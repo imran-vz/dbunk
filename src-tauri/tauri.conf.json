@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "codes.imran.dbunk",
   "build": {
-    "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "bun run --bun dev:vite",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "bun run --bun build:vite",
+    "frontendDist": "../.output/public"
   },
   "app": {
     "windows": [
