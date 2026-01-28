@@ -1,0 +1,666 @@
+import { create } from "zustand";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
+
+export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
+
+export type StoredConnection = {
+  id: string;
+  name: string;
+  database: string;
+  engine: DatabaseEngine;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  role: string;
+};
+
+export type Connection = {
+  id: string;
+  name: string;
+  database: string;
+  status: "Connected" | "Read only" | "Disconnected";
+  engine: DatabaseEngine;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  role: string;
+  latency: string;
+  lastSync: string;
+};
+
+type ConnectResult = {
+  latencyMs: number;
+};
+
+type RunQueryResult = {
+  columns: string[];
+  rows: string[][];
+  runtimeMs: number;
+  rowCount: number;
+};
+
+const hydrateConnection = (connection: StoredConnection): Connection => ({
+  ...connection,
+  status: "Disconnected",
+  latency: "--",
+  lastSync: "Never",
+});
+
+const toStoredConnection = (connection: Connection): StoredConnection => ({
+  id: connection.id,
+  name: connection.name,
+  database: connection.database,
+  engine: connection.engine,
+  host: connection.host,
+  port: connection.port,
+  user: connection.user,
+  password: connection.password,
+  role: connection.role,
+});
+
+const applyConnectionUpdate = (
+  connections: Connection[],
+  connectionId: string,
+  updates: Partial<Connection>,
+) =>
+  connections.map((connection) =>
+    connection.id === connectionId ? { ...connection, ...updates } : connection,
+  );
+
+export type SchemaExplorer = {
+  name: string;
+  tables: string[];
+  views?: string[];
+};
+
+export type WorkspaceTabKind = "table" | "query";
+
+export type WorkspaceTab = {
+  id: string;
+  kind: WorkspaceTabKind;
+  label: string;
+  connectionId: string;
+  schema: string;
+  table?: string;
+  query?: string;
+  lastRun?: string;
+  isDirty?: boolean;
+};
+
+export type TablePreviewData = {
+  columns: string[];
+  rows: string[][];
+  rowCount: string;
+  primaryKey: string;
+  size: string;
+  lastVacuum: string;
+};
+
+export type QueryPreviewData = {
+  columns: string[];
+  rows: string[][];
+  runtime: string;
+  rowCount: string;
+  cache: string;
+};
+
+export type SchemaFlow = {
+  nodes: {
+    id: string;
+    position: { x: number; y: number };
+    data: { label: string };
+  }[];
+  edges: {
+    id: string;
+    source: string;
+    target: string;
+    label: string;
+    type: string;
+  }[];
+};
+
+interface AppState {
+  activeView: "workspace" | "connections";
+  activeConnectionId: string;
+  activeTabId: string;
+  expandedSchemas: string[];
+  isLeftSidebarOpen: boolean;
+  connections: Connection[];
+  workspaceTabs: WorkspaceTab[];
+  schemaExplorer: Record<string, SchemaExplorer[]>;
+  tablePreviews: Record<string, TablePreviewData>;
+  queryPreviews: Record<string, QueryPreviewData>;
+  queryEdits: Record<string, Record<number, Record<number, string>>>;
+  tableEdits: Record<string, Record<number, Record<number, string>>>;
+  schemaFlows: Record<string, SchemaFlow>;
+  recentQueries: string[];
+  editorTheme: string;
+  selectedRowIndex: number;
+
+  setActiveView: (view: "workspace" | "connections") => void;
+  setActiveConnectionId: (id: string) => void;
+  setActiveTabId: (id: string) => void;
+  setExpandedSchemas: (
+    schemas: string[] | ((prev: string[]) => string[]),
+  ) => void;
+  toggleLeftSidebar: () => void;
+  setWorkspaceTabs: (
+    tabs: WorkspaceTab[] | ((prev: WorkspaceTab[]) => WorkspaceTab[]),
+  ) => void;
+  setEditorTheme: (theme: string) => void;
+  setSelectedRowIndex: (index: number) => void;
+  setQueryEdit: (
+    tabId: string,
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => void;
+  discardQueryEdits: (tabId: string) => void;
+  setTableEdit: (
+    tableName: string,
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => void;
+  discardTableEdits: (tableName: string) => void;
+  loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
+  loadConnections: () => Promise<void>;
+  addConnection: (connection: Connection) => Promise<void>;
+  updateConnection: (connection: Connection) => Promise<void>;
+  deleteConnection: (connectionId: string) => Promise<void>;
+  connectConnection: (connectionId: string) => Promise<void>;
+  updateQuery: (tabId: string, query: string) => void;
+  runQuery: (tabId: string) => Promise<void>;
+  closeTab: (tabId: string) => void;
+  openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
+  openTableTab: (schemaName: string, tableName: string) => void;
+  openQueryForTable: (schemaName: string, tableName: string) => void;
+  openViewTab: (schemaName: string, viewName: string) => void;
+  createNewQueryTab: () => void;
+  createNewTableTab: () => void;
+  toggleSchema: (schemaName: string) => void;
+}
+
+// Initial Empty State
+const initialConnections: Connection[] = [];
+const initialSchemaExplorer: Record<string, SchemaExplorer[]> = {};
+const initialWorkspaceTabs: WorkspaceTab[] = [];
+const initialTablePreviews: Record<string, TablePreviewData> = {};
+const initialQueryPreviews: Record<string, QueryPreviewData> = {};
+const initialQueryEdits: Record<
+  string,
+  Record<number, Record<number, string>>
+> = {};
+const initialTableEdits: Record<
+  string,
+  Record<number, Record<number, string>>
+> = {};
+const initialSchemaFlows: Record<string, SchemaFlow> = {};
+const initialRecentQueries: string[] = [];
+
+let nextTabIndex = 1;
+let nextQueryIndex = 1;
+
+export const useAppStore = create<AppState>((set, get) => ({
+  activeView: "workspace",
+  activeConnectionId: "",
+  activeTabId: "",
+  expandedSchemas: [],
+  isLeftSidebarOpen: true,
+  connections: initialConnections,
+  workspaceTabs: initialWorkspaceTabs,
+  schemaExplorer: initialSchemaExplorer,
+  tablePreviews: initialTablePreviews,
+  queryPreviews: initialQueryPreviews,
+  queryEdits: initialQueryEdits,
+  tableEdits: initialTableEdits,
+  schemaFlows: initialSchemaFlows,
+  recentQueries: initialRecentQueries,
+  editorTheme: "vs",
+  selectedRowIndex: 0,
+
+  setActiveView: (view) => set({ activeView: view }),
+  setActiveConnectionId: (id) => set({ activeConnectionId: id }),
+  setActiveTabId: (id) => set({ activeTabId: id, activeView: "workspace" }),
+  setExpandedSchemas: (schemas) =>
+    set((state) => ({
+      expandedSchemas:
+        typeof schemas === "function"
+          ? schemas(state.expandedSchemas)
+          : schemas,
+    })),
+  toggleLeftSidebar: () =>
+    set((state) => ({ isLeftSidebarOpen: !state.isLeftSidebarOpen })),
+  setWorkspaceTabs: (tabs) =>
+    set((state) => ({
+      workspaceTabs:
+        typeof tabs === "function" ? tabs(state.workspaceTabs) : tabs,
+    })),
+  setEditorTheme: (theme) => set({ editorTheme: theme }),
+  setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
+
+  setQueryEdit: (tabId, rowIndex, colIndex, value) =>
+    set((state) => ({
+      queryEdits: {
+        ...state.queryEdits,
+        [tabId]: {
+          ...(state.queryEdits[tabId] ?? {}),
+          [rowIndex]: {
+            ...(state.queryEdits[tabId]?.[rowIndex] ?? {}),
+            [colIndex]: value,
+          },
+        },
+      },
+    })),
+
+  discardQueryEdits: (tabId) =>
+    set((state) => {
+      const { [tabId]: _, ...rest } = state.queryEdits;
+      return { queryEdits: rest };
+    }),
+
+  setTableEdit: (tableName, rowIndex, colIndex, value) =>
+    set((state) => ({
+      tableEdits: {
+        ...state.tableEdits,
+        [tableName]: {
+          ...(state.tableEdits[tableName] ?? {}),
+          [rowIndex]: {
+            ...(state.tableEdits[tableName]?.[rowIndex] ?? {}),
+            [colIndex]: value,
+          },
+        },
+      },
+    })),
+
+  discardTableEdits: (tableName) =>
+    set((state) => {
+      const { [tableName]: _, ...rest } = state.tableEdits;
+      return { tableEdits: rest };
+    }),
+
+  loadTablePreview: async (schemaName, tableName) => {
+    const connectionId = get().activeConnectionId;
+    if (!connectionId) {
+      return;
+    }
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      const result = await tauriInvoke<RunQueryResult>("run_query", {
+        payload: {
+          connectionId,
+          query: `select * from ${schemaName}.${tableName} limit 100`,
+        },
+      });
+      set((state) => ({
+        tablePreviews: {
+          ...state.tablePreviews,
+          [tableName]: {
+            columns: result.columns,
+            rows: result.rows,
+            rowCount: result.rowCount.toString(),
+            primaryKey: "id",
+            size: "--",
+            lastVacuum: "--",
+          },
+        },
+      }));
+    } catch (error) {
+      console.error("Failed to load table preview", error);
+    }
+  },
+
+  loadConnections: async () => {
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<StoredConnection[]>("load_connections");
+      const connections = stored.map(hydrateConnection);
+      set((state) => ({
+        connections,
+        activeConnectionId: connections.some(
+          (connection) => connection.id === state.activeConnectionId,
+        )
+          ? state.activeConnectionId
+          : (connections[0]?.id ?? ""),
+      }));
+    } catch (error) {
+      console.error("Failed to load connections", error);
+    }
+  },
+
+  addConnection: async (connection) => {
+    if (!isTauri()) {
+      set((state) => ({
+        connections: [...state.connections, connection],
+        activeConnectionId: connection.id,
+      }));
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<StoredConnection[]>("save_connection", {
+        connection: toStoredConnection(connection),
+      });
+      const connections = stored.map(hydrateConnection);
+      set({ connections, activeConnectionId: connection.id });
+    } catch (error) {
+      console.error("Failed to save connection", error);
+      set((state) => ({
+        connections: [...state.connections, connection],
+        activeConnectionId: connection.id,
+      }));
+    }
+  },
+
+  updateConnection: async (connection) => {
+    if (!isTauri()) {
+      set((state) => ({
+        connections: state.connections.map((c) =>
+          c.id === connection.id ? connection : c,
+        ),
+      }));
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<StoredConnection[]>("save_connection", {
+        connection: toStoredConnection(connection),
+      });
+      const connections = stored.map(hydrateConnection);
+      // Preserve the connection status for the updated connection
+      const currentConnection = get().connections.find(
+        (c) => c.id === connection.id,
+      );
+      if (currentConnection) {
+        const updatedConnections = connections.map((c) =>
+          c.id === connection.id
+            ? {
+                ...c,
+                status: currentConnection.status,
+                latency: currentConnection.latency,
+                lastSync: currentConnection.lastSync,
+              }
+            : c,
+        );
+        set({ connections: updatedConnections });
+      } else {
+        set({ connections });
+      }
+    } catch (error) {
+      console.error("Failed to update connection", error);
+    }
+  },
+
+  deleteConnection: async (connectionId) => {
+    if (!isTauri()) {
+      set((state) => {
+        const connections = state.connections.filter(
+          (c) => c.id !== connectionId,
+        );
+        const newActiveId =
+          state.activeConnectionId === connectionId
+            ? (connections[0]?.id ?? "")
+            : state.activeConnectionId;
+        return {
+          connections,
+          activeConnectionId: newActiveId,
+          schemaExplorer: Object.fromEntries(
+            Object.entries(state.schemaExplorer).filter(
+              ([key]) => key !== connectionId,
+            ),
+          ),
+        };
+      });
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<StoredConnection[]>(
+        "delete_connection",
+        {
+          payload: { connectionId },
+        },
+      );
+      const connections = stored.map(hydrateConnection);
+      set((state) => {
+        const newActiveId =
+          state.activeConnectionId === connectionId
+            ? (connections[0]?.id ?? "")
+            : state.activeConnectionId;
+        return {
+          connections,
+          activeConnectionId: newActiveId,
+          schemaExplorer: Object.fromEntries(
+            Object.entries(state.schemaExplorer).filter(
+              ([key]) => key !== connectionId,
+            ),
+          ),
+        };
+      });
+    } catch (error) {
+      console.error("Failed to delete connection", error);
+    }
+  },
+
+  connectConnection: async (connectionId) => {
+    if (!connectionId) {
+      return;
+    }
+    set({ activeConnectionId: connectionId });
+    if (!isTauri()) {
+      set((state) => ({
+        connections: applyConnectionUpdate(state.connections, connectionId, {
+          status: "Connected",
+          lastSync: "Just now",
+        }),
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<ConnectResult>("connect_connection", {
+        payload: { connectionId },
+      });
+      const schema = await tauriInvoke<SchemaExplorer[]>(
+        "load_schema_explorer",
+        { payload: { connectionId } },
+      );
+      set((state) => ({
+        connections: applyConnectionUpdate(state.connections, connectionId, {
+          status: "Connected",
+          latency: result.latencyMs ? `${result.latencyMs} ms` : "--",
+          lastSync: "Just now",
+        }),
+        schemaExplorer: {
+          ...state.schemaExplorer,
+          [connectionId]: schema,
+        },
+      }));
+    } catch (error) {
+      console.error("Failed to connect", error);
+      set((state) => ({
+        connections: applyConnectionUpdate(state.connections, connectionId, {
+          status: "Disconnected",
+        }),
+      }));
+    }
+  },
+
+  updateQuery: (tabId, query) =>
+    set((state) => ({
+      workspaceTabs: state.workspaceTabs.map((tab) =>
+        tab.id === tabId ? { ...tab, query, isDirty: true } : tab,
+      ),
+    })),
+
+  runQuery: async (tabId) => {
+    const state = get();
+    const tab = state.workspaceTabs.find((item) => item.id === tabId);
+    if (!tab || tab.kind !== "query") {
+      return;
+    }
+    const query = tab.query?.trim();
+    if (!query) {
+      return;
+    }
+    if (!isTauri()) {
+      set((state) => ({
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId
+            ? { ...item, lastRun: "Just now", isDirty: false }
+            : item,
+        ),
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<RunQueryResult>("run_query", {
+        payload: { connectionId: tab.connectionId, query },
+      });
+      set((state) => ({
+        queryPreviews: {
+          ...state.queryPreviews,
+          [tab.label]: {
+            columns: result.columns,
+            rows: result.rows,
+            runtime: `${result.runtimeMs} ms`,
+            rowCount: result.rowCount.toString(),
+            cache: "Cold",
+          },
+        },
+        recentQueries: [query, ...state.recentQueries].slice(0, 10),
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId
+            ? { ...item, lastRun: "Just now", isDirty: false }
+            : item,
+        ),
+      }));
+    } catch (error) {
+      console.error("Failed to run query", error);
+      set((state) => ({
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId
+            ? { ...item, lastRun: "Failed", isDirty: false }
+            : item,
+        ),
+      }));
+    }
+  },
+
+  closeTab: (tabId) =>
+    set((state) => {
+      const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
+      if (index === -1) {
+        return {};
+      }
+      const nextTabs = state.workspaceTabs.filter((tab) => tab.id !== tabId);
+      let nextActiveTabId = state.activeTabId;
+
+      if (tabId === state.activeTabId) {
+        const nextTab = nextTabs[index] ?? nextTabs[index - 1];
+        nextActiveTabId = nextTab?.id ?? "";
+      }
+
+      return { workspaceTabs: nextTabs, activeTabId: nextActiveTabId };
+    }),
+
+  openWorkspaceTab: (tab) => {
+    const state = get();
+    set({ activeView: "workspace", activeConnectionId: tab.connectionId });
+
+    const existing = state.workspaceTabs.find(
+      (item) =>
+        item.kind === tab.kind &&
+        item.label === tab.label &&
+        item.connectionId === tab.connectionId,
+    );
+
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+
+    const id = `tab-${nextTabIndex}`;
+    nextTabIndex += 1;
+    set((state) => ({
+      workspaceTabs: [...state.workspaceTabs, { ...tab, id }],
+      activeTabId: id,
+    }));
+  },
+
+  openTableTab: (schemaName, tableName) => {
+    get().openWorkspaceTab({
+      kind: "table",
+      label: tableName,
+      connectionId: get().activeConnectionId,
+      schema: schemaName,
+      table: tableName,
+    });
+    void get().loadTablePreview(schemaName, tableName);
+  },
+
+  openViewTab: (schemaName, viewName) => {
+    get().openWorkspaceTab({
+      kind: "query",
+      label: `${viewName}.sql`,
+      connectionId: get().activeConnectionId,
+      schema: schemaName,
+      query: `select * from ${schemaName}.${viewName} limit 100;`,
+    });
+  },
+
+  openQueryForTable: (schemaName, tableName) => {
+    const state = get();
+    const queryLabel = `query_${nextQueryIndex}.sql`;
+    nextQueryIndex += 1;
+
+    get().openWorkspaceTab({
+      kind: "query",
+      label: queryLabel,
+      connectionId: state.activeConnectionId,
+      schema: schemaName,
+      query: `select * from ${schemaName}.${tableName} limit 100;`,
+    });
+  },
+
+  createNewQueryTab: () => {
+    const state = get();
+    const explorerSchemas =
+      state.schemaExplorer[state.activeConnectionId] ?? [];
+    const schemaName = explorerSchemas[0]?.name ?? "public";
+    const queryLabel = `query_${nextQueryIndex}.sql`;
+    nextQueryIndex += 1;
+
+    get().openWorkspaceTab({
+      kind: "query",
+      label: queryLabel,
+      connectionId: state.activeConnectionId,
+      schema: schemaName,
+      query: `select * from ${schemaName}.users limit 50;`,
+    });
+  },
+
+  createNewTableTab: () => {
+    const state = get();
+    const explorerSchemas =
+      state.schemaExplorer[state.activeConnectionId] ?? [];
+    const schemaName = explorerSchemas[0]?.name;
+    const tableName = explorerSchemas[0]?.tables[0];
+    if (!schemaName || !tableName) {
+      return;
+    }
+    get().openTableTab(schemaName, tableName);
+  },
+
+  toggleSchema: (schemaName) => {
+    const state = get();
+    const schemaId = `${state.activeConnectionId}:${schemaName}`;
+    set((state) => ({
+      expandedSchemas: state.expandedSchemas.includes(schemaId)
+        ? state.expandedSchemas.filter((item) => item !== schemaId)
+        : [...state.expandedSchemas, schemaId],
+    }));
+  },
+}));
