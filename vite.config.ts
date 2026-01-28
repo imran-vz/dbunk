@@ -14,6 +14,7 @@ type SpaPrerenderOptions = NonNullable<SpaOptions["prerender"]>;
 type RegularPrerenderOptions = NonNullable<SpaOptions["prerender"]>;
 
 const host: string | undefined = process.env.TAURI_DEV_HOST;
+const isVitest = process.env.VITEST === "true";
 
 // Read from environment variable to pick which prerender mode to use.
 // Defaults to false, which will pick the SPA prerender mode
@@ -51,46 +52,55 @@ const spaWithPrerenderOptions: SpaOptions = {
 };
 
 // See: https://vite.dev/config/
-export default defineConfig(async () => ({
-  plugins: [
-    devtools(),
-    nitro(),
-    // this is the plugin that enables path aliases
-    viteTsConfigPaths({
-      projects: ["./tsconfig.json"],
-    }),
-    tailwindcss(),
-    tanstackStart({
-      spa: (!useSsrPrerenderMode
-        ? spaWithPrerenderOptions
-        : undefined) satisfies SpaOptions | undefined,
-      prerender: (useSsrPrerenderMode
-        ? regularPrerenderOptions
-        : undefined) satisfies RegularPrerenderOptions | undefined,
-    }),
-    viteReact(),
-  ],
+export default defineConfig(async () => {
+  const pathAliases = viteTsConfigPaths({
+    projects: ["./tsconfig.json"],
+  });
+  const reactPlugin = viteReact();
 
-  // Prevent Vite from obscuring rust errors
-  clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
-  server: {
-    port: 3000,
-    strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 3001,
-        }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+  const plugins = isVitest
+    ? [pathAliases, reactPlugin]
+    : [
+        devtools(),
+        nitro(),
+        // this is the plugin that enables path aliases
+        pathAliases,
+        tailwindcss(),
+        tanstackStart({
+          spa: (!useSsrPrerenderMode
+            ? spaWithPrerenderOptions
+            : undefined) satisfies SpaOptions | undefined,
+          prerender: (useSsrPrerenderMode
+            ? regularPrerenderOptions
+            : undefined) satisfies RegularPrerenderOptions | undefined,
+        }),
+        reactPlugin,
+      ];
+
+  return {
+    plugins,
+
+    // Prevent Vite from obscuring rust errors
+    clearScreen: false,
+    // 2. tauri expects a fixed port, fail if that port is not available
+    server: {
+      port: 3000,
+      strictPort: true,
+      host: host || false,
+      hmr: host
+        ? {
+            protocol: "ws",
+            host,
+            port: 3001,
+          }
+        : undefined,
+      watch: {
+        // 3. tell Vite to ignore watching `src-tauri`
+        ignored: ["**/src-tauri/**"],
+      },
     },
-  },
-  test: {
-    passWithNoTests: true,
-  },
-}));
+    test: {
+      passWithNoTests: true,
+    },
+  };
+});

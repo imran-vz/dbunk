@@ -78,6 +78,15 @@
   },
   "overrides": [
     {
+      "includes": ["src-tauri/**"],
+      "linter": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "linter": {
         "rules": {
           "style": {
