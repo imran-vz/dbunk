@@ -22,6 +22,7 @@ import {
   getCoreRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
+  type RowSelectionState,
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
@@ -150,6 +151,20 @@ export interface DataGridProps {
    * Defaults to "export" if omitted.
    */
   exportFilenameBase?: string;
+  /**
+   * Optional toolbar slot rendered between the Save/Discard cluster and
+   * the filter/columns controls. Used by callers that want to extend the
+   * grid's left toolbar with table-specific actions (e.g. Add row,
+   * Delete selected) without forking the grid.
+   */
+  toolbarLeading?: React.ReactNode;
+  /**
+   * Controlled row-selection state. When provided, the parent owns the
+   * selection map and is responsible for clearing it (e.g. after a
+   * delete). Falls back to uncontrolled local state when omitted.
+   */
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: (selection: RowSelectionState) => void;
 }
 
 export function DataGrid({
@@ -168,6 +183,9 @@ export function DataGrid({
   onViewModeChange,
   onToggleSidebar,
   exportFilenameBase = "export",
+  toolbarLeading,
+  rowSelection: rowSelectionProp,
+  onRowSelectionChange,
 }: DataGridProps) {
   // When the grid is read-only we do not propagate the editor wiring to
   // cells. This both prevents `onEdit` from being called and makes the
@@ -175,7 +193,33 @@ export function DataGrid({
   const effectiveOnEdit = readOnly ? undefined : onEdit;
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = useState({});
+  // Selection: when the parent passes `rowSelection` it owns the state; we
+  // mirror it for tanstack-table. When uncontrolled, we keep the previous
+  // local-state behavior for callers that don't care about lifting it.
+  const [internalRowSelection, setInternalRowSelection] =
+    useState<RowSelectionState>({});
+  const rowSelection = rowSelectionProp ?? internalRowSelection;
+  const setRowSelection = useCallback(
+    (
+      updater:
+        | RowSelectionState
+        | ((old: RowSelectionState) => RowSelectionState),
+    ) => {
+      const next =
+        typeof updater === "function"
+          ? (updater as (old: RowSelectionState) => RowSelectionState)(
+              rowSelection,
+            )
+          : updater;
+      if (rowSelectionProp !== undefined) {
+        onRowSelectionChange?.(next);
+      } else {
+        setInternalRowSelection(next);
+        onRowSelectionChange?.(next);
+      }
+    },
+    [rowSelection, rowSelectionProp, onRowSelectionChange],
+  );
   const [showFilters, setShowFilters] = useState(false);
   const [columnSearch, setColumnSearch] = useState("");
   const [activeFilterColumn, setActiveFilterColumn] = useState<string>(
@@ -389,6 +433,8 @@ export function DataGrid({
             )
           )}
 
+          {toolbarLeading}
+
           <div className="flex items-center gap-2">
             <Button
               variant={showFilters ? "secondary" : "outline"}
@@ -472,14 +518,6 @@ export function DataGrid({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          <Button
-            size="sm"
-            className="h-9 gap-2 bg-foreground text-background hover:bg-foreground/90"
-          >
-            <IconPlus className="size-3.5" />
-            Add record
-          </Button>
         </div>
 
         <div className="flex items-center gap-4">
