@@ -26,7 +26,7 @@ import { tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
 
-const tab: WorkspaceTab = {
+const tableTab: WorkspaceTab = {
   id: "tab-1",
   kind: "table",
   label: "users",
@@ -35,35 +35,33 @@ const tab: WorkspaceTab = {
   table: "users",
 };
 
+const initialStoreState = useAppStore.getState();
+
 const seed = (
   data: TableDataState,
-  status: TableLoadStatus = { status: "success" },
+  status: TableLoadStatus = { state: "success" },
 ) => {
   const key = tableDataKey(data.connectionId, data.schema, data.table);
   useAppStore.setState({
     activeConnectionId: data.connectionId,
     tableData: { [key]: data },
-    tableLoadStatus: { [key]: status },
+    tableLoadStatus: { [data.table]: status },
   });
   return key;
 };
 
 beforeEach(() => {
+  useAppStore.setState(initialStoreState, true);
   mockedInvoke.mockReset();
   // The panel kicks off a fetch on mount. Default to a never-resolving
   // promise so seeded tableData/tableLoadStatus survive in tests that
   // don't care about the mount fetch. Status will be "loading" but the
   // tableData stays as seeded.
   mockedInvoke.mockImplementation(() => new Promise(() => {}));
-  useAppStore.setState({
-    activeConnectionId: "conn-1",
-    tableData: {},
-    tableLoadStatus: {},
-    tablePreviews: {},
-  });
 });
 
 afterEach(() => {
+  useAppStore.setState(initialStoreState, true);
   mockedInvoke.mockReset();
 });
 
@@ -71,12 +69,12 @@ afterEach(() => {
 // status to "loading" (we keep that pending), which would otherwise
 // disable navigation buttons in our pagination tests. Override the
 // status back to success so the buttons reflect the seeded data.
-const settleStatus = (key: string) => {
+const settleStatus = (table: string) => {
   act(() => {
     useAppStore.setState((state) => ({
       tableLoadStatus: {
         ...state.tableLoadStatus,
-        [key]: { status: "success" },
+        [table]: { state: "success" },
       },
     }));
   });
@@ -84,7 +82,7 @@ const settleStatus = (key: string) => {
 
 describe("TableEditorPanel pagination", () => {
   it("disables Prev on page 1", () => {
-    const key = seed({
+    seed({
       connectionId: "conn-1",
       schema: "public",
       table: "users",
@@ -96,15 +94,15 @@ describe("TableEditorPanel pagination", () => {
       runtimeMs: 5,
     });
 
-    render(<TableEditorPanel tab={tab} />);
-    settleStatus(key);
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
 
     const prev = screen.getByLabelText("Previous page") as HTMLButtonElement;
     expect(prev.disabled).toBe(true);
   });
 
   it("clicking Next requests the next page", () => {
-    const key = seed({
+    seed({
       connectionId: "conn-1",
       schema: "public",
       table: "users",
@@ -116,8 +114,8 @@ describe("TableEditorPanel pagination", () => {
       runtimeMs: 5,
     });
 
-    render(<TableEditorPanel tab={tab} />);
-    settleStatus(key);
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
     mockedInvoke.mockClear();
 
     fireEvent.click(screen.getByLabelText("Next page"));
@@ -134,7 +132,7 @@ describe("TableEditorPanel pagination", () => {
   });
 
   it("disables Next on the last page when totalRows is known", () => {
-    const key = seed({
+    seed({
       connectionId: "conn-1",
       schema: "public",
       table: "users",
@@ -146,15 +144,15 @@ describe("TableEditorPanel pagination", () => {
       runtimeMs: 5,
     });
 
-    render(<TableEditorPanel tab={tab} />);
-    settleStatus(key);
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
 
     const next = screen.getByLabelText("Next page") as HTMLButtonElement;
     expect(next.disabled).toBe(true);
   });
 
   it("clicking Refresh re-fetches with the stored page and pageSize", () => {
-    const key = seed({
+    seed({
       connectionId: "conn-1",
       schema: "public",
       table: "users",
@@ -166,8 +164,8 @@ describe("TableEditorPanel pagination", () => {
       runtimeMs: 5,
     });
 
-    render(<TableEditorPanel tab={tab} />);
-    settleStatus(key);
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
     mockedInvoke.mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
@@ -197,10 +195,10 @@ describe("TableEditorPanel status banners", () => {
         pageSize: 100,
         runtimeMs: 0,
       },
-      { status: "loading" },
+      { state: "loading" },
     );
 
-    render(<TableEditorPanel tab={tab} />);
+    render(<TableEditorPanel tab={tableTab} />);
 
     expect(screen.getByTestId("table-loading")).toBeTruthy();
   });
@@ -222,15 +220,17 @@ describe("TableEditorPanel status banners", () => {
         pageSize: 100,
         runtimeMs: 0,
       },
-      { status: "error", message: "boom" },
+      { state: "error", error: "boom" },
     );
 
-    render(<TableEditorPanel tab={tab} />);
+    render(<TableEditorPanel tab={tableTab} />);
 
     // Allow the mount-effect's rejection to flush.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(screen.getByTestId("table-error")).toBeTruthy();
-    expect(screen.getByText(/boom/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("boom");
   });
 });

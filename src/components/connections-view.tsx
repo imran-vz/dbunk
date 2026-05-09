@@ -1,4 +1,5 @@
 import {
+  IconAlertCircle,
   IconPencil,
   IconPlus,
   IconSearch,
@@ -101,6 +102,17 @@ export function ConnectionsView() {
                     </Badge>
                   </CardHeader>
                   <CardContent className="grid gap-3 text-xs text-muted-foreground">
+                    {connection.errorMessage && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-destructive"
+                      >
+                        <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                        <div className="flex-1 break-words">
+                          {connection.errorMessage}
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <div className="text-[0.625rem] uppercase">Host</div>

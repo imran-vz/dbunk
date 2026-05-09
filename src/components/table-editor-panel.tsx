@@ -54,9 +54,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   }, [tab.kind, tab.table, tab.schema, tab.connectionId, loadTableData]);
 
   const activeTableData = dataKey ? tableData[dataKey] : undefined;
-  const status = dataKey ? tableLoadStatus[dataKey] : undefined;
-
   const tableName = tab.table ?? "";
+  const status = tableName ? tableLoadStatus[tableName] : undefined;
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
 
@@ -164,8 +163,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     };
   }, [columns, tab.table, tab.schema]);
 
-  const isLoading = status?.status === "loading";
-  const errorMessage = status?.status === "error" ? status.message : null;
+  const isLoading = status?.state === "loading";
+  const errorMessage = status?.state === "error" ? status.error : null;
 
   const pageInfo = (() => {
     const parts: string[] = [];
@@ -194,6 +193,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       {errorMessage ? (
         <div
           data-testid="table-error"
+          role="alert"
           className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
         >
           <IconAlertTriangle className="size-4" />

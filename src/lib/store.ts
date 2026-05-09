@@ -28,6 +28,39 @@ export type Connection = {
   role: string;
   latency: string;
   lastSync: string;
+  errorMessage?: string;
+};
+
+export type QueryStatus =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "success"; runtimeMs?: number }
+  | { state: "error"; error: string };
+
+export type TableLoadStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
+
+const errorToMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown error";
+  }
 };
 
 type ConnectResult = {
@@ -61,12 +94,6 @@ export type TableDataState = {
   totalRows?: number;
   runtimeMs: number;
 };
-
-export type TableLoadStatus =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "success" }
-  | { status: "error"; message: string };
 
 export const tableDataKey = (
   connectionId: string,
@@ -165,8 +192,9 @@ interface AppState {
   schemaExplorer: Record<string, SchemaExplorer[]>;
   tablePreviews: Record<string, TablePreviewData>;
   tableData: Record<string, TableDataState>;
-  tableLoadStatus: Record<string, TableLoadStatus>;
   queryPreviews: Record<string, QueryPreviewData>;
+  queryStatus: Record<string, QueryStatus>;
+  tableLoadStatus: Record<string, TableLoadStatus>;
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
   schemaFlows: Record<string, SchemaFlow>;
@@ -232,8 +260,9 @@ const initialSchemaExplorer: Record<string, SchemaExplorer[]> = {};
 const initialWorkspaceTabs: WorkspaceTab[] = [];
 const initialTablePreviews: Record<string, TablePreviewData> = {};
 const initialTableData: Record<string, TableDataState> = {};
-const initialTableLoadStatus: Record<string, TableLoadStatus> = {};
 const initialQueryPreviews: Record<string, QueryPreviewData> = {};
+const initialQueryStatus: Record<string, QueryStatus> = {};
+const initialTableLoadStatus: Record<string, TableLoadStatus> = {};
 const initialQueryEdits: Record<
   string,
   Record<number, Record<number, string>>
@@ -259,8 +288,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   schemaExplorer: initialSchemaExplorer,
   tablePreviews: initialTablePreviews,
   tableData: initialTableData,
-  tableLoadStatus: initialTableLoadStatus,
   queryPreviews: initialQueryPreviews,
+  queryStatus: initialQueryStatus,
+  tableLoadStatus: initialTableLoadStatus,
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
   schemaFlows: initialSchemaFlows,
@@ -350,7 +380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       tableLoadStatus: {
         ...state.tableLoadStatus,
-        [key]: { status: "loading" },
+        [table]: { state: "loading" },
       },
     }));
     if (!isTauri()) {
@@ -359,7 +389,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         tableLoadStatus: {
           ...state.tableLoadStatus,
-          [key]: { status: "idle" },
+          [table]: { state: "idle" },
         },
       }));
       return;
@@ -409,15 +439,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         tableLoadStatus: {
           ...state.tableLoadStatus,
-          [key]: { status: "success" },
+          [table]: { state: "success" },
         },
       }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorToMessage(error);
+      console.error("Failed to load table data", error);
       set((state) => ({
         tableLoadStatus: {
           ...state.tableLoadStatus,
-          [key]: { status: "error", message },
+          [table]: { state: "error", error: message },
         },
       }));
     }
@@ -578,6 +609,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Connected",
           lastSync: "Just now",
+          errorMessage: undefined,
         }),
       }));
       return;
@@ -595,6 +627,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           status: "Connected",
           latency: result.latencyMs ? `${result.latencyMs} ms` : "--",
           lastSync: "Just now",
+          errorMessage: undefined,
         }),
         schemaExplorer: {
           ...state.schemaExplorer,
@@ -602,10 +635,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       }));
     } catch (error) {
+      const message = errorToMessage(error);
       console.error("Failed to connect", error);
       set((state) => ({
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Disconnected",
+          errorMessage: message,
         }),
       }));
     }
@@ -624,6 +659,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!tab || tab.kind !== "query") {
       return;
     }
+    if (state.queryStatus[tabId]?.state === "running") {
+      return;
+    }
     const query = tab.query?.trim();
     if (!query) {
       return;
@@ -638,6 +676,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return;
     }
+    set((state) => ({
+      queryStatus: {
+        ...state.queryStatus,
+        [tabId]: { state: "running" },
+      },
+    }));
     try {
       const result = await tauriInvoke<RunQueryResult>("run_query", {
         payload: { connectionId: tab.connectionId, query },
@@ -653,6 +697,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             cache: "Cold",
           },
         },
+        queryStatus: {
+          ...state.queryStatus,
+          [tabId]: { state: "success", runtimeMs: result.runtimeMs },
+        },
         recentQueries: [query, ...state.recentQueries].slice(0, 10),
         workspaceTabs: state.workspaceTabs.map((item) =>
           item.id === tabId
@@ -661,8 +709,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       }));
     } catch (error) {
+      const message = errorToMessage(error);
       console.error("Failed to run query", error);
       set((state) => ({
+        queryStatus: {
+          ...state.queryStatus,
+          [tabId]: { state: "error", error: message },
+        },
         workspaceTabs: state.workspaceTabs.map((item) =>
           item.id === tabId
             ? { ...item, lastRun: "Failed", isDirty: false }
