@@ -189,9 +189,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         </div>
       ) : null}
       {isReadOnly && activeTableStructure ? (
-        <div
+        <output
           data-testid="table-readonly-banner"
-          role="status"
           className="flex items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400"
         >
           <IconLock className="size-4" />
@@ -199,12 +198,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
             This table has no primary key or non-null unique index — it is
             read-only. Add a unique constraint to enable editing.
           </span>
-        </div>
+        </output>
       ) : null}
       {commitStatus?.state === "success" ? (
-        <div
+        <output
           data-testid="table-commit-success"
-          role="status"
           className="flex items-center gap-2 border-b border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-700 dark:text-emerald-400"
         >
           <IconCheck className="size-4" />
@@ -221,7 +219,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           >
             Dismiss
           </Button>
-        </div>
+        </output>
       ) : null}
       {commitStatus?.state === "error" ? (
         <div

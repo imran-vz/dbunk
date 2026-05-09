@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { pickRowIdentity } from "@/lib/row-identity";
 import type { ColumnInfo, IndexInfo, TableStructure } from "@/lib/store";
 
-const buildColumn = (overrides: Partial<ColumnInfo> & { name: string }): ColumnInfo => ({
+const buildColumn = (
+  overrides: Partial<ColumnInfo> & { name: string },
+): ColumnInfo => ({
   name: overrides.name,
   dataType: overrides.dataType ?? "text",
   nullable: overrides.nullable ?? false,
@@ -12,7 +14,9 @@ const buildColumn = (overrides: Partial<ColumnInfo> & { name: string }): ColumnI
   ordinalPosition: overrides.ordinalPosition ?? 1,
 });
 
-const buildIndex = (overrides: Partial<IndexInfo> & { name: string }): IndexInfo => ({
+const buildIndex = (
+  overrides: Partial<IndexInfo> & { name: string },
+): IndexInfo => ({
   name: overrides.name,
   columns: overrides.columns ?? [],
   isUnique: overrides.isUnique ?? false,
@@ -65,8 +69,16 @@ describe("pickRowIdentity", () => {
   it("supports composite primary keys", () => {
     const structure = buildStructure({
       columns: [
-        buildColumn({ name: "tenant_id", isPrimaryKey: true, ordinalPosition: 1 }),
-        buildColumn({ name: "user_id", isPrimaryKey: true, ordinalPosition: 2 }),
+        buildColumn({
+          name: "tenant_id",
+          isPrimaryKey: true,
+          ordinalPosition: 1,
+        }),
+        buildColumn({
+          name: "user_id",
+          isPrimaryKey: true,
+          ordinalPosition: 2,
+        }),
       ],
       primaryKey: ["tenant_id", "user_id"],
     });
