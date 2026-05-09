@@ -5,8 +5,8 @@ vi.mock("@/lib/tauri", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-import { isTauri, tauriInvoke } from "@/lib/tauri";
 import { useAppStore, type WorkspaceTab } from "@/lib/store";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
 const mockedIsTauri = vi.mocked(isTauri);
@@ -72,9 +72,7 @@ describe("runQuery", () => {
       rowCount: 0,
     });
 
-    await useAppStore
-      .getState()
-      .runQuery(TAB_ID, { overrideSql: "SELECT 1" });
+    await useAppStore.getState().runQuery(TAB_ID, { overrideSql: "SELECT 1" });
 
     expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
       payload: { connectionId: "conn-1", query: "SELECT 1" },
@@ -111,9 +109,7 @@ describe("runQuery", () => {
       rowCount: 0,
     });
 
-    await useAppStore
-      .getState()
-      .runQuery(TAB_ID, { overrideSql: "SELECT 1" });
+    await useAppStore.getState().runQuery(TAB_ID, { overrideSql: "SELECT 1" });
 
     expect(getTab(TAB_ID)?.query).toBe("select * from users;");
   });
@@ -127,9 +123,7 @@ describe("runQuery", () => {
       rowCount: 0,
     });
 
-    await useAppStore
-      .getState()
-      .runQuery(TAB_ID, { overrideSql: "SELECT 1" });
+    await useAppStore.getState().runQuery(TAB_ID, { overrideSql: "SELECT 1" });
 
     expect(useAppStore.getState().recentQueries[0]).toBe("SELECT 1");
   });
@@ -159,9 +153,7 @@ describe("runQuery", () => {
       rowCount: 1,
     });
 
-    await useAppStore
-      .getState()
-      .runQuery(TAB_ID, { overrideSql: "SELECT 1" });
+    await useAppStore.getState().runQuery(TAB_ID, { overrideSql: "SELECT 1" });
 
     const preview = useAppStore.getState().queryPreviews["query_42.sql"];
     expect(preview).toEqual({
@@ -187,9 +179,7 @@ describe("runQuery", () => {
   it("ignores the call when tab is not a query tab", async () => {
     seedTab(buildQueryTab({ kind: "table", query: undefined }));
 
-    await useAppStore
-      .getState()
-      .runQuery(TAB_ID, { overrideSql: "SELECT 1" });
+    await useAppStore.getState().runQuery(TAB_ID, { overrideSql: "SELECT 1" });
 
     expect(mockedInvoke).not.toHaveBeenCalled();
   });
