@@ -1166,4 +1166,3 @@ describe("store.commitStructureChanges", () => {
     }
   });
 });
-

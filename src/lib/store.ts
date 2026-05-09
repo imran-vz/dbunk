@@ -7,7 +7,11 @@ import {
 import { pickSqlToRun } from "@/lib/sql";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
-export type { ColumnChangeKind, NewColumn, PendingChange } from "@/lib/ddl/postgres";
+export type {
+  ColumnChangeKind,
+  NewColumn,
+  PendingChange,
+} from "@/lib/ddl/postgres";
 
 export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
 

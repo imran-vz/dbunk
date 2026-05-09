@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  classifyDestructive,
   type ColumnChangeKind,
+  classifyDestructive,
   generatePostgresDdl,
 } from "@/lib/ddl/postgres";
 
@@ -61,7 +61,7 @@ describe("generatePostgresDdl", () => {
     const sql = generatePostgresDdl("public", "users", [change]);
 
     expect(sql).toBe(
-      "ALTER TABLE \"public\".\"users\" ADD COLUMN \"label\" text NOT NULL DEFAULT 'it''s fine';",
+      'ALTER TABLE "public"."users" ADD COLUMN "label" text NOT NULL DEFAULT \'it\'\'s fine\';',
     );
   });
 
@@ -162,7 +162,7 @@ describe("generatePostgresDdl", () => {
       default: "pending",
     };
     expect(generatePostgresDdl("public", "users", [change])).toBe(
-      "ALTER TABLE \"public\".\"users\" ALTER COLUMN \"status\" SET DEFAULT 'pending';",
+      'ALTER TABLE "public"."users" ALTER COLUMN "status" SET DEFAULT \'pending\';',
     );
   });
 
@@ -182,7 +182,7 @@ describe("generatePostgresDdl", () => {
       kind: "drop",
       columnName: 'weird"name',
     };
-    expect(generatePostgresDdl("pub\"lic", "us\"ers", [change])).toBe(
+    expect(generatePostgresDdl('pub"lic', 'us"ers', [change])).toBe(
       'ALTER TABLE "pub""lic"."us""ers" DROP COLUMN "weird""name";',
     );
   });
