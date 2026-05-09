@@ -443,7 +443,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </div>
         </div>
       ) : null}
-      <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
+      <div className="flex-1 min-w-0 overflow-hidden">
         {viewMode === "data" ? (
           <DataGrid
             data={rows}
