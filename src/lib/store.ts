@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { pickSqlToRun } from "@/lib/sql";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
@@ -172,7 +173,10 @@ interface AppState {
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
   updateQuery: (tabId: string, query: string) => void;
-  runQuery: (tabId: string) => Promise<void>;
+  runQuery: (
+    tabId: string,
+    options?: { overrideSql?: string },
+  ) => Promise<void>;
   closeTab: (tabId: string) => void;
   openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
   openTableTab: (schemaName: string, tableName: string) => void;
@@ -495,13 +499,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     })),
 
-  runQuery: async (tabId) => {
+  runQuery: async (tabId, options) => {
     const state = get();
     const tab = state.workspaceTabs.find((item) => item.id === tabId);
     if (!tab || tab.kind !== "query") {
       return;
     }
-    const query = tab.query?.trim();
+    const fullText = tab.query ?? "";
+    const overrideSql = options?.overrideSql ?? null;
+    const query = pickSqlToRun(fullText, overrideSql).trim();
     if (!query) {
       return;
     }
