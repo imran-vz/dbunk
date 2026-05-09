@@ -101,6 +101,68 @@ export const tableDataKey = (
   table: string,
 ) => `${connectionId}::${schema}::${table}`;
 
+export const tableStructureKey = (
+  connectionId: string,
+  schema: string,
+  table: string,
+) => `${connectionId}::${schema}::${table}`;
+
+export type ColumnInfo = {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+  ordinalPosition: number;
+};
+
+export type ForeignKeyInfo = {
+  name: string;
+  columns: string[];
+  referencedSchema: string;
+  referencedTable: string;
+  referencedColumns: string[];
+  onUpdate: string | null;
+  onDelete: string | null;
+};
+
+export type IndexInfo = {
+  name: string;
+  columns: string[];
+  isUnique: boolean;
+  isPrimary: boolean;
+  method: string | null;
+};
+
+export type ConstraintInfo = {
+  name: string;
+  kind: string;
+  definition: string;
+};
+
+export type StructureCapabilities = {
+  columns: boolean;
+  primaryKey: boolean;
+  foreignKeys: boolean;
+  indexes: boolean;
+  constraints: boolean;
+};
+
+export type TableStructure = {
+  columns: ColumnInfo[];
+  primaryKey: string[] | null;
+  foreignKeys: ForeignKeyInfo[];
+  indexes: IndexInfo[];
+  constraints: ConstraintInfo[];
+  capabilities: StructureCapabilities;
+};
+
+export type TableStructureStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
+
 const hydrateConnection = (connection: StoredConnection): Connection => ({
   ...connection,
   status: "Disconnected",
@@ -192,9 +254,11 @@ interface AppState {
   schemaExplorer: Record<string, SchemaExplorer[]>;
   tablePreviews: Record<string, TablePreviewData>;
   tableData: Record<string, TableDataState>;
+  tableStructure: Record<string, TableStructure>;
   queryPreviews: Record<string, QueryPreviewData>;
   queryStatus: Record<string, QueryStatus>;
   tableLoadStatus: Record<string, TableLoadStatus>;
+  tableStructureStatus: Record<string, TableStructureStatus>;
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
   schemaFlows: Record<string, SchemaFlow>;
@@ -237,6 +301,11 @@ interface AppState {
     pageSize?: number,
   ) => Promise<void>;
   refreshTableData: (key: string) => Promise<void>;
+  loadTableStructure: (
+    connectionId: string,
+    schema: string,
+    table: string,
+  ) => Promise<void>;
   loadConnections: () => Promise<void>;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
@@ -260,9 +329,11 @@ const initialSchemaExplorer: Record<string, SchemaExplorer[]> = {};
 const initialWorkspaceTabs: WorkspaceTab[] = [];
 const initialTablePreviews: Record<string, TablePreviewData> = {};
 const initialTableData: Record<string, TableDataState> = {};
+const initialTableStructure: Record<string, TableStructure> = {};
 const initialQueryPreviews: Record<string, QueryPreviewData> = {};
 const initialQueryStatus: Record<string, QueryStatus> = {};
 const initialTableLoadStatus: Record<string, TableLoadStatus> = {};
+const initialTableStructureStatus: Record<string, TableStructureStatus> = {};
 const initialQueryEdits: Record<
   string,
   Record<number, Record<number, string>>
@@ -288,9 +359,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   schemaExplorer: initialSchemaExplorer,
   tablePreviews: initialTablePreviews,
   tableData: initialTableData,
+  tableStructure: initialTableStructure,
   queryPreviews: initialQueryPreviews,
   queryStatus: initialQueryStatus,
   tableLoadStatus: initialTableLoadStatus,
+  tableStructureStatus: initialTableStructureStatus,
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
   schemaFlows: initialSchemaFlows,
@@ -466,6 +539,58 @@ export const useAppStore = create<AppState>((set, get) => ({
       existing.page,
       existing.pageSize,
     );
+  },
+
+  loadTableStructure: async (connectionId, schema, table) => {
+    if (!connectionId) {
+      return;
+    }
+    const key = tableStructureKey(connectionId, schema, table);
+    set((state) => ({
+      tableStructureStatus: {
+        ...state.tableStructureStatus,
+        [key]: { state: "loading" },
+      },
+    }));
+    if (!isTauri()) {
+      // In non-Tauri environments (browser preview, tests without mocks)
+      // we cannot fetch real metadata; mark idle and bail.
+      set((state) => ({
+        tableStructureStatus: {
+          ...state.tableStructureStatus,
+          [key]: { state: "idle" },
+        },
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<TableStructure>("load_table_structure", {
+        payload: {
+          connectionId,
+          schema,
+          table,
+        },
+      });
+      set((state) => ({
+        tableStructure: {
+          ...state.tableStructure,
+          [key]: result,
+        },
+        tableStructureStatus: {
+          ...state.tableStructureStatus,
+          [key]: { state: "success" },
+        },
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load table structure", error);
+      set((state) => ({
+        tableStructureStatus: {
+          ...state.tableStructureStatus,
+          [key]: { state: "error", error: message },
+        },
+      }));
+    }
   },
 
   loadConnections: async () => {
