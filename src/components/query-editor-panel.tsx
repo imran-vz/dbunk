@@ -7,7 +7,7 @@ import {
   IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { DataGrid } from "@/components/data-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,13 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+
+// Minimal shape we need from the Monaco editor instance. Avoids pulling the
+// full monaco-editor types in (the package isn't installed for runtime use).
+type MonacoEditorInstance = {
+  getSelection: () => unknown;
+  getModel: () => { getValueInRange: (range: unknown) => string } | null;
+};
 
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
@@ -52,6 +59,25 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     () => queryEdits[tab.id] ?? {},
     [queryEdits, tab.id],
   );
+
+  const editorRef = useRef<MonacoEditorInstance | null>(null);
+
+  const getEditorSelectionText = useCallback((): string => {
+    const editor = editorRef.current;
+    if (!editor) {
+      return "";
+    }
+    const selection = editor.getSelection();
+    const model = editor.getModel();
+    if (!selection || !model) {
+      return "";
+    }
+    return model.getValueInRange(selection) ?? "";
+  }, []);
+
+  const handleRun = useCallback(() => {
+    void runQuery(tab.id, { overrideSql: getEditorSelectionText() });
+  }, [getEditorSelectionText, runQuery, tab.id]);
 
   const hasEdits = Object.keys(currentEdits).length > 0;
 
@@ -114,7 +140,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
             size="sm"
             variant="secondary"
             className="h-7 px-3 text-xs shadow-none"
-            onClick={() => runQuery(tab.id)}
+            onClick={handleRun}
           >
             <IconPlayerPlay className="mr-1.5 size-3.5" />
             Run
@@ -142,6 +168,9 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
               value={tab.query ?? ""}
               options={editorOptions}
               onChange={(value) => updateQuery(tab.id, value ?? "")}
+              onMount={(editor) => {
+                editorRef.current = editor as MonacoEditorInstance;
+              }}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
