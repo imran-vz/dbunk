@@ -106,6 +106,40 @@ struct LoadTableStructurePayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct LoadSchemaRelationshipsPayload {
+    connection_id: String,
+    schema: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchemaTableNode {
+    schema: String,
+    name: String,
+    column_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchemaForeignKey {
+    constraint_name: String,
+    from_schema: String,
+    from_table: String,
+    from_columns: Vec<String>,
+    to_schema: String,
+    to_table: String,
+    to_columns: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchemaRelationships {
+    tables: Vec<SchemaTableNode>,
+    foreign_keys: Vec<SchemaForeignKey>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ExecuteDdlPayload {
     connection_id: String,
     sql: String,
@@ -1499,6 +1533,143 @@ async fn execute_ddl(
     }
 }
 
+async fn fetch_schema_relationships_postgres(
+    connection: &StoredConnection,
+    schema: &str,
+) -> Result<SchemaRelationships, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    // Tables in the requested schema. We pull a column count alongside so the
+    // UI can size nodes if it wants to. Views are intentionally excluded.
+    let table_rows = sqlx::query(
+        r#"
+        SELECT t.table_name::text AS name,
+               COALESCE((
+                   SELECT COUNT(*)::int
+                   FROM information_schema.columns c
+                   WHERE c.table_schema = t.table_schema
+                     AND c.table_name = t.table_name
+               ), 0) AS column_count
+        FROM information_schema.tables t
+        WHERE t.table_schema = $1
+          AND t.table_type = 'BASE TABLE'
+        ORDER BY t.table_name
+        "#,
+    )
+    .bind(schema)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let tables: Vec<SchemaTableNode> = table_rows
+        .into_iter()
+        .map(|row| {
+            let name: String = row.try_get("name").unwrap_or_default();
+            let column_count: i32 = row.try_get("column_count").unwrap_or(0);
+            SchemaTableNode {
+                schema: schema.to_string(),
+                name,
+                column_count: column_count.max(0) as u32,
+            }
+        })
+        .collect();
+
+    // Foreign keys originating in the requested schema. We aggregate the
+    // participating columns into arrays directly in SQL using the constraint
+    // catalog so multi-column FKs collapse to a single row. The referenced
+    // table may live in a different schema; we surface that on the result so
+    // the UI can render cross-schema edges.
+    let fk_rows = sqlx::query(
+        r#"
+        SELECT con.conname::text AS name,
+               nsp.nspname::text AS from_schema,
+               cls.relname::text AS from_table,
+               nsp_ref.nspname::text AS to_schema,
+               cls_ref.relname::text AS to_table,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = con.conrelid AND att.attnum = u.attnum
+               ) AS from_columns,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(con.confkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = con.confrelid AND att.attnum = u.attnum
+               ) AS to_columns
+        FROM pg_constraint con
+        JOIN pg_class cls ON cls.oid = con.conrelid
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        JOIN pg_class cls_ref ON cls_ref.oid = con.confrelid
+        JOIN pg_namespace nsp_ref ON nsp_ref.oid = cls_ref.relnamespace
+        WHERE con.contype = 'f'
+          AND nsp.nspname = $1
+        ORDER BY con.conname
+        "#,
+    )
+    .bind(schema)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let foreign_keys: Vec<SchemaForeignKey> = fk_rows
+        .into_iter()
+        .map(|row| SchemaForeignKey {
+            constraint_name: row.try_get("name").unwrap_or_default(),
+            from_schema: row.try_get("from_schema").unwrap_or_default(),
+            from_table: row.try_get("from_table").unwrap_or_default(),
+            from_columns: row.try_get("from_columns").unwrap_or_default(),
+            to_schema: row.try_get("to_schema").unwrap_or_default(),
+            to_table: row.try_get("to_table").unwrap_or_default(),
+            to_columns: row.try_get("to_columns").unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(SchemaRelationships {
+        tables,
+        foreign_keys,
+    })
+}
+
+#[tauri::command]
+async fn load_schema_relationships(
+    app: AppHandle,
+    payload: LoadSchemaRelationshipsPayload,
+) -> Result<SchemaRelationships, String> {
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => {
+            fetch_schema_relationships_postgres(&connection, &payload.schema).await
+        }
+        // Other engines are a deliberate v1 follow-up. Returning empty
+        // collections keeps the UI usable (nothing to render) while
+        // signalling clearly that the engine is unsupported via the missing
+        // data, rather than producing a hard error and breaking the panel.
+        _ => Ok(SchemaRelationships {
+            tables: Vec::new(),
+            foreign_keys: Vec::new(),
+        }),
+    }
+}
+
 #[tauri::command]
 async fn load_table_data(
     app: AppHandle,
@@ -1586,6 +1757,7 @@ pub fn run() {
             delete_connection,
             connect_connection,
             load_schema_explorer,
+            load_schema_relationships,
             run_query,
             load_table_data,
             load_table_structure,
