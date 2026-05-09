@@ -64,8 +64,9 @@ export function SchemaRelationshipMap({
     () =>
       graph.nodes.map((node) => ({
         ...node,
+        style: { width: "auto" },
         className: cn(
-          "rounded-md border bg-card px-2 py-1 text-[0.65rem] shadow-sm",
+          "rounded-md border bg-card px-2 py-1 text-[0.65rem] shadow-sm whitespace-nowrap",
           node.data.isActive
             ? "border-primary bg-primary/10 text-primary"
             : node.data.isExternal
