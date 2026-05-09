@@ -1,7 +1,9 @@
 import MonacoEditor from "@monaco-editor/react";
 import {
+  IconAlertCircle,
   IconDatabase,
   IconDeviceFloppy,
+  IconLoader2,
   IconPlayerPlay,
   IconSearch,
   IconTerminal2,
@@ -32,6 +34,7 @@ interface QueryEditorPanelProps {
 export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   const {
     queryPreviews,
+    queryStatus,
     queryEdits,
     editorTheme,
     updateQuery,
@@ -39,6 +42,10 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     setQueryEdit,
     discardQueryEdits,
   } = useAppStore();
+
+  const status = queryStatus[tab.id] ?? { state: "idle" as const };
+  const isRunning = status.state === "running";
+  const errorMessage = status.state === "error" ? status.error : null;
 
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
     if (tab.kind !== "query") {
@@ -141,9 +148,20 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
             variant="secondary"
             className="h-7 px-3 text-xs shadow-none"
             onClick={handleRun}
+            disabled={isRunning}
+            aria-busy={isRunning}
           >
-            <IconPlayerPlay className="mr-1.5 size-3.5" />
-            Run
+            {isRunning ? (
+              <>
+                <IconLoader2 className="mr-1.5 size-3.5 animate-spin" />
+                Running...
+              </>
+            ) : (
+              <>
+                <IconPlayerPlay className="mr-1.5 size-3.5" />
+                Run
+              </>
+            )}
           </Button>
           <Button
             size="sm"
@@ -205,9 +223,26 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
             </Badge>
           </div>
 
+          {errorMessage && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-start gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+              <div className="flex-1 whitespace-pre-wrap break-words font-mono">
+                {errorMessage}
+              </div>
+            </div>
+          )}
+
           {/* Data Grid */}
           <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
-            {activeQueryPreview?.rows.length ? (
+            {isRunning ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                <IconLoader2 className="size-6 animate-spin opacity-70" />
+                <div className="text-xs">Running query...</div>
+              </div>
+            ) : activeQueryPreview?.rows.length ? (
               <DataGrid
                 data={activeQueryPreview?.rows ?? []}
                 columns={activeQueryPreview?.columns ?? []}
@@ -216,6 +251,13 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
                   setQueryEdit(tab.id, rowIndex, colIndex, value)
                 }
               />
+            ) : errorMessage ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                <div className="rounded-full bg-destructive/10 p-3">
+                  <IconAlertCircle className="size-6 text-destructive opacity-70" />
+                </div>
+                <div className="text-xs">Query did not return results</div>
+              </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
                 <div className="rounded-full bg-muted p-3">

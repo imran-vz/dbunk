@@ -1,15 +1,20 @@
+import {
+  IconAlertTriangle,
+  IconChevronLeft,
+  IconChevronRight,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, MiniMap } from "reactflow";
 
 import { DataGrid, type TableViewMode } from "@/components/data-grid";
-import {
-  type TableStructureData,
-  TableStructureView,
-} from "@/components/table-structure-view";
+import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   type TablePreviewData,
+  tableDataKey,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
@@ -23,109 +28,128 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [viewMode, setViewMode] = useState<TableViewMode>("data");
 
   const {
-    tablePreviews,
+    tableData,
+    tableLoadStatus,
     tableEdits,
     openQueryForTable,
-    loadTablePreview,
+    loadTableData,
+    refreshTableData,
     setTableEdit,
     discardTableEdits,
     toggleLeftSidebar,
   } = useAppStore();
 
+  const dataKey =
+    tab.kind === "table" && tab.table
+      ? tableDataKey(tab.connectionId, tab.schema, tab.table)
+      : "";
+
   useEffect(() => {
-    if (tab.kind === "table" && tab.table) {
-      void loadTablePreview(tab.schema, tab.table);
+    if (tab.kind === "table" && tab.table && tab.connectionId) {
+      void loadTableData(tab.connectionId, tab.schema, tab.table);
     }
-  }, [tab, loadTablePreview]);
+  }, [tab.kind, tab.table, tab.schema, tab.connectionId, loadTableData]);
 
-  const activeTablePreview = useMemo(() => {
-    if (tab.kind !== "table") {
-      return null;
-    }
-    return (
-      tablePreviews[tab.table ?? ""] ?? {
-        columns: [],
-        rows: [],
-        rowCount: "0",
-        primaryKey: "id",
-        size: "0 B",
-        lastVacuum: "Never",
-      }
-    );
-  }, [tab, tablePreviews]);
-
+  const activeTableData = dataKey ? tableData[dataKey] : undefined;
   const tableName = tab.table ?? "";
+  const status = tableName ? tableLoadStatus[tableName] : undefined;
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
 
-  // Generate mock structure data based on the table preview
-  const structureData: TableStructureData = useMemo(() => {
-    const columns = (activeTablePreview?.columns ?? []).map((colName) => {
-      // Infer some structure from column names
-      const isPrimaryKey = colName === "id";
-      const isTimestamp = colName.includes("_at");
-      const isBoolean = colName.startsWith("is_");
-      const isEmail = colName === "email";
-      const isHash = colName.includes("hash") || colName.includes("password");
+  const columns = activeTableData?.columns ?? [];
+  const rows = activeTableData?.rows ?? [];
+  const page = activeTableData?.page ?? 1;
+  const pageSize = activeTableData?.pageSize ?? 100;
+  const totalRows = activeTableData?.totalRows;
+  const runtimeMs = activeTableData?.runtimeMs;
 
-      let dataType = "VARCHAR(255)";
-      if (isPrimaryKey) dataType = "VARCHAR(50)";
-      if (isTimestamp) dataType = "TIMESTAMP WITH TIME ZONE";
-      if (isBoolean) dataType = "BOOLEAN";
-      if (colName === "phone") dataType = "VARCHAR(50)";
+  const totalPages =
+    totalRows !== undefined && pageSize > 0
+      ? Math.max(1, Math.ceil(totalRows / pageSize))
+      : undefined;
+  const isLastPage =
+    totalPages !== undefined ? page >= totalPages : rows.length < pageSize;
 
-      const isNullable =
-        colName === "phone" ||
-        colName === "deleted_at" ||
-        (!isPrimaryKey && !isEmail && !isHash && !isBoolean && !isTimestamp);
+  const onPrevPage = () => {
+    if (tab.kind === "table" && tab.table && tab.connectionId && page > 1) {
+      void loadTableData(
+        tab.connectionId,
+        tab.schema,
+        tab.table,
+        page - 1,
+        pageSize,
+      );
+    }
+  };
 
-      return {
-        name: colName,
-        dataType,
-        isPrimaryKey,
-        isNullable,
-        defaultValue: undefined,
-        isGenerated: false,
-      };
-    });
+  const onNextPage = () => {
+    if (tab.kind === "table" && tab.table && tab.connectionId && !isLastPage) {
+      void loadTableData(
+        tab.connectionId,
+        tab.schema,
+        tab.table,
+        page + 1,
+        pageSize,
+      );
+    }
+  };
 
-    return {
-      tableName: tab.table ?? "untitled",
-      schema: tab.schema,
-      columns,
-      constraints: [
-        {
-          name: `${tab.table}_pkey`,
-          type: "PRIMARY KEY" as const,
-          columns: ["id"],
-        },
-      ],
-      indexes: [
-        {
-          name: `ix_${tab.table}_email`,
-          isUnique: true,
-          method: "BTREE",
-          columns: ["email"],
-        },
-        {
-          name: `${tab.table}_pkey`,
-          isUnique: true,
-          method: "BTREE",
-          columns: ["id"],
-        },
-      ],
-      policies: [],
-      rowLevelSecurity: false,
-    };
-  }, [activeTablePreview, tab.table, tab.schema]);
+  const onRefresh = () => {
+    if (dataKey) {
+      void refreshTableData(dataKey);
+    }
+  };
+
+  const isLoading = status?.state === "loading";
+  const errorMessage = status?.state === "error" ? status.error : null;
+
+  const pageInfo = (() => {
+    const parts: string[] = [];
+    parts.push(
+      totalPages !== undefined
+        ? `Page ${page} of ${totalPages}`
+        : `Page ${page}`,
+    );
+    if (totalRows !== undefined) {
+      parts.push(`${totalRows.toLocaleString()} rows`);
+    }
+    if (runtimeMs !== undefined) {
+      parts.push(`${runtimeMs} ms`);
+    }
+    return parts.join(" • ");
+  })();
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {isLoading ? (
+        <div
+          data-testid="table-loading"
+          className="h-0.5 w-full animate-pulse bg-primary"
+        />
+      ) : null}
+      {errorMessage ? (
+        <div
+          data-testid="table-error"
+          role="alert"
+          className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+        >
+          <IconAlertTriangle className="size-4" />
+          <span>Failed to load rows: {errorMessage}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs"
+            onClick={onRefresh}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
       <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
         {viewMode === "data" ? (
           <DataGrid
-            data={activeTablePreview?.rows ?? []}
-            columns={activeTablePreview?.columns ?? []}
+            data={rows}
+            columns={columns}
             edits={currentEdits}
             onEdit={(rowIndex, colIndex, value) =>
               setTableEdit(tableName, rowIndex, colIndex, value)
@@ -149,12 +173,55 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               className="h-14 flex-none"
             />
             <TableStructureView
-              data={structureData}
+              connectionId={tab.connectionId}
+              schema={tab.schema}
+              tableName={tab.table ?? ""}
               className="flex-1 border-t"
             />
           </div>
         )}
       </div>
+      {viewMode === "data" && tab.kind === "table" ? (
+        <div
+          data-testid="table-pagination"
+          className="flex h-9 shrink-0 items-center justify-between border-t bg-background px-4 text-xs text-muted-foreground"
+        >
+          <span className="tabular-nums">{pageInfo}</span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={onRefresh}
+              aria-label="Refresh"
+            >
+              <IconRefresh className="mr-1 size-3.5" /> Refresh
+            </Button>
+            <div className="flex items-center rounded-md border bg-muted/20 p-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-sm"
+                onClick={onPrevPage}
+                disabled={page <= 1 || isLoading}
+                aria-label="Previous page"
+              >
+                <IconChevronLeft className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-sm"
+                onClick={onNextPage}
+                disabled={isLastPage || isLoading}
+                aria-label="Next page"
+              >
+                <IconChevronRight className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
