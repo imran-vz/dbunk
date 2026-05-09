@@ -1300,3 +1300,285 @@ describe("store.focusTableInSchemaMap", () => {
     expect(useAppStore.getState().activeTabId).toBe("tab-existing");
   });
 });
+
+describe("store.commitTableEdits", () => {
+  const dataKey = tableDataKey("conn-1", "public", "users");
+  const structureKey = tableStructureKey("conn-1", "public", "users");
+
+  const seedTable = ({
+    primaryKey = ["id"] as string[] | null,
+    indexes = [] as Array<{
+      name: string;
+      columns: string[];
+      isUnique: boolean;
+      isPrimary: boolean;
+      method: string | null;
+    }>,
+  } = {}) => {
+    seedPostgresConnection();
+    useAppStore.setState({
+      tableData: {
+        [dataKey]: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["id", "email", "name"],
+          rows: [
+            ["1", "ada@example.com", "Ada"],
+            ["2", "grace@example.com", "Grace"],
+          ],
+          page: 1,
+          pageSize: 100,
+          totalRows: 2,
+          runtimeMs: 1,
+        },
+      },
+      tableStructure: {
+        [structureKey]: {
+          columns: [
+            {
+              name: "id",
+              dataType: "integer",
+              nullable: false,
+              defaultValue: null,
+              isPrimaryKey: primaryKey?.includes("id") ?? false,
+              ordinalPosition: 1,
+            },
+            {
+              name: "email",
+              dataType: "text",
+              nullable: false,
+              defaultValue: null,
+              isPrimaryKey: false,
+              ordinalPosition: 2,
+            },
+            {
+              name: "name",
+              dataType: "text",
+              nullable: true,
+              defaultValue: null,
+              isPrimaryKey: false,
+              ordinalPosition: 3,
+            },
+          ],
+          primaryKey,
+          foreignKeys: [],
+          indexes,
+          constraints: [],
+          capabilities: {
+            columns: true,
+            primaryKey: true,
+            foreignKeys: true,
+            indexes: true,
+            constraints: true,
+          },
+        },
+      },
+    });
+  };
+
+  it("does nothing when there are no pending edits", async () => {
+    seedTable();
+    await useAppStore.getState().commitTableEdits("users");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("invokes commit_cell_edits with identity + set values for each edited row", async () => {
+    seedTable();
+    act(() => {
+      // Edit the email of row 0 and the name of row 1.
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+      useAppStore.getState().setTableEdit("users", 1, 2, "Grace H.");
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 2, runtimeMs: 7 })
+      // refreshTableData -> load_table_data
+      .mockResolvedValueOnce({
+        columns: ["id", "email", "name"],
+        rows: [
+          ["1", "ada@new.com", "Ada"],
+          ["2", "grace@example.com", "Grace H."],
+        ],
+        page: 1,
+        pageSize: 100,
+        totalRows: 2,
+        runtimeMs: 1,
+      });
+
+    await useAppStore.getState().commitTableEdits("users");
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "commit_cell_edits", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        edits: [
+          {
+            rowIndex: 0,
+            identity: [{ column: "id", value: "1" }],
+            set: [{ column: "email", value: "ada@new.com" }],
+          },
+          {
+            rowIndex: 1,
+            identity: [{ column: "id", value: "2" }],
+            set: [{ column: "name", value: "Grace H." }],
+          },
+        ],
+      },
+    });
+  });
+
+  it("clears edits, refreshes data, and reports success on commit success", async () => {
+    seedTable();
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 5 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email", "name"],
+        rows: [["1", "ada@new.com", "Ada"]],
+        page: 1,
+        pageSize: 100,
+        totalRows: 1,
+        runtimeMs: 1,
+      });
+
+    await useAppStore.getState().commitTableEdits("users");
+
+    const state = useAppStore.getState();
+    expect(state.tableEdits["users"]).toBeUndefined();
+    expect(state.tableEditsCommitStatus["users"]?.state).toBe("success");
+    // Two invokes: commit + reload.
+    expect(mockedInvoke).toHaveBeenCalledTimes(2);
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_data", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        page: 1,
+        pageSize: 100,
+      },
+    });
+  });
+
+  it("preserves edits and reports an error on commit failure", async () => {
+    seedTable();
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+    mockedInvoke.mockRejectedValueOnce(new Error("row not found: id=1"));
+
+    await useAppStore.getState().commitTableEdits("users");
+
+    const state = useAppStore.getState();
+    expect(state.tableEdits["users"]?.[0]?.[1]).toBe("ada@new.com");
+    const status = state.tableEditsCommitStatus["users"];
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toContain("row not found");
+    // No refresh on failure.
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to a unique non-null index when no primary key is present", async () => {
+    seedTable({
+      primaryKey: null,
+      indexes: [
+        {
+          name: "users_email_key",
+          columns: ["email"],
+          isUnique: true,
+          isPrimary: false,
+          method: "btree",
+        },
+      ],
+    });
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 2, "Ada Lovelace");
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 5 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email", "name"],
+        rows: [["1", "ada@example.com", "Ada Lovelace"]],
+        page: 1,
+        pageSize: 100,
+        totalRows: 1,
+        runtimeMs: 1,
+      });
+
+    await useAppStore.getState().commitTableEdits("users");
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "commit_cell_edits", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        edits: [
+          {
+            rowIndex: 0,
+            identity: [{ column: "email", value: "ada@example.com" }],
+            set: [{ column: "name", value: "Ada Lovelace" }],
+          },
+        ],
+      },
+    });
+  });
+
+  it("does not invoke commit and reports a read-only error when no identity is available", async () => {
+    seedTable({ primaryKey: null, indexes: [] });
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+
+    await useAppStore.getState().commitTableEdits("users");
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    const status = useAppStore.getState().tableEditsCommitStatus["users"];
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toMatch(/read.?only|primary key|unique/i);
+    // Edits are kept so the user can still discard explicitly.
+    expect(useAppStore.getState().tableEdits["users"]?.[0]?.[1]).toBe(
+      "ada@new.com",
+    );
+  });
+
+  it("strips edits that match the original value (no-op edits) before committing", async () => {
+    seedTable();
+    act(() => {
+      // Set then revert to original — should be filtered out.
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@example.com");
+      // A genuine edit on another row.
+      useAppStore.getState().setTableEdit("users", 1, 2, "Grace H.");
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 3 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email", "name"],
+        rows: [
+          ["1", "ada@example.com", "Ada"],
+          ["2", "grace@example.com", "Grace H."],
+        ],
+        page: 1,
+        pageSize: 100,
+        totalRows: 2,
+        runtimeMs: 1,
+      });
+
+    await useAppStore.getState().commitTableEdits("users");
+
+    const call = mockedInvoke.mock.calls[0];
+    expect(call?.[0]).toBe("commit_cell_edits");
+    const payload = (call?.[1] as { payload: { edits: unknown[] } }).payload;
+    expect(payload.edits).toHaveLength(1);
+    expect(payload.edits[0]).toMatchObject({
+      rowIndex: 1,
+      identity: [{ column: "id", value: "2" }],
+      set: [{ column: "name", value: "Grace H." }],
+    });
+  });
+});

@@ -4,6 +4,7 @@ import {
   generatePostgresDdl,
   type PendingChange,
 } from "@/lib/ddl/postgres";
+import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type SchemaForeignKey,
   type SchemaRelationships,
@@ -193,6 +194,23 @@ export type StructureCommitStatus =
   | { state: "success"; runtimeMs?: number }
   | { state: "error"; error: string };
 
+export type TableEditsCommitStatus =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "success"; rowsAffected: number; runtimeMs: number }
+  | { state: "error"; error: string };
+
+type CellEditPayload = {
+  rowIndex: number;
+  identity: Array<{ column: string; value: string | null }>;
+  set: Array<{ column: string; value: string | null }>;
+};
+
+type CommitCellEditsResult = {
+  rowsAffected: number;
+  runtimeMs: number;
+};
+
 export type SchemaRelationshipsStatus =
   | { state: "idle" }
   | { state: "loading" }
@@ -324,6 +342,7 @@ interface AppState {
   structureCommitStatus: Record<string, StructureCommitStatus>;
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
+  tableEditsCommitStatus: Record<string, TableEditsCommitStatus>;
   schemaRelationships: Record<string, SchemaRelationships>;
   schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
   queryHistory: QueryHistoryEntry[];
@@ -356,6 +375,8 @@ interface AppState {
     value: string,
   ) => void;
   discardTableEdits: (tableName: string) => void;
+  commitTableEdits: (tableName: string) => Promise<void>;
+  clearTableEditsCommitStatus: (tableName: string) => void;
   loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
   loadTableData: (
     connectionId: string,
@@ -429,6 +450,8 @@ const initialTableEdits: Record<
   string,
   Record<number, Record<number, string>>
 > = {};
+const initialTableEditsCommitStatus: Record<string, TableEditsCommitStatus> =
+  {};
 const initialSchemaRelationships: Record<string, SchemaRelationships> = {};
 const initialSchemaRelationshipsStatus: Record<
   string,
@@ -459,6 +482,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   structureCommitStatus: initialStructureCommitStatus,
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
+  tableEditsCommitStatus: initialTableEditsCommitStatus,
   schemaRelationships: initialSchemaRelationships,
   schemaRelationshipsStatus: initialSchemaRelationshipsStatus,
   queryHistory: initialQueryHistory,
@@ -524,6 +548,239 @@ export const useAppStore = create<AppState>((set, get) => ({
       const { [tableName]: _, ...rest } = state.tableEdits;
       return { tableEdits: rest };
     }),
+
+  clearTableEditsCommitStatus: (tableName) =>
+    set((state) => {
+      if (!(tableName in state.tableEditsCommitStatus)) {
+        return {};
+      }
+      const { [tableName]: _, ...rest } = state.tableEditsCommitStatus;
+      return { tableEditsCommitStatus: rest };
+    }),
+
+  commitTableEdits: async (tableName) => {
+    const state = get();
+    const editsForTable = state.tableEdits[tableName];
+    if (!editsForTable || Object.keys(editsForTable).length === 0) {
+      return;
+    }
+
+    // Find the loaded table data for this table. The active table edits are
+    // keyed by table name; the underlying data is keyed by
+    // `${connectionId}::${schema}::${table}`. We accept the first match for
+    // the table name — only one table tab can be the active edit target at a
+    // time today.
+    const dataEntry = Object.entries(state.tableData).find(
+      ([, data]) => data.table === tableName,
+    );
+    if (!dataEntry) {
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "error",
+            error: "Table data is not loaded; cannot commit edits.",
+          },
+        },
+      }));
+      return;
+    }
+    const [dataKeyForTable, data] = dataEntry;
+    const structureKeyForTable = tableStructureKey(
+      data.connectionId,
+      data.schema,
+      data.table,
+    );
+    const structure = state.tableStructure[structureKeyForTable];
+    const identity = pickRowIdentity(structure);
+    if (!identity) {
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "error",
+            error:
+              "This table has no primary key or non-null unique index — it is read-only.",
+          },
+        },
+      }));
+      return;
+    }
+
+    const connection = state.connections.find(
+      (c) => c.id === data.connectionId,
+    );
+    if (!connection) {
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "error",
+            error: "Connection not found for this table.",
+          },
+        },
+      }));
+      return;
+    }
+    if (connection.engine !== "PostgreSQL") {
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "error",
+            error: `Cell edits are only supported on PostgreSQL (got ${connection.engine}).`,
+          },
+        },
+      }));
+      return;
+    }
+
+    // Build edits payload. Filter out any cell edits where the new value
+    // matches the original — those are no-ops and should not appear in the
+    // UPDATE. Filter out rows whose only edits were no-ops.
+    const columnIndexByName = new Map<string, number>();
+    data.columns.forEach((name, index) => {
+      columnIndexByName.set(name, index);
+    });
+
+    const identityMissing: string[] = identity.columns.filter(
+      (col) => !columnIndexByName.has(col),
+    );
+    if (identityMissing.length > 0) {
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "error",
+            error: `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
+          },
+        },
+      }));
+      return;
+    }
+
+    const editsPayload: CellEditPayload[] = [];
+    const sortedRowIndices = Object.keys(editsForTable)
+      .map((k) => Number.parseInt(k, 10))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b);
+
+    for (const rowIndex of sortedRowIndices) {
+      const row = data.rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+      const colChanges = editsForTable[rowIndex] ?? {};
+      const sortedColIndices = Object.keys(colChanges)
+        .map((k) => Number.parseInt(k, 10))
+        .filter((n) => Number.isFinite(n))
+        .sort((a, b) => a - b);
+
+      const setEntries: Array<{ column: string; value: string | null }> = [];
+      for (const colIndex of sortedColIndices) {
+        const newValue = colChanges[colIndex];
+        if (newValue === undefined) {
+          continue;
+        }
+        const original = row[colIndex];
+        if (newValue === original) {
+          continue;
+        }
+        const columnName = data.columns[colIndex];
+        if (!columnName) {
+          continue;
+        }
+        setEntries.push({ column: columnName, value: newValue });
+      }
+      if (setEntries.length === 0) {
+        continue;
+      }
+
+      const identityEntries = identity.columns.map((col) => {
+        const idx = columnIndexByName.get(col) as number;
+        return { column: col, value: row[idx] ?? null };
+      });
+
+      editsPayload.push({
+        rowIndex,
+        identity: identityEntries,
+        set: setEntries,
+      });
+    }
+
+    if (editsPayload.length === 0) {
+      // All edits were no-ops; clear them silently and report success.
+      set((s) => {
+        const { [tableName]: _, ...rest } = s.tableEdits;
+        return {
+          tableEdits: rest,
+          tableEditsCommitStatus: {
+            ...s.tableEditsCommitStatus,
+            [tableName]: { state: "success", rowsAffected: 0, runtimeMs: 0 },
+          },
+        };
+      });
+      return;
+    }
+
+    set((s) => ({
+      tableEditsCommitStatus: {
+        ...s.tableEditsCommitStatus,
+        [tableName]: { state: "running" },
+      },
+    }));
+
+    if (!isTauri()) {
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "error",
+            error: "Backend is unavailable in this environment.",
+          },
+        },
+      }));
+      return;
+    }
+
+    try {
+      const result = await tauriInvoke<CommitCellEditsResult>(
+        "commit_cell_edits",
+        {
+          payload: {
+            connectionId: data.connectionId,
+            schema: data.schema,
+            table: data.table,
+            edits: editsPayload,
+          },
+        },
+      );
+      set((s) => {
+        const { [tableName]: _, ...restEdits } = s.tableEdits;
+        return {
+          tableEdits: restEdits,
+          tableEditsCommitStatus: {
+            ...s.tableEditsCommitStatus,
+            [tableName]: {
+              state: "success",
+              rowsAffected: result.rowsAffected,
+              runtimeMs: result.runtimeMs,
+            },
+          },
+        };
+      });
+      await get().refreshTableData(dataKeyForTable);
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to commit cell edits", error);
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
 
   loadTablePreview: async (schemaName, tableName) => {
     const connectionId = get().activeConnectionId;
