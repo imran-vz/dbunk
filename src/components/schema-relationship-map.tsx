@@ -1,9 +1,12 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
+  Handle,
   type Node,
   type NodeMouseHandler,
+  type NodeProps,
+  Position,
 } from "reactflow";
 import {
   buildSchemaGraph,
@@ -19,6 +22,110 @@ interface SchemaRelationshipMapProps {
   activeTable: string | null;
   isClient?: boolean;
 }
+
+const visibleColumnLimit = 18;
+
+const typeGlyph = (dataType: string): string => {
+  const normalized = dataType.toLowerCase();
+  if (
+    normalized.includes("int") ||
+    normalized.includes("numeric") ||
+    normalized.includes("decimal") ||
+    normalized.includes("real") ||
+    normalized.includes("double")
+  ) {
+    return "123";
+  }
+  if (normalized.includes("bool")) {
+    return "T/F";
+  }
+  if (
+    normalized.includes("date") ||
+    normalized.includes("time") ||
+    normalized.includes("timestamp")
+  ) {
+    return "time";
+  }
+  if (normalized.includes("json")) {
+    return "{}";
+  }
+  return "A-Z";
+};
+
+function SchemaTableNode({ data }: NodeProps<SchemaGraphNodeData>) {
+  const visibleColumns = data.columns.slice(0, visibleColumnLimit);
+  const hiddenColumnCount = Math.max(
+    0,
+    data.columnCount - visibleColumns.length,
+  );
+
+  return (
+    <div
+      data-active={data.isActive ? "true" : "false"}
+      className={cn(
+        "group/schema-node w-52 overflow-hidden rounded-md border bg-card text-[0.625rem] text-card-foreground shadow-sm ring-1 ring-background/80",
+        data.isActive
+          ? "border-primary shadow-primary/20"
+          : data.isExternal
+            ? "border-dashed border-primary/50"
+            : "border-primary/80",
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!size-2 !border-primary !bg-primary/70"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!size-2 !border-primary !bg-primary/70"
+      />
+      <div className="flex items-center justify-center gap-1.5 border-b border-primary/70 bg-muted/70 px-2 py-1 text-center text-[0.68rem] font-medium">
+        <span className="text-primary">tbl</span>
+        <span className="truncate">{data.label}</span>
+      </div>
+      <div className="max-h-72 overflow-auto bg-card">
+        {visibleColumns.length > 0 ? (
+          visibleColumns.map((column) => (
+            <div
+              key={column.name}
+              className={cn(
+                "grid grid-cols-[2rem_minmax(0,1fr)] items-center border-b border-border/50 px-1.5 py-0.5 last:border-b-0",
+                column.isPrimaryKey && "bg-primary/10",
+              )}
+            >
+              <span className="text-[0.56rem] leading-none text-primary">
+                {column.isPrimaryKey ? "PK" : typeGlyph(column.dataType)}
+              </span>
+              <span
+                className={cn(
+                  "truncate",
+                  column.nullable && "text-muted-foreground",
+                )}
+              >
+                {column.name}
+              </span>
+            </div>
+          ))
+        ) : (
+          <div className="px-2 py-1.5 text-muted-foreground">
+            {data.isExternal ? "External table" : `${data.columnCount} columns`}
+          </div>
+        )}
+        {hiddenColumnCount > 0 ? (
+          <div className="border-t border-primary/40 px-2 py-1 text-muted-foreground">
+            + {hiddenColumnCount} more
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = {
+  schemaTable: SchemaTableNode,
+};
 
 export function SchemaRelationshipMap({
   connectionId,
@@ -64,15 +171,8 @@ export function SchemaRelationshipMap({
     () =>
       graph.nodes.map((node) => ({
         ...node,
-        style: { width: "auto" },
-        className: cn(
-          "rounded-md border bg-card px-2 py-1 text-[0.65rem] shadow-sm whitespace-nowrap",
-          node.data.isActive
-            ? "border-primary bg-primary/10 text-primary"
-            : node.data.isExternal
-              ? "border-dashed border-border text-muted-foreground"
-              : "border-border text-foreground",
-        ),
+        type: "schemaTable",
+        style: { width: 208 },
       })),
     [graph.nodes],
   );
@@ -87,6 +187,36 @@ export function SchemaRelationshipMap({
 
   const hasNodes = graph.nodes.length > 0;
   const errorMessage = status?.state === "error" ? status.error : null;
+  const flowContainerRef = useRef<HTMLDivElement>(null);
+  const [flowSizeKey, setFlowSizeKey] = useState("initial");
+
+  useEffect(() => {
+    if (!isClient || !hasNodes || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const container = flowContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    let frame = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const width = Math.round(entry.contentRect.width / 24);
+        const height = Math.round(entry.contentRect.height / 24);
+        setFlowSizeKey(`${width}x${height}`);
+      });
+    });
+
+    observer.observe(container);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [isClient, hasNodes]);
 
   if (errorMessage) {
     return (
@@ -101,7 +231,7 @@ export function SchemaRelationshipMap({
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={flowContainerRef} className="relative h-full w-full">
       {!hasNodes ? (
         <div
           data-testid="schema-flow-empty"
@@ -113,13 +243,20 @@ export function SchemaRelationshipMap({
         </div>
       ) : isClient ? (
         <ReactFlow
+          key={`${key}:${flowSizeKey}`}
           nodes={styledNodes}
           edges={graph.edges}
+          nodeTypes={nodeTypes}
           fitView
+          defaultEdgeOptions={{
+            style: { stroke: "var(--primary)", strokeWidth: 1.25 },
+          }}
+          fitViewOptions={{ padding: 0.16, maxZoom: 1 }}
           nodesConnectable={false}
           onNodeClick={onNodeClick}
+          proOptions={{ hideAttribution: true }}
         >
-          <Background gap={16} size={0.5} />
+          <Background gap={18} size={0.6} color="var(--border)" />
           <Controls showInteractive={false} />
         </ReactFlow>
       ) : (

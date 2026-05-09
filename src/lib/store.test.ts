@@ -1254,6 +1254,56 @@ describe("store.loadSchemaRelationships", () => {
   });
 });
 
+describe("store.loadDatabaseOverviewStats", () => {
+  const statsResult = {
+    databaseSizeBytes: 10485760,
+    tableSizeBytes: 4194304,
+    indexSizeBytes: 2097152,
+  };
+
+  it("invokes load_database_overview_stats with the right payload", async () => {
+    mockedInvoke.mockResolvedValueOnce(statsResult);
+
+    await useAppStore.getState().loadDatabaseOverviewStats("conn-1");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_database_overview_stats", {
+      payload: {
+        connectionId: "conn-1",
+      },
+    });
+  });
+
+  it("populates databaseOverviewStats and marks status success on resolve", async () => {
+    mockedInvoke.mockResolvedValueOnce(statsResult);
+
+    await useAppStore.getState().loadDatabaseOverviewStats("conn-1");
+
+    const state = useAppStore.getState();
+    expect(state.databaseOverviewStats["conn-1"]).toEqual(statsResult);
+    expect(state.databaseOverviewStatsStatus["conn-1"]).toEqual({
+      state: "success",
+    });
+  });
+
+  it("captures the error message on rejection", async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error("permission denied"));
+
+    await useAppStore.getState().loadDatabaseOverviewStats("conn-1");
+
+    const status = useAppStore.getState().databaseOverviewStatsStatus["conn-1"];
+    if (status?.state !== "error") {
+      throw new Error(`expected error, got ${status?.state}`);
+    }
+    expect(status.error).toContain("permission denied");
+  });
+
+  it("does nothing without a connection id", async () => {
+    await useAppStore.getState().loadDatabaseOverviewStats("");
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
 describe("store.focusTableInSchemaMap", () => {
   it("opens a table tab via the existing openTableTab path", async () => {
     mockedInvoke.mockResolvedValue({

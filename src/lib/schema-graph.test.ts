@@ -8,7 +8,27 @@ import {
 } from "@/lib/schema-graph";
 
 const tables: SchemaTableNode[] = [
-  { schema: "public", name: "users", columnCount: 4 },
+  {
+    schema: "public",
+    name: "users",
+    columnCount: 4,
+    columns: [
+      {
+        name: "id",
+        dataType: "integer",
+        nullable: false,
+        isPrimaryKey: true,
+        ordinalPosition: 1,
+      },
+      {
+        name: "email",
+        dataType: "text",
+        nullable: false,
+        isPrimaryKey: false,
+        ordinalPosition: 2,
+      },
+    ],
+  },
   { schema: "public", name: "orders", columnCount: 6 },
   { schema: "public", name: "order_items", columnCount: 5 },
 ];
@@ -63,6 +83,17 @@ describe("buildSchemaGraph", () => {
     const orders = graph.nodes.find((node) => node.id === "public.orders");
     expect(orders?.data.schema).toBe("public");
     expect(orders?.data.table).toBe("orders");
+  });
+
+  it("carries column metadata on table nodes for the ERD renderer", () => {
+    const graph = buildSchemaGraph(tables, foreignKeys);
+    const users = graph.nodes.find((node) => node.id === "public.users");
+    expect(users?.data.columnCount).toBe(4);
+    expect(users?.data.columns[0]).toMatchObject({
+      name: "id",
+      dataType: "integer",
+      isPrimaryKey: true,
+    });
   });
 
   it("flags only the active table on its node", () => {

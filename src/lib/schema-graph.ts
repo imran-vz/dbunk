@@ -4,6 +4,15 @@ export type SchemaTableNode = {
   schema: string;
   name: string;
   columnCount: number;
+  columns?: SchemaTableColumn[];
+};
+
+export type SchemaTableColumn = {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  isPrimaryKey: boolean;
+  ordinalPosition: number;
 };
 
 export type SchemaForeignKey = {
@@ -25,6 +34,8 @@ export type SchemaGraphNodeData = {
   label: string;
   schema: string;
   table: string;
+  columnCount: number;
+  columns: SchemaTableColumn[];
   isActive: boolean;
   isExternal: boolean;
 };
@@ -48,10 +59,10 @@ const tableNodeId = (schema: string, table: string): string =>
 // A simple deterministic grid layout. dagre would give a nicer DAG layout but
 // would add a runtime dependency we don't currently ship; a stable grid is
 // good enough for v1 and keeps tests trivial to assert against.
-const NODE_WIDTH = 200;
-const NODE_HEIGHT = 90;
-const COLUMN_GAP = 60;
-const ROW_GAP = 40;
+const NODE_WIDTH = 220;
+const NODE_HEIGHT = 300;
+const COLUMN_GAP = 120;
+const ROW_GAP = 80;
 const COLUMNS_PER_ROW = 4;
 
 const positionFor = (index: number): { x: number; y: number } => {
@@ -88,7 +99,13 @@ export const buildSchemaGraph = (
   const orderedIds: string[] = [];
   const tableMeta = new Map<
     string,
-    { schema: string; name: string; isExternal: boolean }
+    {
+      schema: string;
+      name: string;
+      columnCount: number;
+      columns: SchemaTableColumn[];
+      isExternal: boolean;
+    }
   >();
 
   for (const table of tables) {
@@ -98,6 +115,8 @@ export const buildSchemaGraph = (
       tableMeta.set(id, {
         schema: table.schema,
         name: table.name,
+        columnCount: table.columnCount,
+        columns: table.columns ?? [],
         isExternal: false,
       });
     }
@@ -110,6 +129,8 @@ export const buildSchemaGraph = (
       tableMeta.set(id, {
         schema: fk.toSchema,
         name: fk.toTable,
+        columnCount: 0,
+        columns: [],
         isExternal: true,
       });
     }
@@ -128,6 +149,8 @@ export const buildSchemaGraph = (
         label: meta.name,
         schema: meta.schema,
         table: meta.name,
+        columnCount: meta.columnCount,
+        columns: meta.columns,
         isActive: activeTable != null && meta.name === activeTable,
         isExternal: meta.isExternal,
       },
@@ -139,7 +162,9 @@ export const buildSchemaGraph = (
     source: tableNodeId(fk.fromSchema, fk.fromTable),
     target: tableNodeId(fk.toSchema, fk.toTable),
     label: fkLabel(fk),
+    labelStyle: { display: "none" },
     type: "default",
+    style: { stroke: "var(--primary)", strokeWidth: 1.25 },
   }));
 
   return { nodes, edges };

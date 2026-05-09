@@ -4,6 +4,7 @@ use sqlx::{
     PgConnection, Row,
 };
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
     str::FromStr,
@@ -113,10 +114,35 @@ struct LoadSchemaRelationshipsPayload {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct DatabaseOverviewStats {
+    database_size_bytes: i64,
+    table_size_bytes: i64,
+    index_size_bytes: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadDatabaseOverviewStatsPayload {
+    connection_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchemaTableColumn {
+    name: String,
+    data_type: String,
+    nullable: bool,
+    is_primary_key: bool,
+    ordinal_position: i32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SchemaTableNode {
     schema: String,
     name: String,
     column_count: u32,
+    columns: Vec<SchemaTableColumn>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2036,17 +2062,10 @@ async fn fetch_schema_relationships_postgres(
         .await
         .map_err(|error| error.to_string())?;
 
-    // Tables in the requested schema. We pull a column count alongside so the
-    // UI can size nodes if it wants to. Views are intentionally excluded.
+    // Tables in the requested schema. Views are intentionally excluded.
     let table_rows = sqlx::query(
         r#"
-        SELECT t.table_name::text AS name,
-               COALESCE((
-                   SELECT COUNT(*)::int
-                   FROM information_schema.columns c
-                   WHERE c.table_schema = t.table_schema
-                     AND c.table_name = t.table_name
-               ), 0) AS column_count
+        SELECT t.table_name::text AS name
         FROM information_schema.tables t
         WHERE t.table_schema = $1
           AND t.table_type = 'BASE TABLE'
@@ -2058,15 +2077,68 @@ async fn fetch_schema_relationships_postgres(
     .await
     .map_err(|error| error.to_string())?;
 
+    let column_rows = sqlx::query(
+        r#"
+        SELECT c.table_name::text AS table_name,
+               c.column_name::text AS column_name,
+               c.data_type::text AS data_type,
+               c.udt_name::text AS udt_name,
+               c.is_nullable::text AS is_nullable,
+               c.ordinal_position::int AS ordinal_position,
+               (kcu.column_name IS NOT NULL) AS is_primary_key
+        FROM information_schema.columns c
+        LEFT JOIN information_schema.table_constraints tc
+          ON tc.constraint_type = 'PRIMARY KEY'
+         AND tc.table_schema = c.table_schema
+         AND tc.table_name = c.table_name
+        LEFT JOIN information_schema.key_column_usage kcu
+          ON kcu.constraint_name = tc.constraint_name
+         AND kcu.table_schema = tc.table_schema
+         AND kcu.table_name = tc.table_name
+         AND kcu.column_name = c.column_name
+        WHERE c.table_schema = $1
+        ORDER BY c.table_name, c.ordinal_position
+        "#,
+    )
+    .bind(schema)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut columns_by_table: HashMap<String, Vec<SchemaTableColumn>> = HashMap::new();
+    for row in column_rows {
+        let table_name: String = row.try_get("table_name").unwrap_or_default();
+        let data_type: String = row.try_get("data_type").unwrap_or_default();
+        let udt_name: String = row.try_get("udt_name").unwrap_or_default();
+        let rendered_type = match data_type.as_str() {
+            "USER-DEFINED" | "ARRAY" => udt_name,
+            other => other.to_string(),
+        };
+        columns_by_table
+            .entry(table_name)
+            .or_default()
+            .push(SchemaTableColumn {
+                name: row.try_get("column_name").unwrap_or_default(),
+                data_type: rendered_type,
+                nullable: row
+                    .try_get::<String, _>("is_nullable")
+                    .unwrap_or_default()
+                    .eq_ignore_ascii_case("YES"),
+                is_primary_key: row.try_get("is_primary_key").unwrap_or(false),
+                ordinal_position: row.try_get("ordinal_position").unwrap_or(0),
+            });
+    }
+
     let tables: Vec<SchemaTableNode> = table_rows
         .into_iter()
         .map(|row| {
             let name: String = row.try_get("name").unwrap_or_default();
-            let column_count: i32 = row.try_get("column_count").unwrap_or(0);
+            let columns = columns_by_table.remove(&name).unwrap_or_default();
             SchemaTableNode {
                 schema: schema.to_string(),
                 name,
-                column_count: column_count.max(0) as u32,
+                column_count: columns.len() as u32,
+                columns,
             }
         })
         .collect();
@@ -2147,6 +2219,66 @@ async fn load_schema_relationships(
             tables: Vec::new(),
             foreign_keys: Vec::new(),
         }),
+    }
+}
+
+async fn load_database_overview_stats_postgres(
+    connection: &StoredConnection,
+) -> Result<DatabaseOverviewStats, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT pg_database_size(current_database())::bigint AS database_size_bytes,
+               COALESCE(SUM(pg_table_size(c.oid)), 0)::bigint AS table_size_bytes,
+               COALESCE(SUM(pg_indexes_size(c.oid)), 0)::bigint AS index_size_bytes
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'p')
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+        "#,
+    )
+    .fetch_one(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    Ok(DatabaseOverviewStats {
+        database_size_bytes: row.try_get("database_size_bytes").unwrap_or(0),
+        table_size_bytes: row.try_get("table_size_bytes").unwrap_or(0),
+        index_size_bytes: row.try_get("index_size_bytes").unwrap_or(0),
+    })
+}
+
+#[tauri::command]
+async fn load_database_overview_stats(
+    app: AppHandle,
+    payload: LoadDatabaseOverviewStatsPayload,
+) -> Result<DatabaseOverviewStats, String> {
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => load_database_overview_stats_postgres(&connection).await,
+        _ => Err(format!(
+            "Database size stats are not supported for {} (PostgreSQL only)",
+            engine_name(&connection.engine)
+        )),
     }
 }
 
@@ -2238,6 +2370,7 @@ pub fn run() {
             connect_connection,
             load_schema_explorer,
             load_schema_relationships,
+            load_database_overview_stats,
             run_query,
             load_table_data,
             load_table_structure,
