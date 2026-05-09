@@ -104,6 +104,19 @@ struct LoadTableStructurePayload {
     table: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecuteDdlPayload {
+    connection_id: String,
+    sql: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecuteDdlResult {
+    runtime_ms: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ColumnInfo {
@@ -1417,6 +1430,75 @@ async fn load_table_structure(
     }
 }
 
+async fn execute_ddl_postgres(
+    connection: &StoredConnection,
+    sql: &str,
+) -> Result<ExecuteDdlResult, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let start = Instant::now();
+
+    // Wrap the entire DDL batch in an explicit transaction so a partial
+    // failure leaves the schema unchanged. sqlx's PgConnection::execute
+    // accepts multi-statement strings, which lets us send the generated
+    // DDL as a single round-trip.
+    use sqlx::Executor;
+    if let Err(error) = conn.execute("BEGIN").await {
+        return Err(error.to_string());
+    }
+    match conn.execute(sql).await {
+        Ok(_) => {
+            if let Err(error) = conn.execute("COMMIT").await {
+                // Best-effort rollback if COMMIT fails (rare).
+                let _ = conn.execute("ROLLBACK").await;
+                return Err(error.to_string());
+            }
+            Ok(ExecuteDdlResult {
+                runtime_ms: start.elapsed().as_millis() as u64,
+            })
+        }
+        Err(error) => {
+            let _ = conn.execute("ROLLBACK").await;
+            Err(error.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn execute_ddl(
+    app: AppHandle,
+    payload: ExecuteDdlPayload,
+) -> Result<ExecuteDdlResult, String> {
+    if payload.sql.trim().is_empty() {
+        return Err("DDL statement is empty".to_string());
+    }
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => execute_ddl_postgres(&connection, &payload.sql).await,
+        _ => Err(format!(
+            "Structure commit is not supported for {} (PostgreSQL only)",
+            engine_name(&connection.engine)
+        )),
+    }
+}
+
 #[tauri::command]
 async fn load_table_data(
     app: AppHandle,
@@ -1507,6 +1589,7 @@ pub fn run() {
             run_query,
             load_table_data,
             load_table_structure,
+            execute_ddl,
             load_query_history,
             append_query_history,
             clear_query_history

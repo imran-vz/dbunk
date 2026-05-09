@@ -1,6 +1,13 @@
 import { create } from "zustand";
+import {
+  type ColumnChangeKind,
+  generatePostgresDdl,
+  type PendingChange,
+} from "@/lib/ddl/postgres";
 import { pickSqlToRun } from "@/lib/sql";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
+
+export type { ColumnChangeKind, NewColumn, PendingChange } from "@/lib/ddl/postgres";
 
 export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
 
@@ -164,6 +171,25 @@ export type TableStructureStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
+export type StructureCommitStatus =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "success"; runtimeMs?: number }
+  | { state: "error"; error: string };
+
+const generatePendingId = (): string => {
+  if (
+    typeof globalThis !== "undefined" &&
+    typeof (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+      ?.randomUUID === "function"
+  ) {
+    return (
+      globalThis as { crypto: { randomUUID: () => string } }
+    ).crypto.randomUUID();
+  }
+  return `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 const hydrateConnection = (connection: StoredConnection): Connection => ({
   ...connection,
   status: "Disconnected",
@@ -287,6 +313,8 @@ interface AppState {
   queryStatus: Record<string, QueryStatus>;
   tableLoadStatus: Record<string, TableLoadStatus>;
   tableStructureStatus: Record<string, TableStructureStatus>;
+  pendingStructureChanges: Record<string, PendingChange[]>;
+  structureCommitStatus: Record<string, StructureCommitStatus>;
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
   schemaFlows: Record<string, SchemaFlow>;
@@ -334,6 +362,13 @@ interface AppState {
     schema: string,
     table: string,
   ) => Promise<void>;
+  addPendingStructureChange: (
+    key: string,
+    entry: { schema: string; table: string; change: ColumnChangeKind },
+  ) => void;
+  removePendingStructureChange: (key: string, id: string) => void;
+  clearPendingStructureChanges: (key: string) => void;
+  commitStructureChanges: (key: string) => Promise<void>;
   loadConnections: () => Promise<void>;
   loadQueryHistory: () => Promise<void>;
   reopenHistoryEntry: (entry: QueryHistoryEntry) => void;
@@ -367,6 +402,8 @@ const initialQueryPreviews: Record<string, QueryPreviewData> = {};
 const initialQueryStatus: Record<string, QueryStatus> = {};
 const initialTableLoadStatus: Record<string, TableLoadStatus> = {};
 const initialTableStructureStatus: Record<string, TableStructureStatus> = {};
+const initialPendingStructureChanges: Record<string, PendingChange[]> = {};
+const initialStructureCommitStatus: Record<string, StructureCommitStatus> = {};
 const initialQueryEdits: Record<
   string,
   Record<number, Record<number, string>>
@@ -397,6 +434,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryStatus: initialQueryStatus,
   tableLoadStatus: initialTableLoadStatus,
   tableStructureStatus: initialTableStructureStatus,
+  pendingStructureChanges: initialPendingStructureChanges,
+  structureCommitStatus: initialStructureCommitStatus,
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
   schemaFlows: initialSchemaFlows,
@@ -620,6 +659,144 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         tableStructureStatus: {
           ...state.tableStructureStatus,
+          [key]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
+
+  addPendingStructureChange: (key, entry) =>
+    set((state) => {
+      const existing = state.pendingStructureChanges[key] ?? [];
+      const next: PendingChange = {
+        id: generatePendingId(),
+        schema: entry.schema,
+        table: entry.table,
+        change: entry.change,
+      };
+      return {
+        pendingStructureChanges: {
+          ...state.pendingStructureChanges,
+          [key]: [...existing, next],
+        },
+      };
+    }),
+
+  removePendingStructureChange: (key, id) =>
+    set((state) => {
+      const existing = state.pendingStructureChanges[key];
+      if (!existing) {
+        return {};
+      }
+      return {
+        pendingStructureChanges: {
+          ...state.pendingStructureChanges,
+          [key]: existing.filter((entry) => entry.id !== id),
+        },
+      };
+    }),
+
+  clearPendingStructureChanges: (key) =>
+    set((state) => {
+      if (!(key in state.pendingStructureChanges)) {
+        return {};
+      }
+      const { [key]: _, ...rest } = state.pendingStructureChanges;
+      return { pendingStructureChanges: rest };
+    }),
+
+  commitStructureChanges: async (key) => {
+    const state = get();
+    const pending = state.pendingStructureChanges[key];
+    if (!pending || pending.length === 0) {
+      return;
+    }
+    // Pending entries are added as a unit per (schema, table) so we can
+    // safely take schema/table from the first entry.
+    const { schema, table } = pending[0];
+    // The key is `${connectionId}::${schema}::${table}`; derive connection.
+    const connectionId = key.split("::")[0] ?? "";
+    const connection = state.connections.find((c) => c.id === connectionId);
+    if (!connection) {
+      set((state) => ({
+        structureCommitStatus: {
+          ...state.structureCommitStatus,
+          [key]: {
+            state: "error",
+            error: "Connection not found for this table.",
+          },
+        },
+      }));
+      return;
+    }
+    if (connection.engine !== "PostgreSQL") {
+      set((state) => ({
+        structureCommitStatus: {
+          ...state.structureCommitStatus,
+          [key]: {
+            state: "error",
+            error: `Structure commit is only supported on PostgreSQL (got ${connection.engine}).`,
+          },
+        },
+      }));
+      return;
+    }
+
+    const sql = generatePostgresDdl(
+      schema,
+      table,
+      pending.map((entry) => entry.change),
+    );
+
+    set((state) => ({
+      structureCommitStatus: {
+        ...state.structureCommitStatus,
+        [key]: { state: "running" },
+      },
+    }));
+
+    if (!isTauri()) {
+      // No backend in browser preview / unmocked tests: leave pending in
+      // place and surface a clear status.
+      set((state) => ({
+        structureCommitStatus: {
+          ...state.structureCommitStatus,
+          [key]: {
+            state: "error",
+            error: "Backend is unavailable in this environment.",
+          },
+        },
+      }));
+      return;
+    }
+
+    try {
+      const result = await tauriInvoke<{ runtimeMs: number }>("execute_ddl", {
+        payload: { connectionId, sql },
+      });
+      // Clear pending on success and refresh structure metadata.
+      set((state) => {
+        const { [key]: _, ...rest } = state.pendingStructureChanges;
+        return {
+          pendingStructureChanges: rest,
+          structureCommitStatus: {
+            ...state.structureCommitStatus,
+            [key]: { state: "success", runtimeMs: result.runtimeMs },
+          },
+        };
+      });
+      await get().loadTableStructure(connectionId, schema, table);
+      // Best-effort: also refresh data if it was previously loaded.
+      const dataKey = tableDataKey(connectionId, schema, table);
+      if (get().tableData[dataKey]) {
+        await get().refreshTableData(dataKey);
+      }
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to commit structure changes", error);
+      set((state) => ({
+        structureCommitStatus: {
+          ...state.structureCommitStatus,
           [key]: { state: "error", error: message },
         },
       }));
