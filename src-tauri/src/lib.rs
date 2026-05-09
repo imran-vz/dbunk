@@ -66,6 +66,65 @@ struct RunQueryPayload {
     query: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadTableDataPayload {
+    connection_id: String,
+    schema: String,
+    table: String,
+    page: Option<u32>,
+    page_size: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TableDataResult {
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+    page: u32,
+    page_size: u32,
+    total_rows: Option<u64>,
+    runtime_ms: u64,
+}
+
+const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
+const MAX_TABLE_PAGE_SIZE: u32 = 1000;
+
+fn quote_double(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn quote_backtick(identifier: &str) -> String {
+    format!("`{}`", identifier.replace('`', "``"))
+}
+
+fn qualified_table_name(engine: &DatabaseEngine, schema: &str, table: &str) -> String {
+    match engine {
+        DatabaseEngine::PostgreSQL | DatabaseEngine::SQLite => {
+            if schema.is_empty() {
+                quote_double(table)
+            } else {
+                format!("{}.{}", quote_double(schema), quote_double(table))
+            }
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::ClickHouse => {
+            if schema.is_empty() {
+                quote_backtick(table)
+            } else {
+                format!("{}.{}", quote_backtick(schema), quote_backtick(table))
+            }
+        }
+    }
+}
+
+fn parse_total_rows(result: &QueryResult) -> Option<u64> {
+    result
+        .rows
+        .first()
+        .and_then(|row| row.first())
+        .and_then(|cell| cell.parse::<u64>().ok())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SchemaExplorer {
@@ -854,6 +913,57 @@ async fn run_query(app: AppHandle, payload: RunQueryPayload) -> Result<QueryResu
     }
 }
 
+async fn run_engine_query(
+    connection: &StoredConnection,
+    query: &str,
+) -> Result<QueryResult, String> {
+    match connection.engine {
+        DatabaseEngine::ClickHouse => run_clickhouse_query(connection, query).await,
+        _ => run_sqlx_query(connection, query).await,
+    }
+}
+
+#[tauri::command]
+async fn load_table_data(
+    app: AppHandle,
+    payload: LoadTableDataPayload,
+) -> Result<TableDataResult, String> {
+    let connection = find_connection(&app, &payload.connection_id)?;
+    let page = payload.page.unwrap_or(1).max(1);
+    let page_size = payload
+        .page_size
+        .unwrap_or(DEFAULT_TABLE_PAGE_SIZE)
+        .clamp(1, MAX_TABLE_PAGE_SIZE);
+    let offset = (page - 1) as u64 * page_size as u64;
+
+    let qualified = qualified_table_name(&connection.engine, &payload.schema, &payload.table);
+
+    // SELECT with LIMIT/OFFSET works for all four supported engines
+    // (PostgreSQL, MySQL, SQLite, ClickHouse).
+    let select_query = format!(
+        "SELECT * FROM {} LIMIT {} OFFSET {}",
+        qualified, page_size, offset
+    );
+
+    let select_result = run_engine_query(&connection, &select_query).await?;
+
+    // Best-effort COUNT(*) — never fail the call if the count fails.
+    let count_query = format!("SELECT COUNT(*) FROM {}", qualified);
+    let total_rows = match run_engine_query(&connection, &count_query).await {
+        Ok(result) => parse_total_rows(&result),
+        Err(_) => None,
+    };
+
+    Ok(TableDataResult {
+        columns: select_result.columns,
+        rows: select_result.rows,
+        page,
+        page_size,
+        total_rows,
+        runtime_ms: select_result.runtime_ms,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     ensure_sqlx_drivers();
@@ -865,7 +975,8 @@ pub fn run() {
             delete_connection,
             connect_connection,
             load_schema_explorer,
-            run_query
+            run_query,
+            load_table_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
