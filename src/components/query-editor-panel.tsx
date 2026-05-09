@@ -587,7 +587,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
               className="flex shrink-0 items-start gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
             >
               <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-              <div className="flex-1 whitespace-pre-wrap break-words font-mono">
+              <div className="flex-1 whitespace-pre-wrap wrap-break-word font-mono">
                 {errorMessage}
               </div>
             </div>
