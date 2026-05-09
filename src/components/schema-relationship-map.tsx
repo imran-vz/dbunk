@@ -2,7 +2,6 @@ import { useEffect, useMemo } from "react";
 import ReactFlow, {
   Background,
   Controls,
-  MiniMap,
   type Node,
   type NodeMouseHandler,
 } from "reactflow";
@@ -116,15 +115,10 @@ export function SchemaRelationshipMap({
           nodes={styledNodes}
           edges={graph.edges}
           fitView
-          nodesDraggable={false}
           nodesConnectable={false}
-          zoomOnScroll={false}
-          zoomOnDoubleClick={false}
-          panOnDrag={false}
           onNodeClick={onNodeClick}
         >
           <Background gap={16} size={0.5} />
-          <MiniMap pannable zoomable />
           <Controls showInteractive={false} />
         </ReactFlow>
       ) : (
