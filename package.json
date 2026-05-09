@@ -2,6 +2,26 @@
   "name": "dbunk",
   "private": true,
   "version": "0.1.0",
+  "description": "Open-source desktop database workspace for exploring data, running SQL, and inspecting schemas.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imran-vz/dbunk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/imran-vz/dbunk/issues"
+  },
+  "homepage": "https://github.com/imran-vz/dbunk#readme",
+  "keywords": [
+    "database",
+    "sql",
+    "tauri",
+    "react",
+    "postgres",
+    "mysql",
+    "sqlite",
+    "clickhouse"
+  ],
   "type": "module",
   "scripts": {
     "dev:vite": "vite dev --port 3000",
