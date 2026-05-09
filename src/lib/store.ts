@@ -4,6 +4,12 @@ import {
   generatePostgresDdl,
   type PendingChange,
 } from "@/lib/ddl/postgres";
+import {
+  type SchemaForeignKey,
+  type SchemaRelationships,
+  type SchemaTableNode,
+  schemaRelationshipsKey,
+} from "@/lib/schema-graph";
 import { pickSqlToRun } from "@/lib/sql";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
@@ -12,6 +18,12 @@ export type {
   NewColumn,
   PendingChange,
 } from "@/lib/ddl/postgres";
+export type {
+  SchemaForeignKey,
+  SchemaRelationships,
+  SchemaTableNode,
+} from "@/lib/schema-graph";
+export { schemaRelationshipsKey } from "@/lib/schema-graph";
 
 export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
 
@@ -181,6 +193,12 @@ export type StructureCommitStatus =
   | { state: "success"; runtimeMs?: number }
   | { state: "error"; error: string };
 
+export type SchemaRelationshipsStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
+
 const generatePendingId = (): string => {
   if (
     typeof globalThis !== "undefined" &&
@@ -286,21 +304,6 @@ export type QueryPreviewData = {
   cache: string;
 };
 
-export type SchemaFlow = {
-  nodes: {
-    id: string;
-    position: { x: number; y: number };
-    data: { label: string };
-  }[];
-  edges: {
-    id: string;
-    source: string;
-    target: string;
-    label: string;
-    type: string;
-  }[];
-};
-
 interface AppState {
   activeView: "workspace" | "connections";
   activeConnectionId: string;
@@ -321,7 +324,8 @@ interface AppState {
   structureCommitStatus: Record<string, StructureCommitStatus>;
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
-  schemaFlows: Record<string, SchemaFlow>;
+  schemaRelationships: Record<string, SchemaRelationships>;
+  schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
   queryHistory: QueryHistoryEntry[];
   editorTheme: string;
   selectedRowIndex: number;
@@ -366,6 +370,15 @@ interface AppState {
     schema: string,
     table: string,
   ) => Promise<void>;
+  loadSchemaRelationships: (
+    connectionId: string,
+    schema: string,
+  ) => Promise<void>;
+  focusTableInSchemaMap: (
+    connectionId: string,
+    schema: string,
+    table: string,
+  ) => void;
   addPendingStructureChange: (
     key: string,
     entry: { schema: string; table: string; change: ColumnChangeKind },
@@ -416,7 +429,11 @@ const initialTableEdits: Record<
   string,
   Record<number, Record<number, string>>
 > = {};
-const initialSchemaFlows: Record<string, SchemaFlow> = {};
+const initialSchemaRelationships: Record<string, SchemaRelationships> = {};
+const initialSchemaRelationshipsStatus: Record<
+  string,
+  SchemaRelationshipsStatus
+> = {};
 const initialQueryHistory: QueryHistoryEntry[] = [];
 
 let nextTabIndex = 1;
@@ -442,7 +459,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   structureCommitStatus: initialStructureCommitStatus,
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
-  schemaFlows: initialSchemaFlows,
+  schemaRelationships: initialSchemaRelationships,
+  schemaRelationshipsStatus: initialSchemaRelationshipsStatus,
   queryHistory: initialQueryHistory,
   editorTheme: "vs",
   selectedRowIndex: 0,
@@ -667,6 +685,68 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       }));
     }
+  },
+
+  loadSchemaRelationships: async (connectionId, schema) => {
+    if (!connectionId) {
+      return;
+    }
+    const key = schemaRelationshipsKey(connectionId, schema);
+    set((state) => ({
+      schemaRelationshipsStatus: {
+        ...state.schemaRelationshipsStatus,
+        [key]: { state: "loading" },
+      },
+    }));
+    if (!isTauri()) {
+      // Non-Tauri environments (browser preview, unmocked tests) cannot
+      // hit the backend; mark idle and bail.
+      set((state) => ({
+        schemaRelationshipsStatus: {
+          ...state.schemaRelationshipsStatus,
+          [key]: { state: "idle" },
+        },
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<{
+        tables: SchemaTableNode[];
+        foreignKeys: SchemaForeignKey[];
+      }>("load_schema_relationships", {
+        payload: { connectionId, schema },
+      });
+      set((state) => ({
+        schemaRelationships: {
+          ...state.schemaRelationships,
+          [key]: {
+            tables: result.tables,
+            foreignKeys: result.foreignKeys,
+          },
+        },
+        schemaRelationshipsStatus: {
+          ...state.schemaRelationshipsStatus,
+          [key]: { state: "success" },
+        },
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load schema relationships", error);
+      set((state) => ({
+        schemaRelationshipsStatus: {
+          ...state.schemaRelationshipsStatus,
+          [key]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
+
+  focusTableInSchemaMap: (connectionId, schema, table) => {
+    // Use the existing tab-opening flow: it focuses an existing tab when
+    // present and creates one otherwise. We pin activeConnectionId to
+    // match the requested schema so the workspace shows the right context.
+    set({ activeConnectionId: connectionId });
+    get().openTableTab(schema, table);
   },
 
   addPendingStructureChange: (key, entry) =>
