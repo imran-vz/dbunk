@@ -6,7 +6,13 @@ vi.mock("@/lib/tauri", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-import { tableDataKey, tableStructureKey, useAppStore } from "@/lib/store";
+import type { ColumnChangeKind } from "@/lib/ddl/postgres";
+import {
+  type Connection,
+  tableDataKey,
+  tableStructureKey,
+  useAppStore,
+} from "@/lib/store";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
@@ -952,3 +958,212 @@ describe("query history", () => {
     expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
   });
 });
+
+const seedPostgresConnection = () => {
+  const connection: Connection = {
+    id: "conn-1",
+    name: "Local",
+    database: "dbunk",
+    status: "Connected",
+    engine: "PostgreSQL",
+    host: "localhost",
+    port: 5432,
+    user: "postgres",
+    password: "",
+    role: "admin",
+    latency: "10 ms",
+    lastSync: "Just now",
+  };
+  useAppStore.setState({
+    connections: [connection],
+    activeConnectionId: connection.id,
+  });
+  return connection;
+};
+
+describe("store.pendingStructureChanges", () => {
+  const key = tableStructureKey("conn-1", "public", "users");
+
+  it("addPendingStructureChange appends a change and assigns it an id", () => {
+    const change: ColumnChangeKind = { kind: "drop", columnName: "legacy" };
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change,
+      });
+    });
+    const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    expect(pending).toHaveLength(1);
+    expect(pending[0].change).toEqual(change);
+    expect(pending[0].schema).toBe("public");
+    expect(pending[0].table).toBe("users");
+    expect(typeof pending[0].id).toBe("string");
+    expect(pending[0].id.length).toBeGreaterThan(0);
+  });
+
+  it("addPendingStructureChange preserves order across multiple calls", () => {
+    const a: ColumnChangeKind = { kind: "drop", columnName: "a" };
+    const b: ColumnChangeKind = { kind: "drop", columnName: "b" };
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: a,
+      });
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: b,
+      });
+    });
+    const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    expect(pending.map((p) => p.change)).toEqual([a, b]);
+  });
+
+  it("removePendingStructureChange removes only the targeted entry", () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "a" },
+      });
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "b" },
+      });
+    });
+    const firstId =
+      useAppStore.getState().pendingStructureChanges[key]?.[0]?.id ?? "";
+    act(() => {
+      useAppStore.getState().removePendingStructureChange(key, firstId);
+    });
+    const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    expect(pending).toHaveLength(1);
+    expect(pending[0].id).not.toBe(firstId);
+  });
+
+  it("clearPendingStructureChanges drops all changes for the key", () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "a" },
+      });
+    });
+    act(() => {
+      useAppStore.getState().clearPendingStructureChanges(key);
+    });
+    expect(
+      useAppStore.getState().pendingStructureChanges[key] ?? [],
+    ).toHaveLength(0);
+  });
+});
+
+describe("store.commitStructureChanges", () => {
+  const key = tableStructureKey("conn-1", "public", "users");
+
+  beforeEach(() => {
+    seedPostgresConnection();
+  });
+
+  it("does nothing when there are no pending changes", async () => {
+    await useAppStore.getState().commitStructureChanges(key);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("invokes execute_ddl with generated SQL and clears pending on success", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+    // First call: execute_ddl, second call: load_table_structure refresh.
+    mockedInvoke
+      .mockResolvedValueOnce({ runtimeMs: 12 })
+      .mockResolvedValueOnce({
+        columns: [],
+        primaryKey: null,
+        foreignKeys: [],
+        indexes: [],
+        constraints: [],
+        capabilities: {
+          columns: true,
+          primaryKey: true,
+          foreignKeys: true,
+          indexes: true,
+          constraints: true,
+        },
+      });
+
+    await useAppStore.getState().commitStructureChanges(key);
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "execute_ddl", {
+      payload: {
+        connectionId: "conn-1",
+        sql: 'ALTER TABLE "public"."users" DROP COLUMN "legacy";',
+      },
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_structure", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+      },
+    });
+
+    const state = useAppStore.getState();
+    expect(state.pendingStructureChanges[key] ?? []).toHaveLength(0);
+    expect(state.structureCommitStatus[key]?.state).toBe("success");
+  });
+
+  it("preserves pending and surfaces error on backend failure", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+    mockedInvoke.mockRejectedValueOnce(new Error("permission denied"));
+
+    await useAppStore.getState().commitStructureChanges(key);
+
+    const state = useAppStore.getState();
+    expect(state.pendingStructureChanges[key] ?? []).toHaveLength(1);
+    expect(state.structureCommitStatus[key]).toEqual({
+      state: "error",
+      error: "permission denied",
+    });
+    // Should not refresh structure on failure.
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects commit when active engine is not PostgreSQL", async () => {
+    useAppStore.setState((state) => ({
+      connections: state.connections.map((c) =>
+        c.id === "conn-1" ? { ...c, engine: "MySQL" } : c,
+      ),
+    }));
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+
+    await useAppStore.getState().commitStructureChanges(key);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    const status = useAppStore.getState().structureCommitStatus[key];
+    expect(status?.state).toBe("error");
+    if (status?.state === "error") {
+      expect(status.error).toMatch(/postgres/i);
+    }
+  });
+});
+
