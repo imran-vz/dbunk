@@ -1447,8 +1447,8 @@ describe("store.commitTableEdits", () => {
     await useAppStore.getState().commitTableEdits("users");
 
     const state = useAppStore.getState();
-    expect(state.tableEdits["users"]).toBeUndefined();
-    expect(state.tableEditsCommitStatus["users"]?.state).toBe("success");
+    expect(state.tableEdits.users).toBeUndefined();
+    expect(state.tableEditsCommitStatus.users?.state).toBe("success");
     // Two invokes: commit + reload.
     expect(mockedInvoke).toHaveBeenCalledTimes(2);
     expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_data", {
@@ -1472,8 +1472,8 @@ describe("store.commitTableEdits", () => {
     await useAppStore.getState().commitTableEdits("users");
 
     const state = useAppStore.getState();
-    expect(state.tableEdits["users"]?.[0]?.[1]).toBe("ada@new.com");
-    const status = state.tableEditsCommitStatus["users"];
+    expect(state.tableEdits.users?.[0]?.[1]).toBe("ada@new.com");
+    const status = state.tableEditsCommitStatus.users;
     if (status?.state !== "error") {
       throw new Error(`expected error status, got ${status?.state}`);
     }
@@ -1536,13 +1536,13 @@ describe("store.commitTableEdits", () => {
     await useAppStore.getState().commitTableEdits("users");
 
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().tableEditsCommitStatus["users"];
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
     if (status?.state !== "error") {
       throw new Error(`expected error status, got ${status?.state}`);
     }
     expect(status.error).toMatch(/read.?only|primary key|unique/i);
     // Edits are kept so the user can still discard explicitly.
-    expect(useAppStore.getState().tableEdits["users"]?.[0]?.[1]).toBe(
+    expect(useAppStore.getState().tableEdits.users?.[0]?.[1]).toBe(
       "ada@new.com",
     );
   });

@@ -174,3 +174,48 @@ describe("DataGrid export menu", () => {
     expect(parsed).toEqual([{ id: "2", name: "Grace" }]);
   });
 });
+
+describe("DataGrid read-only mode", () => {
+  it("does not invoke onEdit when readOnly is true", () => {
+    const onEdit = vi.fn();
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        onEdit={onEdit}
+        readOnly
+      />,
+    );
+
+    // Try to click into a cell — read-only cells render as non-editable buttons
+    // with `tabIndex=-1` and no click handler that engages the editor.
+    const cells = screen.getAllByRole("button");
+    const dataCell = cells.find((btn) => btn.textContent === "Ada");
+    expect(dataCell).toBeDefined();
+    if (dataCell) {
+      fireEvent.click(dataCell);
+      // No input should appear — the cell remains a plain button.
+      expect(dataCell.tagName.toLowerCase()).toBe("button");
+    }
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it("disables the Save button when isSaving is true", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        onEdit={vi.fn()}
+        hasEdits
+        isSaving
+        onSave={vi.fn()}
+        onDiscard={vi.fn()}
+      />,
+    );
+
+    const save = screen.getByRole("button", {
+      name: /saving|save changes/i,
+    }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+  });
+});
