@@ -16,9 +16,12 @@ vi.mock("reactflow", () => ({
 
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import {
+  type Connection,
   type TableDataState,
   type TableLoadStatus,
+  type TableStructure,
   tableDataKey,
+  tableStructureKey,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
@@ -177,6 +180,172 @@ describe("TableEditorPanel pagination", () => {
         table: "users",
         page: 2,
         pageSize: 50,
+      },
+    });
+  });
+});
+
+const postgresConnection: Connection = {
+  id: "conn-1",
+  name: "Local",
+  database: "dbunk",
+  status: "Connected",
+  engine: "PostgreSQL",
+  host: "localhost",
+  port: 5432,
+  user: "postgres",
+  password: "",
+  role: "admin",
+  latency: "10 ms",
+  lastSync: "Just now",
+};
+
+const seedStructure = (structure: TableStructure) => {
+  const key = tableStructureKey("conn-1", "public", "users");
+  useAppStore.setState((state) => ({
+    connections:
+      state.connections.length > 0 ? state.connections : [postgresConnection],
+    activeConnectionId: "conn-1",
+    tableStructure: {
+      ...state.tableStructure,
+      [key]: structure,
+    },
+  }));
+};
+
+const editableStructure: TableStructure = {
+  columns: [
+    {
+      name: "id",
+      dataType: "integer",
+      nullable: false,
+      defaultValue: null,
+      isPrimaryKey: true,
+      ordinalPosition: 1,
+    },
+    {
+      name: "email",
+      dataType: "text",
+      nullable: false,
+      defaultValue: null,
+      isPrimaryKey: false,
+      ordinalPosition: 2,
+    },
+  ],
+  primaryKey: ["id"],
+  foreignKeys: [],
+  indexes: [],
+  constraints: [],
+  capabilities: {
+    columns: true,
+    primaryKey: true,
+    foreignKeys: true,
+    indexes: true,
+    constraints: true,
+  },
+};
+
+const readOnlyStructure: TableStructure = {
+  ...editableStructure,
+  primaryKey: null,
+  indexes: [],
+};
+
+describe("TableEditorPanel read-only handling", () => {
+  it("shows a read-only banner when the structure has no PK or unique non-null index", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(readOnlyStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    expect(screen.getByTestId("table-readonly-banner")).toBeTruthy();
+  });
+
+  it("does not show the read-only banner when structure has a primary key", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    expect(screen.queryByTestId("table-readonly-banner")).toBeNull();
+  });
+});
+
+describe("TableEditorPanel save wiring", () => {
+  it("clicking Save calls commit_cell_edits with the right payload", async () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    // Pre-populate an edit so the Save button is rendered.
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+    mockedInvoke.mockReset();
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 4 })
+      // refresh
+      .mockResolvedValueOnce({
+        columns: ["id", "email"],
+        rows: [["1", "ada@new.com"]],
+        page: 1,
+        pageSize: 100,
+        totalRows: 1,
+        runtimeMs: 1,
+      });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedInvoke).toHaveBeenCalledWith("commit_cell_edits", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        edits: [
+          {
+            rowIndex: 0,
+            identity: [{ column: "id", value: "1" }],
+            set: [{ column: "email", value: "ada@new.com" }],
+          },
+        ],
       },
     });
   });

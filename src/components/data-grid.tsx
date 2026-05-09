@@ -133,6 +133,14 @@ export interface DataGridProps {
   onDiscard?: () => void;
   onOpenSQL?: () => void;
   hasEdits?: boolean;
+  /**
+   * When true, the grid suppresses cell editing entirely. Used when the
+   * underlying table has no usable row identity (no PK, no non-null unique
+   * index) — see `pickRowIdentity`.
+   */
+  readOnly?: boolean;
+  /** Whether a commit is in flight; disables the Save button. */
+  isSaving?: boolean;
   viewMode?: TableViewMode;
   onViewModeChange?: (mode: TableViewMode) => void;
   onToggleSidebar?: () => void;
@@ -154,11 +162,17 @@ export function DataGrid({
   onDiscard,
   onOpenSQL,
   hasEdits,
+  readOnly,
+  isSaving,
   viewMode = "data",
   onViewModeChange,
   onToggleSidebar,
   exportFilenameBase = "export",
 }: DataGridProps) {
+  // When the grid is read-only we do not propagate the editor wiring to
+  // cells. This both prevents `onEdit` from being called and makes the
+  // visual affordance plain (no edit cursor, no focus ring on click).
+  const effectiveOnEdit = readOnly ? undefined : onEdit;
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState({});
@@ -211,14 +225,14 @@ export function DataGrid({
             rowIndex={props.row.index}
             columnIndex={index}
             editValue={edits?.[props.row.index]?.[index]}
-            onEdit={onEdit}
+            onEdit={effectiveOnEdit}
           />
         ),
       });
     });
 
     return cols;
-  }, [columnNames, edits, onEdit]);
+  }, [columnNames, edits, effectiveOnEdit]);
 
   const table = useReactTable({
     data,
@@ -346,11 +360,18 @@ export function DataGrid({
                 variant="ghost"
                 className="h-9 px-2 text-xs"
                 onClick={onDiscard}
+                disabled={isSaving}
               >
                 <IconX className="mr-1 size-3.5" /> Discard
               </Button>
-              <Button size="sm" className="h-9 px-2 text-xs" onClick={onSave}>
-                <IconDeviceFloppy className="mr-1 size-3.5" /> Save changes
+              <Button
+                size="sm"
+                className="h-9 px-2 text-xs"
+                onClick={onSave}
+                disabled={isSaving}
+              >
+                <IconDeviceFloppy className="mr-1 size-3.5" />{" "}
+                {isSaving ? "Saving…" : "Save changes"}
               </Button>
               <div className="mx-2 h-6 w-px bg-border" />
             </div>

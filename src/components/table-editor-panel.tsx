@@ -1,8 +1,11 @@
 import {
   IconAlertTriangle,
+  IconCheck,
   IconChevronLeft,
   IconChevronRight,
+  IconLock,
   IconRefresh,
+  IconX,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -12,9 +15,11 @@ import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type TablePreviewData,
   tableDataKey,
+  tableStructureKey,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
@@ -28,13 +33,18 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
   const {
     tableData,
+    tableStructure,
     tableLoadStatus,
     tableEdits,
+    tableEditsCommitStatus,
     openQueryForTable,
     loadTableData,
+    loadTableStructure,
     refreshTableData,
     setTableEdit,
     discardTableEdits,
+    commitTableEdits,
+    clearTableEditsCommitStatus,
     toggleLeftSidebar,
   } = useAppStore();
 
@@ -42,18 +52,37 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     tab.kind === "table" && tab.table
       ? tableDataKey(tab.connectionId, tab.schema, tab.table)
       : "";
+  const structureKey =
+    tab.kind === "table" && tab.table
+      ? tableStructureKey(tab.connectionId, tab.schema, tab.table)
+      : "";
 
   useEffect(() => {
     if (tab.kind === "table" && tab.table && tab.connectionId) {
       void loadTableData(tab.connectionId, tab.schema, tab.table);
+      // Structure is needed to discover identity columns for safe edits.
+      void loadTableStructure(tab.connectionId, tab.schema, tab.table);
     }
-  }, [tab.kind, tab.table, tab.schema, tab.connectionId, loadTableData]);
+  }, [
+    tab.kind,
+    tab.table,
+    tab.schema,
+    tab.connectionId,
+    loadTableData,
+    loadTableStructure,
+  ]);
 
   const activeTableData = dataKey ? tableData[dataKey] : undefined;
+  const activeTableStructure = structureKey
+    ? tableStructure[structureKey]
+    : undefined;
   const tableName = tab.table ?? "";
   const status = tableName ? tableLoadStatus[tableName] : undefined;
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
+  const rowIdentity = pickRowIdentity(activeTableStructure);
+  const isReadOnly = rowIdentity === null;
+  const commitStatus = tableEditsCommitStatus[tableName];
 
   const columns = activeTableData?.columns ?? [];
   const rows = activeTableData?.rows ?? [];
@@ -159,6 +188,59 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </Button>
         </div>
       ) : null}
+      {isReadOnly && activeTableStructure ? (
+        <div
+          data-testid="table-readonly-banner"
+          role="status"
+          className="flex items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400"
+        >
+          <IconLock className="size-4" />
+          <span>
+            This table has no primary key or non-null unique index — it is
+            read-only. Add a unique constraint to enable editing.
+          </span>
+        </div>
+      ) : null}
+      {commitStatus?.state === "success" ? (
+        <div
+          data-testid="table-commit-success"
+          role="status"
+          className="flex items-center gap-2 border-b border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-700 dark:text-emerald-400"
+        >
+          <IconCheck className="size-4" />
+          <span>
+            Saved {commitStatus.rowsAffected} row
+            {commitStatus.rowsAffected === 1 ? "" : "s"} in{" "}
+            {commitStatus.runtimeMs} ms.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs"
+            onClick={() => clearTableEditsCommitStatus(tableName)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
+      {commitStatus?.state === "error" ? (
+        <div
+          data-testid="table-commit-error"
+          role="alert"
+          className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+        >
+          <IconX className="size-4" />
+          <span>Failed to save: {commitStatus.error}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs"
+            onClick={() => clearTableEditsCommitStatus(tableName)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
       <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
         {viewMode === "data" ? (
           <DataGrid
@@ -169,8 +251,12 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               setTableEdit(tableName, rowIndex, colIndex, value)
             }
             hasEdits={hasEdits}
+            readOnly={isReadOnly}
+            isSaving={commitStatus?.state === "running"}
             onDiscard={() => discardTableEdits(tableName)}
-            onSave={() => {}}
+            onSave={() => {
+              void commitTableEdits(tableName);
+            }}
             onOpenSQL={() => openQueryForTable(tab.schema, tab.table ?? "")}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
