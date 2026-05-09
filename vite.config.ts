@@ -101,8 +101,8 @@ export default defineConfig(async () => {
     },
     test: {
       passWithNoTests: true,
-      globals: true,
       environment: "jsdom",
+      globals: true,
     },
   };
 });
