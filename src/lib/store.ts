@@ -41,6 +41,39 @@ type RunQueryResult = {
   rowCount: number;
 };
 
+type TableDataResult = {
+  columns: string[];
+  rows: string[][];
+  page: number;
+  pageSize: number;
+  totalRows?: number | null;
+  runtimeMs: number;
+};
+
+export type TableDataState = {
+  connectionId: string;
+  schema: string;
+  table: string;
+  columns: string[];
+  rows: string[][];
+  page: number;
+  pageSize: number;
+  totalRows?: number;
+  runtimeMs: number;
+};
+
+export type TableLoadStatus =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success" }
+  | { status: "error"; message: string };
+
+export const tableDataKey = (
+  connectionId: string,
+  schema: string,
+  table: string,
+) => `${connectionId}::${schema}::${table}`;
+
 const hydrateConnection = (connection: StoredConnection): Connection => ({
   ...connection,
   status: "Disconnected",
@@ -131,6 +164,8 @@ interface AppState {
   workspaceTabs: WorkspaceTab[];
   schemaExplorer: Record<string, SchemaExplorer[]>;
   tablePreviews: Record<string, TablePreviewData>;
+  tableData: Record<string, TableDataState>;
+  tableLoadStatus: Record<string, TableLoadStatus>;
   queryPreviews: Record<string, QueryPreviewData>;
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
@@ -166,6 +201,14 @@ interface AppState {
   ) => void;
   discardTableEdits: (tableName: string) => void;
   loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
+  loadTableData: (
+    connectionId: string,
+    schema: string,
+    table: string,
+    page?: number,
+    pageSize?: number,
+  ) => Promise<void>;
+  refreshTableData: (key: string) => Promise<void>;
   loadConnections: () => Promise<void>;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
@@ -188,6 +231,8 @@ const initialConnections: Connection[] = [];
 const initialSchemaExplorer: Record<string, SchemaExplorer[]> = {};
 const initialWorkspaceTabs: WorkspaceTab[] = [];
 const initialTablePreviews: Record<string, TablePreviewData> = {};
+const initialTableData: Record<string, TableDataState> = {};
+const initialTableLoadStatus: Record<string, TableLoadStatus> = {};
 const initialQueryPreviews: Record<string, QueryPreviewData> = {};
 const initialQueryEdits: Record<
   string,
@@ -213,6 +258,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceTabs: initialWorkspaceTabs,
   schemaExplorer: initialSchemaExplorer,
   tablePreviews: initialTablePreviews,
+  tableData: initialTableData,
+  tableLoadStatus: initialTableLoadStatus,
   queryPreviews: initialQueryPreviews,
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
@@ -286,32 +333,108 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!connectionId) {
       return;
     }
+    await get().loadTableData(connectionId, schemaName, tableName);
+  },
+
+  loadTableData: async (
+    connectionId,
+    schema,
+    table,
+    page = 1,
+    pageSize = 100,
+  ) => {
+    if (!connectionId) {
+      return;
+    }
+    const key = tableDataKey(connectionId, schema, table);
+    set((state) => ({
+      tableLoadStatus: {
+        ...state.tableLoadStatus,
+        [key]: { status: "loading" },
+      },
+    }));
     if (!isTauri()) {
+      // In non-Tauri environments (browser preview, tests without mocks)
+      // we cannot fetch real data; mark idle and bail.
+      set((state) => ({
+        tableLoadStatus: {
+          ...state.tableLoadStatus,
+          [key]: { status: "idle" },
+        },
+      }));
       return;
     }
     try {
-      const result = await tauriInvoke<RunQueryResult>("run_query", {
+      const result = await tauriInvoke<TableDataResult>("load_table_data", {
         payload: {
           connectionId,
-          query: `select * from ${schemaName}.${tableName} limit 100`,
+          schema,
+          table,
+          page,
+          pageSize,
         },
       });
+      const totalRows =
+        result.totalRows === null || result.totalRows === undefined
+          ? undefined
+          : result.totalRows;
       set((state) => ({
-        tablePreviews: {
-          ...state.tablePreviews,
-          [tableName]: {
+        tableData: {
+          ...state.tableData,
+          [key]: {
+            connectionId,
+            schema,
+            table,
             columns: result.columns,
             rows: result.rows,
-            rowCount: result.rowCount.toString(),
+            page: result.page,
+            pageSize: result.pageSize,
+            totalRows,
+            runtimeMs: result.runtimeMs,
+          },
+        },
+        tablePreviews: {
+          ...state.tablePreviews,
+          [table]: {
+            columns: result.columns,
+            rows: result.rows,
+            rowCount:
+              totalRows !== undefined
+                ? totalRows.toString()
+                : result.rows.length.toString(),
             primaryKey: "id",
             size: "--",
             lastVacuum: "--",
           },
         },
+        tableLoadStatus: {
+          ...state.tableLoadStatus,
+          [key]: { status: "success" },
+        },
       }));
     } catch (error) {
-      console.error("Failed to load table preview", error);
+      const message = error instanceof Error ? error.message : String(error);
+      set((state) => ({
+        tableLoadStatus: {
+          ...state.tableLoadStatus,
+          [key]: { status: "error", message },
+        },
+      }));
     }
+  },
+
+  refreshTableData: async (key) => {
+    const existing = get().tableData[key];
+    if (!existing) {
+      return;
+    }
+    await get().loadTableData(
+      existing.connectionId,
+      existing.schema,
+      existing.table,
+      existing.page,
+      existing.pageSize,
+    );
   },
 
   loadConnections: async () => {
@@ -591,14 +714,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   openTableTab: (schemaName, tableName) => {
+    const connectionId = get().activeConnectionId;
     get().openWorkspaceTab({
       kind: "table",
       label: tableName,
-      connectionId: get().activeConnectionId,
+      connectionId,
       schema: schemaName,
       table: tableName,
     });
-    void get().loadTablePreview(schemaName, tableName);
+    if (connectionId) {
+      void get().loadTableData(connectionId, schemaName, tableName);
+    }
   },
 
   openViewTab: (schemaName, viewName) => {
