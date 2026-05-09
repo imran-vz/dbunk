@@ -76,6 +76,76 @@ struct LoadTableDataPayload {
     page_size: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadTableStructurePayload {
+    connection_id: String,
+    schema: String,
+    table: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ColumnInfo {
+    name: String,
+    data_type: String,
+    nullable: bool,
+    default_value: Option<String>,
+    is_primary_key: bool,
+    ordinal_position: i32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ForeignKeyInfo {
+    name: String,
+    columns: Vec<String>,
+    referenced_schema: String,
+    referenced_table: String,
+    referenced_columns: Vec<String>,
+    on_update: Option<String>,
+    on_delete: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexInfo {
+    name: String,
+    columns: Vec<String>,
+    is_unique: bool,
+    is_primary: bool,
+    method: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConstraintInfo {
+    name: String,
+    kind: String,
+    definition: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StructureCapabilities {
+    columns: bool,
+    primary_key: bool,
+    foreign_keys: bool,
+    indexes: bool,
+    constraints: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TableStructure {
+    columns: Vec<ColumnInfo>,
+    primary_key: Option<Vec<String>>,
+    foreign_keys: Vec<ForeignKeyInfo>,
+    indexes: Vec<IndexInfo>,
+    constraints: Vec<ConstraintInfo>,
+    capabilities: StructureCapabilities,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TableDataResult {
@@ -923,6 +993,380 @@ async fn run_engine_query(
     }
 }
 
+async fn fetch_table_structure_postgres(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+) -> Result<TableStructure, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    // Primary key columns first so we can mark them on the columns list.
+    let pk_rows = sqlx::query(
+        r#"
+        SELECT kcu.column_name::text AS column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+         AND tc.table_schema = kcu.table_schema
+         AND tc.table_name = kcu.table_name
+        WHERE tc.constraint_type = 'PRIMARY KEY'
+          AND tc.table_schema = $1
+          AND tc.table_name = $2
+        ORDER BY kcu.ordinal_position
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let primary_key_cols: Vec<String> = pk_rows
+        .iter()
+        .map(|row| row.try_get::<String, _>("column_name").unwrap_or_default())
+        .collect();
+
+    // Columns
+    let column_rows = sqlx::query(
+        r#"
+        SELECT column_name::text AS column_name,
+               data_type::text AS data_type,
+               udt_name::text AS udt_name,
+               is_nullable::text AS is_nullable,
+               column_default::text AS column_default,
+               ordinal_position::int AS ordinal_position,
+               character_maximum_length::int AS character_maximum_length,
+               numeric_precision::int AS numeric_precision,
+               numeric_scale::int AS numeric_scale
+        FROM information_schema.columns
+        WHERE table_schema = $1 AND table_name = $2
+        ORDER BY ordinal_position
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut columns = Vec::with_capacity(column_rows.len());
+    for row in column_rows {
+        let name: String = row.try_get("column_name").unwrap_or_default();
+        let data_type: String = row.try_get("data_type").unwrap_or_default();
+        let udt_name: String = row.try_get("udt_name").unwrap_or_default();
+        let is_nullable: String = row.try_get("is_nullable").unwrap_or_default();
+        let default_value: Option<String> = row.try_get("column_default").ok();
+        let ordinal_position: i32 = row.try_get("ordinal_position").unwrap_or(0);
+        let char_len: Option<i32> = row.try_get("character_maximum_length").ok();
+        let numeric_precision: Option<i32> = row.try_get("numeric_precision").ok();
+        let numeric_scale: Option<i32> = row.try_get("numeric_scale").ok();
+
+        // Build a richer rendered type. Trust `data_type` from information_schema
+        // for the high-level family and fall back to `udt_name` for specifics.
+        let rendered_type = match data_type.as_str() {
+            "character varying" => match char_len {
+                Some(len) => format!("varchar({})", len),
+                None => "varchar".to_string(),
+            },
+            "character" => match char_len {
+                Some(len) => format!("char({})", len),
+                None => "char".to_string(),
+            },
+            "numeric" => match (numeric_precision, numeric_scale) {
+                (Some(p), Some(s)) if s > 0 => format!("numeric({},{})", p, s),
+                (Some(p), _) => format!("numeric({})", p),
+                _ => "numeric".to_string(),
+            },
+            "USER-DEFINED" | "ARRAY" => udt_name.clone(),
+            other => other.to_string(),
+        };
+
+        columns.push(ColumnInfo {
+            name: name.clone(),
+            data_type: rendered_type,
+            nullable: is_nullable.eq_ignore_ascii_case("YES"),
+            default_value,
+            is_primary_key: primary_key_cols.iter().any(|pk| pk == &name),
+            ordinal_position,
+        });
+    }
+
+    // Foreign keys
+    let fk_rows = sqlx::query(
+        r#"
+        SELECT con.conname::text AS name,
+               nsp_ref.nspname::text AS referenced_schema,
+               cls_ref.relname::text AS referenced_table,
+               con.confupdtype::text AS on_update,
+               con.confdeltype::text AS on_delete,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = con.conrelid AND att.attnum = u.attnum
+               ) AS columns,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(con.confkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = con.confrelid AND att.attnum = u.attnum
+               ) AS referenced_columns
+        FROM pg_constraint con
+        JOIN pg_class cls ON cls.oid = con.conrelid
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        JOIN pg_class cls_ref ON cls_ref.oid = con.confrelid
+        JOIN pg_namespace nsp_ref ON nsp_ref.oid = cls_ref.relnamespace
+        WHERE con.contype = 'f'
+          AND nsp.nspname = $1
+          AND cls.relname = $2
+        ORDER BY con.conname
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let foreign_keys = fk_rows
+        .into_iter()
+        .map(|row| {
+            let name: String = row.try_get("name").unwrap_or_default();
+            let referenced_schema: String = row.try_get("referenced_schema").unwrap_or_default();
+            let referenced_table: String = row.try_get("referenced_table").unwrap_or_default();
+            let on_update_code: String = row.try_get("on_update").unwrap_or_default();
+            let on_delete_code: String = row.try_get("on_delete").unwrap_or_default();
+            let columns: Vec<String> = row.try_get("columns").unwrap_or_default();
+            let referenced_columns: Vec<String> =
+                row.try_get("referenced_columns").unwrap_or_default();
+            ForeignKeyInfo {
+                name,
+                columns,
+                referenced_schema,
+                referenced_table,
+                referenced_columns,
+                on_update: pg_fk_action_label(&on_update_code),
+                on_delete: pg_fk_action_label(&on_delete_code),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Indexes
+    let index_rows = sqlx::query(
+        r#"
+        SELECT i.relname::text AS index_name,
+               ix.indisunique AS is_unique,
+               ix.indisprimary AS is_primary,
+               am.amname::text AS method,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(ix.indkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = ix.indrelid AND att.attnum = u.attnum
+               ) AS columns
+        FROM pg_class t
+        JOIN pg_index ix ON t.oid = ix.indrelid
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_am am ON am.oid = i.relam
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = $1 AND t.relname = $2
+        ORDER BY i.relname
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let indexes = index_rows
+        .into_iter()
+        .map(|row| IndexInfo {
+            name: row.try_get("index_name").unwrap_or_default(),
+            columns: row.try_get("columns").unwrap_or_default(),
+            is_unique: row.try_get("is_unique").unwrap_or(false),
+            is_primary: row.try_get("is_primary").unwrap_or(false),
+            method: row.try_get::<String, _>("method").ok(),
+        })
+        .collect::<Vec<_>>();
+
+    // Other constraints (CHECK, UNIQUE, EXCLUDE) — skip primary key and foreign key here.
+    let constraint_rows = sqlx::query(
+        r#"
+        SELECT con.conname::text AS name,
+               con.contype::text AS contype,
+               pg_get_constraintdef(con.oid) AS definition
+        FROM pg_constraint con
+        JOIN pg_class cls ON cls.oid = con.conrelid
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        WHERE nsp.nspname = $1
+          AND cls.relname = $2
+          AND con.contype IN ('c', 'u', 'x')
+        ORDER BY con.conname
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let constraints = constraint_rows
+        .into_iter()
+        .map(|row| {
+            let kind_code: String = row.try_get("contype").unwrap_or_default();
+            ConstraintInfo {
+                name: row.try_get("name").unwrap_or_default(),
+                kind: pg_constraint_kind(&kind_code).to_string(),
+                definition: row.try_get("definition").unwrap_or_default(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let primary_key = if primary_key_cols.is_empty() {
+        None
+    } else {
+        Some(primary_key_cols)
+    };
+
+    Ok(TableStructure {
+        columns,
+        primary_key,
+        foreign_keys,
+        indexes,
+        constraints,
+        capabilities: StructureCapabilities {
+            columns: true,
+            primary_key: true,
+            foreign_keys: true,
+            indexes: true,
+            constraints: true,
+        },
+    })
+}
+
+fn pg_fk_action_label(code: &str) -> Option<String> {
+    match code {
+        "a" => Some("NO ACTION".to_string()),
+        "r" => Some("RESTRICT".to_string()),
+        "c" => Some("CASCADE".to_string()),
+        "n" => Some("SET NULL".to_string()),
+        "d" => Some("SET DEFAULT".to_string()),
+        _ => None,
+    }
+}
+
+fn pg_constraint_kind(code: &str) -> &'static str {
+    match code {
+        "c" => "check",
+        "u" => "unique",
+        "x" => "exclusion",
+        "p" => "primary key",
+        "f" => "foreign key",
+        _ => "constraint",
+    }
+}
+
+fn engine_name(engine: &DatabaseEngine) -> &'static str {
+    match engine {
+        DatabaseEngine::PostgreSQL => "PostgreSQL",
+        DatabaseEngine::MySQL => "MySQL",
+        DatabaseEngine::ClickHouse => "ClickHouse",
+        DatabaseEngine::SQLite => "SQLite",
+    }
+}
+
+async fn fetch_table_structure_columns_only(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+) -> Result<TableStructure, String> {
+    // Best-effort columns-only fallback for engines we have not yet
+    // implemented full structure inspection for. We use a LIMIT 0
+    // query to learn the column names; we cannot derive types,
+    // nullability, defaults, or PK without engine-specific catalog
+    // queries, so we expose those as unsupported via capabilities.
+    let qualified = qualified_table_name(&connection.engine, schema, table);
+    let probe = format!("SELECT * FROM {} LIMIT 0", qualified);
+    let result = run_engine_query(connection, &probe).await?;
+
+    let columns = result
+        .columns
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| ColumnInfo {
+            name,
+            data_type: "unknown".to_string(),
+            nullable: true,
+            default_value: None,
+            is_primary_key: false,
+            ordinal_position: (index as i32) + 1,
+        })
+        .collect();
+
+    Ok(TableStructure {
+        columns,
+        primary_key: None,
+        foreign_keys: Vec::new(),
+        indexes: Vec::new(),
+        constraints: Vec::new(),
+        capabilities: StructureCapabilities {
+            columns: true,
+            primary_key: false,
+            foreign_keys: false,
+            indexes: false,
+            constraints: false,
+        },
+    })
+}
+
+#[tauri::command]
+async fn load_table_structure(
+    app: AppHandle,
+    payload: LoadTableStructurePayload,
+) -> Result<TableStructure, String> {
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => {
+            fetch_table_structure_postgres(&connection, &payload.schema, &payload.table).await
+        }
+        // For now, MySQL / SQLite / ClickHouse fall back to a columns-only
+        // probe; the UI surfaces the disabled sections via capabilities.
+        // Issue #2 ships PostgreSQL as the must-have engine; richer
+        // metadata for the others is a deliberate follow-up.
+        _ => {
+            // The fallback discovers columns via a `LIMIT 0` probe;
+            // surface a clear message if the engine cannot even do that.
+            fetch_table_structure_columns_only(&connection, &payload.schema, &payload.table)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Structure inspection is not yet supported for {}: {}",
+                        engine_name(&connection.engine),
+                        error
+                    )
+                })
+        }
+    }
+}
+
 #[tauri::command]
 async fn load_table_data(
     app: AppHandle,
@@ -976,7 +1420,8 @@ pub fn run() {
             connect_connection,
             load_schema_explorer,
             run_query,
-            load_table_data
+            load_table_data,
+            load_table_structure
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
