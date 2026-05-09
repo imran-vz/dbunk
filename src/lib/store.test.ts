@@ -6,8 +6,8 @@ vi.mock("@/lib/tauri", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-import { isTauri, tauriInvoke } from "@/lib/tauri";
 import { useAppStore } from "@/lib/store";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = tauriInvoke as unknown as ReturnType<typeof vi.fn>;
 const mockedIsTauri = isTauri as unknown as ReturnType<typeof vi.fn>;
@@ -79,9 +79,10 @@ describe("runQuery status tracking", () => {
     });
 
     const status = useAppStore.getState().queryStatus[tabId];
-    expect(status.state).toBe("success");
+    if (status.state !== "success") {
+      throw new Error(`expected success status, got ${status.state}`);
+    }
     expect(status.runtimeMs).toBe(42);
-    expect(status.error).toBeUndefined();
   });
 
   it("transitions to error and captures error message on failure", async () => {
@@ -94,7 +95,9 @@ describe("runQuery status tracking", () => {
     });
 
     const status = useAppStore.getState().queryStatus[tabId];
-    expect(status.state).toBe("error");
+    if (status.state !== "error") {
+      throw new Error(`expected error status, got ${status.state}`);
+    }
     expect(status.error).toContain("syntax error");
   });
 
@@ -189,7 +192,9 @@ describe("loadTablePreview status tracking", () => {
     });
 
     const status = useAppStore.getState().tableLoadStatus.missing;
-    expect(status.state).toBe("error");
+    if (status.state !== "error") {
+      throw new Error(`expected error status, got ${status.state}`);
+    }
     expect(status.error).toContain("relation does not exist");
   });
 });
