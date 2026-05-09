@@ -4,6 +4,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconLock,
+  IconMaximize,
   IconPlus,
   IconRefresh,
   IconTrash,
@@ -17,7 +18,13 @@ import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   buildInsertValuesPayload,
@@ -561,6 +568,7 @@ export interface TableSidebarProps {
 
 export function TableSidebar({ tab, isClient }: TableSidebarProps) {
   const { tablePreviews } = useAppStore();
+  const [isSchemaMapFullscreen, setIsSchemaMapFullscreen] = useState(false);
 
   const activeTablePreview: TablePreviewData | null = useMemo(() => {
     if (tab.kind !== "table") {
@@ -579,6 +587,19 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
   }, [tab, tablePreviews]);
 
   const activeTable = tab.kind === "table" ? (tab.table ?? null) : null;
+
+  useEffect(() => {
+    if (!isSchemaMapFullscreen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSchemaMapFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isSchemaMapFullscreen]);
 
   return (
     <>
@@ -630,6 +651,17 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
       <Card size="sm" className="border border-border">
         <CardHeader>
           <CardTitle>Schema map</CardTitle>
+          <CardAction>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Open schema map fullscreen"
+              onClick={() => setIsSchemaMapFullscreen(true)}
+            >
+              <IconMaximize className="size-3.5" />
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent>
           <div className="h-56 overflow-hidden rounded-md border">
@@ -642,6 +674,42 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
           </div>
         </CardContent>
       </Card>
+
+      {isSchemaMapFullscreen ? (
+        <div
+          data-testid="schema-map-fullscreen"
+          className="fixed inset-0 z-50 flex flex-col bg-background"
+        >
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold">Schema map</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {tab.schema}
+                {activeTable ? ` / ${activeTable}` : ""}
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setIsSchemaMapFullscreen(false)}
+            >
+              <IconX className="size-3.5" />
+              Close
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 p-3">
+            <div className="h-full overflow-hidden rounded-md border bg-muted/10">
+              <SchemaRelationshipMap
+                connectionId={tab.connectionId}
+                schema={tab.schema}
+                activeTable={activeTable}
+                isClient={isClient}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <Card size="sm" className="border border-border">
         <CardHeader>

@@ -217,6 +217,18 @@ export type SchemaRelationshipsStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
+export type DatabaseOverviewStats = {
+  databaseSizeBytes: number;
+  tableSizeBytes: number;
+  indexSizeBytes: number;
+};
+
+export type DatabaseOverviewStatsStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
+
 const generatePendingId = (): string => {
   if (
     typeof globalThis !== "undefined" &&
@@ -345,6 +357,8 @@ interface AppState {
   tableEditsCommitStatus: Record<string, TableEditsCommitStatus>;
   schemaRelationships: Record<string, SchemaRelationships>;
   schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
+  databaseOverviewStats: Record<string, DatabaseOverviewStats>;
+  databaseOverviewStatsStatus: Record<string, DatabaseOverviewStatsStatus>;
   queryHistory: QueryHistoryEntry[];
   editorTheme: string;
   selectedRowIndex: number;
@@ -406,6 +420,7 @@ interface AppState {
     connectionId: string,
     schema: string,
   ) => Promise<void>;
+  loadDatabaseOverviewStats: (connectionId: string) => Promise<void>;
   focusTableInSchemaMap: (
     connectionId: string,
     schema: string,
@@ -468,6 +483,11 @@ const initialSchemaRelationshipsStatus: Record<
   string,
   SchemaRelationshipsStatus
 > = {};
+const initialDatabaseOverviewStats: Record<string, DatabaseOverviewStats> = {};
+const initialDatabaseOverviewStatsStatus: Record<
+  string,
+  DatabaseOverviewStatsStatus
+> = {};
 const initialQueryHistory: QueryHistoryEntry[] = [];
 
 let nextTabIndex = 1;
@@ -496,6 +516,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   tableEditsCommitStatus: initialTableEditsCommitStatus,
   schemaRelationships: initialSchemaRelationships,
   schemaRelationshipsStatus: initialSchemaRelationshipsStatus,
+  databaseOverviewStats: initialDatabaseOverviewStats,
+  databaseOverviewStatsStatus: initialDatabaseOverviewStatsStatus,
   queryHistory: initialQueryHistory,
   editorTheme: "vs",
   selectedRowIndex: 0,
@@ -1211,6 +1233,54 @@ export const useAppStore = create<AppState>((set, get) => ({
         schemaRelationshipsStatus: {
           ...state.schemaRelationshipsStatus,
           [key]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
+
+  loadDatabaseOverviewStats: async (connectionId) => {
+    if (!connectionId) {
+      return;
+    }
+    set((state) => ({
+      databaseOverviewStatsStatus: {
+        ...state.databaseOverviewStatsStatus,
+        [connectionId]: { state: "loading" },
+      },
+    }));
+    if (!isTauri()) {
+      set((state) => ({
+        databaseOverviewStatsStatus: {
+          ...state.databaseOverviewStatsStatus,
+          [connectionId]: { state: "idle" },
+        },
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<DatabaseOverviewStats>(
+        "load_database_overview_stats",
+        {
+          payload: { connectionId },
+        },
+      );
+      set((state) => ({
+        databaseOverviewStats: {
+          ...state.databaseOverviewStats,
+          [connectionId]: result,
+        },
+        databaseOverviewStatsStatus: {
+          ...state.databaseOverviewStatsStatus,
+          [connectionId]: { state: "success" },
+        },
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load database overview stats", error);
+      set((state) => ({
+        databaseOverviewStatsStatus: {
+          ...state.databaseOverviewStatsStatus,
+          [connectionId]: { state: "error", error: message },
         },
       }));
     }

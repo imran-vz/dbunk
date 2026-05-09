@@ -14,7 +14,10 @@ vi.mock("reactflow", () => ({
   MiniMap: () => null,
 }));
 
-import { TableEditorPanel } from "@/components/table-editor-panel";
+import {
+  TableEditorPanel,
+  TableSidebar,
+} from "@/components/table-editor-panel";
 import {
   type Connection,
   type TableDataState,
@@ -182,6 +185,29 @@ describe("TableEditorPanel pagination", () => {
         pageSize: 50,
       },
     });
+  });
+});
+
+describe("TableSidebar schema map fullscreen", () => {
+  it("opens and closes the schema map fullscreen overlay", () => {
+    render(<TableSidebar tab={tableTab} isClient={false} />);
+
+    fireEvent.click(screen.getByLabelText("Open schema map fullscreen"));
+
+    expect(screen.getByTestId("schema-map-fullscreen")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+
+    expect(screen.queryByTestId("schema-map-fullscreen")).toBeNull();
+  });
+
+  it("closes the fullscreen schema map with Escape", () => {
+    render(<TableSidebar tab={tableTab} isClient={false} />);
+
+    fireEvent.click(screen.getByLabelText("Open schema map fullscreen"));
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.queryByTestId("schema-map-fullscreen")).toBeNull();
   });
 });
 

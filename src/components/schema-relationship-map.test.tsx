@@ -12,7 +12,11 @@ vi.mock("@/lib/tauri", () => ({
 // APIs. For component-level tests we replace it with a tiny stub that
 // renders nodes/edges as DOM nodes we can query and click on.
 vi.mock("reactflow", () => {
-  type StubNode = Node<{ label: string; isActive: boolean }>;
+  type StubNode = Node<{
+    label: string;
+    columns?: Array<{ name: string }>;
+    isActive: boolean;
+  }>;
   type StubProps = {
     nodes: StubNode[];
     edges: Edge[];
@@ -35,6 +39,9 @@ vi.mock("reactflow", () => {
             }
           >
             {node.data?.label}
+            {node.data?.columns?.map((column) => (
+              <span key={column.name}>{column.name}</span>
+            ))}
           </button>
         ))}
       </div>
@@ -73,7 +80,27 @@ const seedRelationships = () => {
       "conn-1::public": {
         tables: [
           { schema: "public", name: "users", columnCount: 4 },
-          { schema: "public", name: "orders", columnCount: 6 },
+          {
+            schema: "public",
+            name: "orders",
+            columnCount: 6,
+            columns: [
+              {
+                name: "id",
+                dataType: "integer",
+                nullable: false,
+                isPrimaryKey: true,
+                ordinalPosition: 1,
+              },
+              {
+                name: "user_id",
+                dataType: "integer",
+                nullable: false,
+                isPrimaryKey: false,
+                ordinalPosition: 2,
+              },
+            ],
+          },
         ],
         foreignKeys: [
           {
@@ -114,6 +141,22 @@ describe("SchemaRelationshipMap", () => {
 
     expect(screen.getByTestId("schema-flow-node-public.users")).toBeTruthy();
     expect(screen.getByTestId("schema-flow-node-public.orders")).toBeTruthy();
+  });
+
+  it("passes table columns into schema map nodes", () => {
+    seedRelationships();
+
+    render(
+      <SchemaRelationshipMap
+        connectionId="conn-1"
+        schema="public"
+        activeTable={null}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("schema-flow-node-public.orders").textContent,
+    ).toContain("user_id");
   });
 
   it("renders one edge per foreign key", () => {
