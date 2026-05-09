@@ -8,10 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, MiniMap } from "reactflow";
 
 import { DataGrid, type TableViewMode } from "@/components/data-grid";
-import {
-  type TableStructureData,
-  TableStructureView,
-} from "@/components/table-structure-view";
+import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,66 +100,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     }
   };
 
-  // Generate mock structure data based on the table preview
-  const structureData: TableStructureData = useMemo(() => {
-    const cols = columns.map((colName) => {
-      const isPrimaryKey = colName === "id";
-      const isTimestamp = colName.includes("_at");
-      const isBoolean = colName.startsWith("is_");
-      const isEmail = colName === "email";
-      const isHash = colName.includes("hash") || colName.includes("password");
-
-      let dataType = "VARCHAR(255)";
-      if (isPrimaryKey) dataType = "VARCHAR(50)";
-      if (isTimestamp) dataType = "TIMESTAMP WITH TIME ZONE";
-      if (isBoolean) dataType = "BOOLEAN";
-      if (colName === "phone") dataType = "VARCHAR(50)";
-
-      const isNullable =
-        colName === "phone" ||
-        colName === "deleted_at" ||
-        (!isPrimaryKey && !isEmail && !isHash && !isBoolean && !isTimestamp);
-
-      return {
-        name: colName,
-        dataType,
-        isPrimaryKey,
-        isNullable,
-        defaultValue: undefined,
-        isGenerated: false,
-      };
-    });
-
-    return {
-      tableName: tab.table ?? "untitled",
-      schema: tab.schema,
-      columns: cols,
-      constraints: [
-        {
-          name: `${tab.table}_pkey`,
-          type: "PRIMARY KEY" as const,
-          columns: ["id"],
-        },
-      ],
-      indexes: [
-        {
-          name: `ix_${tab.table}_email`,
-          isUnique: true,
-          method: "BTREE",
-          columns: ["email"],
-        },
-        {
-          name: `${tab.table}_pkey`,
-          isUnique: true,
-          method: "BTREE",
-          columns: ["id"],
-        },
-      ],
-      policies: [],
-      rowLevelSecurity: false,
-    };
-  }, [columns, tab.table, tab.schema]);
-
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
 
@@ -236,7 +173,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               className="h-14 flex-none"
             />
             <TableStructureView
-              data={structureData}
+              connectionId={tab.connectionId}
+              schema={tab.schema}
+              tableName={tab.table ?? ""}
               className="flex-1 border-t"
             />
           </div>
