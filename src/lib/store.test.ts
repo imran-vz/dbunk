@@ -6,7 +6,7 @@ vi.mock("@/lib/tauri", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-import { tableDataKey, useAppStore } from "@/lib/store";
+import { tableDataKey, tableStructureKey, useAppStore } from "@/lib/store";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
@@ -380,6 +380,147 @@ describe("loadTablePreview status tracking", () => {
       throw new Error(`expected error status, got ${status.state}`);
     }
     expect(status.error).toContain("relation does not exist");
+  });
+});
+
+describe("store.loadTableStructure", () => {
+  const baseStructure = {
+    columns: [
+      {
+        name: "id",
+        dataType: "integer",
+        nullable: false,
+        defaultValue: null,
+        isPrimaryKey: true,
+        ordinalPosition: 1,
+      },
+      {
+        name: "email",
+        dataType: "text",
+        nullable: true,
+        defaultValue: null,
+        isPrimaryKey: false,
+        ordinalPosition: 2,
+      },
+    ],
+    primaryKey: ["id"],
+    foreignKeys: [],
+    indexes: [],
+    constraints: [],
+    capabilities: {
+      columns: true,
+      primaryKey: true,
+      foreignKeys: true,
+      indexes: true,
+      constraints: true,
+    },
+  };
+
+  it("invokes load_table_structure with the connection, schema, and table", async () => {
+    mockedInvoke.mockResolvedValueOnce(baseStructure);
+
+    await useAppStore
+      .getState()
+      .loadTableStructure("conn-1", "public", "users");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_table_structure", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+      },
+    });
+  });
+
+  it("populates tableStructure on success and marks status as success", async () => {
+    mockedInvoke.mockResolvedValueOnce(baseStructure);
+
+    await useAppStore
+      .getState()
+      .loadTableStructure("conn-1", "public", "users");
+
+    const key = tableStructureKey("conn-1", "public", "users");
+    const state = useAppStore.getState();
+    expect(state.tableStructure[key]).toMatchObject({
+      columns: baseStructure.columns,
+      primaryKey: ["id"],
+      capabilities: {
+        columns: true,
+        primaryKey: true,
+        foreignKeys: true,
+        indexes: true,
+        constraints: true,
+      },
+    });
+    expect(state.tableStructureStatus[key]).toEqual({ state: "success" });
+  });
+
+  it("preserves capability flags when the backend reports them as false", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      ...baseStructure,
+      capabilities: {
+        columns: true,
+        primaryKey: true,
+        foreignKeys: false,
+        indexes: false,
+        constraints: false,
+      },
+    });
+
+    await useAppStore
+      .getState()
+      .loadTableStructure("conn-1", "public", "users");
+
+    const key = tableStructureKey("conn-1", "public", "users");
+    const state = useAppStore.getState();
+    expect(state.tableStructure[key]?.capabilities).toEqual({
+      columns: true,
+      primaryKey: true,
+      foreignKeys: false,
+      indexes: false,
+      constraints: false,
+    });
+  });
+
+  it("records an error when the invoke rejects", async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error("permission denied"));
+
+    await useAppStore
+      .getState()
+      .loadTableStructure("conn-1", "public", "users");
+
+    const key = tableStructureKey("conn-1", "public", "users");
+    const status = useAppStore.getState().tableStructureStatus[key];
+    if (!status || status.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toContain("permission denied");
+  });
+
+  it("sets loading status before resolving", async () => {
+    let resolveInvoke: ((value: unknown) => void) | undefined;
+    mockedInvoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInvoke = resolve as (value: unknown) => void;
+        }),
+    );
+
+    const key = tableStructureKey("conn-1", "public", "users");
+    const promise = useAppStore
+      .getState()
+      .loadTableStructure("conn-1", "public", "users");
+
+    expect(useAppStore.getState().tableStructureStatus[key]?.state).toBe(
+      "loading",
+    );
+
+    resolveInvoke?.(baseStructure);
+    await promise;
+
+    expect(useAppStore.getState().tableStructureStatus[key]?.state).toBe(
+      "success",
+    );
   });
 });
 
