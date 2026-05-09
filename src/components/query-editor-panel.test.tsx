@@ -150,7 +150,7 @@ describe("QueryEditorPanel Run button (selection forwarding)", () => {
       activeTabId: queryTab.id,
       queryStatus: {},
       queryPreviews: {},
-      recentQueries: [],
+      queryHistory: [],
     });
   });
 

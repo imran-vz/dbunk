@@ -26,6 +26,26 @@ enum DatabaseEngine {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct QueryHistoryEntry {
+    id: String,
+    sql: String,
+    connection_id: String,
+    connection_name: String,
+    database: String,
+    engine: DatabaseEngine,
+    status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error_message: Option<String>,
+    runtime_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    row_count: Option<u64>,
+    started_at: String,
+}
+
+const MAX_QUERY_HISTORY: usize = 200;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct StoredConnection {
     id: String,
     name: String,
@@ -245,6 +265,12 @@ fn connections_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("connections.json"))
 }
 
+fn query_history_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = config_directory(app)?;
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir.join("query_history.json"))
+}
+
 fn read_connections(path: &Path) -> Result<Vec<StoredConnection>, String> {
     if !path.exists() {
         return Ok(vec![]);
@@ -255,6 +281,30 @@ fn read_connections(path: &Path) -> Result<Vec<StoredConnection>, String> {
 
 fn write_connections(path: &Path, connections: &[StoredConnection]) -> Result<(), String> {
     let data = serde_json::to_string_pretty(connections).map_err(|error| error.to_string())?;
+    fs::write(path, data).map_err(|error| error.to_string())
+}
+
+fn read_query_history(path: &Path) -> Result<Vec<QueryHistoryEntry>, String> {
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let data = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    if data.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    // Be tolerant of corrupt files: a parse failure should not wipe the
+    // user's app state on boot. Log and start fresh.
+    match serde_json::from_str::<Vec<QueryHistoryEntry>>(&data) {
+        Ok(entries) => Ok(entries),
+        Err(error) => {
+            eprintln!("query_history.json is unreadable, ignoring: {error}");
+            Ok(vec![])
+        }
+    }
+}
+
+fn write_query_history(path: &Path, entries: &[QueryHistoryEntry]) -> Result<(), String> {
+    let data = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
     fs::write(path, data).map_err(|error| error.to_string())
 }
 
@@ -1408,6 +1458,41 @@ async fn load_table_data(
     })
 }
 
+#[tauri::command]
+async fn load_query_history(
+    app: AppHandle,
+    limit: Option<u32>,
+) -> Result<Vec<QueryHistoryEntry>, String> {
+    let path = query_history_file(&app)?;
+    let mut entries = read_query_history(&path)?;
+    if let Some(limit) = limit {
+        entries.truncate(limit as usize);
+    }
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn append_query_history(
+    app: AppHandle,
+    entry: QueryHistoryEntry,
+) -> Result<Vec<QueryHistoryEntry>, String> {
+    let path = query_history_file(&app)?;
+    let mut entries = read_query_history(&path)?;
+    // Newest first; cap to MAX_QUERY_HISTORY.
+    entries.insert(0, entry);
+    if entries.len() > MAX_QUERY_HISTORY {
+        entries.truncate(MAX_QUERY_HISTORY);
+    }
+    write_query_history(&path, &entries)?;
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn clear_query_history(app: AppHandle) -> Result<(), String> {
+    let path = query_history_file(&app)?;
+    write_query_history(&path, &[])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     ensure_sqlx_drivers();
@@ -1421,7 +1506,10 @@ pub fn run() {
             load_schema_explorer,
             run_query,
             load_table_data,
-            load_table_structure
+            load_table_structure,
+            load_query_history,
+            append_query_history,
+            clear_query_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

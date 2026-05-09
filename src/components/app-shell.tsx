@@ -8,8 +8,13 @@ import { cn } from "@/lib/utils";
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
 
-  const { activeView, isLeftSidebarOpen, setEditorTheme, loadConnections } =
-    useAppStore();
+  const {
+    activeView,
+    isLeftSidebarOpen,
+    setEditorTheme,
+    loadConnections,
+    loadQueryHistory,
+  } = useAppStore();
 
   useEffect(() => {
     setIsClient(true);
@@ -23,7 +28,8 @@ export function AppShell() {
 
   useEffect(() => {
     void loadConnections();
-  }, [loadConnections]);
+    void loadQueryHistory();
+  }, [loadConnections, loadQueryHistory]);
 
   return (
     <div className="flex h-screen w-screen bg-background text-foreground">
