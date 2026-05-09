@@ -1582,3 +1582,357 @@ describe("store.commitTableEdits", () => {
     });
   });
 });
+
+describe("store.addTableRow", () => {
+  const dataKey = tableDataKey("conn-1", "public", "users");
+
+  const seedTableForInsert = () => {
+    seedPostgresConnection();
+    useAppStore.setState({
+      tableData: {
+        [dataKey]: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["id", "email"],
+          rows: [["1", "ada@example.com"]],
+          page: 1,
+          pageSize: 100,
+          totalRows: 1,
+          runtimeMs: 1,
+        },
+      },
+    });
+  };
+
+  it("invokes insert_row with the right payload, refreshes data, and reports success", async () => {
+    seedTableForInsert();
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 4 })
+      // refresh
+      .mockResolvedValueOnce({
+        columns: ["id", "email"],
+        rows: [
+          ["1", "ada@example.com"],
+          ["2", "grace@example.com"],
+        ],
+        page: 1,
+        pageSize: 100,
+        totalRows: 2,
+        runtimeMs: 1,
+      });
+
+    await useAppStore
+      .getState()
+      .addTableRow("users", [{ column: "email", value: "grace@example.com" }]);
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "insert_row", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        values: [{ column: "email", value: "grace@example.com" }],
+      },
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_data", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        page: 1,
+        pageSize: 100,
+      },
+    });
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "success") {
+      throw new Error(`expected success status, got ${status?.state}`);
+    }
+    expect(status.rowsAffected).toBe(1);
+  });
+
+  it("reports an error and does not refresh when insert fails", async () => {
+    seedTableForInsert();
+    mockedInvoke.mockRejectedValueOnce(
+      new Error('null value in column "email" violates not-null constraint'),
+    );
+
+    await useAppStore
+      .getState()
+      .addTableRow("users", [{ column: "email", value: null }]);
+
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toContain("not-null");
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("errors immediately when the connection is not Postgres", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "dbunk",
+          status: "Connected",
+          engine: "MySQL",
+          host: "localhost",
+          port: 3306,
+          user: "root",
+          password: "",
+          role: "admin",
+          latency: "10 ms",
+          lastSync: "Just now",
+        },
+      ],
+      activeConnectionId: "conn-1",
+      tableData: {
+        [dataKey]: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["id", "email"],
+          rows: [],
+          page: 1,
+          pageSize: 100,
+          totalRows: 0,
+          runtimeMs: 1,
+        },
+      },
+    });
+
+    await useAppStore
+      .getState()
+      .addTableRow("users", [{ column: "email", value: "x@y.z" }]);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toMatch(/PostgreSQL|MySQL/);
+  });
+
+  it("errors when there are no values to insert", async () => {
+    seedTableForInsert();
+    await useAppStore.getState().addTableRow("users", []);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toMatch(/no values|at least one/i);
+  });
+});
+
+describe("store.deleteSelectedTableRows", () => {
+  const dataKey = tableDataKey("conn-1", "public", "users");
+  const structureKey = tableStructureKey("conn-1", "public", "users");
+
+  const seedTableForDelete = ({
+    primaryKey = ["id"] as string[] | null,
+  } = {}) => {
+    seedPostgresConnection();
+    useAppStore.setState({
+      tableData: {
+        [dataKey]: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["id", "email"],
+          rows: [
+            ["1", "ada@example.com"],
+            ["2", "grace@example.com"],
+            ["3", "edsger@example.com"],
+          ],
+          page: 1,
+          pageSize: 100,
+          totalRows: 3,
+          runtimeMs: 1,
+        },
+      },
+      tableStructure: {
+        [structureKey]: {
+          columns: [
+            {
+              name: "id",
+              dataType: "integer",
+              nullable: false,
+              defaultValue: null,
+              isPrimaryKey: primaryKey?.includes("id") ?? false,
+              ordinalPosition: 1,
+            },
+            {
+              name: "email",
+              dataType: "text",
+              nullable: false,
+              defaultValue: null,
+              isPrimaryKey: false,
+              ordinalPosition: 2,
+            },
+          ],
+          primaryKey,
+          foreignKeys: [],
+          indexes: [],
+          constraints: [],
+          capabilities: {
+            columns: true,
+            primaryKey: true,
+            foreignKeys: true,
+            indexes: true,
+            constraints: true,
+          },
+        },
+      },
+    });
+  };
+
+  it("builds identity payloads from tableData rows and refreshes on success", async () => {
+    seedTableForDelete();
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 2, runtimeMs: 6 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email"],
+        rows: [["3", "edsger@example.com"]],
+        page: 1,
+        pageSize: 100,
+        totalRows: 1,
+        runtimeMs: 1,
+      });
+
+    await useAppStore.getState().deleteSelectedTableRows("users", [0, 1]);
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "delete_rows", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        rows: [[{ column: "id", value: "1" }], [{ column: "id", value: "2" }]],
+      },
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_data", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        page: 1,
+        pageSize: 100,
+      },
+    });
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "success") {
+      throw new Error(`expected success status, got ${status?.state}`);
+    }
+    expect(status.rowsAffected).toBe(2);
+  });
+
+  it("does not invoke and reports a read-only error when no identity is available", async () => {
+    seedTableForDelete({ primaryKey: null });
+    await useAppStore.getState().deleteSelectedTableRows("users", [0]);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toMatch(/read.?only|primary key|unique/i);
+  });
+
+  it("does nothing when the row index list is empty", async () => {
+    seedTableForDelete();
+    await useAppStore.getState().deleteSelectedTableRows("users", []);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("errors immediately when the connection is not Postgres", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "dbunk",
+          status: "Connected",
+          engine: "MySQL",
+          host: "localhost",
+          port: 3306,
+          user: "root",
+          password: "",
+          role: "admin",
+          latency: "10 ms",
+          lastSync: "Just now",
+        },
+      ],
+      activeConnectionId: "conn-1",
+      tableData: {
+        [dataKey]: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["id", "email"],
+          rows: [["1", "ada@example.com"]],
+          page: 1,
+          pageSize: 100,
+          totalRows: 1,
+          runtimeMs: 1,
+        },
+      },
+      tableStructure: {
+        [structureKey]: {
+          columns: [
+            {
+              name: "id",
+              dataType: "integer",
+              nullable: false,
+              defaultValue: null,
+              isPrimaryKey: true,
+              ordinalPosition: 1,
+            },
+            {
+              name: "email",
+              dataType: "text",
+              nullable: false,
+              defaultValue: null,
+              isPrimaryKey: false,
+              ordinalPosition: 2,
+            },
+          ],
+          primaryKey: ["id"],
+          foreignKeys: [],
+          indexes: [],
+          constraints: [],
+          capabilities: {
+            columns: true,
+            primaryKey: true,
+            foreignKeys: true,
+            indexes: true,
+            constraints: true,
+          },
+        },
+      },
+    });
+
+    await useAppStore.getState().deleteSelectedTableRows("users", [0]);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toMatch(/PostgreSQL|MySQL/);
+  });
+
+  it("preserves data and reports an error when the delete fails", async () => {
+    seedTableForDelete();
+    mockedInvoke.mockRejectedValueOnce(new Error("row not found: id=1"));
+
+    await useAppStore.getState().deleteSelectedTableRows("users", [0]);
+
+    const status = useAppStore.getState().tableEditsCommitStatus.users;
+    if (status?.state !== "error") {
+      throw new Error(`expected error status, got ${status?.state}`);
+    }
+    expect(status.error).toContain("row not found");
+    // No refresh on failure.
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+});
