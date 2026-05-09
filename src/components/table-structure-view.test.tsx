@@ -384,3 +384,185 @@ describe("TableStructureView", () => {
     );
   });
 });
+
+describe("TableStructureView edit flow", () => {
+  it("hides editing controls when engine is not PostgreSQL", () => {
+    seedConnection("MySQL");
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    expect(screen.queryByTestId("structure-add-column")).toBeNull();
+    expect(screen.queryByTestId("structure-pending-section")).toBeNull();
+  });
+
+  it("shows the editing toolbar on PostgreSQL", () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    expect(screen.getByTestId("structure-add-column")).toBeTruthy();
+  });
+
+  it("queues a drop column change when the drop button is clicked", () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+
+    const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    expect(pending).toHaveLength(1);
+    expect(pending[0].change).toEqual({ kind: "drop", columnName: "email" });
+    // The pending changes section is now visible.
+    expect(screen.getByTestId("structure-pending-section")).toBeTruthy();
+  });
+
+  it("removes a queued change when its remove button is clicked", () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+    const pendingId =
+      useAppStore.getState().pendingStructureChanges[key]?.[0]?.id ?? "";
+    expect(pendingId).not.toBe("");
+
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId(`structure-remove-pending-${pendingId}`),
+      );
+    });
+
+    expect(
+      useAppStore.getState().pendingStructureChanges[key] ?? [],
+    ).toHaveLength(0);
+  });
+
+  it("renders the SQL preview on demand", () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-preview-sql"));
+    });
+
+    const preview = screen.getByTestId("structure-sql-preview");
+    expect(preview.textContent).toContain(
+      'ALTER TABLE "public"."users" DROP COLUMN "email"',
+    );
+  });
+
+  it("aborts commit when the destructive confirm dialog is dismissed", async () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockedInvoke.mockReset();
+    mockedInvoke.mockImplementation(() => new Promise(() => {}));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("structure-commit"));
+    });
+
+    expect(confirmSpy).toHaveBeenCalled();
+    // Pending preserved; no execute_ddl.
+    expect(
+      useAppStore.getState().pendingStructureChanges[key] ?? [],
+    ).toHaveLength(1);
+    expect(
+      mockedInvoke.mock.calls.some(([name]) => name === "execute_ddl"),
+    ).toBe(false);
+
+    confirmSpy.mockRestore();
+  });
+
+  it("sends execute_ddl when the destructive confirm dialog is accepted", async () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockedInvoke.mockReset();
+    mockedInvoke
+      .mockResolvedValueOnce({ runtimeMs: 8 })
+      .mockResolvedValueOnce(baseStructure);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("structure-commit"));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(confirmSpy).toHaveBeenCalled();
+    const ddlCall = mockedInvoke.mock.calls.find(
+      ([name]) => name === "execute_ddl",
+    );
+    expect(ddlCall).toBeDefined();
+    if (ddlCall) {
+      const payload = (ddlCall[1] as { payload: { sql: string } }).payload;
+      expect(payload.sql).toContain('DROP COLUMN "email"');
+    }
+    confirmSpy.mockRestore();
+  });
+});
