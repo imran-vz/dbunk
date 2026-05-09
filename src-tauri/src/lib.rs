@@ -190,6 +190,44 @@ struct CommitCellEditsResult {
     runtime_ms: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InsertRowPayload {
+    connection_id: String,
+    schema: String,
+    table: String,
+    // column -> Option<String> (None = NULL). Columns omitted from this list
+    // get the database default — that lets users insert rows that rely on
+    // SERIAL/identity columns or DEFAULT NOW() etc.
+    values: Vec<CellEditKeyValue>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InsertRowResult {
+    runtime_ms: u64,
+    rows_affected: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteRowsPayload {
+    connection_id: String,
+    schema: String,
+    table: String,
+    // Each Vec<CellEditKeyValue> is the identity for one row. We delete each
+    // identified row inside a single transaction; if any identified row
+    // misses (rows_affected == 0) we ROLLBACK the whole batch.
+    rows: Vec<Vec<CellEditKeyValue>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteRowsResult {
+    runtime_ms: u64,
+    rows_affected: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ColumnInfo {
@@ -1733,6 +1771,248 @@ async fn commit_cell_edits(
     }
 }
 
+fn build_insert_statement(
+    schema: &str,
+    table: &str,
+    values: &[CellEditKeyValue],
+) -> (String, Vec<Option<String>>) {
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
+    let mut params: Vec<Option<String>> = Vec::with_capacity(values.len());
+    let column_list: Vec<String> = values
+        .iter()
+        .map(|kv| quote_double(&kv.column))
+        .collect();
+    let placeholders: Vec<String> = values
+        .iter()
+        .enumerate()
+        .map(|(i, kv)| {
+            params.push(kv.value.clone());
+            format!("${}", i + 1)
+        })
+        .collect();
+    let sql = format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        qualified,
+        column_list.join(", "),
+        placeholders.join(", ")
+    );
+    (sql, params)
+}
+
+async fn insert_row_postgres(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    values: &[CellEditKeyValue],
+) -> Result<InsertRowResult, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    use sqlx::Executor;
+    if let Err(error) = conn.execute("BEGIN").await {
+        return Err(error.to_string());
+    }
+
+    let start = Instant::now();
+    let (sql, params) = build_insert_statement(schema, table, values);
+    let mut query = sqlx::query(&sql);
+    for param in &params {
+        query = query.bind(param.as_deref());
+    }
+    let rows_affected = match query.execute(&mut conn).await {
+        Ok(result) => result.rows_affected(),
+        Err(error) => {
+            let _ = conn.execute("ROLLBACK").await;
+            return Err(error.to_string());
+        }
+    };
+
+    if let Err(error) = conn.execute("COMMIT").await {
+        let _ = conn.execute("ROLLBACK").await;
+        return Err(error.to_string());
+    }
+
+    Ok(InsertRowResult {
+        rows_affected,
+        runtime_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+#[tauri::command]
+async fn insert_row(
+    app: AppHandle,
+    payload: InsertRowPayload,
+) -> Result<InsertRowResult, String> {
+    if payload.values.is_empty() {
+        return Err("no values provided".to_string());
+    }
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => {
+            insert_row_postgres(
+                &connection,
+                &payload.schema,
+                &payload.table,
+                &payload.values,
+            )
+            .await
+        }
+        _ => Err(format!(
+            "Insert row is not supported for {} (PostgreSQL only)",
+            engine_name(&connection.engine)
+        )),
+    }
+}
+
+fn build_delete_statement(
+    schema: &str,
+    table: &str,
+    identity: &[CellEditKeyValue],
+) -> (String, Vec<Option<String>>) {
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
+    let mut params: Vec<Option<String>> = Vec::with_capacity(identity.len());
+    let where_clause: Vec<String> = identity
+        .iter()
+        .map(|kv| {
+            // NULL identity column → IS NULL (matches commit_cell_edits
+            // behavior). Otherwise bind a positional parameter.
+            if kv.value.is_none() {
+                format!("{} IS NULL", quote_double(&kv.column))
+            } else {
+                params.push(kv.value.clone());
+                format!("{} = ${}", quote_double(&kv.column), params.len())
+            }
+        })
+        .collect();
+    let sql = format!(
+        "DELETE FROM {} WHERE {}",
+        qualified,
+        where_clause.join(" AND ")
+    );
+    (sql, params)
+}
+
+async fn delete_rows_postgres(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    rows: &[Vec<CellEditKeyValue>],
+) -> Result<DeleteRowsResult, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    use sqlx::Executor;
+    if let Err(error) = conn.execute("BEGIN").await {
+        return Err(error.to_string());
+    }
+
+    let start = Instant::now();
+    let mut total_rows_affected: u64 = 0;
+
+    for identity in rows {
+        if identity.is_empty() {
+            let _ = conn.execute("ROLLBACK").await;
+            return Err("missing identity".to_string());
+        }
+        let (sql, params) = build_delete_statement(schema, table, identity);
+        let mut query = sqlx::query(&sql);
+        for param in &params {
+            query = query.bind(param.as_deref());
+        }
+        match query.execute(&mut conn).await {
+            Ok(result) => {
+                let affected = result.rows_affected();
+                if affected == 0 {
+                    let _ = conn.execute("ROLLBACK").await;
+                    let identity_desc = identity
+                        .iter()
+                        .map(|kv| {
+                            format!(
+                                "{}={}",
+                                kv.column,
+                                kv.value.as_deref().unwrap_or("NULL")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(format!("row not found: {}", identity_desc));
+                }
+                total_rows_affected += affected;
+            }
+            Err(error) => {
+                let _ = conn.execute("ROLLBACK").await;
+                return Err(error.to_string());
+            }
+        }
+    }
+
+    if let Err(error) = conn.execute("COMMIT").await {
+        let _ = conn.execute("ROLLBACK").await;
+        return Err(error.to_string());
+    }
+
+    Ok(DeleteRowsResult {
+        rows_affected: total_rows_affected,
+        runtime_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+#[tauri::command]
+async fn delete_rows(
+    app: AppHandle,
+    payload: DeleteRowsPayload,
+) -> Result<DeleteRowsResult, String> {
+    if payload.rows.is_empty() {
+        return Err("no rows provided".to_string());
+    }
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => {
+            delete_rows_postgres(
+                &connection,
+                &payload.schema,
+                &payload.table,
+                &payload.rows,
+            )
+            .await
+        }
+        _ => Err(format!(
+            "Delete rows is not supported for {} (PostgreSQL only)",
+            engine_name(&connection.engine)
+        )),
+    }
+}
+
 async fn fetch_schema_relationships_postgres(
     connection: &StoredConnection,
     schema: &str,
@@ -1963,6 +2243,8 @@ pub fn run() {
             load_table_structure,
             execute_ddl,
             commit_cell_edits,
+            insert_row,
+            delete_rows,
             load_query_history,
             append_query_history,
             clear_query_history
