@@ -377,6 +377,17 @@ interface AppState {
   discardTableEdits: (tableName: string) => void;
   commitTableEdits: (tableName: string) => Promise<void>;
   clearTableEditsCommitStatus: (tableName: string) => void;
+  // The `tableEditsCommitStatus` map is intentionally shared between cell
+  // edits, inserts, and deletes — there is one banner area in the UI per
+  // table, so one status surface keeps things simple.
+  addTableRow: (
+    tableName: string,
+    values: Array<{ column: string; value: string | null }>,
+  ) => Promise<void>;
+  deleteSelectedTableRows: (
+    tableName: string,
+    rowIndices: number[],
+  ) => Promise<void>;
   loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
   loadTableData: (
     connectionId: string,
@@ -779,6 +790,213 @@ export const useAppStore = create<AppState>((set, get) => ({
           [tableName]: { state: "error", error: message },
         },
       }));
+    }
+  },
+
+  addTableRow: async (tableName, values) => {
+    const setError = (error: string) =>
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: { state: "error", error },
+        },
+      }));
+
+    if (values.length === 0) {
+      setError("Provide at least one value (or default) to insert.");
+      return;
+    }
+
+    const state = get();
+    const dataEntry = Object.entries(state.tableData).find(
+      ([, data]) => data.table === tableName,
+    );
+    if (!dataEntry) {
+      setError("Table data is not loaded; cannot insert a row.");
+      return;
+    }
+    const [dataKeyForTable, data] = dataEntry;
+
+    const connection = state.connections.find(
+      (c) => c.id === data.connectionId,
+    );
+    if (!connection) {
+      setError("Connection not found for this table.");
+      return;
+    }
+    if (connection.engine !== "PostgreSQL") {
+      setError(
+        `Insert is only supported on PostgreSQL (got ${connection.engine}).`,
+      );
+      return;
+    }
+
+    set((s) => ({
+      tableEditsCommitStatus: {
+        ...s.tableEditsCommitStatus,
+        [tableName]: { state: "running" },
+      },
+    }));
+
+    if (!isTauri()) {
+      setError("Backend is unavailable in this environment.");
+      return;
+    }
+
+    try {
+      const result = await tauriInvoke<{
+        rowsAffected: number;
+        runtimeMs: number;
+      }>("insert_row", {
+        payload: {
+          connectionId: data.connectionId,
+          schema: data.schema,
+          table: data.table,
+          values,
+        },
+      });
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "success",
+            rowsAffected: result.rowsAffected,
+            runtimeMs: result.runtimeMs,
+          },
+        },
+      }));
+      await get().refreshTableData(dataKeyForTable);
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to insert row", error);
+      setError(message);
+    }
+  },
+
+  deleteSelectedTableRows: async (tableName, rowIndices) => {
+    if (rowIndices.length === 0) {
+      return;
+    }
+
+    const setError = (error: string) =>
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: { state: "error", error },
+        },
+      }));
+
+    const state = get();
+    const dataEntry = Object.entries(state.tableData).find(
+      ([, data]) => data.table === tableName,
+    );
+    if (!dataEntry) {
+      setError("Table data is not loaded; cannot delete rows.");
+      return;
+    }
+    const [dataKeyForTable, data] = dataEntry;
+    const structureKeyForTable = tableStructureKey(
+      data.connectionId,
+      data.schema,
+      data.table,
+    );
+    const structure = state.tableStructure[structureKeyForTable];
+    const identity = pickRowIdentity(structure);
+    if (!identity) {
+      setError(
+        "This table has no primary key or non-null unique index — it is read-only.",
+      );
+      return;
+    }
+
+    const connection = state.connections.find(
+      (c) => c.id === data.connectionId,
+    );
+    if (!connection) {
+      setError("Connection not found for this table.");
+      return;
+    }
+    if (connection.engine !== "PostgreSQL") {
+      setError(
+        `Delete is only supported on PostgreSQL (got ${connection.engine}).`,
+      );
+      return;
+    }
+
+    const columnIndexByName = new Map<string, number>();
+    data.columns.forEach((name, index) => {
+      columnIndexByName.set(name, index);
+    });
+    const identityMissing = identity.columns.filter(
+      (col) => !columnIndexByName.has(col),
+    );
+    if (identityMissing.length > 0) {
+      setError(
+        `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
+      );
+      return;
+    }
+
+    const rowsPayload: Array<Array<{ column: string; value: string | null }>> =
+      [];
+    const sortedIndices = [...rowIndices].sort((a, b) => a - b);
+    for (const rowIndex of sortedIndices) {
+      const row = data.rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+      rowsPayload.push(
+        identity.columns.map((col) => {
+          const idx = columnIndexByName.get(col) as number;
+          return { column: col, value: row[idx] ?? null };
+        }),
+      );
+    }
+
+    if (rowsPayload.length === 0) {
+      // Selection pointed at non-existent rows. Nothing to do, no banner.
+      return;
+    }
+
+    set((s) => ({
+      tableEditsCommitStatus: {
+        ...s.tableEditsCommitStatus,
+        [tableName]: { state: "running" },
+      },
+    }));
+
+    if (!isTauri()) {
+      setError("Backend is unavailable in this environment.");
+      return;
+    }
+
+    try {
+      const result = await tauriInvoke<{
+        rowsAffected: number;
+        runtimeMs: number;
+      }>("delete_rows", {
+        payload: {
+          connectionId: data.connectionId,
+          schema: data.schema,
+          table: data.table,
+          rows: rowsPayload,
+        },
+      });
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: {
+            state: "success",
+            rowsAffected: result.rowsAffected,
+            runtimeMs: result.runtimeMs,
+          },
+        },
+      }));
+      await get().refreshTableData(dataKeyForTable);
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to delete rows", error);
+      setError(message);
     }
   },
 
