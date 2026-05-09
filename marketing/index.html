@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dbunk — The Database Tool for Serious Work</title>
+    <meta
+      name="description"
+      content="A fast, local database workspace. No cloud lock-in. No subscription fees. Open source."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hepta+Slab:wght@300;400;500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg: #fafaf8;
+        --fg: #1a1a1a;
+        --red: #e60012;
+        --gray: #666;
+        --gray-light: #999;
+        --border: rgba(0, 0, 0, 0.1);
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family: "Hepta Slab", Georgia, serif;
+        background: var(--bg);
+        color: var(--fg);
+        overflow-x: hidden;
+        line-height: 1.5;
+      }
+
+      /* Grid background */
+      .grid-bg {
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+        background-size: 60px 60px;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      /* Red accent line */
+      .accent-line {
+        position: fixed;
+        top: 0;
+        left: 50%;
+        width: 2px;
+        height: 100%;
+        background: var(--red);
+        opacity: 0.15;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      /* Header */
+      header {
+        position: relative;
+        z-index: 10;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        padding: 32px 48px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .header-tag {
+        font-size: 0.75rem;
+        letter-spacing: 0.2em;
+        color: var(--gray-light);
+      }
+
+      .logo {
+        font-size: 1.4rem;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      nav {
+        display: flex;
+        justify-content: flex-end;
+        gap: 32px;
+        font-size: 0.8rem;
+      }
+
+      nav a {
+        color: var(--gray);
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+
+      nav a:hover {
+        color: var(--fg);
+      }
+
+      nav a.app-link {
+        color: var(--red);
+      }
+
+      /* Hero */
+      .hero {
+        position: relative;
+        z-index: 10;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        min-height: 90vh;
+        align-items: center;
+        gap: 0;
+      }
+
+      .hero-content {
+        padding: 0 48px 0 80px;
+      }
+
+      .hero-tag {
+        font-size: 0.7rem;
+        letter-spacing: 0.3em;
+        color: var(--red);
+        margin-bottom: 32px;
+        font-weight: 500;
+      }
+
+      .hero h1 {
+        font-size: clamp(3rem, 6vw, 5.5rem);
+        font-weight: 300;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        margin-bottom: 40px;
+        word-break: keep-all;
+      }
+
+      .hero h1 strong {
+        font-weight: 900;
+      }
+
+      .hero p {
+        font-size: 1rem;
+        line-height: 1.7;
+        color: var(--gray);
+        max-width: 420px;
+        margin-bottom: 48px;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .btn {
+        display: inline-block;
+        background: var(--fg);
+        color: #fff;
+        padding: 16px 36px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-decoration: none;
+        transition: background 0.2s;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      .btn:hover {
+        background: var(--red);
+      }
+
+      .btn-outline {
+        background: transparent;
+        color: var(--fg);
+        border: 2px solid var(--fg);
+      }
+
+      .btn-outline:hover {
+        background: var(--fg);
+        color: #fff;
+      }
+
+      .hero-meta {
+        font-size: 0.7rem;
+        color: var(--gray-light);
+        letter-spacing: 0.1em;
+      }
+
+      /* Hero Screenshot */
+      .hero-visual {
+        position: relative;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 48px 24px 0;
+        overflow: hidden;
+      }
+
+      .hero-zoom-container {
+        position: relative;
+        width: 100%;
+        max-width: 760px;
+        aspect-ratio: 16/10;
+        overflow: hidden;
+        border-radius: 8px;
+        box-shadow:
+          0 20px 60px -15px rgba(0, 0, 0, 0.2),
+          0 0 0 1px rgba(0, 0, 0, 0.06);
+      }
+
+      .hero-zoom-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      /* Features - screenshot with animated zoom */
+      .features {
+        position: relative;
+        z-index: 10;
+        padding: 120px 48px;
+        border-top: 1px solid var(--border);
+      }
+
+      .features-container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .features-header {
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 80px;
+        margin-bottom: 80px;
+      }
+
+      .features-label {
+        font-size: 0.7rem;
+        letter-spacing: 0.2em;
+        color: var(--red);
+        font-weight: 500;
+        padding-top: 8px;
+      }
+
+      .features-title {
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        font-weight: 300;
+        line-height: 1.2;
+        margin-bottom: 24px;
+      }
+
+      .features-accent {
+        width: 60px;
+        height: 3px;
+        background: var(--red);
+        margin-bottom: 48px;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 60px;
+        align-items: start;
+      }
+
+      .feature-list {
+        list-style: none;
+        position: sticky;
+        top: 120px;
+      }
+
+      .feature-item {
+        padding: 24px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+        transition: all 0.4s ease;
+        opacity: 0.4;
+        position: relative;
+      }
+
+      .feature-item.active {
+        opacity: 1;
+        padding-left: 16px;
+      }
+
+      .feature-item.active::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 60%;
+        background: var(--red);
+      }
+
+      .feature-item:hover {
+        opacity: 0.7;
+      }
+
+      .feature-item.active:hover {
+        opacity: 1;
+      }
+
+      .feature-row {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+      }
+
+      .feature-num {
+        font-size: 0.65rem;
+        letter-spacing: 0.1em;
+        color: var(--red);
+        font-weight: 500;
+        min-width: 24px;
+      }
+
+      .feature-name {
+        font-size: 1.3rem;
+        transition: all 0.3s;
+      }
+
+      .feature-item.active .feature-name {
+        font-weight: 700;
+      }
+
+      .feature-desc {
+        font-size: 0.85rem;
+        color: var(--gray-light);
+        margin-top: 8px;
+        line-height: 1.5;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        max-height: 0;
+        overflow: hidden;
+        transition:
+          max-height 0.4s ease,
+          opacity 0.3s ease;
+        opacity: 0;
+      }
+
+      .feature-item.active .feature-desc {
+        max-height: 80px;
+        opacity: 1;
+      }
+
+      .feature-viewport {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16/10;
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow:
+          0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 20px 40px -10px rgba(0, 0, 0, 0.15),
+          0 0 0 1px rgba(0, 0, 0, 0.05);
+        background: #f0f0f0;
+      }
+
+      .feature-viewport img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition:
+          opacity 0.6s ease,
+          transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        will-change: transform, opacity;
+        opacity: 0;
+      }
+
+      .feature-viewport img.active {
+        opacity: 1;
+      }
+
+      /* Stats */
+      .stats {
+        position: relative;
+        z-index: 10;
+        padding: 80px 48px;
+        border-top: 1px solid var(--border);
+        background: var(--fg);
+        color: #fff;
+      }
+
+      .stats-grid {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 48px;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 2.8rem;
+        font-weight: 900;
+        color: var(--red);
+        margin-bottom: 8px;
+        line-height: 1;
+      }
+
+      .stat-label {
+        font-size: 0.7rem;
+        letter-spacing: 0.15em;
+        color: #666;
+        text-transform: uppercase;
+      }
+
+      /* Footer */
+      footer {
+        position: relative;
+        z-index: 10;
+        padding: 80px 48px;
+        text-align: center;
+        border-top: 1px solid var(--border);
+      }
+
+      .footer-title {
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        font-weight: 300;
+        margin-bottom: 16px;
+      }
+
+      footer p {
+        font-size: 0.9rem;
+        color: var(--gray-light);
+        margin-bottom: 40px;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .footer-note {
+        margin-top: 60px;
+        font-size: 0.65rem;
+        color: #ccc;
+        letter-spacing: 0.15em;
+      }
+
+      /* Responsive */
+      @media (max-width: 1100px) {
+        .features-grid {
+          grid-template-columns: 1fr;
+          gap: 40px;
+        }
+
+        .feature-list {
+          position: relative;
+          top: 0;
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 0 24px;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .hero {
+          grid-template-columns: 1fr;
+          min-height: auto;
+          padding: 60px 0;
+        }
+
+        .hero-content {
+          padding: 0 32px;
+        }
+
+        .hero-visual {
+          display: none;
+        }
+
+        .features-header {
+          grid-template-columns: 1fr;
+          gap: 24px;
+        }
+
+        .stats-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        header {
+          grid-template-columns: 1fr;
+          gap: 16px;
+          text-align: center;
+        }
+
+        nav {
+          justify-content: center;
+        }
+      }
+
+      @media (max-width: 500px) {
+        .hero-content {
+          padding: 0 24px;
+        }
+
+        .features {
+          padding: 60px 24px;
+        }
+
+        .feature-list {
+          grid-template-columns: 1fr;
+        }
+
+        .stats-grid {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+
+        header {
+          padding: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid-bg"></div>
+    <div class="accent-line"></div>
+
+    <header>
+      <div class="header-tag">DATABASE WORKSPACE</div>
+      <div class="logo">dbunk</div>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="/" class="app-link">App →</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-content">
+        <div class="hero-tag">OPEN SOURCE / DESKTOP APP</div>
+        <h1>The database<br />tool for<br /><strong>serious work</strong></h1>
+        <p>
+          No cloud lock-in. No subscription fees. Just a fast, local database
+          workspace that respects your workflow.
+        </p>
+        <div class="hero-actions">
+          <a href="#download" class="btn">DOWNLOAD</a>
+          <span class="hero-meta">macOS / Linux / Windows</span>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="hero-zoom-container">
+          <img
+            src="hero-home-concept.png"
+            alt="Dbunk app interface showing the main workspace"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="features-container">
+        <div class="features-header">
+          <div class="features-label">CAPABILITIES</div>
+          <div>
+            <h2 class="features-title">
+              Everything you need.<br />Nothing you don't.
+            </h2>
+            <div class="features-accent"></div>
+          </div>
+        </div>
+
+        <div class="features-grid">
+          <ul class="feature-list" id="featureList">
+            <li class="feature-item active" data-index="0">
+              <div class="feature-row">
+                <span class="feature-num">01</span>
+                <span class="feature-name">SQL Editor</span>
+              </div>
+              <div class="feature-desc">
+                Write and execute queries with syntax highlighting and
+                autocomplete
+              </div>
+            </li>
+            <li class="feature-item" data-index="1">
+              <div class="feature-row">
+                <span class="feature-num">02</span>
+                <span class="feature-name">Schema Maps</span>
+              </div>
+              <div class="feature-desc">
+                Visual relationship diagrams that reveal your database structure
+              </div>
+            </li>
+            <li class="feature-item" data-index="2">
+              <div class="feature-row">
+                <span class="feature-num">03</span>
+                <span class="feature-name">Data Grid</span>
+              </div>
+              <div class="feature-desc">
+                Browse millions of rows with virtualized tables and instant
+                filtering
+              </div>
+            </li>
+            <li class="feature-item" data-index="3">
+              <div class="feature-row">
+                <span class="feature-num">04</span>
+                <span class="feature-name">Multi-Database</span>
+              </div>
+              <div class="feature-desc">
+                PostgreSQL, MySQL, SQLite, ClickHouse — all in one workspace
+              </div>
+            </li>
+          </ul>
+
+          <div class="feature-viewport" id="featureViewport">
+            <img
+              src="sql-editor.png"
+              alt="SQL Editor with syntax highlighting"
+              class="active"
+              data-feature="0"
+            />
+            <img
+              src="schema-maps.png"
+              alt="Schema maps showing database structure"
+              data-feature="1"
+            />
+            <img
+              src="home.png"
+              alt="Data grid browsing database rows"
+              data-feature="2"
+            />
+            <img
+              src="connections-tab.png"
+              alt="Multiple database connections"
+              data-feature="3"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats">
+      <div class="stats-grid">
+        <div>
+          <div class="stat-value">4</div>
+          <div class="stat-label">Database Engines</div>
+        </div>
+        <div>
+          <div class="stat-value">0ms</div>
+          <div class="stat-label">Local Latency</div>
+        </div>
+        <div>
+          <div class="stat-value">∞</div>
+          <div class="stat-label">Row Capacity</div>
+        </div>
+        <div>
+          <div class="stat-value">MIT</div>
+          <div class="stat-label">License</div>
+        </div>
+      </div>
+    </section>
+
+    <footer id="download">
+      <div class="footer-title">Ready to work?</div>
+      <p>Free, open source, and always local.</p>
+      <a
+        href="https://github.com/imran-vz/dbunk"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="btn"
+        >GET DBUNK</a
+      >
+      <div class="footer-note">BUILT WITH RUST + REACT + TAURI</div>
+    </footer>
+
+    <script>
+      const features = [
+        {
+          num: "01",
+          title: "SQL Editor",
+          desc: "Write and execute queries with syntax highlighting and autocomplete",
+          image: "sql-editor.png",
+        },
+        {
+          num: "02",
+          title: "Schema Maps",
+          desc: "Visual relationship diagrams that reveal your database structure in real-time",
+          image: "schema-maps.png",
+        },
+        {
+          num: "03",
+          title: "Data Grid",
+          desc: "Browse millions of rows with virtualized tables, sorting, and instant filtering",
+          image: "home.png",
+        },
+        {
+          num: "04",
+          title: "Multi-Database",
+          desc: "PostgreSQL, MySQL, SQLite, ClickHouse — switch contexts without switching tools",
+          image: "add-conn.png",
+        },
+      ];
+
+      const items = document.querySelectorAll(".feature-item");
+      const viewport = document.getElementById("featureViewport");
+      const featureImages = viewport.querySelectorAll("img[data-feature]");
+      let activeIndex = 0;
+      let intervalId;
+
+      function showFeature(index) {
+        activeIndex = index;
+        items.forEach((item, i) => {
+          item.classList.toggle("active", i === index);
+        });
+
+        featureImages.forEach((img, i) => {
+          img.classList.toggle("active", i === index);
+        });
+      }
+
+      function startAutoRotate() {
+        intervalId = setInterval(() => {
+          showFeature((activeIndex + 1) % features.length);
+        }, 5000);
+      }
+
+      items.forEach((item, index) => {
+        item.addEventListener("click", () => {
+          clearInterval(intervalId);
+          showFeature(index);
+          startAutoRotate();
+        });
+      });
+
+      startAutoRotate();
+    </script>
+  </body>
+</html>
