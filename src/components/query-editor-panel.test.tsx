@@ -12,11 +12,7 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 import { QueryEditorPanel } from "@/components/query-editor-panel";
-import {
-  type QueryStatus,
-  useAppStore,
-  type WorkspaceTab,
-} from "@/lib/store";
+import { type QueryStatus, useAppStore, type WorkspaceTab } from "@/lib/store";
 
 const initialStoreState = useAppStore.getState();
 
