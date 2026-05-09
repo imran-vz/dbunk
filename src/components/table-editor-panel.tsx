@@ -5,9 +5,9 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
-import ReactFlow, { Background, Controls, MiniMap } from "reactflow";
 
 import { DataGrid, type TableViewMode } from "@/components/data-grid";
+import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
-import { cn } from "@/lib/utils";
 
 interface TableEditorPanelProps {
   tab: WorkspaceTab;
@@ -248,7 +247,7 @@ export interface TableSidebarProps {
 }
 
 export function TableSidebar({ tab, isClient }: TableSidebarProps) {
-  const { activeConnectionId, tablePreviews, schemaFlows } = useAppStore();
+  const { tablePreviews } = useAppStore();
 
   const activeTablePreview: TablePreviewData | null = useMemo(() => {
     if (tab.kind !== "table") {
@@ -266,26 +265,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
     );
   }, [tab, tablePreviews]);
 
-  const flowNodes = useMemo(() => {
-    const defaultFlow = { nodes: [], edges: [] };
-    const flow = schemaFlows[activeConnectionId] ?? defaultFlow;
-    const activeTable = tab.kind === "table" ? tab.table : null;
-
-    return flow.nodes.map((node) => ({
-      ...node,
-      className: cn(
-        "rounded-md border bg-card px-2 py-1 text-[0.65rem] shadow-sm",
-        node.id === activeTable
-          ? "border-primary bg-primary/10 text-primary"
-          : "border-border text-foreground",
-      ),
-    }));
-  }, [activeConnectionId, tab.kind, tab.table, schemaFlows]);
-
-  const flowEdges = useMemo(() => {
-    const defaultFlow = { nodes: [], edges: [] };
-    return (schemaFlows[activeConnectionId] ?? defaultFlow).edges;
-  }, [activeConnectionId, schemaFlows]);
+  const activeTable = tab.kind === "table" ? (tab.table ?? null) : null;
 
   return (
     <>
@@ -340,26 +320,12 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
         </CardHeader>
         <CardContent>
           <div className="h-56 overflow-hidden rounded-md border">
-            {isClient ? (
-              <ReactFlow
-                nodes={flowNodes}
-                edges={flowEdges}
-                fitView
-                nodesDraggable={false}
-                nodesConnectable={false}
-                zoomOnScroll={false}
-                zoomOnDoubleClick={false}
-                panOnDrag={false}
-              >
-                <Background gap={16} size={0.5} />
-                <MiniMap pannable zoomable />
-                <Controls showInteractive={false} />
-              </ReactFlow>
-            ) : (
-              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                Loading schema map...
-              </div>
-            )}
+            <SchemaRelationshipMap
+              connectionId={tab.connectionId}
+              schema={tab.schema}
+              activeTable={activeTable}
+              isClient={isClient}
+            />
           </div>
         </CardContent>
       </Card>
