@@ -1,3 +1,9 @@
+import {
+  IconAlertTriangle,
+  IconChevronLeft,
+  IconChevronRight,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, MiniMap } from "reactflow";
 
@@ -7,9 +13,11 @@ import {
   TableStructureView,
 } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   type TablePreviewData,
+  tableDataKey,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
@@ -23,45 +31,82 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [viewMode, setViewMode] = useState<TableViewMode>("data");
 
   const {
-    tablePreviews,
+    tableData,
+    tableLoadStatus,
     tableEdits,
     openQueryForTable,
-    loadTablePreview,
+    loadTableData,
+    refreshTableData,
     setTableEdit,
     discardTableEdits,
     toggleLeftSidebar,
   } = useAppStore();
 
-  useEffect(() => {
-    if (tab.kind === "table" && tab.table) {
-      void loadTablePreview(tab.schema, tab.table);
-    }
-  }, [tab, loadTablePreview]);
+  const dataKey =
+    tab.kind === "table" && tab.table
+      ? tableDataKey(tab.connectionId, tab.schema, tab.table)
+      : "";
 
-  const activeTablePreview = useMemo(() => {
-    if (tab.kind !== "table") {
-      return null;
+  useEffect(() => {
+    if (tab.kind === "table" && tab.table && tab.connectionId) {
+      void loadTableData(tab.connectionId, tab.schema, tab.table);
     }
-    return (
-      tablePreviews[tab.table ?? ""] ?? {
-        columns: [],
-        rows: [],
-        rowCount: "0",
-        primaryKey: "id",
-        size: "0 B",
-        lastVacuum: "Never",
-      }
-    );
-  }, [tab, tablePreviews]);
+  }, [tab.kind, tab.table, tab.schema, tab.connectionId, loadTableData]);
+
+  const activeTableData = dataKey ? tableData[dataKey] : undefined;
+  const status = dataKey ? tableLoadStatus[dataKey] : undefined;
 
   const tableName = tab.table ?? "";
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
 
+  const columns = activeTableData?.columns ?? [];
+  const rows = activeTableData?.rows ?? [];
+  const page = activeTableData?.page ?? 1;
+  const pageSize = activeTableData?.pageSize ?? 100;
+  const totalRows = activeTableData?.totalRows;
+  const runtimeMs = activeTableData?.runtimeMs;
+
+  const totalPages =
+    totalRows !== undefined && pageSize > 0
+      ? Math.max(1, Math.ceil(totalRows / pageSize))
+      : undefined;
+  const isLastPage =
+    totalPages !== undefined ? page >= totalPages : rows.length < pageSize;
+
+  const onPrevPage = () => {
+    if (tab.kind === "table" && tab.table && tab.connectionId && page > 1) {
+      void loadTableData(
+        tab.connectionId,
+        tab.schema,
+        tab.table,
+        page - 1,
+        pageSize,
+      );
+    }
+  };
+
+  const onNextPage = () => {
+    if (tab.kind === "table" && tab.table && tab.connectionId && !isLastPage) {
+      void loadTableData(
+        tab.connectionId,
+        tab.schema,
+        tab.table,
+        page + 1,
+        pageSize,
+      );
+    }
+  };
+
+  const onRefresh = () => {
+    if (dataKey) {
+      void refreshTableData(dataKey);
+    }
+  };
+
   // Generate mock structure data based on the table preview
   const structureData: TableStructureData = useMemo(() => {
-    const columns = (activeTablePreview?.columns ?? []).map((colName) => {
-      // Infer some structure from column names
+    const cols = columns.map((colName) => {
       const isPrimaryKey = colName === "id";
       const isTimestamp = colName.includes("_at");
       const isBoolean = colName.startsWith("is_");
@@ -92,7 +137,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     return {
       tableName: tab.table ?? "untitled",
       schema: tab.schema,
-      columns,
+      columns: cols,
       constraints: [
         {
           name: `${tab.table}_pkey`,
@@ -117,15 +162,57 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       policies: [],
       rowLevelSecurity: false,
     };
-  }, [activeTablePreview, tab.table, tab.schema]);
+  }, [columns, tab.table, tab.schema]);
+
+  const isLoading = status?.status === "loading";
+  const errorMessage = status?.status === "error" ? status.message : null;
+
+  const pageInfo = (() => {
+    const parts: string[] = [];
+    parts.push(
+      totalPages !== undefined
+        ? `Page ${page} of ${totalPages}`
+        : `Page ${page}`,
+    );
+    if (totalRows !== undefined) {
+      parts.push(`${totalRows.toLocaleString()} rows`);
+    }
+    if (runtimeMs !== undefined) {
+      parts.push(`${runtimeMs} ms`);
+    }
+    return parts.join(" • ");
+  })();
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {isLoading ? (
+        <div
+          data-testid="table-loading"
+          className="h-0.5 w-full animate-pulse bg-primary"
+        />
+      ) : null}
+      {errorMessage ? (
+        <div
+          data-testid="table-error"
+          className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+        >
+          <IconAlertTriangle className="size-4" />
+          <span>Failed to load rows: {errorMessage}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs"
+            onClick={onRefresh}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
       <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
         {viewMode === "data" ? (
           <DataGrid
-            data={activeTablePreview?.rows ?? []}
-            columns={activeTablePreview?.columns ?? []}
+            data={rows}
+            columns={columns}
             edits={currentEdits}
             onEdit={(rowIndex, colIndex, value) =>
               setTableEdit(tableName, rowIndex, colIndex, value)
@@ -155,6 +242,47 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </div>
         )}
       </div>
+      {viewMode === "data" && tab.kind === "table" ? (
+        <div
+          data-testid="table-pagination"
+          className="flex h-9 shrink-0 items-center justify-between border-t bg-background px-4 text-xs text-muted-foreground"
+        >
+          <span className="tabular-nums">{pageInfo}</span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={onRefresh}
+              aria-label="Refresh"
+            >
+              <IconRefresh className="mr-1 size-3.5" /> Refresh
+            </Button>
+            <div className="flex items-center rounded-md border bg-muted/20 p-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-sm"
+                onClick={onPrevPage}
+                disabled={page <= 1 || isLoading}
+                aria-label="Previous page"
+              >
+                <IconChevronLeft className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-sm"
+                onClick={onNextPage}
+                disabled={isLastPage || isLoading}
+                aria-label="Next page"
+              >
+                <IconChevronRight className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
