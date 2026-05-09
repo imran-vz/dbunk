@@ -151,6 +151,45 @@ struct ExecuteDdlResult {
     runtime_ms: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CellEditKeyValue {
+    column: String,
+    // None == NULL when binding the parameter. Serde turns missing or null
+    // JSON values into None, anything else becomes the string verbatim. We
+    // intentionally keep types as strings here: the UI only ever has the
+    // string form in hand and Postgres is happy to accept text params for
+    // most types via `&str` binding (it coerces server-side).
+    value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CellEdit {
+    // Echoed back through to the caller for UI mapping; ignored by SQL.
+    #[serde(default)]
+    #[allow(dead_code)]
+    row_index: u32,
+    identity: Vec<CellEditKeyValue>,
+    set: Vec<CellEditKeyValue>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitCellEditsPayload {
+    connection_id: String,
+    schema: String,
+    table: String,
+    edits: Vec<CellEdit>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitCellEditsResult {
+    rows_affected: u64,
+    runtime_ms: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ColumnInfo {
@@ -1533,6 +1572,167 @@ async fn execute_ddl(
     }
 }
 
+/// Build a parameterized UPDATE statement for a single edit.
+///
+/// Returns a tuple of (sql, params) where params is the ordered binding list.
+/// SET clauses come first ($1..$n), then identity ($n+1..$n+m). Identifiers
+/// are double-quoted and internal quotes are doubled — values are parameter-
+/// bound, so neither the column nor table names ever come from user-supplied
+/// SQL text.
+fn build_update_statement(
+    schema: &str,
+    table: &str,
+    set: &[CellEditKeyValue],
+    identity: &[CellEditKeyValue],
+) -> (String, Vec<Option<String>>) {
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
+    let mut params: Vec<Option<String>> = Vec::with_capacity(set.len() + identity.len());
+    let set_clause: Vec<String> = set
+        .iter()
+        .enumerate()
+        .map(|(i, kv)| {
+            params.push(kv.value.clone());
+            format!("{} = ${}", quote_double(&kv.column), i + 1)
+        })
+        .collect();
+    let where_clause: Vec<String> = identity
+        .iter()
+        .map(|kv| {
+            params.push(kv.value.clone());
+            // Identity values are never NULL in practice (NULLs cannot be
+            // matched with `=`), but we still bind defensively. If a caller
+            // ever sends NULL we fall back to `IS NULL` so the row at least
+            // has a chance of matching.
+            if kv.value.is_none() {
+                // Pop the just-pushed None — it isn't used because we emit
+                // `IS NULL` directly. Keep parameter numbering consistent.
+                params.pop();
+                format!("{} IS NULL", quote_double(&kv.column))
+            } else {
+                format!("{} = ${}", quote_double(&kv.column), params.len())
+            }
+        })
+        .collect();
+    let sql = format!(
+        "UPDATE {} SET {} WHERE {}",
+        qualified,
+        set_clause.join(", "),
+        where_clause.join(" AND ")
+    );
+    (sql, params)
+}
+
+async fn commit_cell_edits_postgres(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    edits: &[CellEdit],
+) -> Result<CommitCellEditsResult, String> {
+    let mut options = PgConnectOptions::new()
+        .host(&connection.host)
+        .username(&connection.user)
+        .database(&connection.database);
+
+    if connection.port != 0 {
+        options = options.port(connection.port);
+    } else {
+        options = options.port(5432);
+    }
+    if !connection.password.is_empty() {
+        options = options.password(&connection.password);
+    }
+
+    let mut conn = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    use sqlx::Executor;
+    if let Err(error) = conn.execute("BEGIN").await {
+        return Err(error.to_string());
+    }
+
+    let start = Instant::now();
+    let mut total_rows_affected: u64 = 0;
+
+    for edit in edits {
+        if edit.set.is_empty() {
+            let _ = conn.execute("ROLLBACK").await;
+            return Err("edit has no SET columns".to_string());
+        }
+        if edit.identity.is_empty() {
+            let _ = conn.execute("ROLLBACK").await;
+            return Err("edit has no identity columns".to_string());
+        }
+        let (sql, params) = build_update_statement(schema, table, &edit.set, &edit.identity);
+        let mut query = sqlx::query(&sql);
+        for param in &params {
+            query = query.bind(param.as_deref());
+        }
+        match query.execute(&mut conn).await {
+            Ok(result) => {
+                let affected = result.rows_affected();
+                if affected == 0 {
+                    let _ = conn.execute("ROLLBACK").await;
+                    let identity_desc = edit
+                        .identity
+                        .iter()
+                        .map(|kv| {
+                            format!(
+                                "{}={}",
+                                kv.column,
+                                kv.value.as_deref().unwrap_or("NULL")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(format!("row not found: {}", identity_desc));
+                }
+                total_rows_affected += affected;
+            }
+            Err(error) => {
+                let _ = conn.execute("ROLLBACK").await;
+                return Err(error.to_string());
+            }
+        }
+    }
+
+    if let Err(error) = conn.execute("COMMIT").await {
+        let _ = conn.execute("ROLLBACK").await;
+        return Err(error.to_string());
+    }
+
+    Ok(CommitCellEditsResult {
+        rows_affected: total_rows_affected,
+        runtime_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+#[tauri::command]
+async fn commit_cell_edits(
+    app: AppHandle,
+    payload: CommitCellEditsPayload,
+) -> Result<CommitCellEditsResult, String> {
+    if payload.edits.is_empty() {
+        return Err("no edits to commit".to_string());
+    }
+    let connection = find_connection(&app, &payload.connection_id)?;
+    match connection.engine {
+        DatabaseEngine::PostgreSQL => {
+            commit_cell_edits_postgres(
+                &connection,
+                &payload.schema,
+                &payload.table,
+                &payload.edits,
+            )
+            .await
+        }
+        _ => Err(format!(
+            "Cell edit commit is not supported for {} (PostgreSQL only)",
+            engine_name(&connection.engine)
+        )),
+    }
+}
+
 async fn fetch_schema_relationships_postgres(
     connection: &StoredConnection,
     schema: &str,
@@ -1762,6 +1962,7 @@ pub fn run() {
             load_table_data,
             load_table_structure,
             execute_ddl,
+            commit_cell_edits,
             load_query_history,
             append_query_history,
             clear_query_history
