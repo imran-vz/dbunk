@@ -1,3 +1,4 @@
+import { IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, MiniMap } from "reactflow";
 
@@ -24,6 +25,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
   const {
     tablePreviews,
+    tableLoadStatus,
     tableEdits,
     openQueryForTable,
     loadTablePreview,
@@ -31,6 +33,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     discardTableEdits,
     toggleLeftSidebar,
   } = useAppStore();
+
+  const tableKey = tab.table ?? "";
+  const loadStatus = tableLoadStatus[tableKey] ?? { state: "idle" as const };
+  const isLoading = loadStatus.state === "loading";
+  const loadError = loadStatus.state === "error" ? loadStatus.error : null;
 
   useEffect(() => {
     if (tab.kind === "table" && tab.table) {
@@ -121,6 +128,23 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {loadError && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-start gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <div className="flex-1 whitespace-pre-wrap break-words font-mono">
+            {loadError}
+          </div>
+        </div>
+      )}
+      {isLoading && (
+        <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <IconLoader2 className="size-3.5 animate-spin" />
+          <span>Loading table preview...</span>
+        </div>
+      )}
       <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
         {viewMode === "data" ? (
           <DataGrid
