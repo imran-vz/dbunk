@@ -351,6 +351,294 @@ describe("TableEditorPanel save wiring", () => {
   });
 });
 
+describe("TableEditorPanel add record", () => {
+  it("disables the Add row button until structure is loaded", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    // No structure seeded yet.
+    useAppStore.setState({
+      connections: [postgresConnection],
+      activeConnectionId: "conn-1",
+    });
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    const addButton = screen.getByRole("button", {
+      name: /add row/i,
+    }) as HTMLButtonElement;
+    expect(addButton.disabled).toBe(true);
+  });
+
+  it("enables the Add row button once structure is loaded for Postgres", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    const addButton = screen.getByRole("button", {
+      name: /add row/i,
+    }) as HTMLButtonElement;
+    expect(addButton.disabled).toBe(false);
+  });
+
+  it("opens an inline form with one input per column when Add row is clicked", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    fireEvent.click(screen.getByRole("button", { name: /add row/i }));
+
+    const form = screen.getByTestId("add-row-form");
+    expect(form).toBeTruthy();
+    // One input per column from the structure.
+    expect(
+      form.querySelectorAll("input[data-testid^='add-row-value-']"),
+    ).toHaveLength(2);
+  });
+
+  it("submits insert_row with the entered values and refreshes", async () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    fireEvent.click(screen.getByRole("button", { name: /add row/i }));
+
+    // For non-nullable, no-default columns the form starts in `value` mode
+    // with an empty input. Type into the email input.
+    const emailInput = screen.getByTestId(
+      "add-row-value-email",
+    ) as HTMLInputElement;
+    fireEvent.change(emailInput, { target: { value: "grace@example.com" } });
+
+    // Set id mode to default-bypass via radio group. The id column has no
+    // default in editableStructure so the form starts in `value` mode; we
+    // type something to satisfy the not-null constraint.
+    const idInput = screen.getByTestId("add-row-value-id") as HTMLInputElement;
+    fireEvent.change(idInput, { target: { value: "2" } });
+
+    mockedInvoke.mockReset();
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 4 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email"],
+        rows: [
+          ["1", "ada@example.com"],
+          ["2", "grace@example.com"],
+        ],
+        page: 1,
+        pageSize: 100,
+        totalRows: 2,
+        runtimeMs: 1,
+      });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^insert$/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedInvoke).toHaveBeenCalledWith("insert_row", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        values: [
+          { column: "id", value: "2" },
+          { column: "email", value: "grace@example.com" },
+        ],
+      },
+    });
+  });
+});
+
+describe("TableEditorPanel delete selected", () => {
+  it("disables Delete selected when no rows are selected", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    const del = screen.getByRole("button", {
+      name: /delete selected/i,
+    }) as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
+  });
+
+  it("disables Delete selected when the table has no identity (read-only)", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(readOnlyStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    // Even after selecting a row, delete remains disabled because the
+    // table is read-only (no identity). Click the first row's checkbox.
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1] as HTMLInputElement);
+
+    const del = screen.getByRole("button", {
+      name: /delete selected/i,
+    }) as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
+  });
+
+  it("invokes delete_rows on confirmed delete and refreshes", async () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [
+        ["1", "ada@example.com"],
+        ["2", "grace@example.com"],
+      ],
+      page: 1,
+      pageSize: 100,
+      totalRows: 2,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    // Select the first data row's checkbox (header is index 0).
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1] as HTMLInputElement);
+
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => true);
+
+    mockedInvoke.mockReset();
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 3 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email"],
+        rows: [["2", "grace@example.com"]],
+        page: 1,
+        pageSize: 100,
+        totalRows: 1,
+        runtimeMs: 1,
+      });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockedInvoke).toHaveBeenCalledWith("delete_rows", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        rows: [[{ column: "id", value: "1" }]],
+      },
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it("does not invoke delete_rows when the confirmation is cancelled", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1] as HTMLInputElement);
+
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => false);
+    mockedInvoke.mockReset();
+
+    fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
 describe("TableEditorPanel status banners", () => {
   it("shows a loading indicator when tableLoadStatus is loading", () => {
     seed(

@@ -4,9 +4,12 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconLock,
+  IconPlus,
   IconRefresh,
+  IconTrash,
   IconX,
 } from "@tabler/icons-react";
+import type { RowSelectionState } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 
 import { DataGrid, type TableViewMode } from "@/components/data-grid";
@@ -15,6 +18,13 @@ import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  buildInsertValuesPayload,
+  type InsertRowFieldMode,
+  type InsertRowFormState,
+  initialFormState,
+} from "@/lib/insert-row-form";
 import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type TablePreviewData,
@@ -45,8 +55,16 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     discardTableEdits,
     commitTableEdits,
     clearTableEditsCommitStatus,
+    addTableRow,
+    deleteSelectedTableRows,
     toggleLeftSidebar,
   } = useAppStore();
+
+  // Row selection lives here so the Delete Selected action can read the
+  // selected indices and clear them after a successful delete.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [isAddRowOpen, setIsAddRowOpen] = useState(false);
+  const [addRowForm, setAddRowForm] = useState<InsertRowFormState>({});
 
   const dataKey =
     tab.kind === "table" && tab.table
@@ -83,6 +101,22 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const rowIdentity = pickRowIdentity(activeTableStructure);
   const isReadOnly = rowIdentity === null;
   const commitStatus = tableEditsCommitStatus[tableName];
+  const connections = useAppStore((s) => s.connections);
+  const connection = connections.find((c) => c.id === tab.connectionId);
+  const isPostgres = connection?.engine === "PostgreSQL";
+  const structureLoaded = Boolean(activeTableStructure);
+  const isWriting = commitStatus?.state === "running";
+  const selectedRowIndices = useMemo(
+    () =>
+      Object.entries(rowSelection)
+        .filter(([, selected]) => selected)
+        .map(([rowId]) => Number.parseInt(rowId, 10))
+        .filter((n) => Number.isFinite(n)),
+    [rowSelection],
+  );
+  const canDeleteSelected =
+    selectedRowIndices.length > 0 && isPostgres && !isReadOnly && !isWriting;
+  const canAddRow = structureLoaded && isPostgres && !isWriting;
 
   const columns = activeTableData?.columns ?? [];
   const rows = activeTableData?.rows ?? [];
@@ -140,6 +174,70 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const onRefresh = () => {
     if (dataKey) {
       void refreshTableData(dataKey);
+    }
+  };
+
+  const handleOpenAddRow = () => {
+    if (!activeTableStructure) {
+      return;
+    }
+    setAddRowForm(initialFormState(activeTableStructure.columns));
+    setIsAddRowOpen(true);
+  };
+
+  const handleCloseAddRow = () => {
+    setIsAddRowOpen(false);
+  };
+
+  const handleSetAddRowMode = (column: string, mode: InsertRowFieldMode) => {
+    setAddRowForm((prev) => ({
+      ...prev,
+      [column]: { mode, value: prev[column]?.value ?? "" },
+    }));
+  };
+
+  const handleSetAddRowValue = (column: string, value: string) => {
+    setAddRowForm((prev) => ({
+      ...prev,
+      [column]: { mode: prev[column]?.mode ?? "value", value },
+    }));
+  };
+
+  const handleSubmitAddRow = async () => {
+    if (!activeTableStructure) {
+      return;
+    }
+    const values = buildInsertValuesPayload(
+      addRowForm,
+      activeTableStructure.columns,
+    );
+    const before = useAppStore.getState().tableEditsCommitStatus[tableName];
+    await addTableRow(tableName, values);
+    const after = useAppStore.getState().tableEditsCommitStatus[tableName];
+    // Only close the form when the call landed in `success`. On error keep
+    // the form open so the user can correct values without re-typing.
+    if (after?.state === "success" && after !== before) {
+      setIsAddRowOpen(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedRowIndices.length === 0) {
+      return;
+    }
+    const message = `Delete ${selectedRowIndices.length} row${
+      selectedRowIndices.length === 1 ? "" : "s"
+    }? This cannot be undone.`;
+    if (!window.confirm(message)) {
+      return;
+    }
+    const before = useAppStore.getState().tableEditsCommitStatus[tableName];
+    await deleteSelectedTableRows(tableName, selectedRowIndices);
+    const after = useAppStore.getState().tableEditsCommitStatus[tableName];
+    if (after?.state === "success" && after !== before) {
+      // Clear selection only on success — preserves selection so the user
+      // can retry or inspect what failed.
+      setRowSelection({});
     }
   };
 
@@ -239,6 +337,112 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </Button>
         </div>
       ) : null}
+      {isAddRowOpen && activeTableStructure ? (
+        <div
+          data-testid="add-row-form"
+          className="flex flex-col gap-2 border-b bg-muted/10 px-4 py-3"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold">Add row</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={handleCloseAddRow}
+            >
+              Cancel
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {activeTableStructure.columns.map((column) => {
+              const field = addRowForm[column.name] ?? {
+                mode: "value" as InsertRowFieldMode,
+                value: "",
+              };
+              const hasDefault =
+                column.defaultValue !== null &&
+                column.defaultValue !== undefined;
+              return (
+                <div
+                  key={column.name}
+                  className="flex flex-col gap-1 rounded-md border bg-background px-2 py-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{column.name}</span>
+                    <span className="text-[0.625rem] text-muted-foreground">
+                      {column.dataType}
+                    </span>
+                  </div>
+                  <Input
+                    data-testid={`add-row-value-${column.name}`}
+                    className="h-7 text-xs"
+                    value={field.value}
+                    placeholder={
+                      hasDefault ? `default: ${column.defaultValue}` : ""
+                    }
+                    disabled={field.mode !== "value"}
+                    onChange={(e) =>
+                      handleSetAddRowValue(column.name, e.target.value)
+                    }
+                  />
+                  <div className="flex items-center gap-3 text-[0.625rem] text-muted-foreground">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`add-row-mode-${column.name}`}
+                        data-testid={`add-row-mode-value-${column.name}`}
+                        checked={field.mode === "value"}
+                        onChange={() =>
+                          handleSetAddRowMode(column.name, "value")
+                        }
+                      />
+                      value
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`add-row-mode-${column.name}`}
+                        data-testid={`add-row-mode-null-${column.name}`}
+                        disabled={!column.nullable}
+                        checked={field.mode === "null"}
+                        onChange={() =>
+                          handleSetAddRowMode(column.name, "null")
+                        }
+                      />
+                      NULL
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`add-row-mode-${column.name}`}
+                        data-testid={`add-row-mode-default-${column.name}`}
+                        disabled={!hasDefault}
+                        checked={field.mode === "default"}
+                        onChange={() =>
+                          handleSetAddRowMode(column.name, "default")
+                        }
+                      />
+                      default
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              size="sm"
+              className="h-8 px-3 text-xs"
+              disabled={isWriting}
+              onClick={() => {
+                void handleSubmitAddRow();
+              }}
+            >
+              {isWriting ? "Inserting…" : "Insert"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
         {viewMode === "data" ? (
           <DataGrid
@@ -260,6 +464,31 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
             onViewModeChange={setViewMode}
             onToggleSidebar={toggleLeftSidebar}
             exportFilenameBase={exportFilenameBase}
+            rowSelection={rowSelection}
+            onRowSelectionChange={setRowSelection}
+            toolbarLeading={
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="h-9 gap-2 bg-foreground text-background hover:bg-foreground/90"
+                  disabled={!canAddRow}
+                  onClick={handleOpenAddRow}
+                >
+                  <IconPlus className="size-3.5" /> Add row
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+                  disabled={!canDeleteSelected}
+                  onClick={() => {
+                    void handleDeleteSelected();
+                  }}
+                >
+                  <IconTrash className="size-3.5" /> Delete selected
+                </Button>
+              </div>
+            }
           />
         ) : (
           <div className="flex h-full flex-col">
