@@ -81,10 +81,12 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
         <div
           className={cn(
             "grid h-full min-h-0 flex-1 transition-all duration-300 ease-in-out",
-            isSidebarOpen ? "grid-cols-[1fr_320px]" : "grid-cols-[1fr_0px]",
+            isSidebarOpen
+              ? "grid-cols-[minmax(0,1fr)_320px]"
+              : "grid-cols-[minmax(0,1fr)_0px]",
           )}
         >
-          <section className="flex min-h-0 flex-col border-r">
+          <section className="flex min-h-0 min-w-0 flex-col border-r">
             {activeTab ? (
               activeTab.kind === "query" ? (
                 <QueryEditorPanel tab={activeTab} isClient={isClient} />
