@@ -1166,3 +1166,137 @@ describe("store.commitStructureChanges", () => {
     }
   });
 });
+
+describe("store.loadSchemaRelationships", () => {
+  const relsResult = {
+    tables: [
+      { schema: "public", name: "users", columnCount: 4 },
+      { schema: "public", name: "orders", columnCount: 6 },
+    ],
+    foreignKeys: [
+      {
+        constraintName: "orders_user_id_fkey",
+        fromSchema: "public",
+        fromTable: "orders",
+        fromColumns: ["user_id"],
+        toSchema: "public",
+        toTable: "users",
+        toColumns: ["id"],
+      },
+    ],
+  };
+
+  it("invokes load_schema_relationships with the right payload", async () => {
+    mockedInvoke.mockResolvedValueOnce(relsResult);
+
+    await useAppStore.getState().loadSchemaRelationships("conn-1", "public");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_schema_relationships", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+      },
+    });
+  });
+
+  it("populates schemaRelationships and marks status success on resolve", async () => {
+    mockedInvoke.mockResolvedValueOnce(relsResult);
+
+    await useAppStore.getState().loadSchemaRelationships("conn-1", "public");
+
+    const state = useAppStore.getState();
+    const key = "conn-1::public";
+    expect(state.schemaRelationships[key]).toEqual(relsResult);
+    expect(state.schemaRelationshipsStatus[key]).toEqual({ state: "success" });
+  });
+
+  it("captures the error message on rejection", async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error("permission denied"));
+
+    await useAppStore.getState().loadSchemaRelationships("conn-1", "public");
+
+    const status =
+      useAppStore.getState().schemaRelationshipsStatus["conn-1::public"];
+    if (status?.state !== "error") {
+      throw new Error(`expected error, got ${status?.state}`);
+    }
+    expect(status.error).toContain("permission denied");
+  });
+
+  it("transitions to loading before resolving", async () => {
+    let resolveInvoke: ((value: unknown) => void) | undefined;
+    mockedInvoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInvoke = resolve as (value: unknown) => void;
+        }),
+    );
+
+    const promise = useAppStore
+      .getState()
+      .loadSchemaRelationships("conn-1", "public");
+
+    expect(
+      useAppStore.getState().schemaRelationshipsStatus["conn-1::public"],
+    ).toEqual({ state: "loading" });
+
+    resolveInvoke?.(relsResult);
+    await promise;
+
+    expect(
+      useAppStore.getState().schemaRelationshipsStatus["conn-1::public"]?.state,
+    ).toBe("success");
+  });
+
+  it("is a no-op when connectionId is empty", async () => {
+    await useAppStore.getState().loadSchemaRelationships("", "public");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("store.focusTableInSchemaMap", () => {
+  it("opens a table tab via the existing openTableTab path", async () => {
+    mockedInvoke.mockResolvedValue({
+      columns: [],
+      rows: [],
+      page: 1,
+      pageSize: 100,
+      totalRows: 0,
+      runtimeMs: 0,
+    });
+    useAppStore.setState({ activeConnectionId: "conn-1" });
+
+    useAppStore.getState().focusTableInSchemaMap("conn-1", "public", "orders");
+
+    const tabs = useAppStore.getState().workspaceTabs;
+    const opened = tabs.find(
+      (tab) => tab.kind === "table" && tab.table === "orders",
+    );
+    expect(opened).toBeDefined();
+    expect(opened?.schema).toBe("public");
+    expect(opened?.connectionId).toBe("conn-1");
+    expect(useAppStore.getState().activeTabId).toBe(opened?.id);
+  });
+
+  it("focuses an existing table tab without re-opening", () => {
+    useAppStore.setState({
+      activeConnectionId: "conn-1",
+      workspaceTabs: [
+        {
+          id: "tab-existing",
+          kind: "table",
+          label: "orders",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "orders",
+        },
+      ],
+    });
+
+    useAppStore.getState().focusTableInSchemaMap("conn-1", "public", "orders");
+
+    const tabs = useAppStore.getState().workspaceTabs;
+    expect(tabs).toHaveLength(1);
+    expect(useAppStore.getState().activeTabId).toBe("tab-existing");
+  });
+});
