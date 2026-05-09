@@ -67,6 +67,19 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     [queryEdits, tab.id],
   );
 
+  const exportFilenameBase = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const slug = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    // Drop any extension on the label (e.g. "query_1.sql" -> "query-1") so
+    // the grid can append its own.
+    const labelStem = tab.label.replace(/\.[^.]+$/, "");
+    return [slug(labelStem), today].filter(Boolean).join("-");
+  }, [tab.label]);
+
   const editorRef = useRef<MonacoEditorInstance | null>(null);
 
   const getEditorSelectionText = useCallback((): string => {
@@ -250,6 +263,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
                 onEdit={(rowIndex, colIndex, value) =>
                   setQueryEdit(tab.id, rowIndex, colIndex, value)
                 }
+                exportFilenameBase={exportFilenameBase}
               />
             ) : errorMessage ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">

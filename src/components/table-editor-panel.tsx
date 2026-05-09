@@ -58,6 +58,21 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
   const columns = activeTableData?.columns ?? [];
   const rows = activeTableData?.rows ?? [];
+  const exportFilenameBase = useMemo(() => {
+    if (tab.kind !== "table" || !tab.table) {
+      return "export";
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const slug = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    return [tab.connectionId, tab.schema, tab.table, today]
+      .map(slug)
+      .filter(Boolean)
+      .join("-");
+  }, [tab.kind, tab.connectionId, tab.schema, tab.table]);
   const page = activeTableData?.page ?? 1;
   const pageSize = activeTableData?.pageSize ?? 100;
   const totalRows = activeTableData?.totalRows;
@@ -161,6 +176,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             onToggleSidebar={toggleLeftSidebar}
+            exportFilenameBase={exportFilenameBase}
           />
         ) : (
           <div className="flex h-full flex-col">

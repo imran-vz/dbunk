@@ -25,7 +25,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -45,6 +45,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { downloadFile } from "@/lib/download";
+import { type ExportTable, toCsv, toJson } from "@/lib/export";
 import { cn } from "@/lib/utils";
 
 interface EditableCellProps {
@@ -134,6 +136,12 @@ export interface DataGridProps {
   viewMode?: TableViewMode;
   onViewModeChange?: (mode: TableViewMode) => void;
   onToggleSidebar?: () => void;
+  /**
+   * Stem used for export filenames, e.g. "myconn-public-users-2026-05-09".
+   * The grid appends `.csv` / `.json` and a "-selected" suffix as needed.
+   * Defaults to "export" if omitted.
+   */
+  exportFilenameBase?: string;
 }
 
 export function DataGrid({
@@ -149,6 +157,7 @@ export function DataGrid({
   viewMode = "data",
   onViewModeChange,
   onToggleSidebar,
+  exportFilenameBase = "export",
 }: DataGridProps) {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -231,6 +240,59 @@ export function DataGrid({
       },
     },
   });
+
+  const hasSelection = Object.keys(rowSelection).length > 0;
+
+  // "All visible" = the rows currently in the filtered model. Column filters
+  // applied via the Filters panel should be honored — that's what the user
+  // sees in the grid. Pagination is not honored: exporting only the current
+  // page of a multi-page result would be surprising.
+  const buildExportTable = useCallback(
+    (mode: "all" | "selected"): ExportTable => {
+      const rowsModel =
+        mode === "selected"
+          ? table.getSelectedRowModel().rows
+          : table.getFilteredRowModel().rows;
+      const exportRows = rowsModel.map((row) =>
+        columnNames.map((_col, colIndex) => row.original[colIndex] ?? null),
+      );
+      return { columns: columnNames, rows: exportRows };
+    },
+    [table, columnNames],
+  );
+
+  const filenameFor = useCallback(
+    (mode: "all" | "selected", ext: "csv" | "json") => {
+      const base = exportFilenameBase || "export";
+      const suffix = mode === "selected" ? "-selected" : "";
+      return `${base}${suffix}.${ext}`;
+    },
+    [exportFilenameBase],
+  );
+
+  const handleExportCsv = useCallback(
+    (mode: "all" | "selected") => {
+      const exportTable = buildExportTable(mode);
+      downloadFile(
+        filenameFor(mode, "csv"),
+        "text/csv;charset=utf-8",
+        toCsv(exportTable),
+      );
+    },
+    [buildExportTable, filenameFor],
+  );
+
+  const handleExportJson = useCallback(
+    (mode: "all" | "selected") => {
+      const exportTable = buildExportTable(mode);
+      downloadFile(
+        filenameFor(mode, "json"),
+        "application/json;charset=utf-8",
+        toJson(exportTable, { pretty: true }),
+      );
+    },
+    [buildExportTable, filenameFor],
+  );
 
   return (
     <div className={cn("flex h-full flex-col bg-background", className)}>
@@ -465,29 +527,35 @@ export function DataGrid({
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportJson("all")}>
                   <IconDownload className="mr-2 size-3.5" />
                   Export all to .json
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportCsv("all")}>
                   <IconDownload className="mr-2 size-3.5" />
                   Export all to .csv
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem disabled>
                   <IconDownload className="mr-2 size-3.5" />
                   Export all to .xlsx
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuGroup>
-                <DropdownMenuItem disabled={!Object.keys(rowSelection).length}>
+                <DropdownMenuItem
+                  disabled={!hasSelection}
+                  onClick={() => handleExportJson("selected")}
+                >
                   <IconDownload className="mr-2 size-3.5" />
                   Export selected to .json
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!Object.keys(rowSelection).length}>
+                <DropdownMenuItem
+                  disabled={!hasSelection}
+                  onClick={() => handleExportCsv("selected")}
+                >
                   <IconDownload className="mr-2 size-3.5" />
                   Export selected to .csv
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!Object.keys(rowSelection).length}>
+                <DropdownMenuItem disabled>
                   <IconDownload className="mr-2 size-3.5" />
                   Export selected to .xlsx
                 </DropdownMenuItem>
