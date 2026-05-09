@@ -198,6 +198,33 @@ export type SchemaExplorer = {
   views?: string[];
 };
 
+export type QueryHistoryEntry = {
+  id: string;
+  sql: string;
+  connectionId: string;
+  connectionName: string;
+  database: string;
+  engine: DatabaseEngine;
+  status: "success" | "error";
+  errorMessage?: string;
+  runtimeMs: number;
+  rowCount?: number;
+  startedAt: string;
+};
+
+const generateHistoryId = (): string => {
+  if (
+    typeof globalThis !== "undefined" &&
+    typeof (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+      ?.randomUUID === "function"
+  ) {
+    return (
+      globalThis as { crypto: { randomUUID: () => string } }
+    ).crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 export type WorkspaceTabKind = "table" | "query";
 
 export type WorkspaceTab = {
@@ -263,7 +290,7 @@ interface AppState {
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   tableEdits: Record<string, Record<number, Record<number, string>>>;
   schemaFlows: Record<string, SchemaFlow>;
-  recentQueries: string[];
+  queryHistory: QueryHistoryEntry[];
   editorTheme: string;
   selectedRowIndex: number;
 
@@ -308,6 +335,8 @@ interface AppState {
     table: string,
   ) => Promise<void>;
   loadConnections: () => Promise<void>;
+  loadQueryHistory: () => Promise<void>;
+  reopenHistoryEntry: (entry: QueryHistoryEntry) => void;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
@@ -347,7 +376,7 @@ const initialTableEdits: Record<
   Record<number, Record<number, string>>
 > = {};
 const initialSchemaFlows: Record<string, SchemaFlow> = {};
-const initialRecentQueries: string[] = [];
+const initialQueryHistory: QueryHistoryEntry[] = [];
 
 let nextTabIndex = 1;
 let nextQueryIndex = 1;
@@ -371,7 +400,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryEdits: initialQueryEdits,
   tableEdits: initialTableEdits,
   schemaFlows: initialSchemaFlows,
-  recentQueries: initialRecentQueries,
+  queryHistory: initialQueryHistory,
   editorTheme: "vs",
   selectedRowIndex: 0,
 
@@ -617,6 +646,55 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  loadQueryHistory: async () => {
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      const stored =
+        await tauriInvoke<QueryHistoryEntry[]>("load_query_history");
+      set({ queryHistory: stored });
+    } catch (error) {
+      console.error("Failed to load query history", error);
+    }
+  },
+
+  reopenHistoryEntry: (entry) => {
+    const state = get();
+    set({
+      activeView: "workspace",
+      activeConnectionId: entry.connectionId,
+    });
+    const existing = state.workspaceTabs.find(
+      (item) =>
+        item.kind === "query" &&
+        item.connectionId === entry.connectionId &&
+        (item.query ?? "") === entry.sql,
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+    const id = `tab-${nextTabIndex}`;
+    nextTabIndex += 1;
+    const label = `query_${nextQueryIndex}.sql`;
+    nextQueryIndex += 1;
+    set((state) => ({
+      workspaceTabs: [
+        ...state.workspaceTabs,
+        {
+          id,
+          kind: "query",
+          label,
+          connectionId: entry.connectionId,
+          schema: "",
+          query: entry.sql,
+        },
+      ],
+      activeTabId: id,
+    }));
+  },
+
   addConnection: async (connection) => {
     if (!isTauri()) {
       set((state) => ({
@@ -807,15 +885,50 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return;
     }
+    const connectionAtRun = state.connections.find(
+      (c) => c.id === tab.connectionId,
+    );
+    const startedAt = new Date().toISOString();
     set((state) => ({
       queryStatus: {
         ...state.queryStatus,
         [tabId]: { state: "running" },
       },
     }));
+    const buildEntry = (
+      base: Pick<QueryHistoryEntry, "status" | "runtimeMs"> &
+        Partial<Pick<QueryHistoryEntry, "rowCount" | "errorMessage">>,
+    ): QueryHistoryEntry => ({
+      id: generateHistoryId(),
+      sql: query,
+      connectionId: tab.connectionId,
+      connectionName: connectionAtRun?.name ?? "",
+      database: connectionAtRun?.database ?? "",
+      engine: connectionAtRun?.engine ?? "PostgreSQL",
+      status: base.status,
+      errorMessage: base.errorMessage,
+      runtimeMs: base.runtimeMs,
+      rowCount: base.rowCount,
+      startedAt,
+    });
+    const persistEntry = async (entry: QueryHistoryEntry) => {
+      try {
+        await tauriInvoke<QueryHistoryEntry[]>("append_query_history", {
+          entry,
+        });
+      } catch (error) {
+        // Persistence is best-effort: never block the UI on a write failure.
+        console.error("Failed to persist query history entry", error);
+      }
+    };
     try {
       const result = await tauriInvoke<RunQueryResult>("run_query", {
         payload: { connectionId: tab.connectionId, query },
+      });
+      const entry = buildEntry({
+        status: "success",
+        runtimeMs: result.runtimeMs,
+        rowCount: result.rowCount,
       });
       set((state) => ({
         queryPreviews: {
@@ -832,27 +945,35 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...state.queryStatus,
           [tabId]: { state: "success", runtimeMs: result.runtimeMs },
         },
-        recentQueries: [query, ...state.recentQueries].slice(0, 10),
+        queryHistory: [entry, ...state.queryHistory].slice(0, 200),
         workspaceTabs: state.workspaceTabs.map((item) =>
           item.id === tabId
             ? { ...item, lastRun: "Just now", isDirty: false }
             : item,
         ),
       }));
+      await persistEntry(entry);
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to run query", error);
+      const entry = buildEntry({
+        status: "error",
+        runtimeMs: Math.max(0, Date.now() - new Date(startedAt).getTime()),
+        errorMessage: message,
+      });
       set((state) => ({
         queryStatus: {
           ...state.queryStatus,
           [tabId]: { state: "error", error: message },
         },
+        queryHistory: [entry, ...state.queryHistory].slice(0, 200),
         workspaceTabs: state.workspaceTabs.map((item) =>
           item.id === tabId
             ? { ...item, lastRun: "Failed", isDirty: false }
             : item,
         ),
       }));
+      await persistEntry(entry);
     }
   },
 

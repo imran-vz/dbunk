@@ -605,29 +605,36 @@ describe("runQuery overrideSql", () => {
 
   it("runs the tab.query when no overrideSql is supplied", async () => {
     const tabId = seedQueryTab({ query: "select * from users;" });
-    mockedInvoke.mockResolvedValueOnce({
-      columns: ["id"],
-      rows: [["1"]],
-      runtimeMs: 12,
-      rowCount: 1,
-    });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: ["id"],
+        rows: [["1"]],
+        runtimeMs: 12,
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce([]);
 
     await useAppStore.getState().runQuery(tabId);
 
-    expect(mockedInvoke).toHaveBeenCalledTimes(1);
-    expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
+    const runCalls = mockedInvoke.mock.calls.filter(
+      (call) => call[0] === "run_query",
+    );
+    expect(runCalls).toHaveLength(1);
+    expect(runCalls[0]?.[1]).toEqual({
       payload: { connectionId: "conn-1", query: "select * from users;" },
     });
   });
 
   it("runs the overrideSql when one is supplied", async () => {
     const tabId = seedQueryTab({ query: "select * from users;" });
-    mockedInvoke.mockResolvedValueOnce({
-      columns: [],
-      rows: [],
-      runtimeMs: 1,
-      rowCount: 0,
-    });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: [],
+        rows: [],
+        runtimeMs: 1,
+        rowCount: 0,
+      })
+      .mockResolvedValueOnce([]);
 
     await useAppStore.getState().runQuery(tabId, { overrideSql: "SELECT 1" });
 
@@ -648,13 +655,15 @@ describe("runQuery overrideSql", () => {
     await useAppStore.getState().runQuery(tabId, { overrideSql: "" });
     await useAppStore.getState().runQuery(tabId, { overrideSql: "   \n" });
 
-    for (const call of mockedInvoke.mock.calls) {
-      expect(call[0]).toBe("run_query");
+    const runCalls = mockedInvoke.mock.calls.filter(
+      (call) => call[0] === "run_query",
+    );
+    for (const call of runCalls) {
       expect(call[1]).toEqual({
         payload: { connectionId: "conn-1", query: "select * from users;" },
       });
     }
-    expect(mockedInvoke).toHaveBeenCalledTimes(2);
+    expect(runCalls).toHaveLength(2);
   });
 
   it("does not mutate tab.query when overrideSql is used", async () => {
@@ -671,18 +680,38 @@ describe("runQuery overrideSql", () => {
     expect(getTab(tabId)?.query).toBe("select * from users;");
   });
 
-  it("records the executed SQL (override) in recentQueries", async () => {
+  it("records the executed SQL (override) in queryHistory", async () => {
     const tabId = seedQueryTab({ query: "select * from users;" });
-    mockedInvoke.mockResolvedValueOnce({
-      columns: [],
-      rows: [],
-      runtimeMs: 5,
-      rowCount: 0,
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+        },
+      ],
     });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: [],
+        rows: [],
+        runtimeMs: 5,
+        rowCount: 0,
+      })
+      .mockResolvedValueOnce([]);
 
     await useAppStore.getState().runQuery(tabId, { overrideSql: "SELECT 1" });
 
-    expect(useAppStore.getState().recentQueries[0]).toBe("SELECT 1");
+    expect(useAppStore.getState().queryHistory[0]?.sql).toBe("SELECT 1");
   });
 
   it("stores result in queryPreviews keyed by tab.label", async () => {
@@ -745,5 +774,181 @@ describe("runQuery overrideSql", () => {
     await useAppStore.getState().runQuery(tabId, { overrideSql: "  " });
 
     expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("query history", () => {
+  const seedConnection = () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local Postgres",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+        },
+      ],
+    });
+  };
+
+  it("appends a success entry to queryHistory after a successful runQuery", async () => {
+    seedConnection();
+    const tabId = seedQueryTab({ query: "select 1;" });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: ["a"],
+        rows: [["1"]],
+        runtimeMs: 42,
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const entry = useAppStore.getState().queryHistory[0];
+    expect(entry).toBeDefined();
+    expect(entry?.sql).toBe("select 1;");
+    expect(entry?.connectionId).toBe("conn-1");
+    expect(entry?.connectionName).toBe("Local Postgres");
+    expect(entry?.database).toBe("postgres");
+    expect(entry?.engine).toBe("PostgreSQL");
+    expect(entry?.status).toBe("success");
+    expect(entry?.runtimeMs).toBe(42);
+    expect(entry?.rowCount).toBe(1);
+    expect(entry?.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(entry?.id).toBeTruthy();
+  });
+
+  it("appends an error entry to queryHistory after a failed runQuery", async () => {
+    seedConnection();
+    const tabId = seedQueryTab({ query: "broken sql" });
+    mockedInvoke
+      .mockRejectedValueOnce(new Error("syntax error at or near"))
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const entry = useAppStore.getState().queryHistory[0];
+    expect(entry?.status).toBe("error");
+    expect(entry?.errorMessage).toContain("syntax error");
+    expect(entry?.sql).toBe("broken sql");
+    expect(entry?.connectionId).toBe("conn-1");
+  });
+
+  it("loadQueryHistory populates queryHistory from invoke result", async () => {
+    const stored = [
+      {
+        id: "abc",
+        sql: "select 1",
+        connectionId: "conn-1",
+        connectionName: "Local",
+        database: "postgres",
+        engine: "PostgreSQL" as const,
+        status: "success" as const,
+        runtimeMs: 5,
+        rowCount: 1,
+        startedAt: "2026-05-09T12:00:00.000Z",
+      },
+    ];
+    mockedInvoke.mockResolvedValueOnce(stored);
+
+    await act(async () => {
+      await useAppStore.getState().loadQueryHistory();
+    });
+
+    expect(mockedInvoke.mock.calls[0]?.[0]).toBe("load_query_history");
+    expect(useAppStore.getState().queryHistory).toEqual(stored);
+  });
+
+  it("does not break runQuery success when append_query_history rejects", async () => {
+    seedConnection();
+    const tabId = seedQueryTab({ query: "select 1;" });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: [],
+        rows: [],
+        runtimeMs: 5,
+        rowCount: 0,
+      })
+      .mockRejectedValueOnce(new Error("disk full"));
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const status = useAppStore.getState().queryStatus[tabId];
+    if (status.state !== "success") {
+      throw new Error(`expected success, got ${status.state}`);
+    }
+    // The in-memory entry should still be present even if persistence fails.
+    const entry = useAppStore.getState().queryHistory[0];
+    expect(entry?.sql).toBe("select 1;");
+    expect(entry?.status).toBe("success");
+  });
+
+  it("reopenHistoryEntry opens a new query tab pre-filled with the SQL", async () => {
+    seedConnection();
+    const entry = {
+      id: "abc",
+      sql: "select 1 from users;",
+      connectionId: "conn-1",
+      connectionName: "Local Postgres",
+      database: "postgres",
+      engine: "PostgreSQL" as const,
+      status: "success" as const,
+      runtimeMs: 5,
+      rowCount: 1,
+      startedAt: "2026-05-09T12:00:00.000Z",
+    };
+
+    act(() => {
+      useAppStore.getState().reopenHistoryEntry(entry);
+    });
+
+    const state = useAppStore.getState();
+    const tab = state.workspaceTabs.find((t) => t.id === state.activeTabId);
+    expect(tab?.kind).toBe("query");
+    expect(tab?.query).toBe("select 1 from users;");
+    expect(tab?.connectionId).toBe("conn-1");
+    expect(state.activeConnectionId).toBe("conn-1");
+  });
+
+  it("reopenHistoryEntry reuses an existing tab with the same SQL+connection", async () => {
+    seedConnection();
+    const entry = {
+      id: "abc",
+      sql: "select 1 from users;",
+      connectionId: "conn-1",
+      connectionName: "Local Postgres",
+      database: "postgres",
+      engine: "PostgreSQL" as const,
+      status: "success" as const,
+      runtimeMs: 5,
+      rowCount: 1,
+      startedAt: "2026-05-09T12:00:00.000Z",
+    };
+
+    act(() => {
+      useAppStore.getState().reopenHistoryEntry(entry);
+    });
+    const firstTabId = useAppStore.getState().activeTabId;
+
+    act(() => {
+      useAppStore.getState().reopenHistoryEntry(entry);
+    });
+    expect(useAppStore.getState().activeTabId).toBe(firstTabId);
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
   });
 });
