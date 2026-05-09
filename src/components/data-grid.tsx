@@ -522,7 +522,7 @@ export function DataGrid({
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="tabular-nums">
+            <span className="tabular-nums whitespace-nowrap">
               {table.getFilteredRowModel().rows.length} rows • 137ms
             </span>
           </div>

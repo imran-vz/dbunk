@@ -136,3 +136,22 @@
 body {
     overflow: hidden;
 }
+
+.dbunk-query-run-glyph {
+    cursor: pointer;
+}
+
+.dbunk-query-run-glyph::before {
+    content: "▶";
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted-foreground);
+    font-size: 0.68rem;
+    line-height: 1;
+}
+
+.dbunk-query-run-glyph:hover::before {
+    color: var(--primary);
+}

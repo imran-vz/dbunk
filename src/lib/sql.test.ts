@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pickSqlToRun } from "@/lib/sql";
+import {
+  getSqlStatementAtPosition,
+  getSqlStatements,
+  pickSqlToRun,
+} from "@/lib/sql";
 
 describe("pickSqlToRun", () => {
   it("returns the selection when it has non-whitespace content", () => {
@@ -30,5 +34,32 @@ describe("pickSqlToRun", () => {
 
   it("returns the full text unchanged even when it has only whitespace", () => {
     expect(pickSqlToRun("   ", null)).toBe("   ");
+  });
+});
+
+describe("getSqlStatements", () => {
+  it("splits statements on semicolons", () => {
+    expect(
+      getSqlStatements("select 1;\nselect 2;").map((item) => item.sql),
+    ).toEqual(["select 1", "select 2"]);
+  });
+
+  it("keeps semicolons inside strings and comments", () => {
+    expect(
+      getSqlStatements("select ';'; -- ;\nselect 2;").map((item) => item.sql),
+    ).toEqual(["select ';'", "-- ;\nselect 2"]);
+  });
+
+  it("returns a multiline statement at the cursor position", () => {
+    const sql = "select *\nfrom users\nwhere id = 1;\nselect 2;";
+
+    expect(getSqlStatementAtPosition(sql, 2, 4)?.sql).toBe(
+      "select *\nfrom users\nwhere id = 1",
+    );
+    expect(getSqlStatementAtPosition(sql, 4, 4)?.sql).toBe("select 2");
+  });
+
+  it("returns null when the cursor is outside any non-empty statement", () => {
+    expect(getSqlStatementAtPosition("\n\n", 1, 1)).toBeNull();
   });
 });
