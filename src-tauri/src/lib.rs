@@ -1,3 +1,6 @@
+mod keychain;
+mod storage;
+
 use serde::{Deserialize, Serialize};
 use sqlx::{
     any::AnyConnectOptions, postgres::PgConnectOptions, Any, AnyConnection, Column, Connection,
@@ -5,13 +8,13 @@ use sqlx::{
 };
 use std::{
     collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
     str::FromStr,
     sync::Once,
     time::Instant,
 };
-use tauri::{path::BaseDirectory, AppHandle, Manager};
+use tauri::{Manager, State};
+
+use crate::{keychain::CredentialUpdate, storage::Paths};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 enum DatabaseEngine {
@@ -57,6 +60,10 @@ struct StoredConnection {
     user: String,
     password: String,
     role: String,
+    /// ISO-8601 timestamp of the most recent successful query/connect.
+    /// Optional so existing connections.json files load without migration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_activity_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -118,6 +125,11 @@ struct DatabaseOverviewStats {
     database_size_bytes: i64,
     table_size_bytes: i64,
     index_size_bytes: i64,
+    table_count: i64,
+    schema_count: i64,
+    row_count_estimate: i64,
+    index_count: i64,
+    connection_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,77 +406,140 @@ fn escape_clickhouse(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn config_directory(app: &AppHandle) -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        app.path()
-            .resolve("dbunk", BaseDirectory::AppData)
-            .map_err(|error| error.to_string())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        app.path()
-            .resolve(".config/dbunk", BaseDirectory::Home)
-            .map_err(|error| error.to_string())
-    }
-}
+// Path resolution + per-entity JSON read/write live in `storage` — see
+// `storage.rs`. Internal helpers below take `&Paths` so they can be exercised
+// over a tempdir without a Tauri runtime.
 
-fn connections_file(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = config_directory(app)?;
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    Ok(dir.join("connections.json"))
-}
+// Connection passwords live in the keychain — see `keychain.rs` for the
+// single-blob shape (ADR-0005), the in-process cache, and migration helpers.
 
-fn query_history_file(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = config_directory(app)?;
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    Ok(dir.join("query_history.json"))
-}
+/// Hydrate a list of connections with passwords from the keychain. If
+/// `connections.json` still carries plaintext passwords (a pre-A6 release
+/// shape) they're folded into the keychain blob and the JSON is rewritten
+/// clean.
+fn read_connections_full(paths: &Paths) -> Result<Vec<StoredConnection>, String> {
+    let mut entries = storage::read_connections(paths)?;
 
-fn read_connections(path: &Path) -> Result<Vec<StoredConnection>, String> {
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let data = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    serde_json::from_str(&data).map_err(|error| error.to_string())
-}
-
-fn write_connections(path: &Path, connections: &[StoredConnection]) -> Result<(), String> {
-    let data = serde_json::to_string_pretty(connections).map_err(|error| error.to_string())?;
-    fs::write(path, data).map_err(|error| error.to_string())
-}
-
-fn read_query_history(path: &Path) -> Result<Vec<QueryHistoryEntry>, String> {
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let data = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    if data.trim().is_empty() {
-        return Ok(vec![]);
-    }
-    // Be tolerant of corrupt files: a parse failure should not wipe the
-    // user's app state on boot. Log and start fresh.
-    match serde_json::from_str::<Vec<QueryHistoryEntry>>(&data) {
-        Ok(entries) => Ok(entries),
-        Err(error) => {
-            eprintln!("query_history.json is unreadable, ignoring: {error}");
-            Ok(vec![])
+    // One-time migration: lift any plaintext passwords from JSON into the
+    // keychain blob so a `git pull` on a working machine doesn't lose
+    // credentials. Hard-saves a single keychain write covering all of them.
+    let plaintext_set: Vec<CredentialUpdate<'_>> = entries
+        .iter()
+        .filter(|entry| !entry.password.is_empty())
+        .map(|entry| CredentialUpdate::Set {
+            id: entry.id.as_str(),
+            password: entry.password.as_str(),
+        })
+        .collect();
+    if !plaintext_set.is_empty() {
+        if let Err(error) = keychain::upsert_many(&plaintext_set) {
+            eprintln!("Failed to migrate plaintext passwords to keychain: {error}");
+        }
+        for entry in entries.iter_mut() {
+            entry.password.clear();
+        }
+        if let Err(error) = storage::write_connections(paths, &entries) {
+            eprintln!("Failed to clear plaintext from connections.json: {error}");
         }
     }
+
+    // Fill from the keychain (cached after first call).
+    for entry in entries.iter_mut() {
+        if entry.password.is_empty() {
+            if let Some(password) = keychain::get(&entry.id) {
+                entry.password = password;
+            }
+        }
+    }
+
+    Ok(entries)
 }
 
-fn write_query_history(path: &Path, entries: &[QueryHistoryEntry]) -> Result<(), String> {
-    let data = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
-    fs::write(path, data).map_err(|error| error.to_string())
+/// Persist the given connections: passwords go to the keychain blob, the
+/// rest goes to JSON with empty `password` fields. Existing keychain entries
+/// for connections outside this batch are preserved.
+fn write_connections_full(
+    paths: &Paths,
+    connections: &[StoredConnection],
+) -> Result<(), String> {
+    let updates: Vec<CredentialUpdate<'_>> = connections
+        .iter()
+        .map(|connection| {
+            if connection.password.is_empty() {
+                CredentialUpdate::Clear {
+                    id: connection.id.as_str(),
+                }
+            } else {
+                CredentialUpdate::Set {
+                    id: connection.id.as_str(),
+                    password: connection.password.as_str(),
+                }
+            }
+        })
+        .collect();
+    keychain::upsert_many(&updates)?;
+
+    let mut clean = connections.to_vec();
+    for entry in clean.iter_mut() {
+        entry.password.clear();
+    }
+    storage::write_connections(paths, &clean)
 }
 
-fn find_connection(app: &AppHandle, connection_id: &str) -> Result<StoredConnection, String> {
-    let path = connections_file(app)?;
-    let connections = read_connections(&path)?;
+fn find_connection(paths: &Paths, connection_id: &str) -> Result<StoredConnection, String> {
+    let connections = read_connections_full(paths)?;
     connections
         .into_iter()
         .find(|connection| connection.id == connection_id)
         .ok_or_else(|| "Connection not found".to_string())
+}
+
+/// Run `op` against a connection and bump its `lastActivityAt` on success.
+///
+/// Owns the contract from ADR-0004: every successful operation against a
+/// connection counts as activity. By making the bump a property of the
+/// helper rather than each command, new commands inherit the behaviour for
+/// free and can't quietly drift out of policy.
+///
+/// The bump only fires when `op` returns `Ok` — failed queries do not count
+/// as activity, so a connection that's unreachable doesn't appear "fresh".
+async fn with_active_connection<T, Fut>(
+    paths: &Paths,
+    connection_id: &str,
+    op: impl FnOnce(StoredConnection) -> Fut,
+) -> Result<T, String>
+where
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let connection = find_connection(paths, connection_id)?;
+    let result = op(connection).await?;
+    touch_connection_activity(paths, connection_id);
+    Ok(result)
+}
+
+/// Bump the `lastActivityAt` field on a connection record. Best-effort —
+/// failures are logged but never bubble up because activity tracking should
+/// not break the underlying operation.
+fn touch_connection_activity(paths: &Paths, connection_id: &str) {
+    // Reads the JSON layer only — we don't need passwords just to bump a
+    // timestamp, and avoiding the keychain hop keeps this hot path cheap.
+    let Ok(mut connections) = storage::read_connections(paths) else {
+        return;
+    };
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut changed = false;
+    for connection in connections.iter_mut() {
+        if connection.id == connection_id {
+            connection.last_activity_at = Some(now.clone());
+            changed = true;
+            break;
+        }
+    }
+    if changed {
+        if let Err(error) = storage::write_connections(paths, &connections) {
+            eprintln!("Failed to touch lastActivityAt: {error}");
+        }
+    }
 }
 
 fn should_fetch_rows(query: &str) -> bool {
@@ -949,28 +1024,40 @@ async fn fetch_schema_explorer_clickhouse(
     }])
 }
 
-async fn run_postgres_query(
-    connection: &StoredConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
+/// Open a `PgConnection` from a stored Connection record.
+///
+/// Owns the `host`/`user`/`database`/`port`/`password` field-mapping every
+/// PostgreSQL helper in this file used to repeat verbatim. Defaults the port
+/// to 5432 when the stored value is `0` (the sentinel we use for "use the
+/// engine default" — set when the user leaves the port field blank).
+///
+/// This is the single seam where future PG connection concerns plug in:
+/// pooling, TLS modes, statement timeouts, `application_name`, etc.
+async fn connect_postgres(connection: &StoredConnection) -> Result<PgConnection, String> {
     let mut options = PgConnectOptions::new()
         .host(&connection.host)
         .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
+        .database(&connection.database)
+        .port(if connection.port == 0 {
+            5432
+        } else {
+            connection.port
+        });
 
     if !connection.password.is_empty() {
         options = options.password(&connection.password);
     }
 
-    let mut conn = PgConnection::connect_with(&options)
+    PgConnection::connect_with(&options)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())
+}
+
+async fn run_postgres_query(
+    connection: &StoredConnection,
+    query: &str,
+) -> Result<QueryResult, String> {
+    let mut conn = connect_postgres(connection).await?;
     let start = Instant::now();
 
     if should_fetch_rows(query) {
@@ -1092,18 +1179,19 @@ async fn run_clickhouse_query(
 }
 
 #[tauri::command]
-async fn load_connections(app: AppHandle) -> Result<Vec<StoredConnection>, String> {
-    let path = connections_file(&app)?;
-    read_connections(&path)
+async fn load_connections(
+    paths: State<'_, Paths>,
+) -> Result<Vec<StoredConnection>, String> {
+    read_connections_full(paths.inner())
 }
 
 #[tauri::command]
 async fn save_connection(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     connection: StoredConnection,
 ) -> Result<Vec<StoredConnection>, String> {
-    let path = connections_file(&app)?;
-    let mut connections = read_connections(&path)?;
+    let paths = paths.inner();
+    let mut connections = read_connections_full(paths)?;
 
     if let Some(existing) = connections.iter_mut().find(|item| item.id == connection.id) {
         *existing = connection.clone();
@@ -1111,17 +1199,19 @@ async fn save_connection(
         connections.push(connection.clone());
     }
 
-    write_connections(&path, &connections)?;
-    Ok(connections)
+    write_connections_full(paths, &connections)?;
+    // Re-hydrate so the response has the keychain-backed passwords (and the
+    // cleaned shape) the caller will use to build subsequent payloads.
+    read_connections_full(paths)
 }
 
 #[tauri::command]
 async fn delete_connection(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: ConnectionPayload,
 ) -> Result<Vec<StoredConnection>, String> {
-    let path = connections_file(&app)?;
-    let mut connections = read_connections(&path)?;
+    let paths = paths.inner();
+    let mut connections = read_connections_full(paths)?;
 
     let initial_len = connections.len();
     connections.retain(|item| item.id != payload.connection_id);
@@ -1130,26 +1220,31 @@ async fn delete_connection(
         return Err(format!("Connection '{}' not found", payload.connection_id));
     }
 
-    write_connections(&path, &connections)?;
+    // Best-effort: remove the keychain entry too. If the keychain write fails
+    // we still want the JSON delete to land — the worst case is an orphan
+    // credential the user can clean up manually.
+    if let Err(error) = keychain::delete(&payload.connection_id) {
+        eprintln!(
+            "Failed to delete keychain entry for {}: {error}",
+            payload.connection_id
+        );
+    }
+
+    write_connections_full(paths, &connections)?;
     Ok(connections)
 }
 
-#[tauri::command]
-async fn connect_connection(
-    app: AppHandle,
-    payload: ConnectionPayload,
-) -> Result<ConnectResult, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
+async fn ping_connection(connection: &StoredConnection) -> Result<ConnectResult, String> {
     match connection.engine {
         DatabaseEngine::ClickHouse => {
-            let result = run_clickhouse_query(&connection, "SELECT 1").await?;
+            let result = run_clickhouse_query(connection, "SELECT 1").await?;
             Ok(ConnectResult {
                 latency_ms: result.runtime_ms,
             })
         }
         _ => {
             ensure_sqlx_drivers();
-            let dsn = sqlx_dsn(&connection)?;
+            let dsn = sqlx_dsn(connection)?;
             let start = Instant::now();
             let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
             let _connection = AnyConnection::connect_with(&options)
@@ -1163,24 +1258,89 @@ async fn connect_connection(
 }
 
 #[tauri::command]
-async fn load_schema_explorer(
-    app: AppHandle,
+async fn connect_connection(
+    paths: State<'_, Paths>,
     payload: ConnectionPayload,
-) -> Result<Vec<SchemaExplorer>, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::ClickHouse => fetch_schema_explorer_clickhouse(&connection).await,
-        _ => fetch_schema_explorer_sqlx(&connection).await,
+) -> Result<ConnectResult, String> {
+    with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
+        ping_connection(&connection).await
+    })
+    .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestConnectionPayload {
+    connection: StoredConnection,
+}
+
+/// Validate credentials without saving them. Used by the New Connection
+/// side panel's `Test Connection` button — connects, runs `SELECT 1`,
+/// disconnects, returns latency or surfaces the underlying driver error.
+#[tauri::command]
+async fn test_connection(payload: TestConnectionPayload) -> Result<ConnectResult, String> {
+    ping_connection(&payload.connection).await
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", tag = "state")]
+enum HealthCheckResult {
+    #[serde(rename = "healthy")]
+    Healthy { latency_ms: u64 },
+    #[serde(rename = "error")]
+    Error { error: String },
+}
+
+/// Periodic poll: returns "healthy" + latency or "error" + message. Designed
+/// for a frontend interval that fans out across all stored connections — the
+/// caller decides cadence and concurrency.
+/// Health check is a probe, not a use of the connection — we deliberately do
+/// NOT route through `with_active_connection` so a 30 s tick doesn't keep
+/// `lastActivityAt` artificially fresh.
+#[tauri::command]
+async fn health_check_connection(
+    paths: State<'_, Paths>,
+    payload: ConnectionPayload,
+) -> Result<HealthCheckResult, String> {
+    let connection = find_connection(paths.inner(), &payload.connection_id)?;
+    match ping_connection(&connection).await {
+        Ok(result) => Ok(HealthCheckResult::Healthy {
+            latency_ms: result.latency_ms,
+        }),
+        Err(error) => Ok(HealthCheckResult::Error { error }),
     }
 }
 
 #[tauri::command]
-async fn run_query(app: AppHandle, payload: RunQueryPayload) -> Result<QueryResult, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::ClickHouse => run_clickhouse_query(&connection, &payload.query).await,
-        _ => run_sqlx_query(&connection, &payload.query).await,
-    }
+async fn load_schema_explorer(
+    paths: State<'_, Paths>,
+    payload: ConnectionPayload,
+) -> Result<Vec<SchemaExplorer>, String> {
+    with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::ClickHouse => fetch_schema_explorer_clickhouse(&connection).await,
+            _ => fetch_schema_explorer_sqlx(&connection).await,
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+async fn run_query(
+    paths: State<'_, Paths>,
+    payload: RunQueryPayload,
+) -> Result<QueryResult, String> {
+    let RunQueryPayload {
+        connection_id,
+        query,
+    } = payload;
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::ClickHouse => run_clickhouse_query(&connection, &query).await,
+            _ => run_sqlx_query(&connection, &query).await,
+        }
+    })
+    .await
 }
 
 async fn run_engine_query(
@@ -1198,24 +1358,7 @@ async fn fetch_table_structure_postgres(
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
+    let mut conn = connect_postgres(connection).await?;
 
     // Primary key columns first so we can mark them on the columns list.
     let pk_rows = sqlx::query(
@@ -1539,22 +1682,24 @@ async fn fetch_table_structure_columns_only(
 
 #[tauri::command]
 async fn load_table_structure(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: LoadTableStructurePayload,
 ) -> Result<TableStructure, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            fetch_table_structure_postgres(&connection, &payload.schema, &payload.table).await
-        }
-        // For now, MySQL / SQLite / ClickHouse fall back to a columns-only
-        // probe; the UI surfaces the disabled sections via capabilities.
-        // Issue #2 ships PostgreSQL as the must-have engine; richer
-        // metadata for the others is a deliberate follow-up.
-        _ => {
-            // The fallback discovers columns via a `LIMIT 0` probe;
-            // surface a clear message if the engine cannot even do that.
-            fetch_table_structure_columns_only(&connection, &payload.schema, &payload.table)
+    let LoadTableStructurePayload {
+        connection_id,
+        schema,
+        table,
+    } = payload;
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => {
+                fetch_table_structure_postgres(&connection, &schema, &table).await
+            }
+            // For now, MySQL / SQLite / ClickHouse fall back to a columns-only
+            // probe; the UI surfaces the disabled sections via capabilities.
+            // Issue #2 ships PostgreSQL as the must-have engine; richer
+            // metadata for the others is a deliberate follow-up.
+            _ => fetch_table_structure_columns_only(&connection, &schema, &table)
                 .await
                 .map_err(|error| {
                     format!(
@@ -1562,33 +1707,17 @@ async fn load_table_structure(
                         engine_name(&connection.engine),
                         error
                     )
-                })
+                }),
         }
-    }
+    })
+    .await
 }
 
 async fn execute_ddl_postgres(
     connection: &StoredConnection,
     sql: &str,
 ) -> Result<ExecuteDdlResult, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
+    let mut conn = connect_postgres(connection).await?;
 
     let start = Instant::now();
 
@@ -1620,20 +1749,26 @@ async fn execute_ddl_postgres(
 
 #[tauri::command]
 async fn execute_ddl(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: ExecuteDdlPayload,
 ) -> Result<ExecuteDdlResult, String> {
-    if payload.sql.trim().is_empty() {
+    let ExecuteDdlPayload {
+        connection_id,
+        sql,
+    } = payload;
+    if sql.trim().is_empty() {
         return Err("DDL statement is empty".to_string());
     }
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => execute_ddl_postgres(&connection, &payload.sql).await,
-        _ => Err(format!(
-            "Structure commit is not supported for {} (PostgreSQL only)",
-            engine_name(&connection.engine)
-        )),
-    }
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => execute_ddl_postgres(&connection, &sql).await,
+            _ => Err(format!(
+                "Structure commit is not supported for {} (PostgreSQL only)",
+                engine_name(&connection.engine)
+            )),
+        }
+    })
+    .await
 }
 
 /// Build a parameterized UPDATE statement for a single edit.
@@ -1692,39 +1827,20 @@ async fn commit_cell_edits_postgres(
     table: &str,
     edits: &[CellEdit],
 ) -> Result<CommitCellEditsResult, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    use sqlx::Executor;
-    if let Err(error) = conn.execute("BEGIN").await {
-        return Err(error.to_string());
-    }
-
+    use sqlx::Connection;
+    let mut conn = connect_postgres(connection).await?;
+    // sqlx's `Transaction` rolls back automatically on drop, so any `?`
+    // return below acts as ROLLBACK without the manual clean-up that used to
+    // litter every error path.
+    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
     let start = Instant::now();
     let mut total_rows_affected: u64 = 0;
 
     for edit in edits {
         if edit.set.is_empty() {
-            let _ = conn.execute("ROLLBACK").await;
             return Err("edit has no SET columns".to_string());
         }
         if edit.identity.is_empty() {
-            let _ = conn.execute("ROLLBACK").await;
             return Err("edit has no identity columns".to_string());
         }
         let (sql, params) = build_update_statement(schema, table, &edit.set, &edit.identity);
@@ -1732,38 +1848,24 @@ async fn commit_cell_edits_postgres(
         for param in &params {
             query = query.bind(param.as_deref());
         }
-        match query.execute(&mut conn).await {
-            Ok(result) => {
-                let affected = result.rows_affected();
-                if affected == 0 {
-                    let _ = conn.execute("ROLLBACK").await;
-                    let identity_desc = edit
-                        .identity
-                        .iter()
-                        .map(|kv| {
-                            format!(
-                                "{}={}",
-                                kv.column,
-                                kv.value.as_deref().unwrap_or("NULL")
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return Err(format!("row not found: {}", identity_desc));
-                }
-                total_rows_affected += affected;
-            }
-            Err(error) => {
-                let _ = conn.execute("ROLLBACK").await;
-                return Err(error.to_string());
-            }
+        let result = query
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+        let affected = result.rows_affected();
+        if affected == 0 {
+            let identity_desc = edit
+                .identity
+                .iter()
+                .map(|kv| format!("{}={}", kv.column, kv.value.as_deref().unwrap_or("NULL")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!("row not found: {}", identity_desc));
         }
+        total_rows_affected += affected;
     }
 
-    if let Err(error) = conn.execute("COMMIT").await {
-        let _ = conn.execute("ROLLBACK").await;
-        return Err(error.to_string());
-    }
+    tx.commit().await.map_err(|error| error.to_string())?;
 
     Ok(CommitCellEditsResult {
         rows_affected: total_rows_affected,
@@ -1773,28 +1875,30 @@ async fn commit_cell_edits_postgres(
 
 #[tauri::command]
 async fn commit_cell_edits(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: CommitCellEditsPayload,
 ) -> Result<CommitCellEditsResult, String> {
-    if payload.edits.is_empty() {
+    let CommitCellEditsPayload {
+        connection_id,
+        schema,
+        table,
+        edits,
+    } = payload;
+    if edits.is_empty() {
         return Err("no edits to commit".to_string());
     }
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            commit_cell_edits_postgres(
-                &connection,
-                &payload.schema,
-                &payload.table,
-                &payload.edits,
-            )
-            .await
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => {
+                commit_cell_edits_postgres(&connection, &schema, &table, &edits).await
+            }
+            _ => Err(format!(
+                "Cell edit commit is not supported for {} (PostgreSQL only)",
+                engine_name(&connection.engine)
+            )),
         }
-        _ => Err(format!(
-            "Cell edit commit is not supported for {} (PostgreSQL only)",
-            engine_name(&connection.engine)
-        )),
-    }
+    })
+    .await
 }
 
 fn build_insert_statement(
@@ -1831,47 +1935,23 @@ async fn insert_row_postgres(
     table: &str,
     values: &[CellEditKeyValue],
 ) -> Result<InsertRowResult, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    use sqlx::Executor;
-    if let Err(error) = conn.execute("BEGIN").await {
-        return Err(error.to_string());
-    }
-
+    use sqlx::Connection;
+    let mut conn = connect_postgres(connection).await?;
+    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
     let start = Instant::now();
+
     let (sql, params) = build_insert_statement(schema, table, values);
     let mut query = sqlx::query(&sql);
     for param in &params {
         query = query.bind(param.as_deref());
     }
-    let rows_affected = match query.execute(&mut conn).await {
-        Ok(result) => result.rows_affected(),
-        Err(error) => {
-            let _ = conn.execute("ROLLBACK").await;
-            return Err(error.to_string());
-        }
-    };
+    let rows_affected = query
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?
+        .rows_affected();
 
-    if let Err(error) = conn.execute("COMMIT").await {
-        let _ = conn.execute("ROLLBACK").await;
-        return Err(error.to_string());
-    }
+    tx.commit().await.map_err(|error| error.to_string())?;
 
     Ok(InsertRowResult {
         rows_affected,
@@ -1881,28 +1961,30 @@ async fn insert_row_postgres(
 
 #[tauri::command]
 async fn insert_row(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: InsertRowPayload,
 ) -> Result<InsertRowResult, String> {
-    if payload.values.is_empty() {
+    let InsertRowPayload {
+        connection_id,
+        schema,
+        table,
+        values,
+    } = payload;
+    if values.is_empty() {
         return Err("no values provided".to_string());
     }
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            insert_row_postgres(
-                &connection,
-                &payload.schema,
-                &payload.table,
-                &payload.values,
-            )
-            .await
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => {
+                insert_row_postgres(&connection, &schema, &table, &values).await
+            }
+            _ => Err(format!(
+                "Insert row is not supported for {} (PostgreSQL only)",
+                engine_name(&connection.engine)
+            )),
         }
-        _ => Err(format!(
-            "Insert row is not supported for {} (PostgreSQL only)",
-            engine_name(&connection.engine)
-        )),
-    }
+    })
+    .await
 }
 
 fn build_delete_statement(
@@ -1939,35 +2021,14 @@ async fn delete_rows_postgres(
     table: &str,
     rows: &[Vec<CellEditKeyValue>],
 ) -> Result<DeleteRowsResult, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    use sqlx::Executor;
-    if let Err(error) = conn.execute("BEGIN").await {
-        return Err(error.to_string());
-    }
-
+    use sqlx::Connection;
+    let mut conn = connect_postgres(connection).await?;
+    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
     let start = Instant::now();
     let mut total_rows_affected: u64 = 0;
 
     for identity in rows {
         if identity.is_empty() {
-            let _ = conn.execute("ROLLBACK").await;
             return Err("missing identity".to_string());
         }
         let (sql, params) = build_delete_statement(schema, table, identity);
@@ -1975,37 +2036,23 @@ async fn delete_rows_postgres(
         for param in &params {
             query = query.bind(param.as_deref());
         }
-        match query.execute(&mut conn).await {
-            Ok(result) => {
-                let affected = result.rows_affected();
-                if affected == 0 {
-                    let _ = conn.execute("ROLLBACK").await;
-                    let identity_desc = identity
-                        .iter()
-                        .map(|kv| {
-                            format!(
-                                "{}={}",
-                                kv.column,
-                                kv.value.as_deref().unwrap_or("NULL")
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return Err(format!("row not found: {}", identity_desc));
-                }
-                total_rows_affected += affected;
-            }
-            Err(error) => {
-                let _ = conn.execute("ROLLBACK").await;
-                return Err(error.to_string());
-            }
+        let result = query
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+        let affected = result.rows_affected();
+        if affected == 0 {
+            let identity_desc = identity
+                .iter()
+                .map(|kv| format!("{}={}", kv.column, kv.value.as_deref().unwrap_or("NULL")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!("row not found: {}", identity_desc));
         }
+        total_rows_affected += affected;
     }
 
-    if let Err(error) = conn.execute("COMMIT").await {
-        let _ = conn.execute("ROLLBACK").await;
-        return Err(error.to_string());
-    }
+    tx.commit().await.map_err(|error| error.to_string())?;
 
     Ok(DeleteRowsResult {
         rows_affected: total_rows_affected,
@@ -2015,52 +2062,37 @@ async fn delete_rows_postgres(
 
 #[tauri::command]
 async fn delete_rows(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: DeleteRowsPayload,
 ) -> Result<DeleteRowsResult, String> {
-    if payload.rows.is_empty() {
+    let DeleteRowsPayload {
+        connection_id,
+        schema,
+        table,
+        rows,
+    } = payload;
+    if rows.is_empty() {
         return Err("no rows provided".to_string());
     }
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            delete_rows_postgres(
-                &connection,
-                &payload.schema,
-                &payload.table,
-                &payload.rows,
-            )
-            .await
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => {
+                delete_rows_postgres(&connection, &schema, &table, &rows).await
+            }
+            _ => Err(format!(
+                "Delete rows is not supported for {} (PostgreSQL only)",
+                engine_name(&connection.engine)
+            )),
         }
-        _ => Err(format!(
-            "Delete rows is not supported for {} (PostgreSQL only)",
-            engine_name(&connection.engine)
-        )),
-    }
+    })
+    .await
 }
 
 async fn fetch_schema_relationships_postgres(
     connection: &StoredConnection,
     schema: &str,
 ) -> Result<SchemaRelationships, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
-
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
+    let mut conn = connect_postgres(connection).await?;
 
     // Tables in the requested schema. Views are intentionally excluded.
     let table_rows = sqlx::query(
@@ -2203,57 +2235,59 @@ async fn fetch_schema_relationships_postgres(
 
 #[tauri::command]
 async fn load_schema_relationships(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: LoadSchemaRelationshipsPayload,
 ) -> Result<SchemaRelationships, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            fetch_schema_relationships_postgres(&connection, &payload.schema).await
+    let LoadSchemaRelationshipsPayload {
+        connection_id,
+        schema,
+    } = payload;
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => {
+                fetch_schema_relationships_postgres(&connection, &schema).await
+            }
+            // Other engines are a deliberate v1 follow-up. Returning empty
+            // collections keeps the UI usable (nothing to render) while
+            // signalling clearly that the engine is unsupported via the missing
+            // data, rather than producing a hard error and breaking the panel.
+            _ => Ok(SchemaRelationships {
+                tables: Vec::new(),
+                foreign_keys: Vec::new(),
+            }),
         }
-        // Other engines are a deliberate v1 follow-up. Returning empty
-        // collections keeps the UI usable (nothing to render) while
-        // signalling clearly that the engine is unsupported via the missing
-        // data, rather than producing a hard error and breaking the panel.
-        _ => Ok(SchemaRelationships {
-            tables: Vec::new(),
-            foreign_keys: Vec::new(),
-        }),
-    }
+    })
+    .await
 }
 
 async fn load_database_overview_stats_postgres(
     connection: &StoredConnection,
 ) -> Result<DatabaseOverviewStats, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database);
+    let mut conn = connect_postgres(connection).await?;
 
-    if connection.port != 0 {
-        options = options.port(connection.port);
-    } else {
-        options = options.port(5432);
-    }
-
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    let mut conn = PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())?;
-
+    // Single round trip: aggregate everything we display on the overview.
+    // `row_count_estimate` is the planner's reltuples estimate (cheap and
+    // good enough for the dashboard); precise counts would require per-table
+    // SELECT count(*) which can be expensive on large databases.
     let row = sqlx::query(
         r#"
-        SELECT pg_database_size(current_database())::bigint AS database_size_bytes,
-               COALESCE(SUM(pg_table_size(c.oid)), 0)::bigint AS table_size_bytes,
-               COALESCE(SUM(pg_indexes_size(c.oid)), 0)::bigint AS index_size_bytes
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relkind IN ('r', 'p')
-          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-          AND n.nspname NOT LIKE 'pg_toast%'
+        WITH user_relations AS (
+            SELECT c.oid, c.relkind, c.reltuples, n.nspname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+              AND n.nspname NOT LIKE 'pg_toast%'
+        )
+        SELECT
+            pg_database_size(current_database())::bigint AS database_size_bytes,
+            COALESCE(SUM(pg_table_size(oid)) FILTER (WHERE relkind IN ('r', 'p')), 0)::bigint AS table_size_bytes,
+            COALESCE(SUM(pg_indexes_size(oid)) FILTER (WHERE relkind IN ('r', 'p')), 0)::bigint AS index_size_bytes,
+            COUNT(*) FILTER (WHERE relkind IN ('r', 'p'))::bigint AS table_count,
+            COUNT(DISTINCT nspname)::bigint AS schema_count,
+            COALESCE(SUM(GREATEST(reltuples, 0)::bigint) FILTER (WHERE relkind IN ('r', 'p')), 0)::bigint AS row_count_estimate,
+            COUNT(*) FILTER (WHERE relkind = 'i')::bigint AS index_count,
+            (SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database())::bigint AS connection_count
+        FROM user_relations
         "#,
     )
     .fetch_one(&mut conn)
@@ -2264,72 +2298,88 @@ async fn load_database_overview_stats_postgres(
         database_size_bytes: row.try_get("database_size_bytes").unwrap_or(0),
         table_size_bytes: row.try_get("table_size_bytes").unwrap_or(0),
         index_size_bytes: row.try_get("index_size_bytes").unwrap_or(0),
+        table_count: row.try_get("table_count").unwrap_or(0),
+        schema_count: row.try_get("schema_count").unwrap_or(0),
+        row_count_estimate: row.try_get("row_count_estimate").unwrap_or(0),
+        index_count: row.try_get("index_count").unwrap_or(0),
+        connection_count: row.try_get("connection_count").unwrap_or(0),
     })
 }
 
 #[tauri::command]
 async fn load_database_overview_stats(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: LoadDatabaseOverviewStatsPayload,
 ) -> Result<DatabaseOverviewStats, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => load_database_overview_stats_postgres(&connection).await,
-        _ => Err(format!(
-            "Database size stats are not supported for {} (PostgreSQL only)",
-            engine_name(&connection.engine)
-        )),
-    }
+    with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
+        match connection.engine {
+            DatabaseEngine::PostgreSQL => {
+                load_database_overview_stats_postgres(&connection).await
+            }
+            _ => Err(format!(
+                "Database size stats are not supported for {} (PostgreSQL only)",
+                engine_name(&connection.engine)
+            )),
+        }
+    })
+    .await
 }
 
 #[tauri::command]
 async fn load_table_data(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     payload: LoadTableDataPayload,
 ) -> Result<TableDataResult, String> {
-    let connection = find_connection(&app, &payload.connection_id)?;
-    let page = payload.page.unwrap_or(1).max(1);
-    let page_size = payload
-        .page_size
+    let LoadTableDataPayload {
+        connection_id,
+        schema,
+        table,
+        page,
+        page_size,
+    } = payload;
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size
         .unwrap_or(DEFAULT_TABLE_PAGE_SIZE)
         .clamp(1, MAX_TABLE_PAGE_SIZE);
     let offset = (page - 1) as u64 * page_size as u64;
 
-    let qualified = qualified_table_name(&connection.engine, &payload.schema, &payload.table);
+    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+        let qualified = qualified_table_name(&connection.engine, &schema, &table);
 
-    // SELECT with LIMIT/OFFSET works for all four supported engines
-    // (PostgreSQL, MySQL, SQLite, ClickHouse).
-    let select_query = format!(
-        "SELECT * FROM {} LIMIT {} OFFSET {}",
-        qualified, page_size, offset
-    );
+        // SELECT with LIMIT/OFFSET works for all four supported engines
+        // (PostgreSQL, MySQL, SQLite, ClickHouse).
+        let select_query = format!(
+            "SELECT * FROM {} LIMIT {} OFFSET {}",
+            qualified, page_size, offset
+        );
 
-    let select_result = run_engine_query(&connection, &select_query).await?;
+        let select_result = run_engine_query(&connection, &select_query).await?;
 
-    // Best-effort COUNT(*) — never fail the call if the count fails.
-    let count_query = format!("SELECT COUNT(*) FROM {}", qualified);
-    let total_rows = match run_engine_query(&connection, &count_query).await {
-        Ok(result) => parse_total_rows(&result),
-        Err(_) => None,
-    };
+        // Best-effort COUNT(*) — never fail the call if the count fails.
+        let count_query = format!("SELECT COUNT(*) FROM {}", qualified);
+        let total_rows = match run_engine_query(&connection, &count_query).await {
+            Ok(result) => parse_total_rows(&result),
+            Err(_) => None,
+        };
 
-    Ok(TableDataResult {
-        columns: select_result.columns,
-        rows: select_result.rows,
-        page,
-        page_size,
-        total_rows,
-        runtime_ms: select_result.runtime_ms,
+        Ok(TableDataResult {
+            columns: select_result.columns,
+            rows: select_result.rows,
+            page,
+            page_size,
+            total_rows,
+            runtime_ms: select_result.runtime_ms,
+        })
     })
+    .await
 }
 
 #[tauri::command]
 async fn load_query_history(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     limit: Option<u32>,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    let path = query_history_file(&app)?;
-    let mut entries = read_query_history(&path)?;
+    let mut entries = storage::read_query_history(paths.inner());
     if let Some(limit) = limit {
         entries.truncate(limit as usize);
     }
@@ -2338,24 +2388,88 @@ async fn load_query_history(
 
 #[tauri::command]
 async fn append_query_history(
-    app: AppHandle,
+    paths: State<'_, Paths>,
     entry: QueryHistoryEntry,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    let path = query_history_file(&app)?;
-    let mut entries = read_query_history(&path)?;
+    let paths = paths.inner();
+    let mut entries = storage::read_query_history(paths);
     // Newest first; cap to MAX_QUERY_HISTORY.
     entries.insert(0, entry);
     if entries.len() > MAX_QUERY_HISTORY {
         entries.truncate(MAX_QUERY_HISTORY);
     }
-    write_query_history(&path, &entries)?;
+    storage::write_query_history(paths, &entries)?;
     Ok(entries)
 }
 
 #[tauri::command]
-async fn clear_query_history(app: AppHandle) -> Result<(), String> {
-    let path = query_history_file(&app)?;
-    write_query_history(&path, &[])
+async fn clear_query_history(paths: State<'_, Paths>) -> Result<(), String> {
+    storage::write_query_history(paths.inner(), &[])
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SavedQuery {
+    id: String,
+    name: String,
+    body: String,
+    /// `None` = saved query is not pinned to a specific connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connection_id: Option<String>,
+    #[serde(default)]
+    is_favorite: bool,
+    /// Reserved for future cloud-sync. Local-only writes leave this empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[tauri::command]
+async fn load_saved_queries(
+    paths: State<'_, Paths>,
+) -> Result<Vec<SavedQuery>, String> {
+    Ok(storage::read_saved_queries(paths.inner()))
+}
+
+/// Insert or update by `id` (idempotent). Bumps `updatedAt` automatically;
+/// callers leave that field as the previous value.
+#[tauri::command]
+async fn save_saved_query(
+    paths: State<'_, Paths>,
+    query: SavedQuery,
+) -> Result<Vec<SavedQuery>, String> {
+    let paths = paths.inner();
+    let mut entries = storage::read_saved_queries(paths);
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut next = query.clone();
+    next.updated_at = now.clone();
+    if let Some(existing) = entries.iter_mut().find(|entry| entry.id == query.id) {
+        *existing = next;
+    } else {
+        next.created_at = now;
+        entries.push(next);
+    }
+    storage::write_saved_queries(paths, &entries)?;
+    Ok(entries)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteSavedQueryPayload {
+    id: String,
+}
+
+#[tauri::command]
+async fn delete_saved_query(
+    paths: State<'_, Paths>,
+    payload: DeleteSavedQueryPayload,
+) -> Result<Vec<SavedQuery>, String> {
+    let paths = paths.inner();
+    let mut entries = storage::read_saved_queries(paths);
+    entries.retain(|entry| entry.id != payload.id);
+    storage::write_saved_queries(paths, &entries)?;
+    Ok(entries)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2363,11 +2477,23 @@ pub fn run() {
     ensure_sqlx_drivers();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            // Resolve and register the on-disk paths once. Every command
+            // reaches the JSON layer via `tauri::State<Paths>` rather than
+            // re-resolving from `AppHandle` on each invocation, which keeps
+            // the persistence layer testable in pure Rust.
+            let paths = Paths::from_app(&app.handle())
+                .map_err(|error| format!("Failed to resolve config dir: {error}"))?;
+            app.manage(paths);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             load_connections,
             save_connection,
             delete_connection,
             connect_connection,
+            test_connection,
+            health_check_connection,
             load_schema_explorer,
             load_schema_relationships,
             load_database_overview_stats,
@@ -2380,7 +2506,10 @@ pub fn run() {
             delete_rows,
             load_query_history,
             append_query_history,
-            clear_query_history
+            clear_query_history,
+            load_saved_queries,
+            save_saved_query,
+            delete_saved_query
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
