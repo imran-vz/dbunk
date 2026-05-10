@@ -19,21 +19,7 @@ const sampleRows = [
 ];
 
 const openMoreMenu = () => {
-  // The grid's "more" trigger is the only icon button without an aria label —
-  // grab it by the icon's data-slot path. The base-ui menu portals the popup
-  // into the body so we click the trigger to expose the menu items.
-  const triggers = screen.getAllByRole("button");
-  // The dots trigger is the last button with no accessible name in the
-  // toolbar. Find it by its empty aria-label/text and presence of an svg.
-  const trigger = triggers.find(
-    (btn) =>
-      btn.getAttribute("aria-haspopup") === "menu" &&
-      btn.querySelector("svg.tabler-icon-dots") !== null,
-  );
-  if (!trigger) {
-    throw new Error("could not find more-actions trigger");
-  }
-  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: /export/i }));
 };
 
 const findMenuItem = (label: RegExp): HTMLElement => {
@@ -217,5 +203,31 @@ describe("DataGrid read-only mode", () => {
       name: /saving|save changes/i,
     }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
+  });
+});
+
+describe("DataGrid cell display", () => {
+  it("limits long text previews while editing the full value", () => {
+    const longValue =
+      "This address is intentionally longer than fifty characters for display testing.";
+    const preview = longValue.slice(0, 50);
+
+    render(
+      <DataGrid
+        data={[["1", longValue]]}
+        columns={sampleColumns}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const cell = screen.getByRole("button", { name: preview });
+    expect(cell.textContent).toBe(preview);
+    expect(screen.queryByText(longValue)).toBeNull();
+    expect(cell.getAttribute("title")).toBe(longValue);
+
+    fireEvent.click(cell);
+
+    const input = screen.getByDisplayValue(longValue) as HTMLInputElement;
+    expect(input.value).toBe(longValue);
   });
 });

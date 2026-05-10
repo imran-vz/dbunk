@@ -1,6 +1,7 @@
 import {
   IconAlertTriangle,
   IconCheck,
+  IconColumns3,
   IconKey,
   IconLink,
   IconPlus,
@@ -134,7 +135,7 @@ export function TableStructureView({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden bg-background",
+        "flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]",
         className,
       )}
     >
@@ -162,21 +163,28 @@ export function TableStructureView({
           </Button>
         </div>
       ) : null}
-      <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-8">
-          <header className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{schema}</span>
-              <span>·</span>
-              <span>{tableName}</span>
+      <div className="flex-1 overflow-auto p-5">
+        <div className="mx-auto max-w-5xl space-y-5">
+          <header className="flex items-center justify-between gap-3 rounded-md border border-white/8 bg-white/[0.025] px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10">
+                <IconColumns3 className="size-4 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{schema}</span>
+                  <span>·</span>
+                  <span>{tableName}</span>
+                </div>
+                <h2 className="truncate font-mono text-base font-semibold text-foreground">
+                  {tableName}
+                </h2>
+              </div>
             </div>
-            <h2 className="font-mono text-lg font-semibold text-foreground">
-              {tableName}
-            </h2>
             {structure?.primaryKey && structure.primaryKey.length > 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Primary key: {structure.primaryKey.join(", ")}
-              </p>
+              <Badge variant="secondary" className="h-6 text-[0.625rem]">
+                PK {structure.primaryKey.join(", ")}
+              </Badge>
             ) : null}
           </header>
 
@@ -271,7 +279,7 @@ function ColumnsSection({
       {columns.length === 0 ? (
         <EmptyRow>No columns reported by the database.</EmptyRow>
       ) : (
-        <div className="divide-y divide-border/50">
+        <div className="divide-y divide-white/8">
           {columns.map((column) => (
             <ColumnRow
               key={column.name}
@@ -310,10 +318,10 @@ function ColumnRow({
   return (
     <div
       data-testid={`structure-column-${column.name}`}
-      className="px-4 py-3 text-sm"
+      className="px-4 py-3 text-sm transition hover:bg-white/[0.025]"
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1fr)_auto] items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="text-xs tabular-nums text-muted-foreground">
             {column.ordinalPosition}
           </span>
@@ -329,7 +337,7 @@ function ColumnRow({
             </Badge>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-blue-400">
             {column.dataType}
           </span>
@@ -362,7 +370,7 @@ function ColumnRow({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 min-w-0 text-xs text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           {column.defaultValue ? (
             <span
               className="font-mono"
@@ -406,7 +414,7 @@ function ColumnRow({
       {editable && editing ? (
         <div
           data-testid={`structure-edit-row-${column.name}`}
-          className="mt-3 grid gap-2 rounded-md border border-border/50 bg-muted/20 p-3 sm:grid-cols-3"
+          className="mt-3 grid gap-2 rounded-md border border-white/8 bg-[#0b1014] p-3 sm:grid-cols-3"
         >
           <div className="flex flex-col gap-1">
             <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
@@ -541,7 +549,7 @@ function AddColumnForm({
   return (
     <div
       data-testid="structure-add-column-form"
-      className="flex flex-wrap items-center gap-2 border-b border-border/50 bg-muted/20 px-4 py-3 text-sm"
+      className="flex flex-wrap items-center gap-2 border-b border-white/8 bg-[#0b1014] px-4 py-3 text-sm"
     >
       <Input
         data-testid="structure-add-column-name"
@@ -678,7 +686,7 @@ function PendingChangesSection({
       {pending.length === 0 ? (
         <EmptyRow>No pending changes.</EmptyRow>
       ) : (
-        <ul className="divide-y divide-border/50">
+        <ul className="divide-y divide-white/8">
           {pending.map((entry) => (
             <li
               key={entry.id}
@@ -705,7 +713,7 @@ function PendingChangesSection({
       {showPreview && previewSql ? (
         <pre
           data-testid="structure-sql-preview"
-          className="overflow-x-auto whitespace-pre-wrap border-t border-border/50 bg-muted/30 px-4 py-3 font-mono text-xs text-foreground"
+          className="overflow-x-auto whitespace-pre-wrap border-t border-white/8 bg-[#05090c] px-4 py-3 font-mono text-xs text-foreground"
         >
           {previewSql}
         </pre>
@@ -723,7 +731,7 @@ function PendingChangesSection({
       {successRuntime !== null && successRuntime !== undefined ? (
         <div
           data-testid="structure-commit-success"
-          className="border-t border-border/50 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-400"
+          className="border-t border-white/8 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-400"
         >
           Committed in {successRuntime} ms.
         </div>
@@ -775,7 +783,7 @@ function ForeignKeysSection({
       ) : foreignKeys.length === 0 ? (
         <EmptyRow>No foreign keys defined.</EmptyRow>
       ) : (
-        <div className="divide-y divide-border/50">
+        <div className="divide-y divide-white/8">
           {foreignKeys.map((fk) => (
             <div
               key={fk.name}
@@ -824,7 +832,7 @@ function IndexesSection({
       ) : indexes.length === 0 ? (
         <EmptyRow>No indexes defined.</EmptyRow>
       ) : (
-        <div className="divide-y divide-border/50">
+        <div className="divide-y divide-white/8">
           {indexes.map((index) => (
             <div
               key={index.name}
@@ -876,7 +884,7 @@ function ConstraintsSection({
       ) : constraints.length === 0 ? (
         <EmptyRow>No additional constraints defined.</EmptyRow>
       ) : (
-        <div className="divide-y divide-border/50">
+        <div className="divide-y divide-white/8">
           {constraints.map((constraint) => (
             <div
               key={constraint.name}
@@ -920,7 +928,7 @@ function Section({
         </h3>
         {action ? <div>{action}</div> : null}
       </div>
-      <div className="overflow-hidden rounded-lg border border-border/50 bg-card/50">
+      <div className="overflow-hidden rounded-md border border-white/8 bg-white/[0.025]">
         {children}
       </div>
     </section>

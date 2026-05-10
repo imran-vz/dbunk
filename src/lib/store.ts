@@ -38,6 +38,8 @@ export type StoredConnection = {
   user: string;
   password: string;
   role: string;
+  /** ISO-8601 timestamp of the most recent successful query/connect. */
+  lastActivityAt?: string;
 };
 
 export type Connection = {
@@ -53,6 +55,8 @@ export type Connection = {
   role: string;
   latency: string;
   lastSync: string;
+  /** ISO-8601 timestamp of the most recent successful query/connect. */
+  lastActivityAt?: string;
   errorMessage?: string;
 };
 
@@ -221,6 +225,11 @@ export type DatabaseOverviewStats = {
   databaseSizeBytes: number;
   tableSizeBytes: number;
   indexSizeBytes: number;
+  tableCount: number;
+  schemaCount: number;
+  rowCountEstimate: number;
+  indexCount: number;
+  connectionCount: number;
 };
 
 export type DatabaseOverviewStatsStatus =
@@ -259,6 +268,7 @@ const toStoredConnection = (connection: Connection): StoredConnection => ({
   user: connection.user,
   password: connection.password,
   role: connection.role,
+  lastActivityAt: connection.lastActivityAt,
 });
 
 const applyConnectionUpdate = (
@@ -275,6 +285,25 @@ export type SchemaExplorer = {
   tables: string[];
   views?: string[];
 };
+
+export type SavedQuery = {
+  id: string;
+  name: string;
+  body: string;
+  /** `null` = saved query is not pinned to a specific connection. */
+  connectionId: string | null;
+  isFavorite: boolean;
+  /** Reserved for future cloud-sync. Local writes leave this null. */
+  ownerId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedQueriesStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
 
 export type QueryHistoryEntry = {
   id: string;
@@ -360,6 +389,8 @@ interface AppState {
   databaseOverviewStats: Record<string, DatabaseOverviewStats>;
   databaseOverviewStatsStatus: Record<string, DatabaseOverviewStatsStatus>;
   queryHistory: QueryHistoryEntry[];
+  savedQueries: SavedQuery[];
+  savedQueriesStatus: SavedQueriesStatus;
   editorTheme: string;
   selectedRowIndex: number;
 
@@ -435,11 +466,32 @@ interface AppState {
   commitStructureChanges: (key: string) => Promise<void>;
   loadConnections: () => Promise<void>;
   loadQueryHistory: () => Promise<void>;
+  loadSavedQueries: () => Promise<void>;
+  saveSavedQuery: (
+    query: Omit<SavedQuery, "createdAt" | "updatedAt"> &
+      Partial<Pick<SavedQuery, "createdAt" | "updatedAt">>,
+  ) => Promise<void>;
+  deleteSavedQuery: (id: string) => Promise<void>;
   reopenHistoryEntry: (entry: QueryHistoryEntry) => void;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
+  testConnection: (
+    connection: Pick<
+      StoredConnection,
+      | "id"
+      | "name"
+      | "database"
+      | "engine"
+      | "host"
+      | "port"
+      | "user"
+      | "password"
+      | "role"
+    >,
+  ) => Promise<{ ok: true; latencyMs: number } | { ok: false; error: string }>;
+  runHealthChecks: () => Promise<void>;
   updateQuery: (tabId: string, query: string) => void;
   runQuery: (
     tabId: string,
@@ -519,6 +571,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   databaseOverviewStats: initialDatabaseOverviewStats,
   databaseOverviewStatsStatus: initialDatabaseOverviewStatsStatus,
   queryHistory: initialQueryHistory,
+  savedQueries: [],
+  savedQueriesStatus: { state: "idle" },
   editorTheme: "vs",
   selectedRowIndex: 0,
 
@@ -547,9 +601,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       queryEdits: {
         ...state.queryEdits,
         [tabId]: {
-          ...(state.queryEdits[tabId] ?? {}),
+          ...state.queryEdits[tabId],
           [rowIndex]: {
-            ...(state.queryEdits[tabId]?.[rowIndex] ?? {}),
+            ...state.queryEdits[tabId]?.[rowIndex],
             [colIndex]: value,
           },
         },
@@ -567,9 +621,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       tableEdits: {
         ...state.tableEdits,
         [tableName]: {
-          ...(state.tableEdits[tableName] ?? {}),
+          ...state.tableEdits[tableName],
           [rowIndex]: {
-            ...(state.tableEdits[tableName]?.[rowIndex] ?? {}),
+            ...state.tableEdits[tableName]?.[rowIndex],
             [colIndex]: value,
           },
         },
@@ -1465,6 +1519,74 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  loadSavedQueries: async () => {
+    if (!isTauri()) {
+      set({ savedQueriesStatus: { state: "success" } });
+      return;
+    }
+    set({ savedQueriesStatus: { state: "loading" } });
+    try {
+      const stored = await tauriInvoke<SavedQuery[]>("load_saved_queries");
+      set({ savedQueries: stored, savedQueriesStatus: { state: "success" } });
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load saved queries", error);
+      set({
+        savedQueriesStatus: { state: "error", error: message },
+      });
+    }
+  },
+
+  saveSavedQuery: async (input) => {
+    const now = new Date().toISOString();
+    // Backend rewrites updatedAt; we send a placeholder. createdAt is filled
+    // server-side on insert.
+    const payload: SavedQuery = {
+      id: input.id,
+      name: input.name,
+      body: input.body,
+      connectionId: input.connectionId,
+      isFavorite: input.isFavorite,
+      ownerId: input.ownerId ?? null,
+      createdAt: input.createdAt ?? now,
+      updatedAt: input.updatedAt ?? now,
+    };
+    if (!isTauri()) {
+      set((state) => ({
+        savedQueries: [
+          payload,
+          ...state.savedQueries.filter((q) => q.id !== payload.id),
+        ],
+      }));
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<SavedQuery[]>("save_saved_query", {
+        query: payload,
+      });
+      set({ savedQueries: stored });
+    } catch (error) {
+      console.error("Failed to save saved query", error);
+    }
+  },
+
+  deleteSavedQuery: async (id) => {
+    if (!isTauri()) {
+      set((state) => ({
+        savedQueries: state.savedQueries.filter((q) => q.id !== id),
+      }));
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<SavedQuery[]>("delete_saved_query", {
+        payload: { id },
+      });
+      set({ savedQueries: stored });
+    } catch (error) {
+      console.error("Failed to delete saved query", error);
+    }
+  },
+
   reopenHistoryEntry: (entry) => {
     const state = get();
     set({
@@ -1612,6 +1734,92 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  testConnection: async (connection) => {
+    if (!isTauri()) {
+      // In dev/storybook mode we can't actually connect — pretend it
+      // succeeded so the UI flow stays exercised.
+      return { ok: true, latencyMs: 0 };
+    }
+    try {
+      const result = await tauriInvoke<ConnectResult>("test_connection", {
+        payload: {
+          connection: {
+            id: connection.id,
+            name: connection.name,
+            database: connection.database,
+            engine: connection.engine,
+            host: connection.host,
+            port: connection.port,
+            user: connection.user,
+            password: connection.password,
+            role: connection.role,
+          },
+        },
+      });
+      return { ok: true, latencyMs: result.latencyMs };
+    } catch (error) {
+      return { ok: false, error: errorToMessage(error) };
+    }
+  },
+
+  runHealthChecks: async () => {
+    if (!isTauri()) {
+      return;
+    }
+    const connectionIds = get().connections.map((c) => c.id);
+    if (connectionIds.length === 0) {
+      return;
+    }
+    // Fan out in parallel; per-connection failures are local and shouldn't
+    // block siblings.
+    const results = await Promise.all(
+      connectionIds.map(async (connectionId) => {
+        try {
+          const result = await tauriInvoke<
+            | { state: "healthy"; latencyMs: number }
+            | { state: "error"; error: string }
+          >("health_check_connection", {
+            payload: { connectionId },
+          });
+          return { connectionId, result };
+        } catch (error) {
+          return {
+            connectionId,
+            result: {
+              state: "error" as const,
+              error: errorToMessage(error),
+            },
+          };
+        }
+      }),
+    );
+    set((state) => {
+      const next = state.connections.map((connection) => {
+        const found = results.find((r) => r.connectionId === connection.id);
+        if (!found) return connection;
+        if (found.result.state === "healthy") {
+          // Don't downgrade an explicit "Read only" status; the health-check
+          // only proves reachability, not write capability.
+          const status: Connection["status"] =
+            connection.status === "Read only" ? "Read only" : "Connected";
+          return {
+            ...connection,
+            status,
+            latency: `${found.result.latencyMs} ms`,
+            lastSync: new Date().toISOString(),
+            errorMessage: undefined,
+          };
+        }
+        return {
+          ...connection,
+          status: "Disconnected" as const,
+          errorMessage: found.result.error,
+        };
+      });
+      return { connections: next };
+    });
+  },
+
   connectConnection: async (connectionId) => {
     if (!connectionId) {
       return;
@@ -1640,6 +1848,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           status: "Connected",
           latency: result.latencyMs ? `${result.latencyMs} ms` : "--",
           lastSync: "Just now",
+          lastActivityAt: new Date().toISOString(),
           errorMessage: undefined,
         }),
         schemaExplorer: {
@@ -1736,6 +1945,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         runtimeMs: result.runtimeMs,
         rowCount: result.rowCount,
       });
+      const nowIso = new Date().toISOString();
       set((state) => ({
         queryPreviews: {
           ...state.queryPreviews,
@@ -1756,6 +1966,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           item.id === tabId
             ? { ...item, lastRun: "Just now", isDirty: false }
             : item,
+        ),
+        connections: applyConnectionUpdate(
+          state.connections,
+          tab.connectionId,
+          { lastActivityAt: nowIso },
         ),
       }));
       await persistEntry(entry);

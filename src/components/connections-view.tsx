@@ -1,18 +1,51 @@
 import {
   IconAlertCircle,
+  IconClockHour3,
+  IconDatabase,
+  IconDotsVertical,
   IconPencil,
   IconPlus,
   IconSearch,
   IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { DeleteConnectionDialog } from "@/components/delete-connection-dialog";
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
-import { Badge } from "@/components/ui/badge";
+import { NewConnectionForm } from "@/components/new-connection-form";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { HealthPill, type StatusTone } from "@/components/ui/status-dot";
 import { type Connection, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+
+type FilterKind = "all" | "healthy" | "warning" | "error";
+
+const FILTER_TONE: Record<FilterKind, StatusTone | "neutral"> = {
+  all: "neutral",
+  healthy: "healthy",
+  warning: "warning",
+  error: "danger",
+};
+
+function statusToTone(status: Connection["status"]): StatusTone {
+  if (status === "Connected") return "healthy";
+  if (status === "Read only") return "warning";
+  return "neutral";
+}
+
+function classifyForFilter(status: Connection["status"]): FilterKind {
+  if (status === "Connected") return "healthy";
+  if (status === "Read only") return "warning";
+  // Treat Disconnected as "neutral" but countable under both All only.
+  return "all";
+}
 
 export function ConnectionsView() {
   const [editingConnection, setEditingConnection] = useState<Connection | null>(
@@ -20,248 +53,201 @@ export function ConnectionsView() {
   );
   const [deletingConnection, setDeletingConnection] =
     useState<Connection | null>(null);
+  const [filter, setFilter] = useState<FilterKind>("all");
+  const [search, setSearch] = useState("");
+  const [showPanel, setShowPanel] = useState(true);
 
   const {
     activeConnectionId,
     connections,
-    schemaExplorer,
     setActiveConnectionId,
     connectConnection,
   } = useAppStore();
 
-  const activeConnection = useMemo(
-    () =>
-      connections.find((connection) => connection.id === activeConnectionId) ??
-      connections[0],
-    [activeConnectionId, connections],
-  );
+  const filterCounts = useMemo(() => {
+    const counts: Record<FilterKind, number> = {
+      all: connections.length,
+      healthy: 0,
+      warning: 0,
+      error: 0,
+    };
+    connections.forEach((c) => {
+      if (c.status === "Connected") counts.healthy += 1;
+      else if (c.status === "Read only") counts.warning += 1;
+      else if (c.errorMessage) counts.error += 1;
+    });
+    return counts;
+  }, [connections]);
 
-  const explorerSchemas = schemaExplorer[activeConnectionId] ?? [];
-  const totalEntities = explorerSchemas.reduce(
-    (count, schema) =>
-      count + schema.tables.length + (schema.views?.length ?? 0),
-    0,
-  );
+  const filteredConnections = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return connections.filter((c) => {
+      if (filter === "healthy" && c.status !== "Connected") return false;
+      if (filter === "warning" && c.status !== "Read only") return false;
+      if (filter === "error" && !c.errorMessage) return false;
+      if (!needle) return true;
+      return (
+        c.name.toLowerCase().includes(needle) ||
+        c.host.toLowerCase().includes(needle) ||
+        c.database.toLowerCase().includes(needle) ||
+        c.engine.toLowerCase().includes(needle)
+      );
+    });
+  }, [connections, filter, search]);
 
   return (
-    <>
-      <header className="flex items-center justify-between border-b px-4 py-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 items-end justify-between gap-3 border-b border-border-subtle bg-surface-window px-6 py-4">
         <div>
-          <div className="text-sm font-semibold">Connections</div>
-          <div className="text-xs text-muted-foreground">
-            {activeConnection
-              ? `${activeConnection.name} / ${activeConnection.database}`
-              : "No active connection"}
-          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Connections
+          </h1>
+          <p className="mt-1 text-xs text-text-muted">
+            Manage your database connections and credentials.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline">
-            <IconSearch />
-            Test connection
-          </Button>
-          <Button size="sm" variant="secondary">
-            <IconPlus />
-            Add connection
-          </Button>
-        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant={showPanel ? "secondary" : "default"}
+          onClick={() => setShowPanel((prev) => !prev)}
+        >
+          <IconPlus className="size-3.5" />
+          {showPanel ? "Hide form" : "New Connection"}
+        </Button>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="grid h-full min-h-0 flex-1 grid-cols-[1fr_320px]">
-          <section className="flex min-h-0 flex-col border-r">
-            <div className="border-b px-4 py-3 text-xs text-muted-foreground">
-              Manage credentials, test connectivity, and browse schema metadata.
-            </div>
-            <div className="grid gap-3 overflow-auto p-4">
-              {connections.map((connection) => (
-                <Card
-                  key={connection.id}
-                  className={cn(
-                    "border border-border transition",
-                    connection.id === activeConnectionId
-                      ? "ring-2 ring-sidebar-ring/30"
-                      : "hover:border-sidebar-border",
-                  )}
-                >
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>{connection.name}</CardTitle>
-                      <div className="text-xs text-muted-foreground">
-                        {connection.engine} · {connection.database}
-                      </div>
-                    </div>
-                    <Badge
-                      variant={
-                        connection.status === "Disconnected"
-                          ? "secondary"
-                          : "default"
-                      }
-                      className="text-[0.625rem]"
-                    >
-                      {connection.status}
-                    </Badge>
-                  </CardHeader>
-                  <CardContent className="grid gap-3 text-xs text-muted-foreground">
-                    {connection.errorMessage && (
-                      <div
-                        role="alert"
-                        className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-destructive"
-                      >
-                        <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                        <div className="flex-1 break-words">
-                          {connection.errorMessage}
-                        </div>
-                      </div>
+      <div
+        className={cn(
+          "grid min-h-0 flex-1",
+          showPanel
+            ? "grid-cols-[minmax(0,1fr)_22rem]"
+            : "grid-cols-[minmax(0,1fr)]",
+        )}
+      >
+        <section className="flex min-h-0 flex-col">
+          {/* Filters + search */}
+          <div className="flex flex-wrap items-center gap-3 border-b border-border-subtle bg-surface-window px-6 py-3">
+            <div
+              role="tablist"
+              aria-label="Connection filters"
+              className="flex items-center gap-1 rounded-md border border-border-subtle bg-surface-panel p-1"
+            >
+              {(
+                [
+                  ["all", "All"],
+                  ["healthy", "Healthy"],
+                  ["warning", "Warning"],
+                  ["error", "Error"],
+                ] as const
+              ).map(([id, label]) => {
+                const isActive = filter === id;
+                const count = filterCounts[id];
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setFilter(id)}
+                    className={cn(
+                      "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-surface-panel-elevated text-foreground"
+                        : "text-text-muted hover:bg-surface-panel-elevated/60 hover:text-foreground",
                     )}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <div className="text-[0.625rem] uppercase">Host</div>
-                        <div className="text-foreground">
-                          {connection.host}:{connection.port}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[0.625rem] uppercase">Role</div>
-                        <div className="text-foreground">{connection.role}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[0.625rem] uppercase">Latency</div>
-                        <div className="text-foreground">
-                          {connection.latency}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[0.625rem] uppercase">
-                          Last sync
-                        </div>
-                        <div className="text-foreground">
-                          {connection.lastSync}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline">
-                        <IconSearch />
-                        Test
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={
-                          connection.status === "Disconnected"
-                            ? "secondary"
-                            : "ghost"
-                        }
-                        onClick={() => {
-                          setActiveConnectionId(connection.id);
-                          if (connection.status === "Disconnected") {
-                            connectConnection(connection.id);
-                          }
-                        }}
-                      >
-                        {connection.status === "Disconnected"
-                          ? "Connect"
-                          : "Open"}
-                      </Button>
-                      <div className="ml-auto flex items-center gap-1">
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Edit ${connection.name}`}
-                          onClick={() => setEditingConnection(connection)}
-                        >
-                          <IconPencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={`Delete ${connection.name}`}
-                          onClick={() => setDeletingConnection(connection)}
-                        >
-                          <IconTrash className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  >
+                    {label}
+                    <span
+                      className={cn(
+                        "tabular-nums",
+                        isActive ? "text-text-secondary" : "text-text-muted",
+                      )}
+                    >
+                      {count}
+                    </span>
+                    <span className="sr-only">
+                      {FILTER_TONE[id as FilterKind] ?? "all"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          </section>
+            <div className="relative ml-auto min-w-64 max-w-md flex-1">
+              <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
+              <Input
+                aria-label="Search connections"
+                placeholder="Search connections"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="pl-8"
+              />
+            </div>
+          </div>
 
-          <aside className="flex min-h-0 flex-col gap-3 overflow-auto bg-muted/20 p-4">
-            <Card size="sm" className="border border-border">
-              <CardHeader>
-                <CardTitle>Active connection</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Status</span>
-                  <Badge variant="secondary" className="text-[0.625rem]">
-                    {activeConnection?.status ?? "Unknown"}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>User</span>
-                  <span className="text-foreground">
-                    {activeConnection?.user ?? "--"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Last sync</span>
-                  <span className="text-foreground">
-                    {activeConnection?.lastSync ?? "--"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+          {/* Card grid */}
+          <div className="min-h-0 flex-1 overflow-auto p-6">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredConnections.map((connection) => (
+                <ConnectionCard
+                  key={connection.id}
+                  connection={connection}
+                  isActive={connection.id === activeConnectionId}
+                  onSelect={() => setActiveConnectionId(connection.id)}
+                  onConnect={() => {
+                    setActiveConnectionId(connection.id);
+                    void connectConnection(connection.id);
+                  }}
+                  onEdit={() => setEditingConnection(connection)}
+                  onDelete={() => setDeletingConnection(connection)}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setShowPanel(true)}
+                className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface-panel/40 text-xs text-text-muted transition-colors hover:border-accent-green/50 hover:bg-surface-panel hover:text-foreground"
+              >
+                <span className="flex size-9 items-center justify-center rounded-md border border-border-subtle bg-surface-panel">
+                  <IconPlus className="size-4" />
+                </span>
+                <span className="font-medium">New Connection</span>
+                <span className="text-[0.6875rem]">
+                  Add a new database connection
+                </span>
+              </button>
+            </div>
+          </div>
+        </section>
 
-            <Card size="sm" className="border border-border">
-              <CardHeader>
-                <CardTitle>Metadata snapshot</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Schemas</span>
-                  <span className="text-foreground">
-                    {explorerSchemas.length}
-                  </span>
+        {showPanel ? (
+          <aside className="flex min-h-0 flex-col border-l border-border-subtle bg-surface-window">
+            <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  New Connection
                 </div>
-                <div className="flex items-center justify-between">
-                  <span>Entities</span>
-                  <span className="text-foreground">{totalEntities}</span>
+                <div className="mt-0.5 text-[0.6875rem] text-text-muted">
+                  Connect to a Postgres, MySQL, ClickHouse, or SQLite database.
                 </div>
-                <div className="flex items-center justify-between">
-                  <span>Last refreshed</span>
-                  <span className="text-foreground">5 min ago</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card size="sm" className="border border-border">
-              <CardHeader>
-                <CardTitle>Access controls</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Privileges</span>
-                  <span className="text-foreground">Schema admin</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Audit</span>
-                  <span className="text-foreground">Enabled</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Secrets</span>
-                  <span className="text-foreground">Vault managed</span>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close new-connection panel"
+                onClick={() => setShowPanel(false)}
+                className="size-7"
+              >
+                <IconX className="size-3.5" />
+              </Button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <NewConnectionForm onSaved={() => setShowPanel(false)} />
+            </div>
           </aside>
-        </div>
+        ) : null}
       </div>
 
-      {/* Edit Connection Dialog */}
       <EditConnectionDialog
         connection={editingConnection}
         open={editingConnection !== null}
@@ -269,8 +255,6 @@ export function ConnectionsView() {
           if (!open) setEditingConnection(null);
         }}
       />
-
-      {/* Delete Connection Dialog */}
       <DeleteConnectionDialog
         connection={deletingConnection}
         open={deletingConnection !== null}
@@ -278,6 +262,145 @@ export function ConnectionsView() {
           if (!open) setDeletingConnection(null);
         }}
       />
-    </>
+    </div>
   );
+}
+
+function ConnectionCard({
+  connection,
+  isActive,
+  onSelect,
+  onConnect,
+  onEdit,
+  onDelete,
+}: {
+  connection: Connection;
+  isActive: boolean;
+  onSelect: () => void;
+  onConnect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const tone = statusToTone(connection.status);
+  const filterKind = classifyForFilter(connection.status);
+  const pillTone = connection.errorMessage
+    ? "danger"
+    : tone === "neutral"
+      ? "neutral"
+      : tone;
+
+  return (
+    <div
+      className={cn(
+        "group flex min-h-32 flex-col gap-3 rounded-lg border bg-surface-panel p-4 transition-colors",
+        isActive
+          ? "border-accent-green/40 bg-accent-green/5"
+          : "border-border-subtle hover:border-border-strong",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+        >
+          <span
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-md",
+              isActive
+                ? "bg-accent-green/15 text-accent-green"
+                : "bg-surface-panel-elevated text-text-secondary",
+            )}
+          >
+            <IconDatabase className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-sm font-semibold text-foreground">
+                {connection.name}
+              </span>
+              <HealthPill
+                tone={pillTone}
+                label={
+                  connection.errorMessage
+                    ? "Error"
+                    : connection.status === "Connected"
+                      ? "Healthy"
+                      : connection.status === "Read only"
+                        ? "Warning"
+                        : "Idle"
+                }
+              />
+            </span>
+            <span className="mt-0.5 block truncate text-[0.6875rem] text-text-muted">
+              {connection.engine}
+            </span>
+          </span>
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="Connection actions"
+            className="rounded-md p-1 text-text-muted hover:bg-surface-panel-elevated hover:text-foreground"
+          >
+            <IconDotsVertical className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onConnect}>Connect</DropdownMenuItem>
+            <DropdownMenuItem onClick={onEdit}>
+              <IconPencil className="size-3.5" />
+              Edit…
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onDelete} className="text-danger">
+              <IconTrash className="size-3.5" />
+              Delete…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="font-mono text-[0.6875rem] text-text-muted">
+        {connection.host || "localhost"}:{connection.port || "—"} /{" "}
+        {connection.database || "—"}
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-2 text-[0.625rem] text-text-muted">
+        <span className="flex items-center gap-1.5">
+          <IconClockHour3 className="size-3" />
+          Last activity {formatLastActivity(connection.lastActivityAt)}
+        </span>
+        <span className="sr-only">{filterKind}</span>
+      </div>
+
+      {connection.errorMessage ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 text-xs text-danger"
+        >
+          <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <div className="flex-1 break-words">{connection.errorMessage}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatLastActivity(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60_000) return "just now";
+  if (diffMs < 3_600_000) {
+    const minutes = Math.round(diffMs / 60_000);
+    return `${minutes}m ago`;
+  }
+  if (diffMs < 86_400_000) {
+    const hours = Math.round(diffMs / 3_600_000);
+    return `${hours}h ago`;
+  }
+  if (diffMs < 30 * 86_400_000) {
+    const days = Math.round(diffMs / 86_400_000);
+    return `${days}d ago`;
+  }
+  return date.toLocaleDateString();
 }
