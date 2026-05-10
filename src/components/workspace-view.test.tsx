@@ -7,20 +7,6 @@ vi.mock("@/lib/tauri", () => ({
   tauriInvoke: vi.fn(),
 }));
 
-vi.mock("@/components/schema-relationship-map", () => ({
-  SchemaRelationshipMap: ({
-    schema,
-    connectionId,
-  }: {
-    schema: string;
-    connectionId: string;
-  }) => (
-    <div data-testid="workspace-schema-map">
-      {connectionId}:{schema}
-    </div>
-  ),
-}));
-
 import { WorkspaceView } from "@/components/workspace-view";
 import { type Connection, useAppStore } from "@/lib/store";
 
@@ -52,7 +38,7 @@ afterEach(() => {
 });
 
 describe("WorkspaceView database overview", () => {
-  it("shows connected database stats, schemas, tables, and schema map when no tab is open", () => {
+  it("renders the connection header, page tabs, and metric cards", () => {
     useAppStore.setState({
       activeConnectionId: "conn-1",
       activeTabId: "",
@@ -73,6 +59,11 @@ describe("WorkspaceView database overview", () => {
           databaseSizeBytes: 10485760,
           tableSizeBytes: 4194304,
           indexSizeBytes: 2097152,
+          tableCount: 3,
+          schemaCount: 2,
+          rowCountEstimate: 1234567,
+          indexCount: 12,
+          connectionCount: 4,
         },
       },
       databaseOverviewStatsStatus: {
@@ -82,72 +73,33 @@ describe("WorkspaceView database overview", () => {
 
     render(<WorkspaceView isClient={false} />);
 
+    // Header
     expect(screen.getByText("Cocoa Comaa")).toBeTruthy();
-    expect(screen.getAllByText("Schemas").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Tables").length).toBeGreaterThan(0);
-    expect(screen.getByText("Views")).toBeTruthy();
-    expect(screen.getByText("Database size")).toBeTruthy();
-    expect(screen.getByText("10 MB")).toBeTruthy();
-    expect(screen.getByText("Table size")).toBeTruthy();
-    expect(screen.getByText("4 MB")).toBeTruthy();
-    expect(screen.getByText("Index size")).toBeTruthy();
-    expect(screen.getByText("2 MB")).toBeTruthy();
-    expect(screen.getByText("public")).toBeTruthy();
-    expect(screen.getByText("audit")).toBeTruthy();
-    expect(screen.getByText("users")).toBeTruthy();
-    expect(screen.getByText("orders")).toBeTruthy();
-    expect(screen.getByText("active_users")).toBeTruthy();
-    expect(screen.getByTestId("workspace-schema-map").textContent).toBe(
-      "conn-1:public",
-    );
+    expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
+
+    // Page-level tab strip (visual-only, all six render)
+    expect(screen.getByText("Overview")).toBeTruthy();
+    expect(screen.getByText("Query History")).toBeTruthy();
+    expect(screen.getByText("Settings")).toBeTruthy();
+
+    // Connection Details card
+    expect(screen.getByText("Connection Details")).toBeTruthy();
+    expect(screen.getByText("Host")).toBeTruthy();
+    expect(screen.getAllByText("Database").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Engine").length).toBeGreaterThan(0);
+
+    // Database Stats card with rendered totals
+    expect(screen.getByText("Database Stats")).toBeTruthy();
+    expect(screen.getByText("Rows")).toBeTruthy();
+    expect(screen.getByText("Indexes")).toBeTruthy();
+
+    // Recent Queries + Favorite Tables sections + health banner
+    expect(screen.getByText("Recent Queries")).toBeTruthy();
+    expect(screen.getByText("Favorite Tables")).toBeTruthy();
+    expect(screen.getByText("Your connection is healthy")).toBeTruthy();
   });
 
-  it("switches the schema map when a schema is selected", () => {
-    useAppStore.setState({
-      activeConnectionId: "conn-1",
-      activeTabId: "",
-      connections: [connectedConnection],
-      workspaceTabs: [],
-      schemaExplorer: {
-        "conn-1": [
-          { name: "public", tables: ["users"], views: [] },
-          { name: "audit", tables: ["events"], views: [] },
-        ],
-      },
-    });
-
-    render(<WorkspaceView isClient={false} />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /select schema audit/i }),
-    );
-
-    expect(screen.getByTestId("workspace-schema-map").textContent).toBe(
-      "conn-1:audit",
-    );
-  });
-
-  it("loads overview schemas from the displayed fallback connection", () => {
-    useAppStore.setState({
-      activeConnectionId: "",
-      activeTabId: "",
-      connections: [connectedConnection],
-      workspaceTabs: [],
-      schemaExplorer: {
-        "conn-1": [{ name: "public", tables: ["users"], views: [] }],
-      },
-    });
-
-    render(<WorkspaceView isClient={false} />);
-
-    expect(screen.getByText("public")).toBeTruthy();
-    expect(screen.getByText("users")).toBeTruthy();
-    expect(screen.getByTestId("workspace-schema-map").textContent).toBe(
-      "conn-1:public",
-    );
-  });
-
-  it("opens a table from the overview table list", () => {
+  it("opens a table from the favorite tables card", () => {
     const openTableTab = vi.fn();
     useAppStore.setState({
       activeConnectionId: "conn-1",
@@ -162,10 +114,27 @@ describe("WorkspaceView database overview", () => {
 
     render(<WorkspaceView isClient={false} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /open table public\.users/i }),
-    );
+    // Card lists "users" with schema "public" — click the row.
+    const usersRow = screen.getByText("users");
+    fireEvent.click(usersRow.closest("button") ?? usersRow);
 
     expect(openTableTab).toHaveBeenCalledWith("public", "users");
+  });
+
+  it("falls back to the first connection when none is active", () => {
+    useAppStore.setState({
+      activeConnectionId: "",
+      activeTabId: "",
+      connections: [connectedConnection],
+      workspaceTabs: [],
+      schemaExplorer: {
+        "conn-1": [{ name: "public", tables: ["users"], views: [] }],
+      },
+    });
+
+    render(<WorkspaceView isClient={false} />);
+
+    expect(screen.getByText("Cocoa Comaa")).toBeTruthy();
+    expect(screen.getByText("users")).toBeTruthy();
   });
 });

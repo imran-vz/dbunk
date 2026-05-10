@@ -1,21 +1,30 @@
 import {
   IconChevronDown,
+  IconPlus,
   IconTable,
   IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceTabs() {
-  const { workspaceTabs, activeTabId, setActiveTabId, closeTab } =
-    useAppStore();
+  const {
+    workspaceTabs,
+    activeTabId,
+    setActiveTabId,
+    closeTab,
+    createNewQueryTab,
+  } = useAppStore();
+
+  if (workspaceTabs.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="flex items-center gap-2 border-b px-4 py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+    <div className="flex h-12 items-end border-b border-white/8 bg-[#0a0f14] px-5">
+      <div className="flex min-w-0 flex-1 items-end overflow-x-auto">
         {workspaceTabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
@@ -23,32 +32,35 @@ export function WorkspaceTabs() {
             <div
               key={tab.id}
               className={cn(
-                "flex items-center gap-1 rounded-md border px-1 py-1 text-xs",
+                "group flex h-10 min-w-42 items-center gap-2 border border-b-0 px-3 text-xs transition",
                 isActive
-                  ? "border-border bg-muted"
-                  : "border-transparent bg-transparent hover:border-border hover:bg-muted/40",
+                  ? "rounded-t-lg border-white/12 bg-white/[0.075] text-foreground"
+                  : "border-transparent text-muted-foreground hover:bg-white/[0.035] hover:text-foreground",
               )}
             >
               <Button
-                size="sm"
+                size="xs"
                 variant="ghost"
-                className="h-6 gap-2 px-2 text-xs"
+                className="min-w-0 flex-1 justify-start border-0 bg-transparent px-0 shadow-none hover:bg-transparent"
                 onClick={() => setActiveTabId(tab.id)}
               >
-                <TabIcon className="size-3.5" />
-                <span className="max-w-35 truncate">{tab.label}</span>
+                <TabIcon
+                  className={cn(
+                    "size-3.5",
+                    isActive ? "text-primary" : "text-muted-foreground",
+                  )}
+                />
+                <span className="truncate font-medium">{tab.label}</span>
                 {tab.isDirty ? (
-                  <span className="size-1.5 rounded-full bg-primary" />
+                  <span className="size-1.5 shrink-0 rounded-full bg-primary" />
                 ) : null}
-                <Badge variant="secondary" className="text-[0.625rem]">
-                  {tab.kind === "query" ? "Query" : "Table"}
-                </Badge>
               </Button>
               <Button
                 size="icon-xs"
                 variant="ghost"
                 aria-label={`Close ${tab.label}`}
                 onClick={() => closeTab(tab.id)}
+                className="opacity-70 hover:opacity-100"
               >
                 <IconX />
               </Button>
@@ -56,7 +68,21 @@ export function WorkspaceTabs() {
           );
         })}
       </div>
-      <Button size="icon-sm" variant="ghost" aria-label="Open tab menu">
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="New query tab"
+        onClick={createNewQueryTab}
+        className="mb-1"
+      >
+        <IconPlus className="size-3.5" />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Open tab menu"
+        className="mb-1"
+      >
         <IconChevronDown />
       </Button>
     </div>

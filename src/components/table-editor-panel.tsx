@@ -3,18 +3,23 @@ import {
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
+  IconChevronsLeft,
+  IconChevronsRight,
+  IconDotsVertical,
+  IconLayoutSidebarRight,
   IconLock,
   IconMaximize,
   IconPlus,
-  IconRefresh,
+  IconTable,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import type { RowSelectionState } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 
-import { DataGrid, type TableViewMode } from "@/components/data-grid";
+import { DataGrid } from "@/components/data-grid";
 import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
+import { StatusBar, type StatusBarItem } from "@/components/status-bar";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +30,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   buildInsertValuesPayload,
@@ -40,13 +51,24 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 interface TableEditorPanelProps {
   tab: WorkspaceTab;
 }
 
+type SubTab = "data" | "schema" | "indexes" | "relations";
+
+const SUB_TABS: Array<{ id: SubTab; label: string }> = [
+  { id: "data", label: "Data" },
+  { id: "schema", label: "Schema" },
+  { id: "indexes", label: "Indexes" },
+  { id: "relations", label: "Relations" },
+];
+
 export function TableEditorPanel({ tab }: TableEditorPanelProps) {
-  const [viewMode, setViewMode] = useState<TableViewMode>("data");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
+  const [isRowDetailsOpen, setIsRowDetailsOpen] = useState(true);
 
   const {
     tableData,
@@ -64,11 +86,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     clearTableEditsCommitStatus,
     addTableRow,
     deleteSelectedTableRows,
-    toggleLeftSidebar,
   } = useAppStore();
 
-  // Row selection lives here so the Delete Selected action can read the
-  // selected indices and clear them after a successful delete.
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [addRowForm, setAddRowForm] = useState<InsertRowFormState>({});
@@ -85,7 +104,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   useEffect(() => {
     if (tab.kind === "table" && tab.table && tab.connectionId) {
       void loadTableData(tab.connectionId, tab.schema, tab.table);
-      // Structure is needed to discover identity columns for safe edits.
       void loadTableStructure(tab.connectionId, tab.schema, tab.table);
     }
   }, [
@@ -154,27 +172,25 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const isLastPage =
     totalPages !== undefined ? page >= totalPages : rows.length < pageSize;
 
-  const onPrevPage = () => {
-    if (tab.kind === "table" && tab.table && tab.connectionId && page > 1) {
-      void loadTableData(
-        tab.connectionId,
-        tab.schema,
-        tab.table,
-        page - 1,
-        pageSize,
-      );
-    }
+  const goToPage = (next: number) => {
+    if (tab.kind !== "table" || !tab.table || !tab.connectionId) return;
+    const target = Math.max(1, totalPages ? Math.min(totalPages, next) : next);
+    if (target === page) return;
+    void loadTableData(
+      tab.connectionId,
+      tab.schema,
+      tab.table,
+      target,
+      pageSize,
+    );
   };
 
-  const onNextPage = () => {
-    if (tab.kind === "table" && tab.table && tab.connectionId && !isLastPage) {
-      void loadTableData(
-        tab.connectionId,
-        tab.schema,
-        tab.table,
-        page + 1,
-        pageSize,
-      );
+  const onPrevPage = () => goToPage(page - 1);
+  const onNextPage = () => goToPage(page + 1);
+  const onFirstPage = () => goToPage(1);
+  const onLastPage = () => {
+    if (totalPages !== undefined) {
+      goToPage(totalPages);
     }
   };
 
@@ -221,8 +237,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     const before = useAppStore.getState().tableEditsCommitStatus[tableName];
     await addTableRow(tableName, values);
     const after = useAppStore.getState().tableEditsCommitStatus[tableName];
-    // Only close the form when the call landed in `success`. On error keep
-    // the form open so the user can correct values without re-typing.
     if (after?.state === "success" && after !== before) {
       setIsAddRowOpen(false);
     }
@@ -242,8 +256,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     await deleteSelectedTableRows(tableName, selectedRowIndices);
     const after = useAppStore.getState().tableEditsCommitStatus[tableName];
     if (after?.state === "success" && after !== before) {
-      // Clear selection only on success — preserves selection so the user
-      // can retry or inspect what failed.
       setRowSelection({});
     }
   };
@@ -251,35 +263,154 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
 
-  const pageInfo = (() => {
-    const parts: string[] = [];
-    parts.push(
-      totalPages !== undefined
-        ? `Page ${page} of ${totalPages}`
-        : `Page ${page}`,
-    );
-    if (totalRows !== undefined) {
-      parts.push(`${totalRows.toLocaleString()} rows`);
-    }
-    if (runtimeMs !== undefined) {
-      parts.push(`${runtimeMs} ms`);
-    }
-    return parts.join(" • ");
-  })();
+  const hasMultipleSelectedRows = selectedRowIndices.length > 1;
+  const selectedRowIndex =
+    selectedRowIndices.length === 1 ? selectedRowIndices[0] : null;
+  const selectedRow =
+    selectedRowIndex !== null ? rows[selectedRowIndex] : rows[0];
+
+  const rowCountLabel =
+    totalRows !== undefined
+      ? `${totalRows.toLocaleString()} rows`
+      : `${rows.length.toLocaleString()} rows`;
+
+  const startRow =
+    totalRows === undefined && rows.length === 0
+      ? 0
+      : (page - 1) * pageSize + 1;
+  const endRow =
+    totalRows !== undefined
+      ? Math.min(totalRows, page * pageSize)
+      : (page - 1) * pageSize + rows.length;
+
+  const statusItems: StatusBarItem[] = [
+    {
+      id: "query",
+      label: "Query",
+      tone: errorMessage ? "danger" : "healthy",
+      value:
+        runtimeMs !== undefined
+          ? `Completed · ${runtimeMs} ms`
+          : isLoading
+            ? "Loading…"
+            : "Idle",
+    },
+    {
+      id: "data",
+      label: "Data",
+      value: `${rows.length.toLocaleString()} rows`,
+    },
+    {
+      id: "page",
+      label: "Page",
+      value: totalPages ? `${page} of ${totalPages}` : `${page}`,
+    },
+    {
+      id: "connection",
+      label: "Connection",
+      tone: "healthy",
+      value: connection?.status ?? "Healthy",
+      align: "right",
+    },
+  ];
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex h-full flex-col bg-surface-app">
       {isLoading ? (
         <div
           data-testid="table-loading"
           className="h-0.5 w-full animate-pulse bg-primary"
         />
       ) : null}
+
+      {/* Header */}
+      <div className="shrink-0 border-b border-border-subtle bg-surface-window px-5 pt-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
+              <IconTable className="size-4" />
+            </div>
+            <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
+              {tab.table ?? tab.label}
+            </h1>
+            <Badge variant="outline" className="h-6 rounded-md px-2">
+              {rowCountLabel}
+            </Badge>
+            <Badge variant="outline" className="h-6 rounded-md px-2">
+              {tab.schema}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            {activeSubTab === "data" ? (
+              <Button
+                size="sm"
+                variant={isRowDetailsOpen ? "secondary" : "outline"}
+                aria-pressed={isRowDetailsOpen}
+                aria-label={
+                  isRowDetailsOpen ? "Hide row details" : "Show row details"
+                }
+                onClick={() => setIsRowDetailsOpen((open) => !open)}
+              >
+                <IconLayoutSidebarRight className="size-3.5" />
+                Details
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="Table actions"
+                className={cn(
+                  "inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
+                )}
+              >
+                <IconDotsVertical className="size-3.5 text-text-muted" />
+                Table actions
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  onClick={() => openQueryForTable(tab.schema, tab.table ?? "")}
+                >
+                  Open in SQL
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRefresh}>
+                  Refresh data
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <div className="mt-3 flex items-end gap-1">
+          {SUB_TABS.map(({ id, label }) => {
+            const isActive = activeSubTab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => {
+                  setActiveSubTab(id);
+                }}
+                className={cn(
+                  "relative h-9 px-3 text-sm font-medium transition-colors",
+                  isActive
+                    ? "text-foreground"
+                    : "text-text-muted hover:text-foreground",
+                )}
+              >
+                {label}
+                {isActive ? (
+                  <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent-green" />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {errorMessage ? (
         <div
           data-testid="table-error"
           role="alert"
-          className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
         >
           <IconAlertTriangle className="size-4" />
           <span>Failed to load rows: {errorMessage}</span>
@@ -293,10 +424,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </Button>
         </div>
       ) : null}
+
       {isReadOnly && activeTableStructure ? (
         <output
           data-testid="table-readonly-banner"
-          className="flex items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400"
+          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning"
         >
           <IconLock className="size-4" />
           <span>
@@ -305,10 +437,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </span>
         </output>
       ) : null}
+
       {commitStatus?.state === "success" ? (
         <output
           data-testid="table-commit-success"
-          className="flex items-center gap-2 border-b border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-700 dark:text-emerald-400"
+          className="flex items-center gap-2 border-b border-accent-green/40 bg-accent-green/10 px-4 py-2 text-xs text-accent-green-hover"
         >
           <IconCheck className="size-4" />
           <span>
@@ -326,11 +459,12 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </Button>
         </output>
       ) : null}
+
       {commitStatus?.state === "error" ? (
         <div
           data-testid="table-commit-error"
           role="alert"
-          className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
         >
           <IconX className="size-4" />
           <span>Failed to save: {commitStatus.error}</span>
@@ -344,10 +478,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </Button>
         </div>
       ) : null}
+
       {isAddRowOpen && activeTableStructure ? (
         <div
           data-testid="add-row-form"
-          className="flex flex-col gap-2 border-b bg-muted/10 px-4 py-3"
+          className="flex flex-col gap-2 border-b border-border-subtle bg-surface-panel px-4 py-3"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold">Add row</span>
@@ -372,11 +507,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               return (
                 <div
                   key={column.name}
-                  className="flex flex-col gap-1 rounded-md border bg-background px-2 py-1.5"
+                  className="flex flex-col gap-1 rounded-md border border-border-subtle bg-surface-app px-2 py-1.5"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium">{column.name}</span>
-                    <span className="text-[0.625rem] text-muted-foreground">
+                    <span className="text-[0.625rem] text-text-muted">
                       {column.dataType}
                     </span>
                   </div>
@@ -392,7 +527,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                       handleSetAddRowValue(column.name, e.target.value)
                     }
                   />
-                  <div className="flex items-center gap-3 text-[0.625rem] text-muted-foreground">
+                  <div className="flex items-center gap-3 text-[0.625rem] text-text-muted">
                     <label className="flex items-center gap-1">
                       <input
                         type="radio"
@@ -450,113 +585,341 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           </div>
         </div>
       ) : null}
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {viewMode === "data" ? (
-          <DataGrid
-            data={rows}
-            columns={columns}
-            edits={currentEdits}
-            onEdit={(rowIndex, colIndex, value) =>
-              setTableEdit(tableName, rowIndex, colIndex, value)
-            }
-            hasEdits={hasEdits}
-            readOnly={isReadOnly}
-            isSaving={commitStatus?.state === "running"}
-            onDiscard={() => discardTableEdits(tableName)}
-            onSave={() => {
-              void commitTableEdits(tableName);
-            }}
-            onOpenSQL={() => openQueryForTable(tab.schema, tab.table ?? "")}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            onToggleSidebar={toggleLeftSidebar}
-            exportFilenameBase={exportFilenameBase}
-            rowSelection={rowSelection}
-            onRowSelectionChange={setRowSelection}
-            toolbarLeading={
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  className="h-9 gap-2 bg-foreground text-background hover:bg-foreground/90"
-                  disabled={!canAddRow}
-                  onClick={handleOpenAddRow}
-                >
-                  <IconPlus className="size-3.5" /> Add row
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-9 gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
-                  disabled={!canDeleteSelected}
-                  onClick={() => {
-                    void handleDeleteSelected();
-                  }}
-                >
-                  <IconTrash className="size-3.5" /> Delete selected
-                </Button>
-              </div>
-            }
-          />
-        ) : (
-          <div className="flex h-full flex-col">
+
+      {/* Body */}
+      <div
+        className={cn(
+          "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden",
+          isRowDetailsOpen &&
+            activeSubTab === "data" &&
+            "xl:grid-cols-[minmax(0,1fr)_20rem]",
+        )}
+      >
+        <div className="min-w-0 overflow-hidden">
+          {activeSubTab === "data" ? (
             <DataGrid
-              data={[]}
-              columns={[]}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              onToggleSidebar={toggleLeftSidebar}
-              className="h-14 flex-none"
+              data={rows}
+              columns={columns}
+              edits={currentEdits}
+              onEdit={(rowIndex, colIndex, value) =>
+                setTableEdit(tableName, rowIndex, colIndex, value)
+              }
+              hasEdits={hasEdits}
+              readOnly={isReadOnly}
+              isSaving={commitStatus?.state === "running"}
+              onDiscard={() => discardTableEdits(tableName)}
+              onSave={() => {
+                void commitTableEdits(tableName);
+              }}
+              onOpenSQL={() => openQueryForTable(tab.schema, tab.table ?? "")}
+              onRefresh={onRefresh}
+              exportFilenameBase={exportFilenameBase}
+              rowSelection={rowSelection}
+              onRowSelectionChange={setRowSelection}
+              toolbarLeading={
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!canAddRow}
+                    onClick={handleOpenAddRow}
+                  >
+                    <IconPlus className="size-3.5" /> Add row
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-danger/40 text-danger hover:bg-danger/10"
+                    disabled={!canDeleteSelected}
+                    onClick={() => {
+                      void handleDeleteSelected();
+                    }}
+                  >
+                    <IconTrash className="size-3.5" /> Delete selected
+                  </Button>
+                </div>
+              }
             />
+          ) : activeSubTab === "schema" ? (
             <TableStructureView
               connectionId={tab.connectionId}
               schema={tab.schema}
               tableName={tab.table ?? ""}
-              className="flex-1 border-t"
+              className="h-full"
             />
-          </div>
-        )}
-      </div>
-      {viewMode === "data" && tab.kind === "table" ? (
-        <div
-          data-testid="table-pagination"
-          className="flex h-9 shrink-0 items-center justify-between border-t bg-background px-4 text-xs text-muted-foreground"
-        >
-          <span className="tabular-nums">{pageInfo}</span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={onRefresh}
-              aria-label="Refresh"
-            >
-              <IconRefresh className="mr-1 size-3.5" /> Refresh
-            </Button>
-            <div className="flex items-center rounded-md border bg-muted/20 p-0.5">
+          ) : (
+            <SubTabPlaceholder kind={activeSubTab} />
+          )}
+        </div>
+
+        {isRowDetailsOpen && activeSubTab === "data" ? (
+          <aside
+            data-testid="row-details-panel"
+            className="hidden min-h-0 flex-col gap-3 border-l border-border-subtle bg-surface-window p-4 text-xs xl:flex"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    Row {selectedRowIndex !== null ? selectedRowIndex + 1 : 1}
+                  </span>
+                  <Badge variant="success" className="h-5 px-2">
+                    Selected
+                  </Badge>
+                </div>
+                <div className="mt-0.5 text-text-muted">
+                  {hasMultipleSelectedRows
+                    ? `${selectedRowIndices.length} rows selected`
+                    : selectedRowIndices.length === 1
+                      ? "1 selected"
+                      : "First visible row"}
+                </div>
+              </div>
               <Button
+                size="icon-sm"
                 variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-sm"
-                onClick={onPrevPage}
-                disabled={page <= 1 || isLoading}
-                aria-label="Previous page"
+                aria-label="Close row details"
+                onClick={() => setIsRowDetailsOpen(false)}
               >
-                <IconChevronLeft className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-sm"
-                onClick={onNextPage}
-                disabled={isLastPage || isLoading}
-                aria-label="Next page"
-              >
-                <IconChevronRight className="size-3.5" />
+                <IconX className="size-3.5" />
               </Button>
             </div>
-          </div>
+
+            <div className="flex flex-1 flex-col gap-2 overflow-auto">
+              {hasMultipleSelectedRows ? (
+                <div className="rounded-md border border-accent-green/20 bg-accent-green/10 p-3 text-text-muted">
+                  <div className="font-semibold text-foreground">
+                    Multiple rows selected
+                  </div>
+                  <div className="mt-1">
+                    Select a single row to inspect column values.
+                  </div>
+                </div>
+              ) : selectedRow ? (
+                columns.map((column, index) => (
+                  <div
+                    key={column}
+                    className="rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
+                  >
+                    <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+                      {column}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[0.75rem] text-foreground">
+                      {selectedRow[index] || "NULL"}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3 text-text-muted">
+                  No row selected
+                </div>
+              )}
+            </div>
+
+            <SummaryCard
+              totalRows={totalRows ?? rows.length}
+              indexes={activeTableStructure?.indexes.length ?? 0}
+            />
+          </aside>
+        ) : null}
+      </div>
+
+      {/* Pagination footer (data only) */}
+      {activeSubTab === "data" && tab.kind === "table" ? (
+        <div
+          data-testid="table-pagination"
+          className="flex h-11 shrink-0 items-center justify-between gap-3 border-t border-border-subtle bg-surface-window px-4 text-xs text-text-muted"
+        >
+          <span className="tabular-nums">
+            Showing {startRow.toLocaleString()} to {endRow.toLocaleString()} of{" "}
+            {(totalRows ?? rows.length).toLocaleString()} rows
+          </span>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            isLastPage={isLastPage}
+            isLoading={isLoading}
+            onFirst={onFirstPage}
+            onPrev={onPrevPage}
+            onNext={onNextPage}
+            onLast={onLastPage}
+            onJump={goToPage}
+          />
+          <span className="tabular-nums">{pageSize} rows</span>
         </div>
       ) : null}
+
+      <StatusBar items={statusItems} />
+    </div>
+  );
+}
+
+function SubTabPlaceholder({ kind }: { kind: "indexes" | "relations" }) {
+  const titles = {
+    indexes: "Indexes",
+    relations: "Relations",
+  } as const;
+  const descriptions = {
+    indexes:
+      "Per-table indexes (name, columns, type, unique flag, size) will appear here.",
+    relations:
+      "Foreign-key relationships in and out of this table will be shown here.",
+  } as const;
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="max-w-md rounded-lg border border-dashed border-border-subtle bg-surface-panel/50 p-6 text-center">
+        <div className="text-sm font-semibold text-foreground">
+          {titles[kind]}
+        </div>
+        <p className="mt-1 text-xs text-text-muted">{descriptions[kind]}</p>
+        <p className="mt-3 text-[0.625rem] uppercase tracking-[0.12em] text-text-muted">
+          Coming soon
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  isLastPage,
+  isLoading,
+  onFirst,
+  onPrev,
+  onNext,
+  onLast,
+  onJump,
+}: {
+  page: number;
+  totalPages: number | undefined;
+  isLastPage: boolean;
+  isLoading: boolean;
+  onFirst: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onLast: () => void;
+  onJump: (page: number) => void;
+}) {
+  const pageButtons = useMemo(() => {
+    if (!totalPages) return [page];
+    const pages: Array<number | "ellipsis-left" | "ellipsis-right"> = [];
+    const window = 1;
+    pages.push(1);
+    if (page - window > 2) pages.push("ellipsis-left");
+    for (
+      let p = Math.max(2, page - window);
+      p <= Math.min(totalPages - 1, page + window);
+      p++
+    ) {
+      pages.push(p);
+    }
+    if (page + window < totalPages - 1) pages.push("ellipsis-right");
+    if (totalPages > 1) pages.push(totalPages);
+    return pages;
+  }, [page, totalPages]);
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="First page"
+        onClick={onFirst}
+        disabled={page <= 1 || isLoading}
+        className="size-8"
+      >
+        <IconChevronsLeft className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Previous page"
+        onClick={onPrev}
+        disabled={page <= 1 || isLoading}
+        className="size-8"
+      >
+        <IconChevronLeft className="size-3.5" />
+      </Button>
+      <div className="flex items-center gap-0.5 px-1">
+        {pageButtons.map((entry, idx) =>
+          typeof entry === "number" ? (
+            <button
+              type="button"
+              key={`p-${entry}`}
+              aria-label={`Go to page ${entry}`}
+              aria-current={entry === page ? "page" : undefined}
+              onClick={() => onJump(entry)}
+              className={cn(
+                "h-7 min-w-7 rounded-md px-2 text-xs tabular-nums transition-colors",
+                entry === page
+                  ? "bg-accent-green/15 text-accent-green-hover"
+                  : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
+              )}
+            >
+              {entry}
+            </button>
+          ) : (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: ellipsis position is stable
+              key={`${entry}-${idx}`}
+              className="px-1 text-text-muted"
+            >
+              …
+            </span>
+          ),
+        )}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Next page"
+        onClick={onNext}
+        disabled={isLastPage || isLoading}
+        className="size-8"
+      >
+        <IconChevronRight className="size-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Last page"
+        onClick={onLast}
+        disabled={isLastPage || isLoading || totalPages === undefined}
+        className="size-8"
+      >
+        <IconChevronsRight className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+function SummaryCard({
+  totalRows,
+  indexes,
+}: {
+  totalRows: number;
+  indexes: number;
+}) {
+  const rows: Array<[string, string]> = [
+    ["Total rows", totalRows.toLocaleString()],
+    ["Data size", "—"],
+    ["Indexes", indexes.toLocaleString()],
+    ["Last vacuum", "—"],
+    ["Last analyze", "—"],
+  ];
+  return (
+    <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3">
+      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+        Summary
+      </div>
+      <dl className="mt-2 space-y-1.5 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between">
+            <dt className="text-text-muted">{label}</dt>
+            <dd className="tabular-nums text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
@@ -603,11 +966,11 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
 
   return (
     <>
-      <Card size="sm" className="border border-border">
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Table insights</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-xs text-muted-foreground">
+        <CardContent className="space-y-2 text-xs text-text-muted">
           <div className="flex items-center justify-between">
             <span>Primary key</span>
             <span className="text-foreground">
@@ -629,7 +992,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
         </CardContent>
       </Card>
 
-      <Card size="sm" className="border border-border">
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Columns</CardTitle>
         </CardHeader>
@@ -637,9 +1000,9 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
           {(activeTablePreview?.columns ?? []).map((column) => (
             <div
               key={column}
-              className="flex items-center justify-between rounded-md border px-2 py-1"
+              className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-app px-2 py-1"
             >
-              <span className="text-muted-foreground">{column}</span>
+              <span className="text-text-muted">{column}</span>
               <Badge variant="secondary" className="text-[0.625rem]">
                 text
               </Badge>
@@ -648,7 +1011,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
         </CardContent>
       </Card>
 
-      <Card size="sm" className="border border-border">
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Schema map</CardTitle>
           <CardAction>
@@ -664,7 +1027,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <div className="h-56 overflow-hidden rounded-md border">
+          <div className="h-56 overflow-hidden rounded-md border border-border-subtle bg-surface-app">
             <SchemaRelationshipMap
               connectionId={tab.connectionId}
               schema={tab.schema}
@@ -678,12 +1041,12 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
       {isSchemaMapFullscreen ? (
         <div
           data-testid="schema-map-fullscreen"
-          className="fixed inset-0 z-50 flex flex-col bg-background"
+          className="fixed inset-0 z-50 flex flex-col bg-surface-app"
         >
-          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-surface-window px-4">
             <div className="min-w-0">
               <div className="text-sm font-semibold">Schema map</div>
-              <div className="truncate text-xs text-muted-foreground">
+              <div className="truncate text-xs text-text-muted">
                 {tab.schema}
                 {activeTable ? ` / ${activeTable}` : ""}
               </div>
@@ -699,7 +1062,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
             </Button>
           </div>
           <div className="min-h-0 flex-1 p-3">
-            <div className="h-full overflow-hidden rounded-md border bg-muted/10">
+            <div className="h-full overflow-hidden rounded-md border border-border-subtle bg-surface-window">
               <SchemaRelationshipMap
                 connectionId={tab.connectionId}
                 schema={tab.schema}
@@ -711,11 +1074,11 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
         </div>
       ) : null}
 
-      <Card size="sm" className="border border-border">
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Access</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-xs text-muted-foreground">
+        <CardContent className="space-y-2 text-xs text-text-muted">
           <div className="flex items-center justify-between">
             <span>Role</span>
             <span className="text-foreground">Analyst</span>

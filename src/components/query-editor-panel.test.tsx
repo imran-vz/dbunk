@@ -183,7 +183,7 @@ describe("QueryEditorPanel feedback", () => {
 
     render(<QueryEditorPanel tab={queryTab} isClient />);
     const runButton = screen.getByRole("button", {
-      name: /run current/i,
+      name: /^run$/i,
     }) as HTMLButtonElement;
     expect(runButton.disabled).toBe(false);
   });
@@ -223,7 +223,11 @@ describe("QueryEditorPanel execution controls", () => {
     });
   });
 
-  it("runs the statement at the cursor by default", () => {
+  const openRunOptions = () => {
+    fireEvent.click(screen.getByRole("button", { name: /run options/i }));
+  };
+
+  it("runs the statement at the cursor by default (Run button)", () => {
     const runQuerySpy = vi.spyOn(useAppStore.getState(), "runQuery");
     const multiQueryTab = {
       ...queryTab,
@@ -233,19 +237,20 @@ describe("QueryEditorPanel execution controls", () => {
     cursorState.column = 3;
 
     render(<QueryEditorPanel tab={multiQueryTab} isClient={true} />);
-    fireEvent.click(screen.getByRole("button", { name: /run current/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
 
     expect(runQuerySpy).toHaveBeenCalledWith("tab-1", {
       overrideSql: "select 2",
     });
   });
 
-  it("runs only the selection from the selection control", () => {
+  it("runs only the selection from the Run selection menu item", () => {
     const runQuerySpy = vi.spyOn(useAppStore.getState(), "runQuery");
     selectionState.value = "select 1";
 
     render(<QueryEditorPanel tab={queryTab} isClient={true} />);
-    fireEvent.click(screen.getByRole("button", { name: /selection/i }));
+    openRunOptions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /run selection/i }));
 
     expect(runQuerySpy).toHaveBeenCalledWith("tab-1", {
       overrideSql: "select 1",
@@ -257,12 +262,13 @@ describe("QueryEditorPanel execution controls", () => {
     selectionState.value = "   \n  ";
 
     render(<QueryEditorPanel tab={queryTab} isClient={true} />);
-    fireEvent.click(screen.getByRole("button", { name: /selection/i }));
+    openRunOptions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /run selection/i }));
 
     expect(runQuerySpy).not.toHaveBeenCalled();
   });
 
-  it("runs the entire editor text from the all control", () => {
+  it("runs the entire editor text from Run all", () => {
     const runQuerySpy = vi.spyOn(useAppStore.getState(), "runQuery");
     const multiQueryTab = {
       ...queryTab,
@@ -270,7 +276,8 @@ describe("QueryEditorPanel execution controls", () => {
     };
 
     render(<QueryEditorPanel tab={multiQueryTab} isClient={true} />);
-    fireEvent.click(screen.getByRole("button", { name: /^all$/i }));
+    openRunOptions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /run all/i }));
 
     expect(runQuerySpy).toHaveBeenCalledWith("tab-1", {
       overrideSql: "select 1;\nselect 2;",
@@ -316,7 +323,7 @@ describe("QueryEditorPanel execution controls", () => {
     const runQuerySpy = vi.spyOn(useAppStore.getState(), "runQuery");
 
     render(<QueryEditorPanel tab={queryTab} isClient={false} />);
-    fireEvent.click(screen.getByRole("button", { name: /run current/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
 
     expect(runQuerySpy).toHaveBeenCalledWith("tab-1", {
       overrideSql: "select 1;",

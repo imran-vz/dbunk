@@ -1,17 +1,12 @@
 import {
-  IconChevronLeft,
-  IconChevronRight,
+  IconArrowsMaximize,
+  IconArrowsSort,
   IconColumns,
   IconDeviceFloppy,
-  IconDots,
   IconDownload,
   IconFilter,
-  IconLayoutSidebar,
   IconRefresh,
   IconSearch,
-  IconStack2,
-  IconTable,
-  IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
 import {
@@ -68,6 +63,14 @@ const OPERATOR_SYMBOL: Record<string, string> = Object.fromEntries(
   FILTER_OPERATORS.map((op) => [op.label, op.symbol]),
 );
 
+const CELL_DISPLAY_CHARACTER_LIMIT = 50;
+
+function formatCellDisplayValue(value: string) {
+  return value.length > CELL_DISPLAY_CHARACTER_LIMIT
+    ? value.slice(0, CELL_DISPLAY_CHARACTER_LIMIT)
+    : value;
+}
+
 type AppliedFilter = {
   column: string;
   operator: string;
@@ -91,6 +94,7 @@ function EditableCell({
 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const displayValue = editValue ?? initialValue;
+  const previewValue = formatCellDisplayValue(displayValue);
   const isDirty = editValue !== undefined;
 
   const onBlur = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -140,8 +144,9 @@ function EditableCell({
         }
       }}
       tabIndex={onEdit ? 0 : -1}
+      title={displayValue}
     >
-      {displayValue}
+      {previewValue}
     </button>
   );
 }
@@ -157,6 +162,7 @@ export interface DataGridProps {
   onSave?: () => void;
   onDiscard?: () => void;
   onOpenSQL?: () => void;
+  onRefresh?: () => void;
   hasEdits?: boolean;
   /**
    * When true, the grid suppresses cell editing entirely. Used when the
@@ -200,12 +206,10 @@ export function DataGrid({
   onSave,
   onDiscard,
   onOpenSQL,
+  onRefresh,
   hasEdits,
   readOnly,
   isSaving,
-  viewMode = "data",
-  onViewModeChange,
-  onToggleSidebar,
   exportFilenameBase = "export",
   toolbarLeading,
   rowSelection: rowSelectionProp,
@@ -423,52 +427,17 @@ export function DataGrid({
     },
     [buildExportTable, filenameFor],
   );
+  const visibleDataColumnCount = Math.max(
+    1,
+    table.getVisibleLeafColumns().filter((column) => column.id !== "select")
+      .length,
+  );
+  const dataColumnWidth = `${100 / visibleDataColumnCount}%`;
 
   return (
-    <div className={cn("flex h-full flex-col bg-background", className)}>
-      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-4 py-2">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex items-center rounded-md border bg-muted/20 p-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-sm"
-              onClick={onToggleSidebar}
-            >
-              <IconLayoutSidebar className="size-4 text-muted-foreground" />
-            </Button>
-            <Button
-              variant={viewMode === "data" ? "secondary" : "ghost"}
-              size="icon"
-              className="h-7 w-7 rounded-sm"
-              onClick={() => onViewModeChange?.("data")}
-            >
-              <IconTable
-                className={cn(
-                  "size-4",
-                  viewMode === "data"
-                    ? "text-foreground"
-                    : "text-muted-foreground",
-                )}
-              />
-            </Button>
-            <Button
-              variant={viewMode === "structure" ? "secondary" : "ghost"}
-              size="icon"
-              className="h-7 w-7 rounded-sm"
-              onClick={() => onViewModeChange?.("structure")}
-            >
-              <IconStack2
-                className={cn(
-                  "size-4",
-                  viewMode === "structure"
-                    ? "text-foreground"
-                    : "text-muted-foreground",
-                )}
-              />
-            </Button>
-          </div>
-
+    <div className={cn("flex h-full flex-col bg-surface-app", className)}>
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border-subtle bg-surface-window px-5 py-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {hasEdits ? (
             <div className="flex items-center gap-2">
               <Button
@@ -489,174 +458,121 @@ export function DataGrid({
                 <IconDeviceFloppy className="mr-1 size-3.5" />{" "}
                 {isSaving ? "Saving…" : "Save changes"}
               </Button>
-              <div className="mx-2 h-6 w-px bg-border" />
+              <div className="mx-2 h-6 w-px bg-border-subtle" />
             </div>
-          ) : (
-            onOpenSQL && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 gap-2 px-2 text-muted-foreground hover:text-foreground"
-                onClick={onOpenSQL}
-              >
-                <IconTerminal2 className="size-4" />
-                SQL
-              </Button>
-            )
-          )}
-
-          {toolbarLeading}
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant={showFilters ? "secondary" : "outline"}
-              size="sm"
-              className={cn(
-                "h-9 gap-2 border-dashed",
-                showFilters && "border-solid",
-              )}
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              <IconFilter className="size-3.5" />
-              Filters
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "h-9 gap-2 border-dashed",
-                )}
-              >
-                <IconColumns className="size-3.5" />
-                Columns
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuGroup>
-                  <div className="flex items-center justify-between px-2 py-1.5">
-                    <span className="text-xs font-semibold">
-                      Toggle columns
-                    </span>
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        table.toggleAllColumnsVisible(false);
-                      }}
-                    >
-                      Deselect all
-                    </button>
-                  </div>
-                  <div className="px-2 pb-2">
-                    <div className="relative">
-                      <IconSearch className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        placeholder="Search..."
-                        className="h-8 pl-8 text-xs"
-                        value={columnSearch}
-                        onChange={(e) => setColumnSearch(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <DropdownMenuSeparator />
-                  <div className="max-h-75 overflow-auto">
-                    {table
-                      .getAllColumns()
-                      .filter(
-                        (column) =>
-                          typeof column.accessorFn !== "undefined" &&
-                          column.getCanHide() &&
-                          column.id
-                            .toLowerCase()
-                            .includes(columnSearch.toLowerCase()),
-                      )
-                      .map((column) => {
-                        return (
-                          <DropdownMenuCheckboxItem
-                            key={column.id}
-                            className="capitalize"
-                            checked={column.getIsVisible()}
-                            onCheckedChange={(value) =>
-                              column.toggleVisibility(!!value)
-                            }
-                          >
-                            {column.id}
-                          </DropdownMenuCheckboxItem>
-                        );
-                      })}
-                  </div>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="hidden items-center gap-1 text-xs text-muted-foreground md:flex">
-            <span className="tabular-nums whitespace-nowrap">
-              {table.getFilteredRowModel().rows.length} rows • 137ms
-            </span>
-          </div>
-          <div className="flex items-center rounded-md border bg-muted/20 p-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              <IconChevronLeft className="size-3.5" />
-            </Button>
-            <div className="hidden h-7 min-w-8 items-center justify-center border-x px-2 text-xs font-medium tabular-nums sm:flex">
-              {table.getState().pagination.pageSize}
-            </div>
-            <div className="flex h-7 min-w-8 items-center justify-center border-x px-2 text-xs font-medium tabular-nums sm:border-l-0">
-              {table.getState().pagination.pageIndex + 1}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-sm"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              <IconChevronRight className="size-3.5" />
-            </Button>
-          </div>
+          ) : null}
 
           <Button
-            variant="ghost"
-            size="icon"
-            className="hidden h-8 w-8 rounded-md border bg-muted/20 md:inline-flex"
+            variant={showFilters ? "secondary" : "outline"}
+            size="sm"
+            className={cn(
+              "h-9 gap-2 border-border-subtle bg-surface-panel",
+              showFilters && "bg-primary/10 text-primary",
+            )}
+            onClick={() => setShowFilters(!showFilters)}
           >
-            <IconRefresh className="size-3.5" />
+            <IconFilter className="size-3.5" />
+            Filter
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-2 border-border-subtle bg-surface-panel"
+          >
+            <IconArrowsSort className="size-3.5" />
+            Sort
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-md border bg-muted/20"
-                >
-                  <IconDots className="size-3.5" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-56">
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-9 gap-2 border-border-subtle bg-surface-panel",
+              )}
+            >
+              <IconColumns className="size-3.5" />
+              Columns
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuGroup>
-                <DropdownMenuItem>
-                  <IconRefresh className="mr-2 size-3.5" />
-                  Refresh rows
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <IconRefresh className="mr-2 size-3.5" />
-                  Refresh schema
-                </DropdownMenuItem>
+                <div className="flex items-center justify-between px-2 py-1.5">
+                  <span className="text-xs font-semibold">Toggle columns</span>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      table.toggleAllColumnsVisible(false);
+                    }}
+                  >
+                    Deselect all
+                  </button>
+                </div>
+                <div className="px-2 pb-2">
+                  <div className="relative">
+                    <IconSearch className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search..."
+                      className="h-8 pl-8 text-xs"
+                      value={columnSearch}
+                      onChange={(e) => setColumnSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <DropdownMenuSeparator />
+                <div className="max-h-75 overflow-auto">
+                  {table
+                    .getAllColumns()
+                    .filter(
+                      (column) =>
+                        typeof column.accessorFn !== "undefined" &&
+                        column.getCanHide() &&
+                        column.id
+                          .toLowerCase()
+                          .includes(columnSearch.toLowerCase()),
+                    )
+                    .map((column) => {
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="capitalize"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={(value) =>
+                            column.toggleVisibility(!!value)
+                          }
+                        >
+                          {column.id}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                </div>
               </DropdownMenuGroup>
-              <DropdownMenuSeparator />
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-2 border-border-subtle bg-surface-panel"
+            onClick={onRefresh}
+            disabled={!onRefresh}
+          >
+            <IconRefresh className="size-3.5" />
+            Refresh
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-9 gap-2 border-border-subtle bg-surface-panel",
+              )}
+            >
+              <IconDownload className="size-3.5" />
+              Export
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuGroup>
                 <DropdownMenuItem onClick={() => handleExportJson("all")}>
                   <IconDownload className="mr-2 size-3.5" />
@@ -671,6 +587,7 @@ export function DataGrid({
                   Export all to .xlsx
                 </DropdownMenuItem>
               </DropdownMenuGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   disabled={!hasSelection}
@@ -693,11 +610,41 @@ export function DataGrid({
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {toolbarLeading ? (
+            <>
+              <div className="mx-1 h-6 w-px bg-border-subtle" />
+              {toolbarLeading}
+            </>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Select defaultValue={String(table.getState().pagination.pageSize)}>
+            <SelectTrigger className="h-9 w-27 border-border-subtle bg-surface-panel text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 25, 50, 100].map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size} rows
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Expand grid"
+            className="h-9 w-9 rounded-md border border-border-subtle bg-surface-panel"
+          >
+            <IconArrowsMaximize className="size-3.5" />
+          </Button>
         </div>
       </div>
 
       {showFilters && (
-        <div className="flex min-h-12 flex-wrap items-center gap-2 border-b bg-muted/10 px-4 py-2">
+        <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-5 py-2">
           <Button
             variant="ghost"
             size="icon"
@@ -712,7 +659,7 @@ export function DataGrid({
               {appliedFilters.map((f) => (
                 <div
                   key={f.column}
-                  className="flex h-7 items-center gap-1.5 rounded-md border bg-background px-2 text-xs shadow-sm"
+                  className="flex h-7 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-panel px-2 text-xs"
                 >
                   <span className="font-medium">{f.column}</span>
                   <span className="font-mono text-[10px] text-muted-foreground">
@@ -734,8 +681,8 @@ export function DataGrid({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 p-1">
-            <div className="flex items-center gap-2 rounded-sm bg-background px-2 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-surface-panel p-1">
+            <div className="flex items-center gap-2 rounded-sm bg-surface-app px-2">
               <span className="text-xs font-medium text-muted-foreground">
                 where
               </span>
@@ -756,7 +703,7 @@ export function DataGrid({
               </Select>
             </div>
 
-            <div className="flex items-center gap-2 rounded-sm bg-background px-2 shadow-sm">
+            <div className="flex items-center gap-2 rounded-sm bg-surface-app px-2">
               <Select
                 value={draftOperator}
                 onValueChange={(val) => setDraftOperator(val ?? "equals")}
@@ -780,7 +727,7 @@ export function DataGrid({
             </div>
 
             <Input
-              className="h-7 w-40 border-none bg-muted/20 px-2 text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/50 sm:w-60"
+              className="h-7 w-40 border-none bg-surface-app px-2 text-xs shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 sm:w-60"
               placeholder="value"
               value={draftValue}
               onChange={(event) => setDraftValue(event.target.value)}
@@ -826,7 +773,7 @@ export function DataGrid({
         </div>
       )}
 
-      <div className="flex-1 overflow-auto bg-background">
+      <div className="flex-1 overflow-auto bg-surface-app">
         {table.getRowModel().rows?.length ? (
           <table className="min-w-full border-separate border-spacing-0 text-left text-xs font-mono">
             <thead className="sticky top-0 z-20">
@@ -836,12 +783,13 @@ export function DataGrid({
                     <th
                       key={header.id}
                       className={cn(
-                        "sticky top-0 z-20 h-9 border-b border-r bg-muted px-0 align-middle font-medium text-muted-foreground last:border-r-0",
+                        "sticky top-0 z-20 h-10 border-b border-r border-border-subtle bg-surface-panel-elevated px-0 align-middle font-medium text-text-muted last:border-r-0",
                         header.id === "select" && "sticky left-0 z-30 w-10",
                       )}
                       style={{
                         minWidth: header.id === "select" ? "40px" : "150px",
-                        maxWidth: header.id === "select" ? "40px" : "300px",
+                        width:
+                          header.id === "select" ? "40px" : dataColumnWidth,
                       }}
                     >
                       {header.isPlaceholder ? null : (
@@ -862,31 +810,33 @@ export function DataGrid({
                 </tr>
               ))}
             </thead>
-            <tbody className="bg-background">
+            <tbody className="bg-surface-app">
               {table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
                   className={cn(
-                    "group hover:bg-muted/5",
-                    row.getIsSelected() && "bg-muted/10",
+                    "group hover:bg-surface-row-hover",
+                    row.getIsSelected() && "bg-accent-overlay text-foreground",
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
                       className={cn(
-                        "h-9 border-b border-r p-0 align-middle last:border-r-0",
+                        "h-9 border-b border-r border-border-subtle p-0 align-middle last:border-r-0",
                         cell.column.id === "select" &&
-                          "sticky left-0 z-10 w-10 bg-background group-hover:bg-muted/5",
+                          "sticky left-0 z-10 w-10 bg-surface-app group-hover:bg-surface-row-hover",
                         cell.column.id === "select" &&
                           row.getIsSelected() &&
-                          "bg-muted/10",
+                          "bg-primary/10",
                       )}
                       style={{
                         minWidth:
                           cell.column.id === "select" ? "40px" : "150px",
-                        maxWidth:
-                          cell.column.id === "select" ? "40px" : "300px",
+                        width:
+                          cell.column.id === "select"
+                            ? "40px"
+                            : dataColumnWidth,
                       }}
                     >
                       {flexRender(

@@ -1,18 +1,28 @@
 import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import {
   IconAlertCircle,
-  IconDatabase,
+  IconChevronDown,
+  IconCopy,
   IconDeviceFloppy,
+  IconDownload,
   IconLoader2,
   IconPlayerPlay,
-  IconSearch,
+  IconSparkles,
   IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataGrid } from "@/components/data-grid";
+import { QuerySidebar } from "@/components/query-sidebar";
+import { StatusBar, type StatusBarItem } from "@/components/status-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { getSqlStatementAtPosition, getSqlStatements } from "@/lib/sql";
 import {
   getSqlCompletions,
@@ -25,9 +35,8 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
-// Minimal shape we need from the Monaco editor instance. Avoids pulling the
-// full monaco-editor types in (the package isn't installed for runtime use).
 type MonacoEditorInstance = {
   getPosition: () => MonacoPosition | null;
   getSelection: () => unknown;
@@ -49,6 +58,9 @@ type MonacoEditorInstance = {
   ) => MonacoCompletionDisposable;
   onDidChangeModelContent?: (
     listener: () => void,
+  ) => MonacoCompletionDisposable;
+  onDidChangeCursorPosition?: (
+    listener: (event: { position: MonacoPosition }) => void,
   ) => MonacoCompletionDisposable;
 };
 
@@ -85,7 +97,15 @@ interface QueryEditorPanelProps {
   isClient: boolean;
 }
 
+type ResultsView = "results" | "explain";
+
 export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
+  const [resultsView, setResultsView] = useState<ResultsView>("results");
+  const [cursor, setCursor] = useState<MonacoPosition>({
+    lineNumber: 1,
+    column: 1,
+  });
+
   const {
     queryPreviews,
     queryStatus,
@@ -93,6 +113,8 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     schemaExplorer,
     tableStructure,
     editorTheme,
+    connections,
+    activeConnectionId,
     updateQuery,
     runQuery,
     loadTableStructure,
@@ -131,8 +153,6 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
-    // Drop any extension on the label (e.g. "query_1.sql" -> "query-1") so
-    // the grid can append its own.
     const labelStem = tab.label.replace(/\.[^.]+$/, "");
     return [slug(labelStem), today].filter(Boolean).join("-");
   }, [tab.label]);
@@ -162,6 +182,13 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   );
 
   completionContextRef.current = completionContext;
+
+  const activeConnection = useMemo(
+    () =>
+      connections.find((c) => c.id === tab.connectionId) ??
+      connections.find((c) => c.id === activeConnectionId),
+    [activeConnectionId, connections, tab.connectionId],
+  );
 
   const getEditorSelectionText = useCallback((): string => {
     const editor = editorRef.current;
@@ -213,6 +240,10 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   const handleRunAll = useCallback(() => {
     runSql(tab.query ?? "");
   }, [runSql, tab.query]);
+
+  const handleFormat = useCallback(() => {
+    // TODO(designs/FOLLOWUPS.md Phase 6): wire actual SQL formatter
+  }, []);
 
   const updateQueryRunDecorations = useCallback(
     (monaco: Parameters<OnMount>[1], model: MonacoTextModel) => {
@@ -266,6 +297,15 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         if (contentDisposable) {
           editorDisposablesRef.current.push(contentDisposable);
         }
+      }
+
+      const cursorDisposable = (
+        editor as MonacoEditorInstance
+      ).onDidChangeCursorPosition?.(({ position }) => {
+        setCursor(position);
+      });
+      if (cursorDisposable) {
+        editorDisposablesRef.current.push(cursorDisposable);
       }
 
       const runCurrent = () => {
@@ -432,7 +472,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
       ({
         minimap: { enabled: false },
         fontSize: 13,
-        fontFamily: "JetBrains Mono Variable, monospace",
+        fontFamily: "SF Mono, JetBrains Mono Variable, monospace",
         scrollBeyondLastLine: false,
         wordWrap: "on" as const,
         lineNumbersMinChars: 3,
@@ -450,184 +490,278 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     [],
   );
 
+  const dbSelectorLabel = activeConnection
+    ? `${activeConnection.engine} (${activeConnection.host || activeConnection.database})`
+    : "No connection";
+
+  const statusItems: StatusBarItem[] = [
+    {
+      id: "tab",
+      label: "Tab",
+      value: tab.label,
+    },
+    {
+      id: "cursor",
+      label: "",
+      value: `Ln ${cursor.lineNumber}, Col ${cursor.column}`,
+    },
+    {
+      id: "diagnostics",
+      tone: errorMessage ? "danger" : "healthy",
+      value: errorMessage ? "Has errors" : "No errors",
+    },
+    {
+      id: "tx",
+      label: "Auto-commit",
+      tone: "healthy",
+      value: "ON",
+      align: "right",
+    },
+  ];
+
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Top Toolbar */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <IconTerminal2 className="size-4" />
-            <span className="font-medium text-foreground">{tab.label}</span>
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-surface-app xl:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="flex min-h-0 min-w-0 flex-col">
+        {/* Editor toolbar */}
+        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border-subtle bg-surface-window px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
+              <IconTerminal2 className="size-4" />
+            </span>
+            <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
+              Query Editor
+            </h1>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="Connection selector"
+                className="ml-2 inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
+              >
+                <span className="size-1.5 rounded-full bg-accent-green" />
+                <span className="truncate">{dbSelectorLabel}</span>
+                <IconChevronDown className="size-3 text-text-muted" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {connections.map((connection) => (
+                  <DropdownMenuItem
+                    key={connection.id}
+                    // TODO(FOLLOWUPS): switch the editor's connection
+                    onClick={() => {}}
+                  >
+                    {connection.name} · {connection.engine}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <div className="h-4 w-px bg-border" />
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <IconDatabase className="size-3" />
-            <span>{tab.schema}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasEdits && (
-            <>
+          <div className="flex items-center gap-2">
+            {hasEdits ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => discardQueryEdits(tab.id)}
+                >
+                  <IconX className="size-3.5" /> Discard
+                </Button>
+                <Button size="sm">
+                  <IconDeviceFloppy className="size-3.5" /> Save
+                </Button>
+                <div className="h-5 w-px bg-border-subtle" />
+              </>
+            ) : null}
+
+            <Button size="sm" variant="outline" onClick={handleFormat}>
+              <IconSparkles className="size-3.5" />
+              Format
+            </Button>
+
+            <div className="flex items-center">
               <Button
                 size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs"
-                onClick={() => discardQueryEdits(tab.id)}
+                onClick={handleRunCurrent}
+                disabled={isRunning}
+                aria-busy={isRunning}
+                className="rounded-r-none"
               >
-                <IconX className="mr-1 size-3.5" /> Discard
+                {isRunning ? (
+                  <>
+                    <IconLoader2 className="size-3.5 animate-spin" />
+                    Running…
+                  </>
+                ) : (
+                  <>
+                    <IconPlayerPlay className="size-3.5" />
+                    Run
+                  </>
+                )}
               </Button>
-              <Button size="sm" className="h-7 px-2 text-xs">
-                <IconDeviceFloppy className="mr-1 size-3.5" /> Save changes
-              </Button>
-              <div className="h-4 w-px bg-border" />
-            </>
-          )}
-
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 px-3 text-xs shadow-none"
-            onClick={handleRunCurrent}
-            disabled={isRunning}
-            aria-busy={isRunning}
-          >
-            {isRunning ? (
-              <>
-                <IconLoader2 className="mr-1.5 size-3.5 animate-spin" />
-                Running...
-              </>
-            ) : (
-              <>
-                <IconPlayerPlay className="mr-1.5 size-3.5" />
-                Run current
-              </>
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 px-3 text-xs shadow-none"
-            onClick={handleRunSelection}
-            disabled={isRunning}
-          >
-            <IconPlayerPlay className="mr-1.5 size-3.5" />
-            Selection
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 px-3 text-xs shadow-none"
-            onClick={handleRunAll}
-            disabled={isRunning}
-          >
-            <IconPlayerPlay className="mr-1.5 size-3.5" />
-            All
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 px-3 text-xs shadow-none"
-          >
-            <IconSearch className="mr-1.5 size-3.5" />
-            Explain
-          </Button>
-        </div>
-      </div>
-
-      {/* Split Pane Container */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* Editor Section - Fixed Height for now */}
-        <div className="relative h-60 shrink-0 border-b">
-          {isClient ? (
-            <MonacoEditor
-              height="100%"
-              language="sql"
-              theme={editorTheme}
-              value={tab.query ?? ""}
-              options={editorOptions}
-              onChange={(value) => updateQuery(tab.id, value ?? "")}
-              onMount={handleEditorMount}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              Loading editor...
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label="Run options"
+                  className="inline-flex h-8 items-center justify-center rounded-r-md border-l border-primary-foreground/20 bg-primary px-2 text-primary-foreground hover:bg-accent-green-hover disabled:opacity-50"
+                  disabled={isRunning}
+                >
+                  <IconChevronDown className="size-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleRunSelection}>
+                    Run selection
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleRunCurrent}>
+                    Run current statement
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleRunAll}>
+                    Run all
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-          )}
-        </div>
-
-        {/* Results Section */}
-        <div className="flex min-h-0 flex-1 flex-col bg-background max-w-[calc(100vw-16rem)]">
-          {/* Results Info Bar */}
-          <div className="flex h-8 shrink-0 items-center gap-2 border-b bg-muted/20 px-2">
-            <Badge
-              variant="outline"
-              className="h-5 rounded-sm border-transparent bg-transparent px-1 text-[0.65rem] font-normal text-muted-foreground hover:bg-muted"
-            >
-              {activeQueryPreview?.rowCount ?? 0} rows
-            </Badge>
-            <div className="h-3 w-px bg-border" />
-            <Badge
-              variant="outline"
-              className="h-5 rounded-sm border-transparent bg-transparent px-1 text-[0.65rem] font-normal text-muted-foreground hover:bg-muted"
-            >
-              {activeQueryPreview?.runtime ?? "--"}
-            </Badge>
-            <div className="h-3 w-px bg-border" />
-            <Badge
-              variant="outline"
-              className="h-5 rounded-sm border-transparent bg-transparent px-1 text-[0.65rem] font-normal text-muted-foreground hover:bg-muted"
-            >
-              ReadOnly
-            </Badge>
           </div>
+        </div>
 
-          {errorMessage && (
-            <div
-              role="alert"
-              className="flex shrink-0 items-start gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-            >
-              <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-              <div className="flex-1 whitespace-pre-wrap wrap-break-word font-mono">
-                {errorMessage}
-              </div>
-            </div>
-          )}
-
-          {/* Data Grid */}
-          <div className="flex-1 overflow-hidden max-w-[calc(100vw-16rem)]">
-            {isRunning ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                <IconLoader2 className="size-6 animate-spin opacity-70" />
-                <div className="text-xs">Running query...</div>
-              </div>
-            ) : activeQueryPreview?.rows.length ? (
-              <DataGrid
-                data={activeQueryPreview?.rows ?? []}
-                columns={activeQueryPreview?.columns ?? []}
-                edits={currentEdits}
-                onEdit={(rowIndex, colIndex, value) =>
-                  setQueryEdit(tab.id, rowIndex, colIndex, value)
-                }
-                exportFilenameBase={exportFilenameBase}
+        {/* Editor + results */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative h-[19rem] shrink-0 border-b border-border-subtle bg-surface-app">
+            {isClient ? (
+              <MonacoEditor
+                height="100%"
+                language="sql"
+                theme={editorTheme}
+                value={tab.query ?? ""}
+                options={editorOptions}
+                onChange={(value) => updateQuery(tab.id, value ?? "")}
+                onMount={handleEditorMount}
               />
-            ) : errorMessage ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                <div className="rounded-full bg-destructive/10 p-3">
-                  <IconAlertCircle className="size-6 text-destructive opacity-70" />
-                </div>
-                <div className="text-xs">Query did not return results</div>
-              </div>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-                <div className="rounded-full bg-muted p-3">
-                  <IconTerminal2 className="size-6 opacity-50" />
-                </div>
-                <div className="text-xs">Run the query to see results</div>
+              <div className="flex h-full items-center justify-center text-xs text-text-muted">
+                Loading editor…
               </div>
             )}
           </div>
+
+          <div className="flex min-h-0 flex-1 flex-col bg-surface-app">
+            {/* Results tabs + meta */}
+            <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-window px-5">
+              <div className="flex items-end gap-1">
+                {(
+                  [
+                    { id: "results", label: "Results" },
+                    { id: "explain", label: "Explain" },
+                  ] as const
+                ).map(({ id, label }) => {
+                  const isActive = resultsView === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setResultsView(id)}
+                      aria-current={isActive ? "page" : undefined}
+                      className={cn(
+                        "relative h-9 px-2.5 text-xs font-medium transition-colors",
+                        isActive
+                          ? "text-foreground"
+                          : "text-text-muted hover:text-foreground",
+                      )}
+                    >
+                      {label}
+                      {isActive ? (
+                        <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent-green" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
+                <span>
+                  Returned {activeQueryPreview?.rowCount ?? 0} rows in{" "}
+                  {activeQueryPreview?.runtime ?? "—"}
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Download results"
+                >
+                  <IconDownload className="size-3.5" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Copy results"
+                >
+                  <IconCopy className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {errorMessage ? (
+              <div
+                role="alert"
+                className="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+              >
+                <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                <div className="flex-1 whitespace-pre-wrap wrap-break-word font-mono">
+                  {errorMessage}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {resultsView === "explain" ? (
+                <div className="flex h-full items-center justify-center p-6">
+                  <div className="max-w-md rounded-lg border border-dashed border-border-subtle bg-surface-panel/40 p-6 text-center">
+                    <div className="text-sm font-semibold text-foreground">
+                      Explain plan
+                    </div>
+                    <p className="mt-1 text-xs text-text-muted">
+                      The execution plan for the active statement will appear
+                      here.
+                    </p>
+                    <Badge variant="outline" className="mt-3">
+                      Coming soon
+                    </Badge>
+                  </div>
+                </div>
+              ) : isRunning ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted">
+                  <IconLoader2 className="size-6 animate-spin opacity-70" />
+                  <div className="text-xs">Running query…</div>
+                </div>
+              ) : activeQueryPreview?.rows.length ? (
+                <DataGrid
+                  data={activeQueryPreview?.rows ?? []}
+                  columns={activeQueryPreview?.columns ?? []}
+                  edits={currentEdits}
+                  onEdit={(rowIndex, colIndex, value) =>
+                    setQueryEdit(tab.id, rowIndex, colIndex, value)
+                  }
+                  exportFilenameBase={exportFilenameBase}
+                />
+              ) : errorMessage ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted">
+                  <div className="rounded-full bg-danger/10 p-3">
+                    <IconAlertCircle className="size-6 text-danger opacity-70" />
+                  </div>
+                  <div className="text-xs">Query did not return results</div>
+                </div>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted">
+                  <div className="rounded-full bg-surface-panel-elevated p-3">
+                    <IconTerminal2 className="size-6 opacity-50" />
+                  </div>
+                  <div className="text-xs">Run the query to see results</div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+
+        <StatusBar items={statusItems} />
       </div>
+      <aside className="hidden min-h-0 border-l border-border-subtle bg-surface-window p-4 xl:block">
+        <QuerySidebar tab={tab} />
+      </aside>
     </div>
   );
 }

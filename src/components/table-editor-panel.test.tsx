@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
@@ -662,6 +662,42 @@ describe("TableEditorPanel delete selected", () => {
     expect(confirmSpy).toHaveBeenCalled();
     expect(mockedInvoke).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+});
+
+describe("TableEditorPanel row details", () => {
+  it("shows a multi-selection state instead of first-row details", async () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [
+        ["1", "ada@example.com"],
+        ["2", "grace@example.com"],
+      ],
+      page: 1,
+      pageSize: 100,
+      totalRows: 2,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    await act(async () => {
+      fireEvent.click(checkboxes[0] as HTMLInputElement);
+    });
+
+    const detailsPanel = within(screen.getByTestId("row-details-panel"));
+    expect(detailsPanel.getByText("2 rows selected")).toBeTruthy();
+    expect(detailsPanel.getByText("Multiple rows selected")).toBeTruthy();
+    expect(
+      detailsPanel.getByText("Select a single row to inspect column values."),
+    ).toBeTruthy();
+    expect(detailsPanel.queryByText("ada@example.com")).toBeNull();
   });
 });
 
