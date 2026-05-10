@@ -1,17 +1,12 @@
 mod keychain;
+mod postgres;
 mod storage;
 
 use serde::{Deserialize, Serialize};
 use sqlx::{
-    any::AnyConnectOptions, postgres::PgConnectOptions, Any, AnyConnection, Column, Connection,
-    PgConnection, Row,
+    any::AnyConnectOptions, Any, AnyConnection, Column, Connection, Row,
 };
-use std::{
-    collections::HashMap,
-    str::FromStr,
-    sync::Once,
-    time::Instant,
-};
+use std::{str::FromStr, sync::Once, time::Instant};
 use tauri::{Manager, State};
 
 use crate::{keychain::CredentialUpdate, storage::Paths};
@@ -653,94 +648,6 @@ fn row_to_strings(row: &sqlx::any::AnyRow) -> Vec<String> {
         .collect()
 }
 
-fn pg_value_to_string(row: &sqlx::postgres::PgRow, index: usize) -> String {
-    // Try string first
-    if let Ok(value) = row.try_get::<Option<String>, _>(index) {
-        return value.unwrap_or_else(|| "NULL".to_string());
-    }
-    // Integers
-    if let Ok(value) = row.try_get::<Option<i64>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    if let Ok(value) = row.try_get::<Option<i32>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    if let Ok(value) = row.try_get::<Option<i16>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    // Floats
-    if let Ok(value) = row.try_get::<Option<f64>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    if let Ok(value) = row.try_get::<Option<f32>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    // Boolean
-    if let Ok(value) = row.try_get::<Option<bool>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    // Timestamps and dates
-    if let Ok(value) = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(index) {
-        return value
-            .map(|v| v.to_rfc3339())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    if let Ok(value) = row.try_get::<Option<chrono::NaiveDateTime>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    if let Ok(value) = row.try_get::<Option<chrono::NaiveDate>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    if let Ok(value) = row.try_get::<Option<chrono::NaiveTime>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    // UUID
-    if let Ok(value) = row.try_get::<Option<uuid::Uuid>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    // JSON
-    if let Ok(value) = row.try_get::<Option<serde_json::Value>, _>(index) {
-        return value
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    // Bytes
-    if let Ok(value) = row.try_get::<Option<Vec<u8>>, _>(index) {
-        return value
-            .map(|bytes| bytes_to_hex(&bytes))
-            .unwrap_or_else(|| "NULL".to_string());
-    }
-    "NULL".to_string()
-}
-
-fn pg_row_to_strings(row: &sqlx::postgres::PgRow) -> Vec<String> {
-    row.columns()
-        .iter()
-        .enumerate()
-        .map(|(index, _)| pg_value_to_string(row, index))
-        .collect()
-}
-
 async fn fetch_rows(
     conn: &mut AnyConnection,
     query: &str,
@@ -1033,74 +940,10 @@ async fn fetch_schema_explorer_clickhouse(
 ///
 /// This is the single seam where future PG connection concerns plug in:
 /// pooling, TLS modes, statement timeouts, `application_name`, etc.
-async fn connect_postgres(connection: &StoredConnection) -> Result<PgConnection, String> {
-    let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database)
-        .port(if connection.port == 0 {
-            5432
-        } else {
-            connection.port
-        });
-
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
-    }
-
-    PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())
-}
-
-async fn run_postgres_query(
-    connection: &StoredConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
-    let mut conn = connect_postgres(connection).await?;
-    let start = Instant::now();
-
-    if should_fetch_rows(query) {
-        let rows = sqlx::query(query)
-            .fetch_all(&mut conn)
-            .await
-            .map_err(|error| error.to_string())?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
-                    .iter()
-                    .map(|column| column.name().to_string())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let values = rows.iter().map(pg_row_to_strings).collect::<Vec<_>>();
-        let runtime_ms = start.elapsed().as_millis() as u64;
-        Ok(QueryResult {
-            columns,
-            rows: values,
-            runtime_ms,
-            row_count: rows.len() as u64,
-        })
-    } else {
-        let result = sqlx::query(query)
-            .execute(&mut conn)
-            .await
-            .map_err(|error| error.to_string())?;
-        let runtime_ms = start.elapsed().as_millis() as u64;
-        Ok(QueryResult {
-            columns: vec![],
-            rows: vec![],
-            runtime_ms,
-            row_count: result.rows_affected(),
-        })
-    }
-}
-
 async fn run_sqlx_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
     // Use native PostgreSQL driver to properly support all Postgres types
     if matches!(connection.engine, DatabaseEngine::PostgreSQL) {
-        return run_postgres_query(connection, query).await;
+        return postgres::run_query(connection, query).await;
     }
 
     ensure_sqlx_drivers();
@@ -1353,279 +1196,6 @@ async fn run_engine_query(
     }
 }
 
-async fn fetch_table_structure_postgres(
-    connection: &StoredConnection,
-    schema: &str,
-    table: &str,
-) -> Result<TableStructure, String> {
-    let mut conn = connect_postgres(connection).await?;
-
-    // Primary key columns first so we can mark them on the columns list.
-    let pk_rows = sqlx::query(
-        r#"
-        SELECT kcu.column_name::text AS column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_name = kcu.constraint_name
-         AND tc.table_schema = kcu.table_schema
-         AND tc.table_name = kcu.table_name
-        WHERE tc.constraint_type = 'PRIMARY KEY'
-          AND tc.table_schema = $1
-          AND tc.table_name = $2
-        ORDER BY kcu.ordinal_position
-        "#,
-    )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let primary_key_cols: Vec<String> = pk_rows
-        .iter()
-        .map(|row| row.try_get::<String, _>("column_name").unwrap_or_default())
-        .collect();
-
-    // Columns
-    let column_rows = sqlx::query(
-        r#"
-        SELECT column_name::text AS column_name,
-               data_type::text AS data_type,
-               udt_name::text AS udt_name,
-               is_nullable::text AS is_nullable,
-               column_default::text AS column_default,
-               ordinal_position::int AS ordinal_position,
-               character_maximum_length::int AS character_maximum_length,
-               numeric_precision::int AS numeric_precision,
-               numeric_scale::int AS numeric_scale
-        FROM information_schema.columns
-        WHERE table_schema = $1 AND table_name = $2
-        ORDER BY ordinal_position
-        "#,
-    )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let mut columns = Vec::with_capacity(column_rows.len());
-    for row in column_rows {
-        let name: String = row.try_get("column_name").unwrap_or_default();
-        let data_type: String = row.try_get("data_type").unwrap_or_default();
-        let udt_name: String = row.try_get("udt_name").unwrap_or_default();
-        let is_nullable: String = row.try_get("is_nullable").unwrap_or_default();
-        let default_value: Option<String> = row.try_get("column_default").ok();
-        let ordinal_position: i32 = row.try_get("ordinal_position").unwrap_or(0);
-        let char_len: Option<i32> = row.try_get("character_maximum_length").ok();
-        let numeric_precision: Option<i32> = row.try_get("numeric_precision").ok();
-        let numeric_scale: Option<i32> = row.try_get("numeric_scale").ok();
-
-        // Build a richer rendered type. Trust `data_type` from information_schema
-        // for the high-level family and fall back to `udt_name` for specifics.
-        let rendered_type = match data_type.as_str() {
-            "character varying" => match char_len {
-                Some(len) => format!("varchar({})", len),
-                None => "varchar".to_string(),
-            },
-            "character" => match char_len {
-                Some(len) => format!("char({})", len),
-                None => "char".to_string(),
-            },
-            "numeric" => match (numeric_precision, numeric_scale) {
-                (Some(p), Some(s)) if s > 0 => format!("numeric({},{})", p, s),
-                (Some(p), _) => format!("numeric({})", p),
-                _ => "numeric".to_string(),
-            },
-            "USER-DEFINED" | "ARRAY" => udt_name.clone(),
-            other => other.to_string(),
-        };
-
-        columns.push(ColumnInfo {
-            name: name.clone(),
-            data_type: rendered_type,
-            nullable: is_nullable.eq_ignore_ascii_case("YES"),
-            default_value,
-            is_primary_key: primary_key_cols.iter().any(|pk| pk == &name),
-            ordinal_position,
-        });
-    }
-
-    // Foreign keys
-    let fk_rows = sqlx::query(
-        r#"
-        SELECT con.conname::text AS name,
-               nsp_ref.nspname::text AS referenced_schema,
-               cls_ref.relname::text AS referenced_table,
-               con.confupdtype::text AS on_update,
-               con.confdeltype::text AS on_delete,
-               (
-                   SELECT array_agg(att.attname::text ORDER BY u.ord)
-                   FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
-                   JOIN pg_attribute att
-                     ON att.attrelid = con.conrelid AND att.attnum = u.attnum
-               ) AS columns,
-               (
-                   SELECT array_agg(att.attname::text ORDER BY u.ord)
-                   FROM unnest(con.confkey) WITH ORDINALITY AS u(attnum, ord)
-                   JOIN pg_attribute att
-                     ON att.attrelid = con.confrelid AND att.attnum = u.attnum
-               ) AS referenced_columns
-        FROM pg_constraint con
-        JOIN pg_class cls ON cls.oid = con.conrelid
-        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
-        JOIN pg_class cls_ref ON cls_ref.oid = con.confrelid
-        JOIN pg_namespace nsp_ref ON nsp_ref.oid = cls_ref.relnamespace
-        WHERE con.contype = 'f'
-          AND nsp.nspname = $1
-          AND cls.relname = $2
-        ORDER BY con.conname
-        "#,
-    )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let foreign_keys = fk_rows
-        .into_iter()
-        .map(|row| {
-            let name: String = row.try_get("name").unwrap_or_default();
-            let referenced_schema: String = row.try_get("referenced_schema").unwrap_or_default();
-            let referenced_table: String = row.try_get("referenced_table").unwrap_or_default();
-            let on_update_code: String = row.try_get("on_update").unwrap_or_default();
-            let on_delete_code: String = row.try_get("on_delete").unwrap_or_default();
-            let columns: Vec<String> = row.try_get("columns").unwrap_or_default();
-            let referenced_columns: Vec<String> =
-                row.try_get("referenced_columns").unwrap_or_default();
-            ForeignKeyInfo {
-                name,
-                columns,
-                referenced_schema,
-                referenced_table,
-                referenced_columns,
-                on_update: pg_fk_action_label(&on_update_code),
-                on_delete: pg_fk_action_label(&on_delete_code),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    // Indexes
-    let index_rows = sqlx::query(
-        r#"
-        SELECT i.relname::text AS index_name,
-               ix.indisunique AS is_unique,
-               ix.indisprimary AS is_primary,
-               am.amname::text AS method,
-               (
-                   SELECT array_agg(att.attname::text ORDER BY u.ord)
-                   FROM unnest(ix.indkey) WITH ORDINALITY AS u(attnum, ord)
-                   JOIN pg_attribute att
-                     ON att.attrelid = ix.indrelid AND att.attnum = u.attnum
-               ) AS columns
-        FROM pg_class t
-        JOIN pg_index ix ON t.oid = ix.indrelid
-        JOIN pg_class i ON i.oid = ix.indexrelid
-        JOIN pg_am am ON am.oid = i.relam
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        WHERE n.nspname = $1 AND t.relname = $2
-        ORDER BY i.relname
-        "#,
-    )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let indexes = index_rows
-        .into_iter()
-        .map(|row| IndexInfo {
-            name: row.try_get("index_name").unwrap_or_default(),
-            columns: row.try_get("columns").unwrap_or_default(),
-            is_unique: row.try_get("is_unique").unwrap_or(false),
-            is_primary: row.try_get("is_primary").unwrap_or(false),
-            method: row.try_get::<String, _>("method").ok(),
-        })
-        .collect::<Vec<_>>();
-
-    // Other constraints (CHECK, UNIQUE, EXCLUDE) — skip primary key and foreign key here.
-    let constraint_rows = sqlx::query(
-        r#"
-        SELECT con.conname::text AS name,
-               con.contype::text AS contype,
-               pg_get_constraintdef(con.oid) AS definition
-        FROM pg_constraint con
-        JOIN pg_class cls ON cls.oid = con.conrelid
-        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
-        WHERE nsp.nspname = $1
-          AND cls.relname = $2
-          AND con.contype IN ('c', 'u', 'x')
-        ORDER BY con.conname
-        "#,
-    )
-    .bind(schema)
-    .bind(table)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let constraints = constraint_rows
-        .into_iter()
-        .map(|row| {
-            let kind_code: String = row.try_get("contype").unwrap_or_default();
-            ConstraintInfo {
-                name: row.try_get("name").unwrap_or_default(),
-                kind: pg_constraint_kind(&kind_code).to_string(),
-                definition: row.try_get("definition").unwrap_or_default(),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let primary_key = if primary_key_cols.is_empty() {
-        None
-    } else {
-        Some(primary_key_cols)
-    };
-
-    Ok(TableStructure {
-        columns,
-        primary_key,
-        foreign_keys,
-        indexes,
-        constraints,
-        capabilities: StructureCapabilities {
-            columns: true,
-            primary_key: true,
-            foreign_keys: true,
-            indexes: true,
-            constraints: true,
-        },
-    })
-}
-
-fn pg_fk_action_label(code: &str) -> Option<String> {
-    match code {
-        "a" => Some("NO ACTION".to_string()),
-        "r" => Some("RESTRICT".to_string()),
-        "c" => Some("CASCADE".to_string()),
-        "n" => Some("SET NULL".to_string()),
-        "d" => Some("SET DEFAULT".to_string()),
-        _ => None,
-    }
-}
-
-fn pg_constraint_kind(code: &str) -> &'static str {
-    match code {
-        "c" => "check",
-        "u" => "unique",
-        "x" => "exclusion",
-        "p" => "primary key",
-        "f" => "foreign key",
-        _ => "constraint",
-    }
-}
 
 fn engine_name(engine: &DatabaseEngine) -> &'static str {
     match engine {
@@ -1693,7 +1263,7 @@ async fn load_table_structure(
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
-                fetch_table_structure_postgres(&connection, &schema, &table).await
+                postgres::fetch_table_structure(&connection, &schema, &table).await
             }
             // For now, MySQL / SQLite / ClickHouse fall back to a columns-only
             // probe; the UI surfaces the disabled sections via capabilities.
@@ -1713,40 +1283,6 @@ async fn load_table_structure(
     .await
 }
 
-async fn execute_ddl_postgres(
-    connection: &StoredConnection,
-    sql: &str,
-) -> Result<ExecuteDdlResult, String> {
-    let mut conn = connect_postgres(connection).await?;
-
-    let start = Instant::now();
-
-    // Wrap the entire DDL batch in an explicit transaction so a partial
-    // failure leaves the schema unchanged. sqlx's PgConnection::execute
-    // accepts multi-statement strings, which lets us send the generated
-    // DDL as a single round-trip.
-    use sqlx::Executor;
-    if let Err(error) = conn.execute("BEGIN").await {
-        return Err(error.to_string());
-    }
-    match conn.execute(sql).await {
-        Ok(_) => {
-            if let Err(error) = conn.execute("COMMIT").await {
-                // Best-effort rollback if COMMIT fails (rare).
-                let _ = conn.execute("ROLLBACK").await;
-                return Err(error.to_string());
-            }
-            Ok(ExecuteDdlResult {
-                runtime_ms: start.elapsed().as_millis() as u64,
-            })
-        }
-        Err(error) => {
-            let _ = conn.execute("ROLLBACK").await;
-            Err(error.to_string())
-        }
-    }
-}
-
 #[tauri::command]
 async fn execute_ddl(
     paths: State<'_, Paths>,
@@ -1761,7 +1297,7 @@ async fn execute_ddl(
     }
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
-            DatabaseEngine::PostgreSQL => execute_ddl_postgres(&connection, &sql).await,
+            DatabaseEngine::PostgreSQL => postgres::execute_ddl(&connection, &sql).await,
             _ => Err(format!(
                 "Structure commit is not supported for {} (PostgreSQL only)",
                 engine_name(&connection.engine)
@@ -1769,108 +1305,6 @@ async fn execute_ddl(
         }
     })
     .await
-}
-
-/// Build a parameterized UPDATE statement for a single edit.
-///
-/// Returns a tuple of (sql, params) where params is the ordered binding list.
-/// SET clauses come first ($1..$n), then identity ($n+1..$n+m). Identifiers
-/// are double-quoted and internal quotes are doubled — values are parameter-
-/// bound, so neither the column nor table names ever come from user-supplied
-/// SQL text.
-fn build_update_statement(
-    schema: &str,
-    table: &str,
-    set: &[CellEditKeyValue],
-    identity: &[CellEditKeyValue],
-) -> (String, Vec<Option<String>>) {
-    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
-    let mut params: Vec<Option<String>> = Vec::with_capacity(set.len() + identity.len());
-    let set_clause: Vec<String> = set
-        .iter()
-        .enumerate()
-        .map(|(i, kv)| {
-            params.push(kv.value.clone());
-            format!("{} = ${}", quote_double(&kv.column), i + 1)
-        })
-        .collect();
-    let where_clause: Vec<String> = identity
-        .iter()
-        .map(|kv| {
-            params.push(kv.value.clone());
-            // Identity values are never NULL in practice (NULLs cannot be
-            // matched with `=`), but we still bind defensively. If a caller
-            // ever sends NULL we fall back to `IS NULL` so the row at least
-            // has a chance of matching.
-            if kv.value.is_none() {
-                // Pop the just-pushed None — it isn't used because we emit
-                // `IS NULL` directly. Keep parameter numbering consistent.
-                params.pop();
-                format!("{} IS NULL", quote_double(&kv.column))
-            } else {
-                format!("{} = ${}", quote_double(&kv.column), params.len())
-            }
-        })
-        .collect();
-    let sql = format!(
-        "UPDATE {} SET {} WHERE {}",
-        qualified,
-        set_clause.join(", "),
-        where_clause.join(" AND ")
-    );
-    (sql, params)
-}
-
-async fn commit_cell_edits_postgres(
-    connection: &StoredConnection,
-    schema: &str,
-    table: &str,
-    edits: &[CellEdit],
-) -> Result<CommitCellEditsResult, String> {
-    use sqlx::Connection;
-    let mut conn = connect_postgres(connection).await?;
-    // sqlx's `Transaction` rolls back automatically on drop, so any `?`
-    // return below acts as ROLLBACK without the manual clean-up that used to
-    // litter every error path.
-    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
-    let start = Instant::now();
-    let mut total_rows_affected: u64 = 0;
-
-    for edit in edits {
-        if edit.set.is_empty() {
-            return Err("edit has no SET columns".to_string());
-        }
-        if edit.identity.is_empty() {
-            return Err("edit has no identity columns".to_string());
-        }
-        let (sql, params) = build_update_statement(schema, table, &edit.set, &edit.identity);
-        let mut query = sqlx::query(&sql);
-        for param in &params {
-            query = query.bind(param.as_deref());
-        }
-        let result = query
-            .execute(&mut *tx)
-            .await
-            .map_err(|error| error.to_string())?;
-        let affected = result.rows_affected();
-        if affected == 0 {
-            let identity_desc = edit
-                .identity
-                .iter()
-                .map(|kv| format!("{}={}", kv.column, kv.value.as_deref().unwrap_or("NULL")))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(format!("row not found: {}", identity_desc));
-        }
-        total_rows_affected += affected;
-    }
-
-    tx.commit().await.map_err(|error| error.to_string())?;
-
-    Ok(CommitCellEditsResult {
-        rows_affected: total_rows_affected,
-        runtime_ms: start.elapsed().as_millis() as u64,
-    })
 }
 
 #[tauri::command]
@@ -1890,7 +1324,7 @@ async fn commit_cell_edits(
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
-                commit_cell_edits_postgres(&connection, &schema, &table, &edits).await
+                postgres::commit_cell_edits(&connection, &schema, &table, &edits).await
             }
             _ => Err(format!(
                 "Cell edit commit is not supported for {} (PostgreSQL only)",
@@ -1899,64 +1333,6 @@ async fn commit_cell_edits(
         }
     })
     .await
-}
-
-fn build_insert_statement(
-    schema: &str,
-    table: &str,
-    values: &[CellEditKeyValue],
-) -> (String, Vec<Option<String>>) {
-    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
-    let mut params: Vec<Option<String>> = Vec::with_capacity(values.len());
-    let column_list: Vec<String> = values
-        .iter()
-        .map(|kv| quote_double(&kv.column))
-        .collect();
-    let placeholders: Vec<String> = values
-        .iter()
-        .enumerate()
-        .map(|(i, kv)| {
-            params.push(kv.value.clone());
-            format!("${}", i + 1)
-        })
-        .collect();
-    let sql = format!(
-        "INSERT INTO {} ({}) VALUES ({})",
-        qualified,
-        column_list.join(", "),
-        placeholders.join(", ")
-    );
-    (sql, params)
-}
-
-async fn insert_row_postgres(
-    connection: &StoredConnection,
-    schema: &str,
-    table: &str,
-    values: &[CellEditKeyValue],
-) -> Result<InsertRowResult, String> {
-    use sqlx::Connection;
-    let mut conn = connect_postgres(connection).await?;
-    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
-    let start = Instant::now();
-
-    let (sql, params) = build_insert_statement(schema, table, values);
-    let mut query = sqlx::query(&sql);
-    for param in &params {
-        query = query.bind(param.as_deref());
-    }
-    let rows_affected = query
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| error.to_string())?
-        .rows_affected();
-
-    tx.commit().await.map_err(|error| error.to_string())?;
-
-    Ok(InsertRowResult {
-        rows_affected,
-        runtime_ms: start.elapsed().as_millis() as u64,
-    })
 }
 
 #[tauri::command]
@@ -1976,7 +1352,7 @@ async fn insert_row(
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
-                insert_row_postgres(&connection, &schema, &table, &values).await
+                postgres::insert_row(&connection, &schema, &table, &values).await
             }
             _ => Err(format!(
                 "Insert row is not supported for {} (PostgreSQL only)",
@@ -1985,79 +1361,6 @@ async fn insert_row(
         }
     })
     .await
-}
-
-fn build_delete_statement(
-    schema: &str,
-    table: &str,
-    identity: &[CellEditKeyValue],
-) -> (String, Vec<Option<String>>) {
-    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
-    let mut params: Vec<Option<String>> = Vec::with_capacity(identity.len());
-    let where_clause: Vec<String> = identity
-        .iter()
-        .map(|kv| {
-            // NULL identity column → IS NULL (matches commit_cell_edits
-            // behavior). Otherwise bind a positional parameter.
-            if kv.value.is_none() {
-                format!("{} IS NULL", quote_double(&kv.column))
-            } else {
-                params.push(kv.value.clone());
-                format!("{} = ${}", quote_double(&kv.column), params.len())
-            }
-        })
-        .collect();
-    let sql = format!(
-        "DELETE FROM {} WHERE {}",
-        qualified,
-        where_clause.join(" AND ")
-    );
-    (sql, params)
-}
-
-async fn delete_rows_postgres(
-    connection: &StoredConnection,
-    schema: &str,
-    table: &str,
-    rows: &[Vec<CellEditKeyValue>],
-) -> Result<DeleteRowsResult, String> {
-    use sqlx::Connection;
-    let mut conn = connect_postgres(connection).await?;
-    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
-    let start = Instant::now();
-    let mut total_rows_affected: u64 = 0;
-
-    for identity in rows {
-        if identity.is_empty() {
-            return Err("missing identity".to_string());
-        }
-        let (sql, params) = build_delete_statement(schema, table, identity);
-        let mut query = sqlx::query(&sql);
-        for param in &params {
-            query = query.bind(param.as_deref());
-        }
-        let result = query
-            .execute(&mut *tx)
-            .await
-            .map_err(|error| error.to_string())?;
-        let affected = result.rows_affected();
-        if affected == 0 {
-            let identity_desc = identity
-                .iter()
-                .map(|kv| format!("{}={}", kv.column, kv.value.as_deref().unwrap_or("NULL")))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(format!("row not found: {}", identity_desc));
-        }
-        total_rows_affected += affected;
-    }
-
-    tx.commit().await.map_err(|error| error.to_string())?;
-
-    Ok(DeleteRowsResult {
-        rows_affected: total_rows_affected,
-        runtime_ms: start.elapsed().as_millis() as u64,
-    })
 }
 
 #[tauri::command]
@@ -2077,7 +1380,7 @@ async fn delete_rows(
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
-                delete_rows_postgres(&connection, &schema, &table, &rows).await
+                postgres::delete_rows(&connection, &schema, &table, &rows).await
             }
             _ => Err(format!(
                 "Delete rows is not supported for {} (PostgreSQL only)",
@@ -2086,151 +1389,6 @@ async fn delete_rows(
         }
     })
     .await
-}
-
-async fn fetch_schema_relationships_postgres(
-    connection: &StoredConnection,
-    schema: &str,
-) -> Result<SchemaRelationships, String> {
-    let mut conn = connect_postgres(connection).await?;
-
-    // Tables in the requested schema. Views are intentionally excluded.
-    let table_rows = sqlx::query(
-        r#"
-        SELECT t.table_name::text AS name
-        FROM information_schema.tables t
-        WHERE t.table_schema = $1
-          AND t.table_type = 'BASE TABLE'
-        ORDER BY t.table_name
-        "#,
-    )
-    .bind(schema)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let column_rows = sqlx::query(
-        r#"
-        SELECT c.table_name::text AS table_name,
-               c.column_name::text AS column_name,
-               c.data_type::text AS data_type,
-               c.udt_name::text AS udt_name,
-               c.is_nullable::text AS is_nullable,
-               c.ordinal_position::int AS ordinal_position,
-               (kcu.column_name IS NOT NULL) AS is_primary_key
-        FROM information_schema.columns c
-        LEFT JOIN information_schema.table_constraints tc
-          ON tc.constraint_type = 'PRIMARY KEY'
-         AND tc.table_schema = c.table_schema
-         AND tc.table_name = c.table_name
-        LEFT JOIN information_schema.key_column_usage kcu
-          ON kcu.constraint_name = tc.constraint_name
-         AND kcu.table_schema = tc.table_schema
-         AND kcu.table_name = tc.table_name
-         AND kcu.column_name = c.column_name
-        WHERE c.table_schema = $1
-        ORDER BY c.table_name, c.ordinal_position
-        "#,
-    )
-    .bind(schema)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let mut columns_by_table: HashMap<String, Vec<SchemaTableColumn>> = HashMap::new();
-    for row in column_rows {
-        let table_name: String = row.try_get("table_name").unwrap_or_default();
-        let data_type: String = row.try_get("data_type").unwrap_or_default();
-        let udt_name: String = row.try_get("udt_name").unwrap_or_default();
-        let rendered_type = match data_type.as_str() {
-            "USER-DEFINED" | "ARRAY" => udt_name,
-            other => other.to_string(),
-        };
-        columns_by_table
-            .entry(table_name)
-            .or_default()
-            .push(SchemaTableColumn {
-                name: row.try_get("column_name").unwrap_or_default(),
-                data_type: rendered_type,
-                nullable: row
-                    .try_get::<String, _>("is_nullable")
-                    .unwrap_or_default()
-                    .eq_ignore_ascii_case("YES"),
-                is_primary_key: row.try_get("is_primary_key").unwrap_or(false),
-                ordinal_position: row.try_get("ordinal_position").unwrap_or(0),
-            });
-    }
-
-    let tables: Vec<SchemaTableNode> = table_rows
-        .into_iter()
-        .map(|row| {
-            let name: String = row.try_get("name").unwrap_or_default();
-            let columns = columns_by_table.remove(&name).unwrap_or_default();
-            SchemaTableNode {
-                schema: schema.to_string(),
-                name,
-                column_count: columns.len() as u32,
-                columns,
-            }
-        })
-        .collect();
-
-    // Foreign keys originating in the requested schema. We aggregate the
-    // participating columns into arrays directly in SQL using the constraint
-    // catalog so multi-column FKs collapse to a single row. The referenced
-    // table may live in a different schema; we surface that on the result so
-    // the UI can render cross-schema edges.
-    let fk_rows = sqlx::query(
-        r#"
-        SELECT con.conname::text AS name,
-               nsp.nspname::text AS from_schema,
-               cls.relname::text AS from_table,
-               nsp_ref.nspname::text AS to_schema,
-               cls_ref.relname::text AS to_table,
-               (
-                   SELECT array_agg(att.attname::text ORDER BY u.ord)
-                   FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
-                   JOIN pg_attribute att
-                     ON att.attrelid = con.conrelid AND att.attnum = u.attnum
-               ) AS from_columns,
-               (
-                   SELECT array_agg(att.attname::text ORDER BY u.ord)
-                   FROM unnest(con.confkey) WITH ORDINALITY AS u(attnum, ord)
-                   JOIN pg_attribute att
-                     ON att.attrelid = con.confrelid AND att.attnum = u.attnum
-               ) AS to_columns
-        FROM pg_constraint con
-        JOIN pg_class cls ON cls.oid = con.conrelid
-        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
-        JOIN pg_class cls_ref ON cls_ref.oid = con.confrelid
-        JOIN pg_namespace nsp_ref ON nsp_ref.oid = cls_ref.relnamespace
-        WHERE con.contype = 'f'
-          AND nsp.nspname = $1
-        ORDER BY con.conname
-        "#,
-    )
-    .bind(schema)
-    .fetch_all(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    let foreign_keys: Vec<SchemaForeignKey> = fk_rows
-        .into_iter()
-        .map(|row| SchemaForeignKey {
-            constraint_name: row.try_get("name").unwrap_or_default(),
-            from_schema: row.try_get("from_schema").unwrap_or_default(),
-            from_table: row.try_get("from_table").unwrap_or_default(),
-            from_columns: row.try_get("from_columns").unwrap_or_default(),
-            to_schema: row.try_get("to_schema").unwrap_or_default(),
-            to_table: row.try_get("to_table").unwrap_or_default(),
-            to_columns: row.try_get("to_columns").unwrap_or_default(),
-        })
-        .collect();
-
-    Ok(SchemaRelationships {
-        tables,
-        foreign_keys,
-    })
 }
 
 #[tauri::command]
@@ -2245,7 +1403,7 @@ async fn load_schema_relationships(
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
-                fetch_schema_relationships_postgres(&connection, &schema).await
+                postgres::fetch_schema_relationships(&connection, &schema).await
             }
             // Other engines are a deliberate v1 follow-up. Returning empty
             // collections keeps the UI usable (nothing to render) while
@@ -2260,52 +1418,6 @@ async fn load_schema_relationships(
     .await
 }
 
-async fn load_database_overview_stats_postgres(
-    connection: &StoredConnection,
-) -> Result<DatabaseOverviewStats, String> {
-    let mut conn = connect_postgres(connection).await?;
-
-    // Single round trip: aggregate everything we display on the overview.
-    // `row_count_estimate` is the planner's reltuples estimate (cheap and
-    // good enough for the dashboard); precise counts would require per-table
-    // SELECT count(*) which can be expensive on large databases.
-    let row = sqlx::query(
-        r#"
-        WITH user_relations AS (
-            SELECT c.oid, c.relkind, c.reltuples, n.nspname
-            FROM pg_class c
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-              AND n.nspname NOT LIKE 'pg_toast%'
-        )
-        SELECT
-            pg_database_size(current_database())::bigint AS database_size_bytes,
-            COALESCE(SUM(pg_table_size(oid)) FILTER (WHERE relkind IN ('r', 'p')), 0)::bigint AS table_size_bytes,
-            COALESCE(SUM(pg_indexes_size(oid)) FILTER (WHERE relkind IN ('r', 'p')), 0)::bigint AS index_size_bytes,
-            COUNT(*) FILTER (WHERE relkind IN ('r', 'p'))::bigint AS table_count,
-            COUNT(DISTINCT nspname)::bigint AS schema_count,
-            COALESCE(SUM(GREATEST(reltuples, 0)::bigint) FILTER (WHERE relkind IN ('r', 'p')), 0)::bigint AS row_count_estimate,
-            COUNT(*) FILTER (WHERE relkind = 'i')::bigint AS index_count,
-            (SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database())::bigint AS connection_count
-        FROM user_relations
-        "#,
-    )
-    .fetch_one(&mut conn)
-    .await
-    .map_err(|error| error.to_string())?;
-
-    Ok(DatabaseOverviewStats {
-        database_size_bytes: row.try_get("database_size_bytes").unwrap_or(0),
-        table_size_bytes: row.try_get("table_size_bytes").unwrap_or(0),
-        index_size_bytes: row.try_get("index_size_bytes").unwrap_or(0),
-        table_count: row.try_get("table_count").unwrap_or(0),
-        schema_count: row.try_get("schema_count").unwrap_or(0),
-        row_count_estimate: row.try_get("row_count_estimate").unwrap_or(0),
-        index_count: row.try_get("index_count").unwrap_or(0),
-        connection_count: row.try_get("connection_count").unwrap_or(0),
-    })
-}
-
 #[tauri::command]
 async fn load_database_overview_stats(
     paths: State<'_, Paths>,
@@ -2314,7 +1426,7 @@ async fn load_database_overview_stats(
     with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
-                load_database_overview_stats_postgres(&connection).await
+                postgres::load_database_overview_stats(&connection).await
             }
             _ => Err(format!(
                 "Database size stats are not supported for {} (PostgreSQL only)",
