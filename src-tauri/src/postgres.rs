@@ -961,3 +961,185 @@ pub async fn load_database_overview_stats(
         connection_count: row.try_get("connection_count").unwrap_or(0),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    //! Tests cover the pure SQL builders only — every other public function
+    //! in this module needs a live PostgreSQL to exercise. SQL composition
+    //! (identifier escaping, NULL handling, `$N` parameter alignment) is
+    //! exactly the kind of thing where bugs hide silently in production
+    //! until a value with an embedded quote shows up; the integration path
+    //! is too expensive to be a primary test surface.
+
+    use super::*;
+
+    /// Construct a `CellEditKeyValue` succinctly. `None` value = SQL `NULL`.
+    fn kv(column: &str, value: Option<&str>) -> CellEditKeyValue {
+        CellEditKeyValue {
+            column: column.to_string(),
+            value: value.map(str::to_string),
+        }
+    }
+
+    // ----- build_update ------------------------------------------------
+
+    #[test]
+    fn update_emits_set_then_where_with_aligned_params() {
+        let set = vec![kv("name", Some("Alice")), kv("email", Some("a@b.c"))];
+        let identity = vec![kv("id", Some("42"))];
+        let (sql, params) = build_update("public", "users", &set, &identity);
+        assert_eq!(
+            sql,
+            r#"UPDATE "public"."users" SET "name" = $1, "email" = $2 WHERE "id" = $3"#
+        );
+        assert_eq!(
+            params,
+            vec![
+                Some("Alice".into()),
+                Some("a@b.c".into()),
+                Some("42".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn update_binds_none_for_set_null_value() {
+        // SET col = NULL must still bind a positional parameter so $N stays
+        // aligned; it just binds None which sqlx maps to NULL.
+        let set = vec![kv("name", None)];
+        let identity = vec![kv("id", Some("42"))];
+        let (sql, params) = build_update("public", "users", &set, &identity);
+        assert_eq!(
+            sql,
+            r#"UPDATE "public"."users" SET "name" = $1 WHERE "id" = $2"#
+        );
+        assert_eq!(params, vec![None, Some("42".into())]);
+    }
+
+    #[test]
+    fn update_renders_null_identity_as_is_null_and_skips_param() {
+        // NULLs cannot be matched with `=`, so we emit `IS NULL` directly
+        // and don't bind a parameter for that identity column.
+        let set = vec![kv("name", Some("Alice"))];
+        let identity = vec![kv("deleted_at", None)];
+        let (sql, params) = build_update("public", "users", &set, &identity);
+        assert_eq!(
+            sql,
+            r#"UPDATE "public"."users" SET "name" = $1 WHERE "deleted_at" IS NULL"#
+        );
+        assert_eq!(params, vec![Some("Alice".into())]);
+    }
+
+    #[test]
+    fn update_keeps_param_indices_when_identity_mixes_null_and_value() {
+        // Two SET cols ($1, $2), then identity with one NULL (no param) and
+        // one real value. The real value must bind to $3 (params.len() at
+        // the time of emission), not $4.
+        let set = vec![kv("a", Some("1")), kv("b", Some("2"))];
+        let identity = vec![kv("nulled", None), kv("real", Some("x"))];
+        let (sql, params) = build_update("public", "t", &set, &identity);
+        assert_eq!(
+            sql,
+            r#"UPDATE "public"."t" SET "a" = $1, "b" = $2 WHERE "nulled" IS NULL AND "real" = $3"#
+        );
+        assert_eq!(
+            params,
+            vec![Some("1".into()), Some("2".into()), Some("x".into())]
+        );
+    }
+
+    #[test]
+    fn update_quotes_identifiers_with_embedded_quotes() {
+        // `quote_double` doubles internal `"` characters per SQL identifier
+        // rules. A column literally named `weird"col` becomes `"weird""col"`.
+        let set = vec![kv(r#"weird"col"#, Some("v"))];
+        let identity = vec![kv("id", Some("1"))];
+        let (sql, _) = build_update(r#"my"schema"#, r#"my"table"#, &set, &identity);
+        assert_eq!(
+            sql,
+            r#"UPDATE "my""schema"."my""table" SET "weird""col" = $1 WHERE "id" = $2"#
+        );
+    }
+
+    // ----- build_insert ------------------------------------------------
+
+    #[test]
+    fn insert_emits_columns_in_order_with_aligned_placeholders() {
+        let values = vec![kv("name", Some("Alice")), kv("email", Some("a@b.c"))];
+        let (sql, params) = build_insert("public", "users", &values);
+        assert_eq!(
+            sql,
+            r#"INSERT INTO "public"."users" ("name", "email") VALUES ($1, $2)"#
+        );
+        assert_eq!(params, vec![Some("Alice".into()), Some("a@b.c".into())]);
+    }
+
+    #[test]
+    fn insert_binds_none_for_null_columns() {
+        let values = vec![kv("name", Some("Alice")), kv("middle_name", None)];
+        let (sql, params) = build_insert("public", "users", &values);
+        assert_eq!(
+            sql,
+            r#"INSERT INTO "public"."users" ("name", "middle_name") VALUES ($1, $2)"#
+        );
+        assert_eq!(params, vec![Some("Alice".into()), None]);
+    }
+
+    #[test]
+    fn insert_quotes_identifiers_with_embedded_quotes() {
+        let values = vec![kv(r#"col"name"#, Some("v"))];
+        let (sql, _) = build_insert(r#"my"schema"#, r#"my"table"#, &values);
+        assert_eq!(
+            sql,
+            r#"INSERT INTO "my""schema"."my""table" ("col""name") VALUES ($1)"#
+        );
+    }
+
+    // ----- build_delete ------------------------------------------------
+
+    #[test]
+    fn delete_emits_where_clause_with_aligned_params() {
+        let identity = vec![kv("id", Some("42"))];
+        let (sql, params) = build_delete("public", "users", &identity);
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "public"."users" WHERE "id" = $1"#
+        );
+        assert_eq!(params, vec![Some("42".into())]);
+    }
+
+    #[test]
+    fn delete_supports_composite_identity() {
+        let identity = vec![kv("a", Some("1")), kv("b", Some("2"))];
+        let (sql, params) = build_delete("public", "t", &identity);
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "public"."t" WHERE "a" = $1 AND "b" = $2"#
+        );
+        assert_eq!(params, vec![Some("1".into()), Some("2".into())]);
+    }
+
+    #[test]
+    fn delete_renders_null_identity_as_is_null_and_skips_param() {
+        // Same behaviour as build_update: NULL identity → `IS NULL`, no
+        // parameter binding, downstream non-NULL identities still bind to
+        // params.len() at emission time.
+        let identity = vec![kv("deleted_at", None), kv("id", Some("42"))];
+        let (sql, params) = build_delete("public", "t", &identity);
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "public"."t" WHERE "deleted_at" IS NULL AND "id" = $1"#
+        );
+        assert_eq!(params, vec![Some("42".into())]);
+    }
+
+    #[test]
+    fn delete_quotes_identifiers_with_embedded_quotes() {
+        let identity = vec![kv(r#"odd"col"#, Some("1"))];
+        let (sql, _) = build_delete(r#"my"schema"#, r#"my"table"#, &identity);
+        assert_eq!(
+            sql,
+            r#"DELETE FROM "my""schema"."my""table" WHERE "odd""col" = $1"#
+        );
+    }
+}
