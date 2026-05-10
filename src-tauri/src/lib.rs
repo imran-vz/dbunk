@@ -1,3 +1,4 @@
+mod clickhouse;
 mod keychain;
 mod postgres;
 mod storage;
@@ -62,18 +63,6 @@ fn ensure_sqlx_drivers() {
     SQLX_DRIVER_INIT.call_once(|| {
         sqlx::any::install_default_drivers();
     });
-}
-
-fn clickhouse_database(connection: &StoredConnection) -> String {
-    if connection.database.trim().is_empty() {
-        "default".to_string()
-    } else {
-        connection.database.clone()
-    }
-}
-
-fn escape_clickhouse(value: &str) -> String {
-    value.replace('\'', "''")
 }
 
 // Path resolution + per-entity JSON read/write live in `storage` — see
@@ -400,81 +389,6 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
     }
 }
 
-fn clickhouse_url(connection: &StoredConnection) -> Result<reqwest::Url, String> {
-    let base = if connection.host.starts_with("http://") || connection.host.starts_with("https://")
-    {
-        connection.host.clone()
-    } else {
-        let port = if connection.port == 0 {
-            8123
-        } else {
-            connection.port
-        };
-        format!("http://{}:{}", connection.host, port)
-    };
-    let mut url = reqwest::Url::parse(&base).map_err(|error| error.to_string())?;
-    url.set_path("/");
-    {
-        let mut pairs = url.query_pairs_mut();
-        pairs.append_pair("default_format", "JSONCompact");
-        if !connection.database.is_empty() {
-            pairs.append_pair("database", &connection.database);
-        }
-    }
-    Ok(url)
-}
-
-fn json_value_to_string(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => "NULL".to_string(),
-        serde_json::Value::String(value) => value.clone(),
-        serde_json::Value::Bool(value) => value.to_string(),
-        serde_json::Value::Number(value) => value.to_string(),
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => value.to_string(),
-    }
-}
-
-fn parse_clickhouse_json(
-    payload: serde_json::Value,
-    runtime_ms: u64,
-) -> Result<QueryResult, String> {
-    let columns = payload
-        .get("meta")
-        .and_then(|value| value.as_array())
-        .map(|meta| {
-            meta.iter()
-                .filter_map(|entry| entry.get("name").and_then(|name| name.as_str()))
-                .map(|name| name.to_string())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    let rows = payload
-        .get("data")
-        .and_then(|value| value.as_array())
-        .map(|data| {
-            data.iter()
-                .map(|row| {
-                    row.as_array()
-                        .map(|cells| cells.iter().map(json_value_to_string).collect::<Vec<_>>())
-                        .unwrap_or_default()
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    let row_count = payload
-        .get("rows")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(rows.len() as u64);
-
-    Ok(QueryResult {
-        columns,
-        rows,
-        runtime_ms,
-        row_count,
-    })
-}
 
 async fn fetch_schema_explorer_sqlx(
     connection: &StoredConnection,
@@ -572,39 +486,6 @@ async fn fetch_schema_explorer_sqlx(
     }
 }
 
-async fn fetch_schema_explorer_clickhouse(
-    connection: &StoredConnection,
-) -> Result<Vec<SchemaExplorer>, String> {
-    let database = clickhouse_database(connection);
-    let escaped = escape_clickhouse(&database);
-    let tables_query = format!(
-        "SELECT name FROM system.tables WHERE database = '{}' AND engine NOT IN ('View', 'MaterializedView', 'LiveView') ORDER BY name",
-        escaped
-    );
-    let views_query = format!(
-        "SELECT name FROM system.tables WHERE database = '{}' AND engine IN ('View', 'MaterializedView', 'LiveView') ORDER BY name",
-        escaped
-    );
-    let tables_result = run_clickhouse_query(connection, &tables_query).await?;
-    let views_result = run_clickhouse_query(connection, &views_query).await?;
-
-    let tables = tables_result
-        .rows
-        .into_iter()
-        .filter_map(|row| row.into_iter().next())
-        .collect::<Vec<_>>();
-    let views = views_result
-        .rows
-        .into_iter()
-        .filter_map(|row| row.into_iter().next())
-        .collect::<Vec<_>>();
-
-    Ok(vec![SchemaExplorer {
-        name: database,
-        tables,
-        views,
-    }])
-}
 
 /// Open a `PgConnection` from a stored Connection record.
 ///
@@ -666,35 +547,6 @@ async fn run_sqlx_query(connection: &StoredConnection, query: &str) -> Result<Qu
     }
 }
 
-async fn run_clickhouse_query(
-    connection: &StoredConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
-    let url = clickhouse_url(connection)?;
-    let client = reqwest::Client::new();
-    let start = Instant::now();
-    let mut request = client.post(url).body(query.to_string());
-    if !connection.user.is_empty() {
-        request = request.basic_auth(connection.user.clone(), Some(connection.password.clone()));
-    }
-    let response = request.send().await.map_err(|error| error.to_string())?;
-    let status = response.status();
-    let text = response.text().await.map_err(|error| error.to_string())?;
-    if !status.is_success() {
-        return Err(text);
-    }
-    let runtime_ms = start.elapsed().as_millis() as u64;
-    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) {
-        parse_clickhouse_json(payload, runtime_ms)
-    } else {
-        Ok(QueryResult {
-            columns: vec![],
-            rows: vec![],
-            runtime_ms,
-            row_count: 0,
-        })
-    }
-}
 
 #[tauri::command]
 async fn load_connections(
@@ -755,7 +607,7 @@ async fn delete_connection(
 async fn ping_connection(connection: &StoredConnection) -> Result<ConnectResult, String> {
     match connection.engine {
         DatabaseEngine::ClickHouse => {
-            let result = run_clickhouse_query(connection, "SELECT 1").await?;
+            let result = clickhouse::run_query(connection, "SELECT 1").await?;
             Ok(ConnectResult {
                 latency_ms: result.runtime_ms,
             })
@@ -821,7 +673,7 @@ async fn load_schema_explorer(
 ) -> Result<Vec<SchemaExplorer>, String> {
     with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
         match connection.engine {
-            DatabaseEngine::ClickHouse => fetch_schema_explorer_clickhouse(&connection).await,
+            DatabaseEngine::ClickHouse => clickhouse::fetch_schema_explorer(&connection).await,
             _ => fetch_schema_explorer_sqlx(&connection).await,
         }
     })
@@ -839,7 +691,7 @@ async fn run_query(
     } = payload;
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
-            DatabaseEngine::ClickHouse => run_clickhouse_query(&connection, &query).await,
+            DatabaseEngine::ClickHouse => clickhouse::run_query(&connection, &query).await,
             _ => run_sqlx_query(&connection, &query).await,
         }
     })
@@ -851,7 +703,7 @@ async fn run_engine_query(
     query: &str,
 ) -> Result<QueryResult, String> {
     match connection.engine {
-        DatabaseEngine::ClickHouse => run_clickhouse_query(connection, query).await,
+        DatabaseEngine::ClickHouse => clickhouse::run_query(connection, query).await,
         _ => run_sqlx_query(connection, query).await,
     }
 }
