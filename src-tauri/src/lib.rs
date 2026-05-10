@@ -1,8 +1,12 @@
 mod keychain;
 mod postgres;
 mod storage;
+mod types;
 
-use serde::{Deserialize, Serialize};
+// Re-export DTOs at the crate root so existing `crate::Foo` paths in child
+// modules and the `#[tauri::command]` macros keep working unchanged.
+pub(crate) use types::*;
+
 use sqlx::{
     any::AnyConnectOptions, Any, AnyConnection, Column, Connection, Row,
 };
@@ -11,328 +15,8 @@ use tauri::{Manager, State};
 
 use crate::{keychain::CredentialUpdate, storage::Paths};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-enum DatabaseEngine {
-    #[serde(rename = "PostgreSQL")]
-    PostgreSQL,
-    #[serde(rename = "MySQL")]
-    MySQL,
-    #[serde(rename = "ClickHouse")]
-    ClickHouse,
-    #[serde(rename = "SQLite")]
-    SQLite,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct QueryHistoryEntry {
-    id: String,
-    sql: String,
-    connection_id: String,
-    connection_name: String,
-    database: String,
-    engine: DatabaseEngine,
-    status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    error_message: Option<String>,
-    runtime_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    row_count: Option<u64>,
-    started_at: String,
-}
-
 const MAX_QUERY_HISTORY: usize = 200;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct StoredConnection {
-    id: String,
-    name: String,
-    database: String,
-    engine: DatabaseEngine,
-    host: String,
-    port: u16,
-    user: String,
-    password: String,
-    role: String,
-    /// ISO-8601 timestamp of the most recent successful query/connect.
-    /// Optional so existing connections.json files load without migration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_activity_at: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct QueryResult {
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
-    runtime_ms: u64,
-    row_count: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ConnectResult {
-    latency_ms: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ConnectionPayload {
-    connection_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RunQueryPayload {
-    connection_id: String,
-    query: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoadTableDataPayload {
-    connection_id: String,
-    schema: String,
-    table: String,
-    page: Option<u32>,
-    page_size: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoadTableStructurePayload {
-    connection_id: String,
-    schema: String,
-    table: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoadSchemaRelationshipsPayload {
-    connection_id: String,
-    schema: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DatabaseOverviewStats {
-    database_size_bytes: i64,
-    table_size_bytes: i64,
-    index_size_bytes: i64,
-    table_count: i64,
-    schema_count: i64,
-    row_count_estimate: i64,
-    index_count: i64,
-    connection_count: i64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoadDatabaseOverviewStatsPayload {
-    connection_id: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SchemaTableColumn {
-    name: String,
-    data_type: String,
-    nullable: bool,
-    is_primary_key: bool,
-    ordinal_position: i32,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SchemaTableNode {
-    schema: String,
-    name: String,
-    column_count: u32,
-    columns: Vec<SchemaTableColumn>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SchemaForeignKey {
-    constraint_name: String,
-    from_schema: String,
-    from_table: String,
-    from_columns: Vec<String>,
-    to_schema: String,
-    to_table: String,
-    to_columns: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SchemaRelationships {
-    tables: Vec<SchemaTableNode>,
-    foreign_keys: Vec<SchemaForeignKey>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ExecuteDdlPayload {
-    connection_id: String,
-    sql: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ExecuteDdlResult {
-    runtime_ms: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CellEditKeyValue {
-    column: String,
-    // None == NULL when binding the parameter. Serde turns missing or null
-    // JSON values into None, anything else becomes the string verbatim. We
-    // intentionally keep types as strings here: the UI only ever has the
-    // string form in hand and Postgres is happy to accept text params for
-    // most types via `&str` binding (it coerces server-side).
-    value: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CellEdit {
-    // Echoed back through to the caller for UI mapping; ignored by SQL.
-    #[serde(default)]
-    #[allow(dead_code)]
-    row_index: u32,
-    identity: Vec<CellEditKeyValue>,
-    set: Vec<CellEditKeyValue>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CommitCellEditsPayload {
-    connection_id: String,
-    schema: String,
-    table: String,
-    edits: Vec<CellEdit>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CommitCellEditsResult {
-    rows_affected: u64,
-    runtime_ms: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InsertRowPayload {
-    connection_id: String,
-    schema: String,
-    table: String,
-    // column -> Option<String> (None = NULL). Columns omitted from this list
-    // get the database default — that lets users insert rows that rely on
-    // SERIAL/identity columns or DEFAULT NOW() etc.
-    values: Vec<CellEditKeyValue>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct InsertRowResult {
-    runtime_ms: u64,
-    rows_affected: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DeleteRowsPayload {
-    connection_id: String,
-    schema: String,
-    table: String,
-    // Each Vec<CellEditKeyValue> is the identity for one row. We delete each
-    // identified row inside a single transaction; if any identified row
-    // misses (rows_affected == 0) we ROLLBACK the whole batch.
-    rows: Vec<Vec<CellEditKeyValue>>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DeleteRowsResult {
-    runtime_ms: u64,
-    rows_affected: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ColumnInfo {
-    name: String,
-    data_type: String,
-    nullable: bool,
-    default_value: Option<String>,
-    is_primary_key: bool,
-    ordinal_position: i32,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ForeignKeyInfo {
-    name: String,
-    columns: Vec<String>,
-    referenced_schema: String,
-    referenced_table: String,
-    referenced_columns: Vec<String>,
-    on_update: Option<String>,
-    on_delete: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct IndexInfo {
-    name: String,
-    columns: Vec<String>,
-    is_unique: bool,
-    is_primary: bool,
-    method: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ConstraintInfo {
-    name: String,
-    kind: String,
-    definition: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StructureCapabilities {
-    columns: bool,
-    primary_key: bool,
-    foreign_keys: bool,
-    indexes: bool,
-    constraints: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TableStructure {
-    columns: Vec<ColumnInfo>,
-    primary_key: Option<Vec<String>>,
-    foreign_keys: Vec<ForeignKeyInfo>,
-    indexes: Vec<IndexInfo>,
-    constraints: Vec<ConstraintInfo>,
-    capabilities: StructureCapabilities,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TableDataResult {
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
-    page: u32,
-    page_size: u32,
-    total_rows: Option<u64>,
-    runtime_ms: u64,
-}
 
 const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
 const MAX_TABLE_PAGE_SIZE: u32 = 1000;
@@ -370,15 +54,6 @@ fn parse_total_rows(result: &QueryResult) -> Option<u64> {
         .first()
         .and_then(|row| row.first())
         .and_then(|cell| cell.parse::<u64>().ok())
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SchemaExplorer {
-    name: String,
-    tables: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    views: Vec<String>,
 }
 
 static SQLX_DRIVER_INIT: Once = Once::new();
@@ -1111,27 +786,12 @@ async fn connect_connection(
     .await
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TestConnectionPayload {
-    connection: StoredConnection,
-}
-
 /// Validate credentials without saving them. Used by the New Connection
 /// side panel's `Test Connection` button — connects, runs `SELECT 1`,
 /// disconnects, returns latency or surfaces the underlying driver error.
 #[tauri::command]
 async fn test_connection(payload: TestConnectionPayload) -> Result<ConnectResult, String> {
     ping_connection(&payload.connection).await
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "state")]
-enum HealthCheckResult {
-    #[serde(rename = "healthy")]
-    Healthy { latency_ms: u64 },
-    #[serde(rename = "error")]
-    Error { error: String },
 }
 
 /// Periodic poll: returns "healthy" + latency or "error" + message. Designed
@@ -1519,24 +1179,6 @@ async fn clear_query_history(paths: State<'_, Paths>) -> Result<(), String> {
     storage::write_query_history(paths.inner(), &[])
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct SavedQuery {
-    id: String,
-    name: String,
-    body: String,
-    /// `None` = saved query is not pinned to a specific connection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    connection_id: Option<String>,
-    #[serde(default)]
-    is_favorite: bool,
-    /// Reserved for future cloud-sync. Local-only writes leave this empty.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    owner_id: Option<String>,
-    created_at: String,
-    updated_at: String,
-}
-
 #[tauri::command]
 async fn load_saved_queries(
     paths: State<'_, Paths>,
@@ -1564,12 +1206,6 @@ async fn save_saved_query(
     }
     storage::write_saved_queries(paths, &entries)?;
     Ok(entries)
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DeleteSavedQueryPayload {
-    id: String,
 }
 
 #[tauri::command]
