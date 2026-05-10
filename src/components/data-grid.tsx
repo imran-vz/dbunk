@@ -7,7 +7,6 @@ import {
   IconDownload,
   IconFilter,
   IconLayoutSidebar,
-  IconPlus,
   IconRefresh,
   IconSearch,
   IconStack2,
@@ -26,7 +25,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -49,6 +48,31 @@ import {
 import { downloadFile } from "@/lib/download";
 import { type ExportTable, toCsv, toJson } from "@/lib/export";
 import { cn } from "@/lib/utils";
+
+const FILTER_OPERATORS = [
+  { label: "equals", symbol: "=" },
+  { label: "not equals", symbol: "<>" },
+  { label: "greater", symbol: ">" },
+  { label: "greater or equals", symbol: ">=" },
+  { label: "less", symbol: "<" },
+  { label: "less or equals", symbol: "<=" },
+  { label: "like", symbol: "LIKE" },
+  { label: "ilike", symbol: "ILIKE" },
+  { label: "not like", symbol: "NOT LIKE" },
+  { label: "in", symbol: "IN" },
+  { label: "is null", symbol: "IS NULL" },
+  { label: "is not null", symbol: "IS NOT NULL" },
+] as const;
+
+const OPERATOR_SYMBOL: Record<string, string> = Object.fromEntries(
+  FILTER_OPERATORS.map((op) => [op.label, op.symbol]),
+);
+
+type AppliedFilter = {
+  column: string;
+  operator: string;
+  value: string;
+};
 
 interface EditableCellProps {
   initialValue: string;
@@ -191,7 +215,7 @@ export function DataGrid({
   // cells. This both prevents `onEdit` from being called and makes the
   // visual affordance plain (no edit cursor, no focus ring on click).
   const effectiveOnEdit = readOnly ? undefined : onEdit;
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [appliedFilters, setAppliedFilters] = useState<AppliedFilter[]>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   // Selection: when the parent passes `rowSelection` it owns the state; we
   // mirror it for tanstack-table. When uncontrolled, we keep the previous
@@ -222,10 +246,59 @@ export function DataGrid({
   );
   const [showFilters, setShowFilters] = useState(false);
   const [columnSearch, setColumnSearch] = useState("");
-  const [activeFilterColumn, setActiveFilterColumn] = useState<string>(
-    columnNames[0] ?? "",
+  // Draft is intentionally separate from appliedFilters: editing the draft
+  // (column, operator, value) must not change what's filtering the grid
+  // until the user explicitly clicks Apply or hits Enter.
+  const [draftColumn, setDraftColumn] = useState<string>(columnNames[0] ?? "");
+  const [draftOperator, setDraftOperator] = useState("equals");
+  const [draftValue, setDraftValue] = useState("");
+
+  useEffect(() => {
+    if (columnNames.length === 0) return;
+    if (!columnNames.includes(draftColumn)) {
+      setDraftColumn(columnNames[0]);
+    }
+  }, [columnNames, draftColumn]);
+
+  useEffect(() => {
+    setAppliedFilters((prev) => {
+      const next = prev.filter((f) => columnNames.includes(f.column));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [columnNames]);
+
+  const columnFilters = useMemo<ColumnFiltersState>(
+    () => appliedFilters.map((f) => ({ id: f.column, value: f.value })),
+    [appliedFilters],
   );
-  const [activeFilterOperator, setActiveFilterOperator] = useState("equals");
+
+  const canApplyDraft = draftColumn !== "" && draftValue.trim() !== "";
+
+  const applyDraft = useCallback(() => {
+    if (!canApplyDraft) return;
+    setAppliedFilters((prev) => {
+      const next: AppliedFilter = {
+        column: draftColumn,
+        operator: draftOperator,
+        value: draftValue,
+      };
+      const idx = prev.findIndex((f) => f.column === draftColumn);
+      if (idx >= 0) {
+        const copy = prev.slice();
+        copy[idx] = next;
+        return copy;
+      }
+      return [...prev, next];
+    });
+  }, [canApplyDraft, draftColumn, draftOperator, draftValue]);
+
+  const removeFilter = useCallback((column: string) => {
+    setAppliedFilters((prev) => prev.filter((f) => f.column !== column));
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setAppliedFilters([]);
+  }, []);
 
   const columns = useMemo<ColumnDef<string[]>[]>(() => {
     const cols: ColumnDef<string[]>[] = [
@@ -282,7 +355,6 @@ export function DataGrid({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
@@ -354,8 +426,8 @@ export function DataGrid({
 
   return (
     <div className={cn("flex h-full flex-col bg-background", className)}>
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-4 gap-4 overflow-x-auto">
-        <div className="flex items-center gap-4">
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-4 py-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center rounded-md border bg-muted/20 p-0.5">
             <Button
               variant="ghost"
@@ -520,8 +592,8 @@ export function DataGrid({
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="hidden items-center gap-1 text-xs text-muted-foreground md:flex">
             <span className="tabular-nums whitespace-nowrap">
               {table.getFilteredRowModel().rows.length} rows • 137ms
             </span>
@@ -536,11 +608,11 @@ export function DataGrid({
             >
               <IconChevronLeft className="size-3.5" />
             </Button>
-            <div className="flex h-7 min-w-8 items-center justify-center border-x px-2 text-xs font-medium tabular-nums">
+            <div className="hidden h-7 min-w-8 items-center justify-center border-x px-2 text-xs font-medium tabular-nums sm:flex">
               {table.getState().pagination.pageSize}
             </div>
-            <div className="flex h-7 min-w-8 items-center justify-center border-r px-2 text-xs font-medium tabular-nums">
-              0
+            <div className="flex h-7 min-w-8 items-center justify-center border-x px-2 text-xs font-medium tabular-nums sm:border-l-0">
+              {table.getState().pagination.pageIndex + 1}
             </div>
             <Button
               variant="ghost"
@@ -556,7 +628,7 @@ export function DataGrid({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-md border bg-muted/20"
+            className="hidden h-8 w-8 rounded-md border bg-muted/20 md:inline-flex"
           >
             <IconRefresh className="size-3.5" />
           </Button>
@@ -625,24 +697,51 @@ export function DataGrid({
       </div>
 
       {showFilters && (
-        <div className="flex h-12 items-center gap-2 border-b bg-muted/10 px-4">
+        <div className="flex min-h-12 flex-wrap items-center gap-2 border-b bg-muted/10 px-4 py-2">
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 text-muted-foreground"
+            className="h-6 w-6 shrink-0 text-muted-foreground"
             onClick={() => setShowFilters(false)}
           >
             <IconX className="size-3.5" />
           </Button>
 
-          <div className="flex items-center gap-2 rounded-md border bg-muted/20 p-1">
+          {appliedFilters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {appliedFilters.map((f) => (
+                <div
+                  key={f.column}
+                  className="flex h-7 items-center gap-1.5 rounded-md border bg-background px-2 text-xs shadow-sm"
+                >
+                  <span className="font-medium">{f.column}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {OPERATOR_SYMBOL[f.operator] ?? f.operator}
+                  </span>
+                  <span className="max-w-32 truncate text-muted-foreground">
+                    {f.value}
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-0.5 rounded-sm text-muted-foreground hover:text-foreground"
+                    onClick={() => removeFilter(f.column)}
+                    aria-label={`Remove filter on ${f.column}`}
+                  >
+                    <IconX className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 p-1">
             <div className="flex items-center gap-2 rounded-sm bg-background px-2 shadow-sm">
               <span className="text-xs font-medium text-muted-foreground">
                 where
               </span>
               <Select
-                value={activeFilterColumn}
-                onValueChange={(val) => setActiveFilterColumn(val ?? "")}
+                value={draftColumn}
+                onValueChange={(val) => setDraftColumn(val ?? "")}
               >
                 <SelectTrigger className="h-7 w-auto min-w-25 border-none bg-transparent px-2 text-xs shadow-none hover:bg-muted/50 focus:ring-0">
                   <SelectValue />
@@ -659,29 +758,14 @@ export function DataGrid({
 
             <div className="flex items-center gap-2 rounded-sm bg-background px-2 shadow-sm">
               <Select
-                value={activeFilterOperator}
-                onValueChange={(val) =>
-                  setActiveFilterOperator(val ?? "equals")
-                }
+                value={draftOperator}
+                onValueChange={(val) => setDraftOperator(val ?? "equals")}
               >
                 <SelectTrigger className="h-7 w-auto min-w-30 border-none bg-transparent px-2 text-xs shadow-none hover:bg-muted/50 focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[
-                    { label: "equals", symbol: "=" },
-                    { label: "not equals", symbol: "<>" },
-                    { label: "greater", symbol: ">" },
-                    { label: "greater or equals", symbol: ">=" },
-                    { label: "less", symbol: "<" },
-                    { label: "less or equals", symbol: "<=" },
-                    { label: "like", symbol: "LIKE" },
-                    { label: "ilike", symbol: "ILIKE" },
-                    { label: "not like", symbol: "NOT LIKE" },
-                    { label: "in", symbol: "IN" },
-                    { label: "is null", symbol: "IS NULL" },
-                    { label: "is not null", symbol: "IS NOT NULL" },
-                  ].map((op) => (
+                  {FILTER_OPERATORS.map((op) => (
                     <SelectItem key={op.label} value={op.label}>
                       <div className="flex w-full items-center justify-between gap-4">
                         <span>{op.label}</span>
@@ -696,39 +780,36 @@ export function DataGrid({
             </div>
 
             <Input
-              className="h-7 w-60 border-none bg-muted/20 px-2 text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/50"
-              placeholder=""
-              value={
-                activeFilterColumn
-                  ? ((table
-                      .getColumn(activeFilterColumn)
-                      ?.getFilterValue() as string) ?? "")
-                  : ""
-              }
-              onChange={(event) => {
-                if (activeFilterColumn) {
-                  table
-                    .getColumn(activeFilterColumn)
-                    ?.setFilterValue(event.target.value);
+              className="h-7 w-40 border-none bg-muted/20 px-2 text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/50 sm:w-60"
+              placeholder="value"
+              value={draftValue}
+              onChange={(event) => setDraftValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  applyDraft();
                 }
               }}
             />
-          </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-2 px-2 text-muted-foreground"
-          >
-            <IconPlus className="size-3.5" />
-            Add filter
-          </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 px-3 text-xs"
+              onClick={applyDraft}
+              disabled={!canApplyDraft}
+            >
+              Apply
+            </Button>
+          </div>
 
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
-              className="h-7 text-xs bg-muted/50 hover:bg-muted text-muted-foreground"
+              className="hidden h-7 text-xs bg-muted/50 hover:bg-muted text-muted-foreground sm:inline-flex"
+              onClick={onOpenSQL}
+              disabled={!onOpenSQL}
             >
               Open in SQL
             </Button>
@@ -736,10 +817,8 @@ export function DataGrid({
               variant="ghost"
               size="sm"
               className="h-7 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                table.resetColumnFilters();
-                setShowFilters(false);
-              }}
+              onClick={clearAllFilters}
+              disabled={appliedFilters.length === 0}
             >
               Clear filters
             </Button>
