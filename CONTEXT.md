@@ -1,9 +1,9 @@
 # dbunk — Domain Context
 
 dbunk is a desktop database client (Tauri + React) for exploring data, running
-SQL, and managing connections across PostgreSQL, MySQL, SQLite, and ClickHouse.
-This file is the canonical domain glossary. New work should reuse these terms
-rather than coining synonyms.
+SQL, and managing connections across PostgreSQL, MySQL, SQLite, ClickHouse,
+and Redis. This file is the canonical domain glossary. New work should reuse
+these terms rather than coining synonyms.
 
 ## Top-level entities
 
@@ -16,16 +16,34 @@ rather than coining synonyms.
   `Disconnected`), a **latency** measurement from the last ping, a **last
   activity** timestamp from the most recent successful query/connect, and an
   optional **error message** from the last health check.
+  Engine-class-specific fields ride on the same record: `useHttps` / `urlPath`
+  for ClickHouse; `dbNumber` / `useTls` / `verifyTlsCert` for Redis. Fields
+  that don't apply to the active engine are ignored.
 - **Stored Connection** — the backend wire shape (no returned password, no
   runtime status). The Rust backend hydrates credentials internally before DB
   operations; stored passwords are not returned to the frontend.
 - **Active Connection** — the one currently selected in the sidebar; drives
-  the schema explorer, overview, and any newly opened tab.
-- **Engine** — `PostgreSQL`, `MySQL`, `SQLite`, or `ClickHouse`. PostgreSQL is
-  the reference implementation (see ADR-0001); other engines have selective
-  coverage and may return "not supported on \<engine\>" placeholders.
+  the schema explorer (relational engines) or keyspace browser (Redis), the
+  overview / server tab, and any newly opened tab.
+- **Engine** — `PostgreSQL`, `MySQL`, `SQLite`, `ClickHouse`, or `Redis`.
+  PostgreSQL is the reference implementation for the relational class (see
+  ADR-0001); other relational engines have selective coverage and may return
+  "not supported on \<engine\>" placeholders. Redis is the first keyvalue
+  engine (see ADR-0008).
+- **Storage Class** — `Relational` or `KeyValue`. Engines fork at this layer
+  above `DatabaseEngine` (ADR-0008): relational engines share schemas/tables/
+  rows/SQL; keyvalue engines share a keyspace of typed keys, no schemas, no
+  rows. The class is **derived** from the engine via
+  `DatabaseEngine::storage_class()` (Rust) and `enginePolicy(engine).storageClass`
+  (TS); it is never stored. A snapshot test asserts both classifiers agree.
+  Adding a future class (`DocumentStore`, `WideColumn`, …) means adding an
+  arm to the enum and a matching dispatcher / workspace / policy union.
 
-## Schema model
+## Schema model (relational class only)
+
+The following entities apply only to engines whose `storage_class()` is
+`Relational`. Keyvalue engines (Redis) have no schemas, no tables, no row
+identity; see the **Keyspace model** section below.
 
 - **Schema** — a namespace inside a database (PostgreSQL, MySQL); SQLite
   collapses to a single schema, ClickHouse calls them databases. The UI
@@ -36,16 +54,67 @@ rather than coining synonyms.
   map. Loaded lazily per-schema.
 - **Table Structure** — columns, primary key, foreign keys, indexes, and
   constraints for one table. Includes a **capabilities** flag that tells the
-  frontend which fields are populated for the active engine.
+  frontend which fields are populated for the active engine. Relational-only;
+  Redis uses **Key Metadata** instead.
 - **Row Identity** — the columns the frontend uses to address a single row
   for edit/delete. Picked from primary key first, falling back to non-null
   unique indexes. Tables without a usable identity render **read-only**.
 
+## Keyspace model (keyvalue class only)
+
+The following entities apply only to engines whose `storage_class()` is
+`KeyValue` (Redis today). See ADR-0008 for the storage-class fork and
+ADR-0009 for the writes-by-default posture.
+
+- **Database (Redis)** — a numbered keyspace, 0–15 on standalone. Selected
+  per connection record (`dbNumber` field); the per-session DB switcher is
+  a Tier-2 deferral. Conceptually parallel to a relational **Schema**, but
+  flat (no nested tables).
+- **Key** — a single record in the keyspace. Has a name (bytes; usually
+  UTF-8), a **type** (`string` | `hash` | `list` | `set` | `sorted set` |
+  `stream` | `JSON`), a **TTL** (live-decrementing seconds remaining; `-1`
+  for never expires), an **encoding** (Redis's internal representation —
+  `embstr`/`raw`/`listpack`/`ziplist`/`quicklist`/`intset`/`hashtable`/
+  `skiplist`/`ReJSON-RL`/…), and an opaque **value** whose shape depends on
+  the type. Bitmap, HyperLogLog, and Geo keys render as their underlying
+  type (`string`, `string`, `sorted set`) with a secondary type-aware panel.
+- **Key Metadata** — the analogue of **Table Structure** for the keyvalue
+  class. Carries type, TTL, encoding, `OBJECT REFCOUNT` / `IDLETIME` /
+  `FREQ`, size summary (element count for collections, byte length for
+  strings), and a watch/refresh toggle. Returned by the `fetch_key_metadata`
+  Tauri command; rendered in the **Key Inspector**'s right-hand metadata
+  drawer.
+- **Keyspace Browser** — the sidebar for keyvalue connections (parallel to
+  the relational **Schema Explorer**). Hybrid shape: a lazy prefix tree
+  (splits keys on a configurable separator, default `:`), a search input
+  that swaps the panel into flat-result mode, and a type-filter chip row.
+  Driven by `SCAN MATCH` with cursor pagination; the full keyspace is never
+  materialised in memory.
+- **Pub/Sub Session** — a dedicated `redis-rs` connection backing one open
+  `pubsub` tab. Holds active `PSUBSCRIBE` patterns and a 10k-message ring
+  buffer (configurable to 50k). Lives for the lifetime of the tab; survives
+  app restart in paused state. Distinct from the multiplexed connection
+  used for every other operation.
+- **Command History Entry** — a record of one CLI-tab command (command
+  text, status, runtime, executed_at, db number). Cap 1000 entries per
+  connection. Persisted in the `redis_command_history` SQLite table —
+  separate from `query_history` because the shapes differ (no SQL/DDL
+  split, no row count).
+
 ## Workspace model
 
-- **Workspace Tab** — an open tab in the main area. Two kinds: `table` (the
-  data browser) and `query` (the SQL editor). The active tab is identified by
-  its **active tab ID**.
+- **Workspace Shell** — the contents of the main area when a connection is
+  active. Forks on the active connection's storage class (ADR-0008): the
+  **Relational Workspace** renders the schema explorer + `table`/`query`
+  tab kinds; the **KeyValue Workspace** renders the keyspace browser +
+  `key`/`cli`/`pubsub`/`server` tab kinds. The app shell (top bar,
+  connections list, settings, credential onboarding) is shared.
+- **Workspace Tab** — an open tab in the main area. Relational kinds:
+  `table` (the data browser) and `query` (the SQL editor). Keyvalue kinds:
+  `key` (multi-instance, one per inspected key), `cli` (singleton REPL),
+  `pubsub` (singleton subscription monitor), `server` (singleton INFO /
+  health view; also the default-opened tab when a Redis connection becomes
+  active). The active tab is identified by its **active tab ID**.
 - **Query History Entry** — a record of one executed query (sql, connection,
   status, runtime, optional error). Capped at 200 entries, persisted in
   SQLite.
@@ -55,9 +124,12 @@ rather than coining synonyms.
   without migration (ADR-0003).
 - **Cell Edit** — a pending change to one cell, keyed by row index inside
   the loaded page. Buffered in memory and committed in a transaction.
+  Relational-only.
 - **DDL Statement** — a schema-level change (CREATE/ALTER/DROP), executed via
   the `execute_ddl` command rather than the regular query path so the
-  frontend can model the response shape distinctly.
+  frontend can model the response shape distinctly. Relational-only — Redis
+  has no schema-shaped surface; its equivalents (key creation, rename,
+  expire) flow through dedicated Tauri commands, not `execute_ddl`.
 - **Pending Mutation** — a single ClickHouse `ALTER TABLE … UPDATE` or
   `ALTER TABLE … DELETE` statement that has been accepted by the server
   and is applying asynchronously across MergeTree parts. Identified by
@@ -78,23 +150,37 @@ rather than coining synonyms.
   the **Test Connection** button before save.
 - **Last Activity** — ISO-8601 timestamp on the connection record. Bumped
   whenever a query or connect succeeds (ADR-0004).
-- **Database Overview Stats** — aggregate counts (tables, schemas, rows,
-  indexes, connections) plus byte sizes (database / table / index). Fetched
-  in a single round trip per connection. Row counts use planner estimates
-  from `pg_class.reltuples`, not exact counts.
+- **Database Overview** — the storage-class-shaped landing payload for an
+  active connection. Per ADR-0008 it is a **tagged union**:
+  - **Relational Overview Stats** (`kind: "relational"`) — aggregate counts
+    (tables, schemas, rows, indexes, connections) plus byte sizes (database
+    / table / index). Fetched in a single round trip per connection. Row
+    counts use planner estimates from `pg_class.reltuples` (PG) or exact
+    counts from `system.parts.rows` (CH), not exact counts on PG.
+  - **KeyValue Overview Stats** (`kind: "keyvalue"`) — Redis-shaped: server
+    identity (version, mode, uptime), per-DB keyspace counts, memory
+    (used/peak/rss/fragmentation/maxmemory/policy), clients
+    (connected/max/blocked), replication (role + replica count or master
+    link), modules (name + version), optional slow log, optional persistence
+    summary. Per-section degradation when source commands are restricted
+    (e.g. managed Redis blocking `INFO replication`).
 
 ## Persistence layout
 
 ```
 ~/.config/dbunk/
-└── dbunk.sqlite
+├── dbunk.sqlite
+└── pubsub-captures/         (created on first capture-to-file from a pubsub tab)
+    └── <connectionId>-<ISO>.jsonl
 
 dbunk.sqlite:
 ├── app_settings
-├── connections
+├── connections                   (relational + keyvalue; Redis-only columns
+│                                  dbNumber/useTls/verifyTlsCert nullable)
 ├── credentials
 ├── credential_verifier
-├── query_history
+├── query_history                 (relational only — SQL queries)
+├── redis_command_history         (keyvalue only — CLI commands, cap 1000/connection)
 └── saved_queries
 
 Optional OS keychain backend (service: "dbunk", account: "connection-credentials"):
@@ -103,6 +189,9 @@ Optional OS keychain backend (service: "dbunk", account: "connection-credentials
 
 ADR-0007 covers SQLite persistence and credential storage modes. ADR-0005's
 single-blob keychain shape now applies only when keychain mode is active.
+The `pubsub-captures` directory is created lazily and stores raw JSONL
+streams from any pub/sub tab that has the **Record to file** toggle on.
+Captures are never auto-pruned; users manage them manually.
 
 ## Process model
 
@@ -113,25 +202,44 @@ single-blob keychain shape now applies only when keychain mode is active.
   validation and activity tracking; it delegates engine-aware work to
   **Engine Dispatch**.
 - **Engine Dispatch** — the `dispatch` module
-  (`src-tauri/src/dispatch.rs`) routes engine-aware operations
-  (`run_query`, `execute_ddl`, mutations, introspection) to the right
-  per-engine implementation (`postgres::`, `clickhouse::`, future
-  `mysql::`, `redis::`). Every match is exhaustive over `DatabaseEngine`
-  — no wildcards — so adding an engine forces every operation to make
-  an explicit choice. Two error shapes: `not_implemented_yet` (will
-  catch up — see ADR-0001) and `not_applicable` (the operation doesn't
-  exist on this engine class, reserved for Redis etc.).
+  (`src-tauri/src/dispatch/mod.rs`) routes engine-aware operations to
+  the right per-engine implementation. Public functions open with one
+  match on `engine.storage_class()`, then delegate to either
+  `dispatch::relational::*` (PG/MySQL/SQLite/CH; module
+  `dispatch/relational.rs`) or `dispatch::keyvalue::*` (Redis; module
+  `dispatch/keyvalue.rs`) — see ADR-0008. Within each class, dispatch
+  matches exhaustively over the `DatabaseEngine` variants of that class —
+  no wildcards — so adding an engine forces every operation to make an
+  explicit choice. Cross-class operations return one of two error shapes
+  at the routing layer: `not_implemented_yet` (in scope for this engine
+  but not built yet — see ADR-0001) or `not_applicable` (the operation
+  does not exist on this engine's class; e.g. `fetch_table_structure`
+  returns this for Redis). Relational-only operations live entirely
+  under `dispatch::relational::*`; keyvalue-only operations (`scan_keys`,
+  `fetch_key_metadata`, `run_redis_command`, `redis_pubsub_*`,
+  `fetch_keyvalue_overview`) live entirely under `dispatch::keyvalue::*`.
 - **Engine UI Policy** — the frontend mirror to Engine Dispatch
   (`src/lib/engine-policy.ts`). A pure `Record<DatabaseEngine,
-  EnginePolicy>` table owning UI-side engine-aware data: connection
-  form shape (host/auth requirements, default port, CH HTTPS toggle),
-  structure-view labels ("Primary key" vs "Sorting key", "Indexes" vs
-  "Skip indices"), stats-card row-count semantics (`exact` vs
-  `estimate`), foreign-key copy when not supported, schema-map empty
-  banner. `TypeScript`'s `Record` enforces exhaustiveness — a new
-  engine variant won't compile until every policy field is filled in.
-  Scope is **engine-level only**: per-table mutation decisions stay on
-  `TableStructure.capabilities` plus `pickRowIdentity`.
+  EnginePolicy>` where `EnginePolicy` is a discriminated union on
+  `storageClass` (ADR-0008): shared base `{ engine, connectionForm }`
+  plus either a `RelationalEnginePolicy` arm (structure-view labels —
+  "Primary key" vs "Sorting key", "Indexes" vs "Skip indices" — plus
+  `rowCountKind` exact/estimate, `hasForeignKeys`, `foreignKeysUnsupportedCopy`,
+  `schemaMapNoForeignKeysCopy`) or a `KeyValueEnginePolicy` arm
+  (`defaultDbNumber`, `maxDbNumber`, `keyTypeIcons`, `pubSubSupported`,
+  `transactionsSupported`, `destructiveCommands` — the last sourced via
+  codegen from `redis-destructive-commands.toml`, shared with Rust).
+  Connection-form policy stays a flat shared field with per-engine
+  feature flags (`showClickHouseHttp`, `showRedisTls`, `showRedisDbNumber`).
+  Storage-class-specific components narrow via the
+  `relationalPolicy(engine)` / `keyvaluePolicy(engine)` helpers; deep
+  call sites do not re-narrow. `TypeScript`'s `Record` enforces
+  exhaustiveness — a new engine variant won't compile until its policy
+  is filled in. Scope is **engine-level only**: per-table mutation
+  decisions stay on `TableStructure.capabilities` plus `pickRowIdentity`
+  (relational); per-key write gating is computed at the editor render
+  site from the connection's auto-read-only state plus the value type
+  (keyvalue; see ADR-0009).
 - **Credential Backend** — the `CredentialBackend` enum in
   `src-tauri/src/credentials.rs` is the single point of dispatch over
   the three storage modes (`Keychain`, `PlainSqlite`,
