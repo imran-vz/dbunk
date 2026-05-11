@@ -1,4 +1,5 @@
 mod clickhouse;
+mod credentials;
 mod dispatch;
 mod keychain;
 mod postgres;
@@ -9,15 +10,20 @@ mod types;
 // modules and the `#[tauri::command]` macros keep working unchanged.
 pub(crate) use types::*;
 
+use sqlx::SqlitePool;
 use tauri::{Manager, State};
 
-use crate::{keychain::CredentialUpdate, storage::Paths};
+use crate::storage::Paths;
 
 const MAX_QUERY_HISTORY: usize = 200;
 
-
 const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
 const MAX_TABLE_PAGE_SIZE: u32 = 1000;
+
+pub(crate) struct AppState {
+    pool: SqlitePool,
+    paths: Paths,
+}
 
 pub(crate) fn quote_double(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
@@ -73,88 +79,32 @@ pub(crate) fn bytes_to_hex(bytes: &[u8]) -> String {
 // per-engine match statements. See ADR-0001 and CONTEXT.md's "Engine
 // Dispatch" entry.
 
-// Path resolution + per-entity JSON read/write live in `storage` — see
-// `storage.rs`. Internal helpers below take `&Paths` so they can be exercised
-// over a tempdir without a Tauri runtime.
+// Path resolution, SQLite persistence, and lightweight migrations live in
+// `storage`. Credential backend routing lives in `credentials`.
 
-// Connection passwords live in the keychain — see `keychain.rs` for the
-// single-blob shape (ADR-0005), the in-process cache, and migration helpers.
-
-/// Hydrate a list of connections with passwords from the keychain. If
-/// `connections.json` still carries plaintext passwords (a pre-A6 release
-/// shape) they're folded into the keychain blob and the JSON is rewritten
-/// clean.
-fn read_connections_full(paths: &Paths) -> Result<Vec<StoredConnection>, String> {
-    let mut entries = storage::read_connections(paths)?;
-
-    // One-time migration: lift any plaintext passwords from JSON into the
-    // keychain blob so a `git pull` on a working machine doesn't lose
-    // credentials. Hard-saves a single keychain write covering all of them.
-    let plaintext_set: Vec<CredentialUpdate<'_>> = entries
-        .iter()
-        .filter(|entry| !entry.password.is_empty())
-        .map(|entry| CredentialUpdate::Set {
-            id: entry.id.as_str(),
-            password: entry.password.as_str(),
-        })
-        .collect();
-    if !plaintext_set.is_empty() {
-        if let Err(error) = keychain::upsert_many(&plaintext_set) {
-            eprintln!("Failed to migrate plaintext passwords to keychain: {error}");
-        }
-        for entry in entries.iter_mut() {
-            entry.password.clear();
-        }
-        if let Err(error) = storage::write_connections(paths, &entries) {
-            eprintln!("Failed to clear plaintext from connections.json: {error}");
-        }
-    }
-
-    // Fill from the keychain (cached after first call).
+async fn public_connections(state: &AppState) -> Result<Vec<StoredConnection>, String> {
+    let mut entries = storage::read_connections(&state.pool).await?;
     for entry in entries.iter_mut() {
-        if entry.password.is_empty() {
-            if let Some(password) = keychain::get(&entry.id) {
-                entry.password = password;
-            }
-        }
+        entry.password.clear();
     }
-
     Ok(entries)
 }
 
-/// Persist the given connections: passwords go to the keychain blob, the
-/// rest goes to JSON with empty `password` fields. Existing keychain entries
-/// for connections outside this batch are preserved.
-fn write_connections_full(
-    paths: &Paths,
-    connections: &[StoredConnection],
-) -> Result<(), String> {
-    let updates: Vec<CredentialUpdate<'_>> = connections
-        .iter()
-        .map(|connection| {
-            if connection.password.is_empty() {
-                CredentialUpdate::Clear {
-                    id: connection.id.as_str(),
-                }
-            } else {
-                CredentialUpdate::Set {
-                    id: connection.id.as_str(),
-                    password: connection.password.as_str(),
-                }
-            }
-        })
-        .collect();
-    keychain::upsert_many(&updates)?;
-
-    let mut clean = connections.to_vec();
-    for entry in clean.iter_mut() {
-        entry.password.clear();
-    }
-    storage::write_connections(paths, &clean)
+async fn current_credential_mode(state: &AppState) -> Result<CredentialStorageMode, String> {
+    credentials::credential_mode(&state.pool)
+        .await?
+        .ok_or_else(|| "Credential storage is not configured".to_string())
 }
 
-fn find_connection(paths: &Paths, connection_id: &str) -> Result<StoredConnection, String> {
-    let connections = read_connections_full(paths)?;
+async fn find_connection(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<StoredConnection, String> {
+    let mode = current_credential_mode(state).await?;
+    let mut connections = storage::read_connections(&state.pool).await?;
+    for connection in connections.iter_mut() {
+        credentials::hydrate(&state.pool, mode, connection).await?;
+    }
     connections
         .into_iter()
         .find(|connection| connection.id == connection_id)
@@ -171,108 +121,76 @@ fn find_connection(paths: &Paths, connection_id: &str) -> Result<StoredConnectio
 /// The bump only fires when `op` returns `Ok` — failed queries do not count
 /// as activity, so a connection that's unreachable doesn't appear "fresh".
 async fn with_active_connection<T, Fut>(
-    paths: &Paths,
+    state: &AppState,
     connection_id: &str,
     op: impl FnOnce(StoredConnection) -> Fut,
 ) -> Result<T, String>
 where
     Fut: std::future::Future<Output = Result<T, String>>,
 {
-    let connection = find_connection(paths, connection_id)?;
+    let connection = find_connection(state, connection_id).await?;
     let result = op(connection).await?;
-    touch_connection_activity(paths, connection_id);
+    touch_connection_activity(state, connection_id).await;
     Ok(result)
 }
 
 /// Bump the `lastActivityAt` field on a connection record. Best-effort —
 /// failures are logged but never bubble up because activity tracking should
 /// not break the underlying operation.
-fn touch_connection_activity(paths: &Paths, connection_id: &str) {
-    // Reads the JSON layer only — we don't need passwords just to bump a
-    // timestamp, and avoiding the keychain hop keeps this hot path cheap.
-    let Ok(mut connections) = storage::read_connections(paths) else {
-        return;
-    };
-    let now = chrono::Utc::now().to_rfc3339();
-    let mut changed = false;
-    for connection in connections.iter_mut() {
-        if connection.id == connection_id {
-            connection.last_activity_at = Some(now.clone());
-            changed = true;
-            break;
-        }
-    }
-    if changed {
-        if let Err(error) = storage::write_connections(paths, &connections) {
-            eprintln!("Failed to touch lastActivityAt: {error}");
-        }
+async fn touch_connection_activity(state: &AppState, connection_id: &str) {
+    if let Err(error) = storage::touch_connection_activity(&state.pool, connection_id).await {
+        eprintln!("Failed to touch lastActivityAt: {error}");
     }
 }
 
 #[tauri::command]
-async fn load_connections(
-    paths: State<'_, Paths>,
-) -> Result<Vec<StoredConnection>, String> {
-    read_connections_full(paths.inner())
+async fn load_connections(state: State<'_, AppState>) -> Result<Vec<StoredConnection>, String> {
+    public_connections(state.inner()).await
 }
 
 #[tauri::command]
 async fn save_connection(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     connection: StoredConnection,
 ) -> Result<Vec<StoredConnection>, String> {
-    let paths = paths.inner();
-    let mut connections = read_connections_full(paths)?;
-
-    if let Some(existing) = connections.iter_mut().find(|item| item.id == connection.id) {
-        *existing = connection.clone();
-    } else {
-        connections.push(connection.clone());
+    let state = state.inner();
+    let mode = current_credential_mode(state).await?;
+    storage::upsert_connection(&state.pool, &connection).await?;
+    if !connection.password.is_empty() {
+        credentials::upsert(&state.pool, mode, &connection).await?;
     }
-
-    write_connections_full(paths, &connections)?;
-    // Re-hydrate so the response has the keychain-backed passwords (and the
-    // cleaned shape) the caller will use to build subsequent payloads.
-    read_connections_full(paths)
+    public_connections(state).await
 }
 
 #[tauri::command]
 async fn delete_connection(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<Vec<StoredConnection>, String> {
-    let paths = paths.inner();
-    let mut connections = read_connections_full(paths)?;
-
-    let initial_len = connections.len();
-    connections.retain(|item| item.id != payload.connection_id);
-
-    if connections.len() == initial_len {
+    let state = state.inner();
+    let mode = current_credential_mode(state).await?;
+    if !storage::delete_connection(&state.pool, &payload.connection_id).await? {
         return Err(format!("Connection '{}' not found", payload.connection_id));
     }
-
-    // Best-effort: remove the keychain entry too. If the keychain write fails
-    // we still want the JSON delete to land — the worst case is an orphan
-    // credential the user can clean up manually.
-    if let Err(error) = keychain::delete(&payload.connection_id) {
+    if let Err(error) = credentials::delete(&state.pool, mode, &payload.connection_id).await {
         eprintln!(
-            "Failed to delete keychain entry for {}: {error}",
+            "Failed to delete credential for {}: {error}",
             payload.connection_id
         );
     }
-
-    write_connections_full(paths, &connections)?;
-    Ok(connections)
+    public_connections(state).await
 }
 
 #[tauri::command]
 async fn connect_connection(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<ConnectResult, String> {
-    with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
-        dispatch::ping_connection(&connection).await
-    })
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::ping_connection(&connection).await },
+    )
     .await
 }
 
@@ -292,10 +210,10 @@ async fn test_connection(payload: TestConnectionPayload) -> Result<ConnectResult
 /// `lastActivityAt` artificially fresh.
 #[tauri::command]
 async fn health_check_connection(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<HealthCheckResult, String> {
-    let connection = find_connection(paths.inner(), &payload.connection_id)?;
+    let connection = find_connection(state.inner(), &payload.connection_id).await?;
     match dispatch::ping_connection(&connection).await {
         Ok(result) => Ok(HealthCheckResult::Healthy {
             latency_ms: result.latency_ms,
@@ -306,25 +224,27 @@ async fn health_check_connection(
 
 #[tauri::command]
 async fn load_schema_explorer(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<Vec<SchemaExplorer>, String> {
-    with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
-        dispatch::load_schema_explorer(&connection).await
-    })
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::load_schema_explorer(&connection).await },
+    )
     .await
 }
 
 #[tauri::command]
 async fn run_query(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: RunQueryPayload,
 ) -> Result<QueryResult, String> {
     let RunQueryPayload {
         connection_id,
         query,
     } = payload;
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::run_query(&connection, &query).await
     })
     .await
@@ -332,7 +252,7 @@ async fn run_query(
 
 #[tauri::command]
 async fn load_table_structure(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: LoadTableStructurePayload,
 ) -> Result<TableStructure, String> {
     let LoadTableStructurePayload {
@@ -340,7 +260,7 @@ async fn load_table_structure(
         schema,
         table,
     } = payload;
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::fetch_table_structure(&connection, &schema, &table).await
     })
     .await
@@ -348,17 +268,14 @@ async fn load_table_structure(
 
 #[tauri::command]
 async fn execute_ddl(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: ExecuteDdlPayload,
 ) -> Result<ExecuteDdlResult, String> {
-    let ExecuteDdlPayload {
-        connection_id,
-        sql,
-    } = payload;
+    let ExecuteDdlPayload { connection_id, sql } = payload;
     if sql.trim().is_empty() {
         return Err("DDL statement is empty".to_string());
     }
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::execute_ddl(&connection, &sql).await
     })
     .await
@@ -366,7 +283,7 @@ async fn execute_ddl(
 
 #[tauri::command]
 async fn commit_cell_edits(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: CommitCellEditsPayload,
 ) -> Result<CommitCellEditsResult, String> {
     let CommitCellEditsPayload {
@@ -378,7 +295,7 @@ async fn commit_cell_edits(
     if edits.is_empty() {
         return Err("no edits to commit".to_string());
     }
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::commit_cell_edits(&connection, &schema, &table, &edits).await
     })
     .await
@@ -386,7 +303,7 @@ async fn commit_cell_edits(
 
 #[tauri::command]
 async fn insert_row(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: InsertRowPayload,
 ) -> Result<InsertRowResult, String> {
     let InsertRowPayload {
@@ -398,7 +315,7 @@ async fn insert_row(
     if values.is_empty() {
         return Err("no values provided".to_string());
     }
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::insert_row(&connection, &schema, &table, &values).await
     })
     .await
@@ -406,7 +323,7 @@ async fn insert_row(
 
 #[tauri::command]
 async fn delete_rows(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: DeleteRowsPayload,
 ) -> Result<DeleteRowsResult, String> {
     let DeleteRowsPayload {
@@ -418,7 +335,7 @@ async fn delete_rows(
     if rows.is_empty() {
         return Err("no rows provided".to_string());
     }
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::delete_rows(&connection, &schema, &table, &rows).await
     })
     .await
@@ -426,7 +343,7 @@ async fn delete_rows(
 
 #[tauri::command]
 async fn poll_mutation_status(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: PollMutationStatusPayload,
 ) -> Result<Vec<MutationStatus>, String> {
     let PollMutationStatusPayload {
@@ -441,20 +358,20 @@ async fn poll_mutation_status(
     // Mutation polling does NOT mark connection activity (it's a probe
     // for in-flight async work, not a use of the connection). Same
     // policy as health_check_connection.
-    let connection = find_connection(paths.inner(), &connection_id)?;
+    let connection = find_connection(state.inner(), &connection_id).await?;
     dispatch::poll_mutation_status(&connection, &database, &table, &mutation_ids).await
 }
 
 #[tauri::command]
 async fn load_schema_relationships(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: LoadSchemaRelationshipsPayload,
 ) -> Result<SchemaRelationships, String> {
     let LoadSchemaRelationshipsPayload {
         connection_id,
         schema,
     } = payload;
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::fetch_schema_relationships(&connection, &schema).await
     })
     .await
@@ -462,18 +379,20 @@ async fn load_schema_relationships(
 
 #[tauri::command]
 async fn load_database_overview_stats(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: LoadDatabaseOverviewStatsPayload,
 ) -> Result<DatabaseOverviewStats, String> {
-    with_active_connection(paths.inner(), &payload.connection_id, |connection| async move {
-        dispatch::fetch_database_overview_stats(&connection).await
-    })
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::fetch_database_overview_stats(&connection).await },
+    )
     .await
 }
 
 #[tauri::command]
 async fn load_table_data(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: LoadTableDataPayload,
 ) -> Result<TableDataResult, String> {
     let LoadTableDataPayload {
@@ -489,7 +408,7 @@ async fn load_table_data(
         .clamp(1, MAX_TABLE_PAGE_SIZE);
     let offset = (page - 1) as u64 * page_size as u64;
 
-    with_active_connection(paths.inner(), &connection_id, |connection| async move {
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
         let qualified = qualified_table_name(&connection.engine, &schema, &table);
 
         // SELECT with LIMIT/OFFSET works for all four supported engines
@@ -522,76 +441,133 @@ async fn load_table_data(
 
 #[tauri::command]
 async fn load_query_history(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     limit: Option<u32>,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    let mut entries = storage::read_query_history(paths.inner());
-    if let Some(limit) = limit {
-        entries.truncate(limit as usize);
-    }
-    Ok(entries)
+    storage::read_query_history(&state.inner().pool, limit).await
 }
 
 #[tauri::command]
 async fn append_query_history(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     entry: QueryHistoryEntry,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    let paths = paths.inner();
-    let mut entries = storage::read_query_history(paths);
-    // Newest first; cap to MAX_QUERY_HISTORY.
-    entries.insert(0, entry);
-    if entries.len() > MAX_QUERY_HISTORY {
-        entries.truncate(MAX_QUERY_HISTORY);
-    }
-    storage::write_query_history(paths, &entries)?;
-    Ok(entries)
+    let state = state.inner();
+    storage::insert_query_history(&state.pool, &entry).await?;
+    storage::read_query_history(&state.pool, Some(MAX_QUERY_HISTORY as u32)).await
 }
 
 #[tauri::command]
-async fn clear_query_history(paths: State<'_, Paths>) -> Result<(), String> {
-    storage::write_query_history(paths.inner(), &[])
+async fn clear_query_history(state: State<'_, AppState>) -> Result<(), String> {
+    storage::clear_query_history(&state.inner().pool).await
 }
 
 #[tauri::command]
-async fn load_saved_queries(
-    paths: State<'_, Paths>,
-) -> Result<Vec<SavedQuery>, String> {
-    Ok(storage::read_saved_queries(paths.inner()))
+async fn load_saved_queries(state: State<'_, AppState>) -> Result<Vec<SavedQuery>, String> {
+    storage::read_saved_queries(&state.inner().pool).await
 }
 
 /// Insert or update by `id` (idempotent). Bumps `updatedAt` automatically;
 /// callers leave that field as the previous value.
 #[tauri::command]
 async fn save_saved_query(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     query: SavedQuery,
 ) -> Result<Vec<SavedQuery>, String> {
-    let paths = paths.inner();
-    let mut entries = storage::read_saved_queries(paths);
+    let state = state.inner();
     let now = chrono::Utc::now().to_rfc3339();
     let mut next = query.clone();
     next.updated_at = now.clone();
-    if let Some(existing) = entries.iter_mut().find(|entry| entry.id == query.id) {
-        *existing = next;
-    } else {
+    if query.created_at.is_empty() {
         next.created_at = now;
-        entries.push(next);
     }
-    storage::write_saved_queries(paths, &entries)?;
-    Ok(entries)
+    storage::upsert_saved_query(&state.pool, &next).await?;
+    storage::read_saved_queries(&state.pool).await
 }
 
 #[tauri::command]
 async fn delete_saved_query(
-    paths: State<'_, Paths>,
+    state: State<'_, AppState>,
     payload: DeleteSavedQueryPayload,
 ) -> Result<Vec<SavedQuery>, String> {
-    let paths = paths.inner();
-    let mut entries = storage::read_saved_queries(paths);
-    entries.retain(|entry| entry.id != payload.id);
-    storage::write_saved_queries(paths, &entries)?;
-    Ok(entries)
+    let state = state.inner();
+    storage::delete_saved_query(&state.pool, &payload.id).await?;
+    storage::read_saved_queries(&state.pool).await
+}
+
+#[tauri::command]
+async fn load_app_settings(state: State<'_, AppState>) -> Result<AppSettingsSnapshot, String> {
+    let state = state.inner();
+    let onboarding_completed = credentials::onboarding_completed(&state.pool).await?;
+    let credential_storage_mode = credentials::credential_mode(&state.pool).await?;
+    let credential_state = if !onboarding_completed || credential_storage_mode.is_none() {
+        CredentialState::NeedsOnboarding
+    } else if credential_storage_mode == Some(CredentialStorageMode::EncryptedSqlite)
+        && !credentials::is_unlocked()
+    {
+        CredentialState::NeedsUnlock
+    } else {
+        CredentialState::Ready
+    };
+    Ok(AppSettingsSnapshot {
+        onboarding_completed,
+        credential_storage_mode,
+        credential_state,
+        config_dir: state.paths.config_dir().display().to_string(),
+    })
+}
+
+#[tauri::command]
+async fn configure_credential_storage(
+    state: State<'_, AppState>,
+    payload: ConfigureCredentialStoragePayload,
+) -> Result<AppSettingsSnapshot, String> {
+    credentials::configure(
+        &state.inner().pool,
+        payload.mode,
+        payload.password.as_deref(),
+    )
+    .await?;
+    load_app_settings(state).await
+}
+
+#[tauri::command]
+async fn unlock_credentials(
+    state: State<'_, AppState>,
+    payload: UnlockCredentialsPayload,
+) -> Result<AppSettingsSnapshot, String> {
+    credentials::unlock(&state.inner().pool, &payload.password).await?;
+    load_app_settings(state).await
+}
+
+#[tauri::command]
+async fn change_credential_storage(
+    state: State<'_, AppState>,
+    payload: ChangeCredentialStoragePayload,
+) -> Result<AppSettingsSnapshot, String> {
+    if !payload.confirm {
+        return Err("Credential storage change must be confirmed".to_string());
+    }
+    let current = current_credential_mode(state.inner()).await?;
+    if current == payload.mode {
+        return load_app_settings(state).await;
+    }
+    credentials::change_mode(
+        &state.inner().pool,
+        current,
+        payload.mode,
+        payload.password.as_deref(),
+    )
+    .await?;
+    load_app_settings(state).await
+}
+
+#[tauri::command]
+async fn reset_credential_storage(
+    state: State<'_, AppState>,
+) -> Result<AppSettingsSnapshot, String> {
+    credentials::reset(&state.inner().pool).await?;
+    load_app_settings(state).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -600,16 +576,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Resolve and register the on-disk paths once. Every command
-            // reaches the JSON layer via `tauri::State<Paths>` rather than
-            // re-resolving from `AppHandle` on each invocation, which keeps
-            // the persistence layer testable in pure Rust.
             let paths = Paths::from_app(&app.handle())
                 .map_err(|error| format!("Failed to resolve config dir: {error}"))?;
-            app.manage(paths);
+            let pool = tauri::async_runtime::block_on(storage::open_pool(&paths))
+                .map_err(|error| format!("Failed to open local database: {error}"))?;
+            app.manage(AppState { pool, paths });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            load_app_settings,
+            configure_credential_storage,
+            unlock_credentials,
+            change_credential_storage,
+            reset_credential_storage,
             load_connections,
             save_connection,
             delete_connection,

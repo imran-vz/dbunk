@@ -7,7 +7,12 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { ConnectionsView } from "@/components/connections-view";
+import {
+  CredentialOnboarding,
+  CredentialUnlock,
+} from "@/components/credential-onboarding";
 import { NewConnectionDialog } from "@/components/new-connection-dialog";
+import { SettingsView } from "@/components/settings-view";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,10 +27,13 @@ export function AppShell() {
   const {
     activeView,
     activeConnectionId,
+    appSettings,
+    appSettingsStatus,
     connections,
     isLeftSidebarOpen,
     setEditorTheme,
     toggleLeftSidebar,
+    loadAppSettings,
     loadConnections,
     loadQueryHistory,
     loadSavedQueries,
@@ -52,10 +60,22 @@ export function AppShell() {
   }, [setEditorTheme]);
 
   useEffect(() => {
+    void loadAppSettings();
+  }, [loadAppSettings]);
+
+  useEffect(() => {
+    if (appSettings?.credentialState !== "ready") {
+      return;
+    }
     void loadConnections();
     void loadQueryHistory();
     void loadSavedQueries();
-  }, [loadConnections, loadQueryHistory, loadSavedQueries]);
+  }, [
+    appSettings?.credentialState,
+    loadConnections,
+    loadQueryHistory,
+    loadSavedQueries,
+  ]);
 
   // Foreground health-check tick: runs once after the connection list loads,
   // then every 30 s while the tab is visible. Pauses when the user switches
@@ -84,6 +104,9 @@ export function AppShell() {
         stop();
       }
     };
+    if (appSettings?.credentialState !== "ready") {
+      return;
+    }
     if (document.visibilityState === "visible") {
       start();
     }
@@ -92,7 +115,36 @@ export function AppShell() {
       document.removeEventListener("visibilitychange", onVisibility);
       stop();
     };
-  }, [runHealthChecks]);
+  }, [appSettings?.credentialState, runHealthChecks]);
+
+  if (
+    appSettingsStatus.state === "loading" ||
+    appSettingsStatus.state === "idle"
+  ) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-surface-app text-xs text-text-muted">
+        Loading settings…
+      </div>
+    );
+  }
+
+  if (appSettingsStatus.state === "error") {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-surface-app p-6 text-foreground">
+        <div className="max-w-md rounded-lg border border-danger/30 bg-danger/10 p-5 text-sm text-danger">
+          {appSettingsStatus.error}
+        </div>
+      </div>
+    );
+  }
+
+  if (appSettings?.credentialState === "needs-onboarding") {
+    return <CredentialOnboarding />;
+  }
+
+  if (appSettings?.credentialState === "needs-unlock") {
+    return <CredentialUnlock />;
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app text-foreground">
@@ -203,8 +255,10 @@ export function AppShell() {
         <div className="flex min-w-0 flex-1 flex-col bg-surface-app">
           {activeView === "workspace" ? (
             <WorkspaceView isClient={isClient} />
-          ) : (
+          ) : activeView === "connections" ? (
             <ConnectionsView />
+          ) : (
+            <SettingsView />
           )}
         </div>
       </div>

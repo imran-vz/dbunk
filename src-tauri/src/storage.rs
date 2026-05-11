@@ -1,41 +1,94 @@
-//! On-disk JSON persistence for connections, query history, and saved queries.
+//! SQLite persistence for dbunk's local app state.
 //!
-//! This module owns the rule "where does dbunk write its files" and the
-//! per-entity read/write helpers. Constructing a [`Paths`] from a
-//! `tempfile::tempdir()` is a complete fake — the persistence layer can be
-//! exercised in pure Rust without a Tauri runtime.
-//!
-//! Entity types (`StoredConnection`, `QueryHistoryEntry`, `SavedQuery`) live
-//! in `lib.rs` because they're also command-payload shapes.
-//!
-//! ## Corruption tolerance
-//!
-//! The three entities deliberately have different rules. `connections.json`
-//! is load-bearing — silently returning an empty list would hide the user's
-//! saved databases and the next save would overwrite the corrupted file.
-//! `query_history.json` and `saved_queries.json` are recoverable — losing
-//! either is annoying but not destructive, so we log the parse failure and
-//! return an empty list so the app still boots.
+//! ADR-0007 makes `~/.config/dbunk/dbunk.sqlite` the primary local store.
+//! This module owns path resolution, pool setup, lightweight embedded
+//! migrations, and per-entity read/write helpers.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
+use std::{fs, path::PathBuf, str::FromStr};
+
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    Row, SqlitePool,
 };
-
-use serde::{de::DeserializeOwned, Serialize};
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 
-use crate::{QueryHistoryEntry, SavedQuery, StoredConnection};
+use crate::{
+    CredentialStorageMode, DatabaseEngine, QueryHistoryEntry, SavedQuery, StoredConnection,
+};
 
-const CONNECTIONS_FILE: &str = "connections.json";
-const QUERY_HISTORY_FILE: &str = "query_history.json";
-const SAVED_QUERIES_FILE: &str = "saved_queries.json";
+const DB_FILE: &str = "dbunk.sqlite";
 
-/// Resolved location of dbunk's config directory.
-///
-/// Construct once via [`Paths::from_app`] at app start and pass a reference
-/// (or hold via `tauri::State`) wherever persistence is needed. Tests can
-/// build one with [`Paths::from_dir`] over a tempdir.
+const MIGRATIONS: &[(i64, &str)] = &[(
+    1,
+    r#"
+CREATE TABLE app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE connections (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  database_name TEXT NOT NULL,
+  engine TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  user_name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  last_activity_at TEXT,
+  use_https INTEGER NOT NULL DEFAULT 0,
+  url_path TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE credentials (
+  connection_id TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,
+  storage_mode TEXT NOT NULL,
+  nonce TEXT,
+  password_value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE credential_verifier (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  kdf TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE query_history (
+  id TEXT PRIMARY KEY,
+  sql TEXT NOT NULL,
+  connection_id TEXT NOT NULL,
+  connection_name TEXT NOT NULL,
+  database_name TEXT NOT NULL,
+  engine TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error_message TEXT,
+  runtime_ms INTEGER NOT NULL,
+  row_count INTEGER,
+  started_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_query_history_started_at ON query_history(started_at DESC);
+
+CREATE TABLE saved_queries (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  body TEXT NOT NULL,
+  connection_id TEXT,
+  is_favorite INTEGER NOT NULL DEFAULT 0,
+  owner_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_saved_queries_updated_at ON saved_queries(updated_at DESC);
+"#,
+)];
+
 pub struct Paths {
     config_dir: PathBuf,
 }
@@ -46,22 +99,17 @@ impl Paths {
         Ok(Self { config_dir })
     }
 
-    /// Test/seam constructor — accepts any directory as the config root.
     #[allow(dead_code)]
     pub fn from_dir(config_dir: PathBuf) -> Self {
         Self { config_dir }
     }
 
-    pub fn connections_file(&self) -> PathBuf {
-        self.config_dir.join(CONNECTIONS_FILE)
+    pub fn db_file(&self) -> PathBuf {
+        self.config_dir.join(DB_FILE)
     }
 
-    pub fn query_history_file(&self) -> PathBuf {
-        self.config_dir.join(QUERY_HISTORY_FILE)
-    }
-
-    pub fn saved_queries_file(&self) -> PathBuf {
-        self.config_dir.join(SAVED_QUERIES_FILE)
+    pub fn config_dir(&self) -> &PathBuf {
+        &self.config_dir
     }
 
     fn ensure_dir(&self) -> Result<(), String> {
@@ -84,178 +132,503 @@ fn resolve_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     }
 }
 
-/// Read a JSON file into `T`. Returns `T::default()` for missing or empty
-/// files. **Refuses corrupt JSON** — load-bearing files use this so a bad
-/// blob fails loud rather than silently zeroing the user's state.
-fn read_json_strict<T: DeserializeOwned + Default>(path: &Path) -> Result<T, String> {
-    if !path.exists() {
-        return Ok(T::default());
-    }
-    let data = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    if data.trim().is_empty() {
-        return Ok(T::default());
-    }
-    serde_json::from_str(&data).map_err(|error| error.to_string())
+pub async fn open_pool(paths: &Paths) -> Result<SqlitePool, String> {
+    paths.ensure_dir()?;
+    let options = SqliteConnectOptions::new()
+        .filename(paths.db_file())
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .foreign_keys(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(options)
+        .await
+        .map_err(|error| error.to_string())?;
+    run_migrations(&pool).await?;
+    Ok(pool)
 }
 
-/// Read a JSON file into `T`. Returns `T::default()` for missing, empty, or
-/// **corrupt** files (logs the parse error). For recoverable state where
-/// "start fresh" is friendlier than "refuse to boot".
-fn read_json_lossy<T: DeserializeOwned + Default>(path: &Path, label: &str) -> T {
-    if !path.exists() {
-        return T::default();
-    }
-    let data = match fs::read_to_string(path) {
-        Ok(data) => data,
-        Err(error) => {
-            eprintln!("{label} unreadable: {error}");
-            return T::default();
+async fn run_migrations(pool: &SqlitePool) -> Result<(), String> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    for (version, sql) in MIGRATIONS {
+        let applied: Option<(i64,)> =
+            sqlx::query_as("SELECT version FROM schema_migrations WHERE version = ?")
+                .bind(version)
+                .fetch_optional(pool)
+                .await
+                .map_err(|error| error.to_string())?;
+        if applied.is_some() {
+            continue;
         }
-    };
-    if data.trim().is_empty() {
-        return T::default();
+        let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
+        for statement in sql.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+            sqlx::query(statement)
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        sqlx::query("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+            .bind(version)
+            .bind(now())
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+        tx.commit().await.map_err(|error| error.to_string())?;
     }
-    match serde_json::from_str(&data) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("{label} is unreadable, ignoring: {error}");
-            T::default()
+    Ok(())
+}
+
+pub fn now() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
+fn bool_to_i64(value: bool) -> i64 {
+    if value {
+        1
+    } else {
+        0
+    }
+}
+
+fn i64_to_u16(value: i64) -> u16 {
+    u16::try_from(value).unwrap_or(0)
+}
+
+impl FromStr for DatabaseEngine {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "PostgreSQL" => Ok(Self::PostgreSQL),
+            "MySQL" => Ok(Self::MySQL),
+            "ClickHouse" => Ok(Self::ClickHouse),
+            "SQLite" => Ok(Self::SQLite),
+            _ => Err(format!("unknown database engine '{value}'")),
         }
     }
 }
 
-fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), String> {
-    let data = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
-    fs::write(path, data).map_err(|error| error.to_string())
+impl DatabaseEngine {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PostgreSQL => "PostgreSQL",
+            Self::MySQL => "MySQL",
+            Self::ClickHouse => "ClickHouse",
+            Self::SQLite => "SQLite",
+        }
+    }
+}
+
+impl CredentialStorageMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Keychain => "keychain",
+            Self::EncryptedSqlite => "encrypted-sqlite",
+            Self::PlainSqlite => "plain-sqlite",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, String> {
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(row.map(|row| row.get::<String, _>("value")))
+}
+
+pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    )
+    .bind(key)
+    .bind(value)
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
 // Connections
 // ---------------------------------------------------------------------------
 
-pub fn read_connections(paths: &Paths) -> Result<Vec<StoredConnection>, String> {
-    read_json_strict(&paths.connections_file())
+pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>, String> {
+    let rows = sqlx::query(
+        "SELECT id, name, database_name, engine, host, port, user_name, role,
+                last_activity_at, use_https, url_path
+         FROM connections
+         ORDER BY name COLLATE NOCASE ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    rows.into_iter()
+        .map(|row| {
+            let engine = DatabaseEngine::from_str(row.get::<String, _>("engine").as_str())?;
+            Ok(StoredConnection {
+                id: row.get("id"),
+                name: row.get("name"),
+                database: row.get("database_name"),
+                engine,
+                host: row.get("host"),
+                port: i64_to_u16(row.get("port")),
+                user: row.get("user_name"),
+                password: String::new(),
+                role: row.get("role"),
+                last_activity_at: row.get("last_activity_at"),
+                use_https: row.get::<i64, _>("use_https") != 0,
+                url_path: row.get("url_path"),
+            })
+        })
+        .collect()
 }
 
-pub fn write_connections(
-    paths: &Paths,
-    connections: &[StoredConnection],
+pub async fn upsert_connection(
+    pool: &SqlitePool,
+    connection: &StoredConnection,
 ) -> Result<(), String> {
-    paths.ensure_dir()?;
-    write_json(&paths.connections_file(), connections)
+    sqlx::query(
+        "INSERT INTO connections (
+            id, name, database_name, engine, host, port, user_name, role,
+            last_activity_at, use_https, url_path
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            database_name = excluded.database_name,
+            engine = excluded.engine,
+            host = excluded.host,
+            port = excluded.port,
+            user_name = excluded.user_name,
+            role = excluded.role,
+            last_activity_at = excluded.last_activity_at,
+            use_https = excluded.use_https,
+            url_path = excluded.url_path",
+    )
+    .bind(&connection.id)
+    .bind(&connection.name)
+    .bind(&connection.database)
+    .bind(connection.engine.as_str())
+    .bind(&connection.host)
+    .bind(i64::from(connection.port))
+    .bind(&connection.user)
+    .bind(&connection.role)
+    .bind(&connection.last_activity_at)
+    .bind(bool_to_i64(connection.use_https))
+    .bind(&connection.url_path)
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn delete_connection(pool: &SqlitePool, connection_id: &str) -> Result<bool, String> {
+    let result = sqlx::query("DELETE FROM connections WHERE id = ?")
+        .bind(connection_id)
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn touch_connection_activity(
+    pool: &SqlitePool,
+    connection_id: &str,
+) -> Result<(), String> {
+    sqlx::query("UPDATE connections SET last_activity_at = ? WHERE id = ?")
+        .bind(now())
+        .bind(connection_id)
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// SQLite credentials
+// ---------------------------------------------------------------------------
+
+pub async fn read_sqlite_credentials(
+    pool: &SqlitePool,
+) -> Result<Vec<(String, Option<String>, String)>, String> {
+    let rows = sqlx::query("SELECT connection_id, nonce, password_value FROM credentials")
+        .fetch_all(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.get("connection_id"),
+                row.get("nonce"),
+                row.get("password_value"),
+            )
+        })
+        .collect())
+}
+
+pub async fn upsert_sqlite_credential(
+    pool: &SqlitePool,
+    connection_id: &str,
+    mode: CredentialStorageMode,
+    nonce: Option<&str>,
+    password_value: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO credentials (connection_id, storage_mode, nonce, password_value, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(connection_id) DO UPDATE SET
+            storage_mode = excluded.storage_mode,
+            nonce = excluded.nonce,
+            password_value = excluded.password_value,
+            updated_at = excluded.updated_at",
+    )
+    .bind(connection_id)
+    .bind(mode.as_str())
+    .bind(nonce)
+    .bind(password_value)
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn clear_sqlite_credentials(pool: &SqlitePool) -> Result<(), String> {
+    sqlx::query("DELETE FROM credentials")
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn read_verifier(
+    pool: &SqlitePool,
+) -> Result<Option<(String, String, String, String)>, String> {
+    let row =
+        sqlx::query("SELECT kdf, salt, nonce, ciphertext FROM credential_verifier WHERE id = 1")
+            .fetch_optional(pool)
+            .await
+            .map_err(|error| error.to_string())?;
+    Ok(row.map(|row| {
+        (
+            row.get("kdf"),
+            row.get("salt"),
+            row.get("nonce"),
+            row.get("ciphertext"),
+        )
+    }))
+}
+
+pub async fn write_verifier(
+    pool: &SqlitePool,
+    kdf: &str,
+    salt: &str,
+    nonce: &str,
+    ciphertext: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO credential_verifier (id, kdf, salt, nonce, ciphertext, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            kdf = excluded.kdf,
+            salt = excluded.salt,
+            nonce = excluded.nonce,
+            ciphertext = excluded.ciphertext,
+            updated_at = excluded.updated_at",
+    )
+    .bind(kdf)
+    .bind(salt)
+    .bind(nonce)
+    .bind(ciphertext)
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn clear_verifier(pool: &SqlitePool) -> Result<(), String> {
+    sqlx::query("DELETE FROM credential_verifier")
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
 // Query history
 // ---------------------------------------------------------------------------
 
-pub fn read_query_history(paths: &Paths) -> Vec<QueryHistoryEntry> {
-    read_json_lossy(&paths.query_history_file(), "query_history.json")
+pub async fn read_query_history(
+    pool: &SqlitePool,
+    limit: Option<u32>,
+) -> Result<Vec<QueryHistoryEntry>, String> {
+    let limit = limit.unwrap_or(200);
+    let rows = sqlx::query(
+        "SELECT id, sql, connection_id, connection_name, database_name, engine,
+                status, error_message, runtime_ms, row_count, started_at
+         FROM query_history
+         ORDER BY started_at DESC
+         LIMIT ?",
+    )
+    .bind(i64::from(limit))
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    rows.into_iter()
+        .map(|row| {
+            let engine = DatabaseEngine::from_str(row.get::<String, _>("engine").as_str())?;
+            Ok(QueryHistoryEntry {
+                id: row.get("id"),
+                sql: row.get("sql"),
+                connection_id: row.get("connection_id"),
+                connection_name: row.get("connection_name"),
+                database: row.get("database_name"),
+                engine,
+                status: row.get("status"),
+                error_message: row.get("error_message"),
+                runtime_ms: row.get::<i64, _>("runtime_ms").max(0) as u64,
+                row_count: row
+                    .get::<Option<i64>, _>("row_count")
+                    .map(|value| value.max(0) as u64),
+                started_at: row.get("started_at"),
+            })
+        })
+        .collect()
 }
 
-pub fn write_query_history(
-    paths: &Paths,
-    entries: &[QueryHistoryEntry],
+pub async fn insert_query_history(
+    pool: &SqlitePool,
+    entry: &QueryHistoryEntry,
 ) -> Result<(), String> {
-    paths.ensure_dir()?;
-    write_json(&paths.query_history_file(), entries)
+    sqlx::query(
+        "INSERT OR REPLACE INTO query_history (
+            id, sql, connection_id, connection_name, database_name, engine,
+            status, error_message, runtime_ms, row_count, started_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&entry.id)
+    .bind(&entry.sql)
+    .bind(&entry.connection_id)
+    .bind(&entry.connection_name)
+    .bind(&entry.database)
+    .bind(entry.engine.as_str())
+    .bind(&entry.status)
+    .bind(&entry.error_message)
+    .bind(i64::try_from(entry.runtime_ms).unwrap_or(i64::MAX))
+    .bind(
+        entry
+            .row_count
+            .map(|value| i64::try_from(value).unwrap_or(i64::MAX)),
+    )
+    .bind(&entry.started_at)
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query(
+        "DELETE FROM query_history
+         WHERE id NOT IN (
+           SELECT id FROM query_history ORDER BY started_at DESC LIMIT 200
+         )",
+    )
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn clear_query_history(pool: &SqlitePool) -> Result<(), String> {
+    sqlx::query("DELETE FROM query_history")
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
 // Saved queries
 // ---------------------------------------------------------------------------
 
-pub fn read_saved_queries(paths: &Paths) -> Vec<SavedQuery> {
-    read_json_lossy(&paths.saved_queries_file(), "saved_queries.json")
+pub async fn read_saved_queries(pool: &SqlitePool) -> Result<Vec<SavedQuery>, String> {
+    let rows = sqlx::query(
+        "SELECT id, name, body, connection_id, is_favorite, owner_id, created_at, updated_at
+         FROM saved_queries
+         ORDER BY updated_at DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| SavedQuery {
+            id: row.get("id"),
+            name: row.get("name"),
+            body: row.get("body"),
+            connection_id: row.get("connection_id"),
+            is_favorite: row.get::<i64, _>("is_favorite") != 0,
+            owner_id: row.get("owner_id"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        })
+        .collect())
 }
 
-pub fn write_saved_queries(paths: &Paths, queries: &[SavedQuery]) -> Result<(), String> {
-    paths.ensure_dir()?;
-    write_json(&paths.saved_queries_file(), queries)
+pub async fn upsert_saved_query(pool: &SqlitePool, query: &SavedQuery) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO saved_queries (
+            id, name, body, connection_id, is_favorite, owner_id, created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            body = excluded.body,
+            connection_id = excluded.connection_id,
+            is_favorite = excluded.is_favorite,
+            owner_id = excluded.owner_id,
+            updated_at = excluded.updated_at",
+    )
+    .bind(&query.id)
+    .bind(&query.name)
+    .bind(&query.body)
+    .bind(&query.connection_id)
+    .bind(bool_to_i64(query.is_favorite))
+    .bind(&query.owner_id)
+    .bind(&query.created_at)
+    .bind(&query.updated_at)
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    //! These tests prove the testability claim of the storage module: by
-    //! constructing `Paths::from_dir(tempdir)` we get full coverage of the
-    //! persistence layer without needing a Tauri runtime, an `AppHandle`, or
-    //! a real filesystem outside the test sandbox.
-    use super::*;
-    use crate::DatabaseEngine;
-
-    fn fixture_paths() -> (tempfile::TempDir, Paths) {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let paths = Paths::from_dir(dir.path().to_path_buf());
-        (dir, paths)
-    }
-
-    fn sample_connection(id: &str) -> StoredConnection {
-        StoredConnection {
-            id: id.to_string(),
-            name: format!("conn {id}"),
-            database: "core".into(),
-            engine: DatabaseEngine::PostgreSQL,
-            host: "localhost".into(),
-            port: 5432,
-            user: "u".into(),
-            password: String::new(),
-            role: "read/write".into(),
-            last_activity_at: None,
-            use_https: false,
-            url_path: String::new(),
-        }
-    }
-
-    #[test]
-    fn read_connections_returns_empty_when_file_missing() {
-        let (_dir, paths) = fixture_paths();
-        let connections = read_connections(&paths).expect("read");
-        assert!(connections.is_empty());
-    }
-
-    #[test]
-    fn write_then_read_round_trips_connections() {
-        let (_dir, paths) = fixture_paths();
-        let original = vec![sample_connection("a"), sample_connection("b")];
-        write_connections(&paths, &original).expect("write");
-
-        let loaded = read_connections(&paths).expect("read");
-        assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].id, "a");
-        assert_eq!(loaded[1].name, "conn b");
-    }
-
-    #[test]
-    fn read_connections_refuses_corrupt_json() {
-        // Load-bearing file: a parse failure must surface, not silently
-        // wipe the user's saved connections.
-        let (_dir, paths) = fixture_paths();
-        std::fs::create_dir_all(paths.connections_file().parent().unwrap()).unwrap();
-        std::fs::write(paths.connections_file(), "{ not json").unwrap();
-
-        let result = read_connections(&paths);
-        assert!(result.is_err(), "expected strict parse failure");
-    }
-
-    #[test]
-    fn read_query_history_tolerates_corrupt_json() {
-        // Recoverable file: corruption logs and returns empty so the app
-        // still boots.
-        let (_dir, paths) = fixture_paths();
-        std::fs::create_dir_all(paths.query_history_file().parent().unwrap()).unwrap();
-        std::fs::write(paths.query_history_file(), "{ not json").unwrap();
-
-        let entries = read_query_history(&paths);
-        assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn read_saved_queries_tolerates_corrupt_json() {
-        let (_dir, paths) = fixture_paths();
-        std::fs::create_dir_all(paths.saved_queries_file().parent().unwrap()).unwrap();
-        std::fs::write(paths.saved_queries_file(), "{ not json").unwrap();
-
-        let entries = read_saved_queries(&paths);
-        assert!(entries.is_empty());
-    }
+pub async fn delete_saved_query(pool: &SqlitePool, id: &str) -> Result<(), String> {
+    sqlx::query("DELETE FROM saved_queries WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }

@@ -38,10 +38,9 @@ use sqlx::{Any, AnyConnection, Column, Connection, Row};
 
 use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
-    CommitCellEditsResult, ConnectResult, DatabaseEngine, DatabaseOverviewStats,
-    DeleteRowsResult, ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult,
-    SchemaExplorer, SchemaRelationships, StoredConnection, StructureCapabilities,
-    TableStructure,
+    CommitCellEditsResult, ConnectResult, DatabaseEngine, DatabaseOverviewStats, DeleteRowsResult,
+    ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, SchemaExplorer,
+    SchemaRelationships, StoredConnection, StructureCapabilities, TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -513,10 +512,7 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
 /// Run an ad-hoc query against the connection's engine. PostgreSQL uses
 /// the native driver (for richer type coverage); ClickHouse uses HTTP;
 /// MySQL/SQLite use sqlx-Any.
-pub async fn run_query(
-    connection: &StoredConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
+pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
     match connection.engine {
         DatabaseEngine::PostgreSQL => postgres::run_query(connection, query).await,
         DatabaseEngine::ClickHouse => clickhouse::run_query(connection, query).await,
@@ -541,8 +537,12 @@ pub async fn fetch_table_structure(
     table: &str,
 ) -> Result<TableStructure, String> {
     match connection.engine {
-        DatabaseEngine::PostgreSQL => postgres::fetch_table_structure(connection, schema, table).await,
-        DatabaseEngine::ClickHouse => clickhouse::fetch_table_structure(connection, schema, table).await,
+        DatabaseEngine::PostgreSQL => {
+            postgres::fetch_table_structure(connection, schema, table).await
+        }
+        DatabaseEngine::ClickHouse => {
+            clickhouse::fetch_table_structure(connection, schema, table).await
+        }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             // Columns-only probe with all `capabilities.*` falsy — the UI
             // hides the disabled sections accordingly. Native engine
@@ -565,8 +565,12 @@ pub async fn fetch_schema_relationships(
     schema: &str,
 ) -> Result<SchemaRelationships, String> {
     match connection.engine {
-        DatabaseEngine::PostgreSQL => postgres::fetch_schema_relationships(connection, schema).await,
-        DatabaseEngine::ClickHouse => clickhouse::fetch_schema_relationships(connection, schema).await,
+        DatabaseEngine::PostgreSQL => {
+            postgres::fetch_schema_relationships(connection, schema).await
+        }
+        DatabaseEngine::ClickHouse => {
+            clickhouse::fetch_schema_relationships(connection, schema).await
+        }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             // Empty rather than error — keeps the relationship-map panel
             // renderable on engines we haven't introspected yet.
@@ -584,9 +588,10 @@ pub async fn fetch_database_overview_stats(
     match connection.engine {
         DatabaseEngine::PostgreSQL => postgres::load_database_overview_stats(connection).await,
         DatabaseEngine::ClickHouse => clickhouse::fetch_database_overview_stats(connection).await,
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine, "Database overview stats"))
-        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite => Err(not_implemented_yet(
+            &connection.engine,
+            "Database overview stats",
+        )),
     }
 }
 
@@ -629,9 +634,7 @@ pub async fn insert_row(
     values: &[CellEditKeyValue],
 ) -> Result<InsertRowResult, String> {
     match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            postgres::insert_row(connection, schema, table, values).await
-        }
+        DatabaseEngine::PostgreSQL => postgres::insert_row(connection, schema, table, values).await,
         DatabaseEngine::ClickHouse => {
             clickhouse::insert_row(connection, schema, table, values).await
         }
@@ -648,9 +651,7 @@ pub async fn delete_rows(
     rows: &[Vec<CellEditKeyValue>],
 ) -> Result<DeleteRowsResult, String> {
     match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            postgres::delete_rows(connection, schema, table, rows).await
-        }
+        DatabaseEngine::PostgreSQL => postgres::delete_rows(connection, schema, table, rows).await,
         DatabaseEngine::ClickHouse => {
             clickhouse::delete_rows(connection, schema, table, rows).await
         }

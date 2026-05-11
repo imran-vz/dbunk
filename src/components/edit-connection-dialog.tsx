@@ -61,13 +61,6 @@ const connectionSchema = z
         path: ["user"],
       });
     }
-    if (!value.password?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Password is required",
-        path: ["password"],
-      });
-    }
   });
 
 type ConnectionFormData = z.infer<typeof connectionSchema>;
@@ -365,7 +358,7 @@ export function EditConnectionDialog({
                         <Input
                           id="edit-connection-password"
                           type="password"
-                          placeholder="••••••••"
+                          placeholder="Leave blank to keep existing password"
                           value={field.state.value ?? ""}
                           onChange={(e) => field.handleChange(e.target.value)}
                           onBlur={field.handleBlur}

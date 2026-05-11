@@ -80,7 +80,11 @@ fn url(connection: &StoredConnection) -> Result<reqwest::Url, String> {
     {
         connection.host.clone()
     } else {
-        let scheme = if connection.use_https { "https" } else { "http" };
+        let scheme = if connection.use_https {
+            "https"
+        } else {
+            "http"
+        };
         let port = if connection.port == 0 {
             if connection.use_https {
                 8443
@@ -175,10 +179,7 @@ fn parse_response(payload: serde_json::Value, runtime_ms: u64) -> Result<QueryRe
 /// error so the user sees whatever ClickHouse said. Bodies that aren't
 /// JSON (DML statements with no result set) collapse to an empty
 /// `QueryResult` with `runtime_ms` populated.
-pub async fn run_query(
-    connection: &StoredConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
+pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
     let url = url(connection)?;
     let client = shared_client();
     let start = Instant::now();
@@ -542,16 +543,13 @@ pub async fn fetch_schema_relationships(
         let column_type = cell(row, type_idx).unwrap_or("").to_string();
         let nullable = column_type.starts_with("Nullable(");
         let in_sorting = matches!(cell(row, sorting_idx), Some("1") | Some("true"));
-        by_table
-            .entry(table)
-            .or_default()
-            .push(SchemaTableColumn {
-                name: cell_owned(row, name_idx),
-                data_type: column_type,
-                nullable,
-                is_primary_key: in_sorting,
-                ordinal_position: parse_int(cell(row, position_idx).unwrap_or("0")) as i32,
-            });
+        by_table.entry(table).or_default().push(SchemaTableColumn {
+            name: cell_owned(row, name_idx),
+            data_type: column_type,
+            nullable,
+            is_primary_key: in_sorting,
+            ordinal_position: parse_int(cell(row, position_idx).unwrap_or("0")) as i32,
+        });
     }
 
     let tables: Vec<SchemaTableNode> = table_names
@@ -590,11 +588,7 @@ fn ch_literal(value: Option<&str>) -> String {
     }
 }
 
-fn build_insert(
-    schema: &str,
-    table: &str,
-    values: &[CellEditKeyValue],
-) -> String {
+fn build_insert(schema: &str, table: &str, values: &[CellEditKeyValue]) -> String {
     // Backtick-quote identifiers per `qualified_table_name`'s convention
     // for CH — keeps reserved words and odd column names safe.
     let qualified = format!("{}.{}", quote_backtick(schema), quote_backtick(table));
@@ -651,7 +645,13 @@ fn build_alter_update(
     let qualified = format!("{}.{}", quote_backtick(schema), quote_backtick(table));
     let set_clause = set
         .iter()
-        .map(|kv| format!("{} = {}", quote_backtick(&kv.column), ch_literal(kv.value.as_deref())))
+        .map(|kv| {
+            format!(
+                "{} = {}",
+                quote_backtick(&kv.column),
+                ch_literal(kv.value.as_deref())
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let where_clause = identity
@@ -959,7 +959,11 @@ pub async fn fetch_database_overview_stats(
 
     // Connection count from system.processes — this counts active queries
     // server-wide, not per-database. Best analogue we have.
-    let processes = run_query(connection, "SELECT count() AS connection_count FROM system.processes").await?;
+    let processes = run_query(
+        connection,
+        "SELECT count() AS connection_count FROM system.processes",
+    )
+    .await?;
     let connection_count = processes
         .rows
         .first()
@@ -1035,7 +1039,10 @@ mod tests {
         assert_eq!(built.scheme(), "http");
         assert_eq!(built.host_str(), Some("localhost"));
         assert_eq!(built.port(), Some(8123));
-        assert!(built.query().unwrap().contains("default_format=JSONCompact"));
+        assert!(built
+            .query()
+            .unwrap()
+            .contains("default_format=JSONCompact"));
     }
 
     #[test]

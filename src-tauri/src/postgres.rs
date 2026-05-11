@@ -174,10 +174,7 @@ fn row_to_strings(row: &PgRow) -> Vec<String> {
 /// Selects (and other row-returning statements) come back with column
 /// metadata + row strings; everything else returns `rows_affected`. Routing
 /// SELECT vs DML lives in `should_fetch_rows`.
-pub async fn run_query(
-    connection: &StoredConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
+pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
     let mut conn = connect(connection).await?;
     let start = Instant::now();
 
@@ -272,10 +269,7 @@ fn build_insert(
 ) -> (String, Vec<Option<String>>) {
     let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
     let mut params: Vec<Option<String>> = Vec::with_capacity(values.len());
-    let column_list: Vec<String> = values
-        .iter()
-        .map(|kv| quote_double(&kv.column))
-        .collect();
+    let column_list: Vec<String> = values.iter().map(|kv| quote_double(&kv.column)).collect();
     let placeholders: Vec<String> = values
         .iter()
         .enumerate()
@@ -1128,10 +1122,7 @@ mod tests {
     fn delete_emits_where_clause_with_aligned_params() {
         let identity = vec![kv("id", Some("42"))];
         let (sql, params) = build_delete("public", "users", &identity);
-        assert_eq!(
-            sql,
-            r#"DELETE FROM "public"."users" WHERE "id" = $1"#
-        );
+        assert_eq!(sql, r#"DELETE FROM "public"."users" WHERE "id" = $1"#);
         assert_eq!(params, vec![Some("42".into())]);
     }
 
