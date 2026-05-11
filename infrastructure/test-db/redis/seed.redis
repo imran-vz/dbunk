@@ -1,0 +1,29 @@
+FLUSHALL
+SET app:banner "Welcome to Dbunk Redis fixtures"
+SET app:empty ""
+SET app:unicode "cafe, 東京, newline\nsecond line"
+SET app:large:text "This intentionally long string exercises wrapping and preview truncation in value inspectors. This intentionally long string exercises wrapping and preview truncation in value inspectors."
+SET counter:pageviews 42
+INCRBY counter:pageviews 8
+SETEX session:expiring 3600 "expires in one hour"
+SET binary:sample "\x00\x01\x02not-really-binary"
+HSET user:101 name "Ada Lovelace" email "ada@acme.example" role "admin" active "true" login_count "14"
+HSET user:102 name "Grace Hopper" email "grace@acme.example" role "" active "false" notes "missing title and phone"
+HSET invoice:INV-2026-0001 status "paid" total_cents "107892" account_id "acct_acme"
+LPUSH jobs:queue "export:csv:125000" "refresh:materialized-view" "email:invoice-reminder"
+RPUSH audit:recent "connection.created" "query.started" "query.failed" "query.retried"
+SADD feature:beta-users "acct_acme" "acct_nulls" "acct_zen"
+SADD emptyish:set "member-with:colon" "member with spaces" ""
+ZADD leaderboard:query-latency 151 "acct_acme" 820 "acct_acme:slow-query" 5 "acct_suspended:rejected"
+ZADD timeline:events 1772013601 "workspace.opened" 1772013673 "query.finished" 1772182365 "purchase.completed"
+XADD stream:connection-events * account acct_acme event connected latency_ms 21
+XADD stream:connection-events * account acct_zen event reconnecting latency_ms 250
+XADD stream:connection-events * account acct_suspended event rejected reason payment_failed
+SELECT 1
+SET db1:notice "logical database 1 fixture"
+HSET db1:hash field "value in db 1"
+SELECT 2
+SET db2:notice "logical database 2 fixture"
+SELECT 0
+JSON.SET json:account:acme $ '{"account_id":"acct_acme","tier":"enterprise","limits":{"users":500,"events":10000000},"flags":["sso","priority"],"nullable":null}'
+JSON.SET json:edge $ '{"emptyArray":[],"nested":{"quote":"syntax error at or near SELECT"},"numbers":[0,-1,3.14159]}'
