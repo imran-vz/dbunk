@@ -56,23 +56,24 @@ use crate::{
 /// concerns plug in: pooling, TLS modes, statement timeouts,
 /// `application_name`, etc.
 async fn connect(connection: &StoredConnection) -> Result<PgConnection, String> {
+    let port = if connection.port == 0 {
+        5432
+    } else {
+        connection.port
+    };
     let mut options = PgConnectOptions::new()
         .host(&connection.host)
         .username(&connection.user)
         .database(&connection.database)
-        .port(if connection.port == 0 {
-            5432
-        } else {
-            connection.port
-        });
+        .port(port);
 
     if !connection.password.is_empty() {
         options = options.password(&connection.password);
     }
 
-    PgConnection::connect_with(&options)
-        .await
-        .map_err(|error| error.to_string())
+    PgConnection::connect_with(&options).await.map_err(|error| {
+        crate::dispatch::friendly_sqlx_error(error, &connection.host, port)
+    })
 }
 
 // ---------------------------------------------------------------------------
