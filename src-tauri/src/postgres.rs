@@ -37,8 +37,8 @@ use sqlx::{
 };
 
 use crate::{
-    bytes_to_hex, quote_double, should_fetch_rows, CellEdit, CellEditKeyValue, ColumnInfo,
-    CommitCellEditsResult, ConstraintInfo, DatabaseOverviewStats, DeleteRowsResult,
+    bytes_to_hex, dispatch::should_fetch_rows, quote_double, CellEdit, CellEditKeyValue,
+    ColumnInfo, CommitCellEditsResult, ConstraintInfo, DatabaseOverviewStats, DeleteRowsResult,
     ExecuteDdlResult, ForeignKeyInfo, IndexInfo, InsertRowResult, QueryResult, SchemaForeignKey,
     SchemaRelationships, SchemaTableColumn, SchemaTableNode, StoredConnection,
     StructureCapabilities, TableStructure,
