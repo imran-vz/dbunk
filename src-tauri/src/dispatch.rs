@@ -80,6 +80,75 @@ fn not_applicable(engine: &DatabaseEngine, operation: &str) -> String {
     )
 }
 
+/// Translate a `sqlx::Error` from a connect attempt into a message
+/// the user can act on. The default `Display` for `sqlx::Error::Io`
+/// surfaces raw OS-error text like `Connection refused (os error 61)`,
+/// which leaks platform detail and offers no guidance — this maps
+/// the common failure modes (refused / DNS / timeout / TLS / auth)
+/// to plain-English explanations.
+pub(crate) fn friendly_sqlx_error(error: sqlx::Error, host: &str, port: u16) -> String {
+    use std::io::ErrorKind;
+
+    let endpoint = if port == 0 {
+        host.to_string()
+    } else {
+        format!("{host}:{port}")
+    };
+
+    match &error {
+        sqlx::Error::Io(io_err) => match io_err.kind() {
+            ErrorKind::ConnectionRefused => format!(
+                "Could not connect to {endpoint}: connection refused. \
+                 Check that the database server is running and listening on this port."
+            ),
+            ErrorKind::TimedOut => format!(
+                "Connection to {endpoint} timed out. \
+                 The host may be unreachable or blocked by a firewall."
+            ),
+            ErrorKind::ConnectionReset => {
+                format!("Connection to {endpoint} was reset by the server.")
+            }
+            ErrorKind::ConnectionAborted => {
+                format!("Connection to {endpoint} was aborted by the server.")
+            }
+            ErrorKind::HostUnreachable => {
+                format!("Host \"{host}\" is unreachable from this network.")
+            }
+            ErrorKind::NetworkUnreachable | ErrorKind::NetworkDown => {
+                format!("Network is unreachable while connecting to {endpoint}.")
+            }
+            _ => {
+                // DNS failures don't have a dedicated `ErrorKind` and vary
+                // by platform, so sniff the message text as a fallback.
+                let text = io_err.to_string();
+                let lower = text.to_lowercase();
+                if lower.contains("nodename nor servname")
+                    || lower.contains("name or service not known")
+                    || lower.contains("no such host")
+                    || lower.contains("failed to lookup address")
+                    || lower.contains("temporary failure in name resolution")
+                {
+                    format!(
+                        "Could not resolve hostname \"{host}\". \
+                         Check the address and your DNS settings."
+                    )
+                } else {
+                    format!("Network error connecting to {endpoint}: {text}")
+                }
+            }
+        },
+        sqlx::Error::Tls(err) => {
+            format!("TLS handshake with {endpoint} failed: {err}")
+        }
+        sqlx::Error::Database(err) => err.message().to_string(),
+        sqlx::Error::PoolTimedOut => {
+            format!("Timed out waiting for a connection to {endpoint}.")
+        }
+        sqlx::Error::PoolClosed => "Connection pool is closed.".to_string(),
+        _ => error.to_string(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // sqlx-Any internals (private to this module)
 // ---------------------------------------------------------------------------
@@ -287,7 +356,7 @@ async fn run_sqlx_any(connection: &StoredConnection, query: &str) -> Result<Quer
     let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
     let mut conn = AnyConnection::connect_with(&options)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| friendly_sqlx_error(error, &connection.host, connection.port))?;
     let start = Instant::now();
 
     if should_fetch_rows(query) {
@@ -335,7 +404,7 @@ async fn fetch_schema_explorer_sqlx(
     let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
     let mut conn = AnyConnection::connect_with(&options)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| friendly_sqlx_error(error, &connection.host, connection.port))?;
 
     match connection.engine {
         DatabaseEngine::PostgreSQL => {
@@ -500,7 +569,7 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
             let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
             let _connection = AnyConnection::connect_with(&options)
                 .await
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| friendly_sqlx_error(error, &connection.host, connection.port))?;
             Ok(ConnectResult {
                 latency_ms: start.elapsed().as_millis() as u64,
             })
@@ -675,5 +744,76 @@ pub async fn poll_mutation_status(
         DatabaseEngine::PostgreSQL | DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             Err(not_implemented_yet(&connection.engine, "Mutation polling"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    fn io_error(kind: io::ErrorKind, msg: &str) -> sqlx::Error {
+        sqlx::Error::Io(io::Error::new(kind, msg))
+    }
+
+    #[test]
+    fn connection_refused_explains_what_to_check() {
+        let msg = friendly_sqlx_error(
+            io_error(io::ErrorKind::ConnectionRefused, "Connection refused"),
+            "localhost",
+            5433,
+        );
+        assert!(msg.contains("localhost:5433"));
+        assert!(msg.contains("connection refused"));
+        assert!(msg.contains("listening on this port"));
+        assert!(!msg.contains("os error"));
+    }
+
+    #[test]
+    fn timed_out_mentions_firewall() {
+        let msg = friendly_sqlx_error(
+            io_error(io::ErrorKind::TimedOut, "operation timed out"),
+            "10.0.0.1",
+            5432,
+        );
+        assert!(msg.contains("10.0.0.1:5432"));
+        assert!(msg.contains("timed out"));
+        assert!(msg.contains("firewall"));
+    }
+
+    #[test]
+    fn dns_failure_text_is_recognised() {
+        let msg = friendly_sqlx_error(
+            io_error(
+                io::ErrorKind::Other,
+                "failed to lookup address information: nodename nor servname provided",
+            ),
+            "no-such-host.invalid",
+            5432,
+        );
+        assert!(msg.contains("Could not resolve hostname"));
+        assert!(msg.contains("no-such-host.invalid"));
+    }
+
+    #[test]
+    fn port_zero_is_omitted_from_endpoint() {
+        let msg = friendly_sqlx_error(
+            io_error(io::ErrorKind::ConnectionRefused, "Connection refused"),
+            "db.example.com",
+            0,
+        );
+        assert!(msg.contains("db.example.com"));
+        assert!(!msg.contains(":0"));
+    }
+
+    #[test]
+    fn unknown_io_error_falls_back_with_endpoint_context() {
+        let msg = friendly_sqlx_error(
+            io_error(io::ErrorKind::PermissionDenied, "permission denied"),
+            "host",
+            1234,
+        );
+        assert!(msg.contains("host:1234"));
+        assert!(msg.contains("permission denied"));
     }
 }
