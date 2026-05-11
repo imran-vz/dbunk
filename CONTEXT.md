@@ -132,6 +132,21 @@ single-blob keychain shape now applies only when keychain mode is active.
   engine variant won't compile until every policy field is filled in.
   Scope is **engine-level only**: per-table mutation decisions stay on
   `TableStructure.capabilities` plus `pickRowIdentity`.
+- **Credential Backend** — the `CredentialBackend` enum in
+  `src-tauri/src/credentials.rs` is the single point of dispatch over
+  the three storage modes (`Keychain`, `PlainSqlite`,
+  `EncryptedSqlite`). Each variant owns its per-mode I/O in its own
+  struct (`KeychainBackend`, `PlainSqliteBackend`,
+  `EncryptedSqliteBackend`); the enum's methods are a 3-arm match.
+  Public functions (`read_all`, `write_all`, `upsert`, etc.)
+  construct a backend via `backend_for(mode, pool)` and delegate.
+  Two physical storage areas back the three modes — the OS keychain
+  is independent, while Plain and Encrypted SQLite share the
+  `credentials` table — and `clear_inactive_storage` is the single
+  helper that encodes this topology when the active mode changes.
+  Mirrors the **Engine Dispatch** pattern: closed variant set,
+  exhaustive dispatch, per-variant logic concentrated, cross-variant
+  invariants in one helper.
 - **AppHandle** — Tauri's global handle, threaded through every command that
   needs to reach the config directory or keychain. Functions that don't need
   the keychain (e.g. `touch_connection_activity`) take a path-only path so
