@@ -128,9 +128,16 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const commitStatus = tableEditsCommitStatus[tableName];
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
-  const isPostgres = connection?.engine === "PostgreSQL";
   const structureLoaded = Boolean(activeTableStructure);
-  const isWriting = commitStatus?.state === "running";
+  const isWriting =
+    commitStatus?.state === "running" || commitStatus?.state === "queued";
+  // Mutation gates come from the per-table capability flags rather than
+  // an engine-name literal — that way a CH MergeTree table is editable
+  // and a CH Distributed/View table is not, with the same shape of code.
+  const capabilities = activeTableStructure?.capabilities;
+  const canInsertRows = capabilities?.canInsertRows ?? false;
+  const canUpdateRows = capabilities?.canUpdateRows ?? false;
+  const canDeleteRows = capabilities?.canDeleteRows ?? false;
   const selectedRowIndices = useMemo(
     () =>
       Object.entries(rowSelection)
@@ -140,8 +147,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     [rowSelection],
   );
   const canDeleteSelected =
-    selectedRowIndices.length > 0 && isPostgres && !isReadOnly && !isWriting;
-  const canAddRow = structureLoaded && isPostgres && !isWriting;
+    selectedRowIndices.length > 0 && canDeleteRows && !isReadOnly && !isWriting;
+  const canAddRow = structureLoaded && canInsertRows && !isWriting;
+  // Used to gate the inline cell editor; surface it on the same axis as
+  // the other capability-derived flags.
+  const canEditCells = canUpdateRows && !isReadOnly && !isWriting;
 
   const columns = activeTableData?.columns ?? [];
   const rows = activeTableData?.rows ?? [];
@@ -438,6 +448,20 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         </output>
       ) : null}
 
+      {commitStatus?.state === "queued" ? (
+        <output
+          data-testid="table-commit-queued"
+          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning"
+        >
+          <IconLock className="size-4" />
+          <span>
+            Queued — applying {commitStatus.mutationIds.length} mutation
+            {commitStatus.mutationIds.length === 1 ? "" : "s"} in the
+            background. Refreshing when complete.
+          </span>
+        </output>
+      ) : null}
+
       {commitStatus?.state === "success" ? (
         <output
           data-testid="table-commit-success"
@@ -605,7 +629,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                 setTableEdit(tableName, rowIndex, colIndex, value)
               }
               hasEdits={hasEdits}
-              readOnly={isReadOnly}
+              readOnly={isReadOnly || !canEditCells}
               isSaving={commitStatus?.state === "running"}
               onDiscard={() => discardTableEdits(tableName)}
               onSave={() => {

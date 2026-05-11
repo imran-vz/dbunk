@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import {
   type ColumnChangeKind,
-  generatePostgresDdl,
+  generateDdlForEngine,
   type PendingChange,
-} from "@/lib/ddl/postgres";
+} from "@/lib/ddl";
 import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type SchemaForeignKey,
@@ -18,7 +18,7 @@ export type {
   ColumnChangeKind,
   NewColumn,
   PendingChange,
-} from "@/lib/ddl/postgres";
+} from "@/lib/ddl";
 export type {
   SchemaForeignKey,
   SchemaRelationships,
@@ -40,6 +40,10 @@ export type StoredConnection = {
   role: string;
   /** ISO-8601 timestamp of the most recent successful query/connect. */
   lastActivityAt?: string;
+  /** ClickHouse-only: connect over HTTPS instead of HTTP. */
+  useHttps?: boolean;
+  /** ClickHouse-only: URL path prefix for proxied deployments (e.g. /clickhouse). */
+  urlPath?: string;
 };
 
 export type Connection = {
@@ -58,6 +62,10 @@ export type Connection = {
   /** ISO-8601 timestamp of the most recent successful query/connect. */
   lastActivityAt?: string;
   errorMessage?: string;
+  /** ClickHouse-only: connect over HTTPS instead of HTTP. */
+  useHttps?: boolean;
+  /** ClickHouse-only: URL path prefix for proxied deployments. */
+  urlPath?: string;
 };
 
 export type QueryStatus =
@@ -175,6 +183,25 @@ export type StructureCapabilities = {
   foreignKeys: boolean;
   indexes: boolean;
   constraints: boolean;
+  /** Whether new rows can be inserted via the row editor. */
+  canInsertRows: boolean;
+  /** Whether existing cells can be updated via the row editor. */
+  canUpdateRows: boolean;
+  /** Whether rows can be deleted via the row editor. */
+  canDeleteRows: boolean;
+  /** Whether ALTER TABLE-style schema edits are supported. */
+  canAlterSchema: boolean;
+  /**
+   * "synchronous" — UPDATE/DELETE return after the change is applied.
+   * "async" — UPDATE/DELETE return after the mutation is queued
+   *   (ClickHouse). The frontend renders a "Queued" status and polls.
+   */
+  updateSemantics: "synchronous" | "async";
+  /**
+   * "exact" — identity columns guarantee at most one matching row.
+   * "best-effort" — identity may match multiple rows (ClickHouse).
+   */
+  uniquenessGuarantee: "exact" | "best-effort";
 };
 
 export type TableStructure = {
@@ -184,6 +211,10 @@ export type TableStructure = {
   indexes: IndexInfo[];
   constraints: ConstraintInfo[];
   capabilities: StructureCapabilities;
+  /** Engine-specific extension fields. Populated only for ClickHouse. */
+  tableEngine?: string;
+  partitionBy?: string;
+  sampleBy?: string;
 };
 
 export type TableStructureStatus =
@@ -201,6 +232,13 @@ export type StructureCommitStatus =
 export type TableEditsCommitStatus =
   | { state: "idle" }
   | { state: "running" }
+  | {
+      state: "queued";
+      database: string;
+      table: string;
+      mutationIds: string[];
+      runtimeMs: number;
+    }
   | { state: "success"; rowsAffected: number; runtimeMs: number }
   | { state: "error"; error: string };
 
@@ -210,9 +248,28 @@ type CellEditPayload = {
   set: Array<{ column: string; value: string | null }>;
 };
 
+/**
+ * Backend-shape result for `commit_cell_edits` and `delete_rows`.
+ *
+ * `state === "committed"` (PG) means the row counts in `rowsAffected`
+ * are authoritative. `state === "queued"` (CH) means the changes have
+ * been accepted as `ALTER … UPDATE/DELETE` mutations that apply
+ * asynchronously; the frontend polls `poll_mutation_status` until every
+ * mutation reports `is_done`.
+ */
 type CommitCellEditsResult = {
   rowsAffected: number;
   runtimeMs: number;
+  state?: "committed" | "queued";
+  database?: string;
+  table?: string;
+  mutationIds?: string[];
+};
+
+type MutationStatus = {
+  mutationId: string;
+  isDone: boolean;
+  latestFailReason: string | null;
 };
 
 export type SchemaRelationshipsStatus =
@@ -269,6 +326,8 @@ const toStoredConnection = (connection: Connection): StoredConnection => ({
   password: connection.password,
   role: connection.role,
   lastActivityAt: connection.lastActivityAt,
+  useHttps: connection.useHttps,
+  urlPath: connection.urlPath,
 });
 
 const applyConnectionUpdate = (
@@ -433,6 +492,20 @@ interface AppState {
     tableName: string,
     rowIndices: number[],
   ) => Promise<void>;
+  /**
+   * Poll `system.mutations` until every supplied mutation reports
+   * `is_done = true`, then mark the table commit status as `success`
+   * and refresh table data. Used by ClickHouse `ALTER … UPDATE/DELETE`
+   * (which return `state: "queued"`); PG never invokes this path.
+   */
+  awaitMutations: (
+    connectionId: string,
+    database: string,
+    table: string,
+    mutationIds: string[],
+    tableName: string,
+    dataKeyForTable: string,
+  ) => Promise<void>;
   loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
   loadTableData: (
     connectionId: string,
@@ -489,7 +562,8 @@ interface AppState {
       | "user"
       | "password"
       | "role"
-    >,
+    > &
+      Partial<Pick<StoredConnection, "useHttps" | "urlPath">>,
   ) => Promise<{ ok: true; latencyMs: number } | { ok: false; error: string }>;
   runHealthChecks: () => Promise<void>;
   updateQuery: (tabId: string, query: string) => void;
@@ -709,13 +783,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return;
     }
-    if (connection.engine !== "PostgreSQL") {
+    if (!structure.capabilities.canUpdateRows) {
       set((s) => ({
         tableEditsCommitStatus: {
           ...s.tableEditsCommitStatus,
           [tableName]: {
             state: "error",
-            error: `Cell edits are only supported on PostgreSQL (got ${connection.engine}).`,
+            error: `This table does not support cell edits on ${connection.engine}.`,
           },
         },
       }));
@@ -842,6 +916,43 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
         },
       );
+      // ClickHouse returns `state: "queued"` with a list of mutation
+      // IDs. The frontend hands off to `awaitMutations` which polls
+      // `system.mutations` until all of them report `is_done`. The edit
+      // buffer clears immediately so the UI doesn't "stick" — the
+      // backing data refresh happens after the mutations complete.
+      if (
+        result.state === "queued" &&
+        result.mutationIds &&
+        result.mutationIds.length > 0
+      ) {
+        set((s) => {
+          const { [tableName]: _, ...restEdits } = s.tableEdits;
+          return {
+            tableEdits: restEdits,
+            tableEditsCommitStatus: {
+              ...s.tableEditsCommitStatus,
+              [tableName]: {
+                state: "queued",
+                database: result.database ?? data.schema,
+                table: result.table ?? data.table,
+                mutationIds: result.mutationIds ?? [],
+                runtimeMs: result.runtimeMs,
+              },
+            },
+          };
+        });
+        await get().awaitMutations(
+          data.connectionId,
+          result.database ?? data.schema,
+          result.table ?? data.table,
+          result.mutationIds,
+          tableName,
+          dataKeyForTable,
+        );
+        return;
+      }
+
       set((s) => {
         const { [tableName]: _, ...restEdits } = s.tableEdits;
         return {
@@ -900,10 +1011,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       setError("Connection not found for this table.");
       return;
     }
-    if (connection.engine !== "PostgreSQL") {
-      setError(
-        `Insert is only supported on PostgreSQL (got ${connection.engine}).`,
-      );
+    const structureKeyForInsert = tableStructureKey(
+      data.connectionId,
+      data.schema,
+      data.table,
+    );
+    const insertStructure = state.tableStructure[structureKeyForInsert];
+    // When structure has been loaded, trust its capability flag. When it
+    // hasn't, defer to the backend — it will surface a clear engine-
+    // specific error rather than us pre-emptively guessing.
+    if (insertStructure && !insertStructure.capabilities.canInsertRows) {
+      setError(`This table does not support inserts on ${connection.engine}.`);
       return;
     }
 
@@ -992,9 +1110,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       setError("Connection not found for this table.");
       return;
     }
-    if (connection.engine !== "PostgreSQL") {
+    if (structure && !structure.capabilities.canDeleteRows) {
       setError(
-        `Delete is only supported on PostgreSQL (got ${connection.engine}).`,
+        `This table does not support row deletes on ${connection.engine}.`,
       );
       return;
     }
@@ -1047,10 +1165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     try {
-      const result = await tauriInvoke<{
-        rowsAffected: number;
-        runtimeMs: number;
-      }>("delete_rows", {
+      const result = await tauriInvoke<CommitCellEditsResult>("delete_rows", {
         payload: {
           connectionId: data.connectionId,
           schema: data.schema,
@@ -1058,6 +1173,33 @@ export const useAppStore = create<AppState>((set, get) => ({
           rows: rowsPayload,
         },
       });
+      if (
+        result.state === "queued" &&
+        result.mutationIds &&
+        result.mutationIds.length > 0
+      ) {
+        set((s) => ({
+          tableEditsCommitStatus: {
+            ...s.tableEditsCommitStatus,
+            [tableName]: {
+              state: "queued",
+              database: result.database ?? data.schema,
+              table: result.table ?? data.table,
+              mutationIds: result.mutationIds ?? [],
+              runtimeMs: result.runtimeMs,
+            },
+          },
+        }));
+        await get().awaitMutations(
+          data.connectionId,
+          result.database ?? data.schema,
+          result.table ?? data.table,
+          result.mutationIds,
+          tableName,
+          dataKeyForTable,
+        );
+        return;
+      }
       set((s) => ({
         tableEditsCommitStatus: {
           ...s.tableEditsCommitStatus,
@@ -1074,6 +1216,88 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error("Failed to delete rows", error);
       setError(message);
     }
+  },
+
+  awaitMutations: async (
+    connectionId,
+    database,
+    table,
+    mutationIds,
+    tableName,
+    dataKeyForTable,
+  ) => {
+    if (!isTauri() || mutationIds.length === 0) {
+      return;
+    }
+    const setError = (error: string) =>
+      set((s) => ({
+        tableEditsCommitStatus: {
+          ...s.tableEditsCommitStatus,
+          [tableName]: { state: "error", error },
+        },
+      }));
+
+    const start = Date.now();
+    // Bound the wait at 60s. CH mutations on small interactive tables
+    // typically finish in <1s; longer waits are likely a failure mode
+    // we'd rather surface than hang on.
+    const deadlineMs = 60_000;
+    const pollIntervalMs = 1_000;
+    let pending = [...mutationIds];
+
+    while (pending.length > 0) {
+      if (Date.now() - start > deadlineMs) {
+        setError(
+          `Mutation did not complete within ${deadlineMs / 1000}s. ` +
+            `Check system.mutations for ${database}.${table}.`,
+        );
+        return;
+      }
+      try {
+        const statuses = await tauriInvoke<MutationStatus[]>(
+          "poll_mutation_status",
+          {
+            payload: {
+              connectionId,
+              database,
+              table,
+              mutationIds: pending,
+            },
+          },
+        );
+        const failed = statuses.find((status) => status.latestFailReason);
+        if (failed) {
+          setError(
+            `ClickHouse mutation ${failed.mutationId} failed: ${failed.latestFailReason}`,
+          );
+          return;
+        }
+        pending = statuses
+          .filter((status) => !status.isDone)
+          .map((status) => status.mutationId);
+        if (pending.length === 0) {
+          break;
+        }
+      } catch (error) {
+        setError(errorToMessage(error));
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    set((s) => ({
+      tableEditsCommitStatus: {
+        ...s.tableEditsCommitStatus,
+        [tableName]: {
+          state: "success",
+          // CH mutations don't report row counts up-front; the refresh
+          // below is the user's source of truth for the new state.
+          rowsAffected: 0,
+          runtimeMs: Date.now() - start,
+        },
+      },
+    }));
+    await get().refreshTableData(dataKeyForTable);
   },
 
   loadTablePreview: async (schemaName, tableName) => {
@@ -1412,23 +1636,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
       return;
     }
-    if (connection.engine !== "PostgreSQL") {
+    const ddlStructure = state.tableStructure[key];
+    // Defer to the backend when structure isn't loaded — it'll surface a
+    // clear engine-specific error rather than us pre-emptively guessing.
+    if (ddlStructure && !ddlStructure.capabilities.canAlterSchema) {
       set((state) => ({
         structureCommitStatus: {
           ...state.structureCommitStatus,
           [key]: {
             state: "error",
-            error: `Structure commit is only supported on PostgreSQL (got ${connection.engine}).`,
+            error: `This table does not support schema edits on ${connection.engine}.`,
           },
         },
       }));
       return;
     }
 
-    const sql = generatePostgresDdl(
+    const sql = generateDdlForEngine(
+      connection.engine,
       schema,
       table,
       pending.map((entry) => entry.change),
+      ddlStructure?.columns,
     );
 
     set((state) => ({
@@ -1753,6 +1982,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             user: connection.user,
             password: connection.password,
             role: connection.role,
+            useHttps: connection.useHttps ?? false,
+            urlPath: connection.urlPath ?? "",
           },
         },
       });

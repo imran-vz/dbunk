@@ -138,7 +138,11 @@ export function SchemaRelationshipMap({
     schemaRelationshipsStatus,
     loadSchemaRelationships,
     focusTableInSchemaMap,
+    connections,
   } = useAppStore();
+  const engine = connections.find(
+    (connection) => connection.id === connectionId,
+  )?.engine;
 
   const key = schemaRelationshipsKey(connectionId, schema);
   const relationships = schemaRelationships[key];
@@ -230,8 +234,20 @@ export function SchemaRelationshipMap({
     );
   }
 
+  const isClickHouse = engine === "ClickHouse";
+  const hasNoForeignKeys =
+    isClickHouse && hasNodes && (relationships?.foreignKeys.length ?? 0) === 0;
+
   return (
     <div ref={flowContainerRef} className="relative h-full w-full">
+      {hasNoForeignKeys ? (
+        <div
+          data-testid="schema-flow-clickhouse-banner"
+          className="absolute left-2 right-2 top-2 z-10 rounded-md border border-border/60 bg-background/90 px-3 py-1.5 text-[0.65rem] text-muted-foreground shadow-sm"
+        >
+          ClickHouse does not support foreign keys — showing tables only.
+        </div>
+      ) : null}
       {!hasNodes ? (
         <div
           data-testid="schema-flow-empty"

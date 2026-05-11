@@ -22,11 +22,11 @@ const MAX_QUERY_HISTORY: usize = 200;
 const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
 const MAX_TABLE_PAGE_SIZE: u32 = 1000;
 
-fn quote_double(identifier: &str) -> String {
+pub(crate) fn quote_double(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
-fn quote_backtick(identifier: &str) -> String {
+pub(crate) fn quote_backtick(identifier: &str) -> String {
     format!("`{}`", identifier.replace('`', "``"))
 }
 
@@ -758,7 +758,16 @@ async fn fetch_table_structure_columns_only(
             foreign_keys: false,
             indexes: false,
             constraints: false,
+            can_insert_rows: false,
+            can_update_rows: false,
+            can_delete_rows: false,
+            can_alter_schema: false,
+            update_semantics: "synchronous".to_string(),
+            uniqueness_guarantee: "best-effort".to_string(),
         },
+        table_engine: None,
+        partition_by: None,
+        sample_by: None,
     })
 }
 
@@ -777,10 +786,11 @@ async fn load_table_structure(
             DatabaseEngine::PostgreSQL => {
                 postgres::fetch_table_structure(&connection, &schema, &table).await
             }
-            // For now, MySQL / SQLite / ClickHouse fall back to a columns-only
-            // probe; the UI surfaces the disabled sections via capabilities.
-            // Issue #2 ships PostgreSQL as the must-have engine; richer
-            // metadata for the others is a deliberate follow-up.
+            DatabaseEngine::ClickHouse => {
+                clickhouse::fetch_table_structure(&connection, &schema, &table).await
+            }
+            // MySQL / SQLite still fall back to a columns-only probe;
+            // the UI surfaces the disabled sections via capabilities.
             _ => fetch_table_structure_columns_only(&connection, &schema, &table)
                 .await
                 .map_err(|error| {
@@ -810,6 +820,7 @@ async fn execute_ddl(
     with_active_connection(paths.inner(), &connection_id, |connection| async move {
         match connection.engine {
             DatabaseEngine::PostgreSQL => postgres::execute_ddl(&connection, &sql).await,
+            DatabaseEngine::ClickHouse => clickhouse::execute_ddl(&connection, &sql).await,
             _ => Err(format!(
                 "Structure commit is not supported for {} (PostgreSQL only)",
                 engine_name(&connection.engine)
@@ -837,6 +848,9 @@ async fn commit_cell_edits(
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
                 postgres::commit_cell_edits(&connection, &schema, &table, &edits).await
+            }
+            DatabaseEngine::ClickHouse => {
+                clickhouse::commit_cell_edits(&connection, &schema, &table, &edits).await
             }
             _ => Err(format!(
                 "Cell edit commit is not supported for {} (PostgreSQL only)",
@@ -866,6 +880,9 @@ async fn insert_row(
             DatabaseEngine::PostgreSQL => {
                 postgres::insert_row(&connection, &schema, &table, &values).await
             }
+            DatabaseEngine::ClickHouse => {
+                clickhouse::insert_row(&connection, &schema, &table, &values).await
+            }
             _ => Err(format!(
                 "Insert row is not supported for {} (PostgreSQL only)",
                 engine_name(&connection.engine)
@@ -894,6 +911,9 @@ async fn delete_rows(
             DatabaseEngine::PostgreSQL => {
                 postgres::delete_rows(&connection, &schema, &table, &rows).await
             }
+            DatabaseEngine::ClickHouse => {
+                clickhouse::delete_rows(&connection, &schema, &table, &rows).await
+            }
             _ => Err(format!(
                 "Delete rows is not supported for {} (PostgreSQL only)",
                 engine_name(&connection.engine)
@@ -901,6 +921,32 @@ async fn delete_rows(
         }
     })
     .await
+}
+
+#[tauri::command]
+async fn poll_mutation_status(
+    paths: State<'_, Paths>,
+    payload: PollMutationStatusPayload,
+) -> Result<Vec<MutationStatus>, String> {
+    let PollMutationStatusPayload {
+        connection_id,
+        database,
+        table,
+        mutation_ids,
+    } = payload;
+    if mutation_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let connection = find_connection(paths.inner(), &connection_id)?;
+    match connection.engine {
+        DatabaseEngine::ClickHouse => {
+            clickhouse::poll_mutations(&connection, &database, &table, &mutation_ids).await
+        }
+        _ => Err(format!(
+            "Mutation polling is not supported for {} (ClickHouse only)",
+            engine_name(&connection.engine)
+        )),
+    }
 }
 
 #[tauri::command]
@@ -917,10 +963,12 @@ async fn load_schema_relationships(
             DatabaseEngine::PostgreSQL => {
                 postgres::fetch_schema_relationships(&connection, &schema).await
             }
-            // Other engines are a deliberate v1 follow-up. Returning empty
-            // collections keeps the UI usable (nothing to render) while
-            // signalling clearly that the engine is unsupported via the missing
-            // data, rather than producing a hard error and breaking the panel.
+            DatabaseEngine::ClickHouse => {
+                clickhouse::fetch_schema_relationships(&connection, &schema).await
+            }
+            // MySQL / SQLite are a deliberate v1 follow-up. Returning
+            // empty collections keeps the UI usable while signalling
+            // unsupported via the missing data.
             _ => Ok(SchemaRelationships {
                 tables: Vec::new(),
                 foreign_keys: Vec::new(),
@@ -939,6 +987,9 @@ async fn load_database_overview_stats(
         match connection.engine {
             DatabaseEngine::PostgreSQL => {
                 postgres::load_database_overview_stats(&connection).await
+            }
+            DatabaseEngine::ClickHouse => {
+                clickhouse::fetch_database_overview_stats(&connection).await
             }
             _ => Err(format!(
                 "Database size stats are not supported for {} (PostgreSQL only)",
@@ -1104,6 +1155,7 @@ pub fn run() {
             commit_cell_edits,
             insert_row,
             delete_rows,
+            poll_mutation_status,
             load_query_history,
             append_query_history,
             clear_query_history,

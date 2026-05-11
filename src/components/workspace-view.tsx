@@ -328,6 +328,9 @@ function WorkspaceDatabaseOverview({
               connections={connectionCount}
               rows={rowCount}
               statsStatus={statsStatus}
+              rowCountKind={
+                activeConnection.engine === "ClickHouse" ? "exact" : "estimate"
+              }
             />
           </section>
 
@@ -457,6 +460,15 @@ type DatabaseStatsCardProps = {
   connections: string;
   rows: string;
   statsStatus?: DatabaseOverviewStatsStatus;
+  /**
+   * "estimate" — PG planner estimate from `pg_class.reltuples`.
+   * "exact"    — ClickHouse aggregate from `system.parts.rows`.
+   *
+   * Drives the "Rows" label so users know what kind of number they're
+   * looking at (relevant when the same dashboard is rendered for
+   * different engines).
+   */
+  rowCountKind: "estimate" | "exact";
 };
 
 function DatabaseStatsCard({
@@ -467,11 +479,13 @@ function DatabaseStatsCard({
   connections,
   rows,
   statsStatus,
+  rowCountKind,
 }: DatabaseStatsCardProps) {
+  const rowsLabel = rowCountKind === "estimate" ? "Rows (≈)" : "Rows";
   const metrics: Array<[string, React.ReactNode]> = [
     ["Tables", tableCount.toLocaleString()],
     ["Schemas", schemaCount.toLocaleString()],
-    ["Rows", rows],
+    [rowsLabel, rows],
     ["Size", databaseSize],
     ["Indexes", indexes],
     ["Connections", connections],

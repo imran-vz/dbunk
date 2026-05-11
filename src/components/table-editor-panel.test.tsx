@@ -268,6 +268,12 @@ const editableStructure: TableStructure = {
     foreignKeys: true,
     indexes: true,
     constraints: true,
+    canInsertRows: true,
+    canUpdateRows: true,
+    canDeleteRows: true,
+    canAlterSchema: true,
+    updateSemantics: "synchronous",
+    uniquenessGuarantee: "exact",
   },
 };
 
@@ -275,6 +281,12 @@ const readOnlyStructure: TableStructure = {
   ...editableStructure,
   primaryKey: null,
   indexes: [],
+  capabilities: {
+    ...editableStructure.capabilities,
+    canUpdateRows: false,
+    canDeleteRows: false,
+    uniquenessGuarantee: "best-effort",
+  },
 };
 
 describe("TableEditorPanel read-only handling", () => {

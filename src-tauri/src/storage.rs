@@ -201,6 +201,8 @@ mod tests {
             password: String::new(),
             role: "read/write".into(),
             last_activity_at: None,
+            use_https: false,
+            url_path: String::new(),
         }
     }
 

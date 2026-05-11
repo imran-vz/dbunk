@@ -1096,6 +1096,12 @@ describe("store.commitStructureChanges", () => {
           foreignKeys: true,
           indexes: true,
           constraints: true,
+          canInsertRows: true,
+          canUpdateRows: true,
+          canDeleteRows: true,
+          canAlterSchema: true,
+          updateSemantics: "synchronous",
+          uniquenessGuarantee: "exact",
         },
       });
 
@@ -1147,6 +1153,31 @@ describe("store.commitStructureChanges", () => {
       connections: state.connections.map((c) =>
         c.id === "conn-1" ? { ...c, engine: "MySQL" } : c,
       ),
+      tableStructure: {
+        ...state.tableStructure,
+        [key]: {
+          columns: [],
+          primaryKey: null,
+          foreignKeys: [],
+          indexes: [],
+          constraints: [],
+          // MySQL is in the "unsupported" tier — capabilities reflect that
+          // and the frontend short-circuits without round-tripping.
+          capabilities: {
+            columns: true,
+            primaryKey: false,
+            foreignKeys: false,
+            indexes: false,
+            constraints: false,
+            canInsertRows: false,
+            canUpdateRows: false,
+            canDeleteRows: false,
+            canAlterSchema: false,
+            updateSemantics: "synchronous",
+            uniquenessGuarantee: "best-effort",
+          },
+        },
+      },
     }));
     act(() => {
       useAppStore.getState().addPendingStructureChange(key, {
@@ -1162,7 +1193,7 @@ describe("store.commitStructureChanges", () => {
     const status = useAppStore.getState().structureCommitStatus[key];
     expect(status?.state).toBe("error");
     if (status?.state === "error") {
-      expect(status.error).toMatch(/postgres/i);
+      expect(status.error).toMatch(/MySQL|does not support/i);
     }
   });
 });
@@ -1421,6 +1452,12 @@ describe("store.commitTableEdits", () => {
             foreignKeys: true,
             indexes: true,
             constraints: true,
+            canInsertRows: true,
+            canUpdateRows: true,
+            canDeleteRows: true,
+            canAlterSchema: true,
+            updateSemantics: "synchronous",
+            uniquenessGuarantee: "exact",
           },
         },
       },
@@ -1635,6 +1672,7 @@ describe("store.commitTableEdits", () => {
 
 describe("store.addTableRow", () => {
   const dataKey = tableDataKey("conn-1", "public", "users");
+  const structureKey = tableStructureKey("conn-1", "public", "users");
 
   const seedTableForInsert = () => {
     seedPostgresConnection();
@@ -1650,6 +1688,28 @@ describe("store.addTableRow", () => {
           pageSize: 100,
           totalRows: 1,
           runtimeMs: 1,
+        },
+      },
+      tableStructure: {
+        [structureKey]: {
+          columns: [],
+          primaryKey: ["id"],
+          foreignKeys: [],
+          indexes: [],
+          constraints: [],
+          capabilities: {
+            columns: true,
+            primaryKey: true,
+            foreignKeys: true,
+            indexes: true,
+            constraints: true,
+            canInsertRows: true,
+            canUpdateRows: true,
+            canDeleteRows: true,
+            canAlterSchema: true,
+            updateSemantics: "synchronous",
+            uniquenessGuarantee: "exact",
+          },
         },
       },
     });
@@ -1750,6 +1810,28 @@ describe("store.addTableRow", () => {
           runtimeMs: 1,
         },
       },
+      tableStructure: {
+        [structureKey]: {
+          columns: [],
+          primaryKey: ["id"],
+          foreignKeys: [],
+          indexes: [],
+          constraints: [],
+          capabilities: {
+            columns: true,
+            primaryKey: false,
+            foreignKeys: false,
+            indexes: false,
+            constraints: false,
+            canInsertRows: false,
+            canUpdateRows: false,
+            canDeleteRows: false,
+            canAlterSchema: false,
+            updateSemantics: "synchronous",
+            uniquenessGuarantee: "best-effort",
+          },
+        },
+      },
     });
 
     await useAppStore
@@ -1761,7 +1843,7 @@ describe("store.addTableRow", () => {
     if (status?.state !== "error") {
       throw new Error(`expected error status, got ${status?.state}`);
     }
-    expect(status.error).toMatch(/PostgreSQL|MySQL/);
+    expect(status.error).toMatch(/MySQL|does not support/i);
   });
 
   it("errors when there are no values to insert", async () => {
@@ -1832,6 +1914,12 @@ describe("store.deleteSelectedTableRows", () => {
             foreignKeys: true,
             indexes: true,
             constraints: true,
+            canInsertRows: true,
+            canUpdateRows: true,
+            canDeleteRows: true,
+            canAlterSchema: true,
+            updateSemantics: "synchronous",
+            uniquenessGuarantee: "exact",
           },
         },
       },
@@ -1956,10 +2044,35 @@ describe("store.deleteSelectedTableRows", () => {
             foreignKeys: true,
             indexes: true,
             constraints: true,
+            canInsertRows: true,
+            canUpdateRows: true,
+            canDeleteRows: true,
+            canAlterSchema: true,
+            updateSemantics: "synchronous",
+            uniquenessGuarantee: "exact",
           },
         },
       },
     });
+
+    // Override the capability flags to reflect MySQL's "unsupported" tier
+    // (the test seeded the structure as if it were a PG fixture before the
+    // capability flags landed).
+    useAppStore.setState((s) => ({
+      tableStructure: {
+        ...s.tableStructure,
+        [structureKey]: {
+          ...s.tableStructure[structureKey],
+          capabilities: {
+            ...s.tableStructure[structureKey].capabilities,
+            canInsertRows: false,
+            canUpdateRows: false,
+            canDeleteRows: false,
+            canAlterSchema: false,
+          },
+        },
+      },
+    }));
 
     await useAppStore.getState().deleteSelectedTableRows("users", [0]);
 
@@ -1968,7 +2081,7 @@ describe("store.deleteSelectedTableRows", () => {
     if (status?.state !== "error") {
       throw new Error(`expected error status, got ${status?.state}`);
     }
-    expect(status.error).toMatch(/PostgreSQL|MySQL/);
+    expect(status.error).toMatch(/MySQL|does not support/i);
   });
 
   it("preserves data and reports an error when the delete fails", async () => {

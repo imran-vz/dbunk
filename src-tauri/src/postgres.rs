@@ -409,6 +409,10 @@ pub async fn commit_cell_edits(
     Ok(CommitCellEditsResult {
         rows_affected: total_rows_affected,
         runtime_ms: start.elapsed().as_millis() as u64,
+        state: "committed".to_string(),
+        database: String::new(),
+        table: String::new(),
+        mutation_ids: Vec::new(),
     })
 }
 
@@ -482,6 +486,10 @@ pub async fn delete_rows(
     Ok(DeleteRowsResult {
         rows_affected: total_rows_affected,
         runtime_ms: start.elapsed().as_millis() as u64,
+        state: "committed".to_string(),
+        database: String::new(),
+        table: String::new(),
+        mutation_ids: Vec::new(),
     })
 }
 
@@ -747,6 +755,8 @@ pub async fn fetch_table_structure(
         Some(primary_key_cols)
     };
 
+    let has_primary_key = primary_key.is_some();
+
     Ok(TableStructure {
         columns,
         primary_key,
@@ -759,7 +769,24 @@ pub async fn fetch_table_structure(
             foreign_keys: true,
             indexes: true,
             constraints: true,
+            can_insert_rows: true,
+            // Row-level UPDATE/DELETE need a row identity; without a PK
+            // we'd be matching on full-row values which is dangerous.
+            // The frontend already gates on row-identity availability;
+            // this flag matches that policy.
+            can_update_rows: has_primary_key,
+            can_delete_rows: has_primary_key,
+            can_alter_schema: true,
+            update_semantics: "synchronous".to_string(),
+            uniqueness_guarantee: if has_primary_key {
+                "exact".to_string()
+            } else {
+                "best-effort".to_string()
+            },
         },
+        table_engine: None,
+        partition_by: None,
+        sample_by: None,
     })
 }
 
