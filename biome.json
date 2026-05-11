@@ -15,11 +15,11 @@
       "**/*.tsx",
       "**/*.mts",
       "**/*.mjs",
-      "!!dist",
-      "!!src-tauri",
-      "!!node_modules",
-      "!!.output",
-      "!!.tanstack",
+      "!dist",
+      "!src-tauri",
+      "!node_modules",
+      "!.output",
+      "!.tanstack",
       "!src/routeTree.gen.ts"
     ]
   },

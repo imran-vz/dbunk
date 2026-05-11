@@ -603,6 +603,74 @@ describe("connectConnection error feedback", () => {
     expect(connection?.status).toBe("Connected");
     expect(connection?.errorMessage).toBeUndefined();
   });
+
+  it("falls back to placeholder latency when reconnect omits latency", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+        },
+      ],
+    });
+
+    mockedInvoke.mockResolvedValueOnce({}).mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().connectConnection("conn-1");
+    });
+
+    const connection = useAppStore
+      .getState()
+      .connections.find((c) => c.id === "conn-1");
+    expect(connection?.status).toBe("Connected");
+    expect(connection?.latency).toBe("--");
+  });
+});
+
+describe("runHealthChecks latency", () => {
+  it("falls back to placeholder latency when a healthy check omits latency", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+        },
+      ],
+    });
+
+    mockedInvoke.mockResolvedValueOnce({ state: "healthy" });
+
+    await act(async () => {
+      await useAppStore.getState().runHealthChecks();
+    });
+
+    const connection = useAppStore
+      .getState()
+      .connections.find((c) => c.id === "conn-1");
+    expect(connection?.status).toBe("Connected");
+    expect(connection?.latency).toBe("--");
+  });
 });
 
 describe("runQuery overrideSql", () => {

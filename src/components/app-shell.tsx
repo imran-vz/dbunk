@@ -101,8 +101,10 @@ export function AppShell() {
         data-tauri-drag-region
         // The macOS window uses `titleBarStyle: Overlay` (see
         // src-tauri/tauri.conf.json), so the OS draws the red/yellow/green
-        // controls on top of our content. Reserve 78 px on the left so the
-        // sidebar toggle and `dbunk` mark don't sit under them. Other
+        // controls on top of our content. The traffic lights are positioned
+        // at x=18, y=21 there, centered in this 56 px header. Reserve 78 px
+        // on the left so the sidebar toggle and `dbunk` mark don't sit under
+        // them. Other
         // platforms render the OS chrome above our header so the spacer is
         // dead weight there — addressed in designs/FOLLOWUPS.md (cross-
         // platform window chrome) when we ship Windows/Linux builds.

@@ -56,6 +56,18 @@ rather than coining synonyms.
 - **DDL Statement** — a schema-level change (CREATE/ALTER/DROP), executed via
   the `execute_ddl` command rather than the regular query path so the
   frontend can model the response shape distinctly.
+- **Pending Mutation** — a single ClickHouse `ALTER TABLE … UPDATE` or
+  `ALTER TABLE … DELETE` statement that has been accepted by the server
+  and is applying asynchronously across MergeTree parts. Identified by
+  `mutation_id` from `system.mutations`, scoped to a specific
+  `(connection, database, table)`. The `pending-mutations` module
+  (`src/lib/pending-mutations.ts`) drives a batch to a `MutationOutcome`
+  (`completed` / `failed` / `timeout`); consumers — `commitTableEdits`,
+  `deleteSelectedTableRows`, future async DDL — translate that outcome
+  into their own status surface and decide what to refresh.
+  Distinct from a **Cell Edit**: a Cell Edit is the user's intent
+  (buffered in memory); a Pending Mutation is the server-side work
+  produced when that intent commits on an async engine.
 
 ## Live state
 
