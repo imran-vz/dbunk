@@ -146,24 +146,19 @@ pub(crate) struct CommitCellEditsResult {
     ///   (ClickHouse `ALTER … UPDATE`). The frontend polls
     ///   `poll_mutation_status` until all `mutation_ids` report
     ///   `is_done = true`.
-    #[serde(default = "default_committed_state")]
     pub state: String,
     /// Database the mutations apply to. Needed alongside `mutation_ids`
     /// because CH's `system.mutations` is keyed by `(database, table,
     /// mutation_id)`. Empty for synchronous engines.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub database: String,
     /// Table the mutations apply to. Empty for synchronous engines.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub table: String,
     /// One ID per `ALTER TABLE … UPDATE` we issued. Empty for
     /// synchronous engines (PostgreSQL).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mutation_ids: Vec<String>,
-}
-
-fn default_committed_state() -> String {
-    "committed".to_string()
 }
 
 #[derive(Debug, Serialize)]
@@ -179,14 +174,13 @@ pub(crate) struct DeleteRowsResult {
     pub runtime_ms: u64,
     pub rows_affected: u64,
     /// "committed" or "queued" — same semantics as `CommitCellEditsResult.state`.
-    #[serde(default = "default_committed_state")]
     pub state: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub database: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub table: String,
     /// One per `ALTER TABLE … DELETE` (CH). Empty for PG.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mutation_ids: Vec<String>,
 }
 

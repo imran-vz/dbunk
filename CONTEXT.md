@@ -88,7 +88,18 @@ ADR-0005 covers the single-blob keychain shape.
 - **Tauri command** — every backend operation is a `#[tauri::command]` async
   function in `src-tauri/src/lib.rs`. The frontend invokes them via
   `tauriInvoke<T>("name", payload)` from `src/lib/tauri.ts`. Payloads use
-  camelCase via serde rename rules.
+  camelCase via serde rename rules. The Tauri command itself owns payload
+  validation and activity tracking; it delegates engine-aware work to
+  **Engine Dispatch**.
+- **Engine Dispatch** — the `dispatch` module
+  (`src-tauri/src/dispatch.rs`) routes engine-aware operations
+  (`run_query`, `execute_ddl`, mutations, introspection) to the right
+  per-engine implementation (`postgres::`, `clickhouse::`, future
+  `mysql::`, `redis::`). Every match is exhaustive over `DatabaseEngine`
+  — no wildcards — so adding an engine forces every operation to make
+  an explicit choice. Two error shapes: `not_implemented_yet` (will
+  catch up — see ADR-0001) and `not_applicable` (the operation doesn't
+  exist on this engine class, reserved for Redis etc.).
 - **AppHandle** — Tauri's global handle, threaded through every command that
   needs to reach the config directory or keychain. Functions that don't need
   the keychain (e.g. `touch_connection_activity`) take a path-only path so
