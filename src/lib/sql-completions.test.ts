@@ -114,7 +114,6 @@ describe("getSqlCompletions", () => {
               canUpdateRows: true,
               canDeleteRows: true,
               canAlterSchema: true,
-              updateSemantics: "synchronous",
               uniquenessGuarantee: "exact",
             },
           },

@@ -272,7 +272,6 @@ const editableStructure: TableStructure = {
     canUpdateRows: true,
     canDeleteRows: true,
     canAlterSchema: true,
-    updateSemantics: "synchronous",
     uniquenessGuarantee: "exact",
   },
 };

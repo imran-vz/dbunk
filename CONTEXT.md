@@ -121,6 +121,17 @@ single-blob keychain shape now applies only when keychain mode is active.
   an explicit choice. Two error shapes: `not_implemented_yet` (will
   catch up — see ADR-0001) and `not_applicable` (the operation doesn't
   exist on this engine class, reserved for Redis etc.).
+- **Engine UI Policy** — the frontend mirror to Engine Dispatch
+  (`src/lib/engine-policy.ts`). A pure `Record<DatabaseEngine,
+  EnginePolicy>` table owning UI-side engine-aware data: connection
+  form shape (host/auth requirements, default port, CH HTTPS toggle),
+  structure-view labels ("Primary key" vs "Sorting key", "Indexes" vs
+  "Skip indices"), stats-card row-count semantics (`exact` vs
+  `estimate`), foreign-key copy when not supported, schema-map empty
+  banner. `TypeScript`'s `Record` enforces exhaustiveness — a new
+  engine variant won't compile until every policy field is filled in.
+  Scope is **engine-level only**: per-table mutation decisions stay on
+  `TableStructure.capabilities` plus `pickRowIdentity`.
 - **AppHandle** — Tauri's global handle, threaded through every command that
   needs to reach the config directory or keychain. Functions that don't need
   the keychain (e.g. `touch_connection_activity`) take a path-only path so

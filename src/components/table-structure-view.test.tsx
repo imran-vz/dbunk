@@ -122,7 +122,6 @@ const baseStructure: TableStructure = {
     canUpdateRows: true,
     canDeleteRows: true,
     canAlterSchema: true,
-    updateSemantics: "synchronous",
     uniquenessGuarantee: "exact",
   },
 };
@@ -372,7 +371,6 @@ describe("TableStructureView", () => {
         canUpdateRows: false,
         canDeleteRows: false,
         canAlterSchema: false,
-        updateSemantics: "synchronous",
         uniquenessGuarantee: "best-effort",
       },
     });

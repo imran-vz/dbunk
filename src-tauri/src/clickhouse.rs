@@ -436,7 +436,6 @@ pub async fn fetch_table_structure(
             can_update_rows: is_mergetree_family,
             can_delete_rows: is_mergetree_family,
             can_alter_schema: is_mergetree_family,
-            update_semantics: "async".to_string(),
             uniqueness_guarantee: "best-effort".to_string(),
         },
         table_engine: table_engine_name,

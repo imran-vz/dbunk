@@ -20,6 +20,7 @@ import {
   type NewColumn,
   type PendingChange,
 } from "@/lib/ddl";
+import { type EnginePolicy, enginePolicy } from "@/lib/engine-policy";
 import {
   type ColumnInfo,
   type ConstraintInfo,
@@ -50,7 +51,6 @@ const fallbackCapabilities: StructureCapabilities = {
   canUpdateRows: false,
   canDeleteRows: false,
   canAlterSchema: false,
-  updateSemantics: "synchronous",
   uniquenessGuarantee: "best-effort",
 };
 
@@ -99,6 +99,11 @@ export function TableStructureView({
   // PostgreSQL is uniformly editable.
   const editable = capabilities.canAlterSchema;
   const pending = pendingChanges ?? [];
+  // Engine-level UI policy (labels, copy). The structure view is the
+  // single biggest consumer — section titles and empty-state copy
+  // change based on engine. Falling back to PostgreSQL preserves the
+  // historical default when the engine isn't loaded yet.
+  const policy = engine ? enginePolicy(engine) : enginePolicy("PostgreSQL");
 
   const handleRetry = () => {
     if (connectionId && schema && tableName) {
@@ -200,7 +205,7 @@ export function TableStructureView({
               ) : null}
               {structure?.primaryKey && structure.primaryKey.length > 0 ? (
                 <Badge variant="secondary" className="h-6 text-[0.625rem]">
-                  {isClickHouse(engine) ? "ORDER BY" : "PK"}{" "}
+                  {policy.labels.primaryKeyBadge}{" "}
                   {structure.primaryKey.join(", ")}
                 </Badge>
               ) : null}
@@ -237,19 +242,21 @@ export function TableStructureView({
           <PrimaryKeySection
             primaryKey={structure?.primaryKey ?? null}
             supported={capabilities.primaryKey}
-            engine={engine}
+            policy={policy}
           />
 
           <ForeignKeysSection
             foreignKeys={structure?.foreignKeys ?? []}
             supported={capabilities.foreignKeys}
             engine={engine}
+            policy={policy}
           />
 
           <IndexesSection
             indexes={structure?.indexes ?? []}
             supported={capabilities.indexes}
             engine={engine}
+            policy={policy}
           />
 
           <ConstraintsSection
@@ -262,9 +269,6 @@ export function TableStructureView({
     </div>
   );
 }
-
-const isClickHouse = (engine: DatabaseEngine | undefined): boolean =>
-  engine === "ClickHouse";
 
 function ClickHousePhysicalLayout({
   partitionBy,
@@ -807,26 +811,24 @@ function PendingChangesSection({
 function PrimaryKeySection({
   primaryKey,
   supported,
-  engine,
+  policy,
 }: {
   primaryKey: string[] | null;
   supported: boolean;
-  engine: DatabaseEngine | undefined;
+  policy: EnginePolicy;
 }) {
   // ClickHouse uses the sorting key as a sparse primary index — it is not
-  // a uniqueness constraint, so we relabel the section accordingly.
-  const ch = isClickHouse(engine);
-  const title = ch ? "Sorting key" : "Primary key";
+  // a uniqueness constraint, so the section title comes from policy.
+  const isClickHouse = policy.engine === "ClickHouse";
   return (
-    <Section title={title} testId="structure-primary-key">
+    <Section title={policy.labels.primaryKey} testId="structure-primary-key">
       {!supported ? (
-        <UnsupportedNotice engine={engine} feature={title} />
+        <UnsupportedNotice
+          engine={policy.engine}
+          feature={policy.labels.primaryKey}
+        />
       ) : !primaryKey || primaryKey.length === 0 ? (
-        <EmptyRow>
-          {ch
-            ? "This table has no sorting key."
-            : "This table has no primary key."}
-        </EmptyRow>
+        <EmptyRow>{policy.labels.noPrimaryKey}</EmptyRow>
       ) : (
         <div className="space-y-1 px-4 py-3">
           <div className="flex items-center gap-2 text-sm">
@@ -835,7 +837,7 @@ function PrimaryKeySection({
               ({primaryKey.join(", ")})
             </span>
           </div>
-          {ch ? (
+          {isClickHouse ? (
             <p className="text-[0.6875rem] text-muted-foreground">
               ClickHouse uses the sorting key as a sparse primary index. It does
               not enforce uniqueness.
@@ -851,17 +853,19 @@ function ForeignKeysSection({
   foreignKeys,
   supported,
   engine,
+  policy,
 }: {
   foreignKeys: ForeignKeyInfo[];
   supported: boolean;
   engine: DatabaseEngine | undefined;
+  policy: EnginePolicy;
 }) {
   return (
     <Section title="Foreign keys" testId="structure-foreign-keys">
       {!supported ? (
-        isClickHouse(engine) ? (
+        !policy.hasForeignKeys ? (
           <div className="px-4 py-3 text-sm text-muted-foreground">
-            ClickHouse does not support foreign keys.
+            {policy.foreignKeysUnsupportedCopy}
           </div>
         ) : (
           <UnsupportedNotice engine={engine} feature="Foreign keys" />
@@ -906,24 +910,22 @@ function IndexesSection({
   indexes,
   supported,
   engine,
+  policy,
 }: {
   indexes: IndexInfo[];
   supported: boolean;
   engine: DatabaseEngine | undefined;
+  policy: EnginePolicy;
 }) {
   // CH calls these "data skipping indices" — they prune granules during
   // scans rather than being uniqueness or B-tree indexes.
-  const title = isClickHouse(engine) ? "Skip indices" : "Indexes";
+  const title = policy.labels.indexes;
   return (
     <Section title={title} testId="structure-indexes">
       {!supported ? (
         <UnsupportedNotice engine={engine} feature={title} />
       ) : indexes.length === 0 ? (
-        <EmptyRow>
-          {isClickHouse(engine)
-            ? "No skip indices defined."
-            : "No indexes defined."}
-        </EmptyRow>
+        <EmptyRow>{policy.labels.noIndexes}</EmptyRow>
       ) : (
         <div className="divide-y divide-white/8">
           {indexes.map((index) => (

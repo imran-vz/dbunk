@@ -8,6 +8,7 @@ import ReactFlow, {
   type NodeProps,
   Position,
 } from "reactflow";
+import { enginePolicy } from "@/lib/engine-policy";
 import {
   buildSchemaGraph,
   type SchemaGraphNodeData,
@@ -234,18 +235,24 @@ export function SchemaRelationshipMap({
     );
   }
 
-  const isClickHouse = engine === "ClickHouse";
-  const hasNoForeignKeys =
-    isClickHouse && hasNodes && (relationships?.foreignKeys.length ?? 0) === 0;
+  // Engine policy carries the "no foreign keys" banner copy. Only
+  // engines with hasForeignKeys=false populate it (CH today).
+  const policy = engine ? enginePolicy(engine) : null;
+  const noFkBanner =
+    policy?.schemaMapNoForeignKeysCopy &&
+    hasNodes &&
+    (relationships?.foreignKeys.length ?? 0) === 0
+      ? policy.schemaMapNoForeignKeysCopy
+      : null;
 
   return (
     <div ref={flowContainerRef} className="relative h-full w-full">
-      {hasNoForeignKeys ? (
+      {noFkBanner ? (
         <div
           data-testid="schema-flow-clickhouse-banner"
           className="absolute left-2 right-2 top-2 z-10 rounded-md border border-border/60 bg-background/90 px-3 py-1.5 text-[0.65rem] text-muted-foreground shadow-sm"
         >
-          ClickHouse does not support foreign keys — showing tables only.
+          {noFkBanner}
         </div>
       ) : null}
       {!hasNodes ? (
