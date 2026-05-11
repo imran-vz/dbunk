@@ -221,12 +221,6 @@ export type StructureCapabilities = {
   /** Whether ALTER TABLE-style schema edits are supported. */
   canAlterSchema: boolean;
   /**
-   * "synchronous" — UPDATE/DELETE return after the change is applied.
-   * "async" — UPDATE/DELETE return after the mutation is queued
-   *   (ClickHouse). The frontend renders a "Queued" status and polls.
-   */
-  updateSemantics: "synchronous" | "async";
-  /**
    * "exact" — identity columns guarantee at most one matching row.
    * "best-effort" — identity may match multiple rows (ClickHouse).
    */

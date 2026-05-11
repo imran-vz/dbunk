@@ -469,7 +469,6 @@ async fn fetch_table_structure_columns_only(
             can_update_rows: false,
             can_delete_rows: false,
             can_alter_schema: false,
-            update_semantics: "synchronous".to_string(),
             uniqueness_guarantee: "best-effort".to_string(),
         },
         table_engine: None,

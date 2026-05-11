@@ -771,7 +771,6 @@ pub async fn fetch_table_structure(
             can_update_rows: has_primary_key,
             can_delete_rows: has_primary_key,
             can_alter_schema: true,
-            update_semantics: "synchronous".to_string(),
             uniqueness_guarantee: if has_primary_key {
                 "exact".to_string()
             } else {

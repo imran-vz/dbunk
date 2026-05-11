@@ -433,12 +433,6 @@ pub(crate) struct StructureCapabilities {
     pub can_update_rows: bool,
     pub can_delete_rows: bool,
     pub can_alter_schema: bool,
-    /// "synchronous" — UPDATE/DELETE return after the change is applied
-    ///   (PostgreSQL).
-    /// "async" — UPDATE/DELETE return after the mutation is queued
-    ///   (ClickHouse). The frontend renders a "Queued" status and
-    ///   polls for completion.
-    pub update_semantics: String,
     /// "exact" — identity columns guarantee at most one matching row
     ///   (PostgreSQL with a real PK).
     /// "best-effort" — identity may match multiple rows (ClickHouse,

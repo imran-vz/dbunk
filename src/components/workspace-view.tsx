@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { StatusDot } from "@/components/ui/status-dot";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
+import { enginePolicy } from "@/lib/engine-policy";
 import {
   type Connection,
   type DatabaseOverviewStats,
@@ -345,9 +346,7 @@ function WorkspaceDatabaseOverview({
               connections={connectionCount}
               rows={rowCount}
               statsStatus={statsStatus}
-              rowCountKind={
-                activeConnection.engine === "ClickHouse" ? "exact" : "estimate"
-              }
+              rowCountKind={enginePolicy(activeConnection.engine).rowCountKind}
             />
           </section>
 
