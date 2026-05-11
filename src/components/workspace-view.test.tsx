@@ -101,6 +101,24 @@ describe("WorkspaceView database overview", () => {
     expect(screen.getByText("Your connection is healthy")).toBeTruthy();
   });
 
+  it("hides missing round-trip latency in the health banner", () => {
+    useAppStore.setState({
+      activeConnectionId: "conn-1",
+      activeTabId: "",
+      connections: [{ ...connectedConnection, latency: "undefined ms" }],
+      workspaceTabs: [],
+      schemaExplorer: {
+        "conn-1": [{ name: "public", tables: ["users"], views: [] }],
+      },
+    });
+
+    render(<WorkspaceView isClient={false} />);
+
+    expect(screen.getByText("Your connection is healthy")).toBeTruthy();
+    expect(screen.queryByText(/Round-trip/i)).toBeNull();
+    expect(screen.getByText(/Last checked/i)).toBeTruthy();
+  });
+
   it("opens a table from the favorite tables card", () => {
     const openTableTab = vi.fn();
     useAppStore.setState({

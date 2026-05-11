@@ -4,6 +4,11 @@ import {
   generateDdlForEngine,
   type PendingChange,
 } from "@/lib/ddl";
+import {
+  type MutationOutcome,
+  pendingMutationsFromResult,
+  trackMutations,
+} from "@/lib/pending-mutations";
 import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type SchemaForeignKey,
@@ -103,6 +108,11 @@ const errorToMessage = (error: unknown): string => {
 type ConnectResult = {
   latencyMs: number;
 };
+
+const formatLatencyMs = (latencyMs: unknown): string =>
+  typeof latencyMs === "number" && Number.isFinite(latencyMs)
+    ? `${latencyMs} ms`
+    : "--";
 
 type RunQueryResult = {
   columns: string[];
@@ -254,8 +264,7 @@ type CellEditPayload = {
  * `state === "committed"` (PG) means the row counts in `rowsAffected`
  * are authoritative. `state === "queued"` (CH) means the changes have
  * been accepted as `ALTER … UPDATE/DELETE` mutations that apply
- * asynchronously; the frontend polls `poll_mutation_status` until every
- * mutation reports `is_done`.
+ * asynchronously — see `@/lib/pending-mutations` for the lifecycle.
  */
 type CommitCellEditsResult = {
   rowsAffected: number;
@@ -266,10 +275,37 @@ type CommitCellEditsResult = {
   mutationIds?: string[];
 };
 
-type MutationStatus = {
-  mutationId: string;
-  isDone: boolean;
-  latestFailReason: string | null;
+/**
+ * Translate a [`MutationOutcome`] into the workspace's per-table
+ * commit-status shape. Lives here (not in `pending-mutations`) because
+ * the status surface is workspace-specific — a future async DDL would
+ * translate the same outcome into `structureCommitStatus` instead.
+ */
+const outcomeToTableEditsStatus = (
+  outcome: MutationOutcome,
+  ctx: { startedAt: number; database: string; table: string },
+): TableEditsCommitStatus => {
+  if (outcome.kind === "completed") {
+    return {
+      state: "success",
+      // ALTER UPDATE/DELETE doesn't report a row count — the refresh
+      // is the source of truth for the post-mutation state.
+      rowsAffected: 0,
+      runtimeMs: Date.now() - ctx.startedAt,
+    };
+  }
+  if (outcome.kind === "failed") {
+    return {
+      state: "error",
+      error: `ClickHouse mutation ${outcome.mutationId} failed: ${outcome.reason}`,
+    };
+  }
+  return {
+    state: "error",
+    error:
+      "Mutation did not complete in time. " +
+      `Check system.mutations for ${ctx.database}.${ctx.table}.`,
+  };
 };
 
 export type SchemaRelationshipsStatus =
@@ -491,20 +527,6 @@ interface AppState {
   deleteSelectedTableRows: (
     tableName: string,
     rowIndices: number[],
-  ) => Promise<void>;
-  /**
-   * Poll `system.mutations` until every supplied mutation reports
-   * `is_done = true`, then mark the table commit status as `success`
-   * and refresh table data. Used by ClickHouse `ALTER … UPDATE/DELETE`
-   * (which return `state: "queued"`); PG never invokes this path.
-   */
-  awaitMutations: (
-    connectionId: string,
-    database: string,
-    table: string,
-    mutationIds: string[],
-    tableName: string,
-    dataKeyForTable: string,
   ) => Promise<void>;
   loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
   loadTableData: (
@@ -917,15 +939,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       );
       // ClickHouse returns `state: "queued"` with a list of mutation
-      // IDs. The frontend hands off to `awaitMutations` which polls
-      // `system.mutations` until all of them report `is_done`. The edit
-      // buffer clears immediately so the UI doesn't "stick" — the
-      // backing data refresh happens after the mutations complete.
-      if (
-        result.state === "queued" &&
-        result.mutationIds &&
-        result.mutationIds.length > 0
-      ) {
+      // IDs. We hand the batch to `trackMutations` and translate its
+      // outcome into the workspace's commit-status surface. The edit
+      // buffer clears immediately so the UI doesn't "stick"; the
+      // backing data refresh fires only when the mutations complete.
+      const pendingMutations = pendingMutationsFromResult(result, {
+        connectionId: data.connectionId,
+        database: data.schema,
+        table: data.table,
+      });
+      if (pendingMutations.length > 0) {
+        const queuedDatabase = pendingMutations[0].database;
+        const queuedTable = pendingMutations[0].table;
         set((s) => {
           const { [tableName]: _, ...restEdits } = s.tableEdits;
           return {
@@ -934,22 +959,29 @@ export const useAppStore = create<AppState>((set, get) => ({
               ...s.tableEditsCommitStatus,
               [tableName]: {
                 state: "queued",
-                database: result.database ?? data.schema,
-                table: result.table ?? data.table,
-                mutationIds: result.mutationIds ?? [],
+                database: queuedDatabase,
+                table: queuedTable,
+                mutationIds: pendingMutations.map((m) => m.id),
                 runtimeMs: result.runtimeMs,
               },
             },
           };
         });
-        await get().awaitMutations(
-          data.connectionId,
-          result.database ?? data.schema,
-          result.table ?? data.table,
-          result.mutationIds,
-          tableName,
-          dataKeyForTable,
-        );
+        const startedAt = Date.now();
+        const outcome = await trackMutations(pendingMutations);
+        set((s) => ({
+          tableEditsCommitStatus: {
+            ...s.tableEditsCommitStatus,
+            [tableName]: outcomeToTableEditsStatus(outcome, {
+              startedAt,
+              database: queuedDatabase,
+              table: queuedTable,
+            }),
+          },
+        }));
+        if (outcome.kind === "completed") {
+          await get().refreshTableData(dataKeyForTable);
+        }
         return;
       }
 
@@ -1173,31 +1205,41 @@ export const useAppStore = create<AppState>((set, get) => ({
           rows: rowsPayload,
         },
       });
-      if (
-        result.state === "queued" &&
-        result.mutationIds &&
-        result.mutationIds.length > 0
-      ) {
+      const pendingMutations = pendingMutationsFromResult(result, {
+        connectionId: data.connectionId,
+        database: data.schema,
+        table: data.table,
+      });
+      if (pendingMutations.length > 0) {
+        const queuedDatabase = pendingMutations[0].database;
+        const queuedTable = pendingMutations[0].table;
         set((s) => ({
           tableEditsCommitStatus: {
             ...s.tableEditsCommitStatus,
             [tableName]: {
               state: "queued",
-              database: result.database ?? data.schema,
-              table: result.table ?? data.table,
-              mutationIds: result.mutationIds ?? [],
+              database: queuedDatabase,
+              table: queuedTable,
+              mutationIds: pendingMutations.map((m) => m.id),
               runtimeMs: result.runtimeMs,
             },
           },
         }));
-        await get().awaitMutations(
-          data.connectionId,
-          result.database ?? data.schema,
-          result.table ?? data.table,
-          result.mutationIds,
-          tableName,
-          dataKeyForTable,
-        );
+        const startedAt = Date.now();
+        const outcome = await trackMutations(pendingMutations);
+        set((s) => ({
+          tableEditsCommitStatus: {
+            ...s.tableEditsCommitStatus,
+            [tableName]: outcomeToTableEditsStatus(outcome, {
+              startedAt,
+              database: queuedDatabase,
+              table: queuedTable,
+            }),
+          },
+        }));
+        if (outcome.kind === "completed") {
+          await get().refreshTableData(dataKeyForTable);
+        }
         return;
       }
       set((s) => ({
@@ -1216,88 +1258,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error("Failed to delete rows", error);
       setError(message);
     }
-  },
-
-  awaitMutations: async (
-    connectionId,
-    database,
-    table,
-    mutationIds,
-    tableName,
-    dataKeyForTable,
-  ) => {
-    if (!isTauri() || mutationIds.length === 0) {
-      return;
-    }
-    const setError = (error: string) =>
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: { state: "error", error },
-        },
-      }));
-
-    const start = Date.now();
-    // Bound the wait at 60s. CH mutations on small interactive tables
-    // typically finish in <1s; longer waits are likely a failure mode
-    // we'd rather surface than hang on.
-    const deadlineMs = 60_000;
-    const pollIntervalMs = 1_000;
-    let pending = [...mutationIds];
-
-    while (pending.length > 0) {
-      if (Date.now() - start > deadlineMs) {
-        setError(
-          `Mutation did not complete within ${deadlineMs / 1000}s. ` +
-            `Check system.mutations for ${database}.${table}.`,
-        );
-        return;
-      }
-      try {
-        const statuses = await tauriInvoke<MutationStatus[]>(
-          "poll_mutation_status",
-          {
-            payload: {
-              connectionId,
-              database,
-              table,
-              mutationIds: pending,
-            },
-          },
-        );
-        const failed = statuses.find((status) => status.latestFailReason);
-        if (failed) {
-          setError(
-            `ClickHouse mutation ${failed.mutationId} failed: ${failed.latestFailReason}`,
-          );
-          return;
-        }
-        pending = statuses
-          .filter((status) => !status.isDone)
-          .map((status) => status.mutationId);
-        if (pending.length === 0) {
-          break;
-        }
-      } catch (error) {
-        setError(errorToMessage(error));
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    }
-
-    set((s) => ({
-      tableEditsCommitStatus: {
-        ...s.tableEditsCommitStatus,
-        [tableName]: {
-          state: "success",
-          // CH mutations don't report row counts up-front; the refresh
-          // below is the user's source of truth for the new state.
-          rowsAffected: 0,
-          runtimeMs: Date.now() - start,
-        },
-      },
-    }));
-    await get().refreshTableData(dataKeyForTable);
   },
 
   loadTablePreview: async (schemaName, tableName) => {
@@ -2036,7 +1996,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           return {
             ...connection,
             status,
-            latency: `${found.result.latencyMs} ms`,
+            latency: formatLatencyMs(found.result.latencyMs),
             lastSync: new Date().toISOString(),
             errorMessage: undefined,
           };
@@ -2077,7 +2037,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Connected",
-          latency: result.latencyMs ? `${result.latencyMs} ms` : "--",
+          latency: formatLatencyMs(result.latencyMs),
           lastSync: "Just now",
           lastActivityAt: new Date().toISOString(),
           errorMessage: undefined,

@@ -45,6 +45,23 @@ const OVERVIEW_TABS = [
   "Settings",
 ] as const;
 
+const formatConnectionLatency = (latency: unknown) => {
+  if (typeof latency !== "string") {
+    return null;
+  }
+  const normalized = latency.trim().toLowerCase();
+  if (
+    normalized === "" ||
+    normalized === "--" ||
+    normalized === "undefined ms" ||
+    normalized === "null ms" ||
+    normalized === "nan ms"
+  ) {
+    return null;
+  }
+  return latency;
+};
+
 export function WorkspaceView({ isClient }: WorkspaceViewProps) {
   const {
     activeConnectionId,
@@ -355,6 +372,7 @@ function HealthBanner({ connection }: { connection: Connection }) {
   const status = connection.status;
   const isHealthy = status === "Connected" || status === "Read only";
   const lastChecked = formatLastChecked(connection.lastSync);
+  const latency = formatConnectionLatency(connection.latency);
 
   if (isHealthy) {
     return (
@@ -368,8 +386,8 @@ function HealthBanner({ connection }: { connection: Connection }) {
               Your connection is healthy
             </div>
             <div className="text-xs text-accent-green-hover/70">
-              {connection.latency && connection.latency !== "--"
-                ? `Round-trip ${connection.latency}. Last checked ${lastChecked}.`
+              {latency
+                ? `Round-trip ${latency}. Last checked ${lastChecked}.`
                 : `Last checked ${lastChecked}.`}
             </div>
           </div>
