@@ -118,6 +118,12 @@ const baseStructure: TableStructure = {
     foreignKeys: true,
     indexes: true,
     constraints: true,
+    canInsertRows: true,
+    canUpdateRows: true,
+    canDeleteRows: true,
+    canAlterSchema: true,
+    updateSemantics: "synchronous",
+    uniquenessGuarantee: "exact",
   },
 };
 
@@ -362,6 +368,12 @@ describe("TableStructureView", () => {
         foreignKeys: false,
         indexes: false,
         constraints: false,
+        canInsertRows: false,
+        canUpdateRows: false,
+        canDeleteRows: false,
+        canAlterSchema: false,
+        updateSemantics: "synchronous",
+        uniquenessGuarantee: "best-effort",
       },
     });
     render(
@@ -386,9 +398,18 @@ describe("TableStructureView", () => {
 });
 
 describe("TableStructureView edit flow", () => {
-  it("hides editing controls when engine is not PostgreSQL", () => {
+  it("hides editing controls when the engine cannot alter schema", () => {
     seedConnection("MySQL");
-    const key = seedStructure(baseStructure);
+    const key = seedStructure({
+      ...baseStructure,
+      capabilities: {
+        ...baseStructure.capabilities,
+        canAlterSchema: false,
+        canInsertRows: false,
+        canUpdateRows: false,
+        canDeleteRows: false,
+      },
+    });
     render(
       <TableStructureView
         connectionId="conn-1"

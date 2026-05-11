@@ -38,6 +38,12 @@ const buildStructure = (
     foreignKeys: true,
     indexes: true,
     constraints: true,
+    canInsertRows: true,
+    canUpdateRows: true,
+    canDeleteRows: true,
+    canAlterSchema: true,
+    updateSemantics: "synchronous",
+    uniquenessGuarantee: "exact",
   },
 });
 

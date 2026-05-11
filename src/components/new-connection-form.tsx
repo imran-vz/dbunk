@@ -33,6 +33,8 @@ const connectionSchema = z
     password: z.string().optional(),
     role: z.string().optional(),
     ssl: z.boolean().optional(),
+    useHttps: z.boolean().optional(),
+    urlPath: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.engine === "SQLite") {
@@ -94,6 +96,7 @@ export function NewConnectionForm({
 }: NewConnectionFormProps) {
   const [selectedEngine, setSelectedEngine] =
     useState<DatabaseEngine>("PostgreSQL");
+  const [useHttps, setUseHttps] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<
@@ -106,11 +109,14 @@ export function NewConnectionForm({
   const testConnection = useAppStore((state) => state.testConnection);
 
   const isSQLite = selectedEngine === "SQLite";
+  const isClickHouse = selectedEngine === "ClickHouse";
   const portPlaceholder =
     selectedEngine === "MySQL"
       ? "3306"
       : selectedEngine === "ClickHouse"
-        ? "8123"
+        ? useHttps
+          ? "8443"
+          : "8123"
         : "5432";
   const databasePlaceholder =
     selectedEngine === "SQLite" ? "/path/to/db.sqlite" : "core";
@@ -128,6 +134,8 @@ export function NewConnectionForm({
       password: "",
       role: "read/write",
       ssl: true,
+      useHttps: false,
+      urlPath: "",
     } as ConnectionFormData,
     onSubmit: async ({ value }) => {
       await addConnection({
@@ -143,9 +151,13 @@ export function NewConnectionForm({
         role: value.role || "read/write",
         latency: "--",
         lastSync: "Never",
+        useHttps:
+          value.engine === "ClickHouse" ? (value.useHttps ?? false) : false,
+        urlPath: value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
       });
       form.reset();
       setSelectedEngine("PostgreSQL");
+      setUseHttps(false);
       setShowPassword(false);
       onSaved?.();
     },
@@ -157,6 +169,7 @@ export function NewConnectionForm({
   const handleCancel = () => {
     form.reset();
     setSelectedEngine("PostgreSQL");
+    setUseHttps(false);
     setShowPassword(false);
     setTestStatus({ state: "idle" });
     onCancel?.();
@@ -357,23 +370,70 @@ export function NewConnectionForm({
               Advanced Options
             </button>
             {advancedOpen ? (
-              <form.Field name="role">
-                {(field) => (
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="connection-role">Role</Label>
-                    <Input
-                      id="connection-role"
-                      placeholder="read/write"
-                      value={field.state.value ?? ""}
-                      onChange={(event) =>
-                        field.handleChange(event.target.value)
-                      }
-                      onBlur={field.handleBlur}
-                    />
-                    <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
-                  </div>
-                )}
-              </form.Field>
+              <>
+                <form.Field name="role">
+                  {(field) => (
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="connection-role">Role</Label>
+                      <Input
+                        id="connection-role"
+                        placeholder="read/write"
+                        value={field.state.value ?? ""}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        onBlur={field.handleBlur}
+                      />
+                      <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+                    </div>
+                  )}
+                </form.Field>
+                {isClickHouse ? (
+                  <>
+                    <form.Field name="useHttps">
+                      {(field) => (
+                        <label
+                          htmlFor="connection-use-https"
+                          className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2.5"
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="text-xs font-medium">
+                              Use HTTPS
+                            </span>
+                            <span className="text-[0.6875rem] text-text-muted">
+                              Connect to ClickHouse over TLS (port 8443).
+                            </span>
+                          </span>
+                          <Switch
+                            id="connection-use-https"
+                            checked={field.state.value ?? false}
+                            onCheckedChange={(value) => {
+                              field.handleChange(value);
+                              setUseHttps(value);
+                            }}
+                          />
+                        </label>
+                      )}
+                    </form.Field>
+                    <form.Field name="urlPath">
+                      {(field) => (
+                        <div className="grid gap-1.5">
+                          <Label htmlFor="connection-url-path">URL path</Label>
+                          <Input
+                            id="connection-url-path"
+                            placeholder="/clickhouse (optional)"
+                            value={field.state.value ?? ""}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
+                            onBlur={field.handleBlur}
+                          />
+                        </div>
+                      )}
+                    </form.Field>
+                  </>
+                ) : null}
+              </>
             ) : null}
           </>
         ) : null}
@@ -413,9 +473,18 @@ export function NewConnectionForm({
                 user: value.user ?? "",
                 password: value.password ?? "",
                 role: value.role || "read/write",
+                useHttps:
+                  value.engine === "ClickHouse"
+                    ? (value.useHttps ?? false)
+                    : false,
+                urlPath:
+                  value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
               });
               if (result.ok) {
-                setTestStatus({ state: "success", latencyMs: result.latencyMs });
+                setTestStatus({
+                  state: "success",
+                  latencyMs: result.latencyMs,
+                });
               } else {
                 setTestStatus({ state: "error", error: result.error });
               }

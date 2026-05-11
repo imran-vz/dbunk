@@ -16,10 +16,10 @@ import { Input } from "@/components/ui/input";
 import {
   type ColumnChangeKind,
   classifyDestructive,
-  generatePostgresDdl,
+  generateDdlForEngine,
   type NewColumn,
   type PendingChange,
-} from "@/lib/ddl/postgres";
+} from "@/lib/ddl";
 import {
   type ColumnInfo,
   type ConstraintInfo,
@@ -46,6 +46,12 @@ const fallbackCapabilities: StructureCapabilities = {
   foreignKeys: false,
   indexes: false,
   constraints: false,
+  canInsertRows: false,
+  canUpdateRows: false,
+  canDeleteRows: false,
+  canAlterSchema: false,
+  updateSemantics: "synchronous",
+  uniquenessGuarantee: "best-effort",
 };
 
 export function TableStructureView({
@@ -88,7 +94,10 @@ export function TableStructureView({
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
   const capabilities = structure?.capabilities ?? fallbackCapabilities;
-  const editable = engine === "PostgreSQL";
+  // Schema editability is now driven by the per-table capability flag —
+  // CH MergeTree tables can ALTER, CH Distributed/View cannot, and
+  // PostgreSQL is uniformly editable.
+  const editable = capabilities.canAlterSchema;
   const pending = pendingChanges ?? [];
 
   const handleRetry = () => {
@@ -103,12 +112,14 @@ export function TableStructureView({
 
   const previewSql = useMemo(
     () =>
-      generatePostgresDdl(
+      generateDdlForEngine(
+        engine ?? "PostgreSQL",
         schema,
         tableName,
         pending.map((entry) => entry.change),
+        structure?.columns,
       ),
-    [schema, tableName, pending],
+    [engine, schema, tableName, pending, structure?.columns],
   );
 
   const handleCommit = async () => {
@@ -181,12 +192,27 @@ export function TableStructureView({
                 </h2>
               </div>
             </div>
-            {structure?.primaryKey && structure.primaryKey.length > 0 ? (
-              <Badge variant="secondary" className="h-6 text-[0.625rem]">
-                PK {structure.primaryKey.join(", ")}
-              </Badge>
-            ) : null}
+            <div className="flex items-center gap-1.5">
+              {structure?.tableEngine ? (
+                <Badge variant="outline" className="h-6 text-[0.625rem]">
+                  {structure.tableEngine}
+                </Badge>
+              ) : null}
+              {structure?.primaryKey && structure.primaryKey.length > 0 ? (
+                <Badge variant="secondary" className="h-6 text-[0.625rem]">
+                  {isClickHouse(engine) ? "ORDER BY" : "PK"}{" "}
+                  {structure.primaryKey.join(", ")}
+                </Badge>
+              ) : null}
+            </div>
           </header>
+
+          {structure?.partitionBy || structure?.sampleBy ? (
+            <ClickHousePhysicalLayout
+              partitionBy={structure.partitionBy ?? null}
+              sampleBy={structure.sampleBy ?? null}
+            />
+          ) : null}
 
           <ColumnsSection
             columns={structure?.columns ?? []}
@@ -234,6 +260,44 @@ export function TableStructureView({
         </div>
       </div>
     </div>
+  );
+}
+
+const isClickHouse = (engine: DatabaseEngine | undefined): boolean =>
+  engine === "ClickHouse";
+
+function ClickHousePhysicalLayout({
+  partitionBy,
+  sampleBy,
+}: {
+  partitionBy: string | null;
+  sampleBy: string | null;
+}) {
+  // Surfaced read-only — partition + sample expressions are heavyweight
+  // table-level definitions in CH, not column-level edits we route
+  // through the structure editor. Showing them here gives users a
+  // complete picture before they queue an ALTER.
+  return (
+    <Section title="Physical layout" testId="structure-physical-layout">
+      <div className="divide-y divide-white/8">
+        {partitionBy ? (
+          <div className="flex flex-col gap-1 px-4 py-3 text-sm">
+            <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+              PARTITION BY
+            </span>
+            <span className="font-mono text-foreground">{partitionBy}</span>
+          </div>
+        ) : null}
+        {sampleBy ? (
+          <div className="flex flex-col gap-1 px-4 py-3 text-sm">
+            <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+              SAMPLE BY
+            </span>
+            <span className="font-mono text-foreground">{sampleBy}</span>
+          </div>
+        ) : null}
+      </div>
+    </Section>
   );
 }
 
@@ -749,18 +813,34 @@ function PrimaryKeySection({
   supported: boolean;
   engine: DatabaseEngine | undefined;
 }) {
+  // ClickHouse uses the sorting key as a sparse primary index — it is not
+  // a uniqueness constraint, so we relabel the section accordingly.
+  const ch = isClickHouse(engine);
+  const title = ch ? "Sorting key" : "Primary key";
   return (
-    <Section title="Primary key" testId="structure-primary-key">
+    <Section title={title} testId="structure-primary-key">
       {!supported ? (
-        <UnsupportedNotice engine={engine} feature="Primary key" />
+        <UnsupportedNotice engine={engine} feature={title} />
       ) : !primaryKey || primaryKey.length === 0 ? (
-        <EmptyRow>This table has no primary key.</EmptyRow>
+        <EmptyRow>
+          {ch
+            ? "This table has no sorting key."
+            : "This table has no primary key."}
+        </EmptyRow>
       ) : (
-        <div className="flex items-center gap-2 px-4 py-3 text-sm">
-          <IconKey className="size-4 text-muted-foreground" />
-          <span className="font-mono text-foreground">
-            ({primaryKey.join(", ")})
-          </span>
+        <div className="space-y-1 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm">
+            <IconKey className="size-4 text-muted-foreground" />
+            <span className="font-mono text-foreground">
+              ({primaryKey.join(", ")})
+            </span>
+          </div>
+          {ch ? (
+            <p className="text-[0.6875rem] text-muted-foreground">
+              ClickHouse uses the sorting key as a sparse primary index. It does
+              not enforce uniqueness.
+            </p>
+          ) : null}
         </div>
       )}
     </Section>
@@ -779,7 +859,13 @@ function ForeignKeysSection({
   return (
     <Section title="Foreign keys" testId="structure-foreign-keys">
       {!supported ? (
-        <UnsupportedNotice engine={engine} feature="Foreign keys" />
+        isClickHouse(engine) ? (
+          <div className="px-4 py-3 text-sm text-muted-foreground">
+            ClickHouse does not support foreign keys.
+          </div>
+        ) : (
+          <UnsupportedNotice engine={engine} feature="Foreign keys" />
+        )
       ) : foreignKeys.length === 0 ? (
         <EmptyRow>No foreign keys defined.</EmptyRow>
       ) : (
@@ -825,12 +911,19 @@ function IndexesSection({
   supported: boolean;
   engine: DatabaseEngine | undefined;
 }) {
+  // CH calls these "data skipping indices" — they prune granules during
+  // scans rather than being uniqueness or B-tree indexes.
+  const title = isClickHouse(engine) ? "Skip indices" : "Indexes";
   return (
-    <Section title="Indexes" testId="structure-indexes">
+    <Section title={title} testId="structure-indexes">
       {!supported ? (
-        <UnsupportedNotice engine={engine} feature="Indexes" />
+        <UnsupportedNotice engine={engine} feature={title} />
       ) : indexes.length === 0 ? (
-        <EmptyRow>No indexes defined.</EmptyRow>
+        <EmptyRow>
+          {isClickHouse(engine)
+            ? "No skip indices defined."
+            : "No indexes defined."}
+        </EmptyRow>
       ) : (
         <div className="divide-y divide-white/8">
           {indexes.map((index) => (

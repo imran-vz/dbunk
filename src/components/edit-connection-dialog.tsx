@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { type Connection, type DatabaseEngine, useAppStore } from "@/lib/store";
 
 const connectionSchema = z
@@ -32,6 +33,8 @@ const connectionSchema = z
     user: z.string().optional(),
     password: z.string().optional(),
     role: z.string().optional(),
+    useHttps: z.boolean().optional(),
+    urlPath: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.engine === "SQLite") {
@@ -82,14 +85,18 @@ export function EditConnectionDialog({
 }: EditConnectionDialogProps) {
   const [selectedEngine, setSelectedEngine] =
     useState<DatabaseEngine>("PostgreSQL");
+  const [useHttps, setUseHttps] = useState(false);
   const updateConnection = useAppStore((state) => state.updateConnection);
 
   const isSQLite = selectedEngine === "SQLite";
+  const isClickHouse = selectedEngine === "ClickHouse";
   const portPlaceholder =
     selectedEngine === "MySQL"
       ? "3306"
       : selectedEngine === "ClickHouse"
-        ? "8123"
+        ? useHttps
+          ? "8443"
+          : "8123"
         : "5432";
   const databasePlaceholder =
     selectedEngine === "SQLite" ? "/path/to/db.sqlite" : "core";
@@ -106,6 +113,8 @@ export function EditConnectionDialog({
       user: "",
       password: "",
       role: "read/write",
+      useHttps: false,
+      urlPath: "",
     } as ConnectionFormData,
     onSubmit: async ({ value }) => {
       if (!connection) return;
@@ -119,6 +128,9 @@ export function EditConnectionDialog({
         user: value.user ?? "",
         password: value.password ?? "",
         role: value.role || "read/write",
+        useHttps:
+          value.engine === "ClickHouse" ? (value.useHttps ?? false) : false,
+        urlPath: value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
       });
       onOpenChange(false);
     },
@@ -139,7 +151,10 @@ export function EditConnectionDialog({
       form.setFieldValue("user", connection.user);
       form.setFieldValue("password", connection.password);
       form.setFieldValue("role", connection.role);
+      form.setFieldValue("useHttps", connection.useHttps ?? false);
+      form.setFieldValue("urlPath", connection.urlPath ?? "");
       setSelectedEngine(connection.engine);
+      setUseHttps(connection.useHttps ?? false);
     }
   }, [connection, open, form]);
 
@@ -370,6 +385,52 @@ export function EditConnectionDialog({
                     )}
                   </form.Field>
                 </div>
+
+                {isClickHouse && (
+                  <>
+                    <form.Field name="useHttps">
+                      {(field) => (
+                        <label
+                          htmlFor="edit-connection-use-https"
+                          className="flex items-center justify-between rounded-md border px-3 py-2.5"
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="text-xs font-medium">
+                              Use HTTPS
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Connect to ClickHouse over TLS (port 8443).
+                            </span>
+                          </span>
+                          <Switch
+                            id="edit-connection-use-https"
+                            checked={field.state.value ?? false}
+                            onCheckedChange={(value) => {
+                              field.handleChange(value);
+                              setUseHttps(value);
+                            }}
+                          />
+                        </label>
+                      )}
+                    </form.Field>
+                    <form.Field name="urlPath">
+                      {(field) => (
+                        <div className="grid gap-1">
+                          <Label htmlFor="edit-connection-url-path">
+                            URL path
+                          </Label>
+                          <Input
+                            id="edit-connection-url-path"
+                            placeholder="/clickhouse (optional)"
+                            value={field.state.value ?? ""}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            onBlur={field.handleBlur}
+                          />
+                        </div>
+                      )}
+                    </form.Field>
+                  </>
+                )}
               </>
             )}
           </div>

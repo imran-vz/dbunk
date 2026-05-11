@@ -88,9 +88,11 @@ describe("WorkspaceView database overview", () => {
     expect(screen.getAllByText("Database").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Engine").length).toBeGreaterThan(0);
 
-    // Database Stats card with rendered totals
+    // Database Stats card with rendered totals. The default fixture is
+    // PostgreSQL, so the row-count label shows the (≈) suffix to flag
+    // that pg_class.reltuples is an estimate.
     expect(screen.getByText("Database Stats")).toBeTruthy();
-    expect(screen.getByText("Rows")).toBeTruthy();
+    expect(screen.getByText("Rows (≈)")).toBeTruthy();
     expect(screen.getByText("Indexes")).toBeTruthy();
 
     // Recent Queries + Favorite Tables sections + health banner
