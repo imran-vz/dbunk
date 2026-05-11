@@ -107,6 +107,9 @@ export function NewConnectionForm({
   >({ state: "idle" });
   const addConnection = useAppStore((state) => state.addConnection);
   const testConnection = useAppStore((state) => state.testConnection);
+  const credentialMode = useAppStore(
+    (state) => state.appSettings?.credentialStorageMode,
+  );
 
   const isSQLite = selectedEngine === "SQLite";
   const isClickHouse = selectedEngine === "ClickHouse";
@@ -503,7 +506,11 @@ export function NewConnectionForm({
         </div>
         <div className="flex items-center gap-1.5 text-[0.6875rem] text-text-muted">
           <IconShieldLock className="size-3 text-accent-green" />
-          Your credentials are encrypted and stored securely.
+          {credentialMode === "plain-sqlite"
+            ? "Credentials are stored in the local SQLite database without encryption."
+            : credentialMode === "keychain"
+              ? "Credentials are stored with the OS keychain."
+              : "Credentials are encrypted in the local SQLite database."}
         </div>
         {onCancel ? (
           <Button

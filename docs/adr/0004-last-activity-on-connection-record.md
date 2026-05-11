@@ -2,6 +2,9 @@
 
 **Status**: Accepted (2026-05-10)
 
+**Update (ADR-0007, 2026-05-11)**: the timestamp still lives on the connection
+record, but the record is now stored in SQLite rather than `connections.json`.
+
 ## Context
 
 Connection cards show "Last activity 12m ago". The data has to come from
@@ -25,13 +28,11 @@ operation that meaningfully exercises the connection).
 
 ## Consequences
 
-- One JSON write per query/connect. Cheap; happens off the hot result path.
+- One SQLite write per query/connect. Cheap; happens off the hot result path.
 - The frontend gets a stable timestamp it can render directly without
   scanning history.
-- `touch_connection_activity` reads/writes `connections.json` only. It
-  intentionally does not go through `read_connections_full` because it
-  doesn't need passwords — keeping this hot path off the keychain prompt
-  surface.
+- `touch_connection_activity` updates the `connections` table only. It does
+  not hydrate credentials because it does not need passwords.
 - If a query path ever returns a result without invoking the helper, the
   card silently goes stale. Prefer adding a single helper call at the end
   of every command rather than threading bumps through error branches.

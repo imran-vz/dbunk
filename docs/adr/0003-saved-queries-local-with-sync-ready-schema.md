@@ -2,6 +2,9 @@
 
 **Status**: Accepted (2026-05-10)
 
+**Update (ADR-0007, 2026-05-11)**: the sync-ready schema remains, but saved
+queries now persist in SQLite rather than `saved_queries.json`.
+
 ## Context
 
 The Saved Queries panel (DESIGN.md §5.3) lets users name and reopen SQL
@@ -18,9 +21,9 @@ snippets. Three storage options were on the table:
 
 ## Decision
 
-Option 2. Saved queries persist in `~/.config/dbunk/saved_queries.json`,
-managed by the `load_saved_queries` / `save_saved_query` /
-`delete_saved_query` Tauri commands. The schema includes `ownerId`
+Option 2. Saved queries persist locally, managed by the
+`load_saved_queries` / `save_saved_query` / `delete_saved_query` Tauri
+commands. The schema includes `ownerId`
 (reserved, always `null` today), `createdAt`, and `updatedAt` so a future
 sync transport can compare clocks without any file format change.
 

@@ -32,6 +32,25 @@ export type {
 export { schemaRelationshipsKey } from "@/lib/schema-graph";
 
 export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
+export type CredentialStorageMode =
+  | "keychain"
+  | "encrypted-sqlite"
+  | "plain-sqlite";
+
+export type CredentialState = "needs-onboarding" | "needs-unlock" | "ready";
+
+export type AppSettingsSnapshot = {
+  onboardingCompleted: boolean;
+  credentialStorageMode: CredentialStorageMode | null;
+  credentialState: CredentialState;
+  configDir: string;
+};
+
+export type AppSettingsStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready" }
+  | { state: "error"; error: string };
 
 export type StoredConnection = {
   id: string;
@@ -458,8 +477,10 @@ export type QueryPreviewData = {
   cache: string;
 };
 
+type ActiveView = "workspace" | "connections" | "settings";
+
 interface AppState {
-  activeView: "workspace" | "connections";
+  activeView: ActiveView;
   activeConnectionId: string;
   activeTabId: string;
   expandedSchemas: string[];
@@ -486,10 +507,16 @@ interface AppState {
   queryHistory: QueryHistoryEntry[];
   savedQueries: SavedQuery[];
   savedQueriesStatus: SavedQueriesStatus;
+  appSettings: AppSettingsSnapshot | null;
+  appSettingsStatus: AppSettingsStatus;
+  credentialStorageStatus:
+    | { state: "idle" }
+    | { state: "running" }
+    | { state: "error"; error: string };
   editorTheme: string;
   selectedRowIndex: number;
 
-  setActiveView: (view: "workspace" | "connections") => void;
+  setActiveView: (view: ActiveView) => void;
   setActiveConnectionId: (id: string) => void;
   setActiveTabId: (id: string) => void;
   setExpandedSchemas: (
@@ -559,6 +586,17 @@ interface AppState {
   removePendingStructureChange: (key: string, id: string) => void;
   clearPendingStructureChanges: (key: string) => void;
   commitStructureChanges: (key: string) => Promise<void>;
+  loadAppSettings: () => Promise<AppSettingsSnapshot | null>;
+  configureCredentialStorage: (input: {
+    mode: CredentialStorageMode;
+    password?: string;
+  }) => Promise<AppSettingsSnapshot | null>;
+  unlockCredentials: (password: string) => Promise<AppSettingsSnapshot | null>;
+  changeCredentialStorage: (input: {
+    mode: CredentialStorageMode;
+    password?: string;
+  }) => Promise<AppSettingsSnapshot | null>;
+  resetCredentialStorage: () => Promise<AppSettingsSnapshot | null>;
   loadConnections: () => Promise<void>;
   loadQueryHistory: () => Promise<void>;
   loadSavedQueries: () => Promise<void>;
@@ -669,6 +707,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryHistory: initialQueryHistory,
   savedQueries: [],
   savedQueriesStatus: { state: "idle" },
+  appSettings: null,
+  appSettingsStatus: { state: "idle" },
+  credentialStorageStatus: { state: "idle" },
   editorTheme: "vs",
   selectedRowIndex: 0,
 
@@ -1672,6 +1713,137 @@ export const useAppStore = create<AppState>((set, get) => ({
           [key]: { state: "error", error: message },
         },
       }));
+    }
+  },
+
+  loadAppSettings: async () => {
+    if (!isTauri()) {
+      const fallback: AppSettingsSnapshot = {
+        onboardingCompleted: true,
+        credentialStorageMode: "plain-sqlite",
+        credentialState: "ready",
+        configDir: "~/.config/dbunk",
+      };
+      set({ appSettings: fallback, appSettingsStatus: { state: "ready" } });
+      return fallback;
+    }
+    set({ appSettingsStatus: { state: "loading" } });
+    try {
+      const snapshot =
+        await tauriInvoke<AppSettingsSnapshot>("load_app_settings");
+      set({ appSettings: snapshot, appSettingsStatus: { state: "ready" } });
+      return snapshot;
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load app settings", error);
+      set({ appSettingsStatus: { state: "error", error: message } });
+      return null;
+    }
+  },
+
+  configureCredentialStorage: async (input) => {
+    if (!isTauri()) {
+      const snapshot: AppSettingsSnapshot = {
+        onboardingCompleted: true,
+        credentialStorageMode: input.mode,
+        credentialState: "ready",
+        configDir: "~/.config/dbunk",
+      };
+      set({ appSettings: snapshot, appSettingsStatus: { state: "ready" } });
+      return snapshot;
+    }
+    set({ credentialStorageStatus: { state: "running" } });
+    try {
+      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
+        "configure_credential_storage",
+        { payload: input },
+      );
+      set({
+        appSettings: snapshot,
+        appSettingsStatus: { state: "ready" },
+        credentialStorageStatus: { state: "idle" },
+      });
+      return snapshot;
+    } catch (error) {
+      const message = errorToMessage(error);
+      set({ credentialStorageStatus: { state: "error", error: message } });
+      return null;
+    }
+  },
+
+  unlockCredentials: async (password) => {
+    if (!isTauri()) {
+      return get().loadAppSettings();
+    }
+    set({ credentialStorageStatus: { state: "running" } });
+    try {
+      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
+        "unlock_credentials",
+        { payload: { password } },
+      );
+      set({
+        appSettings: snapshot,
+        appSettingsStatus: { state: "ready" },
+        credentialStorageStatus: { state: "idle" },
+      });
+      return snapshot;
+    } catch (error) {
+      const message = errorToMessage(error);
+      set({ credentialStorageStatus: { state: "error", error: message } });
+      return null;
+    }
+  },
+
+  changeCredentialStorage: async (input) => {
+    if (!isTauri()) {
+      const snapshot: AppSettingsSnapshot = {
+        onboardingCompleted: true,
+        credentialStorageMode: input.mode,
+        credentialState: "ready",
+        configDir: "~/.config/dbunk",
+      };
+      set({ appSettings: snapshot });
+      return snapshot;
+    }
+    set({ credentialStorageStatus: { state: "running" } });
+    try {
+      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
+        "change_credential_storage",
+        { payload: { ...input, confirm: true } },
+      );
+      set({
+        appSettings: snapshot,
+        credentialStorageStatus: { state: "idle" },
+      });
+      await get().loadConnections();
+      return snapshot;
+    } catch (error) {
+      const message = errorToMessage(error);
+      set({ credentialStorageStatus: { state: "error", error: message } });
+      return null;
+    }
+  },
+
+  resetCredentialStorage: async () => {
+    if (!isTauri()) {
+      return get().loadAppSettings();
+    }
+    set({ credentialStorageStatus: { state: "running" } });
+    try {
+      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
+        "reset_credential_storage",
+      );
+      set({
+        appSettings: snapshot,
+        connections: [],
+        activeConnectionId: "",
+        credentialStorageStatus: { state: "idle" },
+      });
+      return snapshot;
+    } catch (error) {
+      const message = errorToMessage(error);
+      set({ credentialStorageStatus: { state: "error", error: message } });
+      return null;
     }
   },
 

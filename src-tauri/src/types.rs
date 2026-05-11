@@ -28,6 +28,52 @@ pub(crate) enum DatabaseEngine {
     SQLite,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CredentialStorageMode {
+    Keychain,
+    EncryptedSqlite,
+    PlainSqlite,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppSettingsSnapshot {
+    pub onboarding_completed: bool,
+    pub credential_storage_mode: Option<CredentialStorageMode>,
+    pub credential_state: CredentialState,
+    pub config_dir: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CredentialState {
+    NeedsOnboarding,
+    NeedsUnlock,
+    Ready,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConfigureCredentialStoragePayload {
+    pub mode: CredentialStorageMode,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UnlockCredentialsPayload {
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChangeCredentialStoragePayload {
+    pub mode: CredentialStorageMode,
+    pub password: Option<String>,
+    pub confirm: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StoredConnection {
@@ -41,7 +87,7 @@ pub(crate) struct StoredConnection {
     pub password: String,
     pub role: String,
     /// ISO-8601 timestamp of the most recent successful query/connect.
-    /// Optional so existing connections.json files load without migration.
+    /// Optional so records created before activity tracking still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
     /// ClickHouse-only: when true the URL builder uses the `https://`

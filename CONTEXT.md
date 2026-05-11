@@ -8,15 +8,17 @@ rather than coining synonyms.
 ## Top-level entities
 
 - **Connection** — a saved database endpoint. Carries the engine, host, port,
-  database name, user, role, and an optional credential. Persisted in
-  `connections.json` (no password) plus the OS keychain (passwords).
+  database name, user, role, and an optional credential. Persisted in the
+  local SQLite database (`~/.config/dbunk/dbunk.sqlite`). Password storage is
+  app-wide: encrypted SQLite is recommended, OS keychain is available, and
+  unencrypted SQLite is available with warning (ADR-0007).
   Connections have a runtime **status** (`Connected` / `Read only` /
   `Disconnected`), a **latency** measurement from the last ping, a **last
   activity** timestamp from the most recent successful query/connect, and an
   optional **error message** from the last health check.
-- **Stored Connection** — the on-disk JSON shape (no password, no runtime
-  status). The Rust backend hydrates and dehydrates between this shape and
-  the runtime `Connection` shape on every read/write.
+- **Stored Connection** — the backend wire shape (no returned password, no
+  runtime status). The Rust backend hydrates credentials internally before DB
+  operations; stored passwords are not returned to the frontend.
 - **Active Connection** — the one currently selected in the sidebar; drives
   the schema explorer, overview, and any newly opened tab.
 - **Engine** — `PostgreSQL`, `MySQL`, `SQLite`, or `ClickHouse`. PostgreSQL is
@@ -46,10 +48,10 @@ rather than coining synonyms.
   its **active tab ID**.
 - **Query History Entry** — a record of one executed query (sql, connection,
   status, runtime, optional error). Capped at 200 entries, persisted in
-  `query_history.json`.
+  SQLite.
 - **Saved Query** — a named, persisted SQL snippet with optional connection
-  pinning and a favorite flag. Stored in `saved_queries.json`. The schema
-  reserves an `ownerId` field so a future cloud-sync layer can plug in
+  pinning and a favorite flag. Stored in SQLite. The schema reserves an
+  `ownerId` field so a future cloud-sync layer can plug in
   without migration (ADR-0003).
 - **Cell Edit** — a pending change to one cell, keyed by row index inside
   the loaded page. Buffered in memory and committed in a transaction.
@@ -85,15 +87,22 @@ rather than coining synonyms.
 
 ```
 ~/.config/dbunk/
-├── connections.json        # connection metadata, no passwords
-├── query_history.json      # last 200 entries
-└── saved_queries.json
+└── dbunk.sqlite
 
-OS keychain (service: "dbunk", account: "connection-credentials"):
+dbunk.sqlite:
+├── app_settings
+├── connections
+├── credentials
+├── credential_verifier
+├── query_history
+└── saved_queries
+
+Optional OS keychain backend (service: "dbunk", account: "connection-credentials"):
 └── JSON blob: { connectionId: password }
 ```
 
-ADR-0005 covers the single-blob keychain shape.
+ADR-0007 covers SQLite persistence and credential storage modes. ADR-0005's
+single-blob keychain shape now applies only when keychain mode is active.
 
 ## Process model
 

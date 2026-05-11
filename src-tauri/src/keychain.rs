@@ -1,6 +1,6 @@
 //! Connection-credential storage backed by the OS keychain.
 //!
-//! ## Shape (ADR-0005)
+//! ## Shape (ADR-0005, retained as a backend by ADR-0007)
 //!
 //! All connection passwords live in **one** keychain entry — service `"dbunk"`,
 //! account `"connection-credentials"` — whose value is a serialized JSON map
@@ -18,9 +18,9 @@
 //!
 //! ## Public surface
 //!
-//! - [`get`] — look up a single password.
-//! - [`upsert_many`] — apply a batch of inserts/clears, write the blob once.
-//! - [`delete`] — drop a single id and write the blob.
+//! - [`get_all`] — read the complete credential map.
+//! - [`replace_all`] — replace the complete credential map.
+//! - [`clear_all`] — delete the keychain blob.
 
 use std::{
     collections::HashMap,
@@ -77,55 +77,18 @@ fn write_blob(map: &HashMap<String, String>) -> Result<(), String> {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Look up the password for a connection.
-///
-/// The first call this session reads the keychain blob (one OS prompt on
-/// macOS); subsequent calls hit the in-memory cache.
-pub fn get(connection_id: &str) -> Option<String> {
+pub fn get_all() -> HashMap<String, String> {
     let mut guard = cache().lock().expect("password cache poisoned");
-    let map = guard.get_or_insert_with(read_blob);
-    map.get(connection_id).cloned()
+    guard.get_or_insert_with(read_blob).clone()
 }
 
-/// One change to the credential store: either set a password or clear it.
-pub enum CredentialUpdate<'a> {
-    Set { id: &'a str, password: &'a str },
-    Clear { id: &'a str },
+pub fn replace_all(next: &HashMap<String, String>) -> Result<(), String> {
+    let mut guard = cache().lock().expect("password cache poisoned");
+    write_blob(next)?;
+    *guard = Some(next.clone());
+    Ok(())
 }
 
-/// Apply a batch of credential updates and write the blob *once* if anything
-/// changed. Returns `Ok(true)` if the blob was rewritten.
-pub fn upsert_many(updates: &[CredentialUpdate<'_>]) -> Result<bool, String> {
-    let mut guard = cache().lock().expect("password cache poisoned");
-    let map = guard.get_or_insert_with(read_blob);
-    let mut changed = false;
-    for update in updates {
-        match update {
-            CredentialUpdate::Set { id, password } => {
-                if map.get(*id).map(String::as_str) != Some(*password) {
-                    map.insert((*id).to_string(), (*password).to_string());
-                    changed = true;
-                }
-            }
-            CredentialUpdate::Clear { id } => {
-                if map.remove(*id).is_some() {
-                    changed = true;
-                }
-            }
-        }
-    }
-    if changed {
-        write_blob(map)?;
-    }
-    Ok(changed)
-}
-
-/// Drop a connection's password from the cache and the keychain blob.
-pub fn delete(connection_id: &str) -> Result<(), String> {
-    let mut guard = cache().lock().expect("password cache poisoned");
-    let map = guard.get_or_insert_with(read_blob);
-    if map.remove(connection_id).is_none() {
-        return Ok(());
-    }
-    write_blob(map)
+pub fn clear_all() -> Result<(), String> {
+    replace_all(&HashMap::new())
 }

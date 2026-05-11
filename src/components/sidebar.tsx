@@ -263,6 +263,7 @@ export function Sidebar() {
           size="icon-sm"
           variant="ghost"
           aria-label="Connection settings"
+          onClick={() => setActiveView("settings")}
           className="size-7"
         >
           <IconSettings className="size-3.5" />
