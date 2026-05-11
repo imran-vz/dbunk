@@ -25,6 +25,12 @@
   "type": "module",
   "scripts": {
     "dev:vite": "vite dev --port 3000",
+    "db:all": "infrastructure/test-db/bin/test-db.sh all",
+    "db:clickhouse": "infrastructure/test-db/bin/test-db.sh clickhouse",
+    "db:down": "infrastructure/test-db/bin/test-db.sh down",
+    "db:postgres": "infrastructure/test-db/bin/test-db.sh postgres",
+    "db:postgres-redis": "infrastructure/test-db/bin/test-db.sh postgres-redis",
+    "db:redis": "infrastructure/test-db/bin/test-db.sh redis",
     "build:vite": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
