@@ -156,6 +156,19 @@ ADR-0009 for the writes-by-default posture.
   Distinct from a **Cell Edit**: a Cell Edit is the user's intent
   (buffered in memory); a Pending Mutation is the server-side work
   produced when that intent commits on an async engine.
+- **Edit Outcome** — the caller-facing terminal result of one
+  store-action-driven write (cell-edit commit, row insert, row delete).
+  A tagged union on `kind`: `"completed" | "failed" | "timeout"`,
+  returned by the action that initiated the write so the caller can
+  react to its own operation's result without subscribing to shared
+  status state. Synchronous engines (PG/MySQL/SQLite) resolve to
+  `completed` or `failed`; `timeout` is reachable only on async engines
+  — ClickHouse, where the action drives a **Pending Mutation** batch
+  to terminal state before resolving. Distinct from the lifecycle
+  status the store keeps in `tableEditsCommitStatus` (`running` /
+  `queued` intermediate states for the UI badge); the Edit Outcome is
+  the truth a caller awaits, the lifecycle status is a best-effort
+  view for badge rendering and concurrent-op gating.
 
 ## Live state
 
