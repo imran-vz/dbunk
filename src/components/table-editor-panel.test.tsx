@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(),
+  errorToMessage: (error: unknown) =>
+    error instanceof Error ? error.message : String(error),
 }));
 
 vi.mock("reactflow", () => ({
