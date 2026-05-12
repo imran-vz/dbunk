@@ -33,6 +33,7 @@ import type {
   ColumnChangeKind,
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
+  EditOutcome,
   QueryStatus,
   SchemaExplorer,
   SchemaRelationshipsStatus,
@@ -87,29 +88,30 @@ const generatePendingId = (): string => {
   return `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-const outcomeToTableEditsStatus = (
+/**
+ * Map the CH-internal `MutationOutcome` (terminal result of a Pending
+ * Mutation batch) onto the caller-facing `EditOutcome` shape. Keeps
+ * `MutationOutcome` CH-specific while every store action exposes
+ * `EditOutcome` uniformly.
+ */
+const mutationOutcomeToEditOutcome = (
   outcome: MutationOutcome,
-  ctx: { startedAt: number; database: string; table: string },
-): TableEditsCommitStatus => {
+  ctx: { startedAt: number },
+): EditOutcome => {
   if (outcome.kind === "completed") {
     return {
-      state: "success",
-      rowsAffected: 0,
+      kind: "completed",
       runtimeMs: Date.now() - ctx.startedAt,
     };
   }
   if (outcome.kind === "failed") {
     return {
-      state: "error",
-      error: `ClickHouse mutation ${outcome.mutationId} failed: ${outcome.reason}`,
+      kind: "failed",
+      reason: outcome.reason,
+      mutationId: outcome.mutationId,
     };
   }
-  return {
-    state: "error",
-    error:
-      "Mutation did not complete in time. " +
-      `Check system.mutations for ${ctx.database}.${ctx.table}.`,
-  };
+  return { kind: "timeout", remaining: outcome.remaining };
 };
 
 // ---------------------------------------------------------------------------
@@ -170,16 +172,15 @@ export type RelationalTablesSlice = {
     value: string,
   ) => void;
   discardTableEdits: (tableName: string) => void;
-  clearTableEditsCommitStatus: (tableName: string) => void;
-  commitTableEdits: (tableName: string) => Promise<void>;
+  commitTableEdits: (tableName: string) => Promise<EditOutcome>;
   addTableRow: (
     tableName: string,
     values: Array<{ column: string; value: string | null }>,
-  ) => Promise<void>;
+  ) => Promise<EditOutcome>;
   deleteSelectedTableRows: (
     tableName: string,
     rowIndices: number[],
-  ) => Promise<void>;
+  ) => Promise<EditOutcome>;
 
   addPendingStructureChange: (
     key: string,
@@ -278,36 +279,21 @@ export const createRelationalTablesSlice: StateCreator<
       return { tableEdits: rest };
     }),
 
-  clearTableEditsCommitStatus: (tableName) =>
-    set((state) => {
-      if (!(tableName in state.tableEditsCommitStatus)) {
-        return {};
-      }
-      const { [tableName]: _, ...rest } = state.tableEditsCommitStatus;
-      return { tableEditsCommitStatus: rest };
-    }),
-
-  commitTableEdits: async (tableName) => {
+  commitTableEdits: async (tableName): Promise<EditOutcome> => {
     const state = get();
     const editsForTable = state.tableEdits[tableName];
     if (!editsForTable || Object.keys(editsForTable).length === 0) {
-      return;
+      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
     }
 
     const dataEntry = Object.entries(state.tableData).find(
       ([, data]) => data.table === tableName,
     );
     if (!dataEntry) {
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "error",
-            error: "Table data is not loaded; cannot commit edits.",
-          },
-        },
-      }));
-      return;
+      return {
+        kind: "failed",
+        reason: "Table data is not loaded; cannot commit edits.",
+      };
     }
     const [dataKeyForTable, data] = dataEntry;
     const structureKeyForTable = tableStructureKey(
@@ -318,45 +304,24 @@ export const createRelationalTablesSlice: StateCreator<
     const structure = state.tableStructure[structureKeyForTable];
     const identity = pickRowIdentity(structure);
     if (!identity) {
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "error",
-            error:
-              "This table has no primary key or non-null unique index — it is read-only.",
-          },
-        },
-      }));
-      return;
+      return {
+        kind: "failed",
+        reason:
+          "This table has no primary key or non-null unique index — it is read-only.",
+      };
     }
 
     const connection = state.connections.find(
       (c) => c.id === data.connectionId,
     );
     if (!connection) {
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "error",
-            error: "Connection not found for this table.",
-          },
-        },
-      }));
-      return;
+      return { kind: "failed", reason: "Connection not found for this table." };
     }
     if (!structure.capabilities.canUpdateRows) {
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "error",
-            error: `This table does not support cell edits on ${connection.engine}.`,
-          },
-        },
-      }));
-      return;
+      return {
+        kind: "failed",
+        reason: `This table does not support cell edits on ${connection.engine}.`,
+      };
     }
 
     const columnIndexByName = new Map<string, number>();
@@ -368,16 +333,10 @@ export const createRelationalTablesSlice: StateCreator<
       (col) => !columnIndexByName.has(col),
     );
     if (identityMissing.length > 0) {
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "error",
-            error: `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
-          },
-        },
-      }));
-      return;
+      return {
+        kind: "failed",
+        reason: `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
+      };
     }
 
     const editsPayload: CellEditPayload[] = [];
@@ -432,15 +391,9 @@ export const createRelationalTablesSlice: StateCreator<
     if (editsPayload.length === 0) {
       set((s) => {
         const { [tableName]: _, ...rest } = s.tableEdits;
-        return {
-          tableEdits: rest,
-          tableEditsCommitStatus: {
-            ...s.tableEditsCommitStatus,
-            [tableName]: { state: "success", rowsAffected: 0, runtimeMs: 0 },
-          },
-        };
+        return { tableEdits: rest };
       });
-      return;
+      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
     }
 
     set((s) => ({
@@ -450,17 +403,19 @@ export const createRelationalTablesSlice: StateCreator<
       },
     }));
 
+    const clearLifecycle = () =>
+      set((s) => {
+        if (!(tableName in s.tableEditsCommitStatus)) return {};
+        const { [tableName]: _, ...rest } = s.tableEditsCommitStatus;
+        return { tableEditsCommitStatus: rest };
+      });
+
     if (!isTauri()) {
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "error",
-            error: "Backend is unavailable in this environment.",
-          },
-        },
-      }));
-      return;
+      clearLifecycle();
+      return {
+        kind: "failed",
+        reason: "Backend is unavailable in this environment.",
+      };
     }
 
     try {
@@ -501,61 +456,42 @@ export const createRelationalTablesSlice: StateCreator<
         });
         const startedAt = Date.now();
         const outcome = await trackMutations(pendingMutations);
-        set((s) => ({
-          tableEditsCommitStatus: {
-            ...s.tableEditsCommitStatus,
-            [tableName]: outcomeToTableEditsStatus(outcome, {
-              startedAt,
-              database: queuedDatabase,
-              table: queuedTable,
-            }),
-          },
-        }));
-        if (outcome.kind === "completed") {
+        const editOutcome = mutationOutcomeToEditOutcome(outcome, {
+          startedAt,
+        });
+        clearLifecycle();
+        if (editOutcome.kind === "completed") {
           await get().refreshTableData(dataKeyForTable);
         }
-        return;
+        return editOutcome;
       }
 
       set((s) => {
-        const { [tableName]: _, ...restEdits } = s.tableEdits;
-        return {
-          tableEdits: restEdits,
-          tableEditsCommitStatus: {
-            ...s.tableEditsCommitStatus,
-            [tableName]: {
-              state: "success",
-              rowsAffected: result.rowsAffected,
-              runtimeMs: result.runtimeMs,
-            },
-          },
-        };
+        const { [tableName]: _edit, ...restEdits } = s.tableEdits;
+        const { [tableName]: _status, ...restStatus } =
+          s.tableEditsCommitStatus;
+        return { tableEdits: restEdits, tableEditsCommitStatus: restStatus };
       });
       await get().refreshTableData(dataKeyForTable);
+      return {
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: result.rowsAffected,
+      };
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to commit cell edits", error);
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: { state: "error", error: message },
-        },
-      }));
+      clearLifecycle();
+      return { kind: "failed", reason: message };
     }
   },
 
-  addTableRow: async (tableName, values) => {
-    const setError = (error: string) =>
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: { state: "error", error },
-        },
-      }));
-
+  addTableRow: async (tableName, values): Promise<EditOutcome> => {
     if (values.length === 0) {
-      setError("Provide at least one value (or default) to insert.");
-      return;
+      return {
+        kind: "failed",
+        reason: "Provide at least one value (or default) to insert.",
+      };
     }
 
     const state = get();
@@ -563,8 +499,10 @@ export const createRelationalTablesSlice: StateCreator<
       ([, data]) => data.table === tableName,
     );
     if (!dataEntry) {
-      setError("Table data is not loaded; cannot insert a row.");
-      return;
+      return {
+        kind: "failed",
+        reason: "Table data is not loaded; cannot insert a row.",
+      };
     }
     const [dataKeyForTable, data] = dataEntry;
 
@@ -572,8 +510,7 @@ export const createRelationalTablesSlice: StateCreator<
       (c) => c.id === data.connectionId,
     );
     if (!connection) {
-      setError("Connection not found for this table.");
-      return;
+      return { kind: "failed", reason: "Connection not found for this table." };
     }
     const structureKeyForInsert = tableStructureKey(
       data.connectionId,
@@ -582,8 +519,10 @@ export const createRelationalTablesSlice: StateCreator<
     );
     const insertStructure = state.tableStructure[structureKeyForInsert];
     if (insertStructure && !insertStructure.capabilities.canInsertRows) {
-      setError(`This table does not support inserts on ${connection.engine}.`);
-      return;
+      return {
+        kind: "failed",
+        reason: `This table does not support inserts on ${connection.engine}.`,
+      };
     }
 
     set((s) => ({
@@ -593,9 +532,19 @@ export const createRelationalTablesSlice: StateCreator<
       },
     }));
 
+    const clearLifecycle = () =>
+      set((s) => {
+        if (!(tableName in s.tableEditsCommitStatus)) return {};
+        const { [tableName]: _, ...rest } = s.tableEditsCommitStatus;
+        return { tableEditsCommitStatus: rest };
+      });
+
     if (!isTauri()) {
-      setError("Backend is unavailable in this environment.");
-      return;
+      clearLifecycle();
+      return {
+        kind: "failed",
+        reason: "Backend is unavailable in this environment.",
+      };
     }
 
     try {
@@ -610,44 +559,38 @@ export const createRelationalTablesSlice: StateCreator<
           values,
         },
       });
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "success",
-            rowsAffected: result.rowsAffected,
-            runtimeMs: result.runtimeMs,
-          },
-        },
-      }));
+      clearLifecycle();
       await get().refreshTableData(dataKeyForTable);
+      return {
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: result.rowsAffected,
+      };
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to insert row", error);
-      setError(message);
+      clearLifecycle();
+      return { kind: "failed", reason: message };
     }
   },
 
-  deleteSelectedTableRows: async (tableName, rowIndices) => {
+  deleteSelectedTableRows: async (
+    tableName,
+    rowIndices,
+  ): Promise<EditOutcome> => {
     if (rowIndices.length === 0) {
-      return;
+      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
     }
-
-    const setError = (error: string) =>
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: { state: "error", error },
-        },
-      }));
 
     const state = get();
     const dataEntry = Object.entries(state.tableData).find(
       ([, data]) => data.table === tableName,
     );
     if (!dataEntry) {
-      setError("Table data is not loaded; cannot delete rows.");
-      return;
+      return {
+        kind: "failed",
+        reason: "Table data is not loaded; cannot delete rows.",
+      };
     }
     const [dataKeyForTable, data] = dataEntry;
     const structureKeyForTable = tableStructureKey(
@@ -658,24 +601,24 @@ export const createRelationalTablesSlice: StateCreator<
     const structure = state.tableStructure[structureKeyForTable];
     const identity = pickRowIdentity(structure);
     if (!identity) {
-      setError(
-        "This table has no primary key or non-null unique index — it is read-only.",
-      );
-      return;
+      return {
+        kind: "failed",
+        reason:
+          "This table has no primary key or non-null unique index — it is read-only.",
+      };
     }
 
     const connection = state.connections.find(
       (c) => c.id === data.connectionId,
     );
     if (!connection) {
-      setError("Connection not found for this table.");
-      return;
+      return { kind: "failed", reason: "Connection not found for this table." };
     }
     if (structure && !structure.capabilities.canDeleteRows) {
-      setError(
-        `This table does not support row deletes on ${connection.engine}.`,
-      );
-      return;
+      return {
+        kind: "failed",
+        reason: `This table does not support row deletes on ${connection.engine}.`,
+      };
     }
 
     const columnIndexByName = new Map<string, number>();
@@ -686,10 +629,10 @@ export const createRelationalTablesSlice: StateCreator<
       (col) => !columnIndexByName.has(col),
     );
     if (identityMissing.length > 0) {
-      setError(
-        `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
-      );
-      return;
+      return {
+        kind: "failed",
+        reason: `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
+      };
     }
 
     const rowsPayload: Array<Array<{ column: string; value: string | null }>> =
@@ -709,7 +652,7 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     if (rowsPayload.length === 0) {
-      return;
+      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
     }
 
     set((s) => ({
@@ -719,9 +662,19 @@ export const createRelationalTablesSlice: StateCreator<
       },
     }));
 
+    const clearLifecycle = () =>
+      set((s) => {
+        if (!(tableName in s.tableEditsCommitStatus)) return {};
+        const { [tableName]: _, ...rest } = s.tableEditsCommitStatus;
+        return { tableEditsCommitStatus: rest };
+      });
+
     if (!isTauri()) {
-      setError("Backend is unavailable in this environment.");
-      return;
+      clearLifecycle();
+      return {
+        kind: "failed",
+        reason: "Backend is unavailable in this environment.",
+      };
     }
 
     try {
@@ -755,36 +708,27 @@ export const createRelationalTablesSlice: StateCreator<
         }));
         const startedAt = Date.now();
         const outcome = await trackMutations(pendingMutations);
-        set((s) => ({
-          tableEditsCommitStatus: {
-            ...s.tableEditsCommitStatus,
-            [tableName]: outcomeToTableEditsStatus(outcome, {
-              startedAt,
-              database: queuedDatabase,
-              table: queuedTable,
-            }),
-          },
-        }));
-        if (outcome.kind === "completed") {
+        const editOutcome = mutationOutcomeToEditOutcome(outcome, {
+          startedAt,
+        });
+        clearLifecycle();
+        if (editOutcome.kind === "completed") {
           await get().refreshTableData(dataKeyForTable);
         }
-        return;
+        return editOutcome;
       }
-      set((s) => ({
-        tableEditsCommitStatus: {
-          ...s.tableEditsCommitStatus,
-          [tableName]: {
-            state: "success",
-            rowsAffected: result.rowsAffected,
-            runtimeMs: result.runtimeMs,
-          },
-        },
-      }));
+      clearLifecycle();
       await get().refreshTableData(dataKeyForTable);
+      return {
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: result.rowsAffected,
+      };
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to delete rows", error);
-      setError(message);
+      clearLifecycle();
+      return { kind: "failed", reason: message };
     }
   },
 

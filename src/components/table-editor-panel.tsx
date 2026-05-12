@@ -45,6 +45,7 @@ import {
 } from "@/lib/insert-row-form";
 import { pickRowIdentity } from "@/lib/row-identity";
 import {
+  type EditOutcome,
   type TablePreviewData,
   tableDataKey,
   tableStructureKey,
@@ -70,12 +71,19 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
   const [isRowDetailsOpen, setIsRowDetailsOpen] = useState(true);
 
+  const tableName = tab.kind === "table" ? (tab.table ?? "") : "";
+  // Sliced subscription: re-render only when *this* table's lifecycle
+  // slot changes, not when any other table's status moves.
+  const commitStatus = useAppStore((s) => s.tableEditsCommitStatus[tableName]);
+  // Terminal outcome lives component-local. Disappears on tab unmount,
+  // which is the intended trade-off (CONTEXT.md — Edit Outcome).
+  const [lastOutcome, setLastOutcome] = useState<EditOutcome | null>(null);
+
   const {
     tableData,
     tableStructure,
     tableLoadStatus,
     tableEdits,
-    tableEditsCommitStatus,
     openQueryForTable,
     loadTableData,
     loadTableStructure,
@@ -83,7 +91,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     setTableEdit,
     discardTableEdits,
     commitTableEdits,
-    clearTableEditsCommitStatus,
     addTableRow,
     deleteSelectedTableRows,
   } = useAppStore();
@@ -102,6 +109,10 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       : "";
 
   useEffect(() => {
+    // Reset the terminal-outcome badge on table switch — the panel
+    // instance is reused across tab switches (no React key), so without
+    // this the badge from table A could leak into table B's view.
+    setLastOutcome(null);
     if (tab.kind === "table" && tab.table && tab.connectionId) {
       void loadTableData(tab.connectionId, tab.schema, tab.table);
       void loadTableStructure(tab.connectionId, tab.schema, tab.table);
@@ -119,13 +130,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const activeTableStructure = structureKey
     ? tableStructure[structureKey]
     : undefined;
-  const tableName = tab.table ?? "";
   const status = tableName ? tableLoadStatus[tableName] : undefined;
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
   const rowIdentity = pickRowIdentity(activeTableStructure);
   const isReadOnly = rowIdentity === null;
-  const commitStatus = tableEditsCommitStatus[tableName];
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
   const structureLoaded = Boolean(activeTableStructure);
@@ -244,10 +253,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       addRowForm,
       activeTableStructure.columns,
     );
-    const before = useAppStore.getState().tableEditsCommitStatus[tableName];
-    await addTableRow(tableName, values);
-    const after = useAppStore.getState().tableEditsCommitStatus[tableName];
-    if (after?.state === "success" && after !== before) {
+    const outcome = await addTableRow(tableName, values);
+    setLastOutcome(outcome);
+    if (outcome.kind === "completed") {
       setIsAddRowOpen(false);
     }
   };
@@ -262,10 +270,12 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     if (!window.confirm(message)) {
       return;
     }
-    const before = useAppStore.getState().tableEditsCommitStatus[tableName];
-    await deleteSelectedTableRows(tableName, selectedRowIndices);
-    const after = useAppStore.getState().tableEditsCommitStatus[tableName];
-    if (after?.state === "success" && after !== before) {
+    const outcome = await deleteSelectedTableRows(
+      tableName,
+      selectedRowIndices,
+    );
+    setLastOutcome(outcome);
+    if (outcome.kind === "completed") {
       setRowSelection({});
     }
   };
@@ -462,41 +472,64 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         </output>
       ) : null}
 
-      {commitStatus?.state === "success" ? (
+      {lastOutcome?.kind === "completed" &&
+      lastOutcome.rowsAffected !== undefined ? (
         <output
           data-testid="table-commit-success"
           className="flex items-center gap-2 border-b border-accent-green/40 bg-accent-green/10 px-4 py-2 text-xs text-accent-green-hover"
         >
           <IconCheck className="size-4" />
           <span>
-            Saved {commitStatus.rowsAffected} row
-            {commitStatus.rowsAffected === 1 ? "" : "s"} in{" "}
-            {commitStatus.runtimeMs} ms.
+            Saved {lastOutcome.rowsAffected} row
+            {lastOutcome.rowsAffected === 1 ? "" : "s"} in{" "}
+            {lastOutcome.runtimeMs} ms.
           </span>
           <Button
             variant="ghost"
             size="sm"
             className="ml-auto h-7 px-2 text-xs"
-            onClick={() => clearTableEditsCommitStatus(tableName)}
+            onClick={() => setLastOutcome(null)}
           >
             Dismiss
           </Button>
         </output>
       ) : null}
 
-      {commitStatus?.state === "error" ? (
+      {lastOutcome?.kind === "failed" ? (
         <div
           data-testid="table-commit-error"
           role="alert"
           className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
         >
           <IconX className="size-4" />
-          <span>Failed to save: {commitStatus.error}</span>
+          <span>Failed to save: {lastOutcome.reason}</span>
           <Button
             variant="ghost"
             size="sm"
             className="ml-auto h-7 px-2 text-xs"
-            onClick={() => clearTableEditsCommitStatus(tableName)}
+            onClick={() => setLastOutcome(null)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
+
+      {lastOutcome?.kind === "timeout" ? (
+        <div
+          data-testid="table-commit-timeout"
+          role="alert"
+          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning"
+        >
+          <IconAlertTriangle className="size-4" />
+          <span>
+            Mutation did not complete in time. Check system.mutations for{" "}
+            {lastOutcome.remaining.length} remaining.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs"
+            onClick={() => setLastOutcome(null)}
           >
             Dismiss
           </Button>
@@ -632,8 +665,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               readOnly={isReadOnly || !canEditCells}
               isSaving={commitStatus?.state === "running"}
               onDiscard={() => discardTableEdits(tableName)}
-              onSave={() => {
-                void commitTableEdits(tableName);
+              onSave={async () => {
+                const outcome = await commitTableEdits(tableName);
+                setLastOutcome(outcome);
               }}
               onOpenSQL={() => openQueryForTable(tab.schema, tab.table ?? "")}
               onRefresh={onRefresh}

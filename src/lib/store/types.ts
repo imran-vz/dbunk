@@ -289,8 +289,15 @@ export type StructureCommitStatus =
   | { state: "success"; runtimeMs?: number }
   | { state: "error"; error: string };
 
+/**
+ * Lifecycle state of an in-flight Edit (cell-edit commit, row insert,
+ * row delete) — the **best-effort view** the store keeps so the UI
+ * badge can render across tab unmounts. Terminal state is NOT carried
+ * here; callers get it from the awaited `EditOutcome` returned by the
+ * action. Absence from `tableEditsCommitStatus` means "nothing in
+ * flight." See CONTEXT.md — Edit Outcome.
+ */
 export type TableEditsCommitStatus =
-  | { state: "idle" }
   | { state: "running" }
   | {
       state: "queued";
@@ -298,9 +305,19 @@ export type TableEditsCommitStatus =
       table: string;
       mutationIds: string[];
       runtimeMs: number;
-    }
-  | { state: "success"; rowsAffected: number; runtimeMs: number }
-  | { state: "error"; error: string };
+    };
+
+/**
+ * Terminal result of one Edit attempt, returned by the store action
+ * that initiated the write. Synchronous engines (PG/MySQL/SQLite)
+ * resolve to `completed` or `failed`; `timeout` is reachable only on
+ * async engines (ClickHouse, via Pending Mutation tracking). See
+ * CONTEXT.md — Edit Outcome.
+ */
+export type EditOutcome =
+  | { kind: "completed"; runtimeMs: number; rowsAffected?: number }
+  | { kind: "failed"; reason: string; mutationId?: string }
+  | { kind: "timeout"; remaining: string[] };
 
 export type SchemaRelationshipsStatus =
   | { state: "idle" }
@@ -500,16 +517,15 @@ export interface AppStoreState {
     value: string,
   ) => void;
   discardTableEdits: (tableName: string) => void;
-  commitTableEdits: (tableName: string) => Promise<void>;
-  clearTableEditsCommitStatus: (tableName: string) => void;
+  commitTableEdits: (tableName: string) => Promise<EditOutcome>;
   addTableRow: (
     tableName: string,
     values: Array<{ column: string; value: string | null }>,
-  ) => Promise<void>;
+  ) => Promise<EditOutcome>;
   deleteSelectedTableRows: (
     tableName: string,
     rowIndices: number[],
-  ) => Promise<void>;
+  ) => Promise<EditOutcome>;
   loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
   loadTableData: (
     connectionId: string,

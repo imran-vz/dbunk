@@ -36,6 +36,7 @@ export type {
   DatabaseEngine,
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
+  EditOutcome,
   ForeignKeyInfo,
   IndexInfo,
   MySqlConnection,

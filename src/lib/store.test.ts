@@ -1725,11 +1725,11 @@ describe("store.commitTableEdits", () => {
         runtimeMs: 1,
       });
 
-    await useAppStore.getState().commitTableEdits("users");
+    const outcome = await useAppStore.getState().commitTableEdits("users");
 
     const state = useAppStore.getState();
     expect(state.tableEdits.users).toBeUndefined();
-    expect(state.tableEditsCommitStatus.users?.state).toBe("success");
+    expect(outcome.kind).toBe("completed");
     // Two invokes: commit + reload.
     expect(mockedInvoke).toHaveBeenCalledTimes(2);
     expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_data", {
@@ -1750,15 +1750,14 @@ describe("store.commitTableEdits", () => {
     });
     mockedInvoke.mockRejectedValueOnce(new Error("row not found: id=1"));
 
-    await useAppStore.getState().commitTableEdits("users");
+    const outcome = await useAppStore.getState().commitTableEdits("users");
 
     const state = useAppStore.getState();
     expect(state.tableEdits.users?.[0]?.[1]).toBe("ada@new.com");
-    const status = state.tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toContain("row not found");
+    expect(outcome.reason).toContain("row not found");
     // No refresh on failure.
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
   });
@@ -1814,14 +1813,13 @@ describe("store.commitTableEdits", () => {
       useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
     });
 
-    await useAppStore.getState().commitTableEdits("users");
+    const outcome = await useAppStore.getState().commitTableEdits("users");
 
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toMatch(/read.?only|primary key|unique/i);
+    expect(outcome.reason).toMatch(/read.?only|primary key|unique/i);
     // Edits are kept so the user can still discard explicitly.
     expect(useAppStore.getState().tableEdits.users?.[0]?.[1]).toBe(
       "ada@new.com",
@@ -1925,7 +1923,7 @@ describe("store.addTableRow", () => {
         runtimeMs: 1,
       });
 
-    await useAppStore
+    const outcome = await useAppStore
       .getState()
       .addTableRow("users", [{ column: "email", value: "grace@example.com" }]);
 
@@ -1946,11 +1944,10 @@ describe("store.addTableRow", () => {
         pageSize: 100,
       },
     });
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "success") {
-      throw new Error(`expected success status, got ${status?.state}`);
+    if (outcome.kind !== "completed") {
+      throw new Error(`expected completed outcome, got ${outcome.kind}`);
     }
-    expect(status.rowsAffected).toBe(1);
+    expect(outcome.rowsAffected).toBe(1);
   });
 
   it("reports an error and does not refresh when insert fails", async () => {
@@ -1959,15 +1956,14 @@ describe("store.addTableRow", () => {
       new Error('null value in column "email" violates not-null constraint'),
     );
 
-    await useAppStore
+    const outcome = await useAppStore
       .getState()
       .addTableRow("users", [{ column: "email", value: null }]);
 
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toContain("not-null");
+    expect(outcome.reason).toContain("not-null");
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
   });
 
@@ -2027,27 +2023,25 @@ describe("store.addTableRow", () => {
       },
     });
 
-    await useAppStore
+    const outcome = await useAppStore
       .getState()
       .addTableRow("users", [{ column: "email", value: "x@y.z" }]);
 
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toMatch(/MySQL|does not support/i);
+    expect(outcome.reason).toMatch(/MySQL|does not support/i);
   });
 
   it("errors when there are no values to insert", async () => {
     seedTableForInsert();
-    await useAppStore.getState().addTableRow("users", []);
+    const outcome = await useAppStore.getState().addTableRow("users", []);
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toMatch(/no values|at least one/i);
+    expect(outcome.reason).toMatch(/no values|at least one/i);
   });
 });
 
@@ -2131,7 +2125,9 @@ describe("store.deleteSelectedTableRows", () => {
         runtimeMs: 1,
       });
 
-    await useAppStore.getState().deleteSelectedTableRows("users", [0, 1]);
+    const outcome = await useAppStore
+      .getState()
+      .deleteSelectedTableRows("users", [0, 1]);
 
     expect(mockedInvoke).toHaveBeenNthCalledWith(1, "delete_rows", {
       payload: {
@@ -2150,22 +2146,22 @@ describe("store.deleteSelectedTableRows", () => {
         pageSize: 100,
       },
     });
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "success") {
-      throw new Error(`expected success status, got ${status?.state}`);
+    if (outcome.kind !== "completed") {
+      throw new Error(`expected completed outcome, got ${outcome.kind}`);
     }
-    expect(status.rowsAffected).toBe(2);
+    expect(outcome.rowsAffected).toBe(2);
   });
 
   it("does not invoke and reports a read-only error when no identity is available", async () => {
     seedTableForDelete({ primaryKey: null });
-    await useAppStore.getState().deleteSelectedTableRows("users", [0]);
+    const outcome = await useAppStore
+      .getState()
+      .deleteSelectedTableRows("users", [0]);
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toMatch(/read.?only|primary key|unique/i);
+    expect(outcome.reason).toMatch(/read.?only|primary key|unique/i);
   });
 
   it("does nothing when the row index list is empty", async () => {
@@ -2266,27 +2262,29 @@ describe("store.deleteSelectedTableRows", () => {
       },
     }));
 
-    await useAppStore.getState().deleteSelectedTableRows("users", [0]);
+    const outcome = await useAppStore
+      .getState()
+      .deleteSelectedTableRows("users", [0]);
 
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toMatch(/MySQL|does not support/i);
+    expect(outcome.reason).toMatch(/MySQL|does not support/i);
   });
 
   it("preserves data and reports an error when the delete fails", async () => {
     seedTableForDelete();
     mockedInvoke.mockRejectedValueOnce(new Error("row not found: id=1"));
 
-    await useAppStore.getState().deleteSelectedTableRows("users", [0]);
+    const outcome = await useAppStore
+      .getState()
+      .deleteSelectedTableRows("users", [0]);
 
-    const status = useAppStore.getState().tableEditsCommitStatus.users;
-    if (status?.state !== "error") {
-      throw new Error(`expected error status, got ${status?.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toContain("row not found");
+    expect(outcome.reason).toContain("row not found");
     // No refresh on failure.
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
   });
