@@ -15,7 +15,7 @@
 //! `ConnectionInfo` (Phase 1.1 trusts certs by default; the explicit
 //! cert-skip path is wired alongside the connection-test command).
 
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
 const DEFAULT_PORT: u16 = 6379;
 
@@ -27,7 +27,7 @@ pub struct RedisUrl {
     pub db_number: u8,
 }
 
-pub fn build(connection: &StoredConnection) -> Result<RedisUrl, String> {
+pub fn build(connection: &RedisStoredConnection) -> Result<RedisUrl, String> {
     if connection.host.trim().is_empty() {
         return Err("Redis host is required".to_string());
     }
@@ -104,22 +104,18 @@ fn encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DatabaseEngine;
 
-    fn base() -> StoredConnection {
-        StoredConnection {
+    fn base() -> RedisStoredConnection {
+        RedisStoredConnection {
             id: "id".into(),
             name: "n".into(),
             database: String::new(),
-            engine: DatabaseEngine::Redis,
             host: "localhost".into(),
             port: 0,
             user: String::new(),
             password: String::new(),
             role: String::new(),
             last_activity_at: None,
-            use_https: false,
-            url_path: String::new(),
             db_number: 0,
             use_tls: false,
             verify_tls_cert: true,

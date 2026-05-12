@@ -162,38 +162,42 @@ fn sqlite_dsn(database: &str) -> Result<String, String> {
 }
 
 fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
-    match connection.engine {
-        DatabaseEngine::PostgreSQL => {
-            if connection.host.is_empty() || connection.user.is_empty() {
+    match connection {
+        StoredConnection::PostgreSQL(c) => {
+            if c.host.is_empty() || c.user.is_empty() {
                 return Err("PostgreSQL host and user are required".to_string());
             }
-            let port = if connection.port == 0 {
-                5432
-            } else {
-                connection.port
-            };
+            let port = if c.port == 0 { 5432 } else { c.port };
+            // ADR-0010 threads `ssl` into the PG DSN as
+            // `sslmode=prefer` (default) or `sslmode=disable`. The
+            // canonical PG sqlx path is `postgres.rs::connect` which
+            // builds `PgConnectOptions` directly; this DSN string is
+            // only used for the sqlx-Any fallback below and stays in
+            // sync via the same toggle.
+            let sslmode = if c.ssl { "prefer" } else { "disable" };
             Ok(format!(
-                "postgres://{}:{}@{}:{}/{}",
-                connection.user, connection.password, connection.host, port, connection.database
+                "postgres://{}:{}@{}:{}/{}?sslmode={}",
+                c.user, c.password, c.host, port, c.database, sslmode
             ))
         }
-        DatabaseEngine::MySQL => {
-            if connection.host.is_empty() || connection.user.is_empty() {
+        StoredConnection::MySQL(c) => {
+            if c.host.is_empty() || c.user.is_empty() {
                 return Err("MySQL host and user are required".to_string());
             }
-            let port = if connection.port == 0 {
-                3306
-            } else {
-                connection.port
-            };
+            let port = if c.port == 0 { 3306 } else { c.port };
+            // MySQL's sqlx driver reads `ssl-mode` from the URL.
+            // Translate the binary toggle into the closest canonical
+            // values: `preferred` (negotiate-if-server-supports) when
+            // on, `disabled` when off.
+            let ssl_mode = if c.ssl { "preferred" } else { "disabled" };
             Ok(format!(
-                "mysql://{}:{}@{}:{}/{}",
-                connection.user, connection.password, connection.host, port, connection.database
+                "mysql://{}:{}@{}:{}/{}?ssl-mode={}",
+                c.user, c.password, c.host, port, c.database, ssl_mode
             ))
         }
-        DatabaseEngine::SQLite => sqlite_dsn(&connection.database),
-        DatabaseEngine::ClickHouse => Err("ClickHouse uses HTTP client".to_string()),
-        DatabaseEngine::Redis => {
+        StoredConnection::SQLite(c) => sqlite_dsn(&c.database),
+        StoredConnection::ClickHouse(_) => Err("ClickHouse uses HTTP client".to_string()),
+        StoredConnection::Redis(_) => {
             unreachable!("BUG: relational dispatch reached for Redis — router contract violated")
         }
     }
@@ -328,7 +332,7 @@ async fn run_sqlx_any(connection: &StoredConnection, query: &str) -> Result<Quer
     let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
     let mut conn = AnyConnection::connect_with(&options)
         .await
-        .map_err(|error| friendly_sqlx_error(error, &connection.host, connection.port))?;
+        .map_err(|error| friendly_sqlx_error(error, connection.host(), connection.port()))?;
     let start = Instant::now();
 
     if should_fetch_rows(query) {
@@ -376,9 +380,9 @@ async fn fetch_schema_explorer_sqlx(
     let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
     let mut conn = AnyConnection::connect_with(&options)
         .await
-        .map_err(|error| friendly_sqlx_error(error, &connection.host, connection.port))?;
+        .map_err(|error| friendly_sqlx_error(error, connection.host(), connection.port()))?;
 
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => {
             let schemas = fetch_column(
                 &mut conn,
@@ -409,23 +413,23 @@ async fn fetch_schema_explorer_sqlx(
             Ok(explorer)
         }
         DatabaseEngine::MySQL => {
-            if connection.database.trim().is_empty() {
+            if connection.database().trim().is_empty() {
                 return Err("MySQL database is required".to_string());
             }
             let tables = fetch_column(
                 &mut conn,
                 "SELECT CAST(table_name AS CHAR) FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
-                Some(&connection.database),
+                Some(connection.database()),
             )
             .await?;
             let views = fetch_column(
                 &mut conn,
                 "SELECT CAST(table_name AS CHAR) FROM information_schema.views WHERE table_schema = ? ORDER BY table_name",
-                Some(&connection.database),
+                Some(connection.database()),
             )
             .await?;
             Ok(vec![SchemaExplorer {
-                name: connection.database.clone(),
+                name: connection.database().to_string(),
                 tables,
                 views,
             }])
@@ -479,7 +483,7 @@ async fn fetch_table_structure_columns_only(
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, String> {
-    let qualified = crate::qualified_table_name(&connection.engine, schema, table);
+    let qualified = crate::qualified_table_name(&connection.engine(), schema, table);
     let probe = format!("SELECT * FROM {} LIMIT 0", qualified);
     let result = run_query(connection, &probe).await?;
 
@@ -530,7 +534,7 @@ async fn fetch_table_structure_columns_only(
 /// sqlx-Any connect (PostgreSQL doesn't need its native driver for a
 /// liveness check).
 pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectResult, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::ClickHouse => {
             let result = clickhouse::run_query(connection, "SELECT 1").await?;
             Ok(ConnectResult {
@@ -545,7 +549,7 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
             let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
             let _connection = AnyConnection::connect_with(&options)
                 .await
-                .map_err(|error| friendly_sqlx_error(error, &connection.host, connection.port))?;
+                .map_err(|error| friendly_sqlx_error(error, connection.host(), connection.port()))?;
             Ok(ConnectResult {
                 latency_ms: start.elapsed().as_millis() as u64,
                 redis_capabilities: None,
@@ -561,7 +565,7 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
 /// the native driver (for richer type coverage); ClickHouse uses HTTP;
 /// MySQL/SQLite use sqlx-Any.
 pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::run_query(connection, query).await,
         DatabaseEngine::ClickHouse => clickhouse::run_query(connection, query).await,
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => run_sqlx_any(connection, query).await,
@@ -572,7 +576,7 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
 pub async fn load_schema_explorer(
     connection: &StoredConnection,
 ) -> Result<Vec<SchemaExplorer>, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::ClickHouse => clickhouse::fetch_schema_explorer(connection).await,
         DatabaseEngine::PostgreSQL | DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             fetch_schema_explorer_sqlx(connection).await
@@ -586,7 +590,7 @@ pub async fn fetch_table_structure(
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => {
             postgres::fetch_table_structure(connection, schema, table).await
         }
@@ -602,7 +606,7 @@ pub async fn fetch_table_structure(
                 .map_err(|error| {
                     format!(
                         "Structure inspection is not yet supported for {}: {}",
-                        engine_name(&connection.engine),
+                        engine_name(&connection.engine()),
                         error
                     )
                 })
@@ -615,7 +619,7 @@ pub async fn fetch_schema_relationships(
     connection: &StoredConnection,
     schema: &str,
 ) -> Result<SchemaRelationships, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => {
             postgres::fetch_schema_relationships(connection, schema).await
         }
@@ -637,11 +641,11 @@ pub async fn fetch_schema_relationships(
 pub async fn fetch_database_overview_stats(
     connection: &StoredConnection,
 ) -> Result<DatabaseOverviewStats, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::load_database_overview_stats(connection).await,
         DatabaseEngine::ClickHouse => clickhouse::fetch_database_overview_stats(connection).await,
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => Err(not_implemented_yet(
-            &connection.engine,
+            &connection.engine(),
             "Database overview stats",
         )),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
@@ -652,11 +656,11 @@ pub async fn execute_ddl(
     connection: &StoredConnection,
     sql: &str,
 ) -> Result<ExecuteDdlResult, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::execute_ddl(connection, sql).await,
         DatabaseEngine::ClickHouse => clickhouse::execute_ddl(connection, sql).await,
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine, "DDL execution"))
+            Err(not_implemented_yet(&connection.engine(), "DDL execution"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
@@ -668,7 +672,7 @@ pub async fn commit_cell_edits(
     table: &str,
     edits: &[CellEdit],
 ) -> Result<CommitCellEditsResult, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => {
             postgres::commit_cell_edits(connection, schema, table, edits).await
         }
@@ -676,7 +680,7 @@ pub async fn commit_cell_edits(
             clickhouse::commit_cell_edits(connection, schema, table, edits).await
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine, "Cell edit commit"))
+            Err(not_implemented_yet(&connection.engine(), "Cell edit commit"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
@@ -688,13 +692,13 @@ pub async fn insert_row(
     table: &str,
     values: &[CellEditKeyValue],
 ) -> Result<InsertRowResult, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::insert_row(connection, schema, table, values).await,
         DatabaseEngine::ClickHouse => {
             clickhouse::insert_row(connection, schema, table, values).await
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine, "Row insert"))
+            Err(not_implemented_yet(&connection.engine(), "Row insert"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
@@ -706,13 +710,13 @@ pub async fn delete_rows(
     table: &str,
     rows: &[Vec<CellEditKeyValue>],
 ) -> Result<DeleteRowsResult, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::delete_rows(connection, schema, table, rows).await,
         DatabaseEngine::ClickHouse => {
             clickhouse::delete_rows(connection, schema, table, rows).await
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine, "Row delete"))
+            Err(not_implemented_yet(&connection.engine(), "Row delete"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
@@ -726,12 +730,12 @@ pub async fn poll_mutation_status(
     table: &str,
     mutation_ids: &[String],
 ) -> Result<Vec<MutationStatus>, String> {
-    match connection.engine {
+    match connection.engine() {
         DatabaseEngine::ClickHouse => {
             clickhouse::poll_mutations(connection, database, table, mutation_ids).await
         }
         DatabaseEngine::PostgreSQL | DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine, "Mutation polling"))
+            Err(not_implemented_yet(&connection.engine(), "Mutation polling"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }

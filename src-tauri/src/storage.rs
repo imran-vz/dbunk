@@ -13,7 +13,9 @@ use sqlx::{
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 use crate::{
-    CredentialStorageMode, DatabaseEngine, QueryHistoryEntry, SavedQuery, StoredConnection,
+    ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
+    PgStoredConnection, QueryHistoryEntry, RedisStoredConnection, SavedQuery,
+    SqliteStoredConnection, StoredConnection,
 };
 
 const DB_FILE: &str = "dbunk.sqlite";
@@ -98,6 +100,18 @@ CREATE INDEX idx_saved_queries_updated_at ON saved_queries(updated_at DESC);
 ALTER TABLE connections ADD COLUMN db_number INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE connections ADD COLUMN use_tls INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE connections ADD COLUMN verify_tls_cert INTEGER NOT NULL DEFAULT 1;
+"#,
+    ),
+    (
+        3,
+        // PG/MySQL TLS-on-the-wire toggle. Default 1 matches the
+        // previously-hidden form default; existing connections continue
+        // to negotiate TLS the way they did before. The column lives on
+        // the shared `connections` table because the SQLite schema stays
+        // flat (per ADR-0010); engines other than PG/MySQL simply ignore
+        // the column when their variant is constructed.
+        r#"
+ALTER TABLE connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 1;
 "#,
     ),
 ];
@@ -290,7 +304,7 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
     let rows = sqlx::query(
         "SELECT id, name, database_name, engine, host, port, user_name, role,
                 last_activity_at, use_https, url_path,
-                db_number, use_tls, verify_tls_cert
+                db_number, use_tls, verify_tls_cert, ssl
          FROM connections
          ORDER BY name COLLATE NOCASE ASC",
     )
@@ -300,23 +314,85 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
 
     rows.into_iter()
         .map(|row| {
+            // Row → variant construction. The SQLite schema stays flat
+            // (one row per connection, engine-irrelevant columns simply
+            // unread per variant); we match on the `engine` column to
+            // pick which variant to build. ADR-0010 covers the design.
             let engine = DatabaseEngine::from_str(row.get::<String, _>("engine").as_str())?;
-            Ok(StoredConnection {
-                id: row.get("id"),
-                name: row.get("name"),
-                database: row.get("database_name"),
-                engine,
-                host: row.get("host"),
-                port: i64_to_u16(row.get("port")),
-                user: row.get("user_name"),
-                password: String::new(),
-                role: row.get("role"),
-                last_activity_at: row.get("last_activity_at"),
-                use_https: row.get::<i64, _>("use_https") != 0,
-                url_path: row.get("url_path"),
-                db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
-                use_tls: row.get::<i64, _>("use_tls") != 0,
-                verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
+            let id: String = row.get("id");
+            let name: String = row.get("name");
+            let database: String = row.get("database_name");
+            let host: String = row.get("host");
+            let port = i64_to_u16(row.get("port"));
+            let user: String = row.get("user_name");
+            let role: String = row.get("role");
+            let last_activity_at: Option<String> = row.get("last_activity_at");
+
+            Ok(match engine {
+                DatabaseEngine::PostgreSQL => StoredConnection::PostgreSQL(PgStoredConnection {
+                    id,
+                    name,
+                    database,
+                    host,
+                    port,
+                    user,
+                    password: String::new(),
+                    role,
+                    last_activity_at,
+                    ssl: row.get::<i64, _>("ssl") != 0,
+                }),
+                DatabaseEngine::MySQL => StoredConnection::MySQL(MySqlStoredConnection {
+                    id,
+                    name,
+                    database,
+                    host,
+                    port,
+                    user,
+                    password: String::new(),
+                    role,
+                    last_activity_at,
+                    ssl: row.get::<i64, _>("ssl") != 0,
+                }),
+                DatabaseEngine::SQLite => StoredConnection::SQLite(SqliteStoredConnection {
+                    id,
+                    name,
+                    database,
+                    host,
+                    port,
+                    user,
+                    password: String::new(),
+                    role,
+                    last_activity_at,
+                }),
+                DatabaseEngine::ClickHouse => {
+                    StoredConnection::ClickHouse(ClickHouseStoredConnection {
+                        id,
+                        name,
+                        database,
+                        host,
+                        port,
+                        user,
+                        password: String::new(),
+                        role,
+                        last_activity_at,
+                        use_https: row.get::<i64, _>("use_https") != 0,
+                        url_path: row.get("url_path"),
+                    })
+                }
+                DatabaseEngine::Redis => StoredConnection::Redis(RedisStoredConnection {
+                    id,
+                    name,
+                    database,
+                    host,
+                    port,
+                    user,
+                    password: String::new(),
+                    role,
+                    last_activity_at,
+                    db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
+                    use_tls: row.get::<i64, _>("use_tls") != 0,
+                    verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
+                }),
             })
         })
         .collect()
@@ -326,13 +402,45 @@ pub async fn upsert_connection(
     pool: &SqlitePool,
     connection: &StoredConnection,
 ) -> Result<(), String> {
+    // Per-variant binding: each variant supplies values for the columns
+    // it owns; engine-irrelevant columns get neutral defaults so the
+    // flat row shape remains consistent. The SQLite schema is unchanged
+    // by the enum refactor — only the variant -> column mapping is.
+    let engine = connection.engine();
+    let id = connection.id().to_string();
+    let name = connection.name().to_string();
+    let database = connection.database().to_string();
+    let host = connection.host().to_string();
+    let port = i64::from(connection.port());
+    let user = connection.user().to_string();
+    let role = connection.role().to_string();
+    let last_activity_at = connection.last_activity_at().map(str::to_string);
+
+    let (use_https, url_path) = match connection {
+        StoredConnection::ClickHouse(c) => (bool_to_i64(c.use_https), c.url_path.clone()),
+        _ => (0, String::new()),
+    };
+    let (db_number, use_tls, verify_tls_cert) = match connection {
+        StoredConnection::Redis(c) => (
+            i64::from(c.db_number),
+            bool_to_i64(c.use_tls),
+            bool_to_i64(c.verify_tls_cert),
+        ),
+        _ => (0, 0, 1),
+    };
+    let ssl = match connection {
+        StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl),
+        StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
+        _ => 1,
+    };
+
     sqlx::query(
         "INSERT INTO connections (
             id, name, database_name, engine, host, port, user_name, role,
             last_activity_at, use_https, url_path,
-            db_number, use_tls, verify_tls_cert
+            db_number, use_tls, verify_tls_cert, ssl
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -346,22 +454,24 @@ pub async fn upsert_connection(
             url_path = excluded.url_path,
             db_number = excluded.db_number,
             use_tls = excluded.use_tls,
-            verify_tls_cert = excluded.verify_tls_cert",
+            verify_tls_cert = excluded.verify_tls_cert,
+            ssl = excluded.ssl",
     )
-    .bind(&connection.id)
-    .bind(&connection.name)
-    .bind(&connection.database)
-    .bind(connection.engine.as_str())
-    .bind(&connection.host)
-    .bind(i64::from(connection.port))
-    .bind(&connection.user)
-    .bind(&connection.role)
-    .bind(&connection.last_activity_at)
-    .bind(bool_to_i64(connection.use_https))
-    .bind(&connection.url_path)
-    .bind(i64::from(connection.db_number))
-    .bind(bool_to_i64(connection.use_tls))
-    .bind(bool_to_i64(connection.verify_tls_cert))
+    .bind(id)
+    .bind(name)
+    .bind(database)
+    .bind(engine.as_str())
+    .bind(host)
+    .bind(port)
+    .bind(user)
+    .bind(role)
+    .bind(last_activity_at)
+    .bind(use_https)
+    .bind(url_path)
+    .bind(db_number)
+    .bind(use_tls)
+    .bind(verify_tls_cert)
+    .bind(ssl)
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::redis::connection;
 use crate::redis::value::{self, SerializedValue};
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
 const BUFFER_CAP: usize = 10_000;
 
@@ -61,7 +61,7 @@ pub struct StartSessionResult {
 }
 
 pub async fn start_session(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &StartSessionPayload,
 ) -> Result<StartSessionResult, String> {
     close_session_internal(&payload.session_id);

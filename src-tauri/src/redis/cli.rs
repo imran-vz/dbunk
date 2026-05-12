@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::redis::connection;
 use crate::redis::destructive_commands::{DESTRUCTIVE_HARD, DESTRUCTIVE_SOFT};
 use crate::redis::value::{self, SerializedValue};
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,7 +48,7 @@ pub enum RunCommandResult {
 }
 
 pub async fn run_command(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &RunCommandPayload,
 ) -> Result<RunCommandResult, String> {
     if payload.tokens.is_empty() {

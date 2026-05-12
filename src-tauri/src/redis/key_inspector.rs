@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::redis::connection;
 use crate::redis::value::{self, SerializedValue};
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
 // ---------------------------------------------------------------------------
 // Metadata
@@ -48,7 +48,7 @@ pub struct KeyMetadata {
 }
 
 pub async fn fetch_key_metadata(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &KeyPayload,
 ) -> Result<KeyMetadata, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -124,7 +124,7 @@ pub struct StringValuePayload {
 }
 
 pub async fn fetch_string(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchStringPayload,
 ) -> Result<StringValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -201,7 +201,7 @@ pub struct HashValuePayload {
 }
 
 pub async fn fetch_hash(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchHashPayload,
 ) -> Result<HashValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -277,7 +277,7 @@ pub struct ListValuePayload {
 }
 
 pub async fn fetch_list(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchListPayload,
 ) -> Result<ListValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -331,7 +331,7 @@ pub struct SetValuePayload {
 }
 
 pub async fn fetch_set(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchSetPayload,
 ) -> Result<SetValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -409,7 +409,7 @@ pub struct SortedSetValuePayload {
 }
 
 pub async fn fetch_sorted_set(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchSortedSetPayload,
 ) -> Result<SortedSetValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -511,7 +511,7 @@ pub struct StreamEntry {
 }
 
 pub async fn fetch_stream(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchStreamPayload,
 ) -> Result<StreamValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
@@ -592,7 +592,7 @@ pub struct JsonValuePayload {
 }
 
 pub async fn fetch_json(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &FetchJsonPayload,
 ) -> Result<JsonValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
