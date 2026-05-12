@@ -3,6 +3,7 @@ import {
   IconArrowRight,
   IconClock,
   IconDatabase,
+  IconDatabaseOff,
   IconEdit,
   IconRefresh,
   IconStar,
@@ -76,6 +77,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     workspaceTabs,
     createNewQueryTab,
     connectConnection,
+    disconnectConnection,
     loadDatabaseOverviewStats,
     openTableTab,
   } = useAppStore();
@@ -142,6 +144,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
             onOpenTable={openTableTab}
             onNewQuery={createNewQueryTab}
             onConnectConnection={connectConnection}
+            onDisconnectConnection={disconnectConnection}
           />
         )}
       </div>
@@ -167,6 +170,7 @@ type WorkspaceDatabaseOverviewProps = {
   onOpenTable: (schemaName: string, tableName: string) => void;
   onNewQuery: () => void;
   onConnectConnection: (connectionId: string) => Promise<void>;
+  onDisconnectConnection: (connectionId: string) => void;
 };
 
 function WorkspaceDatabaseOverview({
@@ -179,6 +183,7 @@ function WorkspaceDatabaseOverview({
   onOpenTable,
   onNewQuery,
   onConnectConnection,
+  onDisconnectConnection,
 }: WorkspaceDatabaseOverviewProps) {
   const isConnected =
     activeConnection?.status === "Connected" ||
@@ -368,6 +373,15 @@ function WorkspaceDatabaseOverview({
                 })}
               </nav>
             </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onDisconnectConnection(activeConnection.id)}
+            >
+              <IconDatabaseOff className="size-3.5" />
+              Disconnect
+            </Button>
           </header>
 
           {/* Top row: Connection Details + Database Stats */}

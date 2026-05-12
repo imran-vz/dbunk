@@ -67,6 +67,7 @@ Each downstream slice exposes a named cleanup method:
 |---|---|---|
 | `workspace-tabs.ts` | `closeTabsForConnection(id)` | Drops every Workspace Tab pointing at that connection. |
 | `relational-tables.ts` | `dropRelationalCachesForConnection(id)` | Drops every per-connection cache entry (schema explorer, table structure, table data, overview stats, etc.). |
+| `relational-queries.ts` | `dropOpenQueryStateForConnection(id)` | Drops open-tab query status, edits, and previews without removing query history. |
 | `relational-queries.ts` | `dropQueryStateForConnection(id)` | Drops query history rows pinned to the connection plus query status/edits for its open tabs. |
 | `keyvalue-workspace.ts` | `closeKeyTabsForConnection(id)` | No-op today; reserved for future per-key cache. |
 | `keyvalue-pubsub.ts` | `closePubSubSessionsForConnection(id)` | No-op today; reserved for future pub/sub auto-reconnect state. |

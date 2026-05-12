@@ -717,6 +717,189 @@ describe("connectConnection error feedback", () => {
   });
 });
 
+describe("disconnectConnection cleanup", () => {
+  const connectedPostgres = (id: string, name: string): Connection => ({
+    id,
+    name,
+    database: "postgres",
+    status: "Connected",
+    engine: "PostgreSQL",
+    host: "localhost",
+    port: 5432,
+    user: "postgres",
+    password: "",
+    role: "admin",
+    latency: "12 ms",
+    lastSync: "Just now",
+    ssl: true,
+  });
+
+  it("disconnects the connection, closes its workspace tabs, and drops ephemeral workspace state", () => {
+    const conn1 = connectedPostgres("conn-1", "Primary");
+    const conn2 = connectedPostgres("conn-2", "Reporting");
+    const conn1DataKey = tableDataKey("conn-1", "public", "users");
+    const conn2DataKey = tableDataKey("conn-2", "public", "orders");
+
+    useAppStore.setState({
+      connections: [conn1, conn2],
+      activeConnectionId: "conn-1",
+      activeTabId: "tab-query-1",
+      workspaceTabs: [
+        {
+          id: "tab-query-1",
+          kind: "query",
+          label: "query_1.sql",
+          connectionId: "conn-1",
+          schema: "public",
+          query: "select * from users;",
+        },
+        {
+          id: "tab-table-1",
+          kind: "table",
+          label: "users",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+        },
+        {
+          id: "tab-query-2",
+          kind: "query",
+          label: "query_2.sql",
+          connectionId: "conn-2",
+          schema: "public",
+          query: "select * from orders;",
+        },
+      ],
+      schemaExplorer: {
+        "conn-1": [{ name: "public", tables: ["users"], views: [] }],
+        "conn-2": [{ name: "public", tables: ["orders"], views: [] }],
+      },
+      tableData: {
+        [conn1DataKey]: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["id", "name"],
+          rows: [["1", "Ada"]],
+          page: 1,
+          pageSize: 100,
+          totalRows: 1,
+          runtimeMs: 4,
+        },
+        [conn2DataKey]: {
+          connectionId: "conn-2",
+          schema: "public",
+          table: "orders",
+          columns: ["id"],
+          rows: [["42"]],
+          page: 1,
+          pageSize: 100,
+          totalRows: 1,
+          runtimeMs: 6,
+        },
+      },
+      tableLoadStatus: {
+        [conn1DataKey]: { state: "success" },
+        [conn2DataKey]: { state: "success" },
+      },
+      databaseOverviewStats: {
+        "conn-1": {
+          databaseSizeBytes: 1024,
+          tableSizeBytes: 512,
+          indexSizeBytes: 128,
+          tableCount: 1,
+          schemaCount: 1,
+          rowCountEstimate: 1,
+          indexCount: 1,
+          connectionCount: 1,
+        },
+        "conn-2": {
+          databaseSizeBytes: 2048,
+          tableSizeBytes: 1024,
+          indexSizeBytes: 256,
+          tableCount: 1,
+          schemaCount: 1,
+          rowCountEstimate: 1,
+          indexCount: 1,
+          connectionCount: 1,
+        },
+      },
+      queryStatus: {
+        "tab-query-1": { state: "running" },
+        "tab-query-2": { state: "running" },
+      },
+      queryEdits: {
+        "tab-query-1": { 0: { 0: "select 1" } },
+        "tab-query-2": { 0: { 0: "select 2" } },
+      },
+      queryPreviews: {
+        "query_1.sql": {
+          columns: ["id"],
+          rows: [["1"]],
+          runtime: "4 ms",
+          rowCount: "1",
+          cache: "Cold",
+        },
+        "query_2.sql": {
+          columns: ["id"],
+          rows: [["42"]],
+          runtime: "6 ms",
+          rowCount: "1",
+          cache: "Cold",
+        },
+      },
+      tableEdits: {
+        users: { 0: { 1: "Ada Lovelace" } },
+        orders: { 0: { 0: "42" } },
+      },
+      tableEditsCommitStatus: {
+        users: { state: "running" },
+        orders: { state: "running" },
+      },
+      queryHistory: [
+        {
+          id: "history-1",
+          sql: "select * from users;",
+          connectionId: "conn-1",
+          connectionName: "Primary",
+          database: "postgres",
+          engine: "PostgreSQL",
+          status: "success",
+          runtimeMs: 4,
+          rowCount: 1,
+          startedAt: "2026-05-09T12:00:00.000Z",
+        },
+      ],
+    });
+
+    useAppStore.getState().disconnectConnection("conn-1");
+
+    const state = useAppStore.getState();
+    const disconnected = state.connections.find((c) => c.id === "conn-1");
+    expect(disconnected?.status).toBe("Disconnected");
+    expect(disconnected?.latency).toBe("--");
+    expect(disconnected?.lastSync).toBe("Never");
+    expect(state.workspaceTabs.map((tab) => tab.id)).toEqual(["tab-query-2"]);
+    expect(state.activeTabId).toBe("tab-query-2");
+    expect(state.activeConnectionId).toBe("conn-2");
+    expect(state.schemaExplorer["conn-1"]).toBeUndefined();
+    expect(state.schemaExplorer["conn-2"]).toBeDefined();
+    expect(state.tableData[conn1DataKey]).toBeUndefined();
+    expect(state.tableData[conn2DataKey]).toBeDefined();
+    expect(state.tableLoadStatus[conn1DataKey]).toBeUndefined();
+    expect(state.databaseOverviewStats["conn-1"]).toBeUndefined();
+    expect(state.queryStatus["tab-query-1"]).toBeUndefined();
+    expect(state.queryStatus["tab-query-2"]).toEqual({ state: "running" });
+    expect(state.queryEdits["tab-query-1"]).toBeUndefined();
+    expect(state.queryPreviews["query_1.sql"]).toBeUndefined();
+    expect(state.queryPreviews["query_2.sql"]).toBeDefined();
+    expect(state.tableEdits.users).toBeUndefined();
+    expect(state.tableEdits.orders).toBeDefined();
+    expect(state.tableEditsCommitStatus.users).toBeUndefined();
+    expect(state.queryHistory).toHaveLength(1);
+  });
+});
+
 describe("runHealthChecks latency", () => {
   it("falls back to placeholder latency when a healthy check omits latency", async () => {
     useAppStore.setState({
