@@ -9,7 +9,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 
 use crate::redis::connection;
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +60,7 @@ pub struct ScannedKey {
 /// Reason: the Tauri serde boundary doesn't stream, so making each
 /// page a separate command keeps the UI responsive.
 pub async fn scan_keys(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &ScanKeysPayload,
 ) -> Result<ScanKeysResult, String> {
     let mut conn = connection::manager_for(connection).await?;

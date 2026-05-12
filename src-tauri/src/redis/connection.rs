@@ -33,7 +33,7 @@ use redis::aio::ConnectionManager;
 use redis::{Client, RedisError};
 
 use crate::redis::url::{self, RedisUrl};
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
 const TCP_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -48,7 +48,7 @@ static MANAGER_CACHE: Lazy<Mutex<HashMap<String, ConnectionManager>>> =
 
 /// Returns a clone of the cached `ConnectionManager` for this
 /// connection, opening and caching one if necessary.
-pub async fn manager_for(connection: &StoredConnection) -> Result<ConnectionManager, String> {
+pub async fn manager_for(connection: &RedisStoredConnection) -> Result<ConnectionManager, String> {
     if let Some(manager) = lookup(&connection.id) {
         log::debug!(
             "manager_for: cache hit for connection_id={}",
@@ -92,7 +92,7 @@ fn insert(connection_id: String, manager: ConnectionManager) {
 /// `test_connection` so a "Test" click doesn't leave a stale manager
 /// hanging around in the cache (the saved connection may differ).
 pub async fn open_oneshot(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
 ) -> Result<redis::aio::MultiplexedConnection, String> {
     log_connect_attempt("open_oneshot", connection);
     preflight_tcp(connection).await?;
@@ -116,7 +116,7 @@ pub async fn open_oneshot(
     }
 }
 
-async fn open_manager(connection: &StoredConnection) -> Result<ConnectionManager, String> {
+async fn open_manager(connection: &RedisStoredConnection) -> Result<ConnectionManager, String> {
     log_connect_attempt("open_manager", connection);
     preflight_tcp(connection).await?;
 
@@ -139,12 +139,12 @@ async fn open_manager(connection: &StoredConnection) -> Result<ConnectionManager
     }
 }
 
-fn client_info(connection: &StoredConnection) -> Result<redis::ConnectionInfo, String> {
+fn client_info(connection: &RedisStoredConnection) -> Result<redis::ConnectionInfo, String> {
     let RedisUrl { url, .. } = url::build(connection)?;
     redis::IntoConnectionInfo::into_connection_info(url.as_str()).map_err(redis_err)
 }
 
-fn effective_port(connection: &StoredConnection) -> u16 {
+fn effective_port(connection: &RedisStoredConnection) -> u16 {
     if connection.port == 0 {
         6379
     } else {
@@ -152,7 +152,7 @@ fn effective_port(connection: &StoredConnection) -> u16 {
     }
 }
 
-fn log_connect_attempt(site: &str, connection: &StoredConnection) {
+fn log_connect_attempt(site: &str, connection: &RedisStoredConnection) {
     log::info!(
         "{}: host={} port={} db={} tls={} verify_cert={} user_present={} password_present={}",
         site,
@@ -170,7 +170,7 @@ fn log_connect_attempt(site: &str, connection: &StoredConnection) {
 /// us a clear OS error when the host/port is wrong, instead of the
 /// opaque "multiplexed driver terminated" message redis-rs returns
 /// for everything below the protocol layer.
-async fn preflight_tcp(connection: &StoredConnection) -> Result<(), String> {
+async fn preflight_tcp(connection: &RedisStoredConnection) -> Result<(), String> {
     let host = connection.host.clone();
     let port = effective_port(connection);
     let target = format!("{host}:{port}");
@@ -239,7 +239,7 @@ fn tcp_io_error(host: &str, port: u16, err: &std::io::Error) -> String {
 /// AFTER the TCP probe succeeded. By construction this is no longer
 /// "host unreachable" — it's protocol-layer (TLS mismatch, AUTH
 /// rejected, server speaks a different protocol).
-fn handshake_err(connection: &StoredConnection, error: RedisError) -> String {
+fn handshake_err(connection: &RedisStoredConnection, error: RedisError) -> String {
     use redis::ErrorKind;
 
     let host = connection.host.as_str();

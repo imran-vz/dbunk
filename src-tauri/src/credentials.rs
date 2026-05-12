@@ -57,7 +57,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use sqlx::SqlitePool;
 
-use crate::{keychain, storage, CredentialStorageMode, DatabaseEngine, StoredConnection};
+use crate::{keychain, storage, CredentialStorageMode, StoredConnection};
 
 const SETTING_ONBOARDING_COMPLETED: &str = "onboardingCompleted";
 const SETTING_CREDENTIAL_STORAGE_MODE: &str = "credentialStorageMode";
@@ -329,11 +329,11 @@ pub async fn upsert(
     mode: CredentialStorageMode,
     connection: &StoredConnection,
 ) -> Result<(), String> {
-    if matches!(connection.engine, DatabaseEngine::SQLite) || connection.password.is_empty() {
+    if matches!(connection, StoredConnection::SQLite(_)) || connection.password().is_empty() {
         return Ok(());
     }
     let mut all = read_all_cached(pool, mode).await?;
-    all.insert(connection.id.clone(), connection.password.clone());
+    all.insert(connection.id().to_string(), connection.password().to_string());
     write_all(pool, mode, &all).await
 }
 
@@ -354,12 +354,13 @@ pub async fn hydrate(
     mode: CredentialStorageMode,
     connection: &mut StoredConnection,
 ) -> Result<(), String> {
-    if matches!(connection.engine, DatabaseEngine::SQLite) {
-        connection.password.clear();
+    if matches!(connection, StoredConnection::SQLite(_)) {
+        connection.set_password(String::new());
         return Ok(());
     }
     let all = read_all_cached(pool, mode).await?;
-    connection.password = all.get(&connection.id).cloned().unwrap_or_default();
+    let id = connection.id().to_string();
+    connection.set_password(all.get(&id).cloned().unwrap_or_default());
     Ok(())
 }
 
@@ -610,23 +611,18 @@ mod tests {
     /// to populate the parent first.
     async fn seed_connections(pool: &SqlitePool, ids: &[&str]) {
         for id in ids {
-            let connection = StoredConnection {
+            let connection = StoredConnection::PostgreSQL(crate::PgStoredConnection {
                 id: (*id).to_string(),
                 name: format!("test {id}"),
                 database: "test_db".into(),
-                engine: DatabaseEngine::PostgreSQL,
                 host: "localhost".into(),
                 port: 5432,
                 user: "u".into(),
                 password: String::new(),
                 role: "read/write".into(),
                 last_activity_at: None,
-                use_https: false,
-                url_path: String::new(),
-                db_number: 0,
-                use_tls: false,
-                verify_tls_cert: true,
-            };
+                ssl: true,
+            });
             storage::upsert_connection(pool, &connection)
                 .await
                 .expect("seed connection");

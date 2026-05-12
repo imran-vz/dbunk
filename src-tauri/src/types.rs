@@ -101,48 +101,261 @@ pub(crate) struct ChangeCredentialStoragePayload {
     pub confirm: bool,
 }
 
+/// `StoredConnection` is a per-engine tagged union — the backend's
+/// counterpart to the frontend's `Connection` discriminated union
+/// (see ADR-0010). Each variant carries exactly the fields its engine
+/// uses: `ssl` on PG/MySQL, `useHttps`/`urlPath` on ClickHouse,
+/// `dbNumber`/`useTls`/`verifyTlsCert` on Redis, nothing extra on
+/// SQLite.
+///
+/// Serialized internally-tagged on `engine`, so the wire JSON is flat:
+/// `{ "engine": "PostgreSQL", "id": "...", "host": "...", "ssl": true, ... }`.
+/// This matches the previous flat-struct shape byte-for-byte except
+/// that engine-irrelevant fields are now absent from the wire when
+/// they don't apply (the frontend's optional `useHttps?` / `dbNumber?`
+/// types tolerate the absence).
+///
+/// The enum mirrors the **Credential Backend** pattern: closed
+/// variant set, exhaustive dispatch, per-variant logic concentrated.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "engine")]
+pub(crate) enum StoredConnection {
+    PostgreSQL(PgStoredConnection),
+    MySQL(MySqlStoredConnection),
+    SQLite(SqliteStoredConnection),
+    ClickHouse(ClickHouseStoredConnection),
+    Redis(RedisStoredConnection),
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct StoredConnection {
+pub(crate) struct PgStoredConnection {
     pub id: String,
     pub name: String,
     pub database: String,
-    pub engine: DatabaseEngine,
     pub host: String,
     pub port: u16,
     pub user: String,
     pub password: String,
     pub role: String,
-    /// ISO-8601 timestamp of the most recent successful query/connect.
-    /// Optional so records created before activity tracking still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
-    /// ClickHouse-only: when true the URL builder uses the `https://`
-    /// scheme and defaults the port to 8443 instead of 8123. Other
-    /// engines ignore this field.
+    /// TLS for the wire-protocol upgrade. Distinct concept from
+    /// ClickHouse's `useHttps` (TLS for HTTP transport) and Redis's
+    /// `useTls` (`rediss://` scheme) — see CONTEXT.md `Connection`.
+    #[serde(default = "default_true")]
+    pub ssl: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MySqlStoredConnection {
+    pub id: String,
+    pub name: String,
+    pub database: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    pub role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
+    #[serde(default = "default_true")]
+    pub ssl: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SqliteStoredConnection {
+    pub id: String,
+    pub name: String,
+    /// File path to the SQLite database (or `:memory:`).
+    pub database: String,
+    /// Sentinel fields preserved for wire-compatibility with the
+    /// frontend's flat `Connection` shape (host/port/user/password
+    /// are `required` on the TS side). Always empty for SQLite.
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub port: u16,
+    #[serde(default)]
+    pub user: String,
+    #[serde(default)]
+    pub password: String,
+    pub role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClickHouseStoredConnection {
+    pub id: String,
+    pub name: String,
+    pub database: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    pub role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
+    /// When true the URL builder uses `https://` and defaults the
+    /// port to 8443 instead of 8123.
     #[serde(default)]
     pub use_https: bool,
-    /// ClickHouse-only: optional URL path prefix for deployments that
-    /// proxy CH behind a path (e.g. `/clickhouse`). Empty = root.
+    /// Optional URL path prefix for deployments that proxy CH behind
+    /// a path (e.g. `/clickhouse`). Empty = root.
     #[serde(default)]
     pub url_path: String,
-    /// Redis-only: which numbered DB (0–15 on standalone). Defaults to
-    /// 0; ignored by relational engines.
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RedisStoredConnection {
+    pub id: String,
+    pub name: String,
+    /// Frontend sends this as `""` for Redis; Redis uses `db_number`
+    /// for keyspace selection. Kept on the wire for shape stability.
+    #[serde(default)]
+    pub database: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    pub role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
+    /// Which numbered DB (0–15 on standalone).
     #[serde(default)]
     pub db_number: u8,
-    /// Redis-only: connect over TLS (`rediss://`). Ignored by
-    /// relational engines (which have their own SSL story via sqlx).
+    /// Connect over TLS (`rediss://`).
     #[serde(default)]
     pub use_tls: bool,
-    /// Redis-only: verify the TLS certificate. Only meaningful when
-    /// `use_tls` is true. Default true; users can disable for self-
-    /// signed dev servers.
+    /// Verify the TLS certificate. Only meaningful when `use_tls` is
+    /// true. Default true; users disable for self-signed dev servers.
     #[serde(default = "default_true")]
     pub verify_tls_cert: bool,
 }
 
 fn default_true() -> bool {
     true
+}
+
+impl StoredConnection {
+    pub fn engine(&self) -> DatabaseEngine {
+        match self {
+            Self::PostgreSQL(_) => DatabaseEngine::PostgreSQL,
+            Self::MySQL(_) => DatabaseEngine::MySQL,
+            Self::SQLite(_) => DatabaseEngine::SQLite,
+            Self::ClickHouse(_) => DatabaseEngine::ClickHouse,
+            Self::Redis(_) => DatabaseEngine::Redis,
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.id,
+            Self::MySQL(c) => &c.id,
+            Self::SQLite(c) => &c.id,
+            Self::ClickHouse(c) => &c.id,
+            Self::Redis(c) => &c.id,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.name,
+            Self::MySQL(c) => &c.name,
+            Self::SQLite(c) => &c.name,
+            Self::ClickHouse(c) => &c.name,
+            Self::Redis(c) => &c.name,
+        }
+    }
+
+    pub fn database(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.database,
+            Self::MySQL(c) => &c.database,
+            Self::SQLite(c) => &c.database,
+            Self::ClickHouse(c) => &c.database,
+            Self::Redis(c) => &c.database,
+        }
+    }
+
+    pub fn host(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.host,
+            Self::MySQL(c) => &c.host,
+            Self::SQLite(c) => &c.host,
+            Self::ClickHouse(c) => &c.host,
+            Self::Redis(c) => &c.host,
+        }
+    }
+
+    pub fn port(&self) -> u16 {
+        match self {
+            Self::PostgreSQL(c) => c.port,
+            Self::MySQL(c) => c.port,
+            Self::SQLite(c) => c.port,
+            Self::ClickHouse(c) => c.port,
+            Self::Redis(c) => c.port,
+        }
+    }
+
+    pub fn user(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.user,
+            Self::MySQL(c) => &c.user,
+            Self::SQLite(c) => &c.user,
+            Self::ClickHouse(c) => &c.user,
+            Self::Redis(c) => &c.user,
+        }
+    }
+
+    pub fn password(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.password,
+            Self::MySQL(c) => &c.password,
+            Self::SQLite(c) => &c.password,
+            Self::ClickHouse(c) => &c.password,
+            Self::Redis(c) => &c.password,
+        }
+    }
+
+    pub fn role(&self) -> &str {
+        match self {
+            Self::PostgreSQL(c) => &c.role,
+            Self::MySQL(c) => &c.role,
+            Self::SQLite(c) => &c.role,
+            Self::ClickHouse(c) => &c.role,
+            Self::Redis(c) => &c.role,
+        }
+    }
+
+    pub fn last_activity_at(&self) -> Option<&str> {
+        match self {
+            Self::PostgreSQL(c) => c.last_activity_at.as_deref(),
+            Self::MySQL(c) => c.last_activity_at.as_deref(),
+            Self::SQLite(c) => c.last_activity_at.as_deref(),
+            Self::ClickHouse(c) => c.last_activity_at.as_deref(),
+            Self::Redis(c) => c.last_activity_at.as_deref(),
+        }
+    }
+
+    /// Replace the password on whichever variant is active. Used by
+    /// `credentials::hydrate` to inject the resolved password before
+    /// passing the connection to the engine dispatchers.
+    pub fn set_password(&mut self, password: String) {
+        match self {
+            Self::PostgreSQL(c) => c.password = password,
+            Self::MySQL(c) => c.password = password,
+            Self::SQLite(c) => c.password = password,
+            Self::ClickHouse(c) => c.password = password,
+            Self::Redis(c) => c.password = password,
+        }
+    }
+
 }
 
 /// Connect-time pipeline result for Redis. Surfaced in the connection-

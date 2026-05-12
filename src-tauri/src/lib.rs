@@ -92,7 +92,7 @@ pub(crate) fn bytes_to_hex(bytes: &[u8]) -> String {
 async fn public_connections(state: &AppState) -> Result<Vec<StoredConnection>, String> {
     let mut entries = storage::read_connections(&state.pool).await?;
     for entry in entries.iter_mut() {
-        entry.password.clear();
+        entry.set_password(String::new());
     }
     Ok(entries)
 }
@@ -114,7 +114,7 @@ async fn find_connection(
     }
     connections
         .into_iter()
-        .find(|connection| connection.id == connection_id)
+        .find(|connection| connection.id() == connection_id)
         .ok_or_else(|| "Connection not found".to_string())
 }
 
@@ -163,7 +163,7 @@ async fn save_connection(
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
     storage::upsert_connection(&state.pool, &connection).await?;
-    if !connection.password.is_empty() {
+    if !connection.password().is_empty() {
         credentials::upsert(&state.pool, mode, &connection).await?;
     }
     public_connections(state).await
@@ -416,7 +416,7 @@ async fn load_table_data(
     let offset = (page - 1) as u64 * page_size as u64;
 
     with_active_connection(state.inner(), &connection_id, |connection| async move {
-        let qualified = qualified_table_name(&connection.engine, &schema, &table);
+        let qualified = qualified_table_name(&connection.engine(), &schema, &table);
 
         // SELECT with LIMIT/OFFSET works for all four supported engines
         // (PostgreSQL, MySQL, SQLite, ClickHouse).

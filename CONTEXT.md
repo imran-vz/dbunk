@@ -16,9 +16,12 @@ these terms rather than coining synonyms.
   `Disconnected`), a **latency** measurement from the last ping, a **last
   activity** timestamp from the most recent successful query/connect, and an
   optional **error message** from the last health check.
-  Engine-class-specific fields ride on the same record: `useHttps` / `urlPath`
-  for ClickHouse; `dbNumber` / `useTls` / `verifyTlsCert` for Redis. Fields
-  that don't apply to the active engine are ignored.
+  Engine-class-specific fields ride on the same record: `ssl` for PostgreSQL
+  and MySQL (TLS upgrade on the wire protocol); `useHttps` / `urlPath` for
+  ClickHouse (TLS for the HTTP transport — a separate concept from `ssl`,
+  not a synonym); `dbNumber` / `useTls` / `verifyTlsCert` for Redis (TLS via
+  `rediss://`). SQLite has no transport-encryption field. Fields that don't
+  apply to the active engine are ignored.
 - **Stored Connection** — the backend wire shape (no returned password, no
   runtime status). The Rust backend hydrates credentials internally before DB
   operations; stored passwords are not returned to the frontend.

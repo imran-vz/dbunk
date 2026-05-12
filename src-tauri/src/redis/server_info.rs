@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use crate::redis::connection;
-use crate::{RedisModuleInfo, StoredConnection};
+use crate::{RedisModuleInfo, RedisStoredConnection};
 
 #[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -91,7 +91,7 @@ pub struct PersistenceInfo {
 }
 
 pub async fn fetch_overview(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
 ) -> Result<KeyValueOverviewStats, String> {
     let mut conn = connection::manager_for(connection).await?;
 

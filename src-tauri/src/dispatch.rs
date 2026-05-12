@@ -49,7 +49,7 @@ fn not_applicable(connection: &StoredConnection, operation: &str) -> String {
     format!(
         "{operation} does not apply to {} — the concept does not exist on \
          this engine class.",
-        relational::engine_name(&connection.engine)
+        relational::engine_name(&connection.engine())
     )
 }
 
@@ -61,14 +61,14 @@ fn not_applicable(connection: &StoredConnection, operation: &str) -> String {
 /// implement this — relational uses sqlx connect, keyvalue runs the
 /// Redis capabilities probe (PING + INFO + MODULE LIST + DBSIZE).
 pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectResult, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::ping_connection(connection).await,
         StorageClass::KeyValue => keyvalue::ping_connection(connection).await,
     }
 }
 
 pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::run_query(connection, query).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "SQL query execution")),
     }
@@ -77,7 +77,7 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
 pub async fn load_schema_explorer(
     connection: &StoredConnection,
 ) -> Result<Vec<SchemaExplorer>, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::load_schema_explorer(connection).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Schema explorer")),
     }
@@ -88,7 +88,7 @@ pub async fn fetch_table_structure(
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => {
             relational::fetch_table_structure(connection, schema, table).await
         }
@@ -100,7 +100,7 @@ pub async fn fetch_schema_relationships(
     connection: &StoredConnection,
     schema: &str,
 ) -> Result<SchemaRelationships, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::fetch_schema_relationships(connection, schema).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Schema relationships")),
     }
@@ -109,7 +109,7 @@ pub async fn fetch_schema_relationships(
 pub async fn fetch_database_overview_stats(
     connection: &StoredConnection,
 ) -> Result<DatabaseOverviewStats, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::fetch_database_overview_stats(connection).await,
         // Phase 1.3 lights up the keyvalue overview (KeyValueOverviewStats)
         // behind a separate Tauri command (`fetch_keyvalue_overview`). The
@@ -122,7 +122,7 @@ pub async fn execute_ddl(
     connection: &StoredConnection,
     sql: &str,
 ) -> Result<ExecuteDdlResult, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::execute_ddl(connection, sql).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "DDL execution")),
     }
@@ -134,7 +134,7 @@ pub async fn commit_cell_edits(
     table: &str,
     edits: &[CellEdit],
 ) -> Result<CommitCellEditsResult, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => {
             relational::commit_cell_edits(connection, schema, table, edits).await
         }
@@ -148,7 +148,7 @@ pub async fn insert_row(
     table: &str,
     values: &[CellEditKeyValue],
 ) -> Result<InsertRowResult, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::insert_row(connection, schema, table, values).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Row insert")),
     }
@@ -160,7 +160,7 @@ pub async fn delete_rows(
     table: &str,
     rows: &[Vec<CellEditKeyValue>],
 ) -> Result<DeleteRowsResult, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => relational::delete_rows(connection, schema, table, rows).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Row delete")),
     }
@@ -172,7 +172,7 @@ pub async fn poll_mutation_status(
     table: &str,
     mutation_ids: &[String],
 ) -> Result<Vec<MutationStatus>, String> {
-    match connection.engine.storage_class() {
+    match connection.engine().storage_class() {
         StorageClass::Relational => {
             relational::poll_mutation_status(connection, database, table, mutation_ids).await
         }

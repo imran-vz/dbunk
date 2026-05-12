@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::redis::capabilities;
 use crate::redis::connection;
-use crate::StoredConnection;
+use crate::RedisStoredConnection;
 
-async fn assert_writable(connection: &StoredConnection) -> Result<(), String> {
+async fn assert_writable(connection: &RedisStoredConnection) -> Result<(), String> {
     // Cheap-ish: the capabilities probe runs `INFO replication`. We
     // cache nothing today; the cost is one round trip per write. If
     // this shows up on a profile we'll cache per-session.
@@ -49,7 +49,7 @@ pub struct SetStringResult {
 }
 
 pub async fn set_string(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &SetStringPayload,
 ) -> Result<SetStringResult, String> {
     assert_writable(connection).await?;
@@ -92,7 +92,7 @@ pub struct SetHashFieldsPayload {
 }
 
 pub async fn set_hash_fields(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &SetHashFieldsPayload,
 ) -> Result<(), String> {
     assert_writable(connection).await?;
@@ -121,7 +121,7 @@ pub struct DeleteHashFieldsPayload {
 }
 
 pub async fn delete_hash_fields(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &DeleteHashFieldsPayload,
 ) -> Result<(), String> {
     assert_writable(connection).await?;
@@ -159,7 +159,7 @@ pub struct DelKeysResult {
 }
 
 pub async fn del_keys(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &DelKeysPayload,
 ) -> Result<DelKeysResult, String> {
     assert_writable(connection).await?;
@@ -191,7 +191,7 @@ pub struct SetExpirePayload {
 }
 
 pub async fn set_expire(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &SetExpirePayload,
 ) -> Result<(), String> {
     assert_writable(connection).await?;
@@ -225,7 +225,7 @@ pub struct RenameKeyPayload {
 }
 
 pub async fn rename_key(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &RenameKeyPayload,
 ) -> Result<(), String> {
     assert_writable(connection).await?;
@@ -260,7 +260,7 @@ pub struct CreateKeyPayload {
 }
 
 pub async fn create_key(
-    connection: &StoredConnection,
+    connection: &RedisStoredConnection,
     payload: &CreateKeyPayload,
 ) -> Result<(), String> {
     assert_writable(connection).await?;

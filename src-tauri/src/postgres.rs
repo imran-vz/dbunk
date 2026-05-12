@@ -56,24 +56,45 @@ use crate::{
 /// concerns plug in: pooling, TLS modes, statement timeouts,
 /// `application_name`, etc.
 async fn connect(connection: &StoredConnection) -> Result<PgConnection, String> {
+    // Narrow to the PG variant — the dispatch layer guarantees this
+    // function is only reached for PostgreSQL connections, but we keep
+    // the runtime check to localize the contract here.
+    let StoredConnection::PostgreSQL(connection) = connection else {
+        return Err(
+            "postgres::connect reached with a non-PostgreSQL connection — dispatch bug".to_string(),
+        );
+    };
+
     let port = if connection.port == 0 {
         5432
     } else {
         connection.port
     };
+    // ADR-0010 threads the `ssl` toggle into PG via sqlx's
+    // `PgSslMode::Prefer` (the historical implicit default) when on,
+    // and `Disable` when off. Users who need full verification can
+    // toggle a future "require + verify-full" mode; the current toggle
+    // is a two-state binary covering the common cases.
+    let ssl_mode = if connection.ssl {
+        sqlx::postgres::PgSslMode::Prefer
+    } else {
+        sqlx::postgres::PgSslMode::Disable
+    };
     let mut options = PgConnectOptions::new()
         .host(&connection.host)
         .username(&connection.user)
         .database(&connection.database)
-        .port(port);
+        .port(port)
+        .ssl_mode(ssl_mode);
 
     if !connection.password.is_empty() {
         options = options.password(&connection.password);
     }
 
-    PgConnection::connect_with(&options).await.map_err(|error| {
-        crate::dispatch::friendly_sqlx_error(error, &connection.host, port)
-    })
+    let host_for_err = connection.host.clone();
+    PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))
 }
 
 // ---------------------------------------------------------------------------

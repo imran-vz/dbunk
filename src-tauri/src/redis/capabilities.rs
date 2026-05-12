@@ -16,13 +16,13 @@
 use std::time::Instant;
 
 use crate::redis::connection;
-use crate::{RedisCapabilities, RedisModuleInfo, StoredConnection};
+use crate::{RedisCapabilities, RedisModuleInfo, RedisStoredConnection};
 
 /// Connect once via a fresh multiplexed connection and run the
 /// capabilities probe. Latency is measured around the initial PING
 /// (the rest of the pipeline runs against the same already-open
 /// socket, so its cost is amortised in subsequent server-tab fetches).
-pub async fn probe(connection: &StoredConnection) -> Result<(u64, RedisCapabilities), String> {
+pub async fn probe(connection: &RedisStoredConnection) -> Result<(u64, RedisCapabilities), String> {
     log::info!("probe: starting for connection_id={}", connection.id);
     let start = Instant::now();
     let mut conn = connection::open_oneshot(connection).await?;

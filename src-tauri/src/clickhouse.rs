@@ -36,10 +36,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use crate::{
-    quote_backtick, CellEdit, CellEditKeyValue, ColumnInfo, CommitCellEditsResult, ConstraintInfo,
-    DatabaseOverviewStats, DeleteRowsResult, ExecuteDdlResult, IndexInfo, InsertRowResult,
-    MutationStatus, QueryResult, SchemaExplorer, SchemaForeignKey, SchemaRelationships,
-    SchemaTableColumn, SchemaTableNode, StoredConnection, StructureCapabilities, TableStructure,
+    quote_backtick, CellEdit, CellEditKeyValue, ClickHouseStoredConnection, ColumnInfo,
+    CommitCellEditsResult, ConstraintInfo, DatabaseOverviewStats, DeleteRowsResult,
+    ExecuteDdlResult, IndexInfo, InsertRowResult, MutationStatus, QueryResult, SchemaExplorer,
+    SchemaForeignKey, SchemaRelationships, SchemaTableColumn, SchemaTableNode, StoredConnection,
+    StructureCapabilities, TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,12 +60,25 @@ fn shared_client() -> &'static reqwest::Client {
 // URL + escaping helpers
 // ---------------------------------------------------------------------------
 
-fn database(connection: &StoredConnection) -> String {
-    if connection.database.trim().is_empty() {
+/// Narrow a `StoredConnection` to its ClickHouse variant. The
+/// dispatch layer (`dispatch/relational.rs`) guarantees this module
+/// is only reached for CH connections; the helper localizes the
+/// contract so URL/database builders can use typed field access.
+fn as_ch(connection: &StoredConnection) -> Result<&ClickHouseStoredConnection, String> {
+    match connection {
+        StoredConnection::ClickHouse(ch) => Ok(ch),
+        _ => Err("clickhouse module reached with a non-ClickHouse connection — dispatch bug"
+            .to_string()),
+    }
+}
+
+fn database(connection: &StoredConnection) -> Result<String, String> {
+    let ch = as_ch(connection)?;
+    Ok(if ch.database.trim().is_empty() {
         "default".to_string()
     } else {
-        connection.database.clone()
-    }
+        ch.database.clone()
+    })
 }
 
 fn escape(value: &str) -> String {
@@ -72,44 +86,40 @@ fn escape(value: &str) -> String {
 }
 
 fn url(connection: &StoredConnection) -> Result<reqwest::Url, String> {
+    let ch = as_ch(connection)?;
     // If the user pasted a fully-qualified URL into `host`, honour it.
     // Otherwise compose `<scheme>://<host>:<port>` from the discrete
     // fields. `useHttps` and the explicit port both map to the canonical
     // ClickHouse HTTP endpoints (8123 plain, 8443 TLS).
-    let base = if connection.host.starts_with("http://") || connection.host.starts_with("https://")
-    {
-        connection.host.clone()
+    let base = if ch.host.starts_with("http://") || ch.host.starts_with("https://") {
+        ch.host.clone()
     } else {
-        let scheme = if connection.use_https {
-            "https"
-        } else {
-            "http"
-        };
-        let port = if connection.port == 0 {
-            if connection.use_https {
+        let scheme = if ch.use_https { "https" } else { "http" };
+        let port = if ch.port == 0 {
+            if ch.use_https {
                 8443
             } else {
                 8123
             }
         } else {
-            connection.port
+            ch.port
         };
-        format!("{}://{}:{}", scheme, connection.host, port)
+        format!("{}://{}:{}", scheme, ch.host, port)
     };
     let mut url = reqwest::Url::parse(&base).map_err(|error| error.to_string())?;
-    let path = if connection.url_path.trim().is_empty() {
+    let path = if ch.url_path.trim().is_empty() {
         "/".to_string()
-    } else if connection.url_path.starts_with('/') {
-        connection.url_path.clone()
+    } else if ch.url_path.starts_with('/') {
+        ch.url_path.clone()
     } else {
-        format!("/{}", connection.url_path)
+        format!("/{}", ch.url_path)
     };
     url.set_path(&path);
     {
         let mut pairs = url.query_pairs_mut();
         pairs.append_pair("default_format", "JSONCompact");
-        if !connection.database.is_empty() {
-            pairs.append_pair("database", &connection.database);
+        if !ch.database.is_empty() {
+            pairs.append_pair("database", &ch.database);
         }
     }
     Ok(url)
@@ -180,12 +190,13 @@ fn parse_response(payload: serde_json::Value, runtime_ms: u64) -> Result<QueryRe
 /// JSON (DML statements with no result set) collapse to an empty
 /// `QueryResult` with `runtime_ms` populated.
 pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
+    let ch = as_ch(connection)?;
     let url = url(connection)?;
     let client = shared_client();
     let start = Instant::now();
     let mut request = client.post(url).body(query.to_string());
-    if !connection.user.is_empty() {
-        request = request.basic_auth(connection.user.clone(), Some(connection.password.clone()));
+    if !ch.user.is_empty() {
+        request = request.basic_auth(ch.user.clone(), Some(ch.password.clone()));
     }
     let response = request.send().await.map_err(|error| error.to_string())?;
     let status = response.status();
@@ -213,7 +224,7 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
 pub async fn fetch_schema_explorer(
     connection: &StoredConnection,
 ) -> Result<Vec<SchemaExplorer>, String> {
-    let database = database(connection);
+    let database = database(connection)?;
     let escaped = escape(&database);
     let tables_query = format!(
         "SELECT name FROM system.tables WHERE database = '{}' AND engine NOT IN ('View', 'MaterializedView', 'LiveView') ORDER BY name",
@@ -910,7 +921,7 @@ pub async fn poll_mutations(
 pub async fn fetch_database_overview_stats(
     connection: &StoredConnection,
 ) -> Result<DatabaseOverviewStats, String> {
-    let database = database(connection);
+    let database = database(connection)?;
     let escaped = escape(&database);
 
     // One round trip for everything that lives in `system.parts`.
@@ -993,14 +1004,13 @@ mod tests {
     //! consumes opaque JSON from the network and turns it into the shape
     //! the rest of the app trusts.
     use super::*;
-    use crate::DatabaseEngine;
+    use crate::ClickHouseStoredConnection;
 
     fn ch_conn(host: &str, database: &str, port: u16) -> StoredConnection {
-        StoredConnection {
+        StoredConnection::ClickHouse(ClickHouseStoredConnection {
             id: "ch".into(),
             name: "ch".into(),
             database: database.into(),
-            engine: DatabaseEngine::ClickHouse,
             host: host.into(),
             port,
             user: String::new(),
@@ -1009,22 +1019,29 @@ mod tests {
             last_activity_at: None,
             use_https: false,
             url_path: String::new(),
-            db_number: 0,
-            use_tls: false,
-            verify_tls_cert: true,
+        })
+    }
+
+    /// Mutably borrow the inner CH variant of a fixture for tests that
+    /// tweak engine-specific fields. Tests construct CH variants only,
+    /// so the panic is a wiring bug rather than runtime input.
+    fn ch_mut(connection: &mut StoredConnection) -> &mut ClickHouseStoredConnection {
+        match connection {
+            StoredConnection::ClickHouse(ch) => ch,
+            _ => panic!("fixture is not a ClickHouse variant"),
         }
     }
 
     #[test]
     fn database_defaults_to_literal_default_when_blank() {
         let connection = ch_conn("localhost", "", 0);
-        assert_eq!(database(&connection), "default");
+        assert_eq!(database(&connection).unwrap(), "default");
     }
 
     #[test]
     fn database_preserves_user_value() {
         let connection = ch_conn("localhost", "analytics", 0);
-        assert_eq!(database(&connection), "analytics");
+        assert_eq!(database(&connection).unwrap(), "analytics");
     }
 
     #[test]
@@ -1050,7 +1067,7 @@ mod tests {
     #[test]
     fn url_uses_8443_when_port_is_zero_and_https_on() {
         let mut connection = ch_conn("localhost", "", 0);
-        connection.use_https = true;
+        ch_mut(&mut connection).use_https = true;
         let built = url(&connection).expect("url");
         assert_eq!(built.scheme(), "https");
         assert_eq!(built.port(), Some(8443));
@@ -1092,7 +1109,7 @@ mod tests {
     #[test]
     fn url_uses_custom_path_when_set() {
         let mut connection = ch_conn("localhost", "", 0);
-        connection.url_path = "/clickhouse".to_string();
+        ch_mut(&mut connection).url_path = "/clickhouse".to_string();
         let built = url(&connection).expect("url");
         assert_eq!(built.path(), "/clickhouse");
     }
@@ -1100,7 +1117,7 @@ mod tests {
     #[test]
     fn url_normalizes_path_without_leading_slash() {
         let mut connection = ch_conn("localhost", "", 0);
-        connection.url_path = "clickhouse".to_string();
+        ch_mut(&mut connection).url_path = "clickhouse".to_string();
         let built = url(&connection).expect("url");
         assert_eq!(built.path(), "/clickhouse");
     }
