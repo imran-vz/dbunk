@@ -297,9 +297,11 @@ export type DatabaseOverviewStatsStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
-// Re-export PendingChange + SchemaRelationships from their owning modules so
-// the workspace state type can refer to them through one import path.
-export type { PendingChange, SchemaRelationships };
+// Re-export domain types from their owning modules so the workspace
+// state type (and slice files) can refer to them through one import
+// path.
+export type { ColumnChangeKind, PendingChange };
+export type { SchemaRelationships };
 
 // ---------------------------------------------------------------------------
 // Schema explorer + saved queries + history

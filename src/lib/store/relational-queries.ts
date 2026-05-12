@@ -1,23 +1,348 @@
 /**
- * Relational Queries slice — owns Query History, Saved Queries,
- * per-tab query editor state. Relational-only (the query editor is a
- * relational-class workspace tab kind).
+ * Relational Queries slice — owns Query History, Saved Queries, and
+ * the per-tab query editor / run state.
  *
  * Exposes `dropQueryStateForConnection(connectionId)` as its piece of
- * the delete-connection cleanup cascade.
- *
- * Phase: scaffold only.
+ * the delete-connection cleanup cascade — drops query-history rows
+ * pinned to that connection (we don't currently key queryStatus or
+ * queryPreviews by connectionId, so they aren't cleaned here).
  */
 
 import type { StateCreator } from "zustand";
 
-import type { AppStoreState } from "./types";
+import { pickSqlToRun } from "@/lib/sql";
+import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
-export type RelationalQueriesSlice = Record<string, never>;
+import type {
+  AppStoreState,
+  QueryHistoryEntry,
+  QueryPreviewData,
+  QueryStatus,
+  SavedQueriesStatus,
+  SavedQuery,
+} from "./types";
+
+type RunQueryResult = {
+  columns: string[];
+  rows: string[][];
+  runtimeMs: number;
+  rowCount: number;
+};
+
+const generateHistoryId = (): string => {
+  if (
+    typeof globalThis !== "undefined" &&
+    typeof (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+      ?.randomUUID === "function"
+  ) {
+    return (
+      globalThis as { crypto: { randomUUID: () => string } }
+    ).crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+export type RelationalQueriesSlice = {
+  queryEdits: Record<string, Record<number, Record<number, string>>>;
+  queryStatus: Record<string, QueryStatus>;
+  queryPreviews: Record<string, QueryPreviewData>;
+  queryHistory: QueryHistoryEntry[];
+  savedQueries: SavedQuery[];
+  savedQueriesStatus: SavedQueriesStatus;
+
+  setQueryEdit: (
+    tabId: string,
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => void;
+  discardQueryEdits: (tabId: string) => void;
+  updateQuery: (tabId: string, query: string) => void;
+  runQuery: (
+    tabId: string,
+    options?: { overrideSql?: string },
+  ) => Promise<void>;
+  loadQueryHistory: () => Promise<void>;
+  loadSavedQueries: () => Promise<void>;
+  saveSavedQuery: (
+    query: Omit<SavedQuery, "createdAt" | "updatedAt"> &
+      Partial<Pick<SavedQuery, "createdAt" | "updatedAt">>,
+  ) => Promise<void>;
+  deleteSavedQuery: (id: string) => Promise<void>;
+
+  /**
+   * Cascade cleanup — drops query-history rows for that connection
+   * and any query-status entries for its open tabs (the tab cleanup
+   * is best-effort because queryStatus is keyed by tab ID, not
+   * connection ID, so we look up the open tabs and drop their
+   * status entries).
+   */
+  dropQueryStateForConnection: (connectionId: string) => void;
+};
 
 export const createRelationalQueriesSlice: StateCreator<
   AppStoreState,
   [],
   [],
   RelationalQueriesSlice
-> = () => ({});
+> = (set, get) => ({
+  queryEdits: {},
+  queryStatus: {},
+  queryPreviews: {},
+  queryHistory: [],
+  savedQueries: [],
+  savedQueriesStatus: { state: "idle" },
+
+  setQueryEdit: (tabId, rowIndex, colIndex, value) =>
+    set((state) => ({
+      queryEdits: {
+        ...state.queryEdits,
+        [tabId]: {
+          ...state.queryEdits[tabId],
+          [rowIndex]: {
+            ...state.queryEdits[tabId]?.[rowIndex],
+            [colIndex]: value,
+          },
+        },
+      },
+    })),
+
+  discardQueryEdits: (tabId) =>
+    set((state) => {
+      const { [tabId]: _, ...rest } = state.queryEdits;
+      return { queryEdits: rest };
+    }),
+
+  updateQuery: (tabId, query) =>
+    set((state) => ({
+      workspaceTabs: state.workspaceTabs.map((tab) =>
+        tab.id === tabId ? { ...tab, query, isDirty: true } : tab,
+      ),
+    })),
+
+  runQuery: async (tabId, options) => {
+    const state = get();
+    const tab = state.workspaceTabs.find((item) => item.id === tabId);
+    if (!tab || tab.kind !== "query") {
+      return;
+    }
+    if (state.queryStatus[tabId]?.state === "running") {
+      return;
+    }
+    const fullText = tab.query ?? "";
+    const overrideSql = options?.overrideSql ?? null;
+    const query = pickSqlToRun(fullText, overrideSql).trim();
+    if (!query) {
+      return;
+    }
+    if (!isTauri()) {
+      set((state) => ({
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId
+            ? { ...item, lastRun: "Just now", isDirty: false }
+            : item,
+        ),
+      }));
+      return;
+    }
+    const connectionAtRun = state.connections.find(
+      (c) => c.id === tab.connectionId,
+    );
+    const startedAt = new Date().toISOString();
+    set((state) => ({
+      queryStatus: {
+        ...state.queryStatus,
+        [tabId]: { state: "running" },
+      },
+    }));
+    const buildEntry = (
+      base: Pick<QueryHistoryEntry, "status" | "runtimeMs"> &
+        Partial<Pick<QueryHistoryEntry, "rowCount" | "errorMessage">>,
+    ): QueryHistoryEntry => ({
+      id: generateHistoryId(),
+      sql: query,
+      connectionId: tab.connectionId,
+      connectionName: connectionAtRun?.name ?? "",
+      database: connectionAtRun?.database ?? "",
+      engine: connectionAtRun?.engine ?? "PostgreSQL",
+      status: base.status,
+      errorMessage: base.errorMessage,
+      runtimeMs: base.runtimeMs,
+      rowCount: base.rowCount,
+      startedAt,
+    });
+    const persistEntry = async (entry: QueryHistoryEntry) => {
+      try {
+        await tauriInvoke<QueryHistoryEntry[]>("append_query_history", {
+          entry,
+        });
+      } catch (error) {
+        console.error("Failed to persist query history entry", error);
+      }
+    };
+    try {
+      const result = await tauriInvoke<RunQueryResult>("run_query", {
+        payload: { connectionId: tab.connectionId, query },
+      });
+      const entry = buildEntry({
+        status: "success",
+        runtimeMs: result.runtimeMs,
+        rowCount: result.rowCount,
+      });
+      const nowIso = new Date().toISOString();
+      set((state) => ({
+        queryPreviews: {
+          ...state.queryPreviews,
+          [tab.label]: {
+            columns: result.columns,
+            rows: result.rows,
+            runtime: `${result.runtimeMs} ms`,
+            rowCount: result.rowCount.toString(),
+            cache: "Cold",
+          },
+        },
+        queryStatus: {
+          ...state.queryStatus,
+          [tabId]: { state: "success", runtimeMs: result.runtimeMs },
+        },
+        queryHistory: [entry, ...state.queryHistory].slice(0, 200),
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId
+            ? { ...item, lastRun: "Just now", isDirty: false }
+            : item,
+        ),
+        // Cross-slice write: bumps the Connection's lastActivityAt.
+        // Belongs as `get().applyConnectionActivity()` once the
+        // Connections slice exposes a helper for it (follow-up).
+        connections: state.connections.map((c) =>
+          c.id === tab.connectionId ? { ...c, lastActivityAt: nowIso } : c,
+        ),
+      }));
+      await persistEntry(entry);
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to run query", error);
+      const entry = buildEntry({
+        status: "error",
+        runtimeMs: Math.max(0, Date.now() - new Date(startedAt).getTime()),
+        errorMessage: message,
+      });
+      set((state) => ({
+        queryStatus: {
+          ...state.queryStatus,
+          [tabId]: { state: "error", error: message },
+        },
+        queryHistory: [entry, ...state.queryHistory].slice(0, 200),
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId
+            ? { ...item, lastRun: "Failed", isDirty: false }
+            : item,
+        ),
+      }));
+      await persistEntry(entry);
+    }
+  },
+
+  loadQueryHistory: async () => {
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      const stored =
+        await tauriInvoke<QueryHistoryEntry[]>("load_query_history");
+      set({ queryHistory: stored });
+    } catch (error) {
+      console.error("Failed to load query history", error);
+    }
+  },
+
+  loadSavedQueries: async () => {
+    if (!isTauri()) {
+      set({ savedQueriesStatus: { state: "success" } });
+      return;
+    }
+    set({ savedQueriesStatus: { state: "loading" } });
+    try {
+      const stored = await tauriInvoke<SavedQuery[]>("load_saved_queries");
+      set({ savedQueries: stored, savedQueriesStatus: { state: "success" } });
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load saved queries", error);
+      set({
+        savedQueriesStatus: { state: "error", error: message },
+      });
+    }
+  },
+
+  saveSavedQuery: async (input) => {
+    const now = new Date().toISOString();
+    const payload: SavedQuery = {
+      id: input.id,
+      name: input.name,
+      body: input.body,
+      connectionId: input.connectionId,
+      isFavorite: input.isFavorite,
+      ownerId: input.ownerId ?? null,
+      createdAt: input.createdAt ?? now,
+      updatedAt: input.updatedAt ?? now,
+    };
+    if (!isTauri()) {
+      set((state) => ({
+        savedQueries: [
+          payload,
+          ...state.savedQueries.filter((q) => q.id !== payload.id),
+        ],
+      }));
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<SavedQuery[]>("save_saved_query", {
+        query: payload,
+      });
+      set({ savedQueries: stored });
+    } catch (error) {
+      console.error("Failed to save saved query", error);
+    }
+  },
+
+  deleteSavedQuery: async (id) => {
+    if (!isTauri()) {
+      set((state) => ({
+        savedQueries: state.savedQueries.filter((q) => q.id !== id),
+      }));
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<SavedQuery[]>("delete_saved_query", {
+        payload: { id },
+      });
+      set({ savedQueries: stored });
+    } catch (error) {
+      console.error("Failed to delete saved query", error);
+    }
+  },
+
+  dropQueryStateForConnection: (connectionId) =>
+    set((state) => {
+      const tabsForConnection = state.workspaceTabs
+        .filter((tab) => tab.connectionId === connectionId)
+        .map((tab) => tab.id);
+      const tabIdSet = new Set(tabsForConnection);
+      const filterByTab = <T>(bag: Record<string, T>): Record<string, T> => {
+        const next: Record<string, T> = {};
+        for (const [key, value] of Object.entries(bag)) {
+          if (!tabIdSet.has(key)) {
+            next[key] = value;
+          }
+        }
+        return next;
+      };
+      return {
+        queryHistory: state.queryHistory.filter(
+          (entry) => entry.connectionId !== connectionId,
+        ),
+        queryStatus: filterByTab(state.queryStatus),
+        queryEdits: filterByTab(state.queryEdits),
+      };
+    }),
+});
