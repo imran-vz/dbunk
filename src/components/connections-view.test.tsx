@@ -24,6 +24,7 @@ const baseConnection: Connection = {
   role: "admin",
   latency: "--",
   lastSync: "Never",
+  ssl: true,
 };
 
 const initialStoreState = useAppStore.getState();

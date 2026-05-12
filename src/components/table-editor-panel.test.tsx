@@ -226,6 +226,7 @@ const postgresConnection: Connection = {
   role: "admin",
   latency: "10 ms",
   lastSync: "Just now",
+  ssl: true,
 };
 
 const seedStructure = (structure: TableStructure) => {

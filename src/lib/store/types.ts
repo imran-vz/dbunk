@@ -86,11 +86,19 @@ export type AppSettingsStatus =
 // Connection records
 // ---------------------------------------------------------------------------
 
-export type StoredConnection = {
+/**
+ * Connection records are per-engine tagged unions discriminated by
+ * `engine`. The Rust backend serializes the same shape via internally-
+ * tagged enums (ADR-0010); TypeScript narrowing makes engine-specific
+ * fields unreachable on the wrong variant.
+ *
+ * See ADR-0011 for the rationale (strict per-engine, sits below the
+ * storage-class fork from ADR-0008).
+ */
+type ConnectionCommon = {
   id: string;
   name: string;
   database: string;
-  engine: DatabaseEngine;
   host: string;
   port: number;
   user: string;
@@ -98,45 +106,65 @@ export type StoredConnection = {
   role: string;
   /** ISO-8601 timestamp of the most recent successful query/connect. */
   lastActivityAt?: string;
-  /** ClickHouse-only: connect over HTTPS instead of HTTP. */
-  useHttps?: boolean;
-  /** ClickHouse-only: URL path prefix for proxied deployments (e.g. /clickhouse). */
-  urlPath?: string;
-  /** Redis-only: which numbered DB (0–15 on standalone). Defaults to 0. */
-  dbNumber?: number;
-  /** Redis-only: connect over TLS (rediss://). */
-  useTls?: boolean;
-  /** Redis-only: verify the TLS certificate. Only meaningful when useTls is true. Default true. */
-  verifyTlsCert?: boolean;
 };
 
-export type Connection = {
-  id: string;
-  name: string;
-  database: string;
+export type PgStoredConnection = ConnectionCommon & {
+  engine: "PostgreSQL";
+  /** TLS upgrade on the wire protocol. PG/MySQL only — distinct from
+   *  ClickHouse `useHttps` and Redis `useTls`. */
+  ssl: boolean;
+};
+export type MySqlStoredConnection = ConnectionCommon & {
+  engine: "MySQL";
+  ssl: boolean;
+};
+export type SqliteStoredConnection = ConnectionCommon & {
+  engine: "SQLite";
+};
+export type ClickHouseStoredConnection = ConnectionCommon & {
+  engine: "ClickHouse";
+  /** Connect over HTTPS instead of HTTP. */
+  useHttps: boolean;
+  /** URL path prefix for proxied deployments (e.g. `/clickhouse`). */
+  urlPath: string;
+};
+export type RedisStoredConnection = ConnectionCommon & {
+  engine: "Redis";
+  /** Which numbered DB (0–15 on standalone). */
+  dbNumber: number;
+  /** Connect over TLS (`rediss://`). */
+  useTls: boolean;
+  /** Verify the TLS certificate when useTls is on. */
+  verifyTlsCert: boolean;
+};
+
+export type StoredConnection =
+  | PgStoredConnection
+  | MySqlStoredConnection
+  | SqliteStoredConnection
+  | ClickHouseStoredConnection
+  | RedisStoredConnection;
+
+type ConnectionRuntimeFields = {
   status: "Connected" | "Read only" | "Disconnected";
-  engine: DatabaseEngine;
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  role: string;
   latency: string;
   lastSync: string;
-  /** ISO-8601 timestamp of the most recent successful query/connect. */
-  lastActivityAt?: string;
   errorMessage?: string;
-  /** ClickHouse-only: connect over HTTPS instead of HTTP. */
-  useHttps?: boolean;
-  /** ClickHouse-only: URL path prefix for proxied deployments. */
-  urlPath?: string;
-  /** Redis-only: which numbered DB (0–15 on standalone). */
-  dbNumber?: number;
-  /** Redis-only: connect over TLS (rediss://). */
-  useTls?: boolean;
-  /** Redis-only: verify the TLS certificate when useTls is on. */
-  verifyTlsCert?: boolean;
 };
+
+export type PgConnection = PgStoredConnection & ConnectionRuntimeFields;
+export type MySqlConnection = MySqlStoredConnection & ConnectionRuntimeFields;
+export type SqliteConnection = SqliteStoredConnection & ConnectionRuntimeFields;
+export type ClickHouseConnection = ClickHouseStoredConnection &
+  ConnectionRuntimeFields;
+export type RedisConnection = RedisStoredConnection & ConnectionRuntimeFields;
+
+export type Connection =
+  | PgConnection
+  | MySqlConnection
+  | SqliteConnection
+  | ClickHouseConnection
+  | RedisConnection;
 
 // ---------------------------------------------------------------------------
 // Per-tab status shapes
@@ -538,24 +566,7 @@ export interface AppStoreState {
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
   testConnection: (
-    connection: Pick<
-      StoredConnection,
-      | "id"
-      | "name"
-      | "database"
-      | "engine"
-      | "host"
-      | "port"
-      | "user"
-      | "password"
-      | "role"
-    > &
-      Partial<
-        Pick<
-          StoredConnection,
-          "useHttps" | "urlPath" | "dbNumber" | "useTls" | "verifyTlsCert"
-        >
-      >,
+    connection: StoredConnection,
   ) => Promise<
     | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
     | { ok: false; error: string }

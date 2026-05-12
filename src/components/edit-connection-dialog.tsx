@@ -137,24 +137,54 @@ export function EditConnectionDialog({
     } as ConnectionFormData,
     onSubmit: async ({ value }) => {
       if (!connection) return;
-      await updateConnection({
-        ...connection,
+      // Build the per-engine variant fresh from form values so we can't
+      // carry stale engine-specific fields if the user picked a
+      // different engine. Common runtime fields (status/latency/etc.)
+      // ride along from the existing record. Slice 4 (#16) lifts this
+      // shape-building into the unified ConnectionForm component.
+      const base = {
+        id: connection.id,
         name: value.name,
         database: value.database ?? "",
-        engine: value.engine,
         host: value.host ?? "",
         port: value.port ?? 0,
         user: value.user ?? "",
         password: value.password ?? "",
         role: value.role || "read/write",
-        useHttps:
-          value.engine === "ClickHouse" ? (value.useHttps ?? false) : false,
-        urlPath: value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
-        dbNumber: value.engine === "Redis" ? (value.dbNumber ?? 0) : 0,
-        useTls: value.engine === "Redis" ? (value.useTls ?? false) : false,
-        verifyTlsCert:
-          value.engine === "Redis" ? (value.verifyTlsCert ?? true) : true,
-      });
+        status: connection.status,
+        latency: connection.latency,
+        lastSync: connection.lastSync,
+        errorMessage: connection.errorMessage,
+        lastActivityAt: connection.lastActivityAt,
+      };
+      let updated: Connection;
+      switch (value.engine) {
+        case "PostgreSQL":
+        case "MySQL":
+          updated = { ...base, engine: value.engine, ssl: true };
+          break;
+        case "SQLite":
+          updated = { ...base, engine: "SQLite" };
+          break;
+        case "ClickHouse":
+          updated = {
+            ...base,
+            engine: "ClickHouse",
+            useHttps: value.useHttps ?? false,
+            urlPath: value.urlPath ?? "",
+          };
+          break;
+        case "Redis":
+          updated = {
+            ...base,
+            engine: "Redis",
+            dbNumber: value.dbNumber ?? 0,
+            useTls: value.useTls ?? false,
+            verifyTlsCert: value.verifyTlsCert ?? true,
+          };
+          break;
+      }
+      await updateConnection(updated);
       onOpenChange(false);
     },
     validators: {
@@ -174,13 +204,21 @@ export function EditConnectionDialog({
       form.setFieldValue("user", connection.user);
       form.setFieldValue("password", connection.password);
       form.setFieldValue("role", connection.role);
-      form.setFieldValue("useHttps", connection.useHttps ?? false);
-      form.setFieldValue("urlPath", connection.urlPath ?? "");
-      form.setFieldValue("dbNumber", connection.dbNumber ?? 0);
-      form.setFieldValue("useTls", connection.useTls ?? false);
-      form.setFieldValue("verifyTlsCert", connection.verifyTlsCert ?? true);
+      const isClickHouse = connection.engine === "ClickHouse";
+      const isRedis = connection.engine === "Redis";
+      form.setFieldValue(
+        "useHttps",
+        isClickHouse ? connection.useHttps : false,
+      );
+      form.setFieldValue("urlPath", isClickHouse ? connection.urlPath : "");
+      form.setFieldValue("dbNumber", isRedis ? connection.dbNumber : 0);
+      form.setFieldValue("useTls", isRedis ? connection.useTls : false);
+      form.setFieldValue(
+        "verifyTlsCert",
+        isRedis ? connection.verifyTlsCert : true,
+      );
       setSelectedEngine(connection.engine);
-      setUseHttps(connection.useHttps ?? false);
+      setUseHttps(isClickHouse ? connection.useHttps : false);
     }
   }, [connection, open, form]);
 

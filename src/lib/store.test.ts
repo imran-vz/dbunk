@@ -549,6 +549,7 @@ describe("connectConnection error feedback", () => {
           role: "admin",
           latency: "--",
           lastSync: "Never",
+          ssl: true,
         },
       ],
     });
@@ -586,6 +587,7 @@ describe("connectConnection error feedback", () => {
           role: "admin",
           latency: "--",
           lastSync: "Never",
+          ssl: true,
           errorMessage: "previous failure",
         },
       ],
@@ -622,6 +624,7 @@ describe("connectConnection error feedback", () => {
           role: "admin",
           latency: "--",
           lastSync: "Never",
+          ssl: true,
         },
       ],
     });
@@ -657,6 +660,7 @@ describe("runHealthChecks latency", () => {
           role: "admin",
           latency: "--",
           lastSync: "Never",
+          ssl: true,
         },
       ],
     });
@@ -773,6 +777,7 @@ describe("runQuery overrideSql", () => {
           role: "admin",
           latency: "--",
           lastSync: "Never",
+          ssl: true,
         },
       ],
     });
@@ -870,6 +875,7 @@ describe("query history", () => {
           role: "admin",
           latency: "--",
           lastSync: "Never",
+          ssl: true,
         },
       ],
     });
@@ -1043,6 +1049,7 @@ const seedPostgresConnection = () => {
     role: "admin",
     latency: "10 ms",
     lastSync: "Just now",
+    ssl: true,
   };
   useAppStore.setState({
     connections: [connection],
@@ -1219,8 +1226,27 @@ describe("store.commitStructureChanges", () => {
 
   it("rejects commit when active engine is not PostgreSQL", async () => {
     useAppStore.setState((state) => ({
+      // Re-emit the connection as a MySQL variant; switching engines is
+      // a transform between Connection union members, not a property
+      // edit. Slice 4 (#16) disables this in the actual edit dialog.
       connections: state.connections.map((c) =>
-        c.id === "conn-1" ? { ...c, engine: "MySQL" } : c,
+        c.id === "conn-1"
+          ? ({
+              id: c.id,
+              name: c.name,
+              database: c.database,
+              status: c.status,
+              host: c.host,
+              port: c.port,
+              user: c.user,
+              password: c.password,
+              role: c.role,
+              latency: c.latency,
+              lastSync: c.lastSync,
+              engine: "MySQL",
+              ssl: true,
+            } satisfies import("@/lib/store").MySqlConnection)
+          : c,
       ),
       tableStructure: {
         ...state.tableStructure,
@@ -1860,6 +1886,7 @@ describe("store.addTableRow", () => {
           role: "admin",
           latency: "10 ms",
           lastSync: "Just now",
+          ssl: true,
         },
       ],
       activeConnectionId: "conn-1",
@@ -2062,6 +2089,7 @@ describe("store.deleteSelectedTableRows", () => {
           role: "admin",
           latency: "10 ms",
           lastSync: "Just now",
+          ssl: true,
         },
       ],
       activeConnectionId: "conn-1",

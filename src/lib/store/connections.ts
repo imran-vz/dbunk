@@ -38,31 +38,51 @@ const hydrateConnection = (connection: StoredConnection): Connection => ({
   lastSync: "Never",
 });
 
-const toStoredConnection = (connection: Connection): StoredConnection => ({
-  id: connection.id,
-  name: connection.name,
-  database: connection.database,
-  engine: connection.engine,
-  host: connection.host,
-  port: connection.port,
-  user: connection.user,
-  password: connection.password,
-  role: connection.role,
-  lastActivityAt: connection.lastActivityAt,
-  useHttps: connection.useHttps,
-  urlPath: connection.urlPath,
-  dbNumber: connection.dbNumber,
-  useTls: connection.useTls,
-  verifyTlsCert: connection.verifyTlsCert,
-});
+/**
+ * Strip the runtime fields (`status`, `latency`, `lastSync`,
+ * `errorMessage`) from a `Connection` to recover the `StoredConnection`
+ * wire shape. The variant-specific fields (`ssl`, `useHttps`, etc.)
+ * pass through untouched via the spread — TypeScript narrows on
+ * `engine` so the returned union member matches the input variant.
+ */
+const toStoredConnection = (connection: Connection): StoredConnection => {
+  const { status, latency, lastSync, errorMessage, ...stored } = connection;
+  // The runtime-field destructure leaves a shape whose engine tag plus
+  // per-variant fields exactly satisfy `StoredConnection`; the cast is
+  // narrowing the union the destructure widens.
+  void status;
+  void latency;
+  void lastSync;
+  void errorMessage;
+  return stored as StoredConnection;
+};
+
+/**
+ * Updates to a Connection's runtime fields (`status`, `latency`,
+ * `lastSync`, `errorMessage`, `lastActivityAt`). Variant-specific
+ * fields are excluded because they're part of the Connection's
+ * engine identity, not transient state.
+ */
+type ConnectionRuntimeUpdate = Partial<
+  Pick<
+    Connection,
+    "status" | "latency" | "lastSync" | "errorMessage" | "lastActivityAt"
+  >
+>;
 
 const applyConnectionUpdate = (
   connections: Connection[],
   connectionId: string,
-  updates: Partial<Connection>,
-) =>
+  updates: ConnectionRuntimeUpdate,
+): Connection[] =>
   connections.map((connection) =>
-    connection.id === connectionId ? { ...connection, ...updates } : connection,
+    connection.id === connectionId
+      ? // The runtime-fields spread preserves the original variant's
+        // `engine` discriminator and engine-specific fields; the cast
+        // is narrowing back to the union after TypeScript widens it
+        // through the spread.
+        ({ ...connection, ...updates } as Connection)
+      : connection,
   );
 
 export type ConnectionsSlice = {
@@ -76,24 +96,7 @@ export type ConnectionsSlice = {
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
   testConnection: (
-    connection: Pick<
-      StoredConnection,
-      | "id"
-      | "name"
-      | "database"
-      | "engine"
-      | "host"
-      | "port"
-      | "user"
-      | "password"
-      | "role"
-    > &
-      Partial<
-        Pick<
-          StoredConnection,
-          "useHttps" | "urlPath" | "dbNumber" | "useTls" | "verifyTlsCert"
-        >
-      >,
+    connection: StoredConnection,
   ) => Promise<
     | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
     | { ok: false; error: string }
@@ -254,25 +257,11 @@ export const createConnectionsSlice: StateCreator<
       return { ok: true, latencyMs: 0 };
     }
     try {
+      // The connection arg is already a `StoredConnection` union member;
+      // serde on the Rust side decodes the engine-tagged JSON into the
+      // matching `StoredConnection::*` variant (ADR-0010).
       const result = await tauriInvoke<ConnectResult>("test_connection", {
-        payload: {
-          connection: {
-            id: connection.id,
-            name: connection.name,
-            database: connection.database,
-            engine: connection.engine,
-            host: connection.host,
-            port: connection.port,
-            user: connection.user,
-            password: connection.password,
-            role: connection.role,
-            useHttps: connection.useHttps ?? false,
-            urlPath: connection.urlPath ?? "",
-            dbNumber: connection.dbNumber ?? 0,
-            useTls: connection.useTls ?? false,
-            verifyTlsCert: connection.verifyTlsCert ?? true,
-          },
-        },
+        payload: { connection },
       });
       return {
         ok: true,
