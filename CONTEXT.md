@@ -7,24 +7,35 @@ these terms rather than coining synonyms.
 
 ## Top-level entities
 
-- **Connection** — a saved database endpoint. Carries the engine, host, port,
-  database name, user, role, and an optional credential. Persisted in the
-  local SQLite database (`~/.config/dbunk/dbunk.sqlite`). Password storage is
-  app-wide: encrypted SQLite is recommended, OS keychain is available, and
-  unencrypted SQLite is available with warning (ADR-0007).
-  Connections have a runtime **status** (`Connected` / `Read only` /
-  `Disconnected`), a **latency** measurement from the last ping, a **last
-  activity** timestamp from the most recent successful query/connect, and an
-  optional **error message** from the last health check.
-  Engine-class-specific fields ride on the same record: `ssl` for PostgreSQL
-  and MySQL (TLS upgrade on the wire protocol); `useHttps` / `urlPath` for
-  ClickHouse (TLS for the HTTP transport — a separate concept from `ssl`,
-  not a synonym); `dbNumber` / `useTls` / `verifyTlsCert` for Redis (TLS via
-  `rediss://`). SQLite has no transport-encryption field. Fields that don't
-  apply to the active engine are ignored.
-- **Stored Connection** — the backend wire shape (no returned password, no
-  runtime status). The Rust backend hydrates credentials internally before DB
-  operations; stored passwords are not returned to the frontend.
+- **Connection** — a saved database endpoint. A **per-engine tagged
+  union** (ADR-0011) — `PgConnection | MySqlConnection |
+  SqliteConnection | ClickHouseConnection | RedisConnection` — each
+  variant discriminated by `engine`. Common fields (`id`, `name`,
+  `host`, `port`, `user`, `password`, `database`, `role`,
+  `lastActivityAt`) plus runtime fields (`status` =
+  `Connected` / `Read only` / `Disconnected`, `latency`, `lastSync`,
+  optional `errorMessage`) live on every variant. Persisted in the
+  local SQLite database (`~/.config/dbunk/dbunk.sqlite`). Password
+  storage is app-wide: encrypted SQLite is recommended, OS keychain
+  is available, unencrypted SQLite is available with warning
+  (ADR-0007).
+  Engine-class-specific fields live on their variants and **only
+  their variants** — TypeScript narrows on `connection.engine` to
+  reach them. `ssl: boolean` lives on `PgConnection` /
+  `MySqlConnection` (TLS upgrade on the wire protocol); `useHttps`
+  and `urlPath` live on `ClickHouseConnection` (TLS for the HTTP
+  transport — a distinct concept from `ssl`); `dbNumber`, `useTls`,
+  `verifyTlsCert` live on `RedisConnection` (TLS via `rediss://`).
+  SQLite has no transport-encryption field.
+- **Stored Connection** — the wire shape, identical to `Connection`
+  minus the runtime fields. A **per-engine serde-tagged enum** on
+  the Rust side (`#[serde(tag = "engine")]` over
+  `PgStoredConnection` / `MySqlStoredConnection` /
+  `SqliteStoredConnection` / `ClickHouseStoredConnection` /
+  `RedisStoredConnection`; ADR-0010); the wire JSON is flat
+  (variant fields next to the `engine` tag). The Rust backend
+  hydrates credentials internally before DB operations; stored
+  passwords are not returned to the frontend.
 - **Active Connection** — the one currently selected in the sidebar; drives
   the schema explorer (relational engines) or keyspace browser (Redis), the
   overview / server tab, and any newly opened tab.
@@ -232,8 +243,17 @@ Captures are never auto-pruned; users manage them manually.
   (`defaultDbNumber`, `maxDbNumber`, `keyTypeIcons`, `pubSubSupported`,
   `transactionsSupported`, `destructiveCommands` — the last sourced via
   codegen from `redis-destructive-commands.toml`, shared with Rust).
-  Connection-form policy stays a flat shared field with per-engine
-  feature flags (`showClickHouseHttp`, `showRedisTls`, `showRedisDbNumber`).
+  **Connection-form policy** (`ConnectionFormPolicy`) is itself a
+  tagged union on `kind` (ADR-0012): `host-auth` (PG/MySQL — carries
+  `defaultPort`, `showSslToggle`), `clickhouse-http` (CH —
+  `defaultPortHttp`, `defaultPortHttps`), `redis` (`defaultPort`,
+  `defaultDbNumber`, `maxDbNumber`), `file` (SQLite). The `kind`
+  discriminator names the **form shape**, not the engine; multiple
+  engines (PG + MySQL) can share a `kind`. The unified
+  `ConnectionForm` component switches on `policy.kind` to decide
+  which engine-specific fields to render, and validates via
+  `validateConnection(policy, value, mode)` — one shared function,
+  mode-aware password rule.
   Storage-class-specific components narrow via the
   `relationalPolicy(engine)` / `keyvaluePolicy(engine)` helpers; deep
   call sites do not re-narrow. `TypeScript`'s `Record` enforces

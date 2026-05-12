@@ -1,6 +1,6 @@
 import { IconPlus, IconX } from "@tabler/icons-react";
 import type React from "react";
-import { NewConnectionForm } from "@/components/new-connection-form";
+import { ConnectionForm } from "@/components/connection-form";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -53,7 +53,8 @@ export function NewConnectionDialog({
           </Button>
         </AlertDialogHeader>
         <div className="flex min-h-0 flex-1 flex-col">
-          <NewConnectionForm
+          <ConnectionForm
+            mode="new"
             onSaved={() => onOpenChange(false)}
             onCancel={() => onOpenChange(false)}
           />
