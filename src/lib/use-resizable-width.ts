@@ -81,20 +81,31 @@ export function useResizableWidth({
 
 /**
  * Observe the rendered width of an element. Returns a ref to attach plus
- * the latest measured pixel width. Initial value is 0 until the first
- * `ResizeObserver` callback fires, so consumers should treat 0 as
- * "unknown" and not collapse panels on first paint.
+ * the latest measured pixel width. The client-side initial value falls
+ * back to `window.innerWidth` so compact shells can collapse optional
+ * panels even in runtimes where element measurement is delayed.
  */
 export function useContainerWidth<T extends HTMLElement>(): [
   React.RefObject<T | null>,
   number,
 ] {
   const ref = useRef<T | null>(null);
-  const [width, setWidth] = useState(0);
+  const [width, setWidth] = useState(() =>
+    typeof window === "undefined" ? 0 : window.innerWidth,
+  );
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el) return;
+    const updateWidth = () => {
+      const measured = el.getBoundingClientRect().width;
+      setWidth(measured > 0 ? measured : window.innerWidth);
+    };
+    updateWidth();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateWidth);
+      return () => window.removeEventListener("resize", updateWidth);
+    }
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setWidth(entry.contentRect.width);

@@ -435,8 +435,14 @@ export function DataGrid({
   const dataColumnWidth = `${100 / visibleDataColumnCount}%`;
 
   return (
-    <div className={cn("flex h-full flex-col bg-surface-app", className)}>
-      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border-subtle bg-surface-window px-5 py-2.5">
+    <div
+      data-slot="data-grid"
+      className={cn("flex h-full flex-col bg-surface-app", className)}
+    >
+      <div
+        data-slot="data-grid-toolbar"
+        className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 overflow-x-auto border-b border-border-subtle bg-surface-window px-5 py-2.5"
+      >
         <div className="flex flex-wrap items-center gap-2">
           {hasEdits ? (
             <div className="flex items-center gap-2">
@@ -447,7 +453,8 @@ export function DataGrid({
                 onClick={onDiscard}
                 disabled={isSaving}
               >
-                <IconX className="mr-1 size-3.5" /> Discard
+                <IconX className="mr-1 size-3.5" />{" "}
+                <span className="dbunk-optional-label">Discard</span>
               </Button>
               <Button
                 size="sm"
@@ -456,7 +463,9 @@ export function DataGrid({
                 disabled={isSaving}
               >
                 <IconDeviceFloppy className="mr-1 size-3.5" />{" "}
-                {isSaving ? "Saving…" : "Save changes"}
+                <span className="dbunk-primary-label">
+                  {isSaving ? "Saving…" : "Save changes"}
+                </span>
               </Button>
               <div className="mx-2 h-6 w-px bg-border-subtle" />
             </div>
@@ -470,29 +479,35 @@ export function DataGrid({
               showFilters && "bg-primary/10 text-primary",
             )}
             onClick={() => setShowFilters(!showFilters)}
+            aria-label="Filter"
+            title="Filter"
           >
             <IconFilter className="size-3.5" />
-            Filter
+            <span className="dbunk-optional-label">Filter</span>
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             className="h-9 gap-2 border-border-subtle bg-surface-panel"
+            aria-label="Sort"
+            title="Sort"
           >
             <IconArrowsSort className="size-3.5" />
-            Sort
+            <span className="dbunk-optional-label">Sort</span>
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger
+              aria-label="Columns"
+              title="Columns"
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
                 "h-9 gap-2 border-border-subtle bg-surface-panel",
               )}
             >
               <IconColumns className="size-3.5" />
-              Columns
+              <span className="dbunk-optional-label">Columns</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuGroup>
@@ -557,20 +572,24 @@ export function DataGrid({
             className="h-9 gap-2 border-border-subtle bg-surface-panel"
             onClick={onRefresh}
             disabled={!onRefresh}
+            aria-label="Refresh"
+            title="Refresh"
           >
             <IconRefresh className="size-3.5" />
-            Refresh
+            <span className="dbunk-optional-label">Refresh</span>
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger
+              aria-label="Export"
+              title="Export"
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
                 "h-9 gap-2 border-border-subtle bg-surface-panel",
               )}
             >
               <IconDownload className="size-3.5" />
-              Export
+              <span className="dbunk-optional-label">Export</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuGroup>
@@ -773,9 +792,15 @@ export function DataGrid({
         </div>
       )}
 
-      <div className="flex-1 overflow-auto bg-surface-app">
+      <div
+        data-slot="data-grid-scroll"
+        className="flex-1 overflow-auto bg-surface-app"
+      >
         {table.getRowModel().rows?.length ? (
-          <table className="min-w-full border-separate border-spacing-0 text-left text-xs font-mono">
+          <table
+            data-slot="data-grid-table"
+            className="min-w-full border-separate border-spacing-0 text-left text-xs font-mono"
+          >
             <thead className="sticky top-0 z-20">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
