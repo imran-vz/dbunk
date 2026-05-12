@@ -39,6 +39,7 @@
     "lint": "biome check",
     "fix": "biome check --write",
     "typecheck": "tsc --noEmit",
+    "check:slice-isolation": "! grep -rE 'from \"\\./(connections|workspace-tabs|credentials|relational-tables|relational-queries|keyvalue-workspace|keyvalue-pubsub)\"' src/lib/store/connections.ts src/lib/store/workspace-tabs.ts src/lib/store/credentials.ts src/lib/store/relational-tables.ts src/lib/store/relational-queries.ts src/lib/store/keyvalue-workspace.ts src/lib/store/keyvalue-pubsub.ts",
     "dev": "tauri dev",
     "build": "tauri build"
   },
