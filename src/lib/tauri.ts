@@ -33,6 +33,13 @@ export async function tauriStartDragging() {
   await getCurrentWindow().startDragging();
 }
 
+export async function tauriRestoreWindowTrafficLightPosition() {
+  if (!isTauri()) {
+    return;
+  }
+  await tauriInvoke("restore_window_traffic_light_position");
+}
+
 export async function tauriPrepareWindowZoomTransition(): Promise<WindowViewportZoomTransition | null> {
   if (!isTauri()) {
     return null;

@@ -6,6 +6,9 @@ type TauriTestWindow = Window & {
 };
 
 const tauriWindowApi = vi.hoisted(() => {
+  const core = {
+    invoke: vi.fn(),
+  };
   const currentWindow = {
     isFullscreen: vi.fn(),
     isMaximized: vi.fn(),
@@ -23,6 +26,7 @@ const tauriWindowApi = vi.hoisted(() => {
   };
 
   return {
+    core,
     currentMonitor: vi.fn(),
     currentWindow,
     getCurrentWindow: vi.fn(() => currentWindow),
@@ -31,7 +35,7 @@ const tauriWindowApi = vi.hoisted(() => {
 });
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  invoke: tauriWindowApi.core.invoke,
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -65,6 +69,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   resetTauriWindowMocks();
+  tauriWindowApi.core.invoke.mockResolvedValue(undefined);
   setViewportSize(900, 650);
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
     configurable: true,
@@ -120,5 +125,25 @@ describe("tauriToggleWindowZoom", () => {
     await tauriToggleWindowZoom();
 
     expect(tauriWindowApi.currentWindow.toggleMaximize).not.toHaveBeenCalled();
+  });
+
+  it("invokes the native traffic-light restore command in Tauri", async () => {
+    const { tauriRestoreWindowTrafficLightPosition } = await loadTauriModule();
+
+    await tauriRestoreWindowTrafficLightPosition();
+
+    expect(tauriWindowApi.core.invoke).toHaveBeenCalledWith(
+      "restore_window_traffic_light_position",
+      undefined,
+    );
+  });
+
+  it("skips the native traffic-light restore command outside Tauri", async () => {
+    delete (window as TauriTestWindow).__TAURI_INTERNALS__;
+    const { tauriRestoreWindowTrafficLightPosition } = await loadTauriModule();
+
+    await tauriRestoreWindowTrafficLightPosition();
+
+    expect(tauriWindowApi.core.invoke).not.toHaveBeenCalled();
   });
 });

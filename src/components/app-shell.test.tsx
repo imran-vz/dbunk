@@ -27,6 +27,7 @@ const tauriMocks = vi.hoisted(() => {
     ),
     tauriStartDragging: vi.fn(() => Promise.resolve()),
     tauriPrepareWindowZoomTransition: vi.fn(() => Promise.resolve(null)),
+    tauriRestoreWindowTrafficLightPosition: vi.fn(() => Promise.resolve()),
     tauriToggleWindowZoom: vi.fn(() => Promise.resolve()),
   };
 });
@@ -36,6 +37,8 @@ vi.mock("@/lib/tauri", () => ({
   tauriInvoke: vi.fn(),
   tauriOnWindowFullscreenChange: tauriMocks.tauriOnWindowFullscreenChange,
   tauriPrepareWindowZoomTransition: tauriMocks.tauriPrepareWindowZoomTransition,
+  tauriRestoreWindowTrafficLightPosition:
+    tauriMocks.tauriRestoreWindowTrafficLightPosition,
   tauriStartDragging: tauriMocks.tauriStartDragging,
   tauriToggleWindowZoom: tauriMocks.tauriToggleWindowZoom,
   errorToMessage: (error: unknown) =>
@@ -124,6 +127,7 @@ beforeEach(() => {
   mockedStartDragging.mockClear();
   mockedPrepareWindowZoomTransition.mockClear();
   mockedPrepareWindowZoomTransition.mockResolvedValue(null);
+  tauriMocks.tauriRestoreWindowTrafficLightPosition.mockClear();
   mockedToggleWindowZoom.mockClear();
   tauriMocks.tauriOnWindowFullscreenChange.mockClear();
   tauriMocks.unlistenFullscreen.mockClear();
@@ -305,5 +309,43 @@ describe("AppShell title bar dragging", () => {
 
     expect(topBar.dataset.windowFullscreen).toBe("false");
     expect(topBar.className).toContain("pl-22");
+  });
+
+  it("restores the native macOS traffic-light position after leaving fullscreen", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<AppShell />);
+
+      act(() => {
+        tauriMocks.state.fullscreenHandler?.(true);
+      });
+      expect(
+        tauriMocks.tauriRestoreWindowTrafficLightPosition,
+      ).not.toHaveBeenCalled();
+
+      act(() => {
+        tauriMocks.state.fullscreenHandler?.(false);
+      });
+
+      expect(
+        tauriMocks.tauriRestoreWindowTrafficLightPosition,
+      ).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(
+        tauriMocks.tauriRestoreWindowTrafficLightPosition,
+      ).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        vi.advanceTimersByTime(220);
+      });
+      expect(
+        tauriMocks.tauriRestoreWindowTrafficLightPosition,
+      ).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

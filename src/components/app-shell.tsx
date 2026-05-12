@@ -10,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -32,6 +33,7 @@ import { useAppStore } from "@/lib/store";
 import {
   tauriOnWindowFullscreenChange,
   tauriPrepareWindowZoomTransition,
+  tauriRestoreWindowTrafficLightPosition,
   tauriStartDragging,
   tauriToggleWindowZoom,
   type WindowViewportZoomTransition,
@@ -49,6 +51,7 @@ const GLOBAL_SIDEBAR_MAX_WIDTH = 420;
 const GLOBAL_SIDEBAR_COMPACT_BELOW = 980;
 const PROTECTED_WORKSPACE_WIDTH = 560;
 const WINDOW_VIEWPORT_ZOOM_MS = 280;
+const WINDOW_TRAFFIC_LIGHT_RESTORE_DELAYS_MS = [120, 340] as const;
 const TOP_BAR_INTERACTIVE_SELECTOR = [
   "a[href]",
   "button",
@@ -79,6 +82,8 @@ export function AppShell() {
     useState<WindowViewportZoomState | null>(null);
   const windowViewportZoomId = useRef(0);
   const windowViewportZoomTimeout = useRef<number | null>(null);
+  const wasWindowFullscreen = useRef(false);
+  const trafficLightRestoreTimeouts = useRef<number[]>([]);
   const [shellBodyRef, shellBodyWidth] = useContainerWidth<HTMLDivElement>();
   const { width: globalSidebarWidth, setWidth: setGlobalSidebarWidth } =
     useResizableWidth({
@@ -151,6 +156,26 @@ export function AppShell() {
     await tauriToggleWindowZoom();
   };
 
+  const clearWindowTrafficLightRestoreTimers = useCallback(() => {
+    for (const timeout of trafficLightRestoreTimeouts.current) {
+      window.clearTimeout(timeout);
+    }
+    trafficLightRestoreTimeouts.current = [];
+  }, []);
+
+  const restoreWindowTrafficLightPosition = useCallback(() => {
+    clearWindowTrafficLightRestoreTimers();
+    void tauriRestoreWindowTrafficLightPosition().catch(() => undefined);
+    for (const delay of WINDOW_TRAFFIC_LIGHT_RESTORE_DELAYS_MS) {
+      const timeout = window.setTimeout(() => {
+        trafficLightRestoreTimeouts.current =
+          trafficLightRestoreTimeouts.current.filter((id) => id !== timeout);
+        void tauriRestoreWindowTrafficLightPosition().catch(() => undefined);
+      }, delay);
+      trafficLightRestoreTimeouts.current.push(timeout);
+    }
+  }, [clearWindowTrafficLightRestoreTimers]);
+
   const startWindowViewportZoom = (
     transition: WindowViewportZoomTransition | null,
   ) => {
@@ -218,7 +243,14 @@ export function AppShell() {
     let unlisten: (() => void) | undefined;
     void tauriOnWindowFullscreenChange((fullscreen) => {
       if (!disposed) {
+        const didExitFullscreen = wasWindowFullscreen.current && !fullscreen;
+        wasWindowFullscreen.current = fullscreen;
         setIsWindowFullscreen(fullscreen);
+        if (didExitFullscreen) {
+          restoreWindowTrafficLightPosition();
+        } else if (fullscreen) {
+          clearWindowTrafficLightRestoreTimers();
+        }
       }
     })
       .then((unsubscribe) => {
@@ -234,15 +266,16 @@ export function AppShell() {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [clearWindowTrafficLightRestoreTimers, restoreWindowTrafficLightPosition]);
 
   useEffect(() => {
     return () => {
       if (windowViewportZoomTimeout.current) {
         window.clearTimeout(windowViewportZoomTimeout.current);
       }
+      clearWindowTrafficLightRestoreTimers();
     };
-  }, []);
+  }, [clearWindowTrafficLightRestoreTimers]);
 
   useEffect(() => {
     if (appSettings?.credentialState !== "ready") {
@@ -376,7 +409,7 @@ export function AppShell() {
         // The macOS window uses `titleBarStyle: Overlay` (see
         // src-tauri/tauri.conf.json), so the OS draws the red/yellow/green
         // controls on top of our content. The traffic lights are positioned
-        // at x=18, y=21 there. Reserve 78 px
+        // at x=18, y=26 there. Reserve 78 px
         // on the left so the sidebar toggle and `dbunk` mark don't sit under
         // them. Other
         // platforms render the OS chrome above our header so the spacer is
