@@ -24,6 +24,8 @@ import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
 import { useRowSelection } from "@/components/table-editor/use-row-selection";
 import { useTableCapabilities } from "@/components/table-editor/use-table-capabilities";
+import { useTableEditorData } from "@/components/table-editor/use-table-editor-data";
+import { useTableExportFilename } from "@/components/table-editor/use-table-export-filename";
 import { useTablePagination } from "@/components/table-editor/use-table-pagination";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
@@ -39,8 +41,6 @@ import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import {
   type EditOutcome,
   type TablePreviewData,
-  tableDataKey,
-  tableStructureKey,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
@@ -55,7 +55,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
   const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
 
-  const tableName = tab.kind === "table" ? (tab.table ?? "") : "";
+  const editor = useTableEditorData(tab);
+  const { ref, tableName, dataKey, data, structure, status } = editor;
   // Sliced subscription: re-render only when *this* table's lifecycle
   // slot changes, not when any other table's status moves.
   const commitStatus = useAppStore((s) => s.tableEditsCommitStatus[tableName]);
@@ -64,13 +65,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [lastOutcome, setLastOutcome] = useState<EditOutcome | null>(null);
 
   const {
-    tableData,
-    tableStructure,
-    tableLoadStatus,
     tableEdits,
     openQueryForTable,
     loadTableData,
-    loadTableStructure,
     refreshTableData,
     setTableEdit,
     discardTableEdits,
@@ -82,77 +79,37 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const rowDetails = useRowDetailsVisibility(bodyWidth);
 
-  const dataKey =
-    tab.kind === "table" && tab.table
-      ? tableDataKey(tab.connectionId, tab.schema, tab.table)
-      : "";
-  const structureKey =
-    tab.kind === "table" && tab.table
-      ? tableStructureKey(tab.connectionId, tab.schema, tab.table)
-      : "";
-
+  // Reset the terminal-outcome badge on table switch — the panel instance
+  // is reused across tab switches (no React key), so without this the
+  // badge from table A could leak into table B's view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tableName is the change trigger, not a value read inside
   useEffect(() => {
-    // Reset the terminal-outcome badge on table switch — the panel
-    // instance is reused across tab switches (no React key), so without
-    // this the badge from table A could leak into table B's view.
     setLastOutcome(null);
-    if (tab.kind === "table" && tab.table && tab.connectionId) {
-      void loadTableData(tab.connectionId, tab.schema, tab.table);
-      void loadTableStructure(tab.connectionId, tab.schema, tab.table);
-    }
-  }, [
-    tab.kind,
-    tab.table,
-    tab.schema,
-    tab.connectionId,
-    loadTableData,
-    loadTableStructure,
-  ]);
+  }, [tableName]);
 
-  const activeTableData = dataKey ? tableData[dataKey] : undefined;
-  const activeTableStructure = structureKey
-    ? tableStructure[structureKey]
-    : undefined;
-  const status = tableName ? tableLoadStatus[tableName] : undefined;
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
 
-  const columns = activeTableData?.columns ?? [];
-  const rows = activeTableData?.rows ?? [];
+  const columns = data?.columns ?? [];
+  const rows = data?.rows ?? [];
   const selection = useRowSelection(rows);
   const caps = useTableCapabilities({
-    structure: activeTableStructure,
+    structure,
     commitStatus,
     selectedCount: selection.selectedCount,
   });
-  const exportFilenameBase = useMemo(() => {
-    if (tab.kind !== "table" || !tab.table) {
-      return "export";
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    const slug = (value: string) =>
-      value
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-    return [tab.connectionId, tab.schema, tab.table, today]
-      .map(slug)
-      .filter(Boolean)
-      .join("-");
-  }, [tab.kind, tab.connectionId, tab.schema, tab.table]);
+  const exportFilenameBase = useTableExportFilename(tab);
 
   const pagination = useTablePagination({
     tab,
-    data: activeTableData,
+    data,
     loadTableData,
   });
 
   const onRefresh = () => {
-    if (dataKey) {
-      void refreshTableData(dataKey);
-    }
+    if (dataKey) void refreshTableData(dataKey);
   };
 
   const handleSubmitAddRow = async (values: InsertRowPayloadEntry[]) => {
@@ -221,9 +178,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onDismissOutcome={() => setLastOutcome(null)}
       />
 
-      {isAddRowOpen && activeTableStructure ? (
+      {isAddRowOpen && structure ? (
         <AddRowForm
-          columns={activeTableStructure.columns}
+          columns={structure.columns}
           isWriting={caps.isWriting}
           onSubmit={handleSubmitAddRow}
           onClose={() => setIsAddRowOpen(false)}
@@ -308,7 +265,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
             selectedRowIndex={selection.selectedIndex}
             selectedRowCount={selection.selectedCount}
             totalRows={pagination.totalRows ?? rows.length}
-            indexes={activeTableStructure?.indexes.length ?? 0}
+            indexes={structure?.indexes.length ?? 0}
             bodyWidth={bodyWidth}
             wideVisible={rowDetails.isOpen}
             overlayOpen={rowDetails.overlayOpen}
@@ -319,7 +276,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       </div>
 
       {/* Pagination footer (data only) */}
-      {activeSubTab === "data" && tab.kind === "table" ? (
+      {activeSubTab === "data" && ref ? (
         <div
           data-testid="table-pagination"
           className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
