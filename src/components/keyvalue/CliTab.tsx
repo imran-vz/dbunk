@@ -184,12 +184,44 @@ export function CliTab({ connectionId }: CliTabProps) {
       {pendingConfirm ? (
         <div className="border-t border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs">
           <p className="mb-2">
-            <strong>Destructive command.</strong> Type{" "}
+            <strong>
+              {pendingConfirm.severity === "soft"
+                ? "Slow command."
+                : "Destructive command."}
+            </strong>{" "}
+            Type{" "}
             <code className="rounded bg-surface-panel px-1 py-0.5 font-mono">
               {pendingConfirm.command}
             </code>{" "}
             to confirm:
           </p>
+          {(() => {
+            const replacement = scanReplacementFor(pendingConfirm.tokens);
+            if (!replacement) return null;
+            return (
+              <p className="mb-2 text-[0.6875rem] text-text-secondary">
+                <code className="rounded bg-surface-panel px-1 py-0.5 font-mono">
+                  KEYS
+                </code>{" "}
+                blocks the server while it scans every key. Consider{" "}
+                <code className="rounded bg-surface-panel px-1 py-0.5 font-mono">
+                  {replacement.join(" ")}
+                </code>{" "}
+                instead — iterates in batches without blocking other clients.{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={() => {
+                    setPendingConfirm(null);
+                    setConfirmText("");
+                    void runTokens(replacement, false);
+                  }}
+                >
+                  Use SCAN instead
+                </button>
+              </p>
+            );
+          })()}
           <div className="flex items-center gap-2">
             <input
               value={confirmText}
@@ -280,4 +312,21 @@ function renderBody(value: SerializedValue): React.ReactNode {
         </ol>
       );
   }
+}
+
+/**
+ * Suggest a non-blocking replacement for `KEYS <pattern>`. Returns
+ * `SCAN 0 MATCH <pattern> COUNT 100` — one batch of results, not the
+ * full iteration. Users continue with subsequent SCAN cursor calls if
+ * they need to walk the whole keyspace.
+ *
+ * Returns `null` when the tokens aren't a `KEYS` command we can
+ * rewrite (no pattern given, etc.).
+ */
+function scanReplacementFor(tokens: string[]): string[] | null {
+  if (tokens.length < 2) return null;
+  if (tokens[0].toUpperCase() !== "KEYS") return null;
+  const pattern = tokens[1];
+  if (!pattern) return null;
+  return ["SCAN", "0", "MATCH", pattern, "COUNT", "100"];
 }
