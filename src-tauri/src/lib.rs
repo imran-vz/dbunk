@@ -20,6 +20,9 @@ const MAX_QUERY_HISTORY: usize = 200;
 
 const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
 const MAX_TABLE_PAGE_SIZE: u32 = 1000;
+// Keep in sync with `app.windows[0].trafficLightPosition` in tauri.conf.json.
+const MACOS_TRAFFIC_LIGHT_X: f64 = 18.0;
+const MACOS_TRAFFIC_LIGHT_Y: f64 = 26.0;
 
 pub(crate) struct AppState {
     pool: SqlitePool,
@@ -78,6 +81,60 @@ pub(crate) fn bytes_to_hex(bytes: &[u8]) -> String {
         output.push_str(&format!("{:02x}", byte));
     }
     output
+}
+
+#[tauri::command]
+fn restore_window_traffic_light_position(window: tauri::Window) -> Result<(), String> {
+    apply_window_traffic_light_position(&window)
+}
+
+#[cfg(target_os = "macos")]
+fn apply_window_traffic_light_position(window: &tauri::Window) -> Result<(), String> {
+    use objc2_app_kit::{NSView, NSWindow, NSWindowButton};
+
+    let ns_window = window.ns_window().map_err(|error| error.to_string())?;
+    let ns_window: &NSWindow = unsafe { &*ns_window.cast::<NSWindow>() };
+
+    unsafe {
+        let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
+            return Ok(());
+        };
+        let Some(miniaturize) = ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton)
+        else {
+            return Ok(());
+        };
+        let zoom = ns_window.standardWindowButton(NSWindowButton::ZoomButton);
+        let Some(title_bar_container_view) = close.superview().and_then(|view| view.superview())
+        else {
+            return Ok(());
+        };
+
+        let close_rect = NSView::frame(&close);
+        let title_bar_frame_height = close_rect.size.height + MACOS_TRAFFIC_LIGHT_Y;
+        let mut title_bar_rect = NSView::frame(&title_bar_container_view);
+        title_bar_rect.size.height = title_bar_frame_height;
+        title_bar_rect.origin.y = ns_window.frame().size.height - title_bar_frame_height;
+        title_bar_container_view.setFrame(title_bar_rect);
+
+        let space_between = NSView::frame(&miniaturize).origin.x - close_rect.origin.x;
+        let mut window_buttons = vec![close, miniaturize];
+        if let Some(zoom) = zoom {
+            window_buttons.push(zoom);
+        }
+
+        for (index, button) in window_buttons.into_iter().enumerate() {
+            let mut rect = NSView::frame(&button);
+            rect.origin.x = MACOS_TRAFFIC_LIGHT_X + (index as f64 * space_between);
+            button.setFrameOrigin(rect.origin);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_window_traffic_light_position(_window: &tauri::Window) -> Result<(), String> {
+    Ok(())
 }
 
 // Engine-aware operations (run_query, DDL, mutations, introspection)
@@ -871,6 +928,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            restore_window_traffic_light_position,
             load_app_settings,
             configure_credential_storage,
             unlock_credentials,

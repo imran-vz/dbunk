@@ -913,6 +913,7 @@ dependencies = [
  "futures-core",
  "keyring",
  "log",
+ "objc2-app-kit",
  "once_cell",
  "rand 0.8.5",
  "redis",
