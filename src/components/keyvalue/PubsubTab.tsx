@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResizerHandle } from "@/components/ui/resizer-handle";
 import {
   closePubsubSession,
   type DrainedMessage,
@@ -17,6 +18,15 @@ import {
   formatValueOneLine,
   startPubsubSession,
 } from "@/lib/redis/api";
+import {
+  useContainerWidth,
+  useResizableWidth,
+} from "@/lib/use-resizable-width";
+
+const PUBSUB_SIDEBAR_MIN = 160;
+const PUBSUB_SIDEBAR_MAX = 360;
+const PUBSUB_SIDEBAR_DEFAULT = 224;
+const PUBSUB_AUTO_HIDE_BELOW_PX = 560;
 
 interface PubsubTabProps {
   connectionId: string;
@@ -112,6 +122,41 @@ export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
     ? messages.filter((m) => m.channel === selectedChannel)
     : messages;
 
+  const {
+    width: sidebarWidth,
+    setWidth: setSidebarWidth,
+    collapsed: sidebarCollapsed,
+    setCollapsed: setSidebarCollapsed,
+  } = useResizableWidth({
+    storageKey: "dbunk.redis.pubsubSidebarWidth",
+    defaultWidth: PUBSUB_SIDEBAR_DEFAULT,
+    min: PUBSUB_SIDEBAR_MIN,
+    max: PUBSUB_SIDEBAR_MAX,
+  });
+  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (containerWidth === 0) return;
+    if (containerWidth < PUBSUB_AUTO_HIDE_BELOW_PX && !sidebarCollapsed) {
+      setSidebarCollapsed(true);
+      setAutoCollapsed(true);
+    } else if (containerWidth >= PUBSUB_AUTO_HIDE_BELOW_PX && autoCollapsed) {
+      setSidebarCollapsed(false);
+      setAutoCollapsed(false);
+    }
+  }, [containerWidth, sidebarCollapsed, autoCollapsed, setSidebarCollapsed]);
+
+  const effectiveSidebarWidth = useMemo(() => {
+    if (sidebarCollapsed) return 0;
+    if (containerWidth === 0) return sidebarWidth;
+    const maxForViewport = Math.max(
+      PUBSUB_SIDEBAR_MIN,
+      Math.floor(containerWidth * 0.4),
+    );
+    return Math.min(sidebarWidth, maxForViewport);
+  }, [sidebarCollapsed, containerWidth, sidebarWidth]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-panel/60 px-4 py-2 text-xs">
@@ -167,58 +212,97 @@ export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
           Add a channel pattern above to start watching messages.
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <aside className="flex w-64 shrink-0 flex-col border-r border-border-subtle bg-surface-window">
-            <div className="flex flex-wrap gap-1 border-b border-border-subtle p-2 text-[0.65rem]">
-              {activePatterns.map((p) => (
-                <Badge
-                  key={p}
-                  variant="secondary"
-                  className="cursor-pointer hover:bg-destructive/30"
-                  onClick={() => {
-                    void removePattern(p);
-                  }}
-                >
-                  {p} ×
-                </Badge>
-              ))}
-            </div>
-            <div className="border-b border-border-subtle px-2 py-1 text-[0.65rem] uppercase text-text-muted">
-              Channels seen
-            </div>
-            <ul className="flex-1 overflow-auto text-[0.65rem]">
-              <li>
+        <div ref={containerRef} className="flex min-h-0 flex-1">
+          {!sidebarCollapsed ? (
+            <aside
+              style={{ width: `${effectiveSidebarWidth}px` }}
+              className="flex shrink-0 flex-col border-r border-border-subtle bg-surface-window"
+            >
+              <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-[0.65rem] uppercase text-text-muted">
+                <span className="truncate">Channels</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedChannel(null)}
-                  className={`flex w-full justify-between px-2 py-1 hover:bg-white/5 ${
-                    selectedChannel === null
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted"
-                  }`}
+                  onClick={() => {
+                    setSidebarCollapsed(true);
+                    setAutoCollapsed(false);
+                  }}
+                  className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
+                  aria-label="Hide channels sidebar"
                 >
-                  <span>All channels</span>
-                  <span>{messages.length}</span>
+                  ‹
                 </button>
-              </li>
-              {channelCounts.map((c) => (
-                <li key={c.channel}>
+              </div>
+              <div className="flex flex-wrap gap-1 border-b border-border-subtle p-2 text-[0.65rem]">
+                {activePatterns.map((p) => (
+                  <Badge
+                    key={p}
+                    variant="secondary"
+                    className="cursor-pointer hover:bg-destructive/30"
+                    onClick={() => {
+                      void removePattern(p);
+                    }}
+                  >
+                    {p} ×
+                  </Badge>
+                ))}
+              </div>
+              <ul className="flex-1 overflow-auto text-[0.65rem]">
+                <li>
                   <button
                     type="button"
-                    onClick={() => setSelectedChannel(c.channel)}
-                    className={`flex w-full justify-between px-2 py-1 font-mono hover:bg-white/5 ${
-                      selectedChannel === c.channel
+                    onClick={() => setSelectedChannel(null)}
+                    className={`flex w-full justify-between px-2 py-1 hover:bg-white/5 ${
+                      selectedChannel === null
                         ? "bg-primary/10 text-primary"
-                        : ""
+                        : "text-text-muted"
                     }`}
                   >
-                    <span className="truncate">{c.channel}</span>
-                    <span className="text-text-muted">{c.count}</span>
+                    <span>All channels</span>
+                    <span>{messages.length}</span>
                   </button>
                 </li>
-              ))}
-            </ul>
-          </aside>
+                {channelCounts.map((c) => (
+                  <li key={c.channel}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChannel(c.channel)}
+                      className={`flex w-full justify-between gap-2 px-2 py-1 font-mono hover:bg-white/5 ${
+                        selectedChannel === c.channel
+                          ? "bg-primary/10 text-primary"
+                          : ""
+                      }`}
+                    >
+                      <span className="truncate">{c.channel}</span>
+                      <span className="shrink-0 text-text-muted">
+                        {c.count}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setSidebarCollapsed(false);
+                setAutoCollapsed(false);
+              }}
+              aria-label="Show channels sidebar"
+              className="flex w-6 shrink-0 items-center justify-center border-r border-border-subtle bg-surface-window text-text-muted hover:bg-white/5 hover:text-foreground"
+            >
+              ›
+            </button>
+          )}
+          {!sidebarCollapsed ? (
+            <ResizerHandle
+              width={effectiveSidebarWidth}
+              onResize={setSidebarWidth}
+              min={PUBSUB_SIDEBAR_MIN}
+              max={PUBSUB_SIDEBAR_MAX}
+              ariaLabel="Resize channels sidebar"
+            />
+          ) : null}
           <main className="flex min-w-0 flex-1 flex-col">
             {error ? (
               <div className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">

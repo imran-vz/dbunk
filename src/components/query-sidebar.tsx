@@ -114,11 +114,11 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                   key={entry.id}
                   type="button"
                   onClick={() => reopenHistoryEntry(entry)}
-                  className="flex flex-col gap-1 rounded-md border border-border-subtle bg-surface-panel-elevated px-2.5 py-2 text-left transition-colors hover:border-accent-green/40 hover:bg-surface-row-hover"
+                  className="flex w-full min-w-0 flex-col gap-1 rounded-md border border-border-subtle bg-surface-panel-elevated px-2.5 py-2 text-left transition-colors hover:border-accent-green/40 hover:bg-surface-row-hover"
                   data-testid="query-history-entry"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-mono text-[0.75rem] text-foreground">
+                  <div className="flex w-full min-w-0 items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] text-foreground">
                       {truncateSql(entry.sql, 48)}
                     </span>
                     {isCurrent ? (
@@ -128,8 +128,8 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                       {entry.status === "success" ? "OK" : "Error"}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between gap-2 text-[0.625rem] text-text-muted">
-                    <span className="truncate">
+                  <div className="flex w-full min-w-0 items-center gap-2 text-[0.625rem] text-text-muted">
+                    <span className="min-w-0 flex-1 truncate">
                       {entry.connectionName || entry.connectionId}
                     </span>
                     <span className="shrink-0 tabular-nums">

@@ -18,6 +18,12 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
+import { useContainerWidth } from "@/lib/use-resizable-width";
+
+/** Below this container width the metadata drawer auto-hides so the value
+ *  viewer keeps a readable column. Users can still toggle it via the
+ *  Details button. */
+const DETAILS_AUTO_HIDE_BELOW_PX = 640;
 
 import { HashValueView } from "@/components/keyvalue/viewers/HashValueView";
 import { JsonValueView } from "@/components/keyvalue/viewers/JsonValueView";
@@ -65,6 +71,7 @@ export function KeyInspectorTab({
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(true);
+  const [autoHidDrawer, setAutoHidDrawer] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
@@ -72,6 +79,21 @@ export function KeyInspectorTab({
   const [expireOpen, setExpireOpen] = useState(false);
   const [expireValue, setExpireValue] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
+
+  // Auto-hide the metadata drawer on narrow inspector widths; remember
+  // whether we hid it automatically so we don't fight a user who's
+  // explicitly opened it on a wide window and then shrunk it briefly.
+  useEffect(() => {
+    if (containerWidth === 0) return;
+    if (containerWidth < DETAILS_AUTO_HIDE_BELOW_PX && drawerOpen) {
+      setDrawerOpen(false);
+      setAutoHidDrawer(true);
+    } else if (containerWidth >= DETAILS_AUTO_HIDE_BELOW_PX && autoHidDrawer) {
+      setDrawerOpen(true);
+      setAutoHidDrawer(false);
+    }
+  }, [containerWidth, drawerOpen, autoHidDrawer]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshTick is an intentional re-trigger
   useEffect(() => {
@@ -95,7 +117,7 @@ export function KeyInspectorTab({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-1">
+    <div ref={containerRef} className="flex h-full min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-panel/80 px-4 py-2">
           <button
@@ -174,7 +196,10 @@ export function KeyInspectorTab({
             </Button>
             <button
               type="button"
-              onClick={() => setDrawerOpen((prev) => !prev)}
+              onClick={() => {
+                setDrawerOpen((prev) => !prev);
+                setAutoHidDrawer(false);
+              }}
               className={cn(
                 "rounded-md border border-border-subtle px-2 py-1 text-[0.65rem] text-text-muted hover:text-foreground",
                 drawerOpen && "bg-surface-panel text-foreground",
