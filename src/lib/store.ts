@@ -1,9 +1,5 @@
 import { create } from "zustand";
-import {
-  type ColumnChangeKind,
-  generateDdlForEngine,
-  type PendingChange,
-} from "@/lib/ddl";
+import { generateDdlForEngine, type PendingChange } from "@/lib/ddl";
 import { formatLatencyMs } from "@/lib/format";
 import {
   type MutationOutcome,
@@ -18,19 +14,16 @@ import {
   schemaRelationshipsKey,
 } from "@/lib/schema-graph";
 import { pickSqlToRun } from "@/lib/sql";
+import { createCredentialsSlice } from "@/lib/store/credentials";
 import type {
-  ActiveView,
-  AppSettingsSnapshot,
-  AppSettingsStatus,
+  AppStoreState,
   Connection,
-  CredentialStorageMode,
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
   QueryHistoryEntry,
   QueryPreviewData,
   QueryStatus,
   RedisCapabilities,
-  SavedQueriesStatus,
   SavedQuery,
   SchemaExplorer,
   SchemaRelationshipsStatus,
@@ -247,175 +240,7 @@ export type {
   WorkspaceTabKind,
 } from "@/lib/store/types";
 
-interface AppState {
-  activeView: ActiveView;
-  activeConnectionId: string;
-  activeTabId: string;
-  expandedSchemas: string[];
-  isLeftSidebarOpen: boolean;
-  connections: Connection[];
-  workspaceTabs: WorkspaceTab[];
-  schemaExplorer: Record<string, SchemaExplorer[]>;
-  tablePreviews: Record<string, TablePreviewData>;
-  tableData: Record<string, TableDataState>;
-  tableStructure: Record<string, TableStructure>;
-  queryPreviews: Record<string, QueryPreviewData>;
-  queryStatus: Record<string, QueryStatus>;
-  tableLoadStatus: Record<string, TableLoadStatus>;
-  tableStructureStatus: Record<string, TableStructureStatus>;
-  pendingStructureChanges: Record<string, PendingChange[]>;
-  structureCommitStatus: Record<string, StructureCommitStatus>;
-  queryEdits: Record<string, Record<number, Record<number, string>>>;
-  tableEdits: Record<string, Record<number, Record<number, string>>>;
-  tableEditsCommitStatus: Record<string, TableEditsCommitStatus>;
-  schemaRelationships: Record<string, SchemaRelationships>;
-  schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
-  databaseOverviewStats: Record<string, DatabaseOverviewStats>;
-  databaseOverviewStatsStatus: Record<string, DatabaseOverviewStatsStatus>;
-  queryHistory: QueryHistoryEntry[];
-  savedQueries: SavedQuery[];
-  savedQueriesStatus: SavedQueriesStatus;
-  appSettings: AppSettingsSnapshot | null;
-  appSettingsStatus: AppSettingsStatus;
-  credentialStorageStatus:
-    | { state: "idle" }
-    | { state: "running" }
-    | { state: "error"; error: string };
-  editorTheme: string;
-  selectedRowIndex: number;
-
-  setActiveView: (view: ActiveView) => void;
-  setActiveConnectionId: (id: string) => void;
-  setActiveTabId: (id: string) => void;
-  setExpandedSchemas: (
-    schemas: string[] | ((prev: string[]) => string[]),
-  ) => void;
-  toggleLeftSidebar: () => void;
-  setWorkspaceTabs: (
-    tabs: WorkspaceTab[] | ((prev: WorkspaceTab[]) => WorkspaceTab[]),
-  ) => void;
-  setEditorTheme: (theme: string) => void;
-  setSelectedRowIndex: (index: number) => void;
-  setQueryEdit: (
-    tabId: string,
-    rowIndex: number,
-    colIndex: number,
-    value: string,
-  ) => void;
-  discardQueryEdits: (tabId: string) => void;
-  setTableEdit: (
-    tableName: string,
-    rowIndex: number,
-    colIndex: number,
-    value: string,
-  ) => void;
-  discardTableEdits: (tableName: string) => void;
-  commitTableEdits: (tableName: string) => Promise<void>;
-  clearTableEditsCommitStatus: (tableName: string) => void;
-  // The `tableEditsCommitStatus` map is intentionally shared between cell
-  // edits, inserts, and deletes — there is one banner area in the UI per
-  // table, so one status surface keeps things simple.
-  addTableRow: (
-    tableName: string,
-    values: Array<{ column: string; value: string | null }>,
-  ) => Promise<void>;
-  deleteSelectedTableRows: (
-    tableName: string,
-    rowIndices: number[],
-  ) => Promise<void>;
-  loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
-  loadTableData: (
-    connectionId: string,
-    schema: string,
-    table: string,
-    page?: number,
-    pageSize?: number,
-  ) => Promise<void>;
-  refreshTableData: (key: string) => Promise<void>;
-  loadTableStructure: (
-    connectionId: string,
-    schema: string,
-    table: string,
-  ) => Promise<void>;
-  loadSchemaRelationships: (
-    connectionId: string,
-    schema: string,
-  ) => Promise<void>;
-  loadDatabaseOverviewStats: (connectionId: string) => Promise<void>;
-  focusTableInSchemaMap: (
-    connectionId: string,
-    schema: string,
-    table: string,
-  ) => void;
-  addPendingStructureChange: (
-    key: string,
-    entry: { schema: string; table: string; change: ColumnChangeKind },
-  ) => void;
-  removePendingStructureChange: (key: string, id: string) => void;
-  clearPendingStructureChanges: (key: string) => void;
-  commitStructureChanges: (key: string) => Promise<void>;
-  loadAppSettings: () => Promise<AppSettingsSnapshot | null>;
-  configureCredentialStorage: (input: {
-    mode: CredentialStorageMode;
-    password?: string;
-  }) => Promise<AppSettingsSnapshot | null>;
-  unlockCredentials: (password: string) => Promise<AppSettingsSnapshot | null>;
-  changeCredentialStorage: (input: {
-    mode: CredentialStorageMode;
-    password?: string;
-  }) => Promise<AppSettingsSnapshot | null>;
-  resetCredentialStorage: () => Promise<AppSettingsSnapshot | null>;
-  loadConnections: () => Promise<void>;
-  loadQueryHistory: () => Promise<void>;
-  loadSavedQueries: () => Promise<void>;
-  saveSavedQuery: (
-    query: Omit<SavedQuery, "createdAt" | "updatedAt"> &
-      Partial<Pick<SavedQuery, "createdAt" | "updatedAt">>,
-  ) => Promise<void>;
-  deleteSavedQuery: (id: string) => Promise<void>;
-  reopenHistoryEntry: (entry: QueryHistoryEntry) => void;
-  addConnection: (connection: Connection) => Promise<void>;
-  updateConnection: (connection: Connection) => Promise<void>;
-  deleteConnection: (connectionId: string) => Promise<void>;
-  connectConnection: (connectionId: string) => Promise<void>;
-  testConnection: (
-    connection: Pick<
-      StoredConnection,
-      | "id"
-      | "name"
-      | "database"
-      | "engine"
-      | "host"
-      | "port"
-      | "user"
-      | "password"
-      | "role"
-    > &
-      Partial<
-        Pick<
-          StoredConnection,
-          "useHttps" | "urlPath" | "dbNumber" | "useTls" | "verifyTlsCert"
-        >
-      >,
-  ) => Promise<
-    | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
-    | { ok: false; error: string }
-  >;
-  runHealthChecks: () => Promise<void>;
-  updateQuery: (tabId: string, query: string) => void;
-  runQuery: (
-    tabId: string,
-    options?: { overrideSql?: string },
-  ) => Promise<void>;
-  closeTab: (tabId: string) => void;
-  openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
-  openTableTab: (schemaName: string, tableName: string) => void;
-  openQueryForTable: (schemaName: string, tableName: string) => void;
-  openViewTab: (schemaName: string, viewName: string) => void;
-  createNewQueryTab: () => void;
-  createNewTableTab: () => void;
-  toggleSchema: (schemaName: string) => void;
-}
+type AppState = AppStoreState;
 
 // Initial Empty State
 const initialConnections: Connection[] = [];
@@ -455,7 +280,7 @@ const initialQueryHistory: QueryHistoryEntry[] = [];
 let nextTabIndex = 1;
 let nextQueryIndex = 1;
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()((set, get, _store) => ({
   activeView: "workspace",
   activeConnectionId: "",
   activeTabId: "",
@@ -483,11 +308,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryHistory: initialQueryHistory,
   savedQueries: [],
   savedQueriesStatus: { state: "idle" },
-  appSettings: null,
-  appSettingsStatus: { state: "idle" },
-  credentialStorageStatus: { state: "idle" },
   editorTheme: "vs",
   selectedRowIndex: 0,
+
+  ...createCredentialsSlice(set, get, _store),
 
   setActiveView: (view) => set({ activeView: view }),
   setActiveConnectionId: (id) => set({ activeConnectionId: id }),
@@ -1489,137 +1313,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           [key]: { state: "error", error: message },
         },
       }));
-    }
-  },
-
-  loadAppSettings: async () => {
-    if (!isTauri()) {
-      const fallback: AppSettingsSnapshot = {
-        onboardingCompleted: true,
-        credentialStorageMode: "plain-sqlite",
-        credentialState: "ready",
-        configDir: "~/.config/dbunk",
-      };
-      set({ appSettings: fallback, appSettingsStatus: { state: "ready" } });
-      return fallback;
-    }
-    set({ appSettingsStatus: { state: "loading" } });
-    try {
-      const snapshot =
-        await tauriInvoke<AppSettingsSnapshot>("load_app_settings");
-      set({ appSettings: snapshot, appSettingsStatus: { state: "ready" } });
-      return snapshot;
-    } catch (error) {
-      const message = errorToMessage(error);
-      console.error("Failed to load app settings", error);
-      set({ appSettingsStatus: { state: "error", error: message } });
-      return null;
-    }
-  },
-
-  configureCredentialStorage: async (input) => {
-    if (!isTauri()) {
-      const snapshot: AppSettingsSnapshot = {
-        onboardingCompleted: true,
-        credentialStorageMode: input.mode,
-        credentialState: "ready",
-        configDir: "~/.config/dbunk",
-      };
-      set({ appSettings: snapshot, appSettingsStatus: { state: "ready" } });
-      return snapshot;
-    }
-    set({ credentialStorageStatus: { state: "running" } });
-    try {
-      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
-        "configure_credential_storage",
-        { payload: input },
-      );
-      set({
-        appSettings: snapshot,
-        appSettingsStatus: { state: "ready" },
-        credentialStorageStatus: { state: "idle" },
-      });
-      return snapshot;
-    } catch (error) {
-      const message = errorToMessage(error);
-      set({ credentialStorageStatus: { state: "error", error: message } });
-      return null;
-    }
-  },
-
-  unlockCredentials: async (password) => {
-    if (!isTauri()) {
-      return get().loadAppSettings();
-    }
-    set({ credentialStorageStatus: { state: "running" } });
-    try {
-      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
-        "unlock_credentials",
-        { payload: { password } },
-      );
-      set({
-        appSettings: snapshot,
-        appSettingsStatus: { state: "ready" },
-        credentialStorageStatus: { state: "idle" },
-      });
-      return snapshot;
-    } catch (error) {
-      const message = errorToMessage(error);
-      set({ credentialStorageStatus: { state: "error", error: message } });
-      return null;
-    }
-  },
-
-  changeCredentialStorage: async (input) => {
-    if (!isTauri()) {
-      const snapshot: AppSettingsSnapshot = {
-        onboardingCompleted: true,
-        credentialStorageMode: input.mode,
-        credentialState: "ready",
-        configDir: "~/.config/dbunk",
-      };
-      set({ appSettings: snapshot });
-      return snapshot;
-    }
-    set({ credentialStorageStatus: { state: "running" } });
-    try {
-      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
-        "change_credential_storage",
-        { payload: { ...input, confirm: true } },
-      );
-      set({
-        appSettings: snapshot,
-        credentialStorageStatus: { state: "idle" },
-      });
-      await get().loadConnections();
-      return snapshot;
-    } catch (error) {
-      const message = errorToMessage(error);
-      set({ credentialStorageStatus: { state: "error", error: message } });
-      return null;
-    }
-  },
-
-  resetCredentialStorage: async () => {
-    if (!isTauri()) {
-      return get().loadAppSettings();
-    }
-    set({ credentialStorageStatus: { state: "running" } });
-    try {
-      const snapshot = await tauriInvoke<AppSettingsSnapshot>(
-        "reset_credential_storage",
-      );
-      set({
-        appSettings: snapshot,
-        connections: [],
-        activeConnectionId: "",
-        credentialStorageStatus: { state: "idle" },
-      });
-      return snapshot;
-    } catch (error) {
-      const message = errorToMessage(error);
-      set({ credentialStorageStatus: { state: "error", error: message } });
-      return null;
     }
   },
 
