@@ -332,7 +332,7 @@
     padding-inline: 0.5rem;
 }
 
-[data-density="compact"] [data-slot="workspace-tabs"] > div > div {
+[data-density="compact"] [data-slot="workspace-tab"] {
     height: 1.75rem;
     min-width: 7.75rem;
     padding-inline: 0.4375rem;
