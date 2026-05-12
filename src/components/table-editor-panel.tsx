@@ -1,16 +1,10 @@
 import {
-  IconAlertTriangle,
-  IconCheck,
   IconChevronLeft,
   IconChevronRight,
   IconChevronsLeft,
   IconChevronsRight,
-  IconDotsVertical,
-  IconLayoutSidebarRight,
-  IconLock,
   IconMaximize,
   IconPlus,
-  IconTable,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -20,6 +14,15 @@ import { useEffect, useMemo, useState } from "react";
 import { DataGrid } from "@/components/data-grid";
 import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
 import { StatusBar, type StatusBarItem } from "@/components/status-bar";
+import { AddRowForm } from "@/components/table-editor/add-row-form";
+import {
+  type SubTab,
+  TableEditorHeader,
+} from "@/components/table-editor/header";
+import { RowDetailsPanel } from "@/components/table-editor/row-details-panel";
+import { TableStatusBanners } from "@/components/table-editor/status-banners";
+import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
+import { useTablePagination } from "@/components/table-editor/use-table-pagination";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,20 +33,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
-import {
-  buildInsertValuesPayload,
-  type InsertRowFieldMode,
-  type InsertRowFormState,
-  initialFormState,
-} from "@/lib/insert-row-form";
+import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type EditOutcome,
@@ -60,23 +50,8 @@ interface TableEditorPanelProps {
   tab: WorkspaceTab;
 }
 
-type SubTab = "data" | "schema" | "indexes" | "relations";
-
-const SUB_TABS: Array<{ id: SubTab; label: string }> = [
-  { id: "data", label: "Data" },
-  { id: "schema", label: "Schema" },
-  { id: "indexes", label: "Indexes" },
-  { id: "relations", label: "Relations" },
-];
-
-const ROW_DETAILS_WIDTH = 320;
-const ROW_DETAILS_COMPACT_BELOW = 980;
-const PROTECTED_WORKSPACE_WIDTH = 560;
-
 export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
-  const [isRowDetailsOpen, setIsRowDetailsOpen] = useState(true);
-  const [rowDetailsOverlayOpen, setRowDetailsOverlayOpen] = useState(false);
   const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const tableName = tab.kind === "table" ? (tab.table ?? "") : "";
@@ -105,7 +80,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
-  const [addRowForm, setAddRowForm] = useState<InsertRowFormState>({});
+  const rowDetails = useRowDetailsVisibility(bodyWidth);
 
   const dataKey =
     tab.kind === "table" && tab.table
@@ -187,39 +162,12 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       .filter(Boolean)
       .join("-");
   }, [tab.kind, tab.connectionId, tab.schema, tab.table]);
-  const page = activeTableData?.page ?? 1;
-  const pageSize = activeTableData?.pageSize ?? 100;
-  const totalRows = activeTableData?.totalRows;
-  const runtimeMs = activeTableData?.runtimeMs;
 
-  const totalPages =
-    totalRows !== undefined && pageSize > 0
-      ? Math.max(1, Math.ceil(totalRows / pageSize))
-      : undefined;
-  const isLastPage =
-    totalPages !== undefined ? page >= totalPages : rows.length < pageSize;
-
-  const goToPage = (next: number) => {
-    if (tab.kind !== "table" || !tab.table || !tab.connectionId) return;
-    const target = Math.max(1, totalPages ? Math.min(totalPages, next) : next);
-    if (target === page) return;
-    void loadTableData(
-      tab.connectionId,
-      tab.schema,
-      tab.table,
-      target,
-      pageSize,
-    );
-  };
-
-  const onPrevPage = () => goToPage(page - 1);
-  const onNextPage = () => goToPage(page + 1);
-  const onFirstPage = () => goToPage(1);
-  const onLastPage = () => {
-    if (totalPages !== undefined) {
-      goToPage(totalPages);
-    }
-  };
+  const pagination = useTablePagination({
+    tab,
+    data: activeTableData,
+    loadTableData,
+  });
 
   const onRefresh = () => {
     if (dataKey) {
@@ -227,40 +175,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     }
   };
 
-  const handleOpenAddRow = () => {
-    if (!activeTableStructure) {
-      return;
-    }
-    setAddRowForm(initialFormState(activeTableStructure.columns));
-    setIsAddRowOpen(true);
-  };
-
-  const handleCloseAddRow = () => {
-    setIsAddRowOpen(false);
-  };
-
-  const handleSetAddRowMode = (column: string, mode: InsertRowFieldMode) => {
-    setAddRowForm((prev) => ({
-      ...prev,
-      [column]: { mode, value: prev[column]?.value ?? "" },
-    }));
-  };
-
-  const handleSetAddRowValue = (column: string, value: string) => {
-    setAddRowForm((prev) => ({
-      ...prev,
-      [column]: { mode: prev[column]?.mode ?? "value", value },
-    }));
-  };
-
-  const handleSubmitAddRow = async () => {
-    if (!activeTableStructure) {
-      return;
-    }
-    const values = buildInsertValuesPayload(
-      addRowForm,
-      activeTableStructure.columns,
-    );
+  const handleSubmitAddRow = async (values: InsertRowPayloadEntry[]) => {
     const outcome = await addTableRow(tableName, values);
     setLastOutcome(outcome);
     if (outcome.kind === "completed") {
@@ -291,25 +206,15 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
 
-  const hasMultipleSelectedRows = selectedRowIndices.length > 1;
   const selectedRowIndex =
     selectedRowIndices.length === 1 ? selectedRowIndices[0] : null;
   const selectedRow =
     selectedRowIndex !== null ? rows[selectedRowIndex] : rows[0];
 
   const rowCountLabel =
-    totalRows !== undefined
-      ? `${totalRows.toLocaleString()} rows`
+    pagination.totalRows !== undefined
+      ? `${pagination.totalRows.toLocaleString()} rows`
       : `${rows.length.toLocaleString()} rows`;
-
-  const startRow =
-    totalRows === undefined && rows.length === 0
-      ? 0
-      : (page - 1) * pageSize + 1;
-  const endRow =
-    totalRows !== undefined
-      ? Math.min(totalRows, page * pageSize)
-      : (page - 1) * pageSize + rows.length;
 
   const statusItems: StatusBarItem[] = [
     {
@@ -317,8 +222,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       label: "Query",
       tone: errorMessage ? "danger" : "healthy",
       value:
-        runtimeMs !== undefined
-          ? `Completed · ${runtimeMs} ms`
+        pagination.runtimeMs !== undefined
+          ? `Completed · ${pagination.runtimeMs} ms`
           : isLoading
             ? "Loading…"
             : "Idle",
@@ -331,7 +236,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     {
       id: "page",
       label: "Page",
-      value: totalPages ? `${page} of ${totalPages}` : `${page}`,
+      value: pagination.totalPages
+        ? `${pagination.page} of ${pagination.totalPages}`
+        : `${pagination.page}`,
     },
     {
       id: "connection",
@@ -341,25 +248,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       align: "right",
     },
   ];
-  const isRowDetailsCompact =
-    bodyWidth > 0 && bodyWidth < ROW_DETAILS_COMPACT_BELOW;
-  const rowDetailsVisible = isRowDetailsCompact
-    ? rowDetailsOverlayOpen
-    : isRowDetailsOpen;
-  const handleToggleRowDetails = () => {
-    if (isRowDetailsCompact) {
-      setRowDetailsOverlayOpen((open) => !open);
-      return;
-    }
-    setIsRowDetailsOpen((open) => !open);
-  };
-  const handleCloseRowDetails = () => {
-    if (isRowDetailsCompact) {
-      setRowDetailsOverlayOpen(false);
-      return;
-    }
-    setIsRowDetailsOpen(false);
-  };
 
   return (
     <div className="flex h-full flex-col bg-surface-app">
@@ -370,298 +258,35 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         />
       ) : null}
 
-      {/* Header */}
-      <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-sm border border-accent-green/30 bg-accent-green/10 text-accent-green">
-              <IconTable className="size-3.5" />
-            </div>
-            <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
-              {tab.table ?? tab.label}
-            </h1>
-            <Badge variant="outline">{rowCountLabel}</Badge>
-            <Badge variant="outline">{tab.schema}</Badge>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {activeSubTab === "data" ? (
-              <Button
-                size="sm"
-                variant={rowDetailsVisible ? "secondary" : "outline"}
-                aria-pressed={rowDetailsVisible}
-                aria-label={
-                  rowDetailsVisible ? "Hide row details" : "Show row details"
-                }
-                title={
-                  rowDetailsVisible ? "Hide row details" : "Show row details"
-                }
-                onClick={handleToggleRowDetails}
-              >
-                <IconLayoutSidebarRight className="size-3.5" />
-                <span className="dbunk-optional-label">Details</span>
-              </Button>
-            ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                aria-label="Table actions"
-                title="Table actions"
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
-                )}
-              >
-                <IconDotsVertical className="size-3.5 text-text-muted" />
-                <span className="dbunk-optional-label">Table actions</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem
-                  onClick={() => openQueryForTable(tab.schema, tab.table ?? "")}
-                >
-                  Open in SQL
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onRefresh}>
-                  Refresh data
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-        <div className="mt-1.5 flex items-end gap-1">
-          {SUB_TABS.map(({ id, label }) => {
-            const isActive = activeSubTab === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-current={isActive ? "page" : undefined}
-                onClick={() => {
-                  setActiveSubTab(id);
-                }}
-                className={cn(
-                  "relative h-7 px-2.5 text-xs font-medium transition-colors",
-                  isActive
-                    ? "text-foreground"
-                    : "text-text-muted hover:text-foreground",
-                )}
-              >
-                {label}
-                {isActive ? (
-                  <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent-green" />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <TableEditorHeader
+        title={tab.table ?? tab.label}
+        schemaBadge={tab.schema}
+        rowCountLabel={rowCountLabel}
+        activeSubTab={activeSubTab}
+        onSubTabChange={setActiveSubTab}
+        showRowDetailsToggle={activeSubTab === "data"}
+        rowDetailsVisible={rowDetails.visible}
+        onToggleRowDetails={rowDetails.onToggle}
+        onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
+        onRefresh={onRefresh}
+      />
 
-      {errorMessage ? (
-        <div
-          data-testid="table-error"
-          role="alert"
-          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger"
-        >
-          <IconAlertTriangle className="size-4" />
-          <span>Failed to load rows: {errorMessage}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={onRefresh}
-          >
-            Retry
-          </Button>
-        </div>
-      ) : null}
-
-      {isReadOnly && activeTableStructure ? (
-        <output
-          data-testid="table-readonly-banner"
-          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
-        >
-          <IconLock className="size-4" />
-          <span>
-            This table has no primary key or non-null unique index — it is
-            read-only. Add a unique constraint to enable editing.
-          </span>
-        </output>
-      ) : null}
-
-      {commitStatus?.state === "queued" ? (
-        <output
-          data-testid="table-commit-queued"
-          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
-        >
-          <IconLock className="size-4" />
-          <span>
-            Queued — applying {commitStatus.mutationIds.length} mutation
-            {commitStatus.mutationIds.length === 1 ? "" : "s"} in the
-            background. Refreshing when complete.
-          </span>
-        </output>
-      ) : null}
-
-      {lastOutcome?.kind === "completed" &&
-      lastOutcome.rowsAffected !== undefined ? (
-        <output
-          data-testid="table-commit-success"
-          className="flex items-center gap-2 border-b border-accent-green/40 bg-accent-green/10 px-3 py-1.5 text-xs text-accent-green-hover"
-        >
-          <IconCheck className="size-4" />
-          <span>
-            Saved {lastOutcome.rowsAffected} row
-            {lastOutcome.rowsAffected === 1 ? "" : "s"} in{" "}
-            {lastOutcome.runtimeMs} ms.
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setLastOutcome(null)}
-          >
-            Dismiss
-          </Button>
-        </output>
-      ) : null}
-
-      {lastOutcome?.kind === "failed" ? (
-        <div
-          data-testid="table-commit-error"
-          role="alert"
-          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger"
-        >
-          <IconX className="size-4" />
-          <span>Failed to save: {lastOutcome.reason}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setLastOutcome(null)}
-          >
-            Dismiss
-          </Button>
-        </div>
-      ) : null}
-
-      {lastOutcome?.kind === "timeout" ? (
-        <div
-          data-testid="table-commit-timeout"
-          role="alert"
-          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
-        >
-          <IconAlertTriangle className="size-4" />
-          <span>
-            Mutation did not complete in time. Check system.mutations for{" "}
-            {lastOutcome.remaining.length} remaining.
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setLastOutcome(null)}
-          >
-            Dismiss
-          </Button>
-        </div>
-      ) : null}
+      <TableStatusBanners
+        errorMessage={errorMessage}
+        showReadOnlyBanner={isReadOnly && Boolean(activeTableStructure)}
+        commitStatus={commitStatus}
+        lastOutcome={lastOutcome}
+        onRetryLoad={onRefresh}
+        onDismissOutcome={() => setLastOutcome(null)}
+      />
 
       {isAddRowOpen && activeTableStructure ? (
-        <div
-          data-testid="add-row-form"
-          className="flex flex-col gap-2 border-b border-border-subtle bg-surface-panel px-3 py-2"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold">Add row</span>
-            <Button variant="ghost" size="sm" onClick={handleCloseAddRow}>
-              Cancel
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {activeTableStructure.columns.map((column) => {
-              const field = addRowForm[column.name] ?? {
-                mode: "value" as InsertRowFieldMode,
-                value: "",
-              };
-              const hasDefault =
-                column.defaultValue !== null &&
-                column.defaultValue !== undefined;
-              return (
-                <div
-                  key={column.name}
-                  className="flex flex-col gap-1 rounded-sm border border-border-subtle bg-surface-app px-2 py-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">{column.name}</span>
-                    <span className="text-[0.625rem] text-text-muted">
-                      {column.dataType}
-                    </span>
-                  </div>
-                  <Input
-                    data-testid={`add-row-value-${column.name}`}
-                    className="h-6 text-xs"
-                    value={field.value}
-                    placeholder={
-                      hasDefault ? `default: ${column.defaultValue}` : ""
-                    }
-                    disabled={field.mode !== "value"}
-                    onChange={(e) =>
-                      handleSetAddRowValue(column.name, e.target.value)
-                    }
-                  />
-                  <div className="flex items-center gap-3 text-[0.625rem] text-text-muted">
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name={`add-row-mode-${column.name}`}
-                        data-testid={`add-row-mode-value-${column.name}`}
-                        checked={field.mode === "value"}
-                        onChange={() =>
-                          handleSetAddRowMode(column.name, "value")
-                        }
-                      />
-                      value
-                    </label>
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name={`add-row-mode-${column.name}`}
-                        data-testid={`add-row-mode-null-${column.name}`}
-                        disabled={!column.nullable}
-                        checked={field.mode === "null"}
-                        onChange={() =>
-                          handleSetAddRowMode(column.name, "null")
-                        }
-                      />
-                      NULL
-                    </label>
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name={`add-row-mode-${column.name}`}
-                        data-testid={`add-row-mode-default-${column.name}`}
-                        disabled={!hasDefault}
-                        checked={field.mode === "default"}
-                        onChange={() =>
-                          handleSetAddRowMode(column.name, "default")
-                        }
-                      />
-                      default
-                    </label>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              size="sm"
-              disabled={isWriting}
-              onClick={() => {
-                void handleSubmitAddRow();
-              }}
-            >
-              {isWriting ? "Inserting…" : "Insert"}
-            </Button>
-          </div>
-        </div>
+        <AddRowForm
+          columns={activeTableStructure.columns}
+          isWriting={isWriting}
+          onSubmit={handleSubmitAddRow}
+          onClose={() => setIsAddRowOpen(false)}
+        />
       ) : null}
 
       {/* Body */}
@@ -699,7 +324,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                   <Button
                     size="sm"
                     disabled={!canAddRow}
-                    onClick={handleOpenAddRow}
+                    onClick={() => setIsAddRowOpen(true)}
                     aria-label="Add row"
                     title="Add row"
                   >
@@ -736,87 +361,19 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         </div>
 
         {activeSubTab === "data" ? (
-          <ResponsiveEdgePanel
-            side="right"
-            storageKey="dbunk.sidebar.rowDetails"
-            title="Row Details"
-            width={ROW_DETAILS_WIDTH}
-            containerWidth={bodyWidth}
-            compactBelow={ROW_DETAILS_COMPACT_BELOW}
-            protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-            wideVisible={isRowDetailsOpen}
-            open={rowDetailsOverlayOpen}
-            onOpenChange={setRowDetailsOverlayOpen}
-          >
-            <div
-              data-testid="row-details-panel"
-              className="flex h-full min-h-0 flex-col gap-3 p-4 text-xs"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">
-                      Row {selectedRowIndex !== null ? selectedRowIndex + 1 : 1}
-                    </span>
-                    <Badge variant="success" className="h-5 px-2">
-                      Selected
-                    </Badge>
-                  </div>
-                  <div className="mt-0.5 text-text-muted">
-                    {hasMultipleSelectedRows
-                      ? `${selectedRowIndices.length} rows selected`
-                      : selectedRowIndices.length === 1
-                        ? "1 selected"
-                        : "First visible row"}
-                  </div>
-                </div>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Close row details"
-                  onClick={handleCloseRowDetails}
-                >
-                  <IconX className="size-3.5" />
-                </Button>
-              </div>
-
-              <div className="flex flex-1 flex-col gap-2 overflow-auto">
-                {hasMultipleSelectedRows ? (
-                  <div className="rounded-md border border-accent-green/20 bg-accent-green/10 p-3 text-text-muted">
-                    <div className="font-semibold text-foreground">
-                      Multiple rows selected
-                    </div>
-                    <div className="mt-1">
-                      Select a single row to inspect column values.
-                    </div>
-                  </div>
-                ) : selectedRow ? (
-                  columns.map((column, index) => (
-                    <div
-                      key={column}
-                      className="rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
-                    >
-                      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
-                        {column}
-                      </div>
-                      <div className="mt-1 truncate font-mono text-[0.75rem] text-foreground">
-                        {selectedRow[index] || "NULL"}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3 text-text-muted">
-                    No row selected
-                  </div>
-                )}
-              </div>
-
-              <SummaryCard
-                totalRows={totalRows ?? rows.length}
-                indexes={activeTableStructure?.indexes.length ?? 0}
-              />
-            </div>
-          </ResponsiveEdgePanel>
+          <RowDetailsPanel
+            columns={columns}
+            selectedRow={selectedRow}
+            selectedRowIndex={selectedRowIndex}
+            selectedRowCount={selectedRowIndices.length}
+            totalRows={pagination.totalRows ?? rows.length}
+            indexes={activeTableStructure?.indexes.length ?? 0}
+            bodyWidth={bodyWidth}
+            wideVisible={rowDetails.isOpen}
+            overlayOpen={rowDetails.overlayOpen}
+            onOverlayOpenChange={rowDetails.setOverlayOpen}
+            onClose={rowDetails.onClose}
+          />
         ) : null}
       </div>
 
@@ -827,21 +384,22 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
         >
           <span className="tabular-nums">
-            Showing {startRow.toLocaleString()} to {endRow.toLocaleString()} of{" "}
-            {(totalRows ?? rows.length).toLocaleString()} rows
+            Showing {pagination.startRow.toLocaleString()} to{" "}
+            {pagination.endRow.toLocaleString()} of{" "}
+            {(pagination.totalRows ?? rows.length).toLocaleString()} rows
           </span>
           <Pagination
-            page={page}
-            totalPages={totalPages}
-            isLastPage={isLastPage}
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            isLastPage={pagination.isLastPage}
             isLoading={isLoading}
-            onFirst={onFirstPage}
-            onPrev={onPrevPage}
-            onNext={onNextPage}
-            onLast={onLastPage}
-            onJump={goToPage}
+            onFirst={pagination.onFirstPage}
+            onPrev={pagination.onPrevPage}
+            onNext={pagination.onNextPage}
+            onLast={pagination.onLastPage}
+            onJump={pagination.goToPage}
           />
-          <span className="tabular-nums">{pageSize} rows</span>
+          <span className="tabular-nums">{pagination.pageSize} rows</span>
         </div>
       ) : null}
 
@@ -986,37 +544,6 @@ function Pagination({
       >
         <IconChevronsRight className="size-3.5" />
       </Button>
-    </div>
-  );
-}
-
-function SummaryCard({
-  totalRows,
-  indexes,
-}: {
-  totalRows: number;
-  indexes: number;
-}) {
-  const rows: Array<[string, string]> = [
-    ["Total rows", totalRows.toLocaleString()],
-    ["Data size", "—"],
-    ["Indexes", indexes.toLocaleString()],
-    ["Last vacuum", "—"],
-    ["Last analyze", "—"],
-  ];
-  return (
-    <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3">
-      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
-        Summary
-      </div>
-      <dl className="mt-2 space-y-1.5 text-xs">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between">
-            <dt className="text-text-muted">{label}</dt>
-            <dd className="tabular-nums text-foreground">{value}</dd>
-          </div>
-        ))}
-      </dl>
     </div>
   );
 }
