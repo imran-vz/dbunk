@@ -20,7 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { type DatabaseEngine, useAppStore } from "@/lib/store";
+import {
+  type Connection,
+  type DatabaseEngine,
+  type StoredConnection,
+  useAppStore,
+} from "@/lib/store";
 
 const connectionSchema = z
   .object({
@@ -94,6 +99,58 @@ const connectionSchema = z
   });
 
 type ConnectionFormData = z.infer<typeof connectionSchema>;
+
+/**
+ * Project the form values into the right `StoredConnection` variant.
+ * Slice 4 (#16) lifts this projection into the unified `ConnectionForm`
+ * component alongside the per-kind validator.
+ */
+function buildStoredConnectionFromForm(
+  value: ConnectionFormData,
+  id: string,
+): StoredConnection {
+  const common = {
+    id,
+    name: value.name,
+    database: value.database ?? "",
+    host: value.host ?? "",
+    port: value.port ?? 0,
+    user: value.user ?? "",
+    password: value.password ?? "",
+    role: value.role || "read/write",
+  };
+  switch (value.engine) {
+    case "PostgreSQL":
+    case "MySQL":
+      return { ...common, engine: value.engine, ssl: value.ssl ?? true };
+    case "SQLite":
+      return { ...common, engine: "SQLite" };
+    case "ClickHouse":
+      return {
+        ...common,
+        engine: "ClickHouse",
+        useHttps: value.useHttps ?? false,
+        urlPath: value.urlPath ?? "",
+      };
+    case "Redis":
+      return {
+        ...common,
+        engine: "Redis",
+        dbNumber: value.dbNumber ?? 0,
+        useTls: value.useTls ?? false,
+        verifyTlsCert: value.verifyTlsCert ?? true,
+      };
+  }
+}
+
+function buildConnectionFromForm(value: ConnectionFormData): Connection {
+  return {
+    ...buildStoredConnectionFromForm(value, crypto.randomUUID()),
+    status: "Disconnected",
+    latency: "--",
+    lastSync: "Never",
+  };
+}
 
 export interface NewConnectionFormProps {
   /**
@@ -170,27 +227,7 @@ export function NewConnectionForm({
       verifyTlsCert: true,
     } as ConnectionFormData,
     onSubmit: async ({ value }) => {
-      await addConnection({
-        id: crypto.randomUUID(),
-        name: value.name,
-        database: value.database ?? "",
-        status: "Disconnected",
-        engine: value.engine,
-        host: value.host ?? "",
-        port: value.port ?? 0,
-        user: value.user ?? "",
-        password: value.password ?? "",
-        role: value.role || "read/write",
-        latency: "--",
-        lastSync: "Never",
-        useHttps:
-          value.engine === "ClickHouse" ? (value.useHttps ?? false) : false,
-        urlPath: value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
-        dbNumber: value.engine === "Redis" ? (value.dbNumber ?? 0) : 0,
-        useTls: value.engine === "Redis" ? (value.useTls ?? false) : false,
-        verifyTlsCert:
-          value.engine === "Redis" ? (value.verifyTlsCert ?? true) : true,
-      });
+      await addConnection(buildConnectionFromForm(value));
       form.reset();
       setSelectedEngine("PostgreSQL");
       setUseHttps(false);
@@ -587,30 +624,9 @@ export function NewConnectionForm({
             onClick={async () => {
               const value = form.state.values;
               setTestStatus({ state: "running" });
-              const result = await testConnection({
-                id: "test-connection",
-                name: value.name || "Untitled",
-                database: value.database ?? "",
-                engine: value.engine,
-                host: value.host ?? "",
-                port: value.port ?? 0,
-                user: value.user ?? "",
-                password: value.password ?? "",
-                role: value.role || "read/write",
-                useHttps:
-                  value.engine === "ClickHouse"
-                    ? (value.useHttps ?? false)
-                    : false,
-                urlPath:
-                  value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
-                dbNumber: value.engine === "Redis" ? (value.dbNumber ?? 0) : 0,
-                useTls:
-                  value.engine === "Redis" ? (value.useTls ?? false) : false,
-                verifyTlsCert:
-                  value.engine === "Redis"
-                    ? (value.verifyTlsCert ?? true)
-                    : true,
-              });
+              const result = await testConnection(
+                buildStoredConnectionFromForm(value, "test-connection"),
+              );
               if (result.ok) {
                 setTestStatus({
                   state: "success",

@@ -99,8 +99,13 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
   // a Redis connection or a non-relational tab kind.
   if (
     activeConnection &&
-    storageClassFor(activeConnection.engine) === "keyvalue"
+    storageClassFor(activeConnection.engine) === "keyvalue" &&
+    activeConnection.engine === "Redis"
   ) {
+    // Engine-tag narrow alongside the storage-class check so TypeScript
+    // can hand `KeyValueWorkspace` a `RedisConnection`. Today Redis is
+    // the only keyvalue engine; the additional discriminator-check
+    // disappears the moment another keyvalue engine joins the union.
     return <KeyValueWorkspace activeConnection={activeConnection} />;
   }
 
@@ -218,7 +223,10 @@ function WorkspaceDatabaseOverview({
 
   // Storage-class fork (ADR-0008). Keyvalue engines (Redis) get their
   // own workspace shell.
-  if (storageClassFor(activeConnection.engine) === "keyvalue") {
+  if (
+    storageClassFor(activeConnection.engine) === "keyvalue" &&
+    activeConnection.engine === "Redis"
+  ) {
     return <KeyValueWorkspace activeConnection={activeConnection} />;
   }
 

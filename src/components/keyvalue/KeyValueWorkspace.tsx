@@ -22,11 +22,18 @@ import { NewKeyDialog } from "@/components/keyvalue/NewKeyDialog";
 import { PubsubTab } from "@/components/keyvalue/PubsubTab";
 import { ServerTab } from "@/components/keyvalue/ServerTab";
 import { Button } from "@/components/ui/button";
-import { type Connection, useAppStore, type WorkspaceTab } from "@/lib/store";
+import {
+  type RedisConnection,
+  useAppStore,
+  type WorkspaceTab,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface KeyValueWorkspaceProps {
-  activeConnection: Connection;
+  /** Narrowed at the workspace fork — see `workspace-view.tsx`'s
+   *  storage-class branch. KeyValueWorkspace is only rendered for
+   *  Redis connections so the prop carries the variant directly. */
+  activeConnection: RedisConnection;
 }
 
 export function KeyValueWorkspace({

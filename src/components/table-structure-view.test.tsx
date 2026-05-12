@@ -22,12 +22,11 @@ const mockedInvoke = vi.mocked(tauriInvoke);
 const initialStoreState = useAppStore.getState();
 
 const seedConnection = (engine: Connection["engine"] = "PostgreSQL") => {
-  const connection: Connection = {
+  const common = {
     id: "conn-1",
     name: "Local",
     database: "dbunk",
-    status: "Connected",
-    engine,
+    status: "Connected" as const,
     host: "localhost",
     port: 5432,
     user: "postgres",
@@ -36,6 +35,33 @@ const seedConnection = (engine: Connection["engine"] = "PostgreSQL") => {
     latency: "10 ms",
     lastSync: "Just now",
   };
+  let connection: Connection;
+  switch (engine) {
+    case "PostgreSQL":
+    case "MySQL":
+      connection = { ...common, engine, ssl: true };
+      break;
+    case "SQLite":
+      connection = { ...common, engine: "SQLite" };
+      break;
+    case "ClickHouse":
+      connection = {
+        ...common,
+        engine: "ClickHouse",
+        useHttps: false,
+        urlPath: "",
+      };
+      break;
+    case "Redis":
+      connection = {
+        ...common,
+        engine: "Redis",
+        dbNumber: 0,
+        useTls: false,
+        verifyTlsCert: true,
+      };
+      break;
+  }
   useAppStore.setState({
     connections: [connection],
     activeConnectionId: connection.id,
