@@ -16,6 +16,7 @@ import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import type {
   AppStoreState,
   QueryHistoryEntry,
+  QueryOutcome,
   QueryPreviewData,
   QueryStatus,
   SavedQueriesStatus,
@@ -61,7 +62,7 @@ export type RelationalQueriesSlice = {
   runQuery: (
     tabId: string,
     options?: { overrideSql?: string },
-  ) => Promise<void>;
+  ) => Promise<QueryOutcome>;
   loadQueryHistory: () => Promise<void>;
   loadSavedQueries: () => Promise<void>;
   saveSavedQuery: (
@@ -120,38 +121,31 @@ export const createRelationalQueriesSlice: StateCreator<
       ),
     })),
 
-  runQuery: async (tabId, options) => {
+  runQuery: async (tabId, options): Promise<QueryOutcome> => {
     const state = get();
     const tab = state.workspaceTabs.find((item) => item.id === tabId);
     if (!tab || tab.kind !== "query") {
-      return;
+      return { kind: "noop" };
     }
     if (state.queryStatus[tabId]?.state === "running") {
-      return;
+      return { kind: "noop" };
     }
     const fullText = tab.query ?? "";
     const overrideSql = options?.overrideSql ?? null;
     const query = pickSqlToRun(fullText, overrideSql).trim();
     if (!query) {
-      return;
+      return { kind: "noop" };
     }
     if (!isTauri()) {
-      set((state) => ({
-        workspaceTabs: state.workspaceTabs.map((item) =>
-          item.id === tabId
-            ? { ...item, lastRun: "Just now", isDirty: false }
-            : item,
-        ),
-      }));
-      return;
+      return { kind: "noop" };
     }
     const connectionAtRun = state.connections.find(
       (c) => c.id === tab.connectionId,
     );
     const startedAt = new Date().toISOString();
-    set((state) => ({
+    set((s) => ({
       queryStatus: {
-        ...state.queryStatus,
+        ...s.queryStatus,
         [tabId]: { state: "running" },
       },
     }));
@@ -190,35 +184,40 @@ export const createRelationalQueriesSlice: StateCreator<
         rowCount: result.rowCount,
       });
       const nowIso = new Date().toISOString();
-      set((state) => ({
-        queryPreviews: {
-          ...state.queryPreviews,
-          [tab.label]: {
-            columns: result.columns,
-            rows: result.rows,
-            runtime: `${result.runtimeMs} ms`,
-            rowCount: result.rowCount.toString(),
-            cache: "Cold",
+      set((s) => {
+        const { [tabId]: _status, ...restStatus } = s.queryStatus;
+        return {
+          queryPreviews: {
+            ...s.queryPreviews,
+            [tab.label]: {
+              columns: result.columns,
+              rows: result.rows,
+              runtime: `${result.runtimeMs} ms`,
+              rowCount: result.rowCount.toString(),
+              cache: "Cold",
+            },
           },
-        },
-        queryStatus: {
-          ...state.queryStatus,
-          [tabId]: { state: "success", runtimeMs: result.runtimeMs },
-        },
-        queryHistory: [entry, ...state.queryHistory].slice(0, 200),
-        workspaceTabs: state.workspaceTabs.map((item) =>
-          item.id === tabId
-            ? { ...item, lastRun: "Just now", isDirty: false }
-            : item,
-        ),
-        // Cross-slice write: bumps the Connection's lastActivityAt.
-        // Belongs as `get().applyConnectionActivity()` once the
-        // Connections slice exposes a helper for it (follow-up).
-        connections: state.connections.map((c) =>
-          c.id === tab.connectionId ? { ...c, lastActivityAt: nowIso } : c,
-        ),
-      }));
+          queryStatus: restStatus,
+          queryHistory: [entry, ...s.queryHistory].slice(0, 200),
+          workspaceTabs: s.workspaceTabs.map((item) =>
+            item.id === tabId
+              ? { ...item, lastRun: "Just now", isDirty: false }
+              : item,
+          ),
+          // Cross-slice write: bumps the Connection's lastActivityAt.
+          // Belongs as `get().applyConnectionActivity()` once the
+          // Connections slice exposes a helper for it (follow-up).
+          connections: s.connections.map((c) =>
+            c.id === tab.connectionId ? { ...c, lastActivityAt: nowIso } : c,
+          ),
+        };
+      });
       await persistEntry(entry);
+      return {
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowCount: result.rowCount,
+      };
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to run query", error);
@@ -227,19 +226,24 @@ export const createRelationalQueriesSlice: StateCreator<
         runtimeMs: Math.max(0, Date.now() - new Date(startedAt).getTime()),
         errorMessage: message,
       });
-      set((state) => ({
-        queryStatus: {
-          ...state.queryStatus,
-          [tabId]: { state: "error", error: message },
-        },
-        queryHistory: [entry, ...state.queryHistory].slice(0, 200),
-        workspaceTabs: state.workspaceTabs.map((item) =>
-          item.id === tabId
-            ? { ...item, lastRun: "Failed", isDirty: false }
-            : item,
-        ),
-      }));
+      // Single set: drop the queryStatus lifecycle entry in the same
+      // updater that writes queryHistory + workspaceTabs, so the
+      // failure path matches the success-path shape (one set per
+      // terminal transition).
+      set((s) => {
+        const { [tabId]: _status, ...restStatus } = s.queryStatus;
+        return {
+          queryStatus: restStatus,
+          queryHistory: [entry, ...s.queryHistory].slice(0, 200),
+          workspaceTabs: s.workspaceTabs.map((item) =>
+            item.id === tabId
+              ? { ...item, lastRun: "Failed", isDirty: false }
+              : item,
+          ),
+        };
+      });
       await persistEntry(entry);
+      return { kind: "failed", reason: message };
     }
   },
 

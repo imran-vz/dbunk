@@ -26,6 +26,7 @@ import {
   type SchemaTableNode,
   schemaRelationshipsKey,
 } from "@/lib/schema-graph";
+import { clearLifecycleSlot } from "@/lib/store-lifecycle";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import type {
@@ -113,31 +114,6 @@ const mutationOutcomeToEditOutcome = (
     };
   }
   return { kind: "timeout", remaining: outcome.remaining };
-};
-
-/**
- * Drop one entry from a per-key lifecycle-status map on `AppStoreState`.
- * Skips the `set` when the key is absent so Zustand subscribers aren't
- * pinged with a new top-level reference for a no-op clear. Centralised
- * here because four actions (`commitTableEdits`, `addTableRow`,
- * `deleteSelectedTableRows`, `commitStructureChanges`) need identical
- * "running → terminal → cleared" cleanup on every exit path.
- */
-type LifecycleSlot = "tableEditsCommitStatus" | "structureCommitStatus";
-
-const clearLifecycleSlot = (
-  set: Parameters<
-    StateCreator<AppStoreState, [], [], RelationalTablesSlice>
-  >[0],
-  slot: LifecycleSlot,
-  subkey: string,
-) => {
-  set((state) => {
-    const current = state[slot] as Record<string, unknown>;
-    if (!(subkey in current)) return {};
-    const { [subkey]: _dropped, ...rest } = current;
-    return { [slot]: rest } as Partial<AppStoreState>;
-  });
 };
 
 // ---------------------------------------------------------------------------
