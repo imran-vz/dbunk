@@ -239,6 +239,17 @@ fn tcp_io_error(host: &str, port: u16, err: &std::io::Error) -> String {
 /// AFTER the TCP probe succeeded. By construction this is no longer
 /// "host unreachable" — it's protocol-layer (TLS mismatch, AUTH
 /// rejected, server speaks a different protocol).
+///
+/// IoError messages are matched against distinctive substrings so the
+/// hint can point at the actual cause rather than listing every
+/// possibility:
+/// - rustls's `InvalidContentType` / "corrupt message" → server is
+///   plaintext, the user has TLS on
+/// - redis-rs's "driver unexpectedly terminated" with no creds set →
+///   server most likely requires AUTH and closed the socket
+///
+/// Anything we can't pattern-match falls through to the generic
+/// three-cause hint.
 fn handshake_err(connection: &RedisStoredConnection, error: RedisError) -> String {
     use redis::ErrorKind;
 
@@ -246,44 +257,97 @@ fn handshake_err(connection: &RedisStoredConnection, error: RedisError) -> Strin
     let port = effective_port(connection);
     let scheme = if connection.use_tls { "rediss" } else { "redis" };
 
-    let base = match error.kind() {
-        ErrorKind::AuthenticationFailed => {
-            return format!(
-                "Authentication rejected by {host}:{port}. \
-                 Check the username and password. \
-                 If the server uses ACLs (Redis 6+), the username must match a configured user."
-            );
-        }
-        ErrorKind::IoError => {
-            // Reached the redis-rs driver but the connection died
-            // during handshake. Common causes ranked by likelihood:
-            // 1. TLS required on server but client connected plaintext (or vice versa)
-            // 2. Server rejected AUTH and closed the socket
-            // 3. Protocol mismatch (the port isn't really Redis)
-            let tls_hint = if connection.use_tls {
-                "If you're using a self-signed TLS cert, disable \"Verify TLS certificate\" under Advanced Options."
-            } else {
-                "If the server requires TLS, enable \"Use TLS\" under Advanced Options."
-            };
-            format!(
-                "Connected to {host}:{port} over {scheme}:// but the handshake failed: {error}. \
-                 Possible causes: TLS mismatch (server requires the opposite of what's set), \
-                 auth rejected and the server closed the socket, \
-                 or the port is reachable but is not a Redis server. \
-                 {tls_hint}"
-            )
-        }
-        ErrorKind::ResponseError => format!(
-            "Redis rejected the connection: {}",
-            error.detail().unwrap_or("(no detail)")
+    match error.kind() {
+        ErrorKind::AuthenticationFailed => format!(
+            "Authentication rejected by {host}:{port}. \
+             Check the username and password. \
+             If the server uses ACLs (Redis 6+), the username must match a configured user."
         ),
+        ErrorKind::IoError => io_handshake_err(connection, &error, host, port, scheme),
+        ErrorKind::ResponseError => {
+            // Redis 6+ AUTH failures surface here as a `ResponseError`
+            // with a NOAUTH/WRONGPASS prefix on the detail line. Lift
+            // the canonical hints to the top so the user sees them
+            // before the raw detail.
+            let detail = error.detail().unwrap_or("(no detail)");
+            let upper = detail.to_uppercase();
+            if upper.starts_with("NOAUTH") {
+                format!(
+                    "Authentication required by {host}:{port}. \
+                     Add a password (and a username for ACL-based Redis 6+) under the form."
+                )
+            } else if upper.starts_with("WRONGPASS") {
+                format!(
+                    "Authentication rejected by {host}:{port}: wrong password. \
+                     Check the credentials under the form."
+                )
+            } else {
+                format!("Redis rejected the connection: {detail}")
+            }
+        }
         _ => format!(
             "Redis handshake with {host}:{port} failed ({}): {}",
             error.category(),
             error
         ),
+    }
+}
+
+fn io_handshake_err(
+    connection: &RedisStoredConnection,
+    error: &RedisError,
+    host: &str,
+    port: u16,
+    scheme: &str,
+) -> String {
+    let text = error.to_string();
+    let lower = text.to_lowercase();
+
+    // Distinctive rustls signal: the server replied with bytes that
+    // weren't TLS records. The most common cause is talking TLS to a
+    // plaintext server (`rediss://` against `redis://`-only port).
+    if connection.use_tls
+        && (lower.contains("invalidcontenttype")
+            || lower.contains("corrupt message")
+            || lower.contains("not enough data"))
+    {
+        return format!(
+            "Connected to {host}:{port} over rediss:// but the server returned non-TLS data. \
+             The server is most likely plaintext — disable \"Use TLS\" under Advanced Options."
+        );
+    }
+
+    // Distinctive redis-rs signal: the MultiplexedConnection driver
+    // died mid-handshake. With no credentials on the client side this
+    // is almost always the server requiring AUTH and closing the
+    // socket on the anonymous client.
+    if !connection.use_tls && lower.contains("driver unexpectedly terminated") {
+        let auth_hint = if connection.password.is_empty() {
+            "The server may require a password (Redis `requirepass`) or a named ACL user — add credentials under the form."
+        } else {
+            "AUTH may have been rejected; double-check the username and password."
+        };
+        return format!(
+            "Connected to {host}:{port} over redis:// but the server closed the connection during the handshake. \
+             {auth_hint} Other possibilities: the server requires TLS (enable \"Use TLS\" under Advanced Options), \
+             or the port is reachable but is not a Redis server."
+        );
+    }
+
+    // Fall-through: keep the generic three-cause hint with the
+    // TLS-direction toggle suggestion.
+    let tls_hint = if connection.use_tls {
+        "If you're using a self-signed TLS cert, disable \"Verify TLS certificate\" under Advanced Options."
+    } else {
+        "If the server requires TLS, enable \"Use TLS\" under Advanced Options."
     };
-    base
+    format!(
+        "Connected to {host}:{port} over {scheme}:// but the handshake failed: {error}. \
+         Possible causes: TLS mismatch (server requires the opposite of what's set), \
+         auth rejected and the server closed the socket, \
+         or the port is reachable but is not a Redis server. \
+         {tls_hint}"
+    )
 }
 
 /// Generic Redis-error mapper used outside the connect path (per-key
