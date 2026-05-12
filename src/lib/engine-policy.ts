@@ -43,32 +43,44 @@
 
 import type { DatabaseEngine, StorageClass } from "@/lib/store";
 
-export type ConnectionFormPolicy = {
-  /**
-   * Whether the connection form needs host/port/user/password
-   * inputs. SQLite is a file-path-only engine; the form collapses
-   * to just the database-file input.
-   */
-  requiresHostAndAuth: boolean;
-  /**
-   * ClickHouse-only: surface the HTTPS toggle and URL-path input
-   * under Advanced Options.
-   */
-  showClickHouseHttp: boolean;
-  /**
-   * Redis-only: surface the TLS toggle and verify-cert toggle
-   * under Advanced Options.
-   */
-  showRedisTls: boolean;
-  /**
-   * Redis-only: surface the DB number input (0–15) on the form.
-   */
-  showRedisDbNumber: boolean;
-  /**
-   * Default port placeholder when the user hasn't typed one.
-   */
-  defaultPort: number;
-};
+/**
+ * Per-engine form-shape policy. A tagged union on `kind`; each
+ * variant carries exactly the knobs its form needs. Multiple engines
+ * may share a `kind` (PG and MySQL both render as `host-auth`); the
+ * `kind` discriminator names the *form shape*, not the engine. The
+ * engine still ships in the surrounding `EnginePolicy`.
+ *
+ * See ADR-0012 for the union shape and the rationale for grouping
+ * PG/MySQL under one form kind while keeping them as separate
+ * Connection-record variants (ADR-0011).
+ */
+export type ConnectionFormPolicy =
+  | {
+      kind: "host-auth";
+      /** Default port placeholder when the user hasn't typed one. */
+      defaultPort: number;
+      /** Whether to render the SSL toggle (PG/MySQL only). */
+      showSslToggle: boolean;
+    }
+  | {
+      kind: "clickhouse-http";
+      /** Port used when `useHttps` is off. */
+      defaultPortHttp: number;
+      /** Port used when `useHttps` is on. */
+      defaultPortHttps: number;
+    }
+  | {
+      kind: "redis";
+      /** Default port placeholder when the user hasn't typed one. */
+      defaultPort: number;
+      /** Default DB number when the user hasn't typed one. */
+      defaultDbNumber: number;
+      /** Maximum DB number accepted on the form (15 on standalone). */
+      maxDbNumber: number;
+    }
+  | {
+      kind: "file";
+    };
 
 // ---------------------------------------------------------------------------
 // Relational engine policy
@@ -199,11 +211,9 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
       "Foreign keys are not supported on this engine.",
     schemaMapNoForeignKeysCopy: null,
     connectionForm: {
-      requiresHostAndAuth: true,
-      showClickHouseHttp: false,
-      showRedisTls: false,
-      showRedisDbNumber: false,
+      kind: "host-auth",
       defaultPort: 5432,
+      showSslToggle: true,
     },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
   },
@@ -216,11 +226,9 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
       "Foreign keys are not supported on this engine.",
     schemaMapNoForeignKeysCopy: null,
     connectionForm: {
-      requiresHostAndAuth: true,
-      showClickHouseHttp: false,
-      showRedisTls: false,
-      showRedisDbNumber: false,
+      kind: "host-auth",
       defaultPort: 3306,
+      showSslToggle: true,
     },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
   },
@@ -232,13 +240,7 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
     foreignKeysUnsupportedCopy:
       "Foreign keys are not supported on this engine.",
     schemaMapNoForeignKeysCopy: null,
-    connectionForm: {
-      requiresHostAndAuth: false,
-      showClickHouseHttp: false,
-      showRedisTls: false,
-      showRedisDbNumber: false,
-      defaultPort: 0,
-    },
+    connectionForm: { kind: "file" },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
   },
   ClickHouse: {
@@ -250,11 +252,9 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
     schemaMapNoForeignKeysCopy:
       "ClickHouse does not support foreign keys — showing tables only.",
     connectionForm: {
-      requiresHostAndAuth: true,
-      showClickHouseHttp: true,
-      showRedisTls: false,
-      showRedisDbNumber: false,
-      defaultPort: 8123,
+      kind: "clickhouse-http",
+      defaultPortHttp: 8123,
+      defaultPortHttps: 8443,
     },
     labels: {
       primaryKey: "Sorting key",
@@ -275,11 +275,10 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
     destructiveCommandsHard: KEYVALUE_REDIS_DESTRUCTIVE_HARD,
     destructiveCommandsSoft: KEYVALUE_REDIS_DESTRUCTIVE_SOFT,
     connectionForm: {
-      requiresHostAndAuth: true,
-      showClickHouseHttp: false,
-      showRedisTls: true,
-      showRedisDbNumber: true,
+      kind: "redis",
       defaultPort: 6379,
+      defaultDbNumber: 0,
+      maxDbNumber: 15,
     },
   },
 };
@@ -332,4 +331,161 @@ export function keyvaluePolicy(engine: DatabaseEngine): KeyValuePolicy {
     );
   }
   return policy;
+}
+
+/**
+ * Shortcut to the connection-form policy for an engine. Forms read
+ * this once at the engine-picker level and switch on `policy.kind` to
+ * decide which fields to render.
+ */
+export function connectionFormPolicy(
+  engine: DatabaseEngine,
+): ConnectionFormPolicy {
+  return POLICIES[engine].connectionForm;
+}
+
+// ---------------------------------------------------------------------------
+// Connection-form validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared form-values shape — the union of every field any engine's
+ * form might surface. Each variant of `ConnectionFormPolicy` knows
+ * which fields apply to its kind; the validator below ignores
+ * fields that don't.
+ *
+ * Slice 4 (#16) lifts this into the unified `ConnectionForm`
+ * component; Slice 3 wires it through both existing forms.
+ */
+export type ConnectionFormValues = {
+  name?: string;
+  engine: DatabaseEngine;
+  host?: string;
+  database?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  role?: string;
+  ssl?: boolean;
+  useHttps?: boolean;
+  urlPath?: string;
+  dbNumber?: number;
+  useTls?: boolean;
+  verifyTlsCert?: boolean;
+};
+
+export type ConnectionFormIssue = {
+  path: keyof ConnectionFormValues;
+  message: string;
+};
+
+export type ConnectionFormMode = "new" | "edit";
+
+/**
+ * Validate connection-form values against the engine's form-policy
+ * shape. `mode: "edit"` relaxes the password requirement for kinds
+ * that otherwise require it (PG/MySQL/ClickHouse); the existing
+ * backend rule "empty password = keep existing credential"
+ * (`save_connection` in `lib.rs`) handles the substitution.
+ *
+ * Returns a flat list of issues; an empty list means the values are
+ * valid. Each issue carries the form-field `path` it belongs to so
+ * the consumer can surface inline errors next to the right input.
+ *
+ * Pure function — testable per `kind × mode` without spinning up a
+ * form. ADR-0012 covers the broader connection-form unification.
+ */
+export function validateConnection(
+  policy: ConnectionFormPolicy,
+  value: ConnectionFormValues,
+  mode: ConnectionFormMode,
+): ConnectionFormIssue[] {
+  const issues: ConnectionFormIssue[] = [];
+  if (!value.name?.trim()) {
+    issues.push({ path: "name", message: "Connection name is required" });
+  }
+  switch (policy.kind) {
+    case "file": {
+      if (!value.database?.trim()) {
+        issues.push({ path: "database", message: "Database file is required" });
+      }
+      break;
+    }
+    case "host-auth": {
+      validateHostFields(value, issues);
+      validateDatabaseRequired(value, issues);
+      validateUserRequired(value, issues);
+      validatePasswordRequired(value, mode, issues);
+      break;
+    }
+    case "clickhouse-http": {
+      validateHostFields(value, issues);
+      validateDatabaseRequired(value, issues);
+      validateUserRequired(value, issues);
+      validatePasswordRequired(value, mode, issues);
+      break;
+    }
+    case "redis": {
+      validateHostFields(value, issues);
+      // Redis user + password are both optional (no-auth, password-only
+      // for Redis ≤5 compat, or full ACL user+password on Redis 6+).
+      // Database name doesn't apply — Redis uses dbNumber instead.
+      const dbNumber = value.dbNumber ?? policy.defaultDbNumber;
+      if (dbNumber < 0 || dbNumber > policy.maxDbNumber) {
+        issues.push({
+          path: "dbNumber",
+          message: `DB number must be 0–${policy.maxDbNumber}`,
+        });
+      }
+      break;
+    }
+  }
+  return issues;
+}
+
+function validateHostFields(
+  value: ConnectionFormValues,
+  issues: ConnectionFormIssue[],
+): void {
+  if (!value.host?.trim()) {
+    issues.push({ path: "host", message: "Host is required" });
+  }
+  if (!value.port || value.port < 1 || value.port > 65535) {
+    issues.push({
+      path: "port",
+      message: "Port must be between 1 and 65535",
+    });
+  }
+}
+
+function validateDatabaseRequired(
+  value: ConnectionFormValues,
+  issues: ConnectionFormIssue[],
+): void {
+  if (!value.database?.trim()) {
+    issues.push({ path: "database", message: "Database is required" });
+  }
+}
+
+function validateUserRequired(
+  value: ConnectionFormValues,
+  issues: ConnectionFormIssue[],
+): void {
+  if (!value.user?.trim()) {
+    issues.push({ path: "user", message: "User is required" });
+  }
+}
+
+function validatePasswordRequired(
+  value: ConnectionFormValues,
+  mode: ConnectionFormMode,
+  issues: ConnectionFormIssue[],
+): void {
+  // `mode: "edit"` treats a blank password as "keep existing
+  // credential" — the backend's `save_connection` only upserts the
+  // credential when the password is non-empty (ADR-0010 §1).
+  if (mode === "edit") return;
+  if (!value.password?.trim()) {
+    issues.push({ path: "password", message: "Password is required" });
+  }
 }

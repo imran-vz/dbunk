@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { connectionFormPolicy, validateConnection } from "@/lib/engine-policy";
 import {
   type Connection,
   type DatabaseEngine,
@@ -45,55 +46,20 @@ const connectionSchema = z
     verifyTlsCert: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.engine === "SQLite") {
-      if (!value.database?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Database file is required",
-          path: ["database"],
-        });
-      }
-      return;
-    }
-    if (!value.host?.trim()) {
+    // Per-kind validation lives next to the engine policy
+    // (`engine-policy.ts`). The schema only owns shape; semantic rules
+    // are pulled from the shared validator so the new and edit forms
+    // can't drift apart again. See ADR-0012.
+    const issues = validateConnection(
+      connectionFormPolicy(value.engine),
+      value,
+      "new",
+    );
+    for (const issue of issues) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Host is required",
-        path: ["host"],
-      });
-    }
-    if (!value.port || value.port < 1 || value.port > 65535) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Port must be between 1 and 65535",
-        path: ["port"],
-      });
-    }
-    if (value.engine === "Redis") {
-      // Redis user + password are both optional (no-auth, password-only,
-      // or ACL user+password). Database name is also optional — the
-      // `dbNumber` field carries selection.
-      return;
-    }
-    if (!value.database?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Database is required",
-        path: ["database"],
-      });
-    }
-    if (!value.user?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "User is required",
-        path: ["user"],
-      });
-    }
-    if (!value.password?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Password is required",
-        path: ["password"],
+        message: issue.message,
+        path: [issue.path],
       });
     }
   });
