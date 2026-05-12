@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(),
+  errorToMessage: (error: unknown) =>
+    error instanceof Error ? error.message : String(error),
 }));
 
 // Controllable selection that the mocked Monaco editor will return.

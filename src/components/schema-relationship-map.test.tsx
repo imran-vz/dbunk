@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => false),
   tauriInvoke: vi.fn(),
+  errorToMessage: (error: unknown) =>
+    error instanceof Error ? error.message : String(error),
 }));
 
 // reactflow renders into an SVG/canvas tree that pulls in jsdom unsupported

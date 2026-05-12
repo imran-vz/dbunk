@@ -4,6 +4,7 @@ import {
   generateDdlForEngine,
   type PendingChange,
 } from "@/lib/ddl";
+import { formatLatencyMs } from "@/lib/format";
 import {
   type MutationOutcome,
   pendingMutationsFromResult,
@@ -44,7 +45,7 @@ import type {
   WorkspaceTab,
 } from "@/lib/store/types";
 import { tableDataKey, tableStructureKey } from "@/lib/store/types";
-import { isTauri, tauriInvoke } from "@/lib/tauri";
+import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 export type {
   ColumnChangeKind,
@@ -74,36 +75,11 @@ export type {
   TableLoadStatus,
 } from "@/lib/store/types";
 
-const errorToMessage = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string") {
-      return message;
-    }
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown error";
-  }
-};
-
 type ConnectResult = {
   latencyMs: number;
   /** Populated when the target is a Redis server (Phase 1.1+). */
   redisCapabilities?: RedisCapabilities;
 };
-
-const formatLatencyMs = (latencyMs: unknown): string =>
-  typeof latencyMs === "number" && Number.isFinite(latencyMs)
-    ? `${latencyMs} ms`
-    : "--";
 
 type RunQueryResult = {
   columns: string[];
