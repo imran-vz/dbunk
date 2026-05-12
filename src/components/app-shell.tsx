@@ -5,7 +5,14 @@ import {
   IconSearch,
   IconTerminal2,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { ConnectionsView } from "@/components/connections-view";
 import {
   CredentialOnboarding,
@@ -19,17 +26,37 @@ import { Input } from "@/components/ui/input";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkspaceView } from "@/components/workspace-view";
 import { useAppStore } from "@/lib/store";
+import {
+  tauriOnWindowFullscreenChange,
+  tauriStartDragging,
+  tauriToggleMaximize,
+} from "@/lib/tauri";
 import { useContainerWidth } from "@/lib/use-resizable-width";
+import { cn } from "@/lib/utils";
 import logo from "../assets/logo.png";
 
 const GLOBAL_SIDEBAR_WIDTH = 288;
 const GLOBAL_SIDEBAR_COMPACT_BELOW = 980;
 const PROTECTED_WORKSPACE_WIDTH = 560;
+const TOP_BAR_INTERACTIVE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "[contenteditable='true']",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='combobox']",
+  "[role='menuitem']",
+  "[role='textbox']",
+].join(",");
 
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
   const [newConnectionOpen, setNewConnectionOpen] = useState(false);
   const [leftSidebarOverlayOpen, setLeftSidebarOverlayOpen] = useState(false);
+  const [isWindowFullscreen, setIsWindowFullscreen] = useState(false);
   const [shellBodyRef, shellBodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const {
@@ -67,6 +94,24 @@ export function AppShell() {
     }
     toggleLeftSidebar();
   };
+  const handleTopBarPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.detail > 1) {
+      return;
+    }
+    if (!shouldStartTopBarDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    void tauriStartDragging().catch(() => undefined);
+  };
+  const handleTopBarDoubleClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!shouldStartTopBarDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    void tauriToggleMaximize().catch(() => undefined);
+  };
 
   useEffect(() => {
     setIsClient(true);
@@ -82,6 +127,29 @@ export function AppShell() {
   useEffect(() => {
     void loadAppSettings();
   }, [loadAppSettings]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void tauriOnWindowFullscreenChange((fullscreen) => {
+      if (!disposed) {
+        setIsWindowFullscreen(fullscreen);
+      }
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+        unlisten = unsubscribe;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (appSettings?.credentialState !== "ready") {
@@ -142,7 +210,11 @@ export function AppShell() {
     appSettingsStatus.state === "idle"
   ) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-surface-app text-xs text-text-muted">
+      <div className="relative flex h-screen w-screen items-center justify-center bg-surface-app text-xs text-text-muted">
+        <WindowDragSurface
+          onDoubleClick={handleTopBarDoubleClick}
+          onPointerDown={handleTopBarPointerDown}
+        />
         Loading settings…
       </div>
     );
@@ -150,7 +222,11 @@ export function AppShell() {
 
   if (appSettingsStatus.state === "error") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-surface-app p-6 text-foreground">
+      <div className="relative flex h-screen w-screen items-center justify-center bg-surface-app p-6 text-foreground">
+        <WindowDragSurface
+          onDoubleClick={handleTopBarDoubleClick}
+          onPointerDown={handleTopBarPointerDown}
+        />
         <div className="max-w-md rounded-lg border border-danger/30 bg-danger/10 p-5 text-sm text-danger">
           {appSettingsStatus.error}
         </div>
@@ -159,11 +235,25 @@ export function AppShell() {
   }
 
   if (appSettings?.credentialState === "needs-onboarding") {
-    return <CredentialOnboarding />;
+    return (
+      <WindowDragFrame
+        onDoubleClick={handleTopBarDoubleClick}
+        onPointerDown={handleTopBarPointerDown}
+      >
+        <CredentialOnboarding />
+      </WindowDragFrame>
+    );
   }
 
   if (appSettings?.credentialState === "needs-unlock") {
-    return <CredentialUnlock />;
+    return (
+      <WindowDragFrame
+        onDoubleClick={handleTopBarDoubleClick}
+        onPointerDown={handleTopBarPointerDown}
+      >
+        <CredentialUnlock />
+      </WindowDragFrame>
+    );
   }
 
   return (
@@ -173,7 +263,11 @@ export function AppShell() {
     >
       <header
         data-slot="top-bar"
-        data-tauri-drag-region
+        data-testid="app-top-bar"
+        data-window-fullscreen={isWindowFullscreen}
+        data-window-drag-region
+        role="toolbar"
+        aria-label="Application toolbar"
         // The macOS window uses `titleBarStyle: Overlay` (see
         // src-tauri/tauri.conf.json), so the OS draws the red/yellow/green
         // controls on top of our content. The traffic lights are positioned
@@ -184,11 +278,15 @@ export function AppShell() {
         // dead weight there — addressed in designs/FOLLOWUPS.md (cross-
         // platform window chrome) when we ship Windows/Linux builds.
         //
-        // Drag behaviour: each non-interactive wrapper carries its own
-        // `data-tauri-drag-region` so empty space around buttons/inputs is
-        // unambiguously a drag handle on every platform. Buttons + inputs
-        // get `no-drag` automatically as native interactive elements.
-        className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border-subtle bg-surface-window pl-22 pr-2.5 select-none"
+        // Drag behaviour stays on a private marker instead of
+        // `data-tauri-drag-region`: Tauri's built-in titlebar double-click
+        // handling would race our explicit `toggleMaximize()` call.
+        className={cn(
+          "flex h-12 shrink-0 items-center gap-2.5 border-b border-border-subtle bg-surface-window pr-2.5 select-none transition-[padding] duration-150",
+          isWindowFullscreen ? "pl-2.5" : "pl-22",
+        )}
+        onDoubleClick={handleTopBarDoubleClick}
+        onPointerDown={handleTopBarPointerDown}
       >
         <Button
           type="button"
@@ -218,14 +316,14 @@ export function AppShell() {
           <IconLayoutSidebarLeftCollapse className="size-4" />
         </Button>
         <div
-          data-tauri-drag-region
+          data-window-drag-region
           className="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
         >
           <img src={logo} alt="dbunk" className="size-[1.375rem]" />
         </div>
 
         <div
-          data-tauri-drag-region
+          data-window-drag-region
           className="relative ml-1 hidden min-w-40 max-w-md flex-1 md:block"
         >
           <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
@@ -243,12 +341,13 @@ export function AppShell() {
             actions. Always rendered so the right group stays anchored to the
             window edge even on screens too small to show the search. */}
         <div
-          data-tauri-drag-region
+          data-window-drag-region
           aria-hidden="true"
+          data-testid="window-drag-spacer"
           className="h-full flex-1"
         />
 
-        <div data-tauri-drag-region className="flex items-center gap-1.5">
+        <div data-window-drag-region className="flex items-center gap-1.5">
           <NewConnectionDialog
             open={newConnectionOpen}
             onOpenChange={setNewConnectionOpen}
@@ -319,6 +418,61 @@ export function AppShell() {
       </div>
     </div>
   );
+}
+
+function WindowDragFrame({
+  children,
+  onDoubleClick,
+  onPointerDown,
+}: {
+  children: ReactNode;
+  onDoubleClick: (event: ReactMouseEvent<HTMLElement>) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+}) {
+  return (
+    <div className="relative h-screen w-screen overflow-hidden bg-surface-app">
+      <WindowDragSurface
+        onDoubleClick={onDoubleClick}
+        onPointerDown={onPointerDown}
+      />
+      {children}
+    </div>
+  );
+}
+
+function WindowDragSurface({
+  onDoubleClick,
+  onPointerDown,
+}: {
+  onDoubleClick: (event: ReactMouseEvent<HTMLElement>) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+}) {
+  return (
+    <div
+      data-window-drag-region
+      data-testid="window-drag-surface"
+      aria-hidden="true"
+      className="absolute inset-x-0 top-0 z-50 h-10 select-none"
+      onDoubleClick={onDoubleClick}
+      onPointerDown={onPointerDown}
+    />
+  );
+}
+
+function shouldStartTopBarDrag(
+  event: ReactMouseEvent<HTMLElement> | ReactPointerEvent<HTMLElement>,
+) {
+  if (event.button !== 0 || event.defaultPrevented) {
+    return false;
+  }
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  if (target.closest(TOP_BAR_INTERACTIVE_SELECTOR)) {
+    return false;
+  }
+  return Boolean(target.closest("[data-window-drag-region]"));
 }
 
 function initialsFor(user: string | undefined): string | null {

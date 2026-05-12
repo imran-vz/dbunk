@@ -10,6 +10,8 @@
 import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconPin,
+  IconPinnedOff,
   IconPlus,
   IconServer,
   IconTerminal2,
@@ -179,8 +181,7 @@ export function KeyValueWorkspace({
           max: KEYSPACE_MAX_WIDTH,
           ariaLabel: "Resize keyspace sidebar",
         }}
-      >
-        <div className="flex h-full min-h-0 flex-col">
+        renderCompactHeader={({ pinned, onTogglePinned, onClose }) => (
           <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2 text-[0.65rem] uppercase tracking-wide text-text-muted">
             <span className="truncate">
               Keyspace · DB {activeConnection.dbNumber ?? 0}
@@ -191,18 +192,31 @@ export function KeyValueWorkspace({
                 onClick={() => setNewKeyOpen(true)}
                 className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
                 aria-label="New key"
+                title="New key"
               >
                 <IconPlus className="size-3" />
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (isKeyspaceCompact) {
-                    setKeyspaceOverlayOpen(false);
-                  } else {
-                    setKeyspaceSidebarVisible(false);
-                  }
-                }}
+                onClick={onTogglePinned}
+                className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
+                aria-pressed={pinned}
+                aria-label={
+                  pinned ? "Unpin keyspace sidebar" : "Pin keyspace sidebar"
+                }
+                title={
+                  pinned ? "Unpin keyspace sidebar" : "Pin keyspace sidebar"
+                }
+              >
+                {pinned ? (
+                  <IconPinnedOff className="size-3" />
+                ) : (
+                  <IconPin className="size-3" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
                 className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
                 aria-label="Collapse keyspace sidebar"
                 title="Collapse keyspace sidebar"
@@ -211,6 +225,36 @@ export function KeyValueWorkspace({
               </button>
             </div>
           </div>
+        )}
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          {!isKeyspaceCompact ? (
+            <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2 text-[0.65rem] uppercase tracking-wide text-text-muted">
+              <span className="truncate">
+                Keyspace · DB {activeConnection.dbNumber ?? 0}
+              </span>
+              <div className="flex shrink-0 items-center">
+                <button
+                  type="button"
+                  onClick={() => setNewKeyOpen(true)}
+                  className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
+                  aria-label="New key"
+                  title="New key"
+                >
+                  <IconPlus className="size-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKeyspaceSidebarVisible(false)}
+                  className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
+                  aria-label="Collapse keyspace sidebar"
+                  title="Collapse keyspace sidebar"
+                >
+                  <IconLayoutSidebarLeftCollapse className="size-3" />
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="flex shrink-0 items-center gap-1 border-b border-border-subtle px-2 py-1 text-[0.65rem]">
             <Button
               size="sm"
