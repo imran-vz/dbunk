@@ -390,3 +390,35 @@ export type QueryPreviewData = {
 };
 
 export type ActiveView = "workspace" | "connections" | "settings";
+
+// ---------------------------------------------------------------------------
+// Slice union — composed in store/index.ts (post-collapse)
+// ---------------------------------------------------------------------------
+
+/**
+ * Forward-declared slice shapes. Each slice file exports its concrete
+ * shape from this aliasing point so the slice factories can type
+ * themselves against the full store state without circular runtime
+ * imports — types-only imports don't trigger circular resolution.
+ *
+ * During the migration these shapes start as `{}` and grow as state
+ * moves out of store.ts into the per-slice files. Once the migration
+ * is complete, `AppStoreState` is the intersection of every slice's
+ * shape and lives in `store/index.ts`.
+ */
+
+import type { ConnectionsSlice } from "./connections";
+import type { CredentialsSlice } from "./credentials";
+import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
+import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
+import type { RelationalQueriesSlice } from "./relational-queries";
+import type { RelationalTablesSlice } from "./relational-tables";
+import type { WorkspaceTabsSlice } from "./workspace-tabs";
+
+export type AppStoreState = ConnectionsSlice &
+  WorkspaceTabsSlice &
+  CredentialsSlice &
+  RelationalTablesSlice &
+  RelationalQueriesSlice &
+  KeyValueWorkspaceSlice &
+  KeyValuePubSubSlice;
