@@ -11,7 +11,7 @@
  * `errorToMessage`) live in `@/lib/format` and `@/lib/tauri`.
  */
 
-import type { PendingChange } from "@/lib/ddl";
+import type { ColumnChangeKind, PendingChange } from "@/lib/ddl";
 import type { SchemaRelationships } from "@/lib/schema-graph";
 
 // ---------------------------------------------------------------------------
@@ -392,33 +392,184 @@ export type QueryPreviewData = {
 export type ActiveView = "workspace" | "connections" | "settings";
 
 // ---------------------------------------------------------------------------
-// Slice union — composed in store/index.ts (post-collapse)
+// AppStoreState — the full store shape
 // ---------------------------------------------------------------------------
 
 /**
- * Forward-declared slice shapes. Each slice file exports its concrete
- * shape from this aliasing point so the slice factories can type
- * themselves against the full store state without circular runtime
- * imports — types-only imports don't trigger circular resolution.
+ * The complete shape of the Zustand store. During the slice migration
+ * this is the single canonical type — every slice's `StateCreator`
+ * factory types its `set`/`get` against this shape so cross-slice
+ * `get()` calls typecheck.
  *
- * During the migration these shapes start as `{}` and grow as state
- * moves out of store.ts into the per-slice files. Once the migration
- * is complete, `AppStoreState` is the intersection of every slice's
- * shape and lives in `store/index.ts`.
+ * After the migration is complete (commit 10), this can be
+ * re-expressed as the intersection of every slice's `SliceShape`. The
+ * runtime behaviour is identical either way; the intersection form
+ * just removes the need to maintain this explicit declaration as
+ * slices grow.
  */
+export interface AppStoreState {
+  activeView: ActiveView;
+  activeConnectionId: string;
+  activeTabId: string;
+  expandedSchemas: string[];
+  isLeftSidebarOpen: boolean;
+  connections: Connection[];
+  workspaceTabs: WorkspaceTab[];
+  schemaExplorer: Record<string, SchemaExplorer[]>;
+  tablePreviews: Record<string, TablePreviewData>;
+  tableData: Record<string, TableDataState>;
+  tableStructure: Record<string, TableStructure>;
+  queryPreviews: Record<string, QueryPreviewData>;
+  queryStatus: Record<string, QueryStatus>;
+  tableLoadStatus: Record<string, TableLoadStatus>;
+  tableStructureStatus: Record<string, TableStructureStatus>;
+  pendingStructureChanges: Record<string, PendingChange[]>;
+  structureCommitStatus: Record<string, StructureCommitStatus>;
+  queryEdits: Record<string, Record<number, Record<number, string>>>;
+  tableEdits: Record<string, Record<number, Record<number, string>>>;
+  tableEditsCommitStatus: Record<string, TableEditsCommitStatus>;
+  schemaRelationships: Record<string, SchemaRelationships>;
+  schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
+  databaseOverviewStats: Record<string, DatabaseOverviewStats>;
+  databaseOverviewStatsStatus: Record<string, DatabaseOverviewStatsStatus>;
+  queryHistory: QueryHistoryEntry[];
+  savedQueries: SavedQuery[];
+  savedQueriesStatus: SavedQueriesStatus;
+  appSettings: AppSettingsSnapshot | null;
+  appSettingsStatus: AppSettingsStatus;
+  credentialStorageStatus:
+    | { state: "idle" }
+    | { state: "running" }
+    | { state: "error"; error: string };
+  editorTheme: string;
+  selectedRowIndex: number;
 
-import type { ConnectionsSlice } from "./connections";
-import type { CredentialsSlice } from "./credentials";
-import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
-import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
-import type { RelationalQueriesSlice } from "./relational-queries";
-import type { RelationalTablesSlice } from "./relational-tables";
-import type { WorkspaceTabsSlice } from "./workspace-tabs";
-
-export type AppStoreState = ConnectionsSlice &
-  WorkspaceTabsSlice &
-  CredentialsSlice &
-  RelationalTablesSlice &
-  RelationalQueriesSlice &
-  KeyValueWorkspaceSlice &
-  KeyValuePubSubSlice;
+  setActiveView: (view: ActiveView) => void;
+  setActiveConnectionId: (id: string) => void;
+  setActiveTabId: (id: string) => void;
+  setExpandedSchemas: (
+    schemas: string[] | ((prev: string[]) => string[]),
+  ) => void;
+  toggleLeftSidebar: () => void;
+  setWorkspaceTabs: (
+    tabs: WorkspaceTab[] | ((prev: WorkspaceTab[]) => WorkspaceTab[]),
+  ) => void;
+  setEditorTheme: (theme: string) => void;
+  setSelectedRowIndex: (index: number) => void;
+  setQueryEdit: (
+    tabId: string,
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => void;
+  discardQueryEdits: (tabId: string) => void;
+  setTableEdit: (
+    tableName: string,
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => void;
+  discardTableEdits: (tableName: string) => void;
+  commitTableEdits: (tableName: string) => Promise<void>;
+  clearTableEditsCommitStatus: (tableName: string) => void;
+  addTableRow: (
+    tableName: string,
+    values: Array<{ column: string; value: string | null }>,
+  ) => Promise<void>;
+  deleteSelectedTableRows: (
+    tableName: string,
+    rowIndices: number[],
+  ) => Promise<void>;
+  loadTablePreview: (schemaName: string, tableName: string) => Promise<void>;
+  loadTableData: (
+    connectionId: string,
+    schema: string,
+    table: string,
+    page?: number,
+    pageSize?: number,
+  ) => Promise<void>;
+  refreshTableData: (key: string) => Promise<void>;
+  loadTableStructure: (
+    connectionId: string,
+    schema: string,
+    table: string,
+  ) => Promise<void>;
+  loadSchemaRelationships: (
+    connectionId: string,
+    schema: string,
+  ) => Promise<void>;
+  loadDatabaseOverviewStats: (connectionId: string) => Promise<void>;
+  focusTableInSchemaMap: (
+    connectionId: string,
+    schema: string,
+    table: string,
+  ) => void;
+  addPendingStructureChange: (
+    key: string,
+    entry: { schema: string; table: string; change: ColumnChangeKind },
+  ) => void;
+  removePendingStructureChange: (key: string, id: string) => void;
+  clearPendingStructureChanges: (key: string) => void;
+  commitStructureChanges: (key: string) => Promise<void>;
+  loadAppSettings: () => Promise<AppSettingsSnapshot | null>;
+  configureCredentialStorage: (input: {
+    mode: CredentialStorageMode;
+    password?: string;
+  }) => Promise<AppSettingsSnapshot | null>;
+  unlockCredentials: (password: string) => Promise<AppSettingsSnapshot | null>;
+  changeCredentialStorage: (input: {
+    mode: CredentialStorageMode;
+    password?: string;
+  }) => Promise<AppSettingsSnapshot | null>;
+  resetCredentialStorage: () => Promise<AppSettingsSnapshot | null>;
+  loadConnections: () => Promise<void>;
+  loadQueryHistory: () => Promise<void>;
+  loadSavedQueries: () => Promise<void>;
+  saveSavedQuery: (
+    query: Omit<SavedQuery, "createdAt" | "updatedAt"> &
+      Partial<Pick<SavedQuery, "createdAt" | "updatedAt">>,
+  ) => Promise<void>;
+  deleteSavedQuery: (id: string) => Promise<void>;
+  reopenHistoryEntry: (entry: QueryHistoryEntry) => void;
+  addConnection: (connection: Connection) => Promise<void>;
+  updateConnection: (connection: Connection) => Promise<void>;
+  deleteConnection: (connectionId: string) => Promise<void>;
+  connectConnection: (connectionId: string) => Promise<void>;
+  testConnection: (
+    connection: Pick<
+      StoredConnection,
+      | "id"
+      | "name"
+      | "database"
+      | "engine"
+      | "host"
+      | "port"
+      | "user"
+      | "password"
+      | "role"
+    > &
+      Partial<
+        Pick<
+          StoredConnection,
+          "useHttps" | "urlPath" | "dbNumber" | "useTls" | "verifyTlsCert"
+        >
+      >,
+  ) => Promise<
+    | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
+    | { ok: false; error: string }
+  >;
+  runHealthChecks: () => Promise<void>;
+  updateQuery: (tabId: string, query: string) => void;
+  runQuery: (
+    tabId: string,
+    options?: { overrideSql?: string },
+  ) => Promise<void>;
+  closeTab: (tabId: string) => void;
+  openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
+  openTableTab: (schemaName: string, tableName: string) => void;
+  openQueryForTable: (schemaName: string, tableName: string) => void;
+  openViewTab: (schemaName: string, viewName: string) => void;
+  createNewQueryTab: () => void;
+  createNewTableTab: () => void;
+  toggleSchema: (schemaName: string) => void;
+}
