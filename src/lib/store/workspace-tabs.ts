@@ -1,21 +1,237 @@
 /**
  * Workspace Tabs slice — owns the Workspace Tab list, active tab ID,
- * active view, sidebar/editor UI flags. Exposes
- * `closeTabsForConnection(connectionId)` as its piece of the
- * delete-connection cleanup cascade (called by the Connections slice).
+ * active view, and the workspace UI flags (sidebar open/closed,
+ * editor theme, selected row index).
  *
- * Phase: scaffold only.
+ * Exposes `closeTabsForConnection(connectionId)` as its piece of the
+ * delete-connection cleanup cascade. Today `Connections.deleteConnection`
+ * does NOT call this cleanup — preserving pre-refactor behaviour
+ * (orphan tabs survive a connection delete). A follow-up wiring the
+ * cascade end-to-end can fix that orphan-tab bug; that lands as a
+ * deliberate behaviour change, not as part of this implementation
+ * refactor.
  */
 
 import type { StateCreator } from "zustand";
 
-import type { AppStoreState } from "./types";
+import type { AppStoreState, WorkspaceTab } from "./types";
 
-export type WorkspaceTabsSlice = Record<string, never>;
+// Module-local counters survive across the slice's actions but are
+// scoped to the slice file — they were globals in the monolith.
+let nextTabIndex = 1;
+let nextQueryIndex = 1;
+
+export type WorkspaceTabsSlice = {
+  activeView: AppStoreState["activeView"];
+  activeTabId: string;
+  workspaceTabs: WorkspaceTab[];
+  isLeftSidebarOpen: boolean;
+  editorTheme: string;
+  selectedRowIndex: number;
+
+  setActiveView: (view: AppStoreState["activeView"]) => void;
+  setActiveTabId: (id: string) => void;
+  setWorkspaceTabs: (
+    tabs: WorkspaceTab[] | ((prev: WorkspaceTab[]) => WorkspaceTab[]),
+  ) => void;
+  toggleLeftSidebar: () => void;
+  setEditorTheme: (theme: string) => void;
+  setSelectedRowIndex: (index: number) => void;
+  closeTab: (tabId: string) => void;
+  openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
+  openTableTab: (schemaName: string, tableName: string) => void;
+  openViewTab: (schemaName: string, viewName: string) => void;
+  openQueryForTable: (schemaName: string, tableName: string) => void;
+  createNewQueryTab: () => void;
+  createNewTableTab: () => void;
+  reopenHistoryEntry: (entry: { sql: string; connectionId: string }) => void;
+
+  /**
+   * Cascade cleanup — drops every Workspace Tab whose
+   * `connectionId` matches. Exposed for `Connections.deleteConnection`
+   * to call; today it isn't wired up (the monolith never cleaned
+   * tabs either).
+   */
+  closeTabsForConnection: (connectionId: string) => void;
+};
 
 export const createWorkspaceTabsSlice: StateCreator<
   AppStoreState,
   [],
   [],
   WorkspaceTabsSlice
-> = () => ({});
+> = (set, get) => ({
+  activeView: "workspace",
+  activeTabId: "",
+  workspaceTabs: [],
+  isLeftSidebarOpen: true,
+  editorTheme: "vs",
+  selectedRowIndex: 0,
+
+  setActiveView: (view) => set({ activeView: view }),
+  setActiveTabId: (id) => set({ activeTabId: id, activeView: "workspace" }),
+  setWorkspaceTabs: (tabs) =>
+    set((state) => ({
+      workspaceTabs:
+        typeof tabs === "function" ? tabs(state.workspaceTabs) : tabs,
+    })),
+  toggleLeftSidebar: () =>
+    set((state) => ({ isLeftSidebarOpen: !state.isLeftSidebarOpen })),
+  setEditorTheme: (theme) => set({ editorTheme: theme }),
+  setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
+
+  closeTab: (tabId) =>
+    set((state) => {
+      const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
+      if (index === -1) {
+        return {};
+      }
+      const nextTabs = state.workspaceTabs.filter((tab) => tab.id !== tabId);
+      let nextActiveTabId = state.activeTabId;
+      if (tabId === state.activeTabId) {
+        const nextTab = nextTabs[index] ?? nextTabs[index - 1];
+        nextActiveTabId = nextTab?.id ?? "";
+      }
+      return { workspaceTabs: nextTabs, activeTabId: nextActiveTabId };
+    }),
+
+  openWorkspaceTab: (tab) => {
+    const state = get();
+    set({ activeView: "workspace", activeConnectionId: tab.connectionId });
+
+    const existing = state.workspaceTabs.find(
+      (item) =>
+        item.kind === tab.kind &&
+        item.label === tab.label &&
+        item.connectionId === tab.connectionId,
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+
+    const id = `tab-${nextTabIndex}`;
+    nextTabIndex += 1;
+    set((state) => ({
+      workspaceTabs: [...state.workspaceTabs, { ...tab, id }],
+      activeTabId: id,
+    }));
+  },
+
+  openTableTab: (schemaName, tableName) => {
+    const connectionId = get().activeConnectionId;
+    get().openWorkspaceTab({
+      kind: "table",
+      label: tableName,
+      connectionId,
+      schema: schemaName,
+      table: tableName,
+    });
+    if (connectionId) {
+      void get().loadTableData(connectionId, schemaName, tableName);
+    }
+  },
+
+  openViewTab: (schemaName, viewName) => {
+    get().openWorkspaceTab({
+      kind: "query",
+      label: `${viewName}.sql`,
+      connectionId: get().activeConnectionId,
+      schema: schemaName,
+      query: `select * from ${schemaName}.${viewName} limit 100;`,
+    });
+  },
+
+  openQueryForTable: (schemaName, tableName) => {
+    const state = get();
+    const queryLabel = `query_${nextQueryIndex}.sql`;
+    nextQueryIndex += 1;
+    get().openWorkspaceTab({
+      kind: "query",
+      label: queryLabel,
+      connectionId: state.activeConnectionId,
+      schema: schemaName,
+      query: `select * from ${schemaName}.${tableName} limit 100;`,
+    });
+  },
+
+  createNewQueryTab: () => {
+    const state = get();
+    const explorerSchemas =
+      state.schemaExplorer[state.activeConnectionId] ?? [];
+    const schemaName = explorerSchemas[0]?.name ?? "public";
+    const queryLabel = `query_${nextQueryIndex}.sql`;
+    nextQueryIndex += 1;
+    get().openWorkspaceTab({
+      kind: "query",
+      label: queryLabel,
+      connectionId: state.activeConnectionId,
+      schema: schemaName,
+      query: `select * from ${schemaName}.users limit 50;`,
+    });
+  },
+
+  createNewTableTab: () => {
+    const state = get();
+    const explorerSchemas =
+      state.schemaExplorer[state.activeConnectionId] ?? [];
+    const schemaName = explorerSchemas[0]?.name;
+    const tableName = explorerSchemas[0]?.tables[0];
+    if (!schemaName || !tableName) {
+      return;
+    }
+    get().openTableTab(schemaName, tableName);
+  },
+
+  reopenHistoryEntry: (entry) => {
+    const state = get();
+    set({
+      activeView: "workspace",
+      activeConnectionId: entry.connectionId,
+    });
+    const existing = state.workspaceTabs.find(
+      (item) =>
+        item.kind === "query" &&
+        item.connectionId === entry.connectionId &&
+        (item.query ?? "") === entry.sql,
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+    const id = `tab-${nextTabIndex}`;
+    nextTabIndex += 1;
+    const label = `query_${nextQueryIndex}.sql`;
+    nextQueryIndex += 1;
+    set((state) => ({
+      workspaceTabs: [
+        ...state.workspaceTabs,
+        {
+          id,
+          kind: "query",
+          label,
+          connectionId: entry.connectionId,
+          schema: "",
+          query: entry.sql,
+        },
+      ],
+      activeTabId: id,
+    }));
+  },
+
+  closeTabsForConnection: (connectionId) =>
+    set((state) => {
+      const nextTabs = state.workspaceTabs.filter(
+        (tab) => tab.connectionId !== connectionId,
+      );
+      const droppedActive = !nextTabs.some(
+        (tab) => tab.id === state.activeTabId,
+      );
+      return {
+        workspaceTabs: nextTabs,
+        activeTabId: droppedActive
+          ? (nextTabs[0]?.id ?? "")
+          : state.activeTabId,
+      };
+    }),
+});

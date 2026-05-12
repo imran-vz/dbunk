@@ -32,9 +32,9 @@ import type {
   TablePreviewData,
   TableStructure,
   TableStructureStatus,
-  WorkspaceTab,
 } from "@/lib/store/types";
 import { tableDataKey, tableStructureKey } from "@/lib/store/types";
+import { createWorkspaceTabsSlice } from "@/lib/store/workspace-tabs";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 export type {
@@ -201,7 +201,6 @@ type AppState = AppStoreState;
 
 // Initial Empty State
 const initialSchemaExplorer: Record<string, SchemaExplorer[]> = {};
-const initialWorkspaceTabs: WorkspaceTab[] = [];
 const initialTablePreviews: Record<string, TablePreviewData> = {};
 const initialTableData: Record<string, TableDataState> = {};
 const initialTableStructure: Record<string, TableStructure> = {};
@@ -233,15 +232,8 @@ const initialDatabaseOverviewStatsStatus: Record<
 > = {};
 const initialQueryHistory: QueryHistoryEntry[] = [];
 
-let nextTabIndex = 1;
-let nextQueryIndex = 1;
-
 export const useAppStore = create<AppState>()((set, get, _store) => ({
-  activeView: "workspace",
-  activeTabId: "",
   expandedSchemas: [],
-  isLeftSidebarOpen: true,
-  workspaceTabs: initialWorkspaceTabs,
   schemaExplorer: initialSchemaExplorer,
   tablePreviews: initialTablePreviews,
   tableData: initialTableData,
@@ -262,14 +254,11 @@ export const useAppStore = create<AppState>()((set, get, _store) => ({
   queryHistory: initialQueryHistory,
   savedQueries: [],
   savedQueriesStatus: { state: "idle" },
-  editorTheme: "vs",
-  selectedRowIndex: 0,
 
   ...createCredentialsSlice(set, get, _store),
   ...createConnectionsSlice(set, get, _store),
+  ...createWorkspaceTabsSlice(set, get, _store),
 
-  setActiveView: (view) => set({ activeView: view }),
-  setActiveTabId: (id) => set({ activeTabId: id, activeView: "workspace" }),
   setExpandedSchemas: (schemas) =>
     set((state) => ({
       expandedSchemas:
@@ -277,15 +266,6 @@ export const useAppStore = create<AppState>()((set, get, _store) => ({
           ? schemas(state.expandedSchemas)
           : schemas,
     })),
-  toggleLeftSidebar: () =>
-    set((state) => ({ isLeftSidebarOpen: !state.isLeftSidebarOpen })),
-  setWorkspaceTabs: (tabs) =>
-    set((state) => ({
-      workspaceTabs:
-        typeof tabs === "function" ? tabs(state.workspaceTabs) : tabs,
-    })),
-  setEditorTheme: (theme) => set({ editorTheme: theme }),
-  setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
 
   setQueryEdit: (tabId, rowIndex, colIndex, value) =>
     set((state) => ({
@@ -1351,42 +1331,6 @@ export const useAppStore = create<AppState>()((set, get, _store) => ({
     }
   },
 
-  reopenHistoryEntry: (entry) => {
-    const state = get();
-    set({
-      activeView: "workspace",
-      activeConnectionId: entry.connectionId,
-    });
-    const existing = state.workspaceTabs.find(
-      (item) =>
-        item.kind === "query" &&
-        item.connectionId === entry.connectionId &&
-        (item.query ?? "") === entry.sql,
-    );
-    if (existing) {
-      set({ activeTabId: existing.id });
-      return;
-    }
-    const id = `tab-${nextTabIndex}`;
-    nextTabIndex += 1;
-    const label = `query_${nextQueryIndex}.sql`;
-    nextQueryIndex += 1;
-    set((state) => ({
-      workspaceTabs: [
-        ...state.workspaceTabs,
-        {
-          id,
-          kind: "query",
-          label,
-          connectionId: entry.connectionId,
-          schema: "",
-          query: entry.sql,
-        },
-      ],
-      activeTabId: id,
-    }));
-  },
-
   updateQuery: (tabId, query) =>
     set((state) => ({
       workspaceTabs: state.workspaceTabs.map((tab) =>
@@ -1517,114 +1461,6 @@ export const useAppStore = create<AppState>()((set, get, _store) => ({
       }));
       await persistEntry(entry);
     }
-  },
-
-  closeTab: (tabId) =>
-    set((state) => {
-      const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
-      if (index === -1) {
-        return {};
-      }
-      const nextTabs = state.workspaceTabs.filter((tab) => tab.id !== tabId);
-      let nextActiveTabId = state.activeTabId;
-
-      if (tabId === state.activeTabId) {
-        const nextTab = nextTabs[index] ?? nextTabs[index - 1];
-        nextActiveTabId = nextTab?.id ?? "";
-      }
-
-      return { workspaceTabs: nextTabs, activeTabId: nextActiveTabId };
-    }),
-
-  openWorkspaceTab: (tab) => {
-    const state = get();
-    set({ activeView: "workspace", activeConnectionId: tab.connectionId });
-
-    const existing = state.workspaceTabs.find(
-      (item) =>
-        item.kind === tab.kind &&
-        item.label === tab.label &&
-        item.connectionId === tab.connectionId,
-    );
-
-    if (existing) {
-      set({ activeTabId: existing.id });
-      return;
-    }
-
-    const id = `tab-${nextTabIndex}`;
-    nextTabIndex += 1;
-    set((state) => ({
-      workspaceTabs: [...state.workspaceTabs, { ...tab, id }],
-      activeTabId: id,
-    }));
-  },
-
-  openTableTab: (schemaName, tableName) => {
-    const connectionId = get().activeConnectionId;
-    get().openWorkspaceTab({
-      kind: "table",
-      label: tableName,
-      connectionId,
-      schema: schemaName,
-      table: tableName,
-    });
-    if (connectionId) {
-      void get().loadTableData(connectionId, schemaName, tableName);
-    }
-  },
-
-  openViewTab: (schemaName, viewName) => {
-    get().openWorkspaceTab({
-      kind: "query",
-      label: `${viewName}.sql`,
-      connectionId: get().activeConnectionId,
-      schema: schemaName,
-      query: `select * from ${schemaName}.${viewName} limit 100;`,
-    });
-  },
-
-  openQueryForTable: (schemaName, tableName) => {
-    const state = get();
-    const queryLabel = `query_${nextQueryIndex}.sql`;
-    nextQueryIndex += 1;
-
-    get().openWorkspaceTab({
-      kind: "query",
-      label: queryLabel,
-      connectionId: state.activeConnectionId,
-      schema: schemaName,
-      query: `select * from ${schemaName}.${tableName} limit 100;`,
-    });
-  },
-
-  createNewQueryTab: () => {
-    const state = get();
-    const explorerSchemas =
-      state.schemaExplorer[state.activeConnectionId] ?? [];
-    const schemaName = explorerSchemas[0]?.name ?? "public";
-    const queryLabel = `query_${nextQueryIndex}.sql`;
-    nextQueryIndex += 1;
-
-    get().openWorkspaceTab({
-      kind: "query",
-      label: queryLabel,
-      connectionId: state.activeConnectionId,
-      schema: schemaName,
-      query: `select * from ${schemaName}.users limit 50;`,
-    });
-  },
-
-  createNewTableTab: () => {
-    const state = get();
-    const explorerSchemas =
-      state.schemaExplorer[state.activeConnectionId] ?? [];
-    const schemaName = explorerSchemas[0]?.name;
-    const tableName = explorerSchemas[0]?.tables[0];
-    if (!schemaName || !tableName) {
-      return;
-    }
-    get().openTableTab(schemaName, tableName);
   },
 
   toggleSchema: (schemaName) => {
