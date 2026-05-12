@@ -623,6 +623,9 @@ mod tests {
                 last_activity_at: None,
                 use_https: false,
                 url_path: String::new(),
+                db_number: 0,
+                use_tls: false,
+                verify_tls_cert: true,
             };
             storage::upsert_connection(pool, &connection)
                 .await

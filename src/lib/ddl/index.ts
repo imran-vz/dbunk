@@ -48,5 +48,12 @@ export function generateDdlForEngine(
       // backend rejects them at the dispatcher with an engine-name
       // error, so the rendered SQL never actually runs.
       return generatePostgresDdl(schema, table, changes);
+    case "Redis":
+      // Redis has no DDL; the structure view never renders for Redis
+      // connections (ADR-0008 forks the workspace shell), so this
+      // branch is an invariant assertion rather than a real fallback.
+      throw new Error(
+        "generateDdlForEngine() called with Redis — relational shell only",
+      );
   }
 }

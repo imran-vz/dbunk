@@ -1,0 +1,31 @@
+# Redis commands that require typed-confirmation before execution.
+# Single source of truth — codegen produces both the Rust
+# (`destructive_commands.rs`) and TS (`src/lib/redis/destructive-commands.ts`)
+# lists from this file. See ADR-0009.
+#
+# Two categories — both halt execution until confirmation, but the
+# frontend can render slightly different messaging by category.
+#
+# `hard` — the command itself is destructive at a scale that warrants
+# typing the command name to confirm (or refusing entirely on read-only
+# replicas). Backend rejects without `confirmed: true`.
+#
+# `soft` — the command is fine in moderation but can be a performance
+# footgun (KEYS on a million-key database, DEL on hundreds of keys).
+# Backend rejects without `confirmed: true`; the modal copy is softer.
+
+hard = [
+    "FLUSHDB",
+    "FLUSHALL",
+    "DEBUG",
+    "SHUTDOWN",
+    "CONFIG SET",
+    "CONFIG RESETSTAT",
+    "SCRIPT FLUSH",
+    "SCRIPT KILL",
+    "CLIENT KILL",
+]
+
+soft = [
+    "KEYS",
+]

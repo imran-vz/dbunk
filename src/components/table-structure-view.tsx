@@ -20,7 +20,7 @@ import {
   type NewColumn,
   type PendingChange,
 } from "@/lib/ddl";
-import { type EnginePolicy, enginePolicy } from "@/lib/engine-policy";
+import { type RelationalPolicy, relationalPolicy } from "@/lib/engine-policy";
 import {
   type ColumnInfo,
   type ConstraintInfo,
@@ -103,7 +103,7 @@ export function TableStructureView({
   // single biggest consumer — section titles and empty-state copy
   // change based on engine. Falling back to PostgreSQL preserves the
   // historical default when the engine isn't loaded yet.
-  const policy = engine ? enginePolicy(engine) : enginePolicy("PostgreSQL");
+  const policy = relationalPolicy(engine ?? "PostgreSQL");
 
   const handleRetry = () => {
     if (connectionId && schema && tableName) {
@@ -815,7 +815,7 @@ function PrimaryKeySection({
 }: {
   primaryKey: string[] | null;
   supported: boolean;
-  policy: EnginePolicy;
+  policy: RelationalPolicy;
 }) {
   // ClickHouse uses the sorting key as a sparse primary index — it is not
   // a uniqueness constraint, so the section title comes from policy.
@@ -858,7 +858,7 @@ function ForeignKeysSection({
   foreignKeys: ForeignKeyInfo[];
   supported: boolean;
   engine: DatabaseEngine | undefined;
-  policy: EnginePolicy;
+  policy: RelationalPolicy;
 }) {
   return (
     <Section title="Foreign keys" testId="structure-foreign-keys">
@@ -915,7 +915,7 @@ function IndexesSection({
   indexes: IndexInfo[];
   supported: boolean;
   engine: DatabaseEngine | undefined;
-  policy: EnginePolicy;
+  policy: RelationalPolicy;
 }) {
   // CH calls these "data skipping indices" — they prune granules during
   // scans rather than being uniqueness or B-tree indexes.

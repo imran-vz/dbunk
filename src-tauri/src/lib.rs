@@ -3,6 +3,7 @@ mod credentials;
 mod dispatch;
 mod keychain;
 mod postgres;
+mod redis;
 mod storage;
 mod types;
 
@@ -48,6 +49,12 @@ fn qualified_table_name(engine: &DatabaseEngine, schema: &str, table: &str) -> S
             } else {
                 format!("{}.{}", quote_backtick(schema), quote_backtick(table))
             }
+        }
+        DatabaseEngine::Redis => {
+            // Redis has no tables — qualified_table_name should never be
+            // called on a Redis connection. The dispatch router prevents
+            // it; this branch is an invariant assertion.
+            unreachable!("BUG: qualified_table_name called on Redis connection")
         }
     }
 }
@@ -495,6 +502,251 @@ async fn delete_saved_query(
     storage::read_saved_queries(&state.pool).await
 }
 
+// ---------------------------------------------------------------------------
+// Redis commands (Phase 1.2)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn redis_scan_keys(
+    state: State<'_, AppState>,
+    payload: redis::keyspace::ScanKeysPayload,
+) -> Result<redis::keyspace::ScanKeysResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::scan_keys(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_key_metadata(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::KeyPayload,
+) -> Result<redis::key_inspector::KeyMetadata, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_key_metadata(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_string(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchStringPayload,
+) -> Result<redis::key_inspector::StringValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_string(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_hash(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchHashPayload,
+) -> Result<redis::key_inspector::HashValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_hash(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_list(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchListPayload,
+) -> Result<redis::key_inspector::ListValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_list(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_set(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchSetPayload,
+) -> Result<redis::key_inspector::SetValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_set(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_sorted_set(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchSortedSetPayload,
+) -> Result<redis::key_inspector::SortedSetValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_sorted_set(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_stream(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchStreamPayload,
+) -> Result<redis::key_inspector::StreamValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_stream(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_json(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchJsonPayload,
+) -> Result<redis::key_inspector::JsonValuePayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_json(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_run_command(
+    state: State<'_, AppState>,
+    payload: redis::cli::RunCommandPayload,
+) -> Result<redis::cli::RunCommandResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::run_command(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_overview(
+    state: State<'_, AppState>,
+    payload: ConnectionPayload,
+) -> Result<redis::server_info::KeyValueOverviewStats, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::keyvalue::fetch_overview(&connection).await },
+    )
+    .await
+}
+
+#[tauri::command]
+async fn redis_pubsub_start(
+    state: State<'_, AppState>,
+    payload: redis::pubsub::StartSessionPayload,
+) -> Result<redis::pubsub::StartSessionResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::pubsub_start(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+fn redis_pubsub_drain(
+    payload: redis::pubsub::DrainPayload,
+) -> redis::pubsub::DrainResult {
+    dispatch::keyvalue::pubsub_drain(&payload)
+}
+
+#[tauri::command]
+fn redis_pubsub_close(payload: redis::pubsub::CloseSessionPayload) {
+    dispatch::keyvalue::pubsub_close(&payload);
+}
+
+#[tauri::command]
+async fn redis_set_string(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::SetStringPayload,
+) -> Result<redis::key_ops::SetStringResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::set_string(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_set_hash_fields(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::SetHashFieldsPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::set_hash_fields(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_delete_hash_fields(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::DeleteHashFieldsPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::delete_hash_fields(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_del_keys(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::DelKeysPayload,
+) -> Result<redis::key_ops::DelKeysResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::del_keys(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_set_expire(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::SetExpirePayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::set_expire(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_rename_key(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::RenameKeyPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::rename_key(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_create_key(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::CreateKeyPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::create_key(&connection, &payload).await
+    })
+    .await
+}
+
 #[tauri::command]
 async fn load_app_settings(state: State<'_, AppState>) -> Result<AppSettingsSnapshot, String> {
     let state = state.inner();
@@ -570,16 +822,51 @@ async fn reset_credential_storage(
     load_app_settings(state).await
 }
 
+/// Builds the application-wide logger via `tauri-plugin-log`. Dev
+/// targets are stdout (visible in the terminal where `bun tauri dev`
+/// runs) and the webview console (visible in browser DevTools so
+/// frontend developers see backend logs too). Production file
+/// logging is a deferred follow-up — see designs/FOLLOWUPS.md.
+///
+/// Level policy:
+/// - `dbunk_lib` (this crate) at `debug` in development, `info` in release.
+/// - Everything else (dependencies, redis-rs, sqlx, …) at `warn` so we
+///   only see their output when something is genuinely off.
+///
+/// Override at runtime with `RUST_LOG=…` if needed.
+fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{Target, TargetKind};
+
+    let crate_level = if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    tauri_plugin_log::Builder::default()
+        .targets([
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::Webview),
+        ])
+        .level(log::LevelFilter::Warn)
+        .level_for("dbunk_lib", crate_level)
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dispatch::ensure_sqlx_drivers();
     tauri::Builder::default()
+        .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            log::info!("dbunk starting up");
             let paths = Paths::from_app(&app.handle())
                 .map_err(|error| format!("Failed to resolve config dir: {error}"))?;
+            log::info!("config dir: {}", paths.config_dir().display());
             let pool = tauri::async_runtime::block_on(storage::open_pool(&paths))
                 .map_err(|error| format!("Failed to open local database: {error}"))?;
+            log::info!("SQLite pool ready, migrations applied");
             app.manage(AppState { pool, paths });
             Ok(())
         })
@@ -611,7 +898,28 @@ pub fn run() {
             clear_query_history,
             load_saved_queries,
             save_saved_query,
-            delete_saved_query
+            delete_saved_query,
+            redis_scan_keys,
+            redis_fetch_key_metadata,
+            redis_fetch_string,
+            redis_fetch_hash,
+            redis_fetch_list,
+            redis_fetch_set,
+            redis_fetch_sorted_set,
+            redis_fetch_stream,
+            redis_fetch_json,
+            redis_run_command,
+            redis_fetch_overview,
+            redis_pubsub_start,
+            redis_pubsub_drain,
+            redis_pubsub_close,
+            redis_set_string,
+            redis_set_hash_fields,
+            redis_delete_hash_fields,
+            redis_del_keys,
+            redis_set_expire,
+            redis_rename_key,
+            redis_create_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

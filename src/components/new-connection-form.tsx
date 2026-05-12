@@ -25,9 +25,9 @@ import { type DatabaseEngine, useAppStore } from "@/lib/store";
 const connectionSchema = z
   .object({
     name: z.string().min(1, "Connection name is required"),
-    engine: z.enum(["PostgreSQL", "MySQL", "ClickHouse", "SQLite"]),
+    engine: z.enum(["PostgreSQL", "MySQL", "ClickHouse", "SQLite", "Redis"]),
     host: z.string().optional(),
-    database: z.string().min(1, "Database is required"),
+    database: z.string().optional(),
     port: z.number().int().optional(),
     user: z.string().optional(),
     password: z.string().optional(),
@@ -35,9 +35,19 @@ const connectionSchema = z
     ssl: z.boolean().optional(),
     useHttps: z.boolean().optional(),
     urlPath: z.string().optional(),
+    dbNumber: z.number().int().min(0).max(15).optional(),
+    useTls: z.boolean().optional(),
+    verifyTlsCert: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.engine === "SQLite") {
+      if (!value.database?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Database file is required",
+          path: ["database"],
+        });
+      }
       return;
     }
     if (!value.host?.trim()) {
@@ -52,6 +62,19 @@ const connectionSchema = z
         code: z.ZodIssueCode.custom,
         message: "Port must be between 1 and 65535",
         path: ["port"],
+      });
+    }
+    if (value.engine === "Redis") {
+      // Redis user + password are both optional (no-auth, password-only,
+      // or ACL user+password). Database name is also optional — the
+      // `dbNumber` field carries selection.
+      return;
+    }
+    if (!value.database?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Database is required",
+        path: ["database"],
       });
     }
     if (!value.user?.trim()) {
@@ -113,6 +136,7 @@ export function NewConnectionForm({
 
   const isSQLite = selectedEngine === "SQLite";
   const isClickHouse = selectedEngine === "ClickHouse";
+  const isRedis = selectedEngine === "Redis";
   const portPlaceholder =
     selectedEngine === "MySQL"
       ? "3306"
@@ -120,7 +144,9 @@ export function NewConnectionForm({
         ? useHttps
           ? "8443"
           : "8123"
-        : "5432";
+        : selectedEngine === "Redis"
+          ? "6379"
+          : "5432";
   const databasePlaceholder =
     selectedEngine === "SQLite" ? "/path/to/db.sqlite" : "core";
   const databaseLabel =
@@ -139,12 +165,15 @@ export function NewConnectionForm({
       ssl: true,
       useHttps: false,
       urlPath: "",
+      dbNumber: 0,
+      useTls: false,
+      verifyTlsCert: true,
     } as ConnectionFormData,
     onSubmit: async ({ value }) => {
       await addConnection({
         id: crypto.randomUUID(),
         name: value.name,
-        database: value.database,
+        database: value.database ?? "",
         status: "Disconnected",
         engine: value.engine,
         host: value.host ?? "",
@@ -157,6 +186,10 @@ export function NewConnectionForm({
         useHttps:
           value.engine === "ClickHouse" ? (value.useHttps ?? false) : false,
         urlPath: value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
+        dbNumber: value.engine === "Redis" ? (value.dbNumber ?? 0) : 0,
+        useTls: value.engine === "Redis" ? (value.useTls ?? false) : false,
+        verifyTlsCert:
+          value.engine === "Redis" ? (value.verifyTlsCert ?? true) : true,
       });
       form.reset();
       setSelectedEngine("PostgreSQL");
@@ -224,6 +257,7 @@ export function NewConnectionForm({
                   <SelectItem value="MySQL">MySQL</SelectItem>
                   <SelectItem value="ClickHouse">ClickHouse</SelectItem>
                   <SelectItem value="SQLite">SQLite</SelectItem>
+                  <SelectItem value="Redis">Redis</SelectItem>
                 </SelectContent>
               </Select>
               <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
@@ -269,31 +303,56 @@ export function NewConnectionForm({
           </div>
         ) : null}
 
-        <form.Field name="database">
-          {(field) => (
-            <div className="grid gap-1.5">
-              <Label htmlFor="connection-database">{databaseLabel}</Label>
-              <Input
-                id="connection-database"
-                placeholder={databasePlaceholder}
-                value={field.state.value}
-                onChange={(event) => field.handleChange(event.target.value)}
-                onBlur={field.handleBlur}
-              />
-              <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
-            </div>
-          )}
-        </form.Field>
+        {!isRedis ? (
+          <form.Field name="database">
+            {(field) => (
+              <div className="grid gap-1.5">
+                <Label htmlFor="connection-database">{databaseLabel}</Label>
+                <Input
+                  id="connection-database"
+                  placeholder={databasePlaceholder}
+                  value={field.state.value ?? ""}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  onBlur={field.handleBlur}
+                />
+                <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+              </div>
+            )}
+          </form.Field>
+        ) : (
+          <form.Field name="dbNumber">
+            {(field) => (
+              <div className="grid gap-1.5">
+                <Label htmlFor="connection-db-number">DB number</Label>
+                <Input
+                  id="connection-db-number"
+                  type="number"
+                  min={0}
+                  max={15}
+                  placeholder="0"
+                  value={field.state.value ?? 0}
+                  onChange={(event) =>
+                    field.handleChange(Number(event.target.value))
+                  }
+                  onBlur={field.handleBlur}
+                />
+                <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+              </div>
+            )}
+          </form.Field>
+        )}
 
         {!isSQLite ? (
           <>
             <form.Field name="user">
               {(field) => (
                 <div className="grid gap-1.5">
-                  <Label htmlFor="connection-user">Username</Label>
+                  <Label htmlFor="connection-user">
+                    {isRedis ? "Username (optional)" : "Username"}
+                  </Label>
                   <Input
                     id="connection-user"
-                    placeholder="db_user"
+                    placeholder={isRedis ? "default" : "db_user"}
                     value={field.state.value ?? ""}
                     onChange={(event) => field.handleChange(event.target.value)}
                     onBlur={field.handleBlur}
@@ -306,7 +365,9 @@ export function NewConnectionForm({
             <form.Field name="password">
               {(field) => (
                 <div className="grid gap-1.5">
-                  <Label htmlFor="connection-password">Password</Label>
+                  <Label htmlFor="connection-password">
+                    {isRedis ? "Password (optional)" : "Password"}
+                  </Label>
                   <div className="relative">
                     <Input
                       id="connection-password"
@@ -339,26 +400,30 @@ export function NewConnectionForm({
               )}
             </form.Field>
 
-            <form.Field name="ssl">
-              {(field) => (
-                <label
-                  htmlFor="connection-ssl"
-                  className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2.5"
-                >
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-xs font-medium">SSL</span>
-                    <span className="text-[0.6875rem] text-text-muted">
-                      Enable SSL/TLS
+            {/* PG/MySQL SSL toggle. Redis has its own TLS toggle under
+              Advanced Options below; ClickHouse uses `Use HTTPS`. */}
+            {!isRedis && !isClickHouse ? (
+              <form.Field name="ssl">
+                {(field) => (
+                  <label
+                    htmlFor="connection-ssl"
+                    className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2.5"
+                  >
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-xs font-medium">SSL</span>
+                      <span className="text-[0.6875rem] text-text-muted">
+                        Enable SSL/TLS
+                      </span>
                     </span>
-                  </span>
-                  <Switch
-                    id="connection-ssl"
-                    checked={field.state.value ?? false}
-                    onCheckedChange={(value) => field.handleChange(value)}
-                  />
-                </label>
-              )}
-            </form.Field>
+                    <Switch
+                      id="connection-ssl"
+                      checked={field.state.value ?? false}
+                      onCheckedChange={(value) => field.handleChange(value)}
+                    />
+                  </label>
+                )}
+              </form.Field>
+            ) : null}
 
             <button
               type="button"
@@ -436,6 +501,62 @@ export function NewConnectionForm({
                     </form.Field>
                   </>
                 ) : null}
+                {isRedis ? (
+                  <>
+                    <form.Field name="useTls">
+                      {(field) => (
+                        <label
+                          htmlFor="connection-use-tls"
+                          className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2.5"
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="text-xs font-medium">Use TLS</span>
+                            <span className="text-[0.6875rem] text-text-muted">
+                              Connect over TLS (rediss://).
+                            </span>
+                          </span>
+                          <Switch
+                            id="connection-use-tls"
+                            checked={field.state.value ?? false}
+                            onCheckedChange={(value) =>
+                              field.handleChange(value)
+                            }
+                          />
+                        </label>
+                      )}
+                    </form.Field>
+                    <form.Subscribe selector={(state) => state.values.useTls}>
+                      {(useTlsValue) =>
+                        useTlsValue ? (
+                          <form.Field name="verifyTlsCert">
+                            {(field) => (
+                              <label
+                                htmlFor="connection-verify-tls-cert"
+                                className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2.5"
+                              >
+                                <span className="flex flex-col gap-0.5">
+                                  <span className="text-xs font-medium">
+                                    Verify TLS certificate
+                                  </span>
+                                  <span className="text-[0.6875rem] text-text-muted">
+                                    Disable for self-signed dev servers.
+                                  </span>
+                                </span>
+                                <Switch
+                                  id="connection-verify-tls-cert"
+                                  checked={field.state.value ?? true}
+                                  onCheckedChange={(value) =>
+                                    field.handleChange(value)
+                                  }
+                                />
+                              </label>
+                            )}
+                          </form.Field>
+                        ) : null
+                      }
+                    </form.Subscribe>
+                  </>
+                ) : null}
               </>
             ) : null}
           </>
@@ -469,7 +590,7 @@ export function NewConnectionForm({
               const result = await testConnection({
                 id: "test-connection",
                 name: value.name || "Untitled",
-                database: value.database,
+                database: value.database ?? "",
                 engine: value.engine,
                 host: value.host ?? "",
                 port: value.port ?? 0,
@@ -482,6 +603,13 @@ export function NewConnectionForm({
                     : false,
                 urlPath:
                   value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
+                dbNumber: value.engine === "Redis" ? (value.dbNumber ?? 0) : 0,
+                useTls:
+                  value.engine === "Redis" ? (value.useTls ?? false) : false,
+                verifyTlsCert:
+                  value.engine === "Redis"
+                    ? (value.verifyTlsCert ?? true)
+                    : true,
               });
               if (result.ok) {
                 setTestStatus({

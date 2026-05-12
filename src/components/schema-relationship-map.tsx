@@ -8,7 +8,7 @@ import ReactFlow, {
   type NodeProps,
   Position,
 } from "reactflow";
-import { enginePolicy } from "@/lib/engine-policy";
+import { relationalPolicy, storageClassFor } from "@/lib/engine-policy";
 import {
   buildSchemaGraph,
   type SchemaGraphNodeData,
@@ -236,8 +236,13 @@ export function SchemaRelationshipMap({
   }
 
   // Engine policy carries the "no foreign keys" banner copy. Only
-  // engines with hasForeignKeys=false populate it (CH today).
-  const policy = engine ? enginePolicy(engine) : null;
+  // engines with hasForeignKeys=false populate it (CH today). The
+  // schema-relationship map is relational-only so we narrow safely;
+  // Redis connections never render this component.
+  const policy =
+    engine && storageClassFor(engine) === "relational"
+      ? relationalPolicy(engine)
+      : null;
   const noFkBanner =
     policy?.schemaMapNoForeignKeysCopy &&
     hasNodes &&
