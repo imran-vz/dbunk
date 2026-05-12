@@ -8,7 +8,8 @@ redis-server \
   --loadmodule /opt/redis-stack/lib/rejson.so \
   --dir /data \
   --save "" \
-  --appendonly no &
+  --appendonly no \
+  --protected-mode no &
 
 pid="$!"
 
