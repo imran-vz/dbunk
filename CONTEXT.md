@@ -185,6 +185,21 @@ ADR-0009 for the writes-by-default posture.
   status the store keeps in `structureCommitStatus` (`running` only),
   which exists solely to keep the Commit button disabled across tab
   unmounts.
+- **Query Outcome** — the caller-facing terminal result of one
+  `runQuery` invocation — i.e. the outcome of executing one SQL
+  statement on a `query`-kind **Workspace Tab**. A tagged union on
+  `kind`: `"completed" | "failed" | "noop"`, returned by the store
+  action so the panel can await its own operation's result. `completed`
+  carries `runtimeMs` and `rowCount`; the row data itself is written
+  to the store's `queryPreviews` slot and persists across tab unmount
+  (the **Query History Entry** also writes there, regardless of the
+  outcome that flows back to the caller). `noop` covers the five
+  short-circuit paths: no tab, wrong tab kind, already running,
+  empty query after trim, no Tauri backend. The UI does not render
+  a banner for `noop`. Distinct from the lifecycle status the store
+  keeps in `queryStatus` (`running` only), which exists to keep the
+  Run button disabled and the panel labelled "Running…" across tab
+  unmounts.
 
 ## Live state
 

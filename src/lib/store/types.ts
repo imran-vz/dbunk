@@ -170,11 +170,29 @@ export type Connection =
 // Per-tab status shapes
 // ---------------------------------------------------------------------------
 
-export type QueryStatus =
-  | { state: "idle" }
-  | { state: "running" }
-  | { state: "success"; runtimeMs?: number }
-  | { state: "error"; error: string };
+/**
+ * Lifecycle state of an in-flight `runQuery` invocation — the
+ * **best-effort view** the store keeps so the Run button can stay
+ * disabled and the panel can render "Running…" across tab unmounts.
+ * Terminal state is NOT carried here; callers get it from the awaited
+ * `QueryOutcome` returned by `runQuery`. Absence from `queryStatus`
+ * means "nothing in flight." See CONTEXT.md — Query Outcome.
+ */
+export type QueryStatus = { state: "running" };
+
+/**
+ * Terminal result of one `runQuery` invocation — the caller-facing
+ * outcome of executing one SQL statement. A tagged union on `kind`:
+ * `"completed" | "failed" | "noop"`, returned by the action so the
+ * caller can await its own operation's result. `noop` covers the
+ * short-circuit cases (no tab, wrong tab kind, already running,
+ * empty query, no backend); the UI does not render a banner for
+ * it. See CONTEXT.md — Query Outcome.
+ */
+export type QueryOutcome =
+  | { kind: "completed"; runtimeMs: number; rowCount: number }
+  | { kind: "failed"; reason: string }
+  | { kind: "noop" };
 
 export type TableLoadStatus =
   | { state: "idle" }
@@ -614,7 +632,7 @@ export interface AppStoreState {
   runQuery: (
     tabId: string,
     options?: { overrideSql?: string },
-  ) => Promise<void>;
+  ) => Promise<QueryOutcome>;
   closeTab: (tabId: string) => void;
   openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
   openTableTab: (schemaName: string, tableName: string) => void;

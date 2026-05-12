@@ -45,6 +45,7 @@ export type {
   PgConnection,
   PgStoredConnection,
   QueryHistoryEntry,
+  QueryOutcome,
   QueryPreviewData,
   QueryStatus,
   RedisCapabilities,

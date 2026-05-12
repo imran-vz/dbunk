@@ -30,6 +30,7 @@ import {
   type SqlCompletionContext,
 } from "@/lib/sql-completions";
 import {
+  type QueryOutcome,
   type QueryPreviewData,
   tableStructureKey,
   useAppStore,
@@ -122,9 +123,29 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     discardQueryEdits,
   } = useAppStore();
 
-  const status = queryStatus[tab.id] ?? { state: "idle" as const };
-  const isRunning = status.state === "running";
-  const errorMessage = status.state === "error" ? status.error : null;
+  const status = queryStatus[tab.id];
+  const isRunning = status?.state === "running";
+  // Terminal outcome lives component-local. We store the full
+  // QueryOutcome (not just the failure message) for shape parity
+  // with the sibling table-structure-view, and to leave room for a
+  // future "Completed in Xms" toast. Today only `failed` is rendered;
+  // the success-path setLastOutcome triggers one no-op re-render that
+  // could be optimised by narrowing the state if it shows up in
+  // profiling. See CONTEXT.md — Query Outcome.
+  const [lastOutcome, setLastOutcome] = useState<QueryOutcome | null>(null);
+  // Render-phase reset on tab switch — the panel instance is reused
+  // across tabs (no React key), so without this an error banner from
+  // tab A could leak into tab B's view. Using the tracked-prev-prop
+  // pattern (React docs: "Resetting all state when a prop changes")
+  // rather than a useEffect so biome's exhaustive-deps rule stays
+  // happy with the trigger-only dependency.
+  const [trackedTabId, setTrackedTabId] = useState(tab.id);
+  if (trackedTabId !== tab.id) {
+    setTrackedTabId(tab.id);
+    setLastOutcome(null);
+  }
+  const errorMessage =
+    lastOutcome?.kind === "failed" ? lastOutcome.reason : null;
 
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
     if (tab.kind !== "query") {
@@ -220,25 +241,41 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   }, [tab.query]);
 
   const runSql = useCallback(
-    (sql: string) => {
+    async (sql: string) => {
       if (!sql.trim() || isRunning) {
         return;
       }
-      void runQuery(tab.id, { overrideSql: sql });
+      const requestedTabId = tab.id;
+      const outcome = await runQuery(requestedTabId, { overrideSql: sql });
+      // Drop the outcome if the user switched tabs while the query
+      // was in flight — the panel instance is reused across query
+      // tabs (workspace-view.tsx renders no React `key`), so without
+      // this guard the closure's `setLastOutcome` would write tab A's
+      // result into tab B's banner. The setter is stable so it always
+      // targets the *current* tab's component state.
+      if (requestedTabId !== tab.id) {
+        return;
+      }
+      // Skip `noop` so a rapid double-click (the second call short-
+      // circuits while the first is still running) can't wipe the
+      // completed banner the first call just produced.
+      if (outcome.kind !== "noop") {
+        setLastOutcome(outcome);
+      }
     },
     [isRunning, runQuery, tab.id],
   );
 
   const handleRunCurrent = useCallback(() => {
-    runSql(getCurrentStatementText());
+    void runSql(getCurrentStatementText());
   }, [getCurrentStatementText, runSql]);
 
   const handleRunSelection = useCallback(() => {
-    runSql(getEditorSelectionText());
+    void runSql(getEditorSelectionText());
   }, [getEditorSelectionText, runSql]);
 
   const handleRunAll = useCallback(() => {
-    runSql(tab.query ?? "");
+    void runSql(tab.query ?? "");
   }, [runSql, tab.query]);
 
   const handleFormat = useCallback(() => {
@@ -313,10 +350,10 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         const latestModel = latestEditor?.getModel();
         const latestPosition = latestEditor?.getPosition();
         if (!latestModel || !latestPosition) {
-          runSql(tab.query ?? "");
+          void runSql(tab.query ?? "");
           return;
         }
-        runSql(
+        void runSql(
           getSqlStatementAtPosition(
             latestModel.getValue(),
             latestPosition.lineNumber,
@@ -338,14 +375,18 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         label: "Execute selection",
         contextMenuGroupId: "navigation",
         contextMenuOrder: 2,
-        run: () => runSql(getEditorSelectionText()),
+        run: () => {
+          void runSql(getEditorSelectionText());
+        },
       });
       const allAction = editor.addAction?.({
         id: "dbunk.executeAll",
         label: "Execute all",
         contextMenuGroupId: "navigation",
         contextMenuOrder: 3,
-        run: () => runSql(editor.getModel()?.getValue() ?? ""),
+        run: () => {
+          void runSql(editor.getModel()?.getValue() ?? "");
+        },
       });
       const mouseDisposable = editor.onMouseDown?.((event) => {
         if (event.target.type !== 2 || !event.target.position) {
@@ -367,7 +408,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
           return;
         }
         event.event?.preventDefault?.();
-        runSql(statement.sql);
+        void runSql(statement.sql);
       });
       editorDisposablesRef.current.push(
         ...[currentAction, selectionAction, allAction, mouseDisposable].filter(

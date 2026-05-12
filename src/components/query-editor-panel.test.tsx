@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -165,14 +166,29 @@ describe("QueryEditorPanel feedback", () => {
     expect(runButton.disabled).toBe(true);
   });
 
-  it("shows the error message in a banner when the query fails", () => {
-    seedStatus({ state: "error", error: "syntax error at column 5" });
+  it("shows the error message in a banner when the query fails", async () => {
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+    // Drive the action through a real failure rather than seeding
+    // terminal state — terminal error lives in the component's
+    // `lastOutcome` (see CONTEXT.md — Query Outcome), not the store.
+    mockedInvoke.mockRejectedValueOnce(new Error("syntax error at column 5"));
 
     render(<QueryEditorPanel tab={queryTab} isClient />);
 
-    expect(screen.getByRole("alert").textContent).toContain(
-      "syntax error at column 5",
-    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain(
+        "syntax error at column 5",
+      );
+    });
   });
 
   it("renders Run as the default label when idle", () => {

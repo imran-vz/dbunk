@@ -11,6 +11,7 @@ vi.mock("@/lib/tauri", () => ({
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import {
   type Connection,
+  type QueryOutcome,
   tableDataKey,
   tableStructureKey,
   useAppStore,
@@ -238,7 +239,7 @@ describe("store.openTableTab", () => {
 });
 
 describe("runQuery status tracking", () => {
-  it("transitions from running to success and stores runtime", async () => {
+  it("sets running lifecycle in-flight, clears on success, returns completed outcome", async () => {
     const tabId = seedQueryTab();
 
     let resolveInvoke: ((value: unknown) => void) | null = null;
@@ -249,11 +250,13 @@ describe("runQuery status tracking", () => {
         }),
     );
 
-    const runPromise = act(async () => {
-      void useAppStore.getState().runQuery(tabId);
+    let outcomePromise!: Promise<QueryOutcome>;
+    await act(async () => {
+      outcomePromise = useAppStore.getState().runQuery(tabId);
     });
-    await runPromise;
 
+    // In-flight: the load-bearing assertion. structureCommitStatus's
+    // sibling test pins the same invariant.
     expect(useAppStore.getState().queryStatus[tabId]).toEqual({
       state: "running",
     });
@@ -268,44 +271,48 @@ describe("runQuery status tracking", () => {
       await Promise.resolve();
     });
 
-    const status = useAppStore.getState().queryStatus[tabId];
-    if (status.state !== "success") {
-      throw new Error(`expected success status, got ${status.state}`);
+    const outcome = await outcomePromise;
+    if (outcome.kind !== "completed") {
+      throw new Error(`expected completed outcome, got ${outcome.kind}`);
     }
-    expect(status.runtimeMs).toBe(42);
+    expect(outcome.runtimeMs).toBe(42);
+    expect(outcome.rowCount).toBe(1);
+    expect(useAppStore.getState().queryStatus[tabId]).toBeUndefined();
   });
 
-  it("transitions to error and captures error message on failure", async () => {
+  it("returns failed outcome and clears running on backend rejection", async () => {
     const tabId = seedQueryTab();
 
     mockedInvoke.mockRejectedValueOnce(new Error("syntax error at or near"));
 
+    let outcome!: QueryOutcome;
     await act(async () => {
-      await useAppStore.getState().runQuery(tabId);
+      outcome = await useAppStore.getState().runQuery(tabId);
     });
 
-    const status = useAppStore.getState().queryStatus[tabId];
-    if (status.state !== "error") {
-      throw new Error(`expected error status, got ${status.state}`);
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
-    expect(status.error).toContain("syntax error");
+    expect(outcome.reason).toContain("syntax error");
+    expect(useAppStore.getState().queryStatus[tabId]).toBeUndefined();
   });
 
   it("captures string error rejection messages", async () => {
     const tabId = seedQueryTab();
     mockedInvoke.mockRejectedValueOnce("connection lost");
 
+    let outcome!: QueryOutcome;
     await act(async () => {
-      await useAppStore.getState().runQuery(tabId);
+      outcome = await useAppStore.getState().runQuery(tabId);
     });
 
-    expect(useAppStore.getState().queryStatus[tabId]).toEqual({
-      state: "error",
-      error: "connection lost",
-    });
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toBe("connection lost");
   });
 
-  it("ignores re-entry while a tab query is running", async () => {
+  it("returns noop and does not invoke when a query is already in flight", async () => {
     const tabId = seedQueryTab();
 
     let resolveInvoke: ((value: unknown) => void) | null = null;
@@ -322,10 +329,12 @@ describe("runQuery status tracking", () => {
 
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
 
+    let secondOutcome!: QueryOutcome;
     await act(async () => {
-      await useAppStore.getState().runQuery(tabId);
+      secondOutcome = await useAppStore.getState().runQuery(tabId);
     });
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(secondOutcome.kind).toBe("noop");
 
     await act(async () => {
       resolveInvoke?.({
@@ -336,6 +345,28 @@ describe("runQuery status tracking", () => {
       });
       await Promise.resolve();
     });
+  });
+
+  it("returns noop without invoking when the query text is empty", async () => {
+    const tabId = seedQueryTab({ query: "   \n  " });
+    const outcome = await useAppStore.getState().runQuery(tabId);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("noop");
+    expect(useAppStore.getState().queryStatus[tabId]).toBeUndefined();
+  });
+
+  it("returns noop without invoking when the Tauri backend is unavailable", async () => {
+    mockedIsTauri.mockReturnValue(false);
+    const tabId = seedQueryTab();
+    const outcome = await useAppStore.getState().runQuery(tabId);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("noop");
+    // The pre-refactor branch wrote lastRun="Just now" to fake a run;
+    // the contract is now honest — no side effects on noop.
+    const tab = useAppStore
+      .getState()
+      .workspaceTabs.find((t) => t.id === tabId);
+    expect(tab?.lastRun).toBeUndefined();
   });
 });
 
@@ -1067,14 +1098,15 @@ describe("query history", () => {
       })
       .mockRejectedValueOnce(new Error("disk full"));
 
+    let outcome!: QueryOutcome;
     await act(async () => {
-      await useAppStore.getState().runQuery(tabId);
+      outcome = await useAppStore.getState().runQuery(tabId);
     });
 
-    const status = useAppStore.getState().queryStatus[tabId];
-    if (status.state !== "success") {
-      throw new Error(`expected success, got ${status.state}`);
+    if (outcome.kind !== "completed") {
+      throw new Error(`expected completed outcome, got ${outcome.kind}`);
     }
+    expect(outcome.runtimeMs).toBe(5);
     // The in-memory entry should still be present even if persistence fails.
     const entry = useAppStore.getState().queryHistory[0];
     expect(entry?.sql).toBe("select 1;");
