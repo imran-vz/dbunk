@@ -181,19 +181,19 @@ export function TableStructureView({
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 px-2 text-xs"
+            className="ml-auto"
             onClick={handleRetry}
           >
             Retry
           </Button>
         </div>
       ) : null}
-      <div className="flex-1 overflow-auto p-5">
-        <div className="mx-auto max-w-5xl space-y-5">
-          <header className="flex items-center justify-between gap-3 rounded-md border border-white/8 bg-white/[0.025] px-4 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10">
-                <IconColumns3 className="size-4 text-primary" />
+      <div className="flex-1 overflow-auto p-3">
+        <div className="mx-auto max-w-5xl space-y-3">
+          <header className="flex items-center justify-between gap-3 rounded-sm border border-white/8 bg-white/[0.025] px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-primary/25 bg-primary/10">
+                <IconColumns3 className="size-3.5 text-primary" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -201,19 +201,19 @@ export function TableStructureView({
                   <span>·</span>
                   <span>{tableName}</span>
                 </div>
-                <h2 className="truncate font-mono text-base font-semibold text-foreground">
+                <h2 className="truncate font-mono text-sm font-semibold text-foreground">
                   {tableName}
                 </h2>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
               {structure?.tableEngine ? (
-                <Badge variant="outline" className="h-6 text-[0.625rem]">
+                <Badge variant="outline" className="text-[0.625rem]">
                   {structure.tableEngine}
                 </Badge>
               ) : null}
               {structure?.primaryKey && structure.primaryKey.length > 0 ? (
-                <Badge variant="secondary" className="h-6 text-[0.625rem]">
+                <Badge variant="secondary" className="text-[0.625rem]">
                   {policy.labels.primaryKeyBadge}{" "}
                   {structure.primaryKey.join(", ")}
                 </Badge>
@@ -295,7 +295,7 @@ function ClickHousePhysicalLayout({
     <Section title="Physical layout" testId="structure-physical-layout">
       <div className="divide-y divide-white/8">
         {partitionBy ? (
-          <div className="flex flex-col gap-1 px-4 py-3 text-sm">
+          <div className="flex flex-col gap-1 px-3 py-2 text-xs">
             <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
               PARTITION BY
             </span>
@@ -303,7 +303,7 @@ function ClickHousePhysicalLayout({
           </div>
         ) : null}
         {sampleBy ? (
-          <div className="flex flex-col gap-1 px-4 py-3 text-sm">
+          <div className="flex flex-col gap-1 px-3 py-2 text-xs">
             <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
               SAMPLE BY
             </span>
@@ -336,7 +336,7 @@ function ColumnsSection({
             data-testid="structure-add-column"
             variant="outline"
             size="sm"
-            className="h-7 gap-1 px-2 text-xs"
+            className="gap-1"
             onClick={() => setShowAddForm((value) => !value)}
           >
             <IconPlus className="size-3.5" />
@@ -396,7 +396,7 @@ function ColumnRow({
   return (
     <div
       data-testid={`structure-column-${column.name}`}
-      className="px-4 py-3 text-sm transition hover:bg-white/[0.025]"
+      className="px-3 py-2 text-xs transition hover:bg-white/[0.025]"
     >
       <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1fr)_auto] items-center gap-3">
         <div className="flex min-w-0 items-center gap-2">
@@ -425,7 +425,7 @@ function ColumnRow({
               variant="ghost"
               size="sm"
               className={cn(
-                "h-7 px-1.5 text-[0.625rem] uppercase tracking-wide",
+                "px-1.5 text-[0.625rem] uppercase tracking-wide",
                 column.nullable ? "text-muted-foreground" : "text-rose-400",
               )}
               onClick={() =>
@@ -467,7 +467,7 @@ function ColumnRow({
                 data-testid={`structure-edit-column-${column.name}`}
                 variant="ghost"
                 size="sm"
-                className="h-7 px-1.5 text-xs"
+                className="px-1.5 text-xs"
                 aria-label={`Edit column ${column.name}`}
                 onClick={() => (editing ? cancelEditing() : setEditing(true))}
               >
@@ -477,7 +477,7 @@ function ColumnRow({
                 data-testid={`structure-drop-column-${column.name}`}
                 variant="ghost"
                 size="sm"
-                className="h-7 px-1.5 text-rose-400 hover:text-rose-300"
+                className="px-1.5 text-rose-400 hover:text-rose-300"
                 aria-label={`Drop column ${column.name}`}
                 onClick={() =>
                   onQueueChange({ kind: "drop", columnName: column.name })
@@ -492,7 +492,7 @@ function ColumnRow({
       {editable && editing ? (
         <div
           data-testid={`structure-edit-row-${column.name}`}
-          className="mt-3 grid gap-2 rounded-md border border-white/8 bg-[#0b1014] p-3 sm:grid-cols-3"
+          className="mt-2 grid gap-2 rounded-sm border border-white/8 bg-[#0b1014] p-2 sm:grid-cols-3"
         >
           <div className="flex flex-col gap-1">
             <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
@@ -504,14 +504,14 @@ function ColumnRow({
                 aria-label={`Rename column ${column.name}`}
                 value={renameValue}
                 onChange={(event) => setRenameValue(event.target.value)}
-                className="h-7 font-mono text-xs"
+                className="h-6 font-mono text-xs"
               />
               <Button
                 data-testid={`structure-rename-confirm-${column.name}`}
                 variant="ghost"
                 size="sm"
                 disabled={renameValue === column.name || renameValue === ""}
-                className="h-7 px-1.5"
+                className="px-1.5"
                 aria-label="Queue rename"
                 onClick={() => {
                   onQueueChange({
@@ -537,14 +537,14 @@ function ColumnRow({
                 aria-label={`Change type of ${column.name}`}
                 value={typeValue}
                 onChange={(event) => setTypeValue(event.target.value)}
-                className="h-7 font-mono text-xs text-blue-400"
+                className="h-6 font-mono text-xs text-blue-400"
               />
               <Button
                 data-testid={`structure-type-confirm-${column.name}`}
                 variant="ghost"
                 size="sm"
                 disabled={typeValue === column.dataType || typeValue === ""}
-                className="h-7 px-1.5"
+                className="px-1.5"
                 aria-label="Queue type change"
                 onClick={() => {
                   onQueueChange({
@@ -571,14 +571,14 @@ function ColumnRow({
                 value={defaultValue}
                 onChange={(event) => setDefaultValue(event.target.value)}
                 placeholder="(none)"
-                className="h-7 font-mono text-xs"
+                className="h-6 font-mono text-xs"
               />
               <Button
                 data-testid={`structure-default-confirm-${column.name}`}
                 variant="ghost"
                 size="sm"
                 disabled={defaultValue === (column.defaultValue ?? "")}
-                className="h-7 px-1.5"
+                className="px-1.5"
                 aria-label="Queue default change"
                 onClick={() => {
                   onQueueChange({
@@ -627,28 +627,28 @@ function AddColumnForm({
   return (
     <div
       data-testid="structure-add-column-form"
-      className="flex flex-wrap items-center gap-2 border-b border-white/8 bg-[#0b1014] px-4 py-3 text-sm"
+      className="flex flex-wrap items-center gap-1.5 border-b border-white/8 bg-[#0b1014] px-3 py-2 text-xs"
     >
       <Input
         data-testid="structure-add-column-name"
         value={name}
         onChange={(event) => setName(event.target.value)}
         placeholder="column_name"
-        className="h-7 max-w-[12rem] font-mono text-xs"
+        className="h-6 max-w-[12rem] font-mono text-xs"
       />
       <Input
         data-testid="structure-add-column-type"
         value={dataType}
         onChange={(event) => setDataType(event.target.value)}
         placeholder="text"
-        className="h-7 max-w-[10rem] font-mono text-xs"
+        className="h-6 max-w-[10rem] font-mono text-xs"
       />
       <Button
         data-testid="structure-add-column-nullable"
         variant="ghost"
         size="sm"
         className={cn(
-          "h-7 px-2 text-[0.625rem] uppercase tracking-wide",
+          "px-1.5 text-[0.625rem] uppercase tracking-wide",
           nullable ? "text-muted-foreground" : "text-rose-400",
         )}
         onClick={() => setNullable((value) => !value)}
@@ -660,14 +660,13 @@ function AddColumnForm({
         value={defaultValue}
         onChange={(event) => setDefaultValue(event.target.value)}
         placeholder="default (optional)"
-        className="h-7 max-w-[12rem] font-mono text-xs"
+        className="h-6 max-w-[12rem] font-mono text-xs"
       />
       <div className="ml-auto flex items-center gap-1">
         <Button
           data-testid="structure-add-column-cancel"
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs"
           onClick={onCancel}
         >
           Cancel
@@ -676,7 +675,6 @@ function AddColumnForm({
           data-testid="structure-add-column-submit"
           variant="default"
           size="sm"
-          className="h-7 px-2 text-xs"
           onClick={submit}
         >
           Queue add
@@ -744,7 +742,6 @@ function PendingChangesSection({
             data-testid="structure-preview-sql"
             variant="outline"
             size="sm"
-            className="h-7 px-2 text-xs"
             onClick={onTogglePreview}
             disabled={pending.length === 0}
           >
@@ -754,7 +751,6 @@ function PendingChangesSection({
             data-testid="structure-commit"
             variant="default"
             size="sm"
-            className="h-7 px-2 text-xs"
             onClick={onCommit}
             disabled={pending.length === 0 || isRunning}
           >
@@ -771,7 +767,7 @@ function PendingChangesSection({
             <li
               key={entry.id}
               data-testid={`structure-pending-${entry.id}`}
-              className="flex items-center gap-2 px-4 py-2 text-sm"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs"
             >
               <span className="truncate text-foreground">
                 {describeChange(entry.change)}
@@ -780,7 +776,7 @@ function PendingChangesSection({
                 data-testid={`structure-remove-pending-${entry.id}`}
                 variant="ghost"
                 size="sm"
-                className="ml-auto h-7 px-1.5 text-muted-foreground"
+                className="ml-auto px-1.5 text-muted-foreground"
                 aria-label="Remove pending change"
                 onClick={() => onRemove(entry.id)}
               >
@@ -793,7 +789,7 @@ function PendingChangesSection({
       {showPreview && previewSql ? (
         <pre
           data-testid="structure-sql-preview"
-          className="overflow-x-auto whitespace-pre-wrap border-t border-white/8 bg-[#05090c] px-4 py-3 font-mono text-xs text-foreground"
+          className="overflow-x-auto whitespace-pre-wrap border-t border-white/8 bg-[#05090c] px-3 py-2 font-mono text-xs text-foreground"
         >
           {previewSql}
         </pre>
@@ -842,8 +838,8 @@ function PrimaryKeySection({
       ) : !primaryKey || primaryKey.length === 0 ? (
         <EmptyRow>{policy.labels.noPrimaryKey}</EmptyRow>
       ) : (
-        <div className="space-y-1 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm">
+        <div className="space-y-1 px-3 py-2">
+          <div className="flex items-center gap-2 text-xs">
             <IconKey className="size-4 text-muted-foreground" />
             <span className="font-mono text-foreground">
               ({primaryKey.join(", ")})
@@ -876,7 +872,7 @@ function ForeignKeysSection({
     <Section title="Foreign keys" testId="structure-foreign-keys">
       {!supported ? (
         !policy.hasForeignKeys ? (
-          <div className="px-4 py-3 text-sm text-muted-foreground">
+          <div className="px-3 py-2 text-xs text-muted-foreground">
             {policy.foreignKeysUnsupportedCopy}
           </div>
         ) : (
@@ -889,7 +885,7 @@ function ForeignKeysSection({
           {foreignKeys.map((fk) => (
             <div
               key={fk.name}
-              className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm"
+              className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs"
             >
               <IconLink className="size-3.5 text-muted-foreground" />
               <span className="font-mono text-foreground">{fk.name}</span>
@@ -943,7 +939,7 @@ function IndexesSection({
           {indexes.map((index) => (
             <div
               key={index.name}
-              className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm"
+              className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs"
             >
               {index.isUnique ? (
                 <Badge variant="outline" className="text-[0.625rem] uppercase">
@@ -995,7 +991,7 @@ function ConstraintsSection({
           {constraints.map((constraint) => (
             <div
               key={constraint.name}
-              className="flex flex-col gap-1 px-4 py-3 text-sm"
+              className="flex flex-col gap-1 px-3 py-2 text-xs"
             >
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[0.625rem] uppercase">
@@ -1035,7 +1031,7 @@ function Section({
         </h3>
         {action ? <div>{action}</div> : null}
       </div>
-      <div className="overflow-hidden rounded-md border border-white/8 bg-white/[0.025]">
+      <div className="overflow-hidden rounded-sm border border-white/8 bg-white/[0.025]">
         {children}
       </div>
     </section>
@@ -1044,7 +1040,7 @@ function Section({
 
 function EmptyRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-4 py-3 text-sm text-muted-foreground">{children}</div>
+    <div className="px-3 py-2 text-xs text-muted-foreground">{children}</div>
   );
 }
 
@@ -1057,7 +1053,7 @@ function UnsupportedNotice({
 }) {
   const engineLabel = engine ?? "this engine";
   return (
-    <div className="px-4 py-3 text-sm text-muted-foreground">
+    <div className="px-3 py-2 text-xs text-muted-foreground">
       {feature} are not supported on {engineLabel}.
     </div>
   );

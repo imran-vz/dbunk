@@ -24,16 +24,16 @@ export function StatusBar({ items, className }: StatusBarProps) {
     <div
       data-slot="status-bar"
       className={cn(
-        "flex h-7 shrink-0 items-center justify-between gap-4 border-t border-border-subtle bg-surface-window px-4 text-[0.6875rem] text-text-muted",
+        "flex h-6 shrink-0 items-center justify-between gap-3 border-t border-border-subtle bg-surface-window px-3 text-[0.625rem] text-text-muted",
         className,
       )}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex min-w-0 items-center gap-3 overflow-hidden">
         {left.map((item) => (
           <StatusBarPair key={item.id} item={item} />
         ))}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex min-w-0 items-center gap-3 overflow-hidden">
         {right.map((item) => (
           <StatusBarPair key={item.id} item={item} />
         ))}
@@ -44,7 +44,7 @@ export function StatusBar({ items, className }: StatusBarProps) {
 
 function StatusBarPair({ item }: { item: StatusBarItem }) {
   return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap">
+    <span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
       {item.tone ? <StatusDot tone={item.tone} className="size-1.5" /> : null}
       {item.label ? (
         <span className="text-text-muted/80">{item.label}</span>
