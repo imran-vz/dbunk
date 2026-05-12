@@ -1,24 +1,14 @@
-import {
-  IconChevronLeft,
-  IconChevronRight,
-  IconChevronsLeft,
-  IconChevronsRight,
-  IconMaximize,
-  IconPlus,
-  IconTrash,
-  IconX,
-} from "@tabler/icons-react";
+import { IconMaximize, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { DataGrid } from "@/components/data-grid";
 import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
 import { StatusBar } from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
+import { TableEditorBody } from "@/components/table-editor/body";
 import {
   type SubTab,
   TableEditorHeader,
 } from "@/components/table-editor/header";
-import { RowDetailsPanel } from "@/components/table-editor/row-details-panel";
 import { TableStatusBanners } from "@/components/table-editor/status-banners";
 import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
@@ -27,7 +17,6 @@ import { useTableCapabilities } from "@/components/table-editor/use-table-capabi
 import { useTableEditorData } from "@/components/table-editor/use-table-editor-data";
 import { useTableExportFilename } from "@/components/table-editor/use-table-export-filename";
 import { useTablePagination } from "@/components/table-editor/use-table-pagination";
-import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +34,6 @@ import {
   type WorkspaceTab,
 } from "@/lib/store";
 import { useContainerWidth } from "@/lib/use-resizable-width";
-import { cn } from "@/lib/utils";
 
 interface TableEditorPanelProps {
   tab: WorkspaceTab;
@@ -92,7 +80,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
 
-  const columns = data?.columns ?? [];
   const rows = data?.rows ?? [];
   const selection = useRowSelection(rows);
   const caps = useTableCapabilities({
@@ -135,6 +122,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   };
 
   const isLoading = status?.state === "loading";
+  const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
 
   const rowCountLabel = `${(pagination.totalRows ?? rows.length).toLocaleString()} rows`;
@@ -187,261 +175,42 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         />
       ) : null}
 
-      {/* Body */}
-      <div
-        ref={bodyRef}
-        data-workspace-density={
-          bodyWidth > 0 && bodyWidth < 760 ? "compact" : "cozy"
+      <TableEditorBody
+        bodyRef={bodyRef}
+        bodyWidth={bodyWidth}
+        activeSubTab={activeSubTab}
+        tableRef={ref}
+        schema={tab.schema}
+        connectionId={tab.connectionId}
+        tableName={tab.table ?? ""}
+        data={data}
+        structure={structure}
+        currentEdits={currentEdits}
+        hasEdits={hasEdits}
+        selection={selection}
+        caps={caps}
+        rowDetails={rowDetails}
+        pagination={pagination}
+        isLoading={isLoading}
+        isSaving={isSaving}
+        exportFilenameBase={exportFilenameBase}
+        onRefresh={onRefresh}
+        onOpenAddRow={() => setIsAddRowOpen(true)}
+        onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
+        onCellEdit={(rowIndex, colIndex, value) =>
+          setTableEdit(tableName, rowIndex, colIndex, value)
         }
-        className="relative flex min-h-0 flex-1 overflow-hidden"
-      >
-        <div className="min-w-0 flex-1 overflow-hidden">
-          {activeSubTab === "data" ? (
-            <DataGrid
-              data={rows}
-              columns={columns}
-              edits={currentEdits}
-              onEdit={(rowIndex, colIndex, value) =>
-                setTableEdit(tableName, rowIndex, colIndex, value)
-              }
-              hasEdits={hasEdits}
-              readOnly={caps.isReadOnly || !caps.canEditCells}
-              isSaving={commitStatus?.state === "running"}
-              onDiscard={() => discardTableEdits(tableName)}
-              onSave={async () => {
-                const outcome = await commitTableEdits(tableName);
-                setLastOutcome(outcome);
-              }}
-              onOpenSQL={() => openQueryForTable(tab.schema, tab.table ?? "")}
-              onRefresh={onRefresh}
-              exportFilenameBase={exportFilenameBase}
-              rowSelection={selection.rowSelection}
-              onRowSelectionChange={selection.setRowSelection}
-              toolbarLeading={
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    disabled={!caps.canAddRow}
-                    onClick={() => setIsAddRowOpen(true)}
-                    aria-label="Add row"
-                    title="Add row"
-                  >
-                    <IconPlus className="size-3.5" />{" "}
-                    <span className="dbunk-primary-label">Add row</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-danger/40 text-danger hover:bg-danger/10"
-                    disabled={!caps.canDeleteSelected}
-                    aria-label="Delete selected"
-                    title="Delete selected"
-                    onClick={() => {
-                      void handleDeleteSelected();
-                    }}
-                  >
-                    <IconTrash className="size-3.5" />{" "}
-                    <span className="dbunk-primary-label">Delete selected</span>
-                  </Button>
-                </div>
-              }
-            />
-          ) : activeSubTab === "schema" ? (
-            <TableStructureView
-              connectionId={tab.connectionId}
-              schema={tab.schema}
-              tableName={tab.table ?? ""}
-              className="h-full"
-            />
-          ) : (
-            <SubTabPlaceholder kind={activeSubTab} />
-          )}
-        </div>
-
-        {activeSubTab === "data" ? (
-          <RowDetailsPanel
-            columns={columns}
-            selectedRow={selection.selectedRow}
-            selectedRowIndex={selection.selectedIndex}
-            selectedRowCount={selection.selectedCount}
-            totalRows={pagination.totalRows ?? rows.length}
-            indexes={structure?.indexes.length ?? 0}
-            bodyWidth={bodyWidth}
-            wideVisible={rowDetails.isOpen}
-            overlayOpen={rowDetails.overlayOpen}
-            onOverlayOpenChange={rowDetails.setOverlayOpen}
-            onClose={rowDetails.onClose}
-          />
-        ) : null}
-      </div>
-
-      {/* Pagination footer (data only) */}
-      {activeSubTab === "data" && ref ? (
-        <div
-          data-testid="table-pagination"
-          className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
-        >
-          <span className="tabular-nums">
-            Showing {pagination.startRow.toLocaleString()} to{" "}
-            {pagination.endRow.toLocaleString()} of{" "}
-            {(pagination.totalRows ?? rows.length).toLocaleString()} rows
-          </span>
-          <Pagination
-            page={pagination.page}
-            totalPages={pagination.totalPages}
-            isLastPage={pagination.isLastPage}
-            isLoading={isLoading}
-            onFirst={pagination.onFirstPage}
-            onPrev={pagination.onPrevPage}
-            onNext={pagination.onNextPage}
-            onLast={pagination.onLastPage}
-            onJump={pagination.goToPage}
-          />
-          <span className="tabular-nums">{pagination.pageSize} rows</span>
-        </div>
-      ) : null}
+        onDiscardEdits={() => discardTableEdits(tableName)}
+        onSaveEdits={async () => {
+          const outcome = await commitTableEdits(tableName);
+          setLastOutcome(outcome);
+        }}
+        onDeleteSelected={() => {
+          void handleDeleteSelected();
+        }}
+      />
 
       <StatusBar items={statusItems} />
-    </div>
-  );
-}
-
-function SubTabPlaceholder({ kind }: { kind: "indexes" | "relations" }) {
-  const titles = {
-    indexes: "Indexes",
-    relations: "Relations",
-  } as const;
-  const descriptions = {
-    indexes:
-      "Per-table indexes (name, columns, type, unique flag, size) will appear here.",
-    relations:
-      "Foreign-key relationships in and out of this table will be shown here.",
-  } as const;
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="max-w-md rounded-lg border border-dashed border-border-subtle bg-surface-panel/50 p-6 text-center">
-        <div className="text-sm font-semibold text-foreground">
-          {titles[kind]}
-        </div>
-        <p className="mt-1 text-xs text-text-muted">{descriptions[kind]}</p>
-        <p className="mt-3 text-[0.625rem] uppercase tracking-[0.12em] text-text-muted">
-          Coming soon
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Pagination({
-  page,
-  totalPages,
-  isLastPage,
-  isLoading,
-  onFirst,
-  onPrev,
-  onNext,
-  onLast,
-  onJump,
-}: {
-  page: number;
-  totalPages: number | undefined;
-  isLastPage: boolean;
-  isLoading: boolean;
-  onFirst: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-  onLast: () => void;
-  onJump: (page: number) => void;
-}) {
-  const pageButtons = useMemo(() => {
-    if (!totalPages) return [page];
-    const pages: Array<number | "ellipsis-left" | "ellipsis-right"> = [];
-    const window = 1;
-    pages.push(1);
-    if (page - window > 2) pages.push("ellipsis-left");
-    for (
-      let p = Math.max(2, page - window);
-      p <= Math.min(totalPages - 1, page + window);
-      p++
-    ) {
-      pages.push(p);
-    }
-    if (page + window < totalPages - 1) pages.push("ellipsis-right");
-    if (totalPages > 1) pages.push(totalPages);
-    return pages;
-  }, [page, totalPages]);
-
-  return (
-    <div className="flex items-center gap-1">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="First page"
-        onClick={onFirst}
-        disabled={page <= 1 || isLoading}
-        className="size-6"
-      >
-        <IconChevronsLeft className="size-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Previous page"
-        onClick={onPrev}
-        disabled={page <= 1 || isLoading}
-        className="size-6"
-      >
-        <IconChevronLeft className="size-3.5" />
-      </Button>
-      <div className="flex items-center gap-0.5 px-1">
-        {pageButtons.map((entry, idx) =>
-          typeof entry === "number" ? (
-            <button
-              type="button"
-              key={`p-${entry}`}
-              aria-label={`Go to page ${entry}`}
-              aria-current={entry === page ? "page" : undefined}
-              onClick={() => onJump(entry)}
-              className={cn(
-                "h-6 min-w-6 rounded-sm px-1.5 text-xs tabular-nums transition-colors",
-                entry === page
-                  ? "bg-accent-green/15 text-accent-green-hover"
-                  : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
-              )}
-            >
-              {entry}
-            </button>
-          ) : (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: ellipsis position is stable
-              key={`${entry}-${idx}`}
-              className="px-1 text-text-muted"
-            >
-              …
-            </span>
-          ),
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Next page"
-        onClick={onNext}
-        disabled={isLastPage || isLoading}
-        className="size-6"
-      >
-        <IconChevronRight className="size-3.5" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Last page"
-        onClick={onLast}
-        disabled={isLastPage || isLoading || totalPages === undefined}
-        className="size-6"
-      >
-        <IconChevronsRight className="size-3.5" />
-      </Button>
     </div>
   );
 }
