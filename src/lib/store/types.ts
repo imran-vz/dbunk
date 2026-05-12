@@ -283,11 +283,29 @@ export type TableStructureStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
-export type StructureCommitStatus =
-  | { state: "idle" }
-  | { state: "running" }
-  | { state: "success"; runtimeMs?: number }
-  | { state: "error"; error: string };
+/**
+ * Lifecycle state of an in-flight DDL commit — the **best-effort view**
+ * the store keeps so the Commit button can stay disabled and labelled
+ * "Committing..." across tab unmounts. Terminal state is NOT carried
+ * here; callers get it from the awaited `DDLOutcome` returned by
+ * `commitStructureChanges`. Absence from `structureCommitStatus` means
+ * "nothing in flight." See CONTEXT.md — DDL Outcome.
+ */
+export type StructureCommitStatus = { state: "running" };
+
+/**
+ * Terminal result of one `commitStructureChanges` attempt — the
+ * caller-facing outcome of executing a batch of DDL Statements. Always
+ * synchronous today (no async tracking, unlike Edit Outcome). The
+ * `noop` variant is returned when there were no pending changes —
+ * distinct from `completed` so a future caller without a UI guard
+ * doesn't render a "Committed in 0 ms" banner for nothing. See
+ * CONTEXT.md — DDL Outcome.
+ */
+export type DDLOutcome =
+  | { kind: "completed"; runtimeMs: number }
+  | { kind: "failed"; reason: string }
+  | { kind: "noop" };
 
 /**
  * Lifecycle state of an in-flight Edit (cell-edit commit, row insert,
@@ -311,13 +329,17 @@ export type TableEditsCommitStatus =
  * Terminal result of one Edit attempt, returned by the store action
  * that initiated the write. Synchronous engines (PG/MySQL/SQLite)
  * resolve to `completed` or `failed`; `timeout` is reachable only on
- * async engines (ClickHouse, via Pending Mutation tracking). See
- * CONTEXT.md — Edit Outcome.
+ * async engines (ClickHouse, via Pending Mutation tracking). The
+ * `noop` variant is returned when the action found nothing to do
+ * (no edits, no rows, no payload after filtering) — distinct from
+ * `completed` so callers don't render a misleading "saved 0 rows"
+ * banner for a click that did no work. See CONTEXT.md — Edit Outcome.
  */
 export type EditOutcome =
   | { kind: "completed"; runtimeMs: number; rowsAffected?: number }
   | { kind: "failed"; reason: string; mutationId?: string }
-  | { kind: "timeout"; remaining: string[] };
+  | { kind: "timeout"; remaining: string[] }
+  | { kind: "noop" };
 
 export type SchemaRelationshipsStatus =
   | { state: "idle" }
@@ -556,7 +578,7 @@ export interface AppStoreState {
   ) => void;
   removePendingStructureChange: (key: string, id: string) => void;
   clearPendingStructureChanges: (key: string) => void;
-  commitStructureChanges: (key: string) => Promise<void>;
+  commitStructureChanges: (key: string) => Promise<DDLOutcome>;
   loadAppSettings: () => Promise<AppSettingsSnapshot | null>;
   configureCredentialStorage: (input: {
     mode: CredentialStorageMode;

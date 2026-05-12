@@ -1247,8 +1247,9 @@ describe("store.commitStructureChanges", () => {
   });
 
   it("does nothing when there are no pending changes", async () => {
-    await useAppStore.getState().commitStructureChanges(key);
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
     expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("noop");
   });
 
   it("invokes execute_ddl with generated SQL and clears pending on success", async () => {
@@ -1259,9 +1260,17 @@ describe("store.commitStructureChanges", () => {
         change: { kind: "drop", columnName: "legacy" },
       });
     });
-    // First call: execute_ddl, second call: load_table_structure refresh.
+    // Deferred first invoke so we can observe the in-flight `running`
+    // lifecycle slot — the only state in the store while the DDL is
+    // applying, and the load-bearing reason `structureCommitStatus`
+    // exists at all (Commit button disabled across tab unmount).
+    let resolveDdl!: (value: { runtimeMs: number }) => void;
     mockedInvoke
-      .mockResolvedValueOnce({ runtimeMs: 12 })
+      .mockReturnValueOnce(
+        new Promise<{ runtimeMs: number }>((resolve) => {
+          resolveDdl = resolve;
+        }),
+      )
       .mockResolvedValueOnce({
         columns: [],
         primaryKey: null,
@@ -1282,7 +1291,15 @@ describe("store.commitStructureChanges", () => {
         },
       });
 
-    await useAppStore.getState().commitStructureChanges(key);
+    const promise = useAppStore.getState().commitStructureChanges(key);
+    // Flush the synchronous `set({ running })` before observing.
+    await Promise.resolve();
+    expect(useAppStore.getState().structureCommitStatus[key]).toEqual({
+      state: "running",
+    });
+
+    resolveDdl({ runtimeMs: 12 });
+    const outcome = await promise;
 
     expect(mockedInvoke).toHaveBeenNthCalledWith(1, "execute_ddl", {
       payload: {
@@ -1300,7 +1317,59 @@ describe("store.commitStructureChanges", () => {
 
     const state = useAppStore.getState();
     expect(state.pendingStructureChanges[key] ?? []).toHaveLength(0);
-    expect(state.structureCommitStatus[key]?.state).toBe("success");
+    expect(state.structureCommitStatus[key]).toBeUndefined();
+    if (outcome.kind !== "completed") {
+      throw new Error(`expected completed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.runtimeMs).toBe(12);
+  });
+
+  it("returns failed when the connection has been removed", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+    // Wipe the connection between adding the pending change and
+    // committing — the early-validation `failed` path that bypasses
+    // the running lifecycle slot.
+    useAppStore.setState({ connections: [] });
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toMatch(/connection not found/i);
+    // Pending changes survive so the user can retry after fixing the
+    // connection.
+    expect(useAppStore.getState().pendingStructureChanges[key]).toHaveLength(1);
+  });
+
+  it("returns failed and clears the running slot when the backend is unavailable", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+    // Force the !isTauri() short-circuit. This is the only `failed`
+    // path that exercises the running → cleared transition, so it's
+    // the load-bearing test for clearLifecycle.
+    mockedIsTauri.mockReturnValue(false);
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toMatch(/backend is unavailable/i);
   });
 
   it("preserves pending and surfaces error on backend failure", async () => {
@@ -1313,14 +1382,15 @@ describe("store.commitStructureChanges", () => {
     });
     mockedInvoke.mockRejectedValueOnce(new Error("permission denied"));
 
-    await useAppStore.getState().commitStructureChanges(key);
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
 
     const state = useAppStore.getState();
     expect(state.pendingStructureChanges[key] ?? []).toHaveLength(1);
-    expect(state.structureCommitStatus[key]).toEqual({
-      state: "error",
-      error: "permission denied",
-    });
+    expect(state.structureCommitStatus[key]).toBeUndefined();
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toBe("permission denied");
     // Should not refresh structure on failure.
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
   });
@@ -1382,14 +1452,14 @@ describe("store.commitStructureChanges", () => {
       });
     });
 
-    await useAppStore.getState().commitStructureChanges(key);
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
 
     expect(mockedInvoke).not.toHaveBeenCalled();
-    const status = useAppStore.getState().structureCommitStatus[key];
-    expect(status?.state).toBe("error");
-    if (status?.state === "error") {
-      expect(status.error).toMatch(/MySQL|does not support/i);
+    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
+    expect(outcome.reason).toMatch(/MySQL|does not support/i);
   });
 });
 
@@ -1660,8 +1730,9 @@ describe("store.commitTableEdits", () => {
 
   it("does nothing when there are no pending edits", async () => {
     seedTable();
-    await useAppStore.getState().commitTableEdits("users");
+    const outcome = await useAppStore.getState().commitTableEdits("users");
     expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("noop");
   });
 
   it("invokes commit_cell_edits with identity + set values for each edited row", async () => {
@@ -2166,8 +2237,11 @@ describe("store.deleteSelectedTableRows", () => {
 
   it("does nothing when the row index list is empty", async () => {
     seedTableForDelete();
-    await useAppStore.getState().deleteSelectedTableRows("users", []);
+    const outcome = await useAppStore
+      .getState()
+      .deleteSelectedTableRows("users", []);
     expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("noop");
   });
 
   it("errors immediately when the connection is not Postgres", async () => {
