@@ -15,6 +15,7 @@
 
 import type { StateCreator } from "zustand";
 
+import { storageClassFor } from "@/lib/engine-policy";
 import { formatLatencyMs } from "@/lib/format";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
@@ -277,7 +278,17 @@ export const createConnectionsSlice: StateCreator<
     if (!isTauri()) {
       return;
     }
-    const connectionIds = get().connections.map((c) => c.id);
+    // Only probe connections the user has explicitly connected. Pinging
+    // every stored connection on a 30 s tick had the side-effect of auto-
+    // connecting Disconnected entries (PG/MySQL/CH/Redis alike) on launch:
+    // each "health check" opens a real socket and runs SELECT 1 / PING,
+    // which flips the status to Connected even though the user never asked
+    // for that engine. See ADR-0002 (revised 2026-05-12).
+    const connectionIds = get()
+      .connections.filter(
+        (c) => c.status === "Connected" || c.status === "Read only",
+      )
+      .map((c) => c.id);
     if (connectionIds.length === 0) {
       return;
     }
@@ -350,10 +361,20 @@ export const createConnectionsSlice: StateCreator<
       const result = await tauriInvoke<ConnectResult>("connect_connection", {
         payload: { connectionId },
       });
-      const schema = await tauriInvoke<import("./types").SchemaExplorer[]>(
-        "load_schema_explorer",
-        { payload: { connectionId } },
-      );
+      // Schema introspection is a relational-only concept; the keyvalue
+      // dispatch returns `Err("Schema explorer does not apply to Redis…")`
+      // and would otherwise sink the whole connect flow back to
+      // Disconnected. The keyspace browser loads keys lazily via its own
+      // SCAN API, so there's nothing to prefetch for Redis here.
+      const target = get().connections.find((c) => c.id === connectionId);
+      const isRelational =
+        target && storageClassFor(target.engine) === "relational";
+      const schema = isRelational
+        ? await tauriInvoke<import("./types").SchemaExplorer[]>(
+            "load_schema_explorer",
+            { payload: { connectionId } },
+          )
+        : undefined;
       set((state) => ({
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Connected",
@@ -362,10 +383,9 @@ export const createConnectionsSlice: StateCreator<
           lastActivityAt: new Date().toISOString(),
           errorMessage: undefined,
         }),
-        schemaExplorer: {
-          ...state.schemaExplorer,
-          [connectionId]: schema,
-        },
+        schemaExplorer: schema
+          ? { ...state.schemaExplorer, [connectionId]: schema }
+          : state.schemaExplorer,
       }));
     } catch (error) {
       const message = errorToMessage(error);

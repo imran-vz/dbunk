@@ -602,11 +602,11 @@ function RecentQueriesCard({ queries }: { queries: QueryHistoryEntry[] }) {
           queries.map((query) => (
             <div
               key={query.id}
-              className="flex items-center gap-3 rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
+              className="flex w-full min-w-0 items-center gap-3 rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
             >
               <span
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-md",
+                  "flex size-7 shrink-0 items-center justify-center rounded-md",
                   query.status === "success"
                     ? "bg-accent-green/10 text-accent-green-hover"
                     : "bg-danger/10 text-danger",
@@ -614,18 +614,22 @@ function RecentQueriesCard({ queries }: { queries: QueryHistoryEntry[] }) {
               >
                 <IconTerminal2 className="size-3.5" />
               </span>
-              <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-1 flex-col">
                 <div className="truncate font-mono text-[0.75rem] text-foreground">
                   {query.sql}
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[0.625rem] text-text-muted">
-                  <IconClock className="size-2.5" />
-                  <span>{query.startedAt}</span>
-                  <span>·</span>
-                  <span className="truncate">{query.connectionName}</span>
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.625rem] text-text-muted">
+                  <IconClock className="size-2.5 shrink-0" />
+                  <span className="shrink-0 whitespace-nowrap">
+                    {query.startedAt}
+                  </span>
+                  <span className="shrink-0">·</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {query.connectionName}
+                  </span>
                 </div>
               </div>
-              <span className="rounded-full bg-accent-green/10 px-2 py-0.5 text-[0.625rem] font-medium tabular-nums text-accent-green-hover">
+              <span className="shrink-0 rounded-full bg-accent-green/10 px-2 py-0.5 text-[0.625rem] font-medium tabular-nums text-accent-green-hover">
                 {query.runtimeMs} ms
               </span>
             </div>

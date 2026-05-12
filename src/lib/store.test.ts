@@ -641,6 +641,49 @@ describe("connectConnection error feedback", () => {
     expect(connection?.status).toBe("Connected");
     expect(connection?.latency).toBe("--");
   });
+
+  it("skips schema-explorer fetch for keyvalue engines and stays Connected", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-redis",
+          name: "Redis",
+          database: "",
+          status: "Disconnected",
+          engine: "Redis",
+          host: "localhost",
+          port: 6379,
+          user: "",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          useTls: false,
+          verifyTlsCert: false,
+          dbNumber: 0,
+        },
+      ],
+    });
+
+    // Single resolve for connect_connection; load_schema_explorer must NOT
+    // be invoked for Redis. If it is, the second invoke gets no mock and
+    // throws, which would flip status back to Disconnected.
+    mockedInvoke.mockResolvedValueOnce({ latencyMs: 3 });
+
+    await act(async () => {
+      await useAppStore.getState().connectConnection("conn-redis");
+    });
+
+    const connection = useAppStore
+      .getState()
+      .connections.find((c) => c.id === "conn-redis");
+    expect(connection?.status).toBe("Connected");
+    expect(connection?.errorMessage).toBeUndefined();
+    const schemaCalls = mockedInvoke.mock.calls.filter(
+      (call) => call[0] === "load_schema_explorer",
+    );
+    expect(schemaCalls).toHaveLength(0);
+  });
 });
 
 describe("runHealthChecks latency", () => {
@@ -651,7 +694,7 @@ describe("runHealthChecks latency", () => {
           id: "conn-1",
           name: "Local",
           database: "postgres",
-          status: "Disconnected",
+          status: "Connected",
           engine: "PostgreSQL",
           host: "localhost",
           port: 5432,
@@ -676,6 +719,64 @@ describe("runHealthChecks latency", () => {
       .connections.find((c) => c.id === "conn-1");
     expect(connection?.status).toBe("Connected");
     expect(connection?.latency).toBe("--");
+  });
+
+  it("skips Disconnected connections so they aren't auto-connected at startup", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-pg",
+          name: "PG",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          ssl: true,
+        },
+        {
+          id: "conn-redis",
+          name: "Redis",
+          database: "",
+          status: "Connected",
+          engine: "Redis",
+          host: "localhost",
+          port: 6379,
+          user: "",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          useTls: false,
+          verifyTlsCert: false,
+          dbNumber: 0,
+        },
+      ],
+    });
+
+    mockedInvoke.mockResolvedValueOnce({ state: "healthy", latencyMs: 4 });
+
+    await act(async () => {
+      await useAppStore.getState().runHealthChecks();
+    });
+
+    const healthCalls = mockedInvoke.mock.calls.filter(
+      (call) => call[0] === "health_check_connection",
+    );
+    expect(healthCalls).toHaveLength(1);
+    expect(healthCalls[0]?.[1]).toEqual({
+      payload: { connectionId: "conn-redis" },
+    });
+
+    const pg = useAppStore
+      .getState()
+      .connections.find((c) => c.id === "conn-pg");
+    expect(pg?.status).toBe("Disconnected");
   });
 });
 
