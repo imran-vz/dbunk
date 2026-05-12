@@ -15,7 +15,7 @@ import {
   IconTerminal2,
   IconWaveSine,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { CliTab } from "@/components/keyvalue/CliTab";
 import { KeyInspectorTab } from "@/components/keyvalue/KeyInspectorTab";
@@ -24,7 +24,7 @@ import { NewKeyDialog } from "@/components/keyvalue/NewKeyDialog";
 import { PubsubTab } from "@/components/keyvalue/PubsubTab";
 import { ServerTab } from "@/components/keyvalue/ServerTab";
 import { Button } from "@/components/ui/button";
-import { ResizerHandle } from "@/components/ui/resizer-handle";
+import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import {
   type RedisConnection,
   useAppStore,
@@ -36,14 +36,11 @@ import {
 } from "@/lib/use-resizable-width";
 import { cn } from "@/lib/utils";
 
-/** Below this container width the keyspace sidebar auto-collapses so the
- *  inspector/CLI/server panes have breathing room. Picked empirically to
- *  match the smallest reasonable laptop viewport once the app sidebar
- *  (288 px) is open. */
-const AUTO_COLLAPSE_BELOW_PX = 720;
 const KEYSPACE_MIN_WIDTH = 180;
 const KEYSPACE_MAX_WIDTH = 480;
 const KEYSPACE_DEFAULT_WIDTH = 256;
+const KEYSPACE_COMPACT_BELOW = 860;
+const PROTECTED_WORKSPACE_WIDTH = 560;
 
 interface KeyValueWorkspaceProps {
   /** Narrowed at the workspace fork — see `workspace-view.tsx`'s
@@ -61,13 +58,10 @@ export function KeyValueWorkspace({
   const setActiveTabId = useAppStore((state) => state.setActiveTabId);
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [browserRefreshTick, setBrowserRefreshTick] = useState(0);
+  const [keyspaceSidebarVisible, setKeyspaceSidebarVisible] = useState(true);
+  const [keyspaceOverlayOpen, setKeyspaceOverlayOpen] = useState(false);
 
-  const {
-    width: sidebarWidth,
-    setWidth: setSidebarWidth,
-    collapsed: sidebarCollapsed,
-    setCollapsed: setSidebarCollapsed,
-  } = useResizableWidth({
+  const { width: sidebarWidth, setWidth: setSidebarWidth } = useResizableWidth({
     storageKey: "dbunk.redis.keyspaceSidebarWidth",
     defaultWidth: KEYSPACE_DEFAULT_WIDTH,
     min: KEYSPACE_MIN_WIDTH,
@@ -75,37 +69,8 @@ export function KeyValueWorkspace({
   });
 
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
-
-  // Auto-collapse on viewports too narrow to give the inspector room. Don't
-  // fight the user — once they expand, leave it expanded until the next
-  // resize crosses the threshold from the other direction. The
-  // `autoCollapsedRef` mirrors what we did automatically so we can re-expand
-  // when there's room again.
-  const [autoCollapsed, setAutoCollapsed] = useState(false);
-
-  useEffect(() => {
-    if (containerWidth === 0) return;
-    if (containerWidth < AUTO_COLLAPSE_BELOW_PX && !sidebarCollapsed) {
-      setSidebarCollapsed(true);
-      setAutoCollapsed(true);
-    } else if (containerWidth >= AUTO_COLLAPSE_BELOW_PX && autoCollapsed) {
-      setSidebarCollapsed(false);
-      setAutoCollapsed(false);
-    }
-  }, [containerWidth, sidebarCollapsed, autoCollapsed, setSidebarCollapsed]);
-
-  // When the container is narrow but not tiny, clamp the sidebar to ~40 % of
-  // available width so the inspector still has space. The user's stored
-  // preference returns when the window grows again.
-  const effectiveWidth = useMemo(() => {
-    if (sidebarCollapsed) return 0;
-    if (containerWidth === 0) return sidebarWidth;
-    const maxForViewport = Math.max(
-      KEYSPACE_MIN_WIDTH,
-      Math.floor(containerWidth * 0.45),
-    );
-    return Math.min(sidebarWidth, maxForViewport);
-  }, [sidebarCollapsed, containerWidth, sidebarWidth]);
+  const isKeyspaceCompact =
+    containerWidth > 0 && containerWidth < KEYSPACE_COMPACT_BELOW;
 
   const myTabs = useMemo<WorkspaceTab[]>(
     () =>
@@ -183,24 +148,39 @@ export function KeyValueWorkspace({
   };
 
   return (
-    <div ref={containerRef} className="flex min-h-0 flex-1">
-      {sidebarCollapsed ? (
+    <div ref={containerRef} className="relative flex min-h-0 flex-1">
+      {!isKeyspaceCompact && !keyspaceSidebarVisible ? (
         <button
           type="button"
           onClick={() => {
-            setSidebarCollapsed(false);
-            setAutoCollapsed(false);
+            setKeyspaceSidebarVisible(true);
           }}
           aria-label="Expand keyspace sidebar"
+          title="Expand keyspace sidebar"
           className="flex w-7 shrink-0 items-center justify-center border-r border-border-subtle bg-surface-window text-text-muted hover:bg-white/5 hover:text-foreground"
         >
           <IconLayoutSidebarLeftExpand className="size-4" />
         </button>
-      ) : (
-        <aside
-          style={{ width: `${effectiveWidth}px` }}
-          className="flex shrink-0 flex-col border-r border-border-subtle bg-surface-window"
-        >
+      ) : null}
+      <ResponsiveEdgePanel
+        side="left"
+        storageKey="dbunk.sidebar.redisKeyspace"
+        title="Keyspace"
+        width={sidebarWidth}
+        containerWidth={containerWidth}
+        compactBelow={KEYSPACE_COMPACT_BELOW}
+        protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+        wideVisible={keyspaceSidebarVisible}
+        open={keyspaceOverlayOpen}
+        onOpenChange={setKeyspaceOverlayOpen}
+        resizer={{
+          onResize: setSidebarWidth,
+          min: KEYSPACE_MIN_WIDTH,
+          max: KEYSPACE_MAX_WIDTH,
+          ariaLabel: "Resize keyspace sidebar",
+        }}
+      >
+        <div className="flex h-full min-h-0 flex-col">
           <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2 text-[0.65rem] uppercase tracking-wide text-text-muted">
             <span className="truncate">
               Keyspace · DB {activeConnection.dbNumber ?? 0}
@@ -217,11 +197,15 @@ export function KeyValueWorkspace({
               <button
                 type="button"
                 onClick={() => {
-                  setSidebarCollapsed(true);
-                  setAutoCollapsed(false);
+                  if (isKeyspaceCompact) {
+                    setKeyspaceOverlayOpen(false);
+                  } else {
+                    setKeyspaceSidebarVisible(false);
+                  }
                 }}
                 className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
                 aria-label="Collapse keyspace sidebar"
+                title="Collapse keyspace sidebar"
               >
                 <IconLayoutSidebarLeftCollapse className="size-3" />
               </button>
@@ -264,17 +248,8 @@ export function KeyValueWorkspace({
               activeTab?.kind === "key" ? activeTab.redisKey : undefined
             }
           />
-        </aside>
-      )}
-      {!sidebarCollapsed ? (
-        <ResizerHandle
-          width={effectiveWidth}
-          onResize={setSidebarWidth}
-          min={KEYSPACE_MIN_WIDTH}
-          max={KEYSPACE_MAX_WIDTH}
-          ariaLabel="Resize keyspace sidebar"
-        />
-      ) : null}
+        </div>
+      </ResponsiveEdgePanel>
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center gap-1 overflow-auto border-b border-border-subtle bg-surface-panel/40 px-2">
           {myTabs.length === 0 ? (

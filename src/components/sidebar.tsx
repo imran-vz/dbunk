@@ -28,7 +28,7 @@ function statusTone(status: Connection["status"]): StatusTone {
   return "neutral";
 }
 
-export function Sidebar() {
+export function Sidebar({ className }: { className?: string }) {
   const [editingConnection, setEditingConnection] = useState<Connection | null>(
     null,
   );
@@ -71,7 +71,12 @@ export function Sidebar() {
   }, [explorerSchemas, tableFilter]);
 
   return (
-    <aside className="flex h-full w-72 flex-col border-r border-border-subtle bg-surface-sidebar text-foreground">
+    <aside
+      className={cn(
+        "flex h-full w-full flex-col border-r border-border-subtle bg-surface-sidebar text-foreground",
+        className,
+      )}
+    >
       {/* CONNECTIONS */}
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <div className="dbunk-section-title">Connections</div>

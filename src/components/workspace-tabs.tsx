@@ -23,7 +23,10 @@ export function WorkspaceTabs() {
   }
 
   return (
-    <div className="flex h-12 items-end border-b border-white/8 bg-[#0a0f14] px-5">
+    <div
+      data-slot="workspace-tabs"
+      className="flex h-12 items-end border-b border-white/8 bg-[#0a0f14] px-5"
+    >
       <div className="flex min-w-0 flex-1 items-end overflow-x-auto">
         {workspaceTabs.map((tab) => {
           const isActive = tab.id === activeTabId;

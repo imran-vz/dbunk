@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import {
   buildInsertValuesPayload,
   type InsertRowFieldMode,
@@ -52,6 +53,7 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { useContainerWidth } from "@/lib/use-resizable-width";
 import { cn } from "@/lib/utils";
 
 interface TableEditorPanelProps {
@@ -67,9 +69,15 @@ const SUB_TABS: Array<{ id: SubTab; label: string }> = [
   { id: "relations", label: "Relations" },
 ];
 
+const ROW_DETAILS_WIDTH = 320;
+const ROW_DETAILS_COMPACT_BELOW = 980;
+const PROTECTED_WORKSPACE_WIDTH = 560;
+
 export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
   const [isRowDetailsOpen, setIsRowDetailsOpen] = useState(true);
+  const [rowDetailsOverlayOpen, setRowDetailsOverlayOpen] = useState(false);
+  const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const tableName = tab.kind === "table" ? (tab.table ?? "") : "";
   // Sliced subscription: re-render only when *this* table's lifecycle
@@ -333,6 +341,25 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       align: "right",
     },
   ];
+  const isRowDetailsCompact =
+    bodyWidth > 0 && bodyWidth < ROW_DETAILS_COMPACT_BELOW;
+  const rowDetailsVisible = isRowDetailsCompact
+    ? rowDetailsOverlayOpen
+    : isRowDetailsOpen;
+  const handleToggleRowDetails = () => {
+    if (isRowDetailsCompact) {
+      setRowDetailsOverlayOpen((open) => !open);
+      return;
+    }
+    setIsRowDetailsOpen((open) => !open);
+  };
+  const handleCloseRowDetails = () => {
+    if (isRowDetailsCompact) {
+      setRowDetailsOverlayOpen(false);
+      return;
+    }
+    setIsRowDetailsOpen(false);
+  };
 
   return (
     <div className="flex h-full flex-col bg-surface-app">
@@ -364,26 +391,30 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
             {activeSubTab === "data" ? (
               <Button
                 size="sm"
-                variant={isRowDetailsOpen ? "secondary" : "outline"}
-                aria-pressed={isRowDetailsOpen}
+                variant={rowDetailsVisible ? "secondary" : "outline"}
+                aria-pressed={rowDetailsVisible}
                 aria-label={
-                  isRowDetailsOpen ? "Hide row details" : "Show row details"
+                  rowDetailsVisible ? "Hide row details" : "Show row details"
                 }
-                onClick={() => setIsRowDetailsOpen((open) => !open)}
+                title={
+                  rowDetailsVisible ? "Hide row details" : "Show row details"
+                }
+                onClick={handleToggleRowDetails}
               >
                 <IconLayoutSidebarRight className="size-3.5" />
-                Details
+                <span className="dbunk-optional-label">Details</span>
               </Button>
             ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label="Table actions"
+                title="Table actions"
                 className={cn(
                   "inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
                 )}
               >
                 <IconDotsVertical className="size-3.5 text-text-muted" />
-                Table actions
+                <span className="dbunk-optional-label">Table actions</span>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem
@@ -645,14 +676,13 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
       {/* Body */}
       <div
-        className={cn(
-          "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden",
-          isRowDetailsOpen &&
-            activeSubTab === "data" &&
-            "xl:grid-cols-[minmax(0,1fr)_20rem]",
-        )}
+        ref={bodyRef}
+        data-workspace-density={
+          bodyWidth > 0 && bodyWidth < 760 ? "compact" : "cozy"
+        }
+        className="relative flex min-h-0 flex-1 overflow-hidden"
       >
-        <div className="min-w-0 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-hidden">
           {activeSubTab === "data" ? (
             <DataGrid
               data={rows}
@@ -680,19 +710,25 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                     size="sm"
                     disabled={!canAddRow}
                     onClick={handleOpenAddRow}
+                    aria-label="Add row"
+                    title="Add row"
                   >
-                    <IconPlus className="size-3.5" /> Add row
+                    <IconPlus className="size-3.5" />{" "}
+                    <span className="dbunk-primary-label">Add row</span>
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     className="border-danger/40 text-danger hover:bg-danger/10"
                     disabled={!canDeleteSelected}
+                    aria-label="Delete selected"
+                    title="Delete selected"
                     onClick={() => {
                       void handleDeleteSelected();
                     }}
                   >
-                    <IconTrash className="size-3.5" /> Delete selected
+                    <IconTrash className="size-3.5" />{" "}
+                    <span className="dbunk-primary-label">Delete selected</span>
                   </Button>
                 </div>
               }
@@ -709,75 +745,88 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           )}
         </div>
 
-        {isRowDetailsOpen && activeSubTab === "data" ? (
-          <aside
-            data-testid="row-details-panel"
-            className="hidden min-h-0 flex-col gap-3 border-l border-border-subtle bg-surface-window p-4 text-xs xl:flex"
+        {activeSubTab === "data" ? (
+          <ResponsiveEdgePanel
+            side="right"
+            storageKey="dbunk.sidebar.rowDetails"
+            title="Row Details"
+            width={ROW_DETAILS_WIDTH}
+            containerWidth={bodyWidth}
+            compactBelow={ROW_DETAILS_COMPACT_BELOW}
+            protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+            wideVisible={isRowDetailsOpen}
+            open={rowDetailsOverlayOpen}
+            onOpenChange={setRowDetailsOverlayOpen}
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-foreground">
-                    Row {selectedRowIndex !== null ? selectedRowIndex + 1 : 1}
-                  </span>
-                  <Badge variant="success" className="h-5 px-2">
-                    Selected
-                  </Badge>
+            <div
+              data-testid="row-details-panel"
+              className="flex h-full min-h-0 flex-col gap-3 p-4 text-xs"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-foreground">
+                      Row {selectedRowIndex !== null ? selectedRowIndex + 1 : 1}
+                    </span>
+                    <Badge variant="success" className="h-5 px-2">
+                      Selected
+                    </Badge>
+                  </div>
+                  <div className="mt-0.5 text-text-muted">
+                    {hasMultipleSelectedRows
+                      ? `${selectedRowIndices.length} rows selected`
+                      : selectedRowIndices.length === 1
+                        ? "1 selected"
+                        : "First visible row"}
+                  </div>
                 </div>
-                <div className="mt-0.5 text-text-muted">
-                  {hasMultipleSelectedRows
-                    ? `${selectedRowIndices.length} rows selected`
-                    : selectedRowIndices.length === 1
-                      ? "1 selected"
-                      : "First visible row"}
-                </div>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Close row details"
+                  onClick={handleCloseRowDetails}
+                >
+                  <IconX className="size-3.5" />
+                </Button>
               </div>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close row details"
-                onClick={() => setIsRowDetailsOpen(false)}
-              >
-                <IconX className="size-3.5" />
-              </Button>
-            </div>
 
-            <div className="flex flex-1 flex-col gap-2 overflow-auto">
-              {hasMultipleSelectedRows ? (
-                <div className="rounded-md border border-accent-green/20 bg-accent-green/10 p-3 text-text-muted">
-                  <div className="font-semibold text-foreground">
-                    Multiple rows selected
-                  </div>
-                  <div className="mt-1">
-                    Select a single row to inspect column values.
-                  </div>
-                </div>
-              ) : selectedRow ? (
-                columns.map((column, index) => (
-                  <div
-                    key={column}
-                    className="rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
-                  >
-                    <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
-                      {column}
+              <div className="flex flex-1 flex-col gap-2 overflow-auto">
+                {hasMultipleSelectedRows ? (
+                  <div className="rounded-md border border-accent-green/20 bg-accent-green/10 p-3 text-text-muted">
+                    <div className="font-semibold text-foreground">
+                      Multiple rows selected
                     </div>
-                    <div className="mt-1 truncate font-mono text-[0.75rem] text-foreground">
-                      {selectedRow[index] || "NULL"}
+                    <div className="mt-1">
+                      Select a single row to inspect column values.
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3 text-text-muted">
-                  No row selected
-                </div>
-              )}
-            </div>
+                ) : selectedRow ? (
+                  columns.map((column, index) => (
+                    <div
+                      key={column}
+                      className="rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
+                    >
+                      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+                        {column}
+                      </div>
+                      <div className="mt-1 truncate font-mono text-[0.75rem] text-foreground">
+                        {selectedRow[index] || "NULL"}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3 text-text-muted">
+                    No row selected
+                  </div>
+                )}
+              </div>
 
-            <SummaryCard
-              totalRows={totalRows ?? rows.length}
-              indexes={activeTableStructure?.indexes.length ?? 0}
-            />
-          </aside>
+              <SummaryCard
+                totalRows={totalRows ?? rows.length}
+                indexes={activeTableStructure?.indexes.length ?? 0}
+              />
+            </div>
+          </ResponsiveEdgePanel>
         ) : null}
       </div>
 

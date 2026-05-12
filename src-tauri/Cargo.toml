@@ -1,6 +1,6 @@
 [package]
 name = "dbunk"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "Open-source desktop database workspace for exploring data, running SQL, and inspecting schemas."
 authors = ["Imran"]
 license = "MIT"

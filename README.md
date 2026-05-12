@@ -6,7 +6,24 @@ It is built with Tauri, React, TypeScript, Rust, Monaco Editor, SQLx, and Bun.
 
 ## Status
 
-dbunk is early and moving quickly. Expect rough edges, but contributions are welcome: bug reports, feature ideas, docs improvements, design polish, database engine support, tests, and small fixes are all useful.
+dbunk is **pre-alpha** and under heavy development. Expect rough edges, missing features, and breaking changes between releases — and please do not point it at production databases yet. Contributions are welcome: bug reports, feature ideas, docs improvements, design polish, database engine support, tests, and small fixes are all useful.
+
+## Install (pre-alpha)
+
+Pre-built binaries for each release are published on the [GitHub Releases page](https://github.com/imran-vz/dbunk/releases).
+
+### macOS (Apple Silicon)
+
+The current pre-alpha only ships an **arm64 DMG**. Intel Macs are not supported.
+
+1. Download the `dbunk_<version>_aarch64.dmg` asset from the latest release.
+2. Open the DMG and drag **dbunk** into Applications.
+3. The first launch will be blocked by Gatekeeper — the build is unsigned. Use one of:
+   - Right-click `dbunk` in Applications → **Open** → confirm in the dialog.
+   - Or from a terminal: `xattr -dr com.apple.quarantine /Applications/dbunk.app`
+4. Subsequent launches work normally.
+
+Other platforms (Intel macOS, Linux, Windows) are not packaged yet; build from source via the steps below.
 
 ## Features
 

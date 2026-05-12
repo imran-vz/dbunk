@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-dmg:
+    name: Build macOS DMG (arm64)
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight versions
+        run: |
+          set -euo pipefail
+          echo "bun:   $(bun --version)"
+          echo "rustc: $(rustc --version)"
+          echo "cargo: $(cargo --version)"
+          rustup target list --installed | grep -q '^aarch64-apple-darwin$' \
+            || rustup target add aarch64-apple-darwin
+
+      - name: Verify tag matches package version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          tag_version="${tag#v}"
+          pkg_version=$(grep -m1 '"version"' package.json \
+            | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag ${tag} (version ${tag_version}) does not match package.json version ${pkg_version}"
+            exit 1
+          fi
+          tauri_version=$(grep -m1 '"version"' src-tauri/tauri.conf.json \
+            | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+          if [ "$tag_version" != "$tauri_version" ]; then
+            echo "::error::Tag ${tag} does not match tauri.conf.json version ${tauri_version}"
+            exit 1
+          fi
+          cargo_version=$(grep -m1 '^version' src-tauri/Cargo.toml \
+            | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::Tag ${tag} does not match Cargo.toml version ${cargo_version}"
+            exit 1
+          fi
+          echo "Versions in sync: ${tag_version}"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build macOS DMG (aarch64, unsigned)
+        env:
+          # Explicitly clear any inherited signing identity so the runner
+          # always produces an unsigned (ad-hoc) build for pre-alpha.
+          APPLE_SIGNING_IDENTITY: ""
+          APPLE_CERTIFICATE: ""
+          APPLE_CERTIFICATE_PASSWORD: ""
+        run: bun run tauri build --target aarch64-apple-darwin --bundles dmg
+
+      - name: Locate DMG
+        id: locate
+        run: |
+          set -euo pipefail
+          dmg=$(ls -1 src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)
+          if [ -z "$dmg" ]; then
+            echo "::error::No DMG produced under src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/"
+            exit 1
+          fi
+          echo "dmg_path=${dmg}" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$(basename "${dmg}")" >> "$GITHUB_OUTPUT"
+          ls -lh "${dmg}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: true
+          draft: false
+          generate_release_notes: true
+          files: ${{ steps.locate.outputs.dmg_path }}
+          body: |
+            ## dbunk ${{ github.ref_name }} — pre-alpha
+
+            ⚠️ **dbunk is pre-alpha and under heavy development.** Expect breakage, missing features, and breaking changes between releases. Do not point this at production databases.
+
+            ### Install (macOS, Apple Silicon)
+
+            1. Download `${{ steps.locate.outputs.dmg_name }}` from the assets below.
+            2. Open the DMG and drag **dbunk** into Applications.
+            3. First launch is blocked by Gatekeeper — this build is unsigned. Pick one:
+               - **Right-click** the app in Applications → **Open** → confirm.
+               - Or from a terminal: `xattr -dr com.apple.quarantine /Applications/dbunk.app`
+            4. Subsequent launches work normally.
+
+            This release only ships an **Apple Silicon (arm64)** DMG. Intel Macs are not supported in this build.

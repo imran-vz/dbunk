@@ -16,13 +16,21 @@ import { SettingsView } from "@/components/settings-view";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkspaceView } from "@/components/workspace-view";
 import { useAppStore } from "@/lib/store";
-import { cn } from "@/lib/utils";
+import { useContainerWidth } from "@/lib/use-resizable-width";
+import logo from "../assets/logo.png";
+
+const GLOBAL_SIDEBAR_WIDTH = 288;
+const GLOBAL_SIDEBAR_COMPACT_BELOW = 980;
+const PROTECTED_WORKSPACE_WIDTH = 560;
 
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
   const [newConnectionOpen, setNewConnectionOpen] = useState(false);
+  const [leftSidebarOverlayOpen, setLeftSidebarOverlayOpen] = useState(false);
+  const [shellBodyRef, shellBodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const {
     activeView,
@@ -47,6 +55,18 @@ export function AppShell() {
       connections[0],
     [activeConnectionId, connections],
   );
+  const isShellCompact =
+    shellBodyWidth > 0 && shellBodyWidth < GLOBAL_SIDEBAR_COMPACT_BELOW;
+  const density =
+    shellBodyWidth > 0 && shellBodyWidth < 900 ? "compact" : "cozy";
+
+  const handleLeftSidebarToggle = () => {
+    if (isShellCompact) {
+      setLeftSidebarOverlayOpen((open) => !open);
+      return;
+    }
+    toggleLeftSidebar();
+  };
 
   useEffect(() => {
     setIsClient(true);
@@ -147,7 +167,10 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app text-foreground">
+    <div
+      data-density={density}
+      className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app text-foreground"
+    >
       <header
         data-slot="top-bar"
         data-tauri-drag-region
@@ -165,14 +188,31 @@ export function AppShell() {
         // `data-tauri-drag-region` so empty space around buttons/inputs is
         // unambiguously a drag handle on every platform. Buttons + inputs
         // get `no-drag` automatically as native interactive elements.
-        className="flex h-14 shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-window pl-[78px] pr-3 select-none"
+        className="flex h-14 shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-window pl-22 pr-3 select-none"
       >
         <Button
           type="button"
           size="icon-sm"
           variant="ghost"
-          aria-label="Toggle sidebar"
-          onClick={toggleLeftSidebar}
+          aria-label={
+            isShellCompact
+              ? leftSidebarOverlayOpen
+                ? "Hide sidebar"
+                : "Show sidebar"
+              : isLeftSidebarOpen
+                ? "Hide sidebar"
+                : "Show sidebar"
+          }
+          title={
+            isShellCompact
+              ? leftSidebarOverlayOpen
+                ? "Hide sidebar"
+                : "Show sidebar"
+              : isLeftSidebarOpen
+                ? "Hide sidebar"
+                : "Show sidebar"
+          }
+          onClick={handleLeftSidebarToggle}
           className="text-text-muted"
         >
           <IconLayoutSidebarLeftCollapse className="size-4" />
@@ -181,10 +221,7 @@ export function AppShell() {
           data-tauri-drag-region
           className="flex items-center gap-2 text-sm font-semibold tracking-tight"
         >
-          <span className="flex size-6 items-center justify-center rounded-md border border-accent-green/25 bg-accent-green/10 text-[0.68rem] font-semibold text-accent-green">
-            db
-          </span>
-          <span className="text-foreground">dbunk</span>
+          <img src={logo} alt="dbunk" className="size-6" />
         </div>
 
         <div
@@ -216,9 +253,15 @@ export function AppShell() {
             open={newConnectionOpen}
             onOpenChange={setNewConnectionOpen}
             trigger={
-              <Button type="button" size="sm" variant="outline">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label="New Connection"
+                title="New Connection"
+              >
                 <IconPlus className="size-3.5" />
-                New Connection
+                <span className="dbunk-optional-label">New Connection</span>
               </Button>
             }
           />
@@ -226,10 +269,12 @@ export function AppShell() {
             type="button"
             size="sm"
             onClick={createNewQueryTab}
+            aria-label="Run Query"
+            title="Run Query"
             className="gap-2"
           >
             <IconTerminal2 className="size-3.5" />
-            Run Query
+            <span className="dbunk-optional-label">Run Query</span>
           </Button>
           <Button
             type="button"
@@ -243,15 +288,25 @@ export function AppShell() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div
-          className={cn(
-            "shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
-            isLeftSidebarOpen ? "w-72" : "w-0",
-          )}
+      <div
+        ref={shellBodyRef}
+        className="relative flex min-h-0 flex-1 overflow-hidden"
+      >
+        <ResponsiveEdgePanel
+          side="left"
+          storageKey="dbunk.sidebar.global"
+          title="Sidebar"
+          width={GLOBAL_SIDEBAR_WIDTH}
+          containerWidth={shellBodyWidth}
+          compactBelow={GLOBAL_SIDEBAR_COMPACT_BELOW}
+          protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+          wideVisible={isLeftSidebarOpen}
+          open={leftSidebarOverlayOpen}
+          onOpenChange={setLeftSidebarOverlayOpen}
+          className="bg-surface-sidebar"
         >
-          <Sidebar />
-        </div>
+          <Sidebar className="border-r-0" />
+        </ResponsiveEdgePanel>
         <div className="flex min-w-0 flex-1 flex-col bg-surface-app">
           {activeView === "workspace" ? (
             <WorkspaceView isClient={isClient} />

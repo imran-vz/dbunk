@@ -5,6 +5,8 @@ import {
   IconCopy,
   IconDeviceFloppy,
   IconDownload,
+  IconLayoutSidebarRightCollapse,
+  IconLayoutSidebarRightExpand,
   IconLoader2,
   IconPlayerPlay,
   IconSparkles,
@@ -23,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { getSqlStatementAtPosition, getSqlStatements } from "@/lib/sql";
 import {
   getSqlCompletions,
@@ -36,6 +39,7 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { useContainerWidth } from "@/lib/use-resizable-width";
 import { cn } from "@/lib/utils";
 
 type MonacoEditorInstance = {
@@ -100,12 +104,19 @@ interface QueryEditorPanelProps {
 
 type ResultsView = "results" | "explain";
 
+const QUERY_SIDEBAR_WIDTH = 304;
+const QUERY_SIDEBAR_COMPACT_BELOW = 1120;
+const PROTECTED_WORKSPACE_WIDTH = 560;
+
 export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   const [resultsView, setResultsView] = useState<ResultsView>("results");
+  const [querySidebarVisible, setQuerySidebarVisible] = useState(true);
+  const [querySidebarOverlayOpen, setQuerySidebarOverlayOpen] = useState(false);
   const [cursor, setCursor] = useState<MonacoPosition>({
     lineNumber: 1,
     column: 1,
   });
+  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
 
   const {
     queryPreviews,
@@ -534,6 +545,23 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   const dbSelectorLabel = activeConnection
     ? `${activeConnection.engine} (${activeConnection.host || activeConnection.database})`
     : "No connection";
+  const isQuerySidebarCompact =
+    containerWidth > 0 && containerWidth < QUERY_SIDEBAR_COMPACT_BELOW;
+  const isQuerySidebarOpen = isQuerySidebarCompact
+    ? querySidebarOverlayOpen
+    : querySidebarVisible;
+  const workspaceDensity =
+    containerWidth > 0 && containerWidth < 760 ? "compact" : "cozy";
+  const QuerySidebarIcon = isQuerySidebarOpen
+    ? IconLayoutSidebarRightCollapse
+    : IconLayoutSidebarRightExpand;
+  const handleQuerySidebarToggle = () => {
+    if (isQuerySidebarCompact) {
+      setQuerySidebarOverlayOpen((open) => !open);
+      return;
+    }
+    setQuerySidebarVisible((visible) => !visible);
+  };
 
   const statusItems: StatusBarItem[] = [
     {
@@ -561,10 +589,14 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   ];
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] bg-surface-app xl:grid-cols-[minmax(0,1fr)_19rem]">
-      <div className="flex min-h-0 min-w-0 flex-col">
+    <div
+      ref={containerRef}
+      data-workspace-density={workspaceDensity}
+      className="relative flex h-full min-h-0 bg-surface-app"
+    >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Editor toolbar */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border-subtle bg-surface-window px-5">
+        <div className="flex min-h-12 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-border-subtle bg-surface-window px-4 py-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
               <IconTerminal2 className="size-4" />
@@ -575,7 +607,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label="Connection selector"
-                className="ml-2 inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
+                className="ml-2 inline-flex h-8 max-w-64 min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
               >
                 <span className="size-1.5 rounded-full bg-accent-green" />
                 <span className="truncate">{dbSelectorLabel}</span>
@@ -611,9 +643,30 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
               </>
             ) : null}
 
-            <Button size="sm" variant="outline" onClick={handleFormat}>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label="Format"
+              title="Format"
+              onClick={handleFormat}
+            >
               <IconSparkles className="size-3.5" />
-              Format
+              <span className="dbunk-optional-label">Format</span>
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant={isQuerySidebarOpen ? "secondary" : "outline"}
+              aria-label={
+                isQuerySidebarOpen ? "Hide query sidebar" : "Show query sidebar"
+              }
+              title={
+                isQuerySidebarOpen ? "Hide query sidebar" : "Show query sidebar"
+              }
+              aria-pressed={isQuerySidebarOpen}
+              onClick={handleQuerySidebarToggle}
+            >
+              <QuerySidebarIcon className="size-3.5" />
             </Button>
 
             <div className="flex items-center">
@@ -622,6 +675,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
                 onClick={handleRunCurrent}
                 disabled={isRunning}
                 aria-busy={isRunning}
+                aria-label={isRunning ? "Running" : "Run"}
                 className="rounded-r-none"
               >
                 {isRunning ? (
@@ -713,7 +767,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
                 })}
               </div>
               <div className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
-                <span>
+                <span className="dbunk-optional-label">
                   Returned {activeQueryPreview?.rowCount ?? 0} rows in{" "}
                   {activeQueryPreview?.runtime ?? "—"}
                 </span>
@@ -800,9 +854,21 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
 
         <StatusBar items={statusItems} />
       </div>
-      <aside className="hidden min-h-0 border-l border-border-subtle bg-surface-window p-4 xl:block">
+      <ResponsiveEdgePanel
+        side="right"
+        storageKey="dbunk.sidebar.query"
+        title="Query"
+        width={QUERY_SIDEBAR_WIDTH}
+        containerWidth={containerWidth}
+        compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
+        protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+        wideVisible={querySidebarVisible}
+        open={querySidebarOverlayOpen}
+        onOpenChange={setQuerySidebarOverlayOpen}
+        contentClassName="overflow-auto p-4"
+      >
         <QuerySidebar tab={tab} />
-      </aside>
+      </ResponsiveEdgePanel>
     </div>
   );
 }
