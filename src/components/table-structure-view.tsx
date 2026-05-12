@@ -25,6 +25,7 @@ import {
   type ColumnInfo,
   type ConstraintInfo,
   type DatabaseEngine,
+  type DDLOutcome,
   type ForeignKeyInfo,
   type IndexInfo,
   type StructureCapabilities,
@@ -84,8 +85,15 @@ export function TableStructureView({
   );
 
   const [showPreview, setShowPreview] = useState(false);
+  // Terminal outcome lives component-local. Disappears on table switch
+  // (the effect below resets it). See CONTEXT.md — DDL Outcome.
+  const [lastOutcome, setLastOutcome] = useState<DDLOutcome | null>(null);
 
   useEffect(() => {
+    // Reset the terminal-outcome banner on table switch so the message
+    // from table A doesn't bleed into table B's view (the structure
+    // view instance is reused across tables — no React key reset).
+    setLastOutcome(null);
     if (connectionId && schema && tableName) {
       void loadTableStructure(connectionId, schema, tableName);
     }
@@ -145,7 +153,8 @@ export function TableStructureView({
         return;
       }
     }
-    await commitStructureChanges(key);
+    const outcome = await commitStructureChanges(key);
+    setLastOutcome(outcome);
   };
 
   return (
@@ -231,6 +240,7 @@ export function TableStructureView({
               previewSql={previewSql}
               showPreview={showPreview}
               commitStatus={commitStatus}
+              lastOutcome={lastOutcome}
               onTogglePreview={() => setShowPreview((value) => !value)}
               onRemove={(id) => removePendingStructureChange(key, id)}
               onCommit={() => {
@@ -704,6 +714,7 @@ function PendingChangesSection({
   previewSql,
   showPreview,
   commitStatus,
+  lastOutcome,
   onTogglePreview,
   onRemove,
   onCommit,
@@ -712,15 +723,16 @@ function PendingChangesSection({
   previewSql: string;
   showPreview: boolean;
   commitStatus: StructureCommitStatus | undefined;
+  lastOutcome: DDLOutcome | null;
   onTogglePreview: () => void;
   onRemove: (id: string) => void;
   onCommit: () => void;
 }) {
   const isRunning = commitStatus?.state === "running";
   const errorMessage =
-    commitStatus?.state === "error" ? commitStatus.error : null;
+    lastOutcome?.kind === "failed" ? lastOutcome.reason : null;
   const successRuntime =
-    commitStatus?.state === "success" ? commitStatus.runtimeMs : null;
+    lastOutcome?.kind === "completed" ? lastOutcome.runtimeMs : null;
 
   return (
     <Section

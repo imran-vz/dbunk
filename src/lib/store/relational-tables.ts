@@ -33,6 +33,7 @@ import type {
   ColumnChangeKind,
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
+  DDLOutcome,
   EditOutcome,
   QueryStatus,
   SchemaExplorer,
@@ -114,6 +115,31 @@ const mutationOutcomeToEditOutcome = (
   return { kind: "timeout", remaining: outcome.remaining };
 };
 
+/**
+ * Drop one entry from a per-key lifecycle-status map on `AppStoreState`.
+ * Skips the `set` when the key is absent so Zustand subscribers aren't
+ * pinged with a new top-level reference for a no-op clear. Centralised
+ * here because four actions (`commitTableEdits`, `addTableRow`,
+ * `deleteSelectedTableRows`, `commitStructureChanges`) need identical
+ * "running → terminal → cleared" cleanup on every exit path.
+ */
+type LifecycleSlot = "tableEditsCommitStatus" | "structureCommitStatus";
+
+const clearLifecycleSlot = (
+  set: Parameters<
+    StateCreator<AppStoreState, [], [], RelationalTablesSlice>
+  >[0],
+  slot: LifecycleSlot,
+  subkey: string,
+) => {
+  set((state) => {
+    const current = state[slot] as Record<string, unknown>;
+    if (!(subkey in current)) return {};
+    const { [subkey]: _dropped, ...rest } = current;
+    return { [slot]: rest } as Partial<AppStoreState>;
+  });
+};
+
 // ---------------------------------------------------------------------------
 // Slice
 // ---------------------------------------------------------------------------
@@ -188,7 +214,7 @@ export type RelationalTablesSlice = {
   ) => void;
   removePendingStructureChange: (key: string, id: string) => void;
   clearPendingStructureChanges: (key: string) => void;
-  commitStructureChanges: (key: string) => Promise<void>;
+  commitStructureChanges: (key: string) => Promise<DDLOutcome>;
 
   /**
    * Cascade cleanup — drops every per-connection cache entry. Not
@@ -283,7 +309,7 @@ export const createRelationalTablesSlice: StateCreator<
     const state = get();
     const editsForTable = state.tableEdits[tableName];
     if (!editsForTable || Object.keys(editsForTable).length === 0) {
-      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
+      return { kind: "noop" };
     }
 
     const dataEntry = Object.entries(state.tableData).find(
@@ -393,7 +419,7 @@ export const createRelationalTablesSlice: StateCreator<
         const { [tableName]: _, ...rest } = s.tableEdits;
         return { tableEdits: rest };
       });
-      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
+      return { kind: "noop" };
     }
 
     set((s) => ({
@@ -404,11 +430,7 @@ export const createRelationalTablesSlice: StateCreator<
     }));
 
     const clearLifecycle = () =>
-      set((s) => {
-        if (!(tableName in s.tableEditsCommitStatus)) return {};
-        const { [tableName]: _, ...rest } = s.tableEditsCommitStatus;
-        return { tableEditsCommitStatus: rest };
-      });
+      clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
 
     if (!isTauri()) {
       clearLifecycle();
@@ -533,11 +555,7 @@ export const createRelationalTablesSlice: StateCreator<
     }));
 
     const clearLifecycle = () =>
-      set((s) => {
-        if (!(tableName in s.tableEditsCommitStatus)) return {};
-        const { [tableName]: _, ...rest } = s.tableEditsCommitStatus;
-        return { tableEditsCommitStatus: rest };
-      });
+      clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
 
     if (!isTauri()) {
       clearLifecycle();
@@ -579,7 +597,7 @@ export const createRelationalTablesSlice: StateCreator<
     rowIndices,
   ): Promise<EditOutcome> => {
     if (rowIndices.length === 0) {
-      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
+      return { kind: "noop" };
     }
 
     const state = get();
@@ -652,7 +670,7 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     if (rowsPayload.length === 0) {
-      return { kind: "completed", runtimeMs: 0, rowsAffected: 0 };
+      return { kind: "noop" };
     }
 
     set((s) => ({
@@ -663,11 +681,7 @@ export const createRelationalTablesSlice: StateCreator<
     }));
 
     const clearLifecycle = () =>
-      set((s) => {
-        if (!(tableName in s.tableEditsCommitStatus)) return {};
-        const { [tableName]: _, ...rest } = s.tableEditsCommitStatus;
-        return { tableEditsCommitStatus: rest };
-      });
+      clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
 
     if (!isTauri()) {
       clearLifecycle();
@@ -1018,39 +1032,24 @@ export const createRelationalTablesSlice: StateCreator<
       return { pendingStructureChanges: rest };
     }),
 
-  commitStructureChanges: async (key) => {
+  commitStructureChanges: async (key): Promise<DDLOutcome> => {
     const state = get();
     const pending = state.pendingStructureChanges[key];
     if (!pending || pending.length === 0) {
-      return;
+      return { kind: "noop" };
     }
     const { schema, table } = pending[0];
     const connectionId = key.split("::")[0] ?? "";
     const connection = state.connections.find((c) => c.id === connectionId);
     if (!connection) {
-      set((state) => ({
-        structureCommitStatus: {
-          ...state.structureCommitStatus,
-          [key]: {
-            state: "error",
-            error: "Connection not found for this table.",
-          },
-        },
-      }));
-      return;
+      return { kind: "failed", reason: "Connection not found for this table." };
     }
     const ddlStructure = state.tableStructure[key];
     if (ddlStructure && !ddlStructure.capabilities.canAlterSchema) {
-      set((state) => ({
-        structureCommitStatus: {
-          ...state.structureCommitStatus,
-          [key]: {
-            state: "error",
-            error: `This table does not support schema edits on ${connection.engine}.`,
-          },
-        },
-      }));
-      return;
+      return {
+        kind: "failed",
+        reason: `This table does not support schema edits on ${connection.engine}.`,
+      };
     }
 
     const sql = generateDdlForEngine(
@@ -1061,54 +1060,55 @@ export const createRelationalTablesSlice: StateCreator<
       ddlStructure?.columns,
     );
 
-    set((state) => ({
+    set((s) => ({
       structureCommitStatus: {
-        ...state.structureCommitStatus,
+        ...s.structureCommitStatus,
         [key]: { state: "running" },
       },
     }));
 
+    const clearLifecycle = () =>
+      clearLifecycleSlot(set, "structureCommitStatus", key);
+
     if (!isTauri()) {
-      set((state) => ({
-        structureCommitStatus: {
-          ...state.structureCommitStatus,
-          [key]: {
-            state: "error",
-            error: "Backend is unavailable in this environment.",
-          },
-        },
-      }));
-      return;
+      clearLifecycle();
+      return {
+        kind: "failed",
+        reason: "Backend is unavailable in this environment.",
+      };
     }
 
     try {
       const result = await tauriInvoke<{ runtimeMs: number }>("execute_ddl", {
         payload: { connectionId, sql },
       });
-      set((state) => {
-        const { [key]: _, ...rest } = state.pendingStructureChanges;
+      set((s) => {
+        const { [key]: _pending, ...restPending } = s.pendingStructureChanges;
+        const { [key]: _status, ...restStatus } = s.structureCommitStatus;
         return {
-          pendingStructureChanges: rest,
-          structureCommitStatus: {
-            ...state.structureCommitStatus,
-            [key]: { state: "success", runtimeMs: result.runtimeMs },
-          },
+          pendingStructureChanges: restPending,
+          structureCommitStatus: restStatus,
         };
       });
-      await get().loadTableStructure(connectionId, schema, table);
+      // Post-DDL refreshes are independent reads against the same
+      // connection and write to disjoint store slices, so they run
+      // concurrently — saves ~1 RTT on a remote DB. `loadTableData`
+      // is only re-fetched when the data tab has already loaded it
+      // once (preserved from the pre-parallel ordering).
       const dataKey = tableDataKey(connectionId, schema, table);
+      const refreshes: Promise<unknown>[] = [
+        get().loadTableStructure(connectionId, schema, table),
+      ];
       if (get().tableData[dataKey]) {
-        await get().refreshTableData(dataKey);
+        refreshes.push(get().refreshTableData(dataKey));
       }
+      await Promise.all(refreshes);
+      return { kind: "completed", runtimeMs: result.runtimeMs };
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to commit structure changes", error);
-      set((state) => ({
-        structureCommitStatus: {
-          ...state.structureCommitStatus,
-          [key]: { state: "error", error: message },
-        },
-      }));
+      clearLifecycle();
+      return { kind: "failed", reason: message };
     }
   },
 

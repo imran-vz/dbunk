@@ -158,17 +158,33 @@ ADR-0009 for the writes-by-default posture.
   produced when that intent commits on an async engine.
 - **Edit Outcome** — the caller-facing terminal result of one
   store-action-driven write (cell-edit commit, row insert, row delete).
-  A tagged union on `kind`: `"completed" | "failed" | "timeout"`,
-  returned by the action that initiated the write so the caller can
-  react to its own operation's result without subscribing to shared
-  status state. Synchronous engines (PG/MySQL/SQLite) resolve to
-  `completed` or `failed`; `timeout` is reachable only on async engines
-  — ClickHouse, where the action drives a **Pending Mutation** batch
-  to terminal state before resolving. Distinct from the lifecycle
-  status the store keeps in `tableEditsCommitStatus` (`running` /
-  `queued` intermediate states for the UI badge); the Edit Outcome is
-  the truth a caller awaits, the lifecycle status is a best-effort
-  view for badge rendering and concurrent-op gating.
+  A tagged union on `kind`: `"completed" | "failed" | "timeout" |
+  "noop"`, returned by the action that initiated the write so the
+  caller can react to its own operation's result without subscribing
+  to shared status state. Synchronous engines (PG/MySQL/SQLite)
+  resolve to `completed` or `failed`; `timeout` is reachable only on
+  async engines — ClickHouse, where the action drives a **Pending
+  Mutation** batch to terminal state before resolving. The `noop`
+  variant is returned when the action found nothing to commit (no
+  edits, no rows after filtering); the UI does not render a banner
+  for it. Distinct from the lifecycle status the store keeps in
+  `tableEditsCommitStatus` (`running` / `queued` intermediate states
+  for the UI badge); the Edit Outcome is the truth a caller awaits,
+  the lifecycle status is a best-effort view for badge rendering and
+  concurrent-op gating.
+- **DDL Outcome** — the caller-facing terminal result of one
+  `commitStructureChanges` invocation — i.e. the outcome of executing
+  one batch of **DDL Statement**s. A tagged union on `kind`:
+  `"completed" | "failed" | "noop"`, returned by the store action so
+  the caller can await its own operation's result. Always synchronous
+  today: `execute_ddl` returns a final status from the engine
+  immediately and DDL never enters a **Pending Mutation** flow on any
+  current engine — hence no `timeout` variant (unlike Edit Outcome).
+  The `noop` variant is returned when there were no pending changes;
+  the UI does not render a banner for it. Distinct from the lifecycle
+  status the store keeps in `structureCommitStatus` (`running` only),
+  which exists solely to keep the Commit button disabled across tab
+  unmounts.
 
 ## Live state
 
