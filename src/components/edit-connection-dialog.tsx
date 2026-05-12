@@ -26,18 +26,28 @@ import { type Connection, type DatabaseEngine, useAppStore } from "@/lib/store";
 const connectionSchema = z
   .object({
     name: z.string().min(1, "Connection name is required"),
-    engine: z.enum(["PostgreSQL", "MySQL", "ClickHouse", "SQLite"]),
+    engine: z.enum(["PostgreSQL", "MySQL", "ClickHouse", "SQLite", "Redis"]),
     host: z.string().optional(),
-    database: z.string().min(1, "Database is required"),
+    database: z.string().optional(),
     port: z.number().int().optional(),
     user: z.string().optional(),
     password: z.string().optional(),
     role: z.string().optional(),
     useHttps: z.boolean().optional(),
     urlPath: z.string().optional(),
+    dbNumber: z.number().int().min(0).max(15).optional(),
+    useTls: z.boolean().optional(),
+    verifyTlsCert: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.engine === "SQLite") {
+      if (!value.database?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Database file is required",
+          path: ["database"],
+        });
+      }
       return;
     }
     if (!value.host?.trim()) {
@@ -52,6 +62,16 @@ const connectionSchema = z
         code: z.ZodIssueCode.custom,
         message: "Port must be between 1 and 65535",
         path: ["port"],
+      });
+    }
+    if (value.engine === "Redis") {
+      return;
+    }
+    if (!value.database?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Database is required",
+        path: ["database"],
       });
     }
     if (!value.user?.trim()) {
@@ -83,6 +103,7 @@ export function EditConnectionDialog({
 
   const isSQLite = selectedEngine === "SQLite";
   const isClickHouse = selectedEngine === "ClickHouse";
+  const isRedis = selectedEngine === "Redis";
   const portPlaceholder =
     selectedEngine === "MySQL"
       ? "3306"
@@ -90,7 +111,9 @@ export function EditConnectionDialog({
         ? useHttps
           ? "8443"
           : "8123"
-        : "5432";
+        : selectedEngine === "Redis"
+          ? "6379"
+          : "5432";
   const databasePlaceholder =
     selectedEngine === "SQLite" ? "/path/to/db.sqlite" : "core";
   const databaseLabel =
@@ -108,13 +131,16 @@ export function EditConnectionDialog({
       role: "read/write",
       useHttps: false,
       urlPath: "",
+      dbNumber: 0,
+      useTls: false,
+      verifyTlsCert: true,
     } as ConnectionFormData,
     onSubmit: async ({ value }) => {
       if (!connection) return;
       await updateConnection({
         ...connection,
         name: value.name,
-        database: value.database,
+        database: value.database ?? "",
         engine: value.engine,
         host: value.host ?? "",
         port: value.port ?? 0,
@@ -124,6 +150,10 @@ export function EditConnectionDialog({
         useHttps:
           value.engine === "ClickHouse" ? (value.useHttps ?? false) : false,
         urlPath: value.engine === "ClickHouse" ? (value.urlPath ?? "") : "",
+        dbNumber: value.engine === "Redis" ? (value.dbNumber ?? 0) : 0,
+        useTls: value.engine === "Redis" ? (value.useTls ?? false) : false,
+        verifyTlsCert:
+          value.engine === "Redis" ? (value.verifyTlsCert ?? true) : true,
       });
       onOpenChange(false);
     },
@@ -146,6 +176,9 @@ export function EditConnectionDialog({
       form.setFieldValue("role", connection.role);
       form.setFieldValue("useHttps", connection.useHttps ?? false);
       form.setFieldValue("urlPath", connection.urlPath ?? "");
+      form.setFieldValue("dbNumber", connection.dbNumber ?? 0);
+      form.setFieldValue("useTls", connection.useTls ?? false);
+      form.setFieldValue("verifyTlsCert", connection.verifyTlsCert ?? true);
       setSelectedEngine(connection.engine);
       setUseHttps(connection.useHttps ?? false);
     }
@@ -223,6 +256,7 @@ export function EditConnectionDialog({
                         <SelectItem value="MySQL">MySQL</SelectItem>
                         <SelectItem value="ClickHouse">ClickHouse</SelectItem>
                         <SelectItem value="SQLite">SQLite</SelectItem>
+                        <SelectItem value="Redis">Redis</SelectItem>
                       </SelectContent>
                     </Select>
                     {field.state.meta.errors?.[0] && (
@@ -237,30 +271,62 @@ export function EditConnectionDialog({
                 )}
               </form.Field>
 
-              <form.Field name="database">
-                {(field) => (
-                  <div className="grid gap-1">
-                    <Label htmlFor="edit-connection-database">
-                      {databaseLabel}
-                    </Label>
-                    <Input
-                      id="edit-connection-database"
-                      placeholder={databasePlaceholder}
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      onBlur={field.handleBlur}
-                    />
-                    {field.state.meta.errors?.[0] && (
-                      <p className="text-xs text-destructive">
-                        {
-                          (field.state.meta.errors[0] as { message?: string })
-                            ?.message
+              {!isRedis ? (
+                <form.Field name="database">
+                  {(field) => (
+                    <div className="grid gap-1">
+                      <Label htmlFor="edit-connection-database">
+                        {databaseLabel}
+                      </Label>
+                      <Input
+                        id="edit-connection-database"
+                        placeholder={databasePlaceholder}
+                        value={field.state.value ?? ""}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        onBlur={field.handleBlur}
+                      />
+                      {field.state.meta.errors?.[0] && (
+                        <p className="text-xs text-destructive">
+                          {
+                            (field.state.meta.errors[0] as { message?: string })
+                              ?.message
+                          }
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </form.Field>
+              ) : (
+                <form.Field name="dbNumber">
+                  {(field) => (
+                    <div className="grid gap-1">
+                      <Label htmlFor="edit-connection-db-number">
+                        DB number
+                      </Label>
+                      <Input
+                        id="edit-connection-db-number"
+                        type="number"
+                        min={0}
+                        max={15}
+                        placeholder="0"
+                        value={field.state.value ?? 0}
+                        onChange={(e) =>
+                          field.handleChange(Number(e.target.value))
                         }
-                      </p>
-                    )}
-                  </div>
-                )}
-              </form.Field>
+                        onBlur={field.handleBlur}
+                      />
+                      {field.state.meta.errors?.[0] && (
+                        <p className="text-xs text-destructive">
+                          {
+                            (field.state.meta.errors[0] as { message?: string })
+                              ?.message
+                          }
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </form.Field>
+              )}
             </div>
 
             {!isSQLite && (
@@ -422,6 +488,62 @@ export function EditConnectionDialog({
                         </div>
                       )}
                     </form.Field>
+                  </>
+                )}
+                {isRedis && (
+                  <>
+                    <form.Field name="useTls">
+                      {(field) => (
+                        <label
+                          htmlFor="edit-connection-use-tls"
+                          className="flex items-center justify-between rounded-md border px-3 py-2.5"
+                        >
+                          <span className="flex flex-col gap-0.5">
+                            <span className="text-xs font-medium">Use TLS</span>
+                            <span className="text-xs text-muted-foreground">
+                              Connect over TLS (rediss://).
+                            </span>
+                          </span>
+                          <Switch
+                            id="edit-connection-use-tls"
+                            checked={field.state.value ?? false}
+                            onCheckedChange={(value) =>
+                              field.handleChange(value)
+                            }
+                          />
+                        </label>
+                      )}
+                    </form.Field>
+                    <form.Subscribe selector={(state) => state.values.useTls}>
+                      {(useTlsValue) =>
+                        useTlsValue ? (
+                          <form.Field name="verifyTlsCert">
+                            {(field) => (
+                              <label
+                                htmlFor="edit-connection-verify-tls-cert"
+                                className="flex items-center justify-between rounded-md border px-3 py-2.5"
+                              >
+                                <span className="flex flex-col gap-0.5">
+                                  <span className="text-xs font-medium">
+                                    Verify TLS certificate
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    Disable for self-signed dev servers.
+                                  </span>
+                                </span>
+                                <Switch
+                                  id="edit-connection-verify-tls-cert"
+                                  checked={field.state.value ?? true}
+                                  onCheckedChange={(value) =>
+                                    field.handleChange(value)
+                                  }
+                                />
+                              </label>
+                            )}
+                          </form.Field>
+                        ) : null
+                      }
+                    </form.Subscribe>
                   </>
                 )}
               </>

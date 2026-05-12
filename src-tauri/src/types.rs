@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 // Engine + persisted entities
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub(crate) enum DatabaseEngine {
     #[serde(rename = "PostgreSQL")]
     PostgreSQL,
@@ -26,6 +26,33 @@ pub(crate) enum DatabaseEngine {
     ClickHouse,
     #[serde(rename = "SQLite")]
     SQLite,
+    #[serde(rename = "Redis")]
+    Redis,
+}
+
+/// Top-level engine class — `Relational` engines share schemas/tables/
+/// rows/SQL; `KeyValue` engines share a keyspace of typed keys. The
+/// class is derived from `DatabaseEngine::storage_class()`; never
+/// stored. See ADR-0008.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum StorageClass {
+    Relational,
+    KeyValue,
+}
+
+impl DatabaseEngine {
+    /// Class lookup — the single source of truth for "is this engine a
+    /// relational or keyvalue thing?" Exhaustive over variants so a new
+    /// engine forces the question at compile time.
+    pub fn storage_class(&self) -> StorageClass {
+        match self {
+            Self::PostgreSQL | Self::MySQL | Self::SQLite | Self::ClickHouse => {
+                StorageClass::Relational
+            }
+            Self::Redis => StorageClass::KeyValue,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +126,62 @@ pub(crate) struct StoredConnection {
     /// proxy CH behind a path (e.g. `/clickhouse`). Empty = root.
     #[serde(default)]
     pub url_path: String,
+    /// Redis-only: which numbered DB (0–15 on standalone). Defaults to
+    /// 0; ignored by relational engines.
+    #[serde(default)]
+    pub db_number: u8,
+    /// Redis-only: connect over TLS (`rediss://`). Ignored by
+    /// relational engines (which have their own SSL story via sqlx).
+    #[serde(default)]
+    pub use_tls: bool,
+    /// Redis-only: verify the TLS certificate. Only meaningful when
+    /// `use_tls` is true. Default true; users can disable for self-
+    /// signed dev servers.
+    #[serde(default = "default_true")]
+    pub verify_tls_cert: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Connect-time pipeline result for Redis. Surfaced in the connection-
+/// test "modules-detected" banner. Every field is `Option<>` because
+/// managed Redis (Upstash hobby tier, ElastiCache locked-down ACLs)
+/// often restricts `INFO` sections or `MODULE LIST` — degrading
+/// per-field is better than failing the whole connect-test.
+#[derive(Debug, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RedisCapabilities {
+    /// `redis_version` from `INFO server` — e.g. `"7.2.4"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_version: Option<String>,
+    /// `role` from `INFO replication` — `"master"` or `"replica"`.
+    /// Drives auto-read-only (ADR-0009).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// `connected_slaves` from `INFO replication`. Drives the soft
+    /// "this may be a production master" notice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connected_slaves: Option<u32>,
+    /// `MODULE LIST` results. `None` when the command was rejected;
+    /// `Some(vec![])` when it succeeded with zero modules.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modules: Option<Vec<RedisModuleInfo>>,
+    /// `DBSIZE` for the active DB. `None` if rejected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub db_size: Option<u64>,
+    /// `maxmemory-policy` from `CONFIG GET`. Drives whether
+    /// `OBJECT FREQ` is meaningful on keys (LFU policies only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maxmemory_policy: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RedisModuleInfo {
+    pub name: String,
+    pub version: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -154,6 +237,11 @@ pub(crate) struct QueryResult {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConnectResult {
     pub latency_ms: u64,
+    /// Populated when the connection is to a Redis server — the
+    /// post-test-connection banner reads from here. `None` for
+    /// relational engines.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redis_capabilities: Option<RedisCapabilities>,
 }
 
 #[derive(Debug, Serialize)]

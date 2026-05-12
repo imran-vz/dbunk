@@ -9,6 +9,7 @@ import {
   IconTerminal2,
 } from "@tabler/icons-react";
 import { useEffect, useMemo } from "react";
+import { KeyValueWorkspace } from "@/components/keyvalue/KeyValueWorkspace";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import { StatusBar } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/card";
 import { StatusDot } from "@/components/ui/status-dot";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
-import { enginePolicy } from "@/lib/engine-policy";
+import { relationalPolicy, storageClassFor } from "@/lib/engine-policy";
 import {
   type Connection,
   type DatabaseOverviewStats,
@@ -91,11 +92,23 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     [activeTabId, workspaceTabs],
   );
 
+  // Storage-class fork (ADR-0008): keyvalue engines (Redis) render
+  // their own workspace shell with sidebar + key/cli/pubsub/server
+  // tab kinds. Forking here — above the relational tab-kind dispatch
+  // — keeps `TableEditorPanel` / `QueryEditorPanel` from ever seeing
+  // a Redis connection or a non-relational tab kind.
+  if (
+    activeConnection &&
+    storageClassFor(activeConnection.engine) === "keyvalue"
+  ) {
+    return <KeyValueWorkspace activeConnection={activeConnection} />;
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <WorkspaceTabs />
       <div className="flex min-h-0 flex-1 flex-col bg-surface-app">
-        {activeTab ? (
+        {activeTab && isRelationalTab(activeTab.kind) ? (
           activeTab.kind === "query" ? (
             <QueryEditorPanel tab={activeTab} isClient={isClient} />
           ) : (
@@ -129,6 +142,14 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
       </div>
     </div>
   );
+}
+
+/** Narrow a workspace tab kind to the relational set (`table`/
+ * `query`). Returns `false` for the keyvalue kinds (`key`/`cli`/
+ * `pubsub`/`server`) so the relational dispatch can't accidentally
+ * mount a Redis tab. */
+function isRelationalTab(kind: string): kind is "table" | "query" {
+  return kind === "table" || kind === "query";
 }
 
 type WorkspaceDatabaseOverviewProps = {
@@ -193,6 +214,12 @@ function WorkspaceDatabaseOverview({
         </Card>
       </div>
     );
+  }
+
+  // Storage-class fork (ADR-0008). Keyvalue engines (Redis) get their
+  // own workspace shell.
+  if (storageClassFor(activeConnection.engine) === "keyvalue") {
+    return <KeyValueWorkspace activeConnection={activeConnection} />;
   }
 
   if (!isConnected && schemas.length === 0) {
@@ -346,7 +373,9 @@ function WorkspaceDatabaseOverview({
               connections={connectionCount}
               rows={rowCount}
               statsStatus={statsStatus}
-              rowCountKind={enginePolicy(activeConnection.engine).rowCountKind}
+              rowCountKind={
+                relationalPolicy(activeConnection.engine).rowCountKind
+              }
             />
           </section>
 

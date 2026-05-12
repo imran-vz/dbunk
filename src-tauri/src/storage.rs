@@ -18,9 +18,10 @@ use crate::{
 
 const DB_FILE: &str = "dbunk.sqlite";
 
-const MIGRATIONS: &[(i64, &str)] = &[(
-    1,
-    r#"
+const MIGRATIONS: &[(i64, &str)] = &[
+    (
+        1,
+        r#"
 CREATE TABLE app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -87,7 +88,19 @@ CREATE TABLE saved_queries (
 
 CREATE INDEX idx_saved_queries_updated_at ON saved_queries(updated_at DESC);
 "#,
-)];
+    ),
+    (
+        2,
+        // Redis-specific columns on the shared `connections` table. Mirror the
+        // pattern ClickHouse already uses for `use_https`/`url_path`: nullable
+        // / default-valued, ignored by engines that don't need them.
+        r#"
+ALTER TABLE connections ADD COLUMN db_number INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE connections ADD COLUMN use_tls INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE connections ADD COLUMN verify_tls_cert INTEGER NOT NULL DEFAULT 1;
+"#,
+    ),
+];
 
 pub struct Paths {
     config_dir: PathBuf,
@@ -213,6 +226,7 @@ impl FromStr for DatabaseEngine {
             "MySQL" => Ok(Self::MySQL),
             "ClickHouse" => Ok(Self::ClickHouse),
             "SQLite" => Ok(Self::SQLite),
+            "Redis" => Ok(Self::Redis),
             _ => Err(format!("unknown database engine '{value}'")),
         }
     }
@@ -225,6 +239,7 @@ impl DatabaseEngine {
             Self::MySQL => "MySQL",
             Self::ClickHouse => "ClickHouse",
             Self::SQLite => "SQLite",
+            Self::Redis => "Redis",
         }
     }
 }
@@ -274,7 +289,8 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
 pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>, String> {
     let rows = sqlx::query(
         "SELECT id, name, database_name, engine, host, port, user_name, role,
-                last_activity_at, use_https, url_path
+                last_activity_at, use_https, url_path,
+                db_number, use_tls, verify_tls_cert
          FROM connections
          ORDER BY name COLLATE NOCASE ASC",
     )
@@ -298,6 +314,9 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
                 last_activity_at: row.get("last_activity_at"),
                 use_https: row.get::<i64, _>("use_https") != 0,
                 url_path: row.get("url_path"),
+                db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
+                use_tls: row.get::<i64, _>("use_tls") != 0,
+                verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
             })
         })
         .collect()
@@ -310,9 +329,10 @@ pub async fn upsert_connection(
     sqlx::query(
         "INSERT INTO connections (
             id, name, database_name, engine, host, port, user_name, role,
-            last_activity_at, use_https, url_path
+            last_activity_at, use_https, url_path,
+            db_number, use_tls, verify_tls_cert
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -323,7 +343,10 @@ pub async fn upsert_connection(
             role = excluded.role,
             last_activity_at = excluded.last_activity_at,
             use_https = excluded.use_https,
-            url_path = excluded.url_path",
+            url_path = excluded.url_path,
+            db_number = excluded.db_number,
+            use_tls = excluded.use_tls,
+            verify_tls_cert = excluded.verify_tls_cert",
     )
     .bind(&connection.id)
     .bind(&connection.name)
@@ -336,6 +359,9 @@ pub async fn upsert_connection(
     .bind(&connection.last_activity_at)
     .bind(bool_to_i64(connection.use_https))
     .bind(&connection.url_path)
+    .bind(i64::from(connection.db_number))
+    .bind(bool_to_i64(connection.use_tls))
+    .bind(bool_to_i64(connection.verify_tls_cert))
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;

@@ -31,7 +31,41 @@ export type {
 } from "@/lib/schema-graph";
 export { schemaRelationshipsKey } from "@/lib/schema-graph";
 
-export type DatabaseEngine = "PostgreSQL" | "MySQL" | "ClickHouse" | "SQLite";
+export type DatabaseEngine =
+  | "PostgreSQL"
+  | "MySQL"
+  | "ClickHouse"
+  | "SQLite"
+  | "Redis";
+
+/**
+ * Top-level engine class. Relational engines share schemas/tables/
+ * rows/SQL; keyvalue engines share a keyspace of typed keys. Derived
+ * from `DatabaseEngine`; see ADR-0008 and `engine-policy.ts`.
+ */
+export type StorageClass = "relational" | "keyvalue";
+
+export type RedisModuleInfo = {
+  name: string;
+  version: string;
+};
+
+/**
+ * Connect-time pipeline result for Redis — surfaced in the
+ * post-test-connection banner on the new-connection form. Every
+ * field is optional because managed Redis (Upstash hobby tier,
+ * locked-down ACLs) often restricts `INFO` sections or
+ * `MODULE LIST` and we degrade per-field rather than failing.
+ */
+export type RedisCapabilities = {
+  serverVersion?: string;
+  /** `master` or `replica`. Drives auto-read-only (ADR-0009). */
+  role?: string;
+  connectedSlaves?: number;
+  modules?: RedisModuleInfo[];
+  dbSize?: number;
+  maxmemoryPolicy?: string;
+};
 export type CredentialStorageMode =
   | "keychain"
   | "encrypted-sqlite"
@@ -68,6 +102,12 @@ export type StoredConnection = {
   useHttps?: boolean;
   /** ClickHouse-only: URL path prefix for proxied deployments (e.g. /clickhouse). */
   urlPath?: string;
+  /** Redis-only: which numbered DB (0–15 on standalone). Defaults to 0. */
+  dbNumber?: number;
+  /** Redis-only: connect over TLS (rediss://). */
+  useTls?: boolean;
+  /** Redis-only: verify the TLS certificate. Only meaningful when useTls is true. Default true. */
+  verifyTlsCert?: boolean;
 };
 
 export type Connection = {
@@ -90,6 +130,12 @@ export type Connection = {
   useHttps?: boolean;
   /** ClickHouse-only: URL path prefix for proxied deployments. */
   urlPath?: string;
+  /** Redis-only: which numbered DB (0–15 on standalone). */
+  dbNumber?: number;
+  /** Redis-only: connect over TLS (rediss://). */
+  useTls?: boolean;
+  /** Redis-only: verify the TLS certificate when useTls is on. */
+  verifyTlsCert?: boolean;
 };
 
 export type QueryStatus =
@@ -126,6 +172,8 @@ const errorToMessage = (error: unknown): string => {
 
 type ConnectResult = {
   latencyMs: number;
+  /** Populated when the target is a Redis server (Phase 1.1+). */
+  redisCapabilities?: RedisCapabilities;
 };
 
 const formatLatencyMs = (latencyMs: unknown): string =>
@@ -377,6 +425,9 @@ const toStoredConnection = (connection: Connection): StoredConnection => ({
   lastActivityAt: connection.lastActivityAt,
   useHttps: connection.useHttps,
   urlPath: connection.urlPath,
+  dbNumber: connection.dbNumber,
+  useTls: connection.useTls,
+  verifyTlsCert: connection.verifyTlsCert,
 });
 
 const applyConnectionUpdate = (
@@ -440,7 +491,13 @@ const generateHistoryId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-export type WorkspaceTabKind = "table" | "query";
+export type WorkspaceTabKind =
+  | "table"
+  | "query"
+  | "key"
+  | "cli"
+  | "pubsub"
+  | "server";
 
 export type WorkspaceTab = {
   id: string;
@@ -452,6 +509,10 @@ export type WorkspaceTab = {
   query?: string;
   lastRun?: string;
   isDirty?: boolean;
+  /** Redis `key` tab: the inspected key name (under `dbNumber`). */
+  redisKey?: string;
+  /** Redis `key` tab: scoped DB number at open time. */
+  redisDbNumber?: number;
 };
 
 export type TablePreviewData = {
@@ -617,8 +678,16 @@ interface AppState {
       | "password"
       | "role"
     > &
-      Partial<Pick<StoredConnection, "useHttps" | "urlPath">>,
-  ) => Promise<{ ok: true; latencyMs: number } | { ok: false; error: string }>;
+      Partial<
+        Pick<
+          StoredConnection,
+          "useHttps" | "urlPath" | "dbNumber" | "useTls" | "verifyTlsCert"
+        >
+      >,
+  ) => Promise<
+    | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
+    | { ok: false; error: string }
+  >;
   runHealthChecks: () => Promise<void>;
   updateQuery: (tabId: string, query: string) => void;
   runQuery: (
@@ -2110,10 +2179,17 @@ export const useAppStore = create<AppState>((set, get) => ({
             role: connection.role,
             useHttps: connection.useHttps ?? false,
             urlPath: connection.urlPath ?? "",
+            dbNumber: connection.dbNumber ?? 0,
+            useTls: connection.useTls ?? false,
+            verifyTlsCert: connection.verifyTlsCert ?? true,
           },
         },
       });
-      return { ok: true, latencyMs: result.latencyMs };
+      return {
+        ok: true,
+        latencyMs: result.latencyMs,
+        redisCapabilities: result.redisCapabilities,
+      };
     } catch (error) {
       return { ok: false, error: errorToMessage(error) };
     }
