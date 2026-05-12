@@ -1,7 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 
 type UnlistenFn = () => void;
+type ViewportSize = {
+  width: number;
+  height: number;
+};
+export type WindowViewportZoomTransition = {
+  fromWidth: number;
+  fromHeight: number;
+  toWidth: number;
+  toHeight: number;
+};
+
+let windowZoomInFlight: Promise<void> | null = null;
 
 export const isTauri = () =>
   typeof window !== "undefined" &&
@@ -21,11 +33,48 @@ export async function tauriStartDragging() {
   await getCurrentWindow().startDragging();
 }
 
-export async function tauriToggleMaximize() {
+export async function tauriPrepareWindowZoomTransition(): Promise<WindowViewportZoomTransition | null> {
+  if (!isTauri()) {
+    return null;
+  }
+  const appWindow = getCurrentWindow();
+  if (await appWindow.isFullscreen()) {
+    return null;
+  }
+
+  const from = currentBrowserViewportSize();
+  if (!from) {
+    return null;
+  }
+
+  if (await appWindow.isMaximized()) {
+    return null;
+  }
+
+  const monitor = await currentMonitor();
+  if (!monitor) {
+    return null;
+  }
+
+  const to = {
+    width: monitor.workArea.size.width / monitor.scaleFactor,
+    height: monitor.workArea.size.height / monitor.scaleFactor,
+  };
+  return createViewportZoomTransition(from, to);
+}
+
+export async function tauriToggleWindowZoom() {
   if (!isTauri()) {
     return;
   }
-  await getCurrentWindow().toggleMaximize();
+  const appWindow = getCurrentWindow();
+  if (await appWindow.isFullscreen()) {
+    return;
+  }
+  windowZoomInFlight ??= appWindow.toggleMaximize().finally(() => {
+    windowZoomInFlight = null;
+  });
+  await windowZoomInFlight;
 }
 
 export async function tauriOnWindowFullscreenChange(
@@ -87,4 +136,38 @@ export function errorToMessage(error: unknown): string {
   } catch {
     return "Unknown error";
   }
+}
+
+function currentBrowserViewportSize(): ViewportSize | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
+function createViewportZoomTransition(
+  from: ViewportSize,
+  to: ViewportSize,
+): WindowViewportZoomTransition | null {
+  if (
+    !Number.isFinite(to.width) ||
+    !Number.isFinite(to.height) ||
+    to.width <= 0 ||
+    to.height <= 0 ||
+    (Math.abs(from.width - to.width) < 2 &&
+      Math.abs(from.height - to.height) < 2)
+  ) {
+    return null;
+  }
+  return {
+    fromWidth: from.width,
+    fromHeight: from.height,
+    toWidth: to.width,
+    toHeight: to.height,
+  };
 }

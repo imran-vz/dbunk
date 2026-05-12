@@ -102,17 +102,20 @@ export function useContainerWidth<T extends HTMLElement>(): [
       setWidth(measured > 0 ? measured : window.innerWidth);
     };
     updateWidth();
+    window.addEventListener("resize", updateWidth);
     if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateWidth);
       return () => window.removeEventListener("resize", updateWidth);
     }
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        setWidth(entry.contentRect.width);
+        setWidth(entry.contentRect.width || window.innerWidth);
       }
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
   }, []);
 
   return [ref, width];

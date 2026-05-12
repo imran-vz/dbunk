@@ -6,13 +6,16 @@ import {
   IconTerminal2,
 } from "@tabler/icons-react";
 import {
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { ConnectionsView } from "@/components/connections-view";
 import {
   CredentialOnboarding,
@@ -28,16 +31,24 @@ import { WorkspaceView } from "@/components/workspace-view";
 import { useAppStore } from "@/lib/store";
 import {
   tauriOnWindowFullscreenChange,
+  tauriPrepareWindowZoomTransition,
   tauriStartDragging,
-  tauriToggleMaximize,
+  tauriToggleWindowZoom,
+  type WindowViewportZoomTransition,
 } from "@/lib/tauri";
-import { useContainerWidth } from "@/lib/use-resizable-width";
+import {
+  useContainerWidth,
+  useResizableWidth,
+} from "@/lib/use-resizable-width";
 import { cn } from "@/lib/utils";
 import logo from "../assets/logo.png";
 
 const GLOBAL_SIDEBAR_WIDTH = 288;
+const GLOBAL_SIDEBAR_MIN_WIDTH = 220;
+const GLOBAL_SIDEBAR_MAX_WIDTH = 420;
 const GLOBAL_SIDEBAR_COMPACT_BELOW = 980;
 const PROTECTED_WORKSPACE_WIDTH = 560;
+const WINDOW_VIEWPORT_ZOOM_MS = 280;
 const TOP_BAR_INTERACTIVE_SELECTOR = [
   "a[href]",
   "button",
@@ -52,12 +63,30 @@ const TOP_BAR_INTERACTIVE_SELECTOR = [
   "[role='textbox']",
 ].join(",");
 
+type WindowViewportZoomState = WindowViewportZoomTransition & {
+  id: number;
+  active: boolean;
+  scaleX: number;
+  scaleY: number;
+};
+
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
   const [newConnectionOpen, setNewConnectionOpen] = useState(false);
   const [leftSidebarOverlayOpen, setLeftSidebarOverlayOpen] = useState(false);
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(false);
+  const [windowViewportZoom, setWindowViewportZoom] =
+    useState<WindowViewportZoomState | null>(null);
+  const windowViewportZoomId = useRef(0);
+  const windowViewportZoomTimeout = useRef<number | null>(null);
   const [shellBodyRef, shellBodyWidth] = useContainerWidth<HTMLDivElement>();
+  const { width: globalSidebarWidth, setWidth: setGlobalSidebarWidth } =
+    useResizableWidth({
+      storageKey: "dbunk.sidebar.globalWidth",
+      defaultWidth: GLOBAL_SIDEBAR_WIDTH,
+      min: GLOBAL_SIDEBAR_MIN_WIDTH,
+      max: GLOBAL_SIDEBAR_MAX_WIDTH,
+    });
 
   const {
     activeView,
@@ -110,7 +139,63 @@ export function AppShell() {
     }
     event.preventDefault();
     event.stopPropagation();
-    void tauriToggleMaximize().catch(() => undefined);
+    void handleNativeWindowZoom().catch(() => undefined);
+  };
+
+  const handleNativeWindowZoom = async () => {
+    const transition = await tauriPrepareWindowZoomTransition();
+    const willAnimateViewport = startWindowViewportZoom(transition);
+    if (willAnimateViewport) {
+      await nextAnimationFrame();
+    }
+    await tauriToggleWindowZoom();
+  };
+
+  const startWindowViewportZoom = (
+    transition: WindowViewportZoomTransition | null,
+  ) => {
+    if (!transition || prefersReducedMotion()) {
+      return false;
+    }
+    const scaleX = transition.fromWidth / transition.toWidth;
+    const scaleY = transition.fromHeight / transition.toHeight;
+    if (
+      transition.toWidth < transition.fromWidth ||
+      transition.toHeight < transition.fromHeight ||
+      !Number.isFinite(scaleX) ||
+      !Number.isFinite(scaleY) ||
+      scaleX <= 0 ||
+      scaleY <= 0 ||
+      (Math.abs(scaleX - 1) < 0.015 && Math.abs(scaleY - 1) < 0.015)
+    ) {
+      return false;
+    }
+
+    const id = windowViewportZoomId.current + 1;
+    windowViewportZoomId.current = id;
+    if (windowViewportZoomTimeout.current) {
+      window.clearTimeout(windowViewportZoomTimeout.current);
+    }
+
+    flushSync(() => {
+      setWindowViewportZoom({
+        ...transition,
+        id,
+        active: false,
+        scaleX,
+        scaleY,
+      });
+    });
+
+    window.requestAnimationFrame(() => {
+      setWindowViewportZoom((current) =>
+        current?.id === id ? { ...current, active: true } : current,
+      );
+    });
+    windowViewportZoomTimeout.current = window.setTimeout(() => {
+      setWindowViewportZoom((current) => (current?.id === id ? null : current));
+    }, WINDOW_VIEWPORT_ZOOM_MS + 140);
+    return true;
   };
 
   useEffect(() => {
@@ -148,6 +233,14 @@ export function AppShell() {
     return () => {
       disposed = true;
       unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (windowViewportZoomTimeout.current) {
+        window.clearTimeout(windowViewportZoomTimeout.current);
+      }
     };
   }, []);
 
@@ -210,7 +303,7 @@ export function AppShell() {
     appSettingsStatus.state === "idle"
   ) {
     return (
-      <div className="relative flex h-screen w-screen items-center justify-center bg-surface-app text-xs text-text-muted">
+      <div className="fixed inset-0 flex items-center justify-center bg-surface-app text-xs text-text-muted">
         <WindowDragSurface
           onDoubleClick={handleTopBarDoubleClick}
           onPointerDown={handleTopBarPointerDown}
@@ -222,7 +315,7 @@ export function AppShell() {
 
   if (appSettingsStatus.state === "error") {
     return (
-      <div className="relative flex h-screen w-screen items-center justify-center bg-surface-app p-6 text-foreground">
+      <div className="fixed inset-0 flex items-center justify-center bg-surface-app p-6 text-foreground">
         <WindowDragSurface
           onDoubleClick={handleTopBarDoubleClick}
           onPointerDown={handleTopBarPointerDown}
@@ -259,7 +352,19 @@ export function AppShell() {
   return (
     <div
       data-density={density}
-      className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app text-foreground"
+      data-testid="app-shell"
+      data-window-viewport-zoom={
+        windowViewportZoom
+          ? windowViewportZoom.active
+            ? "active"
+            : "idle"
+          : undefined
+      }
+      style={windowViewportZoomStyle(windowViewportZoom)}
+      className={cn(
+        "fixed flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface-app text-foreground",
+        windowViewportZoom ? "top-0 left-0" : "inset-0",
+      )}
     >
       <header
         data-slot="top-bar"
@@ -395,13 +500,19 @@ export function AppShell() {
           side="left"
           storageKey="dbunk.sidebar.global"
           title="Sidebar"
-          width={GLOBAL_SIDEBAR_WIDTH}
+          width={globalSidebarWidth}
           containerWidth={shellBodyWidth}
           compactBelow={GLOBAL_SIDEBAR_COMPACT_BELOW}
           protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
           wideVisible={isLeftSidebarOpen}
           open={leftSidebarOverlayOpen}
           onOpenChange={setLeftSidebarOverlayOpen}
+          resizer={{
+            onResize: setGlobalSidebarWidth,
+            min: GLOBAL_SIDEBAR_MIN_WIDTH,
+            max: GLOBAL_SIDEBAR_MAX_WIDTH,
+            ariaLabel: "Resize connections and tables sidebar",
+          }}
           className="bg-surface-sidebar"
         >
           <Sidebar className="border-r-0" />
@@ -430,7 +541,7 @@ function WindowDragFrame({
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-surface-app">
+    <div className="fixed inset-0 overflow-hidden bg-surface-app">
       <WindowDragSurface
         onDoubleClick={onDoubleClick}
         onPointerDown={onPointerDown}
@@ -473,6 +584,41 @@ function shouldStartTopBarDrag(
     return false;
   }
   return Boolean(target.closest("[data-window-drag-region]"));
+}
+
+function windowViewportZoomStyle(
+  state: WindowViewportZoomState | null,
+): CSSProperties | undefined {
+  if (!state) {
+    return undefined;
+  }
+  return {
+    width: `${state.toWidth}px`,
+    height: `${state.toHeight}px`,
+    transform: state.active
+      ? "scale(1)"
+      : `scale(${state.scaleX}, ${state.scaleY})`,
+    transitionDuration: `${WINDOW_VIEWPORT_ZOOM_MS}ms`,
+  };
+}
+
+function prefersReducedMotion() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return Boolean(
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+}
+
+function nextAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    if (typeof window === "undefined") {
+      resolve();
+      return;
+    }
+    window.requestAnimationFrame(() => resolve());
+  });
 }
 
 function initialsFor(user: string | undefined): string | null {

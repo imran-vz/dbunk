@@ -74,7 +74,7 @@ export function CredentialOnboarding() {
   };
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-surface-app p-6 text-foreground">
+    <div className="flex h-full w-full items-center justify-center bg-surface-app p-6 text-foreground">
       <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="flex flex-col justify-between rounded-lg border border-border-subtle bg-surface-window p-6">
           <div>
@@ -223,7 +223,7 @@ export function CredentialUnlock() {
   };
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-surface-app p-6 text-foreground">
+    <div className="flex h-full w-full items-center justify-center bg-surface-app p-6 text-foreground">
       <div className="w-full max-w-md rounded-lg border border-border-subtle bg-surface-window p-6">
         <div className="flex size-10 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
           <IconShieldLock className="size-5" />
