@@ -371,23 +371,19 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       ) : null}
 
       {/* Header */}
-      <div className="shrink-0 border-b border-border-subtle bg-surface-window px-5 pt-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
-              <IconTable className="size-4" />
+      <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex size-7 items-center justify-center rounded-sm border border-accent-green/30 bg-accent-green/10 text-accent-green">
+              <IconTable className="size-3.5" />
             </div>
-            <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">
+            <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
               {tab.table ?? tab.label}
             </h1>
-            <Badge variant="outline" className="h-6 rounded-md px-2">
-              {rowCountLabel}
-            </Badge>
-            <Badge variant="outline" className="h-6 rounded-md px-2">
-              {tab.schema}
-            </Badge>
+            <Badge variant="outline">{rowCountLabel}</Badge>
+            <Badge variant="outline">{tab.schema}</Badge>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {activeSubTab === "data" ? (
               <Button
                 size="sm"
@@ -410,7 +406,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                 aria-label="Table actions"
                 title="Table actions"
                 className={cn(
-                  "inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
+                  "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
                 )}
               >
                 <IconDotsVertical className="size-3.5 text-text-muted" />
@@ -429,7 +425,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
             </DropdownMenu>
           </div>
         </div>
-        <div className="mt-3 flex items-end gap-1">
+        <div className="mt-1.5 flex items-end gap-1">
           {SUB_TABS.map(({ id, label }) => {
             const isActive = activeSubTab === id;
             return (
@@ -441,7 +437,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                   setActiveSubTab(id);
                 }}
                 className={cn(
-                  "relative h-9 px-3 text-sm font-medium transition-colors",
+                  "relative h-7 px-2.5 text-xs font-medium transition-colors",
                   isActive
                     ? "text-foreground"
                     : "text-text-muted hover:text-foreground",
@@ -461,14 +457,14 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         <div
           data-testid="table-error"
           role="alert"
-          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
+          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger"
         >
           <IconAlertTriangle className="size-4" />
           <span>Failed to load rows: {errorMessage}</span>
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 px-2 text-xs"
+            className="ml-auto"
             onClick={onRefresh}
           >
             Retry
@@ -479,7 +475,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       {isReadOnly && activeTableStructure ? (
         <output
           data-testid="table-readonly-banner"
-          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning"
+          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
         >
           <IconLock className="size-4" />
           <span>
@@ -492,7 +488,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       {commitStatus?.state === "queued" ? (
         <output
           data-testid="table-commit-queued"
-          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning"
+          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
         >
           <IconLock className="size-4" />
           <span>
@@ -507,7 +503,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       lastOutcome.rowsAffected !== undefined ? (
         <output
           data-testid="table-commit-success"
-          className="flex items-center gap-2 border-b border-accent-green/40 bg-accent-green/10 px-4 py-2 text-xs text-accent-green-hover"
+          className="flex items-center gap-2 border-b border-accent-green/40 bg-accent-green/10 px-3 py-1.5 text-xs text-accent-green-hover"
         >
           <IconCheck className="size-4" />
           <span>
@@ -518,7 +514,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 px-2 text-xs"
+            className="ml-auto"
             onClick={() => setLastOutcome(null)}
           >
             Dismiss
@@ -530,14 +526,14 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         <div
           data-testid="table-commit-error"
           role="alert"
-          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
+          className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger"
         >
           <IconX className="size-4" />
           <span>Failed to save: {lastOutcome.reason}</span>
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 px-2 text-xs"
+            className="ml-auto"
             onClick={() => setLastOutcome(null)}
           >
             Dismiss
@@ -549,7 +545,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         <div
           data-testid="table-commit-timeout"
           role="alert"
-          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning"
+          className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning"
         >
           <IconAlertTriangle className="size-4" />
           <span>
@@ -559,7 +555,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 px-2 text-xs"
+            className="ml-auto"
             onClick={() => setLastOutcome(null)}
           >
             Dismiss
@@ -570,16 +566,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       {isAddRowOpen && activeTableStructure ? (
         <div
           data-testid="add-row-form"
-          className="flex flex-col gap-2 border-b border-border-subtle bg-surface-panel px-4 py-3"
+          className="flex flex-col gap-2 border-b border-border-subtle bg-surface-panel px-3 py-2"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold">Add row</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={handleCloseAddRow}
-            >
+            <Button variant="ghost" size="sm" onClick={handleCloseAddRow}>
               Cancel
             </Button>
           </div>
@@ -595,7 +586,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               return (
                 <div
                   key={column.name}
-                  className="flex flex-col gap-1 rounded-md border border-border-subtle bg-surface-app px-2 py-1.5"
+                  className="flex flex-col gap-1 rounded-sm border border-border-subtle bg-surface-app px-2 py-1.5"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium">{column.name}</span>
@@ -605,7 +596,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                   </div>
                   <Input
                     data-testid={`add-row-value-${column.name}`}
-                    className="h-7 text-xs"
+                    className="h-6 text-xs"
                     value={field.value}
                     placeholder={
                       hasDefault ? `default: ${column.defaultValue}` : ""
@@ -662,7 +653,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           <div className="flex items-center justify-end gap-2">
             <Button
               size="sm"
-              className="h-8 px-3 text-xs"
               disabled={isWriting}
               onClick={() => {
                 void handleSubmitAddRow();
@@ -834,7 +824,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       {activeSubTab === "data" && tab.kind === "table" ? (
         <div
           data-testid="table-pagination"
-          className="flex h-11 shrink-0 items-center justify-between gap-3 border-t border-border-subtle bg-surface-window px-4 text-xs text-text-muted"
+          className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
         >
           <span className="tabular-nums">
             Showing {startRow.toLocaleString()} to {endRow.toLocaleString()} of{" "}
@@ -933,7 +923,7 @@ function Pagination({
         aria-label="First page"
         onClick={onFirst}
         disabled={page <= 1 || isLoading}
-        className="size-8"
+        className="size-6"
       >
         <IconChevronsLeft className="size-3.5" />
       </Button>
@@ -943,7 +933,7 @@ function Pagination({
         aria-label="Previous page"
         onClick={onPrev}
         disabled={page <= 1 || isLoading}
-        className="size-8"
+        className="size-6"
       >
         <IconChevronLeft className="size-3.5" />
       </Button>
@@ -957,7 +947,7 @@ function Pagination({
               aria-current={entry === page ? "page" : undefined}
               onClick={() => onJump(entry)}
               className={cn(
-                "h-7 min-w-7 rounded-md px-2 text-xs tabular-nums transition-colors",
+                "h-6 min-w-6 rounded-sm px-1.5 text-xs tabular-nums transition-colors",
                 entry === page
                   ? "bg-accent-green/15 text-accent-green-hover"
                   : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
@@ -982,7 +972,7 @@ function Pagination({
         aria-label="Next page"
         onClick={onNext}
         disabled={isLastPage || isLoading}
-        className="size-8"
+        className="size-6"
       >
         <IconChevronRight className="size-3.5" />
       </Button>
@@ -992,7 +982,7 @@ function Pagination({
         aria-label="Last page"
         onClick={onLast}
         disabled={isLastPage || isLoading || totalPages === undefined}
-        className="size-8"
+        className="size-6"
       >
         <IconChevronsRight className="size-3.5" />
       </Button>
@@ -1150,7 +1140,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
           data-testid="schema-map-fullscreen"
           className="fixed inset-0 z-50 flex flex-col bg-surface-app"
         >
-          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-surface-window px-4">
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border-subtle bg-surface-window px-3">
             <div className="min-w-0">
               <div className="text-sm font-semibold">Schema map</div>
               <div className="truncate text-xs text-text-muted">

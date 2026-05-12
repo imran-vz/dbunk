@@ -132,7 +132,7 @@ function EditableCell({
     <button
       type="button"
       className={cn(
-        "h-full w-full truncate px-3 py-2 text-left text-muted-foreground group-hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
+        "h-full w-full truncate px-2 py-1 text-left text-muted-foreground group-hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
         isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
         !isEditing && onEdit && "cursor-pointer",
         !onEdit && "cursor-default",
@@ -441,33 +441,27 @@ export function DataGrid({
     >
       <div
         data-slot="data-grid-toolbar"
-        className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 overflow-x-auto border-b border-border-subtle bg-surface-window px-5 py-2.5"
+        className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 overflow-x-auto border-b border-border-subtle bg-surface-window px-3 py-1.5"
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           {hasEdits ? (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-9 px-2 text-xs"
                 onClick={onDiscard}
                 disabled={isSaving}
               >
                 <IconX className="mr-1 size-3.5" />{" "}
                 <span className="dbunk-optional-label">Discard</span>
               </Button>
-              <Button
-                size="sm"
-                className="h-9 px-2 text-xs"
-                onClick={onSave}
-                disabled={isSaving}
-              >
+              <Button size="sm" onClick={onSave} disabled={isSaving}>
                 <IconDeviceFloppy className="mr-1 size-3.5" />{" "}
                 <span className="dbunk-primary-label">
                   {isSaving ? "Saving…" : "Save changes"}
                 </span>
               </Button>
-              <div className="mx-2 h-6 w-px bg-border-subtle" />
+              <div className="mx-1 h-5 w-px bg-border-subtle" />
             </div>
           ) : null}
 
@@ -475,7 +469,7 @@ export function DataGrid({
             variant={showFilters ? "secondary" : "outline"}
             size="sm"
             className={cn(
-              "h-9 gap-2 border-border-subtle bg-surface-panel",
+              "gap-1.5 border-border-subtle bg-surface-panel",
               showFilters && "bg-primary/10 text-primary",
             )}
             onClick={() => setShowFilters(!showFilters)}
@@ -489,7 +483,7 @@ export function DataGrid({
           <Button
             variant="outline"
             size="sm"
-            className="h-9 gap-2 border-border-subtle bg-surface-panel"
+            className="gap-1.5 border-border-subtle bg-surface-panel"
             aria-label="Sort"
             title="Sort"
           >
@@ -503,7 +497,7 @@ export function DataGrid({
               title="Columns"
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "h-9 gap-2 border-border-subtle bg-surface-panel",
+                "gap-1.5 border-border-subtle bg-surface-panel",
               )}
             >
               <IconColumns className="size-3.5" />
@@ -529,7 +523,7 @@ export function DataGrid({
                     <IconSearch className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       placeholder="Search..."
-                      className="h-8 pl-8 text-xs"
+                      className="h-7 pl-8 text-xs"
                       value={columnSearch}
                       onChange={(e) => setColumnSearch(e.target.value)}
                     />
@@ -569,7 +563,7 @@ export function DataGrid({
           <Button
             variant="outline"
             size="sm"
-            className="h-9 gap-2 border-border-subtle bg-surface-panel"
+            className="gap-1.5 border-border-subtle bg-surface-panel"
             onClick={onRefresh}
             disabled={!onRefresh}
             aria-label="Refresh"
@@ -585,7 +579,7 @@ export function DataGrid({
               title="Export"
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
-                "h-9 gap-2 border-border-subtle bg-surface-panel",
+                "gap-1.5 border-border-subtle bg-surface-panel",
               )}
             >
               <IconDownload className="size-3.5" />
@@ -632,15 +626,15 @@ export function DataGrid({
 
           {toolbarLeading ? (
             <>
-              <div className="mx-1 h-6 w-px bg-border-subtle" />
+              <div className="mx-0.5 h-5 w-px bg-border-subtle" />
               {toolbarLeading}
             </>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Select defaultValue={String(table.getState().pagination.pageSize)}>
-            <SelectTrigger className="h-9 w-27 border-border-subtle bg-surface-panel text-xs">
+            <SelectTrigger className="h-6 w-24 border-border-subtle bg-surface-panel text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -655,7 +649,7 @@ export function DataGrid({
             variant="ghost"
             size="icon"
             aria-label="Expand grid"
-            className="h-9 w-9 rounded-md border border-border-subtle bg-surface-panel"
+            className="rounded-sm border border-border-subtle bg-surface-panel"
           >
             <IconArrowsMaximize className="size-3.5" />
           </Button>
@@ -663,22 +657,22 @@ export function DataGrid({
       </div>
 
       {showFilters && (
-        <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-5 py-2">
+        <div className="flex min-h-10 flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface-window px-3 py-1.5">
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 shrink-0 text-muted-foreground"
+            className="shrink-0 text-muted-foreground"
             onClick={() => setShowFilters(false)}
           >
             <IconX className="size-3.5" />
           </Button>
 
           {appliedFilters.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1">
               {appliedFilters.map((f) => (
                 <div
                   key={f.column}
-                  className="flex h-7 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-panel px-2 text-xs"
+                  className="flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-xs"
                 >
                   <span className="font-medium">{f.column}</span>
                   <span className="font-mono text-[10px] text-muted-foreground">
@@ -700,8 +694,8 @@ export function DataGrid({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-surface-panel p-1">
-            <div className="flex items-center gap-2 rounded-sm bg-surface-app px-2">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel p-1">
+            <div className="flex items-center gap-1.5 rounded-sm bg-surface-app px-1.5">
               <span className="text-xs font-medium text-muted-foreground">
                 where
               </span>
@@ -709,7 +703,7 @@ export function DataGrid({
                 value={draftColumn}
                 onValueChange={(val) => setDraftColumn(val ?? "")}
               >
-                <SelectTrigger className="h-7 w-auto min-w-25 border-none bg-transparent px-2 text-xs shadow-none hover:bg-muted/50 focus:ring-0">
+                <SelectTrigger className="h-6 w-auto min-w-24 border-none bg-transparent px-1.5 text-xs shadow-none hover:bg-muted/50 focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -722,12 +716,12 @@ export function DataGrid({
               </Select>
             </div>
 
-            <div className="flex items-center gap-2 rounded-sm bg-surface-app px-2">
+            <div className="flex items-center gap-1.5 rounded-sm bg-surface-app px-1.5">
               <Select
                 value={draftOperator}
                 onValueChange={(val) => setDraftOperator(val ?? "equals")}
               >
-                <SelectTrigger className="h-7 w-auto min-w-30 border-none bg-transparent px-2 text-xs shadow-none hover:bg-muted/50 focus:ring-0">
+                <SelectTrigger className="h-6 w-auto min-w-28 border-none bg-transparent px-1.5 text-xs shadow-none hover:bg-muted/50 focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -746,7 +740,7 @@ export function DataGrid({
             </div>
 
             <Input
-              className="h-7 w-40 border-none bg-surface-app px-2 text-xs shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 sm:w-60"
+              className="h-6 w-36 border-none bg-surface-app px-2 text-xs shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 sm:w-56"
               placeholder="value"
               value={draftValue}
               onChange={(event) => setDraftValue(event.target.value)}
@@ -761,7 +755,6 @@ export function DataGrid({
             <Button
               size="sm"
               variant="secondary"
-              className="h-7 px-3 text-xs"
               onClick={applyDraft}
               disabled={!canApplyDraft}
             >
@@ -769,11 +762,11 @@ export function DataGrid({
             </Button>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
             <Button
               variant="secondary"
               size="sm"
-              className="hidden h-7 text-xs bg-muted/50 hover:bg-muted text-muted-foreground sm:inline-flex"
+              className="hidden bg-muted/50 text-muted-foreground hover:bg-muted sm:inline-flex"
               onClick={onOpenSQL}
               disabled={!onOpenSQL}
             >
@@ -782,7 +775,7 @@ export function DataGrid({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
               onClick={clearAllFilters}
               disabled={appliedFilters.length === 0}
             >
@@ -808,7 +801,7 @@ export function DataGrid({
                     <th
                       key={header.id}
                       className={cn(
-                        "sticky top-0 z-20 h-10 border-b border-r border-border-subtle bg-surface-panel-elevated px-0 align-middle font-medium text-text-muted last:border-r-0",
+                        "sticky top-0 z-20 h-8 border-b border-r border-border-subtle bg-surface-panel-elevated px-0 align-middle font-medium text-text-muted last:border-r-0",
                         header.id === "select" && "sticky left-0 z-30 w-10",
                       )}
                       style={{
@@ -821,7 +814,7 @@ export function DataGrid({
                         <div
                           className={cn(
                             "flex items-center gap-2",
-                            header.id !== "select" && "px-3",
+                            header.id !== "select" && "px-2",
                           )}
                         >
                           {flexRender(
@@ -848,7 +841,7 @@ export function DataGrid({
                     <td
                       key={cell.id}
                       className={cn(
-                        "h-9 border-b border-r border-border-subtle p-0 align-middle last:border-r-0",
+                        "h-8 border-b border-r border-border-subtle p-0 align-middle last:border-r-0",
                         cell.column.id === "select" &&
                           "sticky left-0 z-10 w-10 bg-surface-app group-hover:bg-surface-row-hover",
                         cell.column.id === "select" &&

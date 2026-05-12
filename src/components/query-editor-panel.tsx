@@ -529,13 +529,13 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         wordWrap: "on" as const,
         lineNumbersMinChars: 3,
         glyphMargin: true,
-        padding: { top: 12, bottom: 12 },
+        padding: { top: 8, bottom: 8 },
         renderLineHighlight: "none",
         overviewRulerBorder: false,
         hideCursorInOverviewRuler: true,
         scrollbar: {
-          vertical: "visible",
-          horizontal: "visible",
+          vertical: "hidden",
+          horizontal: "hidden",
           useShadows: false,
         },
       }) as const,
@@ -596,18 +596,18 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Editor toolbar */}
-        <div className="flex min-h-12 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-border-subtle bg-surface-window px-4 py-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
-              <IconTerminal2 className="size-4" />
+        <div className="flex min-h-10 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-border-subtle bg-surface-window px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-sm border border-accent-green/30 bg-accent-green/10 text-accent-green">
+              <IconTerminal2 className="size-3.5" />
             </span>
-            <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
+            <h1 className="truncate text-xs font-semibold tracking-tight text-foreground">
               Query Editor
             </h1>
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label="Connection selector"
-                className="ml-2 inline-flex h-8 max-w-64 min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-surface-panel px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
+                className="ml-1 inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
               >
                 <span className="size-1.5 rounded-full bg-accent-green" />
                 <span className="truncate">{dbSelectorLabel}</span>
@@ -626,7 +626,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {hasEdits ? (
               <>
                 <Button
@@ -693,7 +693,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-label="Run options"
-                  className="inline-flex h-8 items-center justify-center rounded-r-md border-l border-primary-foreground/20 bg-primary px-2 text-primary-foreground hover:bg-accent-green-hover disabled:opacity-50"
+                  className="inline-flex h-6 items-center justify-center rounded-r-sm border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground hover:bg-accent-green-hover disabled:opacity-50"
                   disabled={isRunning}
                 >
                   <IconChevronDown className="size-3.5" />
@@ -716,7 +716,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
 
         {/* Editor + results */}
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="relative h-76 shrink-0 border-b border-border-subtle bg-surface-app">
+          <div className="relative h-[17.5rem] shrink-0 border-b border-border-subtle bg-surface-app">
             {isClient ? (
               <MonacoEditor
                 height="100%"
@@ -736,7 +736,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
 
           <div className="flex min-h-0 flex-1 flex-col bg-surface-app">
             {/* Results tabs + meta */}
-            <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-window px-5">
+            <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface-window px-3">
               <div className="flex items-end gap-1">
                 {(
                   [
@@ -752,7 +752,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
                       onClick={() => setResultsView(id)}
                       aria-current={isActive ? "page" : undefined}
                       className={cn(
-                        "relative h-9 px-2.5 text-xs font-medium transition-colors",
+                        "relative h-7 px-2 text-xs font-medium transition-colors",
                         isActive
                           ? "text-foreground"
                           : "text-text-muted hover:text-foreground",
@@ -766,7 +766,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
                   );
                 })}
               </div>
-              <div className="flex items-center gap-2 text-[0.6875rem] text-text-muted">
+              <div className="flex items-center gap-2 text-[0.625rem] text-text-muted">
                 <span className="dbunk-optional-label">
                   Returned {activeQueryPreview?.rowCount ?? 0} rows in{" "}
                   {activeQueryPreview?.runtime ?? "—"}

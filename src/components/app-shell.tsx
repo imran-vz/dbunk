@@ -177,7 +177,7 @@ export function AppShell() {
         // The macOS window uses `titleBarStyle: Overlay` (see
         // src-tauri/tauri.conf.json), so the OS draws the red/yellow/green
         // controls on top of our content. The traffic lights are positioned
-        // at x=18, y=21 there, centered in this 56 px header. Reserve 78 px
+        // at x=18, y=21 there. Reserve 78 px
         // on the left so the sidebar toggle and `dbunk` mark don't sit under
         // them. Other
         // platforms render the OS chrome above our header so the spacer is
@@ -188,7 +188,7 @@ export function AppShell() {
         // `data-tauri-drag-region` so empty space around buttons/inputs is
         // unambiguously a drag handle on every platform. Buttons + inputs
         // get `no-drag` automatically as native interactive elements.
-        className="flex h-14 shrink-0 items-center gap-3 border-b border-border-subtle bg-surface-window pl-22 pr-3 select-none"
+        className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border-subtle bg-surface-window pl-22 pr-2.5 select-none"
       >
         <Button
           type="button"
@@ -219,22 +219,22 @@ export function AppShell() {
         </Button>
         <div
           data-tauri-drag-region
-          className="flex items-center gap-2 text-sm font-semibold tracking-tight"
+          className="flex items-center gap-1.5 text-sm font-semibold tracking-tight"
         >
-          <img src={logo} alt="dbunk" className="size-6" />
+          <img src={logo} alt="dbunk" className="size-[1.375rem]" />
         </div>
 
         <div
           data-tauri-drag-region
-          className="relative ml-2 hidden min-w-44 max-w-md flex-1 md:block"
+          className="relative ml-1 hidden min-w-40 max-w-md flex-1 md:block"
         >
           <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
           <Input
             placeholder="Search tables"
             aria-label="Search tables"
-            className="h-9 rounded-md pl-8 pr-13 text-xs"
+            className="h-8 pl-8 pr-13 text-xs"
           />
-          <span className="pointer-events-none absolute right-2 top-1/2 flex h-5 -translate-y-1/2 items-center gap-0.5 rounded border border-border-subtle bg-surface-app px-1.5 text-[0.62rem] text-text-muted">
+          <span className="pointer-events-none absolute right-2 top-1/2 flex h-[1.125rem] -translate-y-1/2 items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-app px-1.5 text-[0.58rem] text-text-muted">
             <IconCommand className="size-2.5" />K
           </span>
         </div>
@@ -248,7 +248,7 @@ export function AppShell() {
           className="h-full flex-1"
         />
 
-        <div data-tauri-drag-region className="flex items-center gap-2">
+        <div data-tauri-drag-region className="flex items-center gap-1.5">
           <NewConnectionDialog
             open={newConnectionOpen}
             onOpenChange={setNewConnectionOpen}
@@ -281,7 +281,7 @@ export function AppShell() {
             size="icon-sm"
             variant="secondary"
             aria-label="Account menu"
-            className="size-8 rounded-full text-[0.65rem] font-semibold"
+            className="size-7 rounded-full text-[0.625rem] font-semibold"
           >
             {initialsFor(activeConnection?.user) ?? "AD"}
           </Button>
