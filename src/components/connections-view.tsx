@@ -10,9 +10,9 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { ConnectionForm } from "@/components/connection-form";
 import { DeleteConnectionDialog } from "@/components/delete-connection-dialog";
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
-import { NewConnectionForm } from "@/components/new-connection-form";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -242,7 +242,7 @@ export function ConnectionsView() {
               </Button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
-              <NewConnectionForm onSaved={() => setShowPanel(false)} />
+              <ConnectionForm mode="new" onSaved={() => setShowPanel(false)} />
             </div>
           </aside>
         ) : null}
