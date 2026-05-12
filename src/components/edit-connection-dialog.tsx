@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { connectionFormPolicy, validateConnection } from "@/lib/engine-policy";
 import { type Connection, type DatabaseEngine, useAppStore } from "@/lib/store";
 
 const connectionSchema = z
@@ -40,45 +41,20 @@ const connectionSchema = z
     verifyTlsCert: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.engine === "SQLite") {
-      if (!value.database?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Database file is required",
-          path: ["database"],
-        });
-      }
-      return;
-    }
-    if (!value.host?.trim()) {
+    // Edit mode relaxes the password rule for host-auth and
+    // clickhouse-http: an empty password means "keep existing
+    // credential" (backend's `save_connection` handles the
+    // substitution; ADR-0010 §1). The shared validator owns the rule.
+    const issues = validateConnection(
+      connectionFormPolicy(value.engine),
+      value,
+      "edit",
+    );
+    for (const issue of issues) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Host is required",
-        path: ["host"],
-      });
-    }
-    if (!value.port || value.port < 1 || value.port > 65535) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Port must be between 1 and 65535",
-        path: ["port"],
-      });
-    }
-    if (value.engine === "Redis") {
-      return;
-    }
-    if (!value.database?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Database is required",
-        path: ["database"],
-      });
-    }
-    if (!value.user?.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "User is required",
-        path: ["user"],
+        message: issue.message,
+        path: [issue.path],
       });
     }
   });

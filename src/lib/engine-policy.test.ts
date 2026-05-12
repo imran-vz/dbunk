@@ -3,11 +3,31 @@ import { describe, expect, it } from "vitest";
 import type { DatabaseEngine } from "@/lib/store";
 
 import {
+  type ConnectionFormValues,
+  connectionFormPolicy,
   enginePolicy,
   keyvaluePolicy,
   relationalPolicy,
   storageClassFor,
+  validateConnection,
 } from "./engine-policy";
+
+const baseValues = (
+  overrides: Partial<ConnectionFormValues> = {},
+): ConnectionFormValues => ({
+  name: "My DB",
+  engine: "PostgreSQL",
+  host: "localhost",
+  database: "core",
+  port: 5432,
+  user: "postgres",
+  password: "hunter2",
+  ssl: true,
+  ...overrides,
+});
+
+const pathsOf = (issues: ReturnType<typeof validateConnection>) =>
+  issues.map((issue) => issue.path);
 
 /**
  * Every test here is a small assertion against the static policy
@@ -107,28 +127,45 @@ describe("enginePolicy", () => {
     expect(relationalPolicy("SQLite").schemaMapNoForeignKeysCopy).toBeNull();
   });
 
-  it("disables host/auth on SQLite and surfaces engine-specific connection-form toggles", () => {
-    expect(enginePolicy("SQLite").connectionForm.requiresHostAndAuth).toBe(
-      false,
+  it("groups engines by connection-form shape via the kind discriminator", () => {
+    expect(enginePolicy("SQLite").connectionForm.kind).toBe("file");
+    expect(enginePolicy("PostgreSQL").connectionForm.kind).toBe("host-auth");
+    expect(enginePolicy("MySQL").connectionForm.kind).toBe("host-auth");
+    expect(enginePolicy("ClickHouse").connectionForm.kind).toBe(
+      "clickhouse-http",
     );
-    expect(enginePolicy("ClickHouse").connectionForm.showClickHouseHttp).toBe(
-      true,
-    );
-    expect(enginePolicy("Redis").connectionForm.showRedisTls).toBe(true);
-    expect(enginePolicy("Redis").connectionForm.showRedisDbNumber).toBe(true);
-    expect(enginePolicy("PostgreSQL").connectionForm.showClickHouseHttp).toBe(
-      false,
-    );
-    expect(enginePolicy("PostgreSQL").connectionForm.showRedisTls).toBe(false);
-    expect(enginePolicy("MySQL").connectionForm.showClickHouseHttp).toBe(false);
-    expect(enginePolicy("MySQL").connectionForm.showRedisTls).toBe(false);
+    expect(enginePolicy("Redis").connectionForm.kind).toBe("redis");
   });
 
-  it("knows the canonical default port per engine", () => {
-    expect(enginePolicy("PostgreSQL").connectionForm.defaultPort).toBe(5432);
-    expect(enginePolicy("MySQL").connectionForm.defaultPort).toBe(3306);
-    expect(enginePolicy("ClickHouse").connectionForm.defaultPort).toBe(8123);
-    expect(enginePolicy("Redis").connectionForm.defaultPort).toBe(6379);
+  it("surfaces the SSL toggle only on host-auth engines (PG/MySQL)", () => {
+    const pg = enginePolicy("PostgreSQL").connectionForm;
+    const my = enginePolicy("MySQL").connectionForm;
+    if (pg.kind !== "host-auth" || my.kind !== "host-auth") {
+      throw new Error("expected host-auth kind for PG/MySQL");
+    }
+    expect(pg.showSslToggle).toBe(true);
+    expect(my.showSslToggle).toBe(true);
+  });
+
+  it("knows the canonical default port per engine form-shape", () => {
+    const pg = enginePolicy("PostgreSQL").connectionForm;
+    const my = enginePolicy("MySQL").connectionForm;
+    const ch = enginePolicy("ClickHouse").connectionForm;
+    const redis = enginePolicy("Redis").connectionForm;
+    if (pg.kind !== "host-auth" || my.kind !== "host-auth") {
+      throw new Error("expected host-auth kind for PG/MySQL");
+    }
+    if (ch.kind !== "clickhouse-http") {
+      throw new Error("expected clickhouse-http kind");
+    }
+    if (redis.kind !== "redis") {
+      throw new Error("expected redis kind");
+    }
+    expect(pg.defaultPort).toBe(5432);
+    expect(my.defaultPort).toBe(3306);
+    expect(ch.defaultPortHttp).toBe(8123);
+    expect(ch.defaultPortHttps).toBe(8443);
+    expect(redis.defaultPort).toBe(6379);
   });
 
   it("returns Redis-shaped keyvalue policy with destructive-command lists", () => {
@@ -150,5 +187,135 @@ describe("enginePolicy", () => {
 
   it("keyvaluePolicy throws when called with a relational engine", () => {
     expect(() => keyvaluePolicy("PostgreSQL")).toThrow(/relational/);
+  });
+});
+
+describe("validateConnection", () => {
+  it("returns no issues for a fully-populated host-auth value (new mode)", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    expect(validateConnection(policy, baseValues(), "new")).toEqual([]);
+  });
+
+  it("requires name across every kind", () => {
+    for (const engine of [
+      "PostgreSQL",
+      "MySQL",
+      "SQLite",
+      "ClickHouse",
+      "Redis",
+    ] as const) {
+      const policy = connectionFormPolicy(engine);
+      const values =
+        engine === "SQLite"
+          ? baseValues({ engine, name: "", database: "/tmp/db.sqlite" })
+          : baseValues({ engine, name: "" });
+      expect(pathsOf(validateConnection(policy, values, "new"))).toContain(
+        "name",
+      );
+    }
+  });
+
+  it("requires host + port for host-auth, clickhouse-http, and redis", () => {
+    for (const engine of [
+      "PostgreSQL",
+      "MySQL",
+      "ClickHouse",
+      "Redis",
+    ] as const) {
+      const policy = connectionFormPolicy(engine);
+      const values = baseValues({
+        engine,
+        host: "",
+        port: 0,
+        // Redis password is optional, but the host/port rules still apply.
+        password: engine === "Redis" ? undefined : "hunter2",
+      });
+      const paths = pathsOf(validateConnection(policy, values, "new"));
+      expect(paths).toContain("host");
+      expect(paths).toContain("port");
+    }
+  });
+
+  it("requires database + user + password for host-auth (new mode)", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    const issues = validateConnection(
+      policy,
+      baseValues({ database: "", user: "", password: "" }),
+      "new",
+    );
+    expect(pathsOf(issues)).toEqual(
+      expect.arrayContaining(["database", "user", "password"]),
+    );
+  });
+
+  it("relaxes the password rule in edit mode for host-auth", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    const issues = validateConnection(
+      policy,
+      baseValues({ password: "" }),
+      "edit",
+    );
+    expect(pathsOf(issues)).not.toContain("password");
+  });
+
+  it("relaxes the password rule in edit mode for clickhouse-http", () => {
+    const policy = connectionFormPolicy("ClickHouse");
+    const issues = validateConnection(
+      policy,
+      baseValues({ engine: "ClickHouse", password: "" }),
+      "edit",
+    );
+    expect(pathsOf(issues)).not.toContain("password");
+  });
+
+  it("treats user + password as optional for Redis in both modes", () => {
+    const policy = connectionFormPolicy("Redis");
+    for (const mode of ["new", "edit"] as const) {
+      const issues = validateConnection(
+        policy,
+        baseValues({
+          engine: "Redis",
+          user: "",
+          password: "",
+          database: "",
+        }),
+        mode,
+      );
+      expect(pathsOf(issues)).not.toContain("user");
+      expect(pathsOf(issues)).not.toContain("password");
+      expect(pathsOf(issues)).not.toContain("database");
+    }
+  });
+
+  it("rejects Redis DB numbers outside 0–maxDbNumber", () => {
+    const policy = connectionFormPolicy("Redis");
+    const tooHigh = validateConnection(
+      policy,
+      baseValues({ engine: "Redis", dbNumber: 99 }),
+      "new",
+    );
+    const negative = validateConnection(
+      policy,
+      baseValues({ engine: "Redis", dbNumber: -1 }),
+      "new",
+    );
+    expect(pathsOf(tooHigh)).toContain("dbNumber");
+    expect(pathsOf(negative)).toContain("dbNumber");
+  });
+
+  it("SQLite requires only the database file path", () => {
+    const policy = connectionFormPolicy("SQLite");
+    const valid = validateConnection(
+      policy,
+      baseValues({ engine: "SQLite", database: "/tmp/db.sqlite" }),
+      "new",
+    );
+    expect(valid).toEqual([]);
+    const invalid = validateConnection(
+      policy,
+      baseValues({ engine: "SQLite", database: "" }),
+      "new",
+    );
+    expect(pathsOf(invalid)).toContain("database");
   });
 });
