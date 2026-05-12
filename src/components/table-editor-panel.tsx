@@ -8,12 +8,11 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import type { RowSelectionState } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 
 import { DataGrid } from "@/components/data-grid";
 import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
-import { StatusBar, type StatusBarItem } from "@/components/status-bar";
+import { StatusBar } from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
 import {
   type SubTab,
@@ -21,7 +20,10 @@ import {
 } from "@/components/table-editor/header";
 import { RowDetailsPanel } from "@/components/table-editor/row-details-panel";
 import { TableStatusBanners } from "@/components/table-editor/status-banners";
+import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
+import { useRowSelection } from "@/components/table-editor/use-row-selection";
+import { useTableCapabilities } from "@/components/table-editor/use-table-capabilities";
 import { useTablePagination } from "@/components/table-editor/use-table-pagination";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +36,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
-import { pickRowIdentity } from "@/lib/row-identity";
 import {
   type EditOutcome,
   type TablePreviewData,
@@ -78,7 +79,6 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     deleteSelectedTableRows,
   } = useAppStore();
 
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const rowDetails = useRowDetailsVisibility(bodyWidth);
 
@@ -116,37 +116,17 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const status = tableName ? tableLoadStatus[tableName] : undefined;
   const currentEdits = tableEdits[tableName];
   const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
-  const rowIdentity = pickRowIdentity(activeTableStructure);
-  const isReadOnly = rowIdentity === null;
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
-  const structureLoaded = Boolean(activeTableStructure);
-  const isWriting =
-    commitStatus?.state === "running" || commitStatus?.state === "queued";
-  // Mutation gates come from the per-table capability flags rather than
-  // an engine-name literal — that way a CH MergeTree table is editable
-  // and a CH Distributed/View table is not, with the same shape of code.
-  const capabilities = activeTableStructure?.capabilities;
-  const canInsertRows = capabilities?.canInsertRows ?? false;
-  const canUpdateRows = capabilities?.canUpdateRows ?? false;
-  const canDeleteRows = capabilities?.canDeleteRows ?? false;
-  const selectedRowIndices = useMemo(
-    () =>
-      Object.entries(rowSelection)
-        .filter(([, selected]) => selected)
-        .map(([rowId]) => Number.parseInt(rowId, 10))
-        .filter((n) => Number.isFinite(n)),
-    [rowSelection],
-  );
-  const canDeleteSelected =
-    selectedRowIndices.length > 0 && canDeleteRows && !isReadOnly && !isWriting;
-  const canAddRow = structureLoaded && canInsertRows && !isWriting;
-  // Used to gate the inline cell editor; surface it on the same axis as
-  // the other capability-derived flags.
-  const canEditCells = canUpdateRows && !isReadOnly && !isWriting;
 
   const columns = activeTableData?.columns ?? [];
   const rows = activeTableData?.rows ?? [];
+  const selection = useRowSelection(rows);
+  const caps = useTableCapabilities({
+    structure: activeTableStructure,
+    commitStatus,
+    selectedCount: selection.selectedCount,
+  });
   const exportFilenameBase = useMemo(() => {
     if (tab.kind !== "table" || !tab.table) {
       return "export";
@@ -184,70 +164,31 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   };
 
   const handleDeleteSelected = async () => {
-    if (selectedRowIndices.length === 0) {
-      return;
-    }
-    const message = `Delete ${selectedRowIndices.length} row${
-      selectedRowIndices.length === 1 ? "" : "s"
+    if (selection.selectedCount === 0) return;
+    const message = `Delete ${selection.selectedCount} row${
+      selection.selectedCount === 1 ? "" : "s"
     }? This cannot be undone.`;
-    if (!window.confirm(message)) {
-      return;
-    }
+    if (!window.confirm(message)) return;
     const outcome = await deleteSelectedTableRows(
       tableName,
-      selectedRowIndices,
+      selection.selectedIndices,
     );
     setLastOutcome(outcome);
-    if (outcome.kind === "completed") {
-      setRowSelection({});
-    }
+    if (outcome.kind === "completed") selection.clear();
   };
 
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
 
-  const selectedRowIndex =
-    selectedRowIndices.length === 1 ? selectedRowIndices[0] : null;
-  const selectedRow =
-    selectedRowIndex !== null ? rows[selectedRowIndex] : rows[0];
+  const rowCountLabel = `${(pagination.totalRows ?? rows.length).toLocaleString()} rows`;
 
-  const rowCountLabel =
-    pagination.totalRows !== undefined
-      ? `${pagination.totalRows.toLocaleString()} rows`
-      : `${rows.length.toLocaleString()} rows`;
-
-  const statusItems: StatusBarItem[] = [
-    {
-      id: "query",
-      label: "Query",
-      tone: errorMessage ? "danger" : "healthy",
-      value:
-        pagination.runtimeMs !== undefined
-          ? `Completed · ${pagination.runtimeMs} ms`
-          : isLoading
-            ? "Loading…"
-            : "Idle",
-    },
-    {
-      id: "data",
-      label: "Data",
-      value: `${rows.length.toLocaleString()} rows`,
-    },
-    {
-      id: "page",
-      label: "Page",
-      value: pagination.totalPages
-        ? `${pagination.page} of ${pagination.totalPages}`
-        : `${pagination.page}`,
-    },
-    {
-      id: "connection",
-      label: "Connection",
-      tone: "healthy",
-      value: connection?.status ?? "Healthy",
-      align: "right",
-    },
-  ];
+  const statusItems = buildStatusItems({
+    errorMessage,
+    isLoading,
+    rowCount: rows.length,
+    pagination,
+    connectionStatus: connection?.status,
+  });
 
   return (
     <div className="flex h-full flex-col bg-surface-app">
@@ -273,7 +214,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
       <TableStatusBanners
         errorMessage={errorMessage}
-        showReadOnlyBanner={isReadOnly && Boolean(activeTableStructure)}
+        showReadOnlyBanner={caps.isReadOnly && caps.structureLoaded}
         commitStatus={commitStatus}
         lastOutcome={lastOutcome}
         onRetryLoad={onRefresh}
@@ -283,7 +224,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       {isAddRowOpen && activeTableStructure ? (
         <AddRowForm
           columns={activeTableStructure.columns}
-          isWriting={isWriting}
+          isWriting={caps.isWriting}
           onSubmit={handleSubmitAddRow}
           onClose={() => setIsAddRowOpen(false)}
         />
@@ -307,7 +248,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                 setTableEdit(tableName, rowIndex, colIndex, value)
               }
               hasEdits={hasEdits}
-              readOnly={isReadOnly || !canEditCells}
+              readOnly={caps.isReadOnly || !caps.canEditCells}
               isSaving={commitStatus?.state === "running"}
               onDiscard={() => discardTableEdits(tableName)}
               onSave={async () => {
@@ -317,13 +258,13 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
               onOpenSQL={() => openQueryForTable(tab.schema, tab.table ?? "")}
               onRefresh={onRefresh}
               exportFilenameBase={exportFilenameBase}
-              rowSelection={rowSelection}
-              onRowSelectionChange={setRowSelection}
+              rowSelection={selection.rowSelection}
+              onRowSelectionChange={selection.setRowSelection}
               toolbarLeading={
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
-                    disabled={!canAddRow}
+                    disabled={!caps.canAddRow}
                     onClick={() => setIsAddRowOpen(true)}
                     aria-label="Add row"
                     title="Add row"
@@ -335,7 +276,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
                     size="sm"
                     variant="outline"
                     className="border-danger/40 text-danger hover:bg-danger/10"
-                    disabled={!canDeleteSelected}
+                    disabled={!caps.canDeleteSelected}
                     aria-label="Delete selected"
                     title="Delete selected"
                     onClick={() => {
@@ -363,9 +304,9 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         {activeSubTab === "data" ? (
           <RowDetailsPanel
             columns={columns}
-            selectedRow={selectedRow}
-            selectedRowIndex={selectedRowIndex}
-            selectedRowCount={selectedRowIndices.length}
+            selectedRow={selection.selectedRow}
+            selectedRowIndex={selection.selectedIndex}
+            selectedRowCount={selection.selectedCount}
             totalRows={pagination.totalRows ?? rows.length}
             indexes={activeTableStructure?.indexes.length ?? 0}
             bodyWidth={bodyWidth}
