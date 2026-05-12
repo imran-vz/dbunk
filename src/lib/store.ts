@@ -17,6 +17,33 @@ import {
   schemaRelationshipsKey,
 } from "@/lib/schema-graph";
 import { pickSqlToRun } from "@/lib/sql";
+import type {
+  ActiveView,
+  AppSettingsSnapshot,
+  AppSettingsStatus,
+  Connection,
+  CredentialStorageMode,
+  DatabaseOverviewStats,
+  DatabaseOverviewStatsStatus,
+  QueryHistoryEntry,
+  QueryPreviewData,
+  QueryStatus,
+  RedisCapabilities,
+  SavedQueriesStatus,
+  SavedQuery,
+  SchemaExplorer,
+  SchemaRelationshipsStatus,
+  StoredConnection,
+  StructureCommitStatus,
+  TableDataState,
+  TableEditsCommitStatus,
+  TableLoadStatus,
+  TablePreviewData,
+  TableStructure,
+  TableStructureStatus,
+  WorkspaceTab,
+} from "@/lib/store/types";
+import { tableDataKey, tableStructureKey } from "@/lib/store/types";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 export type {
@@ -31,124 +58,21 @@ export type {
 } from "@/lib/schema-graph";
 export { schemaRelationshipsKey } from "@/lib/schema-graph";
 
-export type DatabaseEngine =
-  | "PostgreSQL"
-  | "MySQL"
-  | "ClickHouse"
-  | "SQLite"
-  | "Redis";
-
-/**
- * Top-level engine class. Relational engines share schemas/tables/
- * rows/SQL; keyvalue engines share a keyspace of typed keys. Derived
- * from `DatabaseEngine`; see ADR-0008 and `engine-policy.ts`.
- */
-export type StorageClass = "relational" | "keyvalue";
-
-export type RedisModuleInfo = {
-  name: string;
-  version: string;
-};
-
-/**
- * Connect-time pipeline result for Redis — surfaced in the
- * post-test-connection banner on the new-connection form. Every
- * field is optional because managed Redis (Upstash hobby tier,
- * locked-down ACLs) often restricts `INFO` sections or
- * `MODULE LIST` and we degrade per-field rather than failing.
- */
-export type RedisCapabilities = {
-  serverVersion?: string;
-  /** `master` or `replica`. Drives auto-read-only (ADR-0009). */
-  role?: string;
-  connectedSlaves?: number;
-  modules?: RedisModuleInfo[];
-  dbSize?: number;
-  maxmemoryPolicy?: string;
-};
-export type CredentialStorageMode =
-  | "keychain"
-  | "encrypted-sqlite"
-  | "plain-sqlite";
-
-export type CredentialState = "needs-onboarding" | "needs-unlock" | "ready";
-
-export type AppSettingsSnapshot = {
-  onboardingCompleted: boolean;
-  credentialStorageMode: CredentialStorageMode | null;
-  credentialState: CredentialState;
-  configDir: string;
-};
-
-export type AppSettingsStatus =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "ready" }
-  | { state: "error"; error: string };
-
-export type StoredConnection = {
-  id: string;
-  name: string;
-  database: string;
-  engine: DatabaseEngine;
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  role: string;
-  /** ISO-8601 timestamp of the most recent successful query/connect. */
-  lastActivityAt?: string;
-  /** ClickHouse-only: connect over HTTPS instead of HTTP. */
-  useHttps?: boolean;
-  /** ClickHouse-only: URL path prefix for proxied deployments (e.g. /clickhouse). */
-  urlPath?: string;
-  /** Redis-only: which numbered DB (0–15 on standalone). Defaults to 0. */
-  dbNumber?: number;
-  /** Redis-only: connect over TLS (rediss://). */
-  useTls?: boolean;
-  /** Redis-only: verify the TLS certificate. Only meaningful when useTls is true. Default true. */
-  verifyTlsCert?: boolean;
-};
-
-export type Connection = {
-  id: string;
-  name: string;
-  database: string;
-  status: "Connected" | "Read only" | "Disconnected";
-  engine: DatabaseEngine;
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  role: string;
-  latency: string;
-  lastSync: string;
-  /** ISO-8601 timestamp of the most recent successful query/connect. */
-  lastActivityAt?: string;
-  errorMessage?: string;
-  /** ClickHouse-only: connect over HTTPS instead of HTTP. */
-  useHttps?: boolean;
-  /** ClickHouse-only: URL path prefix for proxied deployments. */
-  urlPath?: string;
-  /** Redis-only: which numbered DB (0–15 on standalone). */
-  dbNumber?: number;
-  /** Redis-only: connect over TLS (rediss://). */
-  useTls?: boolean;
-  /** Redis-only: verify the TLS certificate when useTls is on. */
-  verifyTlsCert?: boolean;
-};
-
-export type QueryStatus =
-  | { state: "idle" }
-  | { state: "running" }
-  | { state: "success"; runtimeMs?: number }
-  | { state: "error"; error: string };
-
-export type TableLoadStatus =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "success" }
-  | { state: "error"; error: string };
+export type {
+  ActiveView,
+  AppSettingsSnapshot,
+  AppSettingsStatus,
+  Connection,
+  CredentialState,
+  CredentialStorageMode,
+  DatabaseEngine,
+  QueryStatus,
+  RedisCapabilities,
+  RedisModuleInfo,
+  StorageClass,
+  StoredConnection,
+  TableLoadStatus,
+} from "@/lib/store/types";
 
 const errorToMessage = (error: unknown): string => {
   if (error instanceof Error) {
@@ -197,121 +121,19 @@ type TableDataResult = {
   runtimeMs: number;
 };
 
-export type TableDataState = {
-  connectionId: string;
-  schema: string;
-  table: string;
-  columns: string[];
-  rows: string[][];
-  page: number;
-  pageSize: number;
-  totalRows?: number;
-  runtimeMs: number;
-};
-
-export const tableDataKey = (
-  connectionId: string,
-  schema: string,
-  table: string,
-) => `${connectionId}::${schema}::${table}`;
-
-export const tableStructureKey = (
-  connectionId: string,
-  schema: string,
-  table: string,
-) => `${connectionId}::${schema}::${table}`;
-
-export type ColumnInfo = {
-  name: string;
-  dataType: string;
-  nullable: boolean;
-  defaultValue: string | null;
-  isPrimaryKey: boolean;
-  ordinalPosition: number;
-};
-
-export type ForeignKeyInfo = {
-  name: string;
-  columns: string[];
-  referencedSchema: string;
-  referencedTable: string;
-  referencedColumns: string[];
-  onUpdate: string | null;
-  onDelete: string | null;
-};
-
-export type IndexInfo = {
-  name: string;
-  columns: string[];
-  isUnique: boolean;
-  isPrimary: boolean;
-  method: string | null;
-};
-
-export type ConstraintInfo = {
-  name: string;
-  kind: string;
-  definition: string;
-};
-
-export type StructureCapabilities = {
-  columns: boolean;
-  primaryKey: boolean;
-  foreignKeys: boolean;
-  indexes: boolean;
-  constraints: boolean;
-  /** Whether new rows can be inserted via the row editor. */
-  canInsertRows: boolean;
-  /** Whether existing cells can be updated via the row editor. */
-  canUpdateRows: boolean;
-  /** Whether rows can be deleted via the row editor. */
-  canDeleteRows: boolean;
-  /** Whether ALTER TABLE-style schema edits are supported. */
-  canAlterSchema: boolean;
-  /**
-   * "exact" — identity columns guarantee at most one matching row.
-   * "best-effort" — identity may match multiple rows (ClickHouse).
-   */
-  uniquenessGuarantee: "exact" | "best-effort";
-};
-
-export type TableStructure = {
-  columns: ColumnInfo[];
-  primaryKey: string[] | null;
-  foreignKeys: ForeignKeyInfo[];
-  indexes: IndexInfo[];
-  constraints: ConstraintInfo[];
-  capabilities: StructureCapabilities;
-  /** Engine-specific extension fields. Populated only for ClickHouse. */
-  tableEngine?: string;
-  partitionBy?: string;
-  sampleBy?: string;
-};
-
-export type TableStructureStatus =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "success" }
-  | { state: "error"; error: string };
-
-export type StructureCommitStatus =
-  | { state: "idle" }
-  | { state: "running" }
-  | { state: "success"; runtimeMs?: number }
-  | { state: "error"; error: string };
-
-export type TableEditsCommitStatus =
-  | { state: "idle" }
-  | { state: "running" }
-  | {
-      state: "queued";
-      database: string;
-      table: string;
-      mutationIds: string[];
-      runtimeMs: number;
-    }
-  | { state: "success"; rowsAffected: number; runtimeMs: number }
-  | { state: "error"; error: string };
+export type {
+  ColumnInfo,
+  ConstraintInfo,
+  ForeignKeyInfo,
+  IndexInfo,
+  StructureCapabilities,
+  StructureCommitStatus,
+  TableDataState,
+  TableEditsCommitStatus,
+  TableStructure,
+  TableStructureStatus,
+} from "@/lib/store/types";
+export { tableDataKey, tableStructureKey } from "@/lib/store/types";
 
 type CellEditPayload = {
   rowIndex: number;
@@ -369,28 +191,11 @@ const outcomeToTableEditsStatus = (
   };
 };
 
-export type SchemaRelationshipsStatus =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "success" }
-  | { state: "error"; error: string };
-
-export type DatabaseOverviewStats = {
-  databaseSizeBytes: number;
-  tableSizeBytes: number;
-  indexSizeBytes: number;
-  tableCount: number;
-  schemaCount: number;
-  rowCountEstimate: number;
-  indexCount: number;
-  connectionCount: number;
-};
-
-export type DatabaseOverviewStatsStatus =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "success" }
-  | { state: "error"; error: string };
+export type {
+  DatabaseOverviewStats,
+  DatabaseOverviewStatsStatus,
+  SchemaRelationshipsStatus,
+} from "@/lib/store/types";
 
 const generatePendingId = (): string => {
   if (
@@ -439,44 +244,12 @@ const applyConnectionUpdate = (
     connection.id === connectionId ? { ...connection, ...updates } : connection,
   );
 
-export type SchemaExplorer = {
-  name: string;
-  tables: string[];
-  views?: string[];
-};
-
-export type SavedQuery = {
-  id: string;
-  name: string;
-  body: string;
-  /** `null` = saved query is not pinned to a specific connection. */
-  connectionId: string | null;
-  isFavorite: boolean;
-  /** Reserved for future cloud-sync. Local writes leave this null. */
-  ownerId?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type SavedQueriesStatus =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "success" }
-  | { state: "error"; error: string };
-
-export type QueryHistoryEntry = {
-  id: string;
-  sql: string;
-  connectionId: string;
-  connectionName: string;
-  database: string;
-  engine: DatabaseEngine;
-  status: "success" | "error";
-  errorMessage?: string;
-  runtimeMs: number;
-  rowCount?: number;
-  startedAt: string;
-};
+export type {
+  QueryHistoryEntry,
+  SavedQueriesStatus,
+  SavedQuery,
+  SchemaExplorer,
+} from "@/lib/store/types";
 
 const generateHistoryId = (): string => {
   if (
@@ -491,48 +264,12 @@ const generateHistoryId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-export type WorkspaceTabKind =
-  | "table"
-  | "query"
-  | "key"
-  | "cli"
-  | "pubsub"
-  | "server";
-
-export type WorkspaceTab = {
-  id: string;
-  kind: WorkspaceTabKind;
-  label: string;
-  connectionId: string;
-  schema: string;
-  table?: string;
-  query?: string;
-  lastRun?: string;
-  isDirty?: boolean;
-  /** Redis `key` tab: the inspected key name (under `dbNumber`). */
-  redisKey?: string;
-  /** Redis `key` tab: scoped DB number at open time. */
-  redisDbNumber?: number;
-};
-
-export type TablePreviewData = {
-  columns: string[];
-  rows: string[][];
-  rowCount: string;
-  primaryKey: string;
-  size: string;
-  lastVacuum: string;
-};
-
-export type QueryPreviewData = {
-  columns: string[];
-  rows: string[][];
-  runtime: string;
-  rowCount: string;
-  cache: string;
-};
-
-type ActiveView = "workspace" | "connections" | "settings";
+export type {
+  QueryPreviewData,
+  TablePreviewData,
+  WorkspaceTab,
+  WorkspaceTabKind,
+} from "@/lib/store/types";
 
 interface AppState {
   activeView: ActiveView;
