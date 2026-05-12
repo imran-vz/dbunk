@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+type UnlistenFn = () => void;
 
 export const isTauri = () =>
   typeof window !== "undefined" &&
@@ -9,6 +12,54 @@ export async function tauriInvoke<T>(
   payload?: Record<string, unknown>,
 ) {
   return invoke<T>(command, payload);
+}
+
+export async function tauriStartDragging() {
+  if (!isTauri()) {
+    return;
+  }
+  await getCurrentWindow().startDragging();
+}
+
+export async function tauriToggleMaximize() {
+  if (!isTauri()) {
+    return;
+  }
+  await getCurrentWindow().toggleMaximize();
+}
+
+export async function tauriOnWindowFullscreenChange(
+  listener: (fullscreen: boolean) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+  const appWindow = getCurrentWindow();
+  let disposed = false;
+  const emitFullscreenState = async () => {
+    if (disposed) {
+      return;
+    }
+    listener(await appWindow.isFullscreen());
+  };
+  const emitFromNativeEvent = () => {
+    void emitFullscreenState().catch(() => undefined);
+    window.setTimeout(() => {
+      void emitFullscreenState().catch(() => undefined);
+    }, 150);
+  };
+  const unlisteners = await Promise.all([
+    appWindow.onResized(emitFromNativeEvent),
+    appWindow.onFocusChanged(emitFromNativeEvent),
+  ]);
+  await emitFullscreenState();
+
+  return () => {
+    disposed = true;
+    for (const unlisten of unlisteners) {
+      unlisten();
+    }
+  };
 }
 
 /**

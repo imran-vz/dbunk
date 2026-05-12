@@ -43,6 +43,11 @@ interface ResponsiveEdgePanelProps {
   };
   className?: string;
   contentClassName?: string;
+  renderCompactHeader?: (props: {
+    pinned: boolean;
+    onTogglePinned: () => void;
+    onClose: () => void;
+  }) => React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -69,6 +74,7 @@ export function ResponsiveEdgePanel({
   resizer,
   className,
   contentClassName,
+  renderCompactHeader,
   children,
 }: ResponsiveEdgePanelProps) {
   const panelId = useId();
@@ -143,6 +149,14 @@ export function ResponsiveEdgePanel({
     }),
     [width],
   );
+  const togglePinned = useCallback(() => {
+    setPinned((next) => !next);
+    setRequestedOpen(true);
+  }, [setRequestedOpen]);
+  const closePanel = useCallback(() => {
+    setRequestedOpen(false);
+    setHovered(false);
+  }, [setRequestedOpen]);
 
   const panel = visible ? (
     <aside
@@ -163,46 +177,46 @@ export function ResponsiveEdgePanel({
         className,
       )}
     >
-      {isCompact ? (
-        <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-2">
-          <span className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-text-muted">
-            {title}
-          </span>
-          <div className="flex items-center gap-0.5">
-            <Button
-              type="button"
-              size="icon-xs"
-              variant={pinned ? "secondary" : "ghost"}
-              aria-pressed={pinned}
-              aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-              title={pinned ? `Unpin ${title}` : `Pin ${title}`}
-              onClick={() => {
-                setPinned((next) => !next);
-                setRequestedOpen(true);
-              }}
-            >
-              {pinned ? (
-                <IconPinnedOff className="size-3" />
-              ) : (
-                <IconPin className="size-3" />
-              )}
-            </Button>
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost"
-              aria-label={`Hide ${title}`}
-              title={`Hide ${title}`}
-              onClick={() => {
-                setRequestedOpen(false);
-                setHovered(false);
-              }}
-            >
-              <CollapseIcon className="size-3" />
-            </Button>
-          </div>
-        </div>
-      ) : null}
+      {isCompact
+        ? (renderCompactHeader?.({
+            pinned,
+            onTogglePinned: togglePinned,
+            onClose: closePanel,
+          }) ?? (
+            <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-2">
+              <span className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-text-muted">
+                {title}
+              </span>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant={pinned ? "secondary" : "ghost"}
+                  aria-pressed={pinned}
+                  aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+                  title={pinned ? `Unpin ${title}` : `Pin ${title}`}
+                  onClick={togglePinned}
+                >
+                  {pinned ? (
+                    <IconPinnedOff className="size-3" />
+                  ) : (
+                    <IconPin className="size-3" />
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Hide ${title}`}
+                  title={`Hide ${title}`}
+                  onClick={closePanel}
+                >
+                  <CollapseIcon className="size-3" />
+                </Button>
+              </div>
+            </div>
+          ))
+        : null}
       <div className={cn("min-h-0 flex-1", contentClassName)}>{children}</div>
     </aside>
   ) : null;
