@@ -194,6 +194,14 @@
     * {
         @apply border-border outline-ring/50;
     }
+    html,
+    body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--background);
+    }
     body {
         @apply font-sans bg-background text-foreground;
     }
@@ -232,8 +240,21 @@
     pointer-events: none !important;
 }
 
-body {
-    overflow: hidden;
+[data-window-viewport-zoom] {
+    transform-origin: top left;
+    will-change: transform;
+    contain: layout paint size;
+}
+
+[data-window-viewport-zoom="active"] {
+    transition-property: transform;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-window-viewport-zoom="active"] {
+        transition-duration: 1ms !important;
+    }
 }
 
 :where([data-density="compact"], [data-workspace-density="compact"])
