@@ -621,6 +621,7 @@ export interface AppStoreState {
   updateConnection: (connection: Connection) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
+  disconnectConnection: (connectionId: string) => void;
   testConnection: (
     connection: StoredConnection,
   ) => Promise<
@@ -640,5 +641,11 @@ export interface AppStoreState {
   openViewTab: (schemaName: string, viewName: string) => void;
   createNewQueryTab: () => void;
   createNewTableTab: () => void;
+  closeTabsForConnection: (connectionId: string) => void;
+  dropOpenQueryStateForConnection: (connectionId: string) => void;
+  dropQueryStateForConnection: (connectionId: string) => void;
+  dropRelationalCachesForConnection: (connectionId: string) => void;
+  closeKeyTabsForConnection: (connectionId: string) => void;
+  closePubSubSessionsForConnection: (connectionId: string) => void;
   toggleSchema: (schemaName: string) => void;
 }

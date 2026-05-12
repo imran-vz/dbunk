@@ -72,6 +72,12 @@ export type RelationalQueriesSlice = {
   deleteSavedQuery: (id: string) => Promise<void>;
 
   /**
+   * Cascade cleanup for closing query tabs without removing the
+   * persistent query history list.
+   */
+  dropOpenQueryStateForConnection: (connectionId: string) => void;
+
+  /**
    * Cascade cleanup — drops query-history rows for that connection
    * and any query-status entries for its open tabs (the tab cleanup
    * is best-effort because queryStatus is keyed by tab ID, not
@@ -326,12 +332,17 @@ export const createRelationalQueriesSlice: StateCreator<
     }
   },
 
-  dropQueryStateForConnection: (connectionId) =>
+  dropOpenQueryStateForConnection: (connectionId) =>
     set((state) => {
-      const tabsForConnection = state.workspaceTabs
-        .filter((tab) => tab.connectionId === connectionId)
-        .map((tab) => tab.id);
-      const tabIdSet = new Set(tabsForConnection);
+      const tabsForConnection = state.workspaceTabs.filter(
+        (tab) => tab.connectionId === connectionId,
+      );
+      const tabIdSet = new Set(tabsForConnection.map((tab) => tab.id));
+      const queryLabelSet = new Set(
+        tabsForConnection
+          .filter((tab) => tab.kind === "query")
+          .map((tab) => tab.label),
+      );
       const filterByTab = <T>(bag: Record<string, T>): Record<string, T> => {
         const next: Record<string, T> = {};
         for (const [key, value] of Object.entries(bag)) {
@@ -341,12 +352,30 @@ export const createRelationalQueriesSlice: StateCreator<
         }
         return next;
       };
+      const filterByQueryLabel = <T>(
+        bag: Record<string, T>,
+      ): Record<string, T> => {
+        const next: Record<string, T> = {};
+        for (const [key, value] of Object.entries(bag)) {
+          if (!queryLabelSet.has(key)) {
+            next[key] = value;
+          }
+        }
+        return next;
+      };
       return {
-        queryHistory: state.queryHistory.filter(
-          (entry) => entry.connectionId !== connectionId,
-        ),
         queryStatus: filterByTab(state.queryStatus),
         queryEdits: filterByTab(state.queryEdits),
+        queryPreviews: filterByQueryLabel(state.queryPreviews),
       };
     }),
+
+  dropQueryStateForConnection: (connectionId) => {
+    get().dropOpenQueryStateForConnection(connectionId);
+    set((state) => ({
+      queryHistory: state.queryHistory.filter(
+        (entry) => entry.connectionId !== connectionId,
+      ),
+    }));
+  },
 });

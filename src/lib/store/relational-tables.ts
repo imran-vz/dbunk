@@ -1092,34 +1092,51 @@ export const createRelationalTablesSlice: StateCreator<
     const prefix = `${connectionId}::`;
     const matches = (key: string) =>
       key === connectionId || key.startsWith(prefix);
-    set((state) => ({
-      schemaExplorer: dropMatching(
-        state.schemaExplorer,
-        (k) => k === connectionId,
-      ),
-      tableData: dropMatching(state.tableData, matches),
-      tableStructure: dropMatching(state.tableStructure, matches),
-      tableLoadStatus: dropMatching(state.tableLoadStatus, matches),
-      tableStructureStatus: dropMatching(state.tableStructureStatus, matches),
-      pendingStructureChanges: dropMatching(
-        state.pendingStructureChanges,
-        matches,
-      ),
-      structureCommitStatus: dropMatching(state.structureCommitStatus, matches),
-      schemaRelationships: dropMatching(state.schemaRelationships, matches),
-      schemaRelationshipsStatus: dropMatching(
-        state.schemaRelationshipsStatus,
-        matches,
-      ),
-      databaseOverviewStats: dropMatching(
-        state.databaseOverviewStats,
-        (k) => k === connectionId,
-      ),
-      databaseOverviewStatsStatus: dropMatching(
-        state.databaseOverviewStatsStatus,
-        (k) => k === connectionId,
-      ),
-    }));
+    set((state) => {
+      const tableNamesForConnection = new Set(
+        Object.values(state.tableData)
+          .filter((data) => data.connectionId === connectionId)
+          .map((data) => data.table),
+      );
+      const matchesTableName = (key: string) =>
+        tableNamesForConnection.has(key);
+      return {
+        tableEdits: dropMatching(state.tableEdits, matchesTableName),
+        tableEditsCommitStatus: dropMatching(
+          state.tableEditsCommitStatus,
+          matchesTableName,
+        ),
+        schemaExplorer: dropMatching(
+          state.schemaExplorer,
+          (k) => k === connectionId,
+        ),
+        tableData: dropMatching(state.tableData, matches),
+        tableStructure: dropMatching(state.tableStructure, matches),
+        tableLoadStatus: dropMatching(state.tableLoadStatus, matches),
+        tableStructureStatus: dropMatching(state.tableStructureStatus, matches),
+        pendingStructureChanges: dropMatching(
+          state.pendingStructureChanges,
+          matches,
+        ),
+        structureCommitStatus: dropMatching(
+          state.structureCommitStatus,
+          matches,
+        ),
+        schemaRelationships: dropMatching(state.schemaRelationships, matches),
+        schemaRelationshipsStatus: dropMatching(
+          state.schemaRelationshipsStatus,
+          matches,
+        ),
+        databaseOverviewStats: dropMatching(
+          state.databaseOverviewStats,
+          (k) => k === connectionId,
+        ),
+        databaseOverviewStatsStatus: dropMatching(
+          state.databaseOverviewStatsStatus,
+          (k) => k === connectionId,
+        ),
+      };
+    });
   },
 });
 

@@ -227,11 +227,16 @@ export const createWorkspaceTabsSlice: StateCreator<
       const droppedActive = !nextTabs.some(
         (tab) => tab.id === state.activeTabId,
       );
+      const nextActiveTab = droppedActive ? nextTabs[0] : undefined;
       return {
         workspaceTabs: nextTabs,
         activeTabId: droppedActive
-          ? (nextTabs[0]?.id ?? "")
+          ? (nextActiveTab?.id ?? "")
           : state.activeTabId,
+        activeConnectionId:
+          droppedActive && nextActiveTab
+            ? nextActiveTab.connectionId
+            : state.activeConnectionId,
       };
     }),
 });

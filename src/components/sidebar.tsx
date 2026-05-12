@@ -2,6 +2,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconDatabase,
+  IconDatabaseOff,
   IconDots,
   IconFilter,
   IconSettings,
@@ -44,6 +45,7 @@ export function Sidebar({ className }: { className?: string }) {
     setActiveView,
     setActiveConnectionId,
     connectConnection,
+    disconnectConnection,
     toggleSchema,
     openTableTab,
     openViewTab,
@@ -146,6 +148,13 @@ export function Sidebar({ className }: { className?: string }) {
                     onClick={() => connectConnection(connection.id)}
                   >
                     Connect
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={connection.status === "Disconnected"}
+                    onClick={() => disconnectConnection(connection.id)}
+                  >
+                    <IconDatabaseOff className="size-3.5" />
+                    Disconnect
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setEditingConnection(connection)}

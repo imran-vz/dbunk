@@ -2,6 +2,7 @@ import {
   IconAlertCircle,
   IconClockHour3,
   IconDatabase,
+  IconDatabaseOff,
   IconDotsVertical,
   IconPencil,
   IconPlus,
@@ -62,6 +63,7 @@ export function ConnectionsView() {
     connections,
     setActiveConnectionId,
     connectConnection,
+    disconnectConnection,
   } = useAppStore();
 
   const filterCounts = useMemo(() => {
@@ -198,6 +200,7 @@ export function ConnectionsView() {
                     setActiveConnectionId(connection.id);
                     void connectConnection(connection.id);
                   }}
+                  onDisconnect={() => disconnectConnection(connection.id)}
                   onEdit={() => setEditingConnection(connection)}
                   onDelete={() => setDeletingConnection(connection)}
                 />
@@ -271,6 +274,7 @@ function ConnectionCard({
   isActive,
   onSelect,
   onConnect,
+  onDisconnect,
   onEdit,
   onDelete,
 }: {
@@ -278,6 +282,7 @@ function ConnectionCard({
   isActive: boolean;
   onSelect: () => void;
   onConnect: () => void;
+  onDisconnect: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -346,6 +351,13 @@ function ConnectionCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onConnect}>Connect</DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={connection.status === "Disconnected"}
+              onClick={onDisconnect}
+            >
+              <IconDatabaseOff className="size-3.5" />
+              Disconnect
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={onEdit}>
               <IconPencil className="size-3.5" />
               Edit…

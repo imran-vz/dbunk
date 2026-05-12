@@ -5,7 +5,7 @@
  * delete-connection cleanup cascade (`store/README.md`). Today
  * `deleteConnection` cleans up the Schema Explorer cache inline; as
  * the per-slice cleanup methods land (relational-tables in commit 7,
- * etc.), `deleteConnection` evolves to call `get().dropRelationalCachesForConnection(id)`
+ * etc.), entity-owner actions call `get().dropRelationalCachesForConnection(id)`
  * and friends instead of the inline `set` pattern.
  *
  * Helpers `hydrateConnection`, `toStoredConnection`, and
@@ -96,6 +96,7 @@ export type ConnectionsSlice = {
   updateConnection: (connection: Connection) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
+  disconnectConnection: (connectionId: string) => void;
   testConnection: (
     connection: StoredConnection,
   ) => Promise<
@@ -397,5 +398,32 @@ export const createConnectionsSlice: StateCreator<
         }),
       }));
     }
+  },
+
+  disconnectConnection: (connectionId) => {
+    if (!connectionId) {
+      return;
+    }
+    const state = get();
+    if (
+      !state.connections.some((connection) => connection.id === connectionId)
+    ) {
+      return;
+    }
+
+    state.dropOpenQueryStateForConnection(connectionId);
+    state.dropRelationalCachesForConnection(connectionId);
+    state.closeKeyTabsForConnection(connectionId);
+    state.closePubSubSessionsForConnection(connectionId);
+    state.closeTabsForConnection(connectionId);
+
+    set((state) => ({
+      connections: applyConnectionUpdate(state.connections, connectionId, {
+        status: "Disconnected",
+        latency: "--",
+        lastSync: "Never",
+        errorMessage: undefined,
+      }),
+    }));
   },
 });
