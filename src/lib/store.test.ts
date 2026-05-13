@@ -38,6 +38,24 @@ afterEach(() => {
   resetStore();
 });
 
+/**
+ * Common assertion for early-validation `failed` paths in
+ * `commitStructureChanges`: no backend call, no lifecycle slot left
+ * behind, and the failure reason matches.
+ */
+const expectCommitStructureFailure = async (
+  key: string,
+  reasonMatch: RegExp,
+): Promise<void> => {
+  const outcome = await useAppStore.getState().commitStructureChanges(key);
+  expect(mockedInvoke).not.toHaveBeenCalled();
+  expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
+  if (outcome.kind !== "failed") {
+    throw new Error(`expected failed outcome, got ${outcome.kind}`);
+  }
+  expect(outcome.reason).toMatch(reasonMatch);
+};
+
 const seedQueryTab = (overrides?: { id?: string; query?: string }) => {
   const id = overrides?.id ?? "tab-1";
   const query = overrides?.query ?? "select 1";
@@ -1554,14 +1572,7 @@ describe("store.commitStructureChanges", () => {
     // the running lifecycle slot.
     useAppStore.setState({ connections: [] });
 
-    const outcome = await useAppStore.getState().commitStructureChanges(key);
-
-    expect(mockedInvoke).not.toHaveBeenCalled();
-    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
-    if (outcome.kind !== "failed") {
-      throw new Error(`expected failed outcome, got ${outcome.kind}`);
-    }
-    expect(outcome.reason).toMatch(/connection not found/i);
+    await expectCommitStructureFailure(key, /connection not found/i);
     // Pending changes survive so the user can retry after fixing the
     // connection.
     expect(useAppStore.getState().pendingStructureChanges[key]).toHaveLength(1);
@@ -1579,14 +1590,7 @@ describe("store.commitStructureChanges", () => {
     // path that exercises the running → cleared transition, so it's
     // the load-bearing test for clearLifecycle.
     mockedIsTauri.mockReturnValue(false);
-    const outcome = await useAppStore.getState().commitStructureChanges(key);
-
-    expect(mockedInvoke).not.toHaveBeenCalled();
-    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
-    if (outcome.kind !== "failed") {
-      throw new Error(`expected failed outcome, got ${outcome.kind}`);
-    }
-    expect(outcome.reason).toMatch(/backend is unavailable/i);
+    await expectCommitStructureFailure(key, /backend is unavailable/i);
   });
 
   it("preserves pending and surfaces error on backend failure", async () => {
@@ -1669,14 +1673,7 @@ describe("store.commitStructureChanges", () => {
       });
     });
 
-    const outcome = await useAppStore.getState().commitStructureChanges(key);
-
-    expect(mockedInvoke).not.toHaveBeenCalled();
-    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
-    if (outcome.kind !== "failed") {
-      throw new Error(`expected failed outcome, got ${outcome.kind}`);
-    }
-    expect(outcome.reason).toMatch(/MySQL|does not support/i);
+    await expectCommitStructureFailure(key, /MySQL|does not support/i);
   });
 });
 

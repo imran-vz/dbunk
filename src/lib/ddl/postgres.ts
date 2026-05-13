@@ -7,6 +7,14 @@
  * semantically safe against a live schema.
  */
 
+import {
+  createIdentQuoter,
+  formatDefault,
+  renderAddColumn,
+  renderDropColumn,
+  renderRenameColumn,
+} from "./shared";
+
 export type NewColumn = {
   name: string;
   dataType: string;
@@ -29,35 +37,7 @@ export type PendingChange = {
   change: ColumnChangeKind;
 };
 
-const quoteIdent = (identifier: string): string =>
-  `"${identifier.replace(/"/g, '""')}"`;
-
-const qualifiedTable = (schema: string, table: string): string =>
-  `${quoteIdent(schema)}.${quoteIdent(table)}`;
-
-/**
- * Default-value quoting rule (v1):
- *   - All-numeric-or-decimal values (matches /^[0-9]+(\.[0-9]+)?$/) are
- *     emitted as raw literals.
- *   - Values that end with `()` are treated as function calls and emitted raw.
- *   - Anything else is single-quoted; embedded `'` characters are escaped to
- *     `''`.
- *
- * This keeps the common cases (`42`, `12.50`, `now()`, `CURRENT_TIMESTAMP()`)
- * working without forcing the caller to think about quoting, while still
- * being safe for arbitrary text. Users who need an unquoted bareword like
- * `CURRENT_TIMESTAMP` (without parens) can append `()` or write a function
- * form. A richer expression model is a deliberate follow-up.
- */
-const formatDefault = (raw: string): string => {
-  if (/^-?[0-9]+(\.[0-9]+)?$/.test(raw)) {
-    return raw;
-  }
-  if (raw.endsWith("()")) {
-    return raw;
-  }
-  return `'${raw.replace(/'/g, "''")}'`;
-};
+const { quoteIdent, qualifiedTable } = createIdentQuoter('"');
 
 const renderColumnDefinition = (column: NewColumn): string => {
   const parts = [quoteIdent(column.name), column.dataType];
@@ -78,13 +58,15 @@ const renderChange = (
   const prefix = `ALTER TABLE ${qualifiedTable(schema, table)}`;
   switch (change.kind) {
     case "add":
-      return `${prefix} ADD COLUMN ${renderColumnDefinition(change.column)};`;
+      return renderAddColumn(prefix, renderColumnDefinition(change.column));
     case "drop":
-      return `${prefix} DROP COLUMN ${quoteIdent(change.columnName)};`;
+      return renderDropColumn(prefix, quoteIdent(change.columnName));
     case "rename":
-      return `${prefix} RENAME COLUMN ${quoteIdent(change.columnName)} TO ${quoteIdent(
-        change.newName,
-      )};`;
+      return renderRenameColumn(
+        prefix,
+        quoteIdent(change.columnName),
+        quoteIdent(change.newName),
+      );
     case "set_type":
       return `${prefix} ALTER COLUMN ${quoteIdent(change.columnName)} TYPE ${change.newType};`;
     case "set_nullable":

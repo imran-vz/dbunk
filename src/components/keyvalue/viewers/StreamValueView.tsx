@@ -3,8 +3,9 @@
  * stream IDs. Renders entries as ID + flat key/value table.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import {
   fetchStream,
@@ -28,30 +29,23 @@ export function StreamValueView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchStream({
-      connectionId,
-      key: keyName,
-      count: 200,
-      reverse,
-    })
-      .then((result) => {
-        if (!cancelled) setEntries(result.entries);
-      })
-      .catch((err) => {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId, keyName, reverse]);
+  useRedisFetch({
+    fetch: () =>
+      fetchStream({
+        connectionId,
+        key: keyName,
+        count: 200,
+        reverse,
+      }),
+    onStart: () => {
+      setLoading(true);
+      setError(null);
+    },
+    onSuccess: (result) => setEntries(result.entries),
+    onError: setError,
+    onSettled: () => setLoading(false),
+    cacheKey: `${connectionId}|${keyName}|${reverse}`,
+  });
 
   const loadMore = async () => {
     if (entries.length === 0) return;
