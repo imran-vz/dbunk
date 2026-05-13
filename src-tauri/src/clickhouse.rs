@@ -252,6 +252,18 @@ pub async fn fetch_schema_explorer(
         name: database,
         tables,
         views,
+        materialized_views: vec![],
+        sequences: vec![],
+        foreign_tables: vec![],
+        functions: vec![],
+        procedures: vec![],
+        aggregate_functions: vec![],
+        types: vec![],
+        domains: vec![],
+        extensions: vec![],
+        event_triggers: vec![],
+        roles: vec![],
+        tablespaces: vec![],
     }])
 }
 

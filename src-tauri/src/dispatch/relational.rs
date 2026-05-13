@@ -405,10 +405,113 @@ async fn fetch_schema_explorer_sqlx(
                     Some(&schema),
                 )
                 .await?;
+                let materialized_views = fetch_column(
+                    &mut conn,
+                    "SELECT matviewname::text FROM pg_matviews WHERE schemaname = $1 ORDER BY matviewname",
+                    Some(&schema),
+                )
+                .await?;
+                let sequences = fetch_column(
+                    &mut conn,
+                    "SELECT sequence_name::text FROM information_schema.sequences WHERE sequence_schema = $1 ORDER BY sequence_name",
+                    Some(&schema),
+                )
+                .await?;
+                let foreign_tables = fetch_column(
+                    &mut conn,
+                    "SELECT foreign_table_name::text FROM information_schema.foreign_tables WHERE foreign_table_schema = $1 ORDER BY foreign_table_name",
+                    Some(&schema),
+                )
+                .await?;
+                let functions = fetch_column(
+                    &mut conn,
+                    "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.prokind = 'f' ORDER BY p.proname",
+                    Some(&schema),
+                )
+                .await?;
+                let procedures = fetch_column(
+                    &mut conn,
+                    "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.prokind = 'p' ORDER BY p.proname",
+                    Some(&schema),
+                )
+                .await?;
+                let aggregate_functions = fetch_column(
+                    &mut conn,
+                    "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.prokind = 'a' ORDER BY p.proname",
+                    Some(&schema),
+                )
+                .await?;
+                let types = fetch_column(
+                    &mut conn,
+                    "SELECT t.typname::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = $1 AND t.typtype IN ('c', 'e', 'r', 'm') AND t.typname NOT LIKE '\\_%' ORDER BY t.typname",
+                    Some(&schema),
+                )
+                .await?;
+                let domains = fetch_column(
+                    &mut conn,
+                    "SELECT domain_name::text FROM information_schema.domains WHERE domain_schema = $1 ORDER BY domain_name",
+                    Some(&schema),
+                )
+                .await?;
+                let extensions = fetch_column(
+                    &mut conn,
+                    "SELECT e.extname::text FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE n.nspname = $1 ORDER BY e.extname",
+                    Some(&schema),
+                )
+                .await?;
                 explorer.push(SchemaExplorer {
                     name: schema,
                     tables,
                     views,
+                    materialized_views,
+                    sequences,
+                    foreign_tables,
+                    functions,
+                    procedures,
+                    aggregate_functions,
+                    types,
+                    domains,
+                    extensions,
+                    event_triggers: vec![],
+                    roles: vec![],
+                    tablespaces: vec![],
+                });
+            }
+            let event_triggers = fetch_column(
+                &mut conn,
+                "SELECT evtname::text FROM pg_event_trigger ORDER BY evtname",
+                None,
+            )
+            .await?;
+            let roles = fetch_column(
+                &mut conn,
+                "SELECT rolname::text FROM pg_roles ORDER BY rolname",
+                None,
+            )
+            .await?;
+            let tablespaces = fetch_column(
+                &mut conn,
+                "SELECT spcname::text FROM pg_tablespace ORDER BY spcname",
+                None,
+            )
+            .await?;
+            if !event_triggers.is_empty() || !roles.is_empty() || !tablespaces.is_empty() {
+                explorer.push(SchemaExplorer {
+                    name: "Database".to_string(),
+                    tables: vec![],
+                    views: vec![],
+                    materialized_views: vec![],
+                    sequences: vec![],
+                    foreign_tables: vec![],
+                    functions: vec![],
+                    procedures: vec![],
+                    aggregate_functions: vec![],
+                    types: vec![],
+                    domains: vec![],
+                    extensions: vec![],
+                    event_triggers,
+                    roles,
+                    tablespaces,
                 });
             }
             Ok(explorer)
@@ -433,6 +536,18 @@ async fn fetch_schema_explorer_sqlx(
                 name: connection.database().to_string(),
                 tables,
                 views,
+                materialized_views: vec![],
+                sequences: vec![],
+                foreign_tables: vec![],
+                functions: vec![],
+                procedures: vec![],
+                aggregate_functions: vec![],
+                types: vec![],
+                domains: vec![],
+                extensions: vec![],
+                event_triggers: vec![],
+                roles: vec![],
+                tablespaces: vec![],
             }])
         }
         DatabaseEngine::SQLite => {
@@ -463,6 +578,18 @@ async fn fetch_schema_explorer_sqlx(
                 name: "main".to_string(),
                 tables,
                 views,
+                materialized_views: vec![],
+                sequences: vec![],
+                foreign_tables: vec![],
+                functions: vec![],
+                procedures: vec![],
+                aggregate_functions: vec![],
+                types: vec![],
+                domains: vec![],
+                extensions: vec![],
+                event_triggers: vec![],
+                roles: vec![],
+                tablespaces: vec![],
             }])
         }
         DatabaseEngine::ClickHouse => {
@@ -744,6 +871,23 @@ pub async fn run_pg_restore(
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
             Err(not_implemented_yet(&connection.engine(), "PostgreSQL restore"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn refresh_materialized_view(
+    connection: &StoredConnection,
+    schema: &str,
+    view: &str,
+    concurrently: bool,
+) -> Result<ExecuteDdlResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => {
+            postgres::refresh_materialized_view(connection, schema, view, concurrently).await
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Materialized view refresh"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }

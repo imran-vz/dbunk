@@ -796,6 +796,16 @@ pub(crate) struct CopyTablePayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct RefreshMaterializedViewPayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub view: String,
+    #[serde(default)]
+    pub concurrently: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DeleteRowsPayload {
     pub connection_id: String,
     pub schema: String,
@@ -970,6 +980,30 @@ pub(crate) struct SchemaExplorer {
     pub tables: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materialized_views: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sequences: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub foreign_tables: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub procedures: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aggregate_functions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_triggers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tablespaces: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

@@ -189,6 +189,20 @@ pub async fn run_pg_restore(
     }
 }
 
+pub async fn refresh_materialized_view(
+    connection: &StoredConnection,
+    schema: &str,
+    view: &str,
+    concurrently: bool,
+) -> Result<ExecuteDdlResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::refresh_materialized_view(connection, schema, view, concurrently).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "Materialized view refresh")),
+    }
+}
+
 pub async fn commit_cell_edits(
     connection: &StoredConnection,
     schema: &str,

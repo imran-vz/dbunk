@@ -411,6 +411,23 @@ async fn run_pg_restore(
 }
 
 #[tauri::command]
+async fn refresh_materialized_view(
+    state: State<'_, AppState>,
+    payload: RefreshMaterializedViewPayload,
+) -> Result<ExecuteDdlResult, String> {
+    let RefreshMaterializedViewPayload {
+        connection_id,
+        schema,
+        view,
+        concurrently,
+    } = payload;
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::refresh_materialized_view(&connection, &schema, &view, concurrently).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn commit_cell_edits(
     state: State<'_, AppState>,
     payload: CommitCellEditsPayload,
@@ -1172,6 +1189,7 @@ pub fn run() {
             export_ddl,
             run_pg_dump,
             run_pg_restore,
+            refresh_materialized_view,
             commit_cell_edits,
             insert_row,
             import_rows,

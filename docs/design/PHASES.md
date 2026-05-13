@@ -13,7 +13,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 3 | Data export upgrade | ✅ shipped | First half of the import/export pain — lay the transfer foundation |
 | 4 | Data import wizard | ✅ shipped | Second half — bulk inbound; pairs with Phase 3's transfer surface |
 | 5 | DDL + dump/restore | ✅ shipped | Schema-level export and full `pg_dump`/`pg_restore` backups |
-| 6 | Object navigator depth | planned | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
+| 6 | Object navigator depth | ✅ shipped | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
 | 7 | Admin tools | planned | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
 | 8 | SQL editor depth | planned | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
 | 9 | Compare + generate | planned | Schema compare, data compare, mock data — depends on Phase 6 coverage |
@@ -102,7 +102,7 @@ What landed:
 - Restore accepts plain SQL through `psql` and custom dumps through `pg_restore`, with an optional clean restore toggle.
 - A table-copy panel copies rows from the open table into a matching destination table on any relational connection, chunked at 1000 rows.
 
-## Phase 6 — Object navigator depth
+## Phase 6 — Object navigator depth — ✅ shipped
 Expand the sidebar tree to cover the rest of Postgres's first-class object types. Each object type gets a viewer and, where applicable, an editor.
 
 - Materialized views (+ refresh action)
@@ -114,6 +114,14 @@ Expand the sidebar tree to cover the rest of Postgres's first-class object types
 - Event triggers
 - Per-table sub-nodes: Triggers, Rules, Policies, Partitions, Dependencies, References
 - Database-level: Roles, Tablespaces
+
+What landed:
+- Schema explorer now introspects PostgreSQL materialized views, sequences, foreign tables, functions, procedures, aggregate functions, custom types, domains, installed extensions, event triggers, roles, and tablespaces.
+- The left navigator renders those object groups under each schema, with search covering every object type.
+- Clicking non-table objects opens an object-specific SQL/catalog viewer query; foreign tables and sequences open directly as queryable relations.
+- Materialized views have a direct refresh action backed by a new `refresh_materialized_view` Tauri command.
+- Table rows can expand into Triggers, Rules, Policies, Partitions, Dependencies, and References catalog viewers.
+- The Tables overview fallback now includes materialized views and foreign tables from the enriched schema explorer.
 
 ## Phase 7 — Admin tools
 Operational visibility that lets a Postgres user diagnose live problems without leaving dbunk.

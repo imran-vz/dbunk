@@ -108,7 +108,25 @@ export function TablesTab({
         rowCountEstimate: 0,
         totalSizeBytes: 0,
       }));
-      return [...tables, ...views];
+      const materializedViews = (schema.materializedViews ?? []).map<TableRow>(
+        (name) => ({
+          schema: schema.name,
+          name,
+          kind: "materialized view",
+          rowCountEstimate: 0,
+          totalSizeBytes: 0,
+        }),
+      );
+      const foreignTables = (schema.foreignTables ?? []).map<TableRow>(
+        (name) => ({
+          schema: schema.name,
+          name,
+          kind: "foreign table",
+          rowCountEstimate: 0,
+          totalSizeBytes: 0,
+        }),
+      );
+      return [...tables, ...views, ...materializedViews, ...foreignTables];
     });
   }, [isPostgres, relationStats, schemas]);
 
