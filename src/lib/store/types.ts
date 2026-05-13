@@ -595,6 +595,7 @@ export type OverviewTabId =
   | "schema-map"
   | "query-history"
   | "admin"
+  | "compare"
   | "details"
   | "settings";
 
