@@ -606,6 +606,12 @@ pub(crate) struct LoadDatabaseOverviewStatsPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct LoadRelationStatsPayload {
+    pub connection_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ExecuteDdlPayload {
     pub connection_id: String,
     pub sql: String,
@@ -829,4 +835,32 @@ pub(crate) struct DatabaseOverviewStats {
     pub row_count_estimate: i64,
     pub index_count: i64,
     pub connection_count: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Per-relation stats (Tables + Schemas sub-tabs)
+// ---------------------------------------------------------------------------
+
+/// One row per user-visible relation (table, view, materialised view)
+/// in the connection's catalogue, used to populate the Tables sub-tab
+/// and to derive the Schemas sub-tab's per-schema aggregates in the
+/// frontend. Today only Postgres is implemented; other relational
+/// engines return an empty list — the Schemas sub-tab is gated to PG
+/// in the UI and the Tables sub-tab degrades to schema/name/kind
+/// columns on non-PG.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RelationInfo {
+    pub schema: String,
+    pub name: String,
+    /// One of "table", "view", "materialized view". Matches the
+    /// kind values rendered by the Tables sub-tab badge.
+    pub kind: String,
+    /// `pg_class.reltuples` cast to bigint — a planner estimate, not
+    /// an exact COUNT. Zero when the estimate is missing or the row
+    /// is a view (where it has no useful meaning).
+    pub row_count_estimate: i64,
+    /// `pg_total_relation_size` in bytes — table plus its TOAST and
+    /// every index. Zero for views.
+    pub total_size_bytes: i64,
 }

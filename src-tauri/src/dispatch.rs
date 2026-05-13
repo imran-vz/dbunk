@@ -36,7 +36,7 @@ pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fet
 
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, DatabaseOverviewStats,
-    DeleteRowsResult, ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult,
+    DeleteRowsResult, ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo,
     SchemaExplorer, SchemaRelationships, StorageClass, StoredConnection, TableStructure,
 };
 
@@ -115,6 +115,15 @@ pub async fn fetch_database_overview_stats(
         // behind a separate Tauri command (`fetch_keyvalue_overview`). The
         // shared `DatabaseOverviewStats` envelope stays relational-only.
         StorageClass::KeyValue => Err(not_applicable(connection, "Database overview stats")),
+    }
+}
+
+pub async fn fetch_relation_stats(
+    connection: &StoredConnection,
+) -> Result<Vec<RelationInfo>, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => relational::fetch_relation_stats(connection).await,
+        StorageClass::KeyValue => Err(not_applicable(connection, "Relation stats")),
     }
 }
 

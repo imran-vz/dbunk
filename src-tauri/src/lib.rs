@@ -455,6 +455,19 @@ async fn load_database_overview_stats(
 }
 
 #[tauri::command]
+async fn load_relation_stats(
+    state: State<'_, AppState>,
+    payload: LoadRelationStatsPayload,
+) -> Result<Vec<RelationInfo>, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::fetch_relation_stats(&connection).await },
+    )
+    .await
+}
+
+#[tauri::command]
 async fn load_table_data(
     state: State<'_, AppState>,
     payload: LoadTableDataPayload,
@@ -943,6 +956,7 @@ pub fn run() {
             load_schema_explorer,
             load_schema_relationships,
             load_database_overview_stats,
+            load_relation_stats,
             run_query,
             load_table_data,
             load_table_structure,

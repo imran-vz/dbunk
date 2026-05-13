@@ -39,6 +39,8 @@ import type {
   DDLOutcome,
   EditOutcome,
   QueryStatus,
+  RelationInfo,
+  RelationStatsStatus,
   SchemaExplorer,
   SchemaRelationshipsStatus,
   StructureCommitStatus,
@@ -106,6 +108,14 @@ export type RelationalTablesSlice = {
   schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
   databaseOverviewStats: Record<string, DatabaseOverviewStats>;
   databaseOverviewStatsStatus: Record<string, DatabaseOverviewStatsStatus>;
+  /**
+   * Per-connection list of relations (tables, views, matviews) used by
+   * the Tables and Schemas sub-tabs. Lazy on first activation of
+   * either sub-tab. Invalidated on DDL commit and dropped on
+   * disconnect/delete. Empty list on non-PG engines.
+   */
+  relationStats: Record<string, RelationInfo[]>;
+  relationStatsStatus: Record<string, RelationStatsStatus>;
 
   setExpandedSchemas: (
     schemas: string[] | ((prev: string[]) => string[]),
@@ -136,6 +146,7 @@ export type RelationalTablesSlice = {
     schema: string,
   ) => Promise<void>;
   loadDatabaseOverviewStats: (connectionId: string) => Promise<void>;
+  loadRelationStats: (connectionId: string) => Promise<void>;
 
   setTableEdit: (
     tableName: string,
@@ -205,6 +216,8 @@ export const createRelationalTablesSlice: StateCreator<
   schemaRelationshipsStatus: {},
   databaseOverviewStats: {},
   databaseOverviewStatsStatus: {},
+  relationStats: {},
+  relationStatsStatus: {},
 
   setExpandedSchemas: (schemas) =>
     set((state) => ({
@@ -790,6 +803,51 @@ export const createRelationalTablesSlice: StateCreator<
     }
   },
 
+  loadRelationStats: async (connectionId) => {
+    if (!connectionId) {
+      return;
+    }
+    set((state) => ({
+      relationStatsStatus: {
+        ...state.relationStatsStatus,
+        [connectionId]: { state: "loading" },
+      },
+    }));
+    if (!isTauri()) {
+      set((state) => ({
+        relationStatsStatus: {
+          ...state.relationStatsStatus,
+          [connectionId]: { state: "idle" },
+        },
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<RelationInfo[]>("load_relation_stats", {
+        payload: { connectionId },
+      });
+      set((state) => ({
+        relationStats: {
+          ...state.relationStats,
+          [connectionId]: result,
+        },
+        relationStatsStatus: {
+          ...state.relationStatsStatus,
+          [connectionId]: { state: "success" },
+        },
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load relation stats", error);
+      set((state) => ({
+        relationStatsStatus: {
+          ...state.relationStatsStatus,
+          [connectionId]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
+
   addPendingStructureChange: (key, entry) =>
     set((state) => {
       const existing = state.pendingStructureChanges[key] ?? [];
@@ -880,9 +938,19 @@ export const createRelationalTablesSlice: StateCreator<
       set((s) => {
         const { [key]: _pending, ...restPending } = s.pendingStructureChanges;
         const { [key]: _status, ...restStatus } = s.structureCommitStatus;
+        // Invalidate the per-connection relation-stats cache so the
+        // Tables / Schemas sub-tabs re-fetch on next activation. The
+        // status slot is dropped alongside so the next call kicks
+        // through its loading transition cleanly.
+        const { [connectionId]: _stats, ...restRelationStats } =
+          s.relationStats;
+        const { [connectionId]: _statsStatus, ...restRelationStatsStatus } =
+          s.relationStatsStatus;
         return {
           pendingStructureChanges: restPending,
           structureCommitStatus: restStatus,
+          relationStats: restRelationStats,
+          relationStatsStatus: restRelationStatsStatus,
         };
       });
       // Post-DDL refreshes are independent reads against the same
@@ -952,6 +1020,14 @@ export const createRelationalTablesSlice: StateCreator<
         ),
         databaseOverviewStatsStatus: dropMatching(
           state.databaseOverviewStatsStatus,
+          (k) => k === connectionId,
+        ),
+        relationStats: dropMatching(
+          state.relationStats,
+          (k) => k === connectionId,
+        ),
+        relationStatsStatus: dropMatching(
+          state.relationStatsStatus,
           (k) => k === connectionId,
         ),
       };

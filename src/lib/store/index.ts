@@ -35,6 +35,8 @@ export type {
   QueryStatus,
   RedisConnection,
   RedisStoredConnection,
+  RelationInfo,
+  RelationStatsStatus,
   SavedQuery,
   SchemaExplorer,
   SqliteStoredConnection,
