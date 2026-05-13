@@ -36,6 +36,7 @@ interface TableEditorHeaderProps {
   onRefresh: () => void;
   onExportTableDdl: () => void;
   onOpenCopyTable: () => void;
+  onRunMaintenance: (action: "vacuum" | "analyze" | "reindex") => void;
 }
 
 export function TableEditorHeader({
@@ -51,6 +52,7 @@ export function TableEditorHeader({
   onRefresh,
   onExportTableDdl,
   onOpenCopyTable,
+  onRunMaintenance,
 }: TableEditorHeaderProps) {
   return (
     <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
@@ -103,6 +105,15 @@ export function TableEditorHeader({
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onOpenCopyTable}>
                 Copy to table…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRunMaintenance("vacuum")}>
+                VACUUM table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRunMaintenance("analyze")}>
+                ANALYZE table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRunMaintenance("reindex")}>
+                REINDEX table
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onRefresh}>
                 Refresh data

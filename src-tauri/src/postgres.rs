@@ -42,8 +42,9 @@ use crate::{
     bytes_to_hex, dispatch::should_fetch_rows, quote_double, CellEdit, CellEditKeyValue,
     ColumnInfo, CommitCellEditsResult, ConstraintInfo, DatabaseOverviewStats, DeleteRowsResult,
     ExecuteDdlResult, ExportDdlResult, ForeignKeyInfo, ImportRowsResult, IndexInfo,
-    InsertRowResult, PgDumpResult, PgRestoreResult, QueryResult, SchemaForeignKey,
-    SchemaRelationships, SchemaTableColumn, SchemaTableNode, StoredConnection,
+    InsertRowResult, PgAdminSnapshot, PgAdminStats, PgBackendActionResult, PgDumpResult,
+    PgLockInfo, PgPendingTransactionInfo, PgRestoreResult, PgSessionInfo, QueryResult,
+    SchemaForeignKey, SchemaRelationships, SchemaTableColumn, SchemaTableNode, StoredConnection,
     StructureCapabilities, TableStructure,
 };
 
@@ -1701,6 +1702,159 @@ pub async fn load_server_details(
         timezone: summary.try_get("timezone").unwrap_or_default(),
         settings,
         extensions,
+    })
+}
+
+pub async fn load_admin_snapshot(connection: &StoredConnection) -> Result<PgAdminSnapshot, String> {
+    let mut conn = connect(connection).await?;
+    let session_rows = sqlx::query(
+        r#"
+        SELECT pid, usename, datname, application_name, client_addr::text, state,
+               wait_event_type, wait_event,
+               EXTRACT(EPOCH FROM now() - query_start)::bigint AS query_age_seconds,
+               EXTRACT(EPOCH FROM now() - xact_start)::bigint AS transaction_age_seconds,
+               left(query, 500) AS query
+        FROM pg_stat_activity
+        WHERE datname = current_database() OR datname IS NULL
+        ORDER BY state NULLS LAST, query_start NULLS LAST
+        "#,
+    )
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    let sessions = session_rows
+        .into_iter()
+        .map(|row| PgSessionInfo {
+            pid: row.try_get("pid").unwrap_or_default(),
+            user: row.try_get("usename").unwrap_or_default(),
+            database: row.try_get("datname").ok(),
+            application_name: row.try_get("application_name").unwrap_or_default(),
+            client_addr: row.try_get("client_addr").ok(),
+            state: row.try_get("state").ok(),
+            wait_event_type: row.try_get("wait_event_type").ok(),
+            wait_event: row.try_get("wait_event").ok(),
+            query_age_seconds: row.try_get("query_age_seconds").ok(),
+            transaction_age_seconds: row.try_get("transaction_age_seconds").ok(),
+            query: row.try_get("query").unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+
+    let lock_rows = sqlx::query(
+        r#"
+        SELECT l.pid, l.locktype, l.relation::regclass::text AS relation,
+               l.mode, l.granted, pg_blocking_pids(l.pid) AS blocked_by,
+               left(a.query, 500) AS query
+        FROM pg_locks l
+        LEFT JOIN pg_stat_activity a ON a.pid = l.pid
+        WHERE a.datname = current_database() OR a.datname IS NULL
+        ORDER BY l.granted ASC, l.pid, l.locktype
+        "#,
+    )
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    let locks = lock_rows
+        .into_iter()
+        .map(|row| PgLockInfo {
+            pid: row.try_get("pid").unwrap_or_default(),
+            lock_type: row.try_get("locktype").unwrap_or_default(),
+            relation: row.try_get("relation").ok(),
+            mode: row.try_get("mode").unwrap_or_default(),
+            granted: row.try_get("granted").unwrap_or(false),
+            blocked_by: row.try_get("blocked_by").unwrap_or_default(),
+            query: row.try_get("query").unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+
+    let pending_transactions = sessions
+        .iter()
+        .filter(|session| session.transaction_age_seconds.unwrap_or(0) > 0)
+        .map(|session| PgPendingTransactionInfo {
+            pid: session.pid,
+            user: session.user.clone(),
+            state: session.state.clone(),
+            transaction_age_seconds: session.transaction_age_seconds,
+            query: session.query.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let stats_row = sqlx::query(
+        r#"
+        SELECT pg_database_size(current_database())::bigint AS database_size_bytes,
+               CASE WHEN blks_hit + blks_read = 0 THEN NULL
+                    ELSE blks_hit::float8 / (blks_hit + blks_read)::float8
+               END AS cache_hit_ratio,
+               (SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database() AND state = 'active') AS active_sessions,
+               (SELECT count(*)::bigint FROM pg_stat_activity WHERE datname = current_database() AND state = 'idle in transaction') AS idle_in_transaction,
+               (SELECT count(*)::bigint FROM pg_locks WHERE NOT granted) AS blocked_locks
+        FROM pg_stat_database
+        WHERE datname = current_database()
+        "#,
+    )
+    .fetch_one(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    let stats = PgAdminStats {
+        database_size_bytes: stats_row.try_get("database_size_bytes").unwrap_or(0),
+        cache_hit_ratio: stats_row.try_get("cache_hit_ratio").ok(),
+        active_sessions: stats_row.try_get("active_sessions").unwrap_or(0),
+        idle_in_transaction: stats_row.try_get("idle_in_transaction").unwrap_or(0),
+        blocked_locks: stats_row.try_get("blocked_locks").unwrap_or(0),
+    };
+    Ok(PgAdminSnapshot {
+        sessions,
+        locks,
+        pending_transactions,
+        stats,
+    })
+}
+
+pub async fn cancel_backend(
+    connection: &StoredConnection,
+    pid: i32,
+) -> Result<PgBackendActionResult, String> {
+    let mut conn = connect(connection).await?;
+    let ok = sqlx::query_scalar::<_, bool>("SELECT pg_cancel_backend($1)")
+        .bind(pid)
+        .fetch_one(&mut conn)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(PgBackendActionResult { ok })
+}
+
+pub async fn terminate_backend(
+    connection: &StoredConnection,
+    pid: i32,
+) -> Result<PgBackendActionResult, String> {
+    let mut conn = connect(connection).await?;
+    let ok = sqlx::query_scalar::<_, bool>("SELECT pg_terminate_backend($1)")
+        .bind(pid)
+        .fetch_one(&mut conn)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(PgBackendActionResult { ok })
+}
+
+pub async fn run_maintenance(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    action: &str,
+) -> Result<ExecuteDdlResult, String> {
+    let mut conn = connect(connection).await?;
+    let start = Instant::now();
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
+    let sql = match action {
+        "vacuum" => format!("VACUUM {qualified}"),
+        "analyze" => format!("ANALYZE {qualified}"),
+        "reindex" => format!("REINDEX TABLE {qualified}"),
+        _ => return Err("maintenance action must be vacuum, analyze, or reindex".to_string()),
+    };
+    conn.execute(sql.as_str())
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(ExecuteDdlResult {
+        runtime_ms: start.elapsed().as_millis() as u64,
     })
 }
 

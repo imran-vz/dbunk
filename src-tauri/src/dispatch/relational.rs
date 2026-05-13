@@ -21,8 +21,9 @@ use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
     CommitCellEditsResult, ConnectResult, CopyTableResult, DatabaseEngine, DatabaseOverviewStats,
     DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult, InsertRowResult,
-    MutationStatus, PgDumpResult, PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer,
-    SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities, TableStructure,
+    MutationStatus, PgAdminSnapshot, PgBackendActionResult, PgDumpResult, PgRestoreResult,
+    QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships, ServerDetails,
+    StoredConnection, StructureCapabilities, TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -812,6 +813,44 @@ pub async fn fetch_server_details(
     }
 }
 
+pub async fn fetch_admin_snapshot(
+    connection: &StoredConnection,
+) -> Result<PgAdminSnapshot, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => postgres::load_admin_snapshot(connection).await,
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Admin tools"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn cancel_backend(
+    connection: &StoredConnection,
+    pid: i32,
+) -> Result<PgBackendActionResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => postgres::cancel_backend(connection, pid).await,
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Backend cancel"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn terminate_backend(
+    connection: &StoredConnection,
+    pid: i32,
+) -> Result<PgBackendActionResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => postgres::terminate_backend(connection, pid).await,
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Backend terminate"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
 pub async fn execute_ddl(
     connection: &StoredConnection,
     sql: &str,
@@ -888,6 +927,23 @@ pub async fn refresh_materialized_view(
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
             Err(not_implemented_yet(&connection.engine(), "Materialized view refresh"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn run_maintenance(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    action: &str,
+) -> Result<ExecuteDdlResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => {
+            postgres::run_maintenance(connection, schema, table, action).await
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Table maintenance"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }

@@ -339,6 +339,38 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     }
   };
 
+  const handleRunMaintenance = async (
+    action: "vacuum" | "analyze" | "reindex",
+  ) => {
+    if (!isTauri()) {
+      setLastOutcome({
+        kind: "failed",
+        reason: "Table maintenance requires the desktop runtime.",
+      });
+      return;
+    }
+    try {
+      const result = await tauriInvoke<{ runtimeMs: number }>(
+        "run_pg_maintenance",
+        {
+          payload: {
+            connectionId: tab.connectionId,
+            schema: tab.schema,
+            table: tab.table ?? "",
+            action,
+          },
+        },
+      );
+      setLastOutcome({
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: 0,
+      });
+    } catch (error) {
+      setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
+    }
+  };
+
   const isLoading = status?.state === "loading";
   const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -375,6 +407,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onRefresh={onRefresh}
         onExportTableDdl={handleExportTableDdl}
         onOpenCopyTable={() => setIsCopyOpen(true)}
+        onRunMaintenance={handleRunMaintenance}
       />
 
       <TableStatusBanners
