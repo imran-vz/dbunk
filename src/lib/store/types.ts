@@ -407,6 +407,55 @@ export type RelationStatsStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
+/**
+ * One row from `pg_settings` — a single GUC parameter. The Details
+ * sub-tab groups by `category`, surfaces `shortDesc` as a tooltip,
+ * and highlights any row where `source !== "default"` to flag
+ * operator overrides.
+ */
+export type PgSetting = {
+  name: string;
+  setting: string;
+  unit: string | null;
+  category: string;
+  shortDesc: string | null;
+  /**
+   * Where the setting's current value came from — one of `default`,
+   * `configuration file`, `command line`, `session`, `client`,
+   * `database`, `user`, `override`, etc.
+   */
+  source: string;
+  bootVal: string | null;
+  resetVal: string | null;
+};
+
+/** One row per installed Postgres extension, surfaced read-only. */
+export type PgExtension = {
+  name: string;
+  version: string;
+  schema: string;
+  description: string | null;
+};
+
+/**
+ * Aggregate server-info snapshot used by the Details sub-tab.
+ * Populated only for Postgres connections via `loadServerDetails`.
+ */
+export type ServerDetails = {
+  serverVersion: string;
+  encoding: string;
+  locale: string;
+  timezone: string;
+  settings: PgSetting[];
+  extensions: PgExtension[];
+};
+
+export type ServerDetailsStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
+
 // Re-export domain types from their owning modules so the workspace
 // state type (and slice files) can refer to them through one import
 // path.

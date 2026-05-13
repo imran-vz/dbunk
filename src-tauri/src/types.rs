@@ -612,6 +612,12 @@ pub(crate) struct LoadRelationStatsPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct LoadServerDetailsPayload {
+    pub connection_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ExecuteDdlPayload {
     pub connection_id: String,
     pub sql: String,
@@ -863,4 +869,54 @@ pub(crate) struct RelationInfo {
     /// `pg_total_relation_size` in bytes — table plus its TOAST and
     /// every index. Zero for views.
     pub total_size_bytes: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Server details (Details sub-tab)
+// ---------------------------------------------------------------------------
+
+/// One row from `pg_settings` — a single GUC parameter. The category
+/// + short_desc + source fields drive the Details sub-tab's grouping,
+/// tooltip, and "modified from default" highlight.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgSetting {
+    pub name: String,
+    pub setting: String,
+    pub unit: Option<String>,
+    pub category: String,
+    pub short_desc: Option<String>,
+    /// `default`, `configuration file`, `command line`, `session`,
+    /// `client`, `database`, `user`, `override`, etc. The frontend
+    /// highlights any non-"default" value to surface operator
+    /// overrides.
+    pub source: String,
+    pub boot_val: Option<String>,
+    pub reset_val: Option<String>,
+}
+
+/// One row per installed Postgres extension, surfaced read-only on
+/// the Details sub-tab. Install/drop UI is explicitly Phase 6, not
+/// Phase 1.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgExtension {
+    pub name: String,
+    pub version: String,
+    pub schema: String,
+    pub description: Option<String>,
+}
+
+/// Aggregate snapshot returned by `load_server_details` — the Details
+/// sub-tab's data source. Postgres-only; non-PG connections never
+/// invoke the command (the UI renders a Postgres-only panel).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ServerDetails {
+    pub server_version: String,
+    pub encoding: String,
+    pub locale: String,
+    pub timezone: String,
+    pub settings: Vec<PgSetting>,
+    pub extensions: Vec<PgExtension>,
 }

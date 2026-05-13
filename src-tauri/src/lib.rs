@@ -468,6 +468,19 @@ async fn load_relation_stats(
 }
 
 #[tauri::command]
+async fn load_server_details(
+    state: State<'_, AppState>,
+    payload: LoadServerDetailsPayload,
+) -> Result<ServerDetails, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::fetch_server_details(&connection).await },
+    )
+    .await
+}
+
+#[tauri::command]
 async fn load_table_data(
     state: State<'_, AppState>,
     payload: LoadTableDataPayload,
@@ -957,6 +970,7 @@ pub fn run() {
             load_schema_relationships,
             load_database_overview_stats,
             load_relation_stats,
+            load_server_details,
             run_query,
             load_table_data,
             load_table_structure,

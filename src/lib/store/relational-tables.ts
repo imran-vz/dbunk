@@ -43,6 +43,8 @@ import type {
   RelationStatsStatus,
   SchemaExplorer,
   SchemaRelationshipsStatus,
+  ServerDetails,
+  ServerDetailsStatus,
   StructureCommitStatus,
   TableDataState,
   TableEditsCommitStatus,
@@ -116,6 +118,14 @@ export type RelationalTablesSlice = {
    */
   relationStats: Record<string, RelationInfo[]>;
   relationStatsStatus: Record<string, RelationStatsStatus>;
+  /**
+   * Per-connection server-info snapshot used by the Details sub-tab.
+   * Lazy on first activation. Dropped on disconnect/delete. Postgres-
+   * only — the Details sub-tab is gated to PG in the UI and never
+   * invokes the loader on other engines.
+   */
+  serverDetails: Record<string, ServerDetails>;
+  serverDetailsStatus: Record<string, ServerDetailsStatus>;
 
   setExpandedSchemas: (
     schemas: string[] | ((prev: string[]) => string[]),
@@ -147,6 +157,7 @@ export type RelationalTablesSlice = {
   ) => Promise<void>;
   loadDatabaseOverviewStats: (connectionId: string) => Promise<void>;
   loadRelationStats: (connectionId: string) => Promise<void>;
+  loadServerDetails: (connectionId: string) => Promise<void>;
 
   setTableEdit: (
     tableName: string,
@@ -218,6 +229,8 @@ export const createRelationalTablesSlice: StateCreator<
   databaseOverviewStatsStatus: {},
   relationStats: {},
   relationStatsStatus: {},
+  serverDetails: {},
+  serverDetailsStatus: {},
 
   setExpandedSchemas: (schemas) =>
     set((state) => ({
@@ -848,6 +861,51 @@ export const createRelationalTablesSlice: StateCreator<
     }
   },
 
+  loadServerDetails: async (connectionId) => {
+    if (!connectionId) {
+      return;
+    }
+    set((state) => ({
+      serverDetailsStatus: {
+        ...state.serverDetailsStatus,
+        [connectionId]: { state: "loading" },
+      },
+    }));
+    if (!isTauri()) {
+      set((state) => ({
+        serverDetailsStatus: {
+          ...state.serverDetailsStatus,
+          [connectionId]: { state: "idle" },
+        },
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<ServerDetails>("load_server_details", {
+        payload: { connectionId },
+      });
+      set((state) => ({
+        serverDetails: {
+          ...state.serverDetails,
+          [connectionId]: result,
+        },
+        serverDetailsStatus: {
+          ...state.serverDetailsStatus,
+          [connectionId]: { state: "success" },
+        },
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load server details", error);
+      set((state) => ({
+        serverDetailsStatus: {
+          ...state.serverDetailsStatus,
+          [connectionId]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
+
   addPendingStructureChange: (key, entry) =>
     set((state) => {
       const existing = state.pendingStructureChanges[key] ?? [];
@@ -1028,6 +1086,14 @@ export const createRelationalTablesSlice: StateCreator<
         ),
         relationStatsStatus: dropMatching(
           state.relationStatsStatus,
+          (k) => k === connectionId,
+        ),
+        serverDetails: dropMatching(
+          state.serverDetails,
+          (k) => k === connectionId,
+        ),
+        serverDetailsStatus: dropMatching(
+          state.serverDetailsStatus,
           (k) => k === connectionId,
         ),
       };
