@@ -121,6 +121,7 @@ export function QueryEditorToolbar({
           variant="outline"
           onClick={onExplain}
           disabled={isRunning}
+          aria-label="Run EXPLAIN"
         >
           EXPLAIN
         </Button>

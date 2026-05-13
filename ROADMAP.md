@@ -72,7 +72,7 @@ Today: schemas → tables + views.
 
 ### 5. SQL editor depth
 - ✅ Basic SQL completion (`src/lib/sql-completions.ts`)
-- ❌ EXPLAIN / EXPLAIN ANALYZE plan visualizer (tree + cost)
+- ✅ EXPLAIN / EXPLAIN ANALYZE plan visualizer (tree + cost)
 - ❌ PL/pgSQL debugger (breakpoints, step, variable inspect)
 - ❌ SQL templates / snippets library
 - ❌ Bind variables / parameterized executions

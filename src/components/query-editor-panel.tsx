@@ -1,6 +1,8 @@
 import MonacoEditor from "@monaco-editor/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
+  type ExplainPlanData,
+  type ExplainPlanNode,
   QueryResultsView,
   type ResultsView,
 } from "@/components/query-editor/results-view";
@@ -20,6 +22,7 @@ import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import {
+  type QueryOutcome,
   type QueryPreviewData,
   useAppStore,
   type WorkspaceTab,
@@ -34,6 +37,9 @@ interface QueryEditorPanelProps {
 export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   const [resultsView, setResultsView] = useState<ResultsView>("results");
   const [bindValues, setBindValues] = useState<Record<string, string>>({});
+  const [explainPlan, setExplainPlan] = useState<ExplainPlanData | null>(null);
+  const activeTabIdRef = useRef(tab.id);
+  activeTabIdRef.current = tab.id;
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
   const sidebar = useQuerySidebarVisibility(containerWidth);
 
@@ -121,6 +127,21 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     editor.runSql(applyBindVariables(editor.currentStatement(), bindValues));
   };
 
+  const handleExplain = async () => {
+    if (isRunning) return;
+    const statement = applyBindVariables(editor.currentStatement(), bindValues);
+    const sql = `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)\n${statement}`;
+    setResultsView("explain");
+    setExplainPlan(null);
+    const requestedTabId = tab.id;
+    const outcome = await runQuery(requestedTabId, { overrideSql: sql });
+    if (requestedTabId !== activeTabIdRef.current) return;
+    if (outcome.kind !== "noop") setOutcome(outcome);
+    if (outcome.kind === "completed") {
+      setExplainPlan(parseExplainPreview(outcome.preview, outcome));
+    }
+  };
+
   const editorOptions = useMemo(
     () =>
       ({
@@ -176,14 +197,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
           }
           onRunSelection={editor.handleRunSelection}
           onRunAll={editor.handleRunAll}
-          onExplain={() =>
-            editor.runSql(
-              `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)\n${applyBindVariables(
-                editor.currentStatement(),
-                bindValues,
-              )}`,
-            )
-          }
+          onExplain={handleExplain}
           onInsertSnippet={(sql) =>
             updateQuery(
               tab.id,
@@ -236,6 +250,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
             view={resultsView}
             onViewChange={setResultsView}
             preview={activeQueryPreview}
+            explainPlan={explainPlan}
             currentEdits={currentEdits}
             exportFilenameBase={exportFilenameBase}
             isRunning={isRunning}
@@ -265,6 +280,95 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
       </ResponsiveEdgePanel>
     </div>
   );
+}
+
+function parseExplainPreview(
+  preview: QueryPreviewData,
+  outcome: Extract<QueryOutcome, { kind: "completed" }>,
+): ExplainPlanData {
+  const raw = preview.rows[0]?.[0] ?? "";
+  const parsed = parseExplainJson(raw);
+  if (parsed) {
+    return {
+      kind: "json",
+      runtimeMs: outcome.runtimeMs,
+      planningMs: numberOrNull(parsed["Planning Time"]),
+      executionMs: numberOrNull(parsed["Execution Time"]),
+      root: normalizeExplainNode(parsed.Plan),
+    };
+  }
+  return {
+    kind: "text",
+    runtimeMs: outcome.runtimeMs,
+    lines: preview.rows.map((row) => row.join(" ")).filter(Boolean),
+  };
+}
+
+function parseExplainJson(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed) && isRecord(parsed[0])) return parsed[0];
+    if (isRecord(parsed)) return parsed;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function normalizeExplainNode(value: unknown): ExplainPlanNode {
+  const node = isRecord(value) ? value : {};
+  const children = Array.isArray(node.Plans)
+    ? node.Plans.map(normalizeExplainNode)
+    : [];
+  return {
+    nodeType: stringOrDefault(node["Node Type"], "Plan"),
+    relation: stringOrUndefined(node["Relation Name"]),
+    alias: stringOrUndefined(node.Alias),
+    startupCost: numberOrUndefined(node["Startup Cost"]),
+    totalCost: numberOrUndefined(node["Total Cost"]),
+    planRows: numberOrUndefined(node["Plan Rows"]),
+    actualStartupTime: numberOrUndefined(node["Actual Startup Time"]),
+    actualTotalTime: numberOrUndefined(node["Actual Total Time"]),
+    actualRows: numberOrUndefined(node["Actual Rows"]),
+    actualLoops: numberOrUndefined(node["Actual Loops"]),
+    buffers: bufferSummary(node),
+    children,
+  };
+}
+
+function bufferSummary(node: Record<string, unknown>): string[] {
+  return [
+    ["Shared Hit", node["Shared Hit Blocks"]],
+    ["Shared Read", node["Shared Read Blocks"]],
+    ["Shared Dirtied", node["Shared Dirtied Blocks"]],
+    ["Shared Written", node["Shared Written Blocks"]],
+    ["Temp Read", node["Temp Read Blocks"]],
+    ["Temp Written", node["Temp Written Blocks"]],
+  ]
+    .filter(([, value]) => typeof value === "number" && value > 0)
+    .map(([label, value]) => `${label}: ${value}`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringOrDefault(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function slug(value: string): string {

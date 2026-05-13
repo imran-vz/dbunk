@@ -196,7 +196,12 @@ export type QueryStatus = { state: "running" };
  * it. See CONTEXT.md — Query Outcome.
  */
 export type QueryOutcome =
-  | { kind: "completed"; runtimeMs: number; rowCount: number }
+  | {
+      kind: "completed";
+      runtimeMs: number;
+      rowCount: number;
+      preview: QueryPreviewData;
+    }
   | { kind: "failed"; reason: string }
   | { kind: "noop" };
 

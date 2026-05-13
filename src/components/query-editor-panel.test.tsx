@@ -195,6 +195,72 @@ afterEach(() => {
 });
 
 describe("QueryEditorPanel feedback", () => {
+  it("renders the Explain tab as a real empty state, not coming soon", () => {
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /show explain view/i }));
+
+    expect(screen.getByText(/run explain/i)).toBeTruthy();
+    expect(screen.queryByText(/coming soon/i)).toBeNull();
+  });
+
+  it("runs EXPLAIN JSON and renders the plan tree in the Explain tab", async () => {
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      columns: ["QUERY PLAN"],
+      rows: [
+        [
+          JSON.stringify([
+            {
+              Plan: {
+                "Node Type": "Seq Scan",
+                "Relation Name": "users",
+                "Startup Cost": 0,
+                "Total Cost": 12.5,
+                "Plan Rows": 5,
+                "Actual Startup Time": 0.01,
+                "Actual Total Time": 0.03,
+                "Actual Rows": 5,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 3,
+              },
+              "Planning Time": 0.2,
+              "Execution Time": 0.05,
+            },
+          ]),
+        ],
+      ],
+      runtimeMs: 8,
+      rowCount: 1,
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /run explain/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Seq Scan")).toBeTruthy();
+    });
+    expect(screen.getByText("users")).toBeTruthy();
+    expect(screen.getByText("Shared Hit: 3")).toBeTruthy();
+    expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
+      payload: {
+        connectionId: "conn-1",
+        query: "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)\nselect 1",
+      },
+    });
+  });
+
   it("disables the Run button while a query is running", () => {
     seedStatus({ state: "running" });
 

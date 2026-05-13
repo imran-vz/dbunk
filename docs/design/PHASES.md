@@ -153,7 +153,7 @@ What landed:
 - Query toolbar now includes reusable SQL snippets for common exploration patterns.
 - Named bind variables like `:customer_id` are detected from editor text and rendered as inline inputs.
 - Running the current statement substitutes bind values with SQL literals while preserving normal selection/all execution.
-- EXPLAIN action runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)` for the current statement and displays the plan in the existing results grid.
+- EXPLAIN action runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` for the current statement and renders the Explain tab as a plan tree with cost, row, timing, loop, and buffer metrics, with text fallback for non-JSON results.
 - Editor run hook now exposes current-statement and explicit-SQL execution so advanced toolbar actions share the same outcome/history path.
 
 ## Phase 9 — Compare + generate — ✅ shipped
