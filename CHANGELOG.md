@@ -25,8 +25,9 @@ Completed on 2026-05-13.
    - Commit: `b521508 feat: add postgres admin tools`
 
 6. Phase 8 — SQL editor depth
-   - Implemented SQL snippets, named bind variables, current-statement execution hooks, and EXPLAIN execution through the existing query result path.
+   - Implemented SQL snippets, named bind variables, current-statement execution hooks, and an EXPLAIN plan visualizer that renders PostgreSQL JSON plans in the Explain tab.
    - Commit: `243a2ba feat: deepen sql editor workflows`
+   - Correction commit: `fix: complete explain plan visualizer`
 
 7. Phase 9 — Compare + generate
    - Implemented Compare overview for schema diffs, sampled data diffs, and mock INSERT generation.

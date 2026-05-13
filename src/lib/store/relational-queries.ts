@@ -201,19 +201,20 @@ export const createRelationalQueriesSlice: StateCreator<
         runtimeMs: result.runtimeMs,
         rowCount: result.rowCount,
       });
+      const preview: QueryPreviewData = {
+        columns: result.columns,
+        rows: result.rows,
+        runtime: `${result.runtimeMs} ms`,
+        rowCount: result.rowCount.toString(),
+        cache: "Cold",
+      };
       const nowIso = new Date().toISOString();
       set((s) => {
         const { [tabId]: _status, ...restStatus } = s.queryStatus;
         return {
           queryPreviews: {
             ...s.queryPreviews,
-            [tab.label]: {
-              columns: result.columns,
-              rows: result.rows,
-              runtime: `${result.runtimeMs} ms`,
-              rowCount: result.rowCount.toString(),
-              cache: "Cold",
-            },
+            [tab.label]: preview,
           },
           queryStatus: restStatus,
           queryHistory: [entry, ...s.queryHistory].slice(0, QUERY_HISTORY_CAP),
@@ -235,6 +236,7 @@ export const createRelationalQueriesSlice: StateCreator<
         kind: "completed",
         runtimeMs: result.runtimeMs,
         rowCount: result.rowCount,
+        preview,
       };
     } catch (error) {
       const message = errorToMessage(error);
