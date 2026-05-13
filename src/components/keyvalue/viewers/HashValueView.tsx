@@ -4,15 +4,15 @@
  * together on Save.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
+import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   deleteRedisHashFields,
   fetchHash,
   formatValueOneLine,
-  type HashValuePayload,
   type SerializedValue,
   setRedisHashFields,
 } from "@/lib/redis/api";
@@ -51,39 +51,30 @@ export function HashValueView({
   const [newValue, setNewValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
-  const requestSeq = useRef(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is intentional
-  useEffect(() => {
-    let cancelled = false;
-    const seq = ++requestSeq.current;
-    setLoading(true);
-    setError(null);
-    setEntries([]);
-    setCursor(null);
-    fetchHash({
-      connectionId,
-      key: keyName,
-      mode,
-      count: 200,
-      pattern: pattern.trim() ? `*${pattern.trim()}*` : null,
-    })
-      .then((result: HashValuePayload) => {
-        if (cancelled || requestSeq.current !== seq) return;
-        setEntries(result.entries);
-        setCursor(result.nextCursor);
-      })
-      .catch((err) => {
-        if (cancelled || requestSeq.current !== seq) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled && requestSeq.current === seq) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId, keyName, mode, pattern, reloadTick]);
+  useRedisFetch({
+    fetch: () =>
+      fetchHash({
+        connectionId,
+        key: keyName,
+        mode,
+        count: 200,
+        pattern: pattern.trim() ? `*${pattern.trim()}*` : null,
+      }),
+    onStart: () => {
+      setLoading(true);
+      setError(null);
+      setEntries([]);
+      setCursor(null);
+    },
+    onSuccess: (result) => {
+      setEntries(result.entries);
+      setCursor(result.nextCursor);
+    },
+    onError: setError,
+    onSettled: () => setLoading(false),
+    cacheKey: `${connectionId}|${keyName}|${mode}|${pattern}|${reloadTick}`,
+  });
 
   const fieldName = (entry: [SerializedValue, SerializedValue]): string =>
     entry[0].kind === "string" ? entry[0].value : formatValueOneLine(entry[0]);

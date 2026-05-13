@@ -3,8 +3,9 @@
  * `SMEMBERS` / `SSCAN`.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
+import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,38 +39,30 @@ export function SetValueView({
   const [pattern, setPattern] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requestSeq = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    const seq = ++requestSeq.current;
-    setLoading(true);
-    setError(null);
-    setMembers([]);
-    setCursor(null);
-    fetchSet({
-      connectionId,
-      key: keyName,
-      mode,
-      count: 200,
-      pattern: pattern.trim() ? `*${pattern.trim()}*` : null,
-    })
-      .then((result) => {
-        if (cancelled || requestSeq.current !== seq) return;
-        setMembers(result.members);
-        setCursor(result.nextCursor);
-      })
-      .catch((err) => {
-        if (cancelled || requestSeq.current !== seq) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled && requestSeq.current === seq) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connectionId, keyName, mode, pattern]);
+  useRedisFetch({
+    fetch: () =>
+      fetchSet({
+        connectionId,
+        key: keyName,
+        mode,
+        count: 200,
+        pattern: pattern.trim() ? `*${pattern.trim()}*` : null,
+      }),
+    onStart: () => {
+      setLoading(true);
+      setError(null);
+      setMembers([]);
+      setCursor(null);
+    },
+    onSuccess: (result) => {
+      setMembers(result.members);
+      setCursor(result.nextCursor);
+    },
+    onError: setError,
+    onSettled: () => setLoading(false),
+    cacheKey: `${connectionId}|${keyName}|${mode}|${pattern}`,
+  });
 
   const loadMore = async () => {
     if (!cursor) return;

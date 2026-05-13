@@ -14,7 +14,7 @@
 
 import type { StateCreator } from "zustand";
 
-import type { AppStoreState, WorkspaceTab } from "./types";
+import type { ActiveView, AppStoreState, WorkspaceTab } from "./types";
 
 // Module-local counters survive across the slice's actions but are
 // scoped to the slice file — they were globals in the monolith.
@@ -22,14 +22,14 @@ let nextTabIndex = 1;
 let nextQueryIndex = 1;
 
 export type WorkspaceTabsSlice = {
-  activeView: AppStoreState["activeView"];
+  activeView: ActiveView;
   activeTabId: string;
   workspaceTabs: WorkspaceTab[];
   isLeftSidebarOpen: boolean;
   editorTheme: string;
   selectedRowIndex: number;
 
-  setActiveView: (view: AppStoreState["activeView"]) => void;
+  setActiveView: (view: ActiveView) => void;
   setActiveTabId: (id: string) => void;
   setWorkspaceTabs: (
     tabs: WorkspaceTab[] | ((prev: WorkspaceTab[]) => WorkspaceTab[]),

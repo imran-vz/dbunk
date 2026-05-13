@@ -3,8 +3,9 @@
  * toggle. Offset pagination for rank, score-range inputs for byscore.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,43 +37,27 @@ export function SortedSetValueView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchSortedSet({
-      connectionId,
-      key: keyName,
-      mode,
-      start: page * pageSize,
-      stop: (page + 1) * pageSize - 1,
-      reverse,
-      scoreMin: mode === "byscore" ? scoreMin : undefined,
-      scoreMax: mode === "byscore" ? scoreMax : undefined,
-    })
-      .then((result) => {
-        if (!cancelled) setEntries(result.entries);
-      })
-      .catch((err) => {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    connectionId,
-    keyName,
-    mode,
-    page,
-    pageSize,
-    reverse,
-    scoreMin,
-    scoreMax,
-  ]);
+  useRedisFetch({
+    fetch: () =>
+      fetchSortedSet({
+        connectionId,
+        key: keyName,
+        mode,
+        start: page * pageSize,
+        stop: (page + 1) * pageSize - 1,
+        reverse,
+        scoreMin: mode === "byscore" ? scoreMin : undefined,
+        scoreMax: mode === "byscore" ? scoreMax : undefined,
+      }),
+    onStart: () => {
+      setLoading(true);
+      setError(null);
+    },
+    onSuccess: (result) => setEntries(result.entries),
+    onError: setError,
+    onSettled: () => setLoading(false),
+    cacheKey: `${connectionId}|${keyName}|${mode}|${page}|${pageSize}|${reverse}|${scoreMin}|${scoreMax}`,
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">

@@ -4,12 +4,30 @@ import {
   IconLock,
   IconShieldLock,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CredentialStorageMode } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+
+/**
+ * Loads the user-scoped persistent stores (connections, query history,
+ * saved queries) in parallel. Shared between the onboarding and unlock
+ * flows since both transition to `ready` and need the same hydration.
+ */
+function useLoadUserData(): () => Promise<void> {
+  const loadConnections = useAppStore((state) => state.loadConnections);
+  const loadQueryHistory = useAppStore((state) => state.loadQueryHistory);
+  const loadSavedQueries = useAppStore((state) => state.loadSavedQueries);
+  return useCallback(async () => {
+    await Promise.all([
+      loadConnections(),
+      loadQueryHistory(),
+      loadSavedQueries(),
+    ]);
+  }, [loadConnections, loadQueryHistory, loadSavedQueries]);
+}
 
 const MODE_COPY: Record<
   CredentialStorageMode,
@@ -47,9 +65,7 @@ export function CredentialOnboarding() {
   const configureCredentialStorage = useAppStore(
     (state) => state.configureCredentialStorage,
   );
-  const loadConnections = useAppStore((state) => state.loadConnections);
-  const loadQueryHistory = useAppStore((state) => state.loadQueryHistory);
-  const loadSavedQueries = useAppStore((state) => state.loadSavedQueries);
+  const loadUserData = useLoadUserData();
   const status = useAppStore((state) => state.credentialStorageStatus);
 
   const needsPassword = mode === "encrypted-sqlite";
@@ -64,13 +80,7 @@ export function CredentialOnboarding() {
       mode,
       password: needsPassword ? password : undefined,
     });
-    if (snapshot?.credentialState === "ready") {
-      await Promise.all([
-        loadConnections(),
-        loadQueryHistory(),
-        loadSavedQueries(),
-      ]);
-    }
+    if (snapshot?.credentialState === "ready") await loadUserData();
   };
 
   return (
@@ -206,20 +216,12 @@ export function CredentialUnlock() {
   const resetCredentialStorage = useAppStore(
     (state) => state.resetCredentialStorage,
   );
-  const loadConnections = useAppStore((state) => state.loadConnections);
-  const loadQueryHistory = useAppStore((state) => state.loadQueryHistory);
-  const loadSavedQueries = useAppStore((state) => state.loadSavedQueries);
+  const loadUserData = useLoadUserData();
   const status = useAppStore((state) => state.credentialStorageStatus);
 
   const handleUnlock = async () => {
     const snapshot = await unlockCredentials(password);
-    if (snapshot?.credentialState === "ready") {
-      await Promise.all([
-        loadConnections(),
-        loadQueryHistory(),
-        loadSavedQueries(),
-      ]);
-    }
+    if (snapshot?.credentialState === "ready") await loadUserData();
   };
 
   return (

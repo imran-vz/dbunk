@@ -26,23 +26,17 @@ import type {
   PendingChange,
 } from "@/lib/ddl/postgres";
 
+import {
+  createIdentQuoter,
+  formatDefault,
+  renderAddColumn,
+  renderDropColumn,
+  renderRenameColumn,
+} from "./shared";
+
 export type { ColumnChangeKind, NewColumn, PendingChange };
 
-const quoteIdent = (identifier: string): string =>
-  `\`${identifier.replace(/`/g, "``")}\``;
-
-const qualifiedTable = (schema: string, table: string): string =>
-  `${quoteIdent(schema)}.${quoteIdent(table)}`;
-
-const formatDefault = (raw: string): string => {
-  if (/^-?[0-9]+(\.[0-9]+)?$/.test(raw)) {
-    return raw;
-  }
-  if (raw.endsWith("()")) {
-    return raw;
-  }
-  return `'${raw.replace(/'/g, "''")}'`;
-};
+const { quoteIdent, qualifiedTable } = createIdentQuoter("`");
 
 const wrapNullable = (type: string): string => {
   if (type.startsWith("Nullable(") && type.endsWith(")")) {
@@ -82,13 +76,15 @@ export const renderChange = (
   const prefix = `ALTER TABLE ${qualifiedTable(schema, table)}`;
   switch (change.kind) {
     case "add":
-      return `${prefix} ADD COLUMN ${renderColumnDefinition(change.column)};`;
+      return renderAddColumn(prefix, renderColumnDefinition(change.column));
     case "drop":
-      return `${prefix} DROP COLUMN ${quoteIdent(change.columnName)};`;
+      return renderDropColumn(prefix, quoteIdent(change.columnName));
     case "rename":
-      return `${prefix} RENAME COLUMN ${quoteIdent(change.columnName)} TO ${quoteIdent(
-        change.newName,
-      )};`;
+      return renderRenameColumn(
+        prefix,
+        quoteIdent(change.columnName),
+        quoteIdent(change.newName),
+      );
     case "set_type":
       // CH MODIFY COLUMN preserves nullability if the new type is also
       // wrapped; we forward the user's literal input so they can write
