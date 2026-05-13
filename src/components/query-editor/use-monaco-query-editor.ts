@@ -37,6 +37,8 @@ interface UseMonacoQueryEditorArgs {
 export interface MonacoQueryEditor {
   onMount: OnMount;
   cursor: MonacoPosition;
+  currentStatement: () => string;
+  runSql: (sql: string) => void;
   handleRunCurrent: () => void;
   handleRunSelection: () => void;
   handleRunAll: () => void;
@@ -350,6 +352,10 @@ export function useMonacoQueryEditor({
   return {
     onMount,
     cursor,
+    currentStatement: getCurrentStatementText,
+    runSql: (sql: string) => {
+      void runSql(sql);
+    },
     handleRunCurrent,
     handleRunSelection,
     handleRunAll,

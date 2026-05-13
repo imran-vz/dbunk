@@ -15,7 +15,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 5 | DDL + dump/restore | ✅ shipped | Schema-level export and full `pg_dump`/`pg_restore` backups |
 | 6 | Object navigator depth | ✅ shipped | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
 | 7 | Admin tools | ✅ shipped | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
-| 8 | SQL editor depth | planned | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
+| 8 | SQL editor depth | ✅ shipped | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
 | 9 | Compare + generate | planned | Schema compare, data compare, mock data — depends on Phase 6 coverage |
 | 10 | Specialized editors | planned | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
 
@@ -140,7 +140,7 @@ What landed:
 - Table actions now include VACUUM, ANALYZE, and REINDEX backed by `run_pg_maintenance`.
 - Dashboard metrics include database size, cache hit ratio, active sessions, idle-in-transaction count, and blocked locks.
 
-## Phase 8 — SQL editor depth
+## Phase 8 — SQL editor depth — ✅ shipped
 Make the editor competitive for serious query work.
 
 - EXPLAIN / EXPLAIN ANALYZE plan visualizer
@@ -148,6 +148,13 @@ Make the editor competitive for serious query work.
 - Bind variables / parameterized executions
 - Stretch: PL/pgSQL debugger
 - Stretch: visual query builder
+
+What landed:
+- Query toolbar now includes reusable SQL snippets for common exploration patterns.
+- Named bind variables like `:customer_id` are detected from editor text and rendered as inline inputs.
+- Running the current statement substitutes bind values with SQL literals while preserving normal selection/all execution.
+- EXPLAIN action runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)` for the current statement and displays the plan in the existing results grid.
+- Editor run hook now exposes current-statement and explicit-SQL execution so advanced toolbar actions share the same outcome/history path.
 
 ## Phase 9 — Compare + generate
 Cross-cutting tools that depend on Phase 6's object coverage.
