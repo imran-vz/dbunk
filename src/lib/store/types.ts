@@ -484,6 +484,18 @@ export type SchemaExplorer = {
   name: string;
   tables: string[];
   views?: string[];
+  materializedViews?: string[];
+  sequences?: string[];
+  foreignTables?: string[];
+  functions?: string[];
+  procedures?: string[];
+  aggregateFunctions?: string[];
+  types?: string[];
+  domains?: string[];
+  extensions?: string[];
+  eventTriggers?: string[];
+  roles?: string[];
+  tablespaces?: string[];
 };
 
 export type SavedQuery = {

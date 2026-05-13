@@ -788,6 +788,28 @@ pub async fn execute_ddl(
     }
 }
 
+pub async fn refresh_materialized_view(
+    connection: &StoredConnection,
+    schema: &str,
+    view: &str,
+    concurrently: bool,
+) -> Result<ExecuteDdlResult, String> {
+    let mut conn = connect(connection).await?;
+    let start = Instant::now();
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(view));
+    let sql = if concurrently {
+        format!("REFRESH MATERIALIZED VIEW CONCURRENTLY {qualified}")
+    } else {
+        format!("REFRESH MATERIALIZED VIEW {qualified}")
+    };
+    conn.execute(sql.as_str())
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(ExecuteDdlResult {
+        runtime_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Cell edits / inserts / deletes
 // ---------------------------------------------------------------------------
