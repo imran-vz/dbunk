@@ -12,7 +12,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 2 | Schema map overhaul | ✅ shipped | Directly addresses the "schema map is really not great" pain |
 | 3 | Data export upgrade | ✅ shipped | First half of the import/export pain — lay the transfer foundation |
 | 4 | Data import wizard | ✅ shipped | Second half — bulk inbound; pairs with Phase 3's transfer surface |
-| 5 | DDL + dump/restore | planned | Schema-level export and full `pg_dump`/`pg_restore` backups |
+| 5 | DDL + dump/restore | ✅ shipped | Schema-level export and full `pg_dump`/`pg_restore` backups |
 | 6 | Object navigator depth | planned | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
 | 7 | Admin tools | planned | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
 | 8 | SQL editor depth | planned | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
@@ -88,13 +88,19 @@ What landed:
 - XLSX imports support multi-sheet selection through the same mapping flow.
 - Imports submit through a backend `import_rows` command in one operation; Postgres large unmapped CSV imports use `COPY FROM STDIN`, while smaller or mapped imports use transactional bulk INSERT chunks.
 
-## Phase 5 — DDL + dump/restore
+## Phase 5 — DDL + dump/restore — ✅ shipped
 Schema-level export and full backup/restore via Postgres-native tooling.
 
 - DDL export: single table, schema, full database
 - `pg_dump` integration (plain + custom formats)
 - `pg_restore` integration
 - Cross-connection table-to-table copy
+
+What landed:
+- Table actions can export single-table DDL as SQL, including columns, defaults, constraints, indexes, views, and materialized views.
+- Connection settings expose PostgreSQL database DDL export plus `pg_dump` downloads in plain SQL and custom formats.
+- Restore accepts plain SQL through `psql` and custom dumps through `pg_restore`, with an optional clean restore toggle.
+- A table-copy panel copies rows from the open table into a matching destination table on any relational connection, chunked at 1000 rows.
 
 ## Phase 6 — Object navigator depth
 Expand the sidebar tree to cover the rest of Postgres's first-class object types. Each object type gets a viewer and, where applicable, an editor.

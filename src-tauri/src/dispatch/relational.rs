@@ -19,10 +19,10 @@ use sqlx::{Any, AnyConnection, Column, Connection, Row};
 
 use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
-    CommitCellEditsResult, ConnectResult, DatabaseEngine, DatabaseOverviewStats, DeleteRowsResult,
-    ExecuteDdlResult, ImportRowsResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo,
-    SchemaExplorer, SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities,
-    TableStructure,
+    CommitCellEditsResult, ConnectResult, CopyTableResult, DatabaseEngine, DatabaseOverviewStats,
+    DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult, InsertRowResult,
+    MutationStatus, PgDumpResult, PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer,
+    SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities, TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -699,6 +699,56 @@ pub async fn execute_ddl(
     }
 }
 
+pub async fn export_ddl(
+    connection: &StoredConnection,
+    scope: &str,
+    schema: Option<&str>,
+    table: Option<&str>,
+) -> Result<ExportDdlResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => postgres::export_ddl(connection, scope, schema, table).await,
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "DDL export"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn run_pg_dump(
+    connection: &StoredConnection,
+    scope: &str,
+    schema: Option<&str>,
+    table: Option<&str>,
+    format: &str,
+) -> Result<PgDumpResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => {
+            postgres::run_pg_dump(connection, scope, schema, table, format).await
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "PostgreSQL dump"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn run_pg_restore(
+    connection: &StoredConnection,
+    data_base64: &str,
+    format: &str,
+    clean: bool,
+) -> Result<PgRestoreResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => {
+            postgres::run_pg_restore(connection, data_base64, format, clean).await
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "PostgreSQL restore"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
 pub async fn commit_cell_edits(
     connection: &StoredConnection,
     schema: &str,
@@ -781,6 +831,82 @@ pub async fn import_rows(
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
+}
+
+pub async fn copy_table_rows(
+    source: &StoredConnection,
+    destination: &StoredConnection,
+    source_schema: &str,
+    source_table: &str,
+    destination_schema: &str,
+    destination_table: &str,
+    page_size: u32,
+) -> Result<CopyTableResult, String> {
+    let start = Instant::now();
+    let source_qualified =
+        crate::qualified_table_name(&source.engine(), source_schema, source_table);
+    let destination_structure =
+        fetch_table_structure(destination, destination_schema, destination_table).await?;
+    let columns = destination_structure
+        .columns
+        .iter()
+        .map(|column| column.name.clone())
+        .collect::<Vec<_>>();
+    let select_columns = columns
+        .iter()
+        .map(|column| match source.engine() {
+            DatabaseEngine::PostgreSQL | DatabaseEngine::SQLite => crate::quote_double(column),
+            DatabaseEngine::MySQL | DatabaseEngine::ClickHouse => crate::quote_backtick(column),
+            DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let page_size = page_size.clamp(1, 1000);
+    let mut offset = 0_u64;
+    let mut rows_copied = 0_u64;
+    loop {
+        let sql = format!(
+            "SELECT {} FROM {} LIMIT {} OFFSET {}",
+            select_columns, source_qualified, page_size, offset
+        );
+        let result = run_query(source, &sql).await?;
+        if result.rows.is_empty() {
+            break;
+        }
+        let rows = result
+            .rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|value| {
+                        if value == "NULL" {
+                            None
+                        } else {
+                            Some(value.clone())
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        rows_copied += import_rows(
+            destination,
+            destination_schema,
+            destination_table,
+            &columns,
+            &rows,
+            false,
+        )
+        .await?
+        .rows_affected;
+        if result.rows.len() < page_size as usize {
+            break;
+        }
+        offset += page_size as u64;
+    }
+    Ok(CopyTableResult {
+        runtime_ms: start.elapsed().as_millis() as u64,
+        rows_copied,
+    })
 }
 
 pub async fn delete_rows(

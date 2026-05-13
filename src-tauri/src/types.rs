@@ -524,6 +524,34 @@ pub(crate) struct ImportRowsResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ExportDdlResult {
+    pub sql: String,
+    pub runtime_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgDumpResult {
+    pub data_base64: String,
+    pub extension: String,
+    pub runtime_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgRestoreResult {
+    pub runtime_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CopyTableResult {
+    pub runtime_ms: u64,
+    pub rows_copied: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DeleteRowsResult {
     pub runtime_ms: u64,
     pub rows_affected: u64,
@@ -723,6 +751,47 @@ pub(crate) struct ImportRowsPayload {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Option<String>>>,
     pub use_copy: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportDdlPayload {
+    pub connection_id: String,
+    pub scope: String,
+    pub schema: Option<String>,
+    pub table: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgDumpPayload {
+    pub connection_id: String,
+    pub scope: String,
+    pub schema: Option<String>,
+    pub table: Option<String>,
+    pub format: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgRestorePayload {
+    pub connection_id: String,
+    pub data_base64: String,
+    pub format: String,
+    #[serde(default)]
+    pub clean: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CopyTablePayload {
+    pub source_connection_id: String,
+    pub source_schema: String,
+    pub source_table: String,
+    pub destination_connection_id: String,
+    pub destination_schema: String,
+    pub destination_table: String,
+    pub page_size: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]

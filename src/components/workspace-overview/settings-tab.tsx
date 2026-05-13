@@ -1,5 +1,9 @@
-import { IconEdit } from "@tabler/icons-react";
-import { type ReactNode, useState } from "react";
+import {
+  IconDatabaseExport,
+  IconDatabaseImport,
+  IconEdit,
+} from "@tabler/icons-react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
 import { Button } from "@/components/ui/button";
@@ -10,7 +14,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { base64ToBytes, fileToBase64 } from "@/lib/backup";
+import { downloadBlob, downloadFile } from "@/lib/download";
 import type { Connection } from "@/lib/store";
+import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import { KeyValue } from "./key-value";
 
@@ -22,6 +29,10 @@ import { KeyValue } from "./key-value";
  */
 export function SettingsTab({ connection }: { connection: Connection }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupBusy, setBackupBusy] = useState<string | null>(null);
+  const [restoreClean, setRestoreClean] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
   const rows = buildSettingsRows(connection);
 
@@ -48,6 +59,102 @@ export function SettingsTab({ connection }: { connection: Connection }) {
         </CardContent>
       </Card>
 
+      {connection.engine === "PostgreSQL" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Backup and restore</CardTitle>
+            <CardAction>
+              <label className="flex items-center gap-1.5 text-[0.6875rem] text-text-muted">
+                <input
+                  type="checkbox"
+                  checked={restoreClean}
+                  onChange={(event) => setRestoreClean(event.target.checked)}
+                />
+                Clean restore
+              </label>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-2 text-xs">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={backupBusy !== null}
+              onClick={() =>
+                void exportDatabaseDdl(
+                  connection.id,
+                  setBackupBusy,
+                  setBackupError,
+                )
+              }
+            >
+              <IconDatabaseExport className="size-3.5" />
+              Export DDL
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={backupBusy !== null}
+              onClick={() =>
+                void runDump(connection, "plain", setBackupBusy, setBackupError)
+              }
+            >
+              <IconDatabaseExport className="size-3.5" />
+              pg_dump SQL
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={backupBusy !== null}
+              onClick={() =>
+                void runDump(
+                  connection,
+                  "custom",
+                  setBackupBusy,
+                  setBackupError,
+                )
+              }
+            >
+              <IconDatabaseExport className="size-3.5" />
+              pg_dump custom
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={backupBusy !== null}
+              onClick={() => restoreInputRef.current?.click()}
+            >
+              <IconDatabaseImport className="size-3.5" />
+              Restore dump
+            </Button>
+            <input
+              ref={restoreInputRef}
+              type="file"
+              className="hidden"
+              accept=".sql,.dump,.backup,application/sql,application/octet-stream"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.currentTarget.value = "";
+                if (file) {
+                  void runRestore(
+                    connection.id,
+                    file,
+                    restoreClean,
+                    setBackupBusy,
+                    setBackupError,
+                  );
+                }
+              }}
+            />
+            {backupBusy ? (
+              <span className="text-text-muted">{backupBusy}…</span>
+            ) : null}
+            {backupError ? (
+              <span className="text-danger">{backupError}</span>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <EditConnectionDialog
         connection={isEditing ? connection : null}
         open={isEditing}
@@ -57,6 +164,102 @@ export function SettingsTab({ connection }: { connection: Connection }) {
       />
     </>
   );
+}
+
+async function exportDatabaseDdl(
+  connectionId: string,
+  setBusy: (value: string | null) => void,
+  setError: (value: string | null) => void,
+) {
+  if (!isTauri()) {
+    setError("DDL export requires the desktop runtime.");
+    return;
+  }
+  setBusy("Exporting DDL");
+  setError(null);
+  try {
+    const result = await tauriInvoke<{ sql: string }>("export_ddl", {
+      payload: { connectionId, scope: "database" },
+    });
+    downloadFile(
+      "database.ddl.sql",
+      "application/sql;charset=utf-8",
+      result.sql,
+    );
+  } catch (error) {
+    setError(errorToMessage(error));
+  } finally {
+    setBusy(null);
+  }
+}
+
+async function runDump(
+  connection: Connection,
+  format: "plain" | "custom",
+  setBusy: (value: string | null) => void,
+  setError: (value: string | null) => void,
+) {
+  if (!isTauri()) {
+    setError("pg_dump requires the desktop runtime.");
+    return;
+  }
+  setBusy("Running pg_dump");
+  setError(null);
+  try {
+    const result = await tauriInvoke<{
+      dataBase64: string;
+      extension: string;
+    }>("run_pg_dump", {
+      payload: {
+        connectionId: connection.id,
+        scope: "database",
+        format,
+      },
+    });
+    const bytes = base64ToBytes(result.dataBase64);
+    const filename = `${connection.database || connection.name}.${result.extension}`;
+    downloadBlob(
+      filename,
+      new Blob([bytes], {
+        type:
+          format === "plain" ? "application/sql" : "application/octet-stream",
+      }),
+    );
+  } catch (error) {
+    setError(errorToMessage(error));
+  } finally {
+    setBusy(null);
+  }
+}
+
+async function runRestore(
+  connectionId: string,
+  file: File,
+  clean: boolean,
+  setBusy: (value: string | null) => void,
+  setError: (value: string | null) => void,
+) {
+  if (!isTauri()) {
+    setError("pg_restore requires the desktop runtime.");
+    return;
+  }
+  const format = /\.sql$/i.test(file.name) ? "plain" : "custom";
+  setBusy("Restoring dump");
+  setError(null);
+  try {
+    await tauriInvoke("run_pg_restore", {
+      payload: {
+        connectionId,
+        dataBase64: await fileToBase64(file),
+        format,
+        clean,
+      },
+    });
+  } catch (error) {
+    setError(errorToMessage(error));
+  } finally {
+    setBusy(null);
+  }
 }
 
 const placeholderValue = <span className="text-text-muted">—</span>;

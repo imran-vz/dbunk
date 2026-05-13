@@ -36,9 +36,10 @@ pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fet
 
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, DatabaseOverviewStats,
-    DeleteRowsResult, ExecuteDdlResult, ImportRowsResult, InsertRowResult, MutationStatus,
-    QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships, ServerDetails, StorageClass,
-    StoredConnection, TableStructure,
+    CopyTableResult, DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult,
+    InsertRowResult, MutationStatus, PgDumpResult, PgRestoreResult, QueryResult, RelationInfo,
+    SchemaExplorer, SchemaRelationships, ServerDetails, StorageClass, StoredConnection,
+    TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -147,6 +148,47 @@ pub async fn execute_ddl(
     }
 }
 
+pub async fn export_ddl(
+    connection: &StoredConnection,
+    scope: &str,
+    schema: Option<&str>,
+    table: Option<&str>,
+) -> Result<ExportDdlResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => relational::export_ddl(connection, scope, schema, table).await,
+        StorageClass::KeyValue => Err(not_applicable(connection, "DDL export")),
+    }
+}
+
+pub async fn run_pg_dump(
+    connection: &StoredConnection,
+    scope: &str,
+    schema: Option<&str>,
+    table: Option<&str>,
+    format: &str,
+) -> Result<PgDumpResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::run_pg_dump(connection, scope, schema, table, format).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "PostgreSQL dump")),
+    }
+}
+
+pub async fn run_pg_restore(
+    connection: &StoredConnection,
+    data_base64: &str,
+    format: &str,
+    clean: bool,
+) -> Result<PgRestoreResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::run_pg_restore(connection, data_base64, format, clean).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "PostgreSQL restore")),
+    }
+}
+
 pub async fn commit_cell_edits(
     connection: &StoredConnection,
     schema: &str,
@@ -186,6 +228,35 @@ pub async fn import_rows(
             relational::import_rows(connection, schema, table, columns, rows, use_copy).await
         }
         StorageClass::KeyValue => Err(not_applicable(connection, "Row import")),
+    }
+}
+
+pub async fn copy_table_rows(
+    source: &StoredConnection,
+    destination: &StoredConnection,
+    source_schema: &str,
+    source_table: &str,
+    destination_schema: &str,
+    destination_table: &str,
+    page_size: u32,
+) -> Result<CopyTableResult, String> {
+    match (
+        source.engine().storage_class(),
+        destination.engine().storage_class(),
+    ) {
+        (StorageClass::Relational, StorageClass::Relational) => {
+            relational::copy_table_rows(
+                source,
+                destination,
+                source_schema,
+                source_table,
+                destination_schema,
+                destination_table,
+                page_size,
+            )
+            .await
+        }
+        _ => Err("Table copy requires two relational connections".to_string()),
     }
 }
 

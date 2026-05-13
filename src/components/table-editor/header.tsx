@@ -34,6 +34,8 @@ interface TableEditorHeaderProps {
   onToggleRowDetails: () => void;
   onOpenSql: () => void;
   onRefresh: () => void;
+  onExportTableDdl: () => void;
+  onOpenCopyTable: () => void;
 }
 
 export function TableEditorHeader({
@@ -47,6 +49,8 @@ export function TableEditorHeader({
   onToggleRowDetails,
   onOpenSql,
   onRefresh,
+  onExportTableDdl,
+  onOpenCopyTable,
 }: TableEditorHeaderProps) {
   return (
     <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
@@ -93,6 +97,12 @@ export function TableEditorHeader({
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem onClick={onOpenSql}>
                 Open in SQL
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onExportTableDdl}>
+                Export table DDL
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenCopyTable}>
+                Copy to table…
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onRefresh}>
                 Refresh data

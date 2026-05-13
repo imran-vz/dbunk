@@ -37,7 +37,7 @@ pub(crate) fn quote_backtick(identifier: &str) -> String {
     format!("`{}`", identifier.replace('`', "``"))
 }
 
-fn qualified_table_name(engine: &DatabaseEngine, schema: &str, table: &str) -> String {
+pub(crate) fn qualified_table_name(engine: &DatabaseEngine, schema: &str, table: &str) -> String {
     match engine {
         DatabaseEngine::PostgreSQL | DatabaseEngine::SQLite => {
             if schema.is_empty() {
@@ -346,6 +346,71 @@ async fn execute_ddl(
 }
 
 #[tauri::command]
+async fn export_ddl(
+    state: State<'_, AppState>,
+    payload: ExportDdlPayload,
+) -> Result<ExportDdlResult, String> {
+    let ExportDdlPayload {
+        connection_id,
+        scope,
+        schema,
+        table,
+    } = payload;
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::export_ddl(
+            &connection,
+            &scope,
+            schema.as_deref(),
+            table.as_deref(),
+        )
+        .await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn run_pg_dump(
+    state: State<'_, AppState>,
+    payload: PgDumpPayload,
+) -> Result<PgDumpResult, String> {
+    let PgDumpPayload {
+        connection_id,
+        scope,
+        schema,
+        table,
+        format,
+    } = payload;
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::run_pg_dump(
+            &connection,
+            &scope,
+            schema.as_deref(),
+            table.as_deref(),
+            &format,
+        )
+        .await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn run_pg_restore(
+    state: State<'_, AppState>,
+    payload: PgRestorePayload,
+) -> Result<PgRestoreResult, String> {
+    let PgRestorePayload {
+        connection_id,
+        data_base64,
+        format,
+        clean,
+    } = payload;
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::run_pg_restore(&connection, &data_base64, &format, clean).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn commit_cell_edits(
     state: State<'_, AppState>,
     payload: CommitCellEditsPayload,
@@ -411,6 +476,37 @@ async fn import_rows(
         dispatch::import_rows(&connection, &schema, &table, &columns, &rows, use_copy).await
     })
     .await
+}
+
+#[tauri::command]
+async fn copy_table_rows(
+    state: State<'_, AppState>,
+    payload: CopyTablePayload,
+) -> Result<CopyTableResult, String> {
+    let CopyTablePayload {
+        source_connection_id,
+        source_schema,
+        source_table,
+        destination_connection_id,
+        destination_schema,
+        destination_table,
+        page_size,
+    } = payload;
+    let source = find_connection(state.inner(), &source_connection_id).await?;
+    let destination = find_connection(state.inner(), &destination_connection_id).await?;
+    let result = dispatch::copy_table_rows(
+        &source,
+        &destination,
+        &source_schema,
+        &source_table,
+        &destination_schema,
+        &destination_table,
+        page_size.unwrap_or(DEFAULT_TABLE_PAGE_SIZE),
+    )
+    .await?;
+    touch_connection_activity(state.inner(), &source_connection_id).await;
+    touch_connection_activity(state.inner(), &destination_connection_id).await;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1073,9 +1169,13 @@ pub fn run() {
             load_table_data,
             load_table_structure,
             execute_ddl,
+            export_ddl,
+            run_pg_dump,
+            run_pg_restore,
             commit_cell_edits,
             insert_row,
             import_rows,
+            copy_table_rows,
             delete_rows,
             poll_mutation_status,
             load_query_history,
