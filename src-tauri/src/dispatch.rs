@@ -37,9 +37,9 @@ pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fet
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, DatabaseOverviewStats,
     CopyTableResult, DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult,
-    InsertRowResult, MutationStatus, PgDumpResult, PgRestoreResult, QueryResult, RelationInfo,
-    SchemaExplorer, SchemaRelationships, ServerDetails, StorageClass, StoredConnection,
-    TableStructure,
+    InsertRowResult, MutationStatus, PgAdminSnapshot, PgBackendActionResult, PgDumpResult,
+    PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships,
+    ServerDetails, StorageClass, StoredConnection, TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -138,6 +138,35 @@ pub async fn fetch_server_details(
     }
 }
 
+pub async fn fetch_admin_snapshot(
+    connection: &StoredConnection,
+) -> Result<PgAdminSnapshot, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => relational::fetch_admin_snapshot(connection).await,
+        StorageClass::KeyValue => Err(not_applicable(connection, "Admin tools")),
+    }
+}
+
+pub async fn cancel_backend(
+    connection: &StoredConnection,
+    pid: i32,
+) -> Result<PgBackendActionResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => relational::cancel_backend(connection, pid).await,
+        StorageClass::KeyValue => Err(not_applicable(connection, "Backend cancel")),
+    }
+}
+
+pub async fn terminate_backend(
+    connection: &StoredConnection,
+    pid: i32,
+) -> Result<PgBackendActionResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => relational::terminate_backend(connection, pid).await,
+        StorageClass::KeyValue => Err(not_applicable(connection, "Backend terminate")),
+    }
+}
+
 pub async fn execute_ddl(
     connection: &StoredConnection,
     sql: &str,
@@ -200,6 +229,20 @@ pub async fn refresh_materialized_view(
             relational::refresh_materialized_view(connection, schema, view, concurrently).await
         }
         StorageClass::KeyValue => Err(not_applicable(connection, "Materialized view refresh")),
+    }
+}
+
+pub async fn run_maintenance(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    action: &str,
+) -> Result<ExecuteDdlResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::run_maintenance(connection, schema, table, action).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "Table maintenance")),
     }
 }
 

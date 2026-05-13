@@ -428,6 +428,23 @@ async fn refresh_materialized_view(
 }
 
 #[tauri::command]
+async fn run_pg_maintenance(
+    state: State<'_, AppState>,
+    payload: PgMaintenancePayload,
+) -> Result<ExecuteDdlResult, String> {
+    let PgMaintenancePayload {
+        connection_id,
+        schema,
+        table,
+        action,
+    } = payload;
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::run_maintenance(&connection, &schema, &table, &action).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn commit_cell_edits(
     state: State<'_, AppState>,
     payload: CommitCellEditsPayload,
@@ -683,6 +700,41 @@ async fn load_server_details(
         &payload.connection_id,
         |connection| async move { dispatch::fetch_server_details(&connection).await },
     )
+    .await
+}
+
+#[tauri::command]
+async fn load_pg_admin_snapshot(
+    state: State<'_, AppState>,
+    payload: ConnectionPayload,
+) -> Result<PgAdminSnapshot, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::fetch_admin_snapshot(&connection).await },
+    )
+    .await
+}
+
+#[tauri::command]
+async fn cancel_pg_backend(
+    state: State<'_, AppState>,
+    payload: PgBackendActionPayload,
+) -> Result<PgBackendActionResult, String> {
+    with_active_connection(state.inner(), &payload.connection_id, |connection| async move {
+        dispatch::cancel_backend(&connection, payload.pid).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn terminate_pg_backend(
+    state: State<'_, AppState>,
+    payload: PgBackendActionPayload,
+) -> Result<PgBackendActionResult, String> {
+    with_active_connection(state.inner(), &payload.connection_id, |connection| async move {
+        dispatch::terminate_backend(&connection, payload.pid).await
+    })
     .await
 }
 
@@ -1182,6 +1234,9 @@ pub fn run() {
             load_database_overview_stats,
             load_relation_stats,
             load_server_details,
+            load_pg_admin_snapshot,
+            cancel_pg_backend,
+            terminate_pg_backend,
             run_query,
             load_table_data,
             load_table_structure,
@@ -1190,6 +1245,7 @@ pub fn run() {
             run_pg_dump,
             run_pg_restore,
             refresh_materialized_view,
+            run_pg_maintenance,
             commit_cell_edits,
             insert_row,
             import_rows,

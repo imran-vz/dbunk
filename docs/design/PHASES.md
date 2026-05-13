@@ -14,7 +14,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 4 | Data import wizard | ✅ shipped | Second half — bulk inbound; pairs with Phase 3's transfer surface |
 | 5 | DDL + dump/restore | ✅ shipped | Schema-level export and full `pg_dump`/`pg_restore` backups |
 | 6 | Object navigator depth | ✅ shipped | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
-| 7 | Admin tools | planned | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
+| 7 | Admin tools | ✅ shipped | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
 | 8 | SQL editor depth | planned | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
 | 9 | Compare + generate | planned | Schema compare, data compare, mock data — depends on Phase 6 coverage |
 | 10 | Specialized editors | planned | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
@@ -123,7 +123,7 @@ What landed:
 - Table rows can expand into Triggers, Rules, Policies, Partitions, Dependencies, and References catalog viewers.
 - The Tables overview fallback now includes materialized views and foreign tables from the enriched schema explorer.
 
-## Phase 7 — Admin tools
+## Phase 7 — Admin tools — ✅ shipped
 Operational visibility that lets a Postgres user diagnose live problems without leaving dbunk.
 
 - Session Manager (`pg_stat_activity` + terminate/cancel)
@@ -131,6 +131,14 @@ Operational visibility that lets a Postgres user diagnose live problems without 
 - Pending transactions view
 - VACUUM / ANALYZE / REINDEX as table context actions
 - Deeper DB stats dashboard (size growth, cache hit ratio, slow queries)
+
+What landed:
+- New Postgres-only Admin overview tab with live sessions, locks, pending transactions, and core database health metrics.
+- Session rows support `pg_cancel_backend` and `pg_terminate_backend` actions, then refresh the admin snapshot.
+- Lock Manager shows granted/pending locks plus blocker PID chains through `pg_blocking_pids`.
+- Pending transactions are pulled from `pg_stat_activity` with transaction age and active query preview.
+- Table actions now include VACUUM, ANALYZE, and REINDEX backed by `run_pg_maintenance`.
+- Dashboard metrics include database size, cache hit ratio, active sessions, idle-in-transaction count, and blocked locks.
 
 ## Phase 8 — SQL editor depth
 Make the editor competitive for serious query work.

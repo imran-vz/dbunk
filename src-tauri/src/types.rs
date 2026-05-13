@@ -552,6 +552,69 @@ pub(crate) struct CopyTableResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct PgSessionInfo {
+    pub pid: i32,
+    pub user: String,
+    pub database: Option<String>,
+    pub application_name: String,
+    pub client_addr: Option<String>,
+    pub state: Option<String>,
+    pub wait_event_type: Option<String>,
+    pub wait_event: Option<String>,
+    pub query_age_seconds: Option<i64>,
+    pub transaction_age_seconds: Option<i64>,
+    pub query: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgLockInfo {
+    pub pid: i32,
+    pub lock_type: String,
+    pub relation: Option<String>,
+    pub mode: String,
+    pub granted: bool,
+    pub blocked_by: Vec<i32>,
+    pub query: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgPendingTransactionInfo {
+    pub pid: i32,
+    pub user: String,
+    pub state: Option<String>,
+    pub transaction_age_seconds: Option<i64>,
+    pub query: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgAdminStats {
+    pub database_size_bytes: i64,
+    pub cache_hit_ratio: Option<f64>,
+    pub active_sessions: i64,
+    pub idle_in_transaction: i64,
+    pub blocked_locks: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgAdminSnapshot {
+    pub sessions: Vec<PgSessionInfo>,
+    pub locks: Vec<PgLockInfo>,
+    pub pending_transactions: Vec<PgPendingTransactionInfo>,
+    pub stats: PgAdminStats,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgBackendActionResult {
+    pub ok: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DeleteRowsResult {
     pub runtime_ms: u64,
     pub rows_affected: u64,
@@ -802,6 +865,22 @@ pub(crate) struct RefreshMaterializedViewPayload {
     pub view: String,
     #[serde(default)]
     pub concurrently: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgBackendActionPayload {
+    pub connection_id: String,
+    pub pid: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgMaintenancePayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub table: String,
+    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
