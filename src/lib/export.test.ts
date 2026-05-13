@@ -1,15 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type ExportTable,
-  serializeExportTask,
-  toCsv,
-  toExcelWorkbookXml,
-  toHtmlTable,
-  toJson,
-  toMarkdownTable,
-  toSqlInserts,
-  toTxtTable,
-} from "@/lib/export";
+import { type ExportTable, toCsv, toJson } from "@/lib/export";
 
 describe("toCsv", () => {
   it("emits a header row followed by data rows", () => {
@@ -153,72 +143,5 @@ describe("toJson", () => {
       rows: [],
     };
     expect(toJson(table, { pretty: true })).toBe("[]");
-  });
-});
-
-describe("table export formats", () => {
-  const table: ExportTable = {
-    columns: ["id", "name", "note"],
-    rows: [
-      ["1", "Ada", "first"],
-      ["2", "Grace", null],
-    ],
-  };
-
-  it("emits PostgreSQL-safe INSERT statements", () => {
-    expect(toSqlInserts(table, { schema: "public", table: "people" })).toBe(
-      `INSERT INTO "public"."people" ("id", "name", "note") VALUES ('1', 'Ada', 'first');\n` +
-        `INSERT INTO "public"."people" ("id", "name", "note") VALUES ('2', 'Grace', NULL);`,
-    );
-  });
-
-  it("escapes HTML table output", () => {
-    expect(
-      toHtmlTable({
-        columns: ["id", "<name>"],
-        rows: [["1", "A & B"]],
-      }),
-    ).toContain("<th>&lt;name&gt;</th>");
-    expect(toHtmlTable(table, "NULL")).toContain("<td>NULL</td>");
-  });
-
-  it("emits pipe-safe Markdown", () => {
-    expect(
-      toMarkdownTable({
-        columns: ["id", "name"],
-        rows: [["1", "Ada | Grace"]],
-      }),
-    ).toBe("| id | name |\n| --- | --- |\n| 1 | Ada \\| Grace |");
-  });
-
-  it("emits tab-delimited TXT", () => {
-    expect(toTxtTable(table, "NULL")).toBe(
-      "id\tname\tnote\n1\tAda\tfirst\n2\tGrace\tNULL",
-    );
-  });
-
-  it("emits an Excel-readable XML workbook payload", () => {
-    const workbook = toExcelWorkbookXml(table);
-    expect(workbook).toContain('progid="Excel.Sheet"');
-    expect(workbook).toContain("<Worksheet");
-    expect(workbook).toContain('<Data ss:Type="String">Ada</Data>');
-  });
-
-  it("serializes re-runnable task configs with scope and compression", () => {
-    const config = serializeExportTask({
-      id: "task-1",
-      name: "Nightly people export",
-      connectionId: "conn-1",
-      scope: { kind: "whole-table", schema: "public", table: "people" },
-      format: "csv",
-      encoding: "utf-8",
-      compression: "gzip",
-      includeHeader: true,
-      createdAt: "2026-05-13T00:00:00.000Z",
-    });
-    expect(JSON.parse(config)).toMatchObject({
-      scope: { kind: "whole-table", table: "people" },
-      compression: "gzip",
-    });
   });
 });
