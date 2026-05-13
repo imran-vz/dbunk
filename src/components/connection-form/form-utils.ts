@@ -1,0 +1,231 @@
+/**
+ * Pure helpers for `ConnectionForm`: schema, builders, defaults. Kept
+ * away from the React tree so they're unit-testable per engine branch
+ * without spinning up a form. The per-engine projection lives in
+ * `buildStoredConnectionFromForm`, split across one helper per variant
+ * to keep each branch trivial (no nested switch + no shared common
+ * spread interleaved with per-engine fields).
+ */
+
+import * as z from "zod";
+
+import type {
+  ClickHouseStoredConnection,
+  Connection,
+  MySqlStoredConnection,
+  PgStoredConnection,
+  RedisStoredConnection,
+  SqliteStoredConnection,
+  StoredConnection,
+} from "@/lib/store";
+
+export const connectionSchema = z.object({
+  name: z.string().min(1, "Connection name is required"),
+  engine: z.enum(["PostgreSQL", "MySQL", "ClickHouse", "SQLite", "Redis"]),
+  host: z.string().optional(),
+  database: z.string().optional(),
+  port: z.number().int().optional(),
+  user: z.string().optional(),
+  password: z.string().optional(),
+  role: z.string().optional(),
+  ssl: z.boolean().optional(),
+  useHttps: z.boolean().optional(),
+  urlPath: z.string().optional(),
+  dbNumber: z.number().int().min(0).max(15).optional(),
+  useTls: z.boolean().optional(),
+  verifyTlsCert: z.boolean().optional(),
+});
+
+export type ConnectionFormData = z.infer<typeof connectionSchema>;
+
+export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
+  name: "",
+  engine: "PostgreSQL",
+  host: "",
+  database: "",
+  port: 5432,
+  user: "",
+  password: "",
+  role: "read/write",
+  ssl: true,
+  useHttps: false,
+  urlPath: "",
+  dbNumber: 0,
+  useTls: false,
+  verifyTlsCert: true,
+};
+
+type CommonShape = {
+  id: string;
+  name: string;
+  database: string;
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  role: string;
+};
+
+function commonFromForm(value: ConnectionFormData, id: string): CommonShape {
+  return {
+    id,
+    name: value.name,
+    database: value.database ?? "",
+    host: value.host ?? "",
+    port: value.port ?? 0,
+    user: value.user ?? "",
+    password: value.password ?? "",
+    role: value.role || "read/write",
+  };
+}
+
+function buildPg(
+  value: ConnectionFormData,
+  common: CommonShape,
+): PgStoredConnection {
+  return { ...common, engine: "PostgreSQL", ssl: value.ssl ?? true };
+}
+
+function buildMySql(
+  value: ConnectionFormData,
+  common: CommonShape,
+): MySqlStoredConnection {
+  return { ...common, engine: "MySQL", ssl: value.ssl ?? true };
+}
+
+function buildSqlite(common: CommonShape): SqliteStoredConnection {
+  return { ...common, engine: "SQLite" };
+}
+
+function buildClickHouse(
+  value: ConnectionFormData,
+  common: CommonShape,
+): ClickHouseStoredConnection {
+  return {
+    ...common,
+    engine: "ClickHouse",
+    useHttps: value.useHttps ?? false,
+    urlPath: value.urlPath ?? "",
+  };
+}
+
+function buildRedis(
+  value: ConnectionFormData,
+  common: CommonShape,
+): RedisStoredConnection {
+  return {
+    ...common,
+    engine: "Redis",
+    dbNumber: value.dbNumber ?? 0,
+    useTls: value.useTls ?? false,
+    verifyTlsCert: value.verifyTlsCert ?? true,
+  };
+}
+
+/**
+ * Project form values into the right `StoredConnection` variant. The
+ * switch on `engine` is the single construction site for the wire
+ * shape — Slice 4 collapses the previously-duplicated builders in
+ * new-connection-form + edit-connection-dialog into this one place.
+ */
+export function buildStoredConnectionFromForm(
+  value: ConnectionFormData,
+  id: string,
+): StoredConnection {
+  const common = commonFromForm(value, id);
+  switch (value.engine) {
+    case "PostgreSQL":
+      return buildPg(value, common);
+    case "MySQL":
+      return buildMySql(value, common);
+    case "SQLite":
+      return buildSqlite(common);
+    case "ClickHouse":
+      return buildClickHouse(value, common);
+    case "Redis":
+      return buildRedis(value, common);
+  }
+}
+
+export function buildConnectionFromForm(
+  value: ConnectionFormData,
+  id: string,
+  runtime: {
+    status: Connection["status"];
+    latency: string;
+    lastSync: string;
+    errorMessage?: string;
+    lastActivityAt?: string;
+  },
+): Connection {
+  return { ...buildStoredConnectionFromForm(value, id), ...runtime };
+}
+
+export function defaultValuesFromConnection(
+  connection: Connection,
+): ConnectionFormData {
+  const common = {
+    name: connection.name,
+    engine: connection.engine,
+    host: connection.host,
+    database: connection.database,
+    port: connection.port || 5432,
+    user: connection.user,
+    password: "",
+    role: connection.role,
+  };
+  switch (connection.engine) {
+    case "PostgreSQL":
+    case "MySQL":
+      return {
+        ...common,
+        ssl: connection.ssl,
+        useHttps: false,
+        urlPath: "",
+        dbNumber: 0,
+        useTls: false,
+        verifyTlsCert: true,
+      };
+    case "SQLite":
+      return {
+        ...common,
+        ssl: true,
+        useHttps: false,
+        urlPath: "",
+        dbNumber: 0,
+        useTls: false,
+        verifyTlsCert: true,
+      };
+    case "ClickHouse":
+      return {
+        ...common,
+        ssl: true,
+        useHttps: connection.useHttps,
+        urlPath: connection.urlPath,
+        dbNumber: 0,
+        useTls: false,
+        verifyTlsCert: true,
+      };
+    case "Redis":
+      return {
+        ...common,
+        ssl: true,
+        useHttps: false,
+        urlPath: "",
+        dbNumber: connection.dbNumber,
+        useTls: connection.useTls,
+        verifyTlsCert: connection.verifyTlsCert,
+      };
+  }
+}
+
+export const FIELD_ERROR = (
+  errors: Array<{ message?: string } | string | undefined> | undefined,
+): string | null => {
+  const first = errors?.[0];
+  if (!first) return null;
+  if (typeof first === "string") return first;
+  return first.message ?? null;
+};
+
+export type Mode = "new" | "edit";
