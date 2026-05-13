@@ -26,7 +26,7 @@ interface SchemaRelationshipMapProps {
 
 const visibleColumnLimit = 18;
 
-const typeGlyph = (dataType: string): string => {
+export const typeGlyph = (dataType: string): string => {
   const normalized = dataType.toLowerCase();
   if (
     normalized.includes("int") ||

@@ -70,7 +70,10 @@ vi.mock("reactflow", () => {
   };
 });
 
-import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
+import {
+  SchemaRelationshipMap,
+  typeGlyph,
+} from "@/components/schema-relationship-map";
 import { useAppStore } from "@/lib/store";
 
 const initialStoreState = useAppStore.getState();
@@ -245,5 +248,52 @@ describe("SchemaRelationshipMap", () => {
     expect(screen.getByTestId("schema-flow-error").textContent).toContain(
       "permission denied",
     );
+  });
+});
+
+describe("typeGlyph", () => {
+  it("returns the numeric glyph for integer-family types", () => {
+    expect(typeGlyph("integer")).toBe("123");
+    expect(typeGlyph("bigint")).toBe("123");
+    expect(typeGlyph("smallint")).toBe("123");
+    expect(typeGlyph("Int64")).toBe("123");
+  });
+
+  it("returns the numeric glyph for numeric/decimal/real/double types", () => {
+    expect(typeGlyph("numeric")).toBe("123");
+    expect(typeGlyph("decimal(18,4)")).toBe("123");
+    expect(typeGlyph("real")).toBe("123");
+    expect(typeGlyph("double precision")).toBe("123");
+  });
+
+  it("returns the boolean glyph for bool-family types", () => {
+    expect(typeGlyph("boolean")).toBe("T/F");
+    expect(typeGlyph("BOOL")).toBe("T/F");
+  });
+
+  it("returns the time glyph for date/time/timestamp types", () => {
+    expect(typeGlyph("date")).toBe("time");
+    expect(typeGlyph("time")).toBe("time");
+    expect(typeGlyph("timestamp")).toBe("time");
+    expect(typeGlyph("timestamptz")).toBe("time");
+    expect(typeGlyph("DateTime64")).toBe("time");
+  });
+
+  it("returns the JSON glyph for json-family types", () => {
+    expect(typeGlyph("json")).toBe("{}");
+    expect(typeGlyph("jsonb")).toBe("{}");
+  });
+
+  it("returns the text glyph for unknown / string types", () => {
+    expect(typeGlyph("text")).toBe("A-Z");
+    expect(typeGlyph("varchar(64)")).toBe("A-Z");
+    expect(typeGlyph("uuid")).toBe("A-Z");
+    expect(typeGlyph("")).toBe("A-Z");
+  });
+
+  it("is case-insensitive — uppercase input maps the same way as lowercase", () => {
+    expect(typeGlyph("INTEGER")).toBe("123");
+    expect(typeGlyph("JSONB")).toBe("{}");
+    expect(typeGlyph("TIMESTAMP")).toBe("time");
   });
 });

@@ -52,6 +52,8 @@ const spaWithPrerenderOptions: SpaOptions = {
 };
 
 // See: https://vite.dev/config/
+// Build config, not application code.
+// fallow-ignore-next-line complexity
 export default defineConfig(async () => {
   const pathAliases = viteTsConfigPaths({
     projects: ["./tsconfig.json"],
