@@ -12,9 +12,11 @@ import {
 export function FavoriteTablesCard({
   tables,
   onOpenTable,
+  onViewAll,
 }: {
   tables: Array<{ schema: string; name: string }>;
   onOpenTable: (schema: string, table: string) => void;
+  onViewAll: () => void;
 }) {
   return (
     <Card>
@@ -55,7 +57,12 @@ export function FavoriteTablesCard({
         )}
       </CardContent>
       <div className="px-4 pt-1">
-        <Button size="sm" variant="ghost" className="px-1 text-text-muted">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="px-1 text-text-muted"
+          onClick={onViewAll}
+        >
           Browse all tables
           <IconArrowRight className="size-3" />
         </Button>

@@ -27,6 +27,7 @@ export type {
   IndexInfo,
   MySqlConnection,
   MySqlStoredConnection,
+  OverviewTabId,
   PgStoredConnection,
   QueryHistoryEntry,
   QueryOutcome,

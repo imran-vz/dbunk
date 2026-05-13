@@ -22,6 +22,7 @@ import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import type {
   AppStoreState,
   Connection,
+  OverviewTabId,
   RedisCapabilities,
   StoredConnection,
 } from "./types";
@@ -89,8 +90,16 @@ const applyConnectionUpdate = (
 export type ConnectionsSlice = {
   connections: Connection[];
   activeConnectionId: string;
+  /**
+   * Active sub-tab inside each connection's Overview surface. Keyed
+   * by connection id; missing entries default to `"overview"` at the
+   * consumer. Entries are dropped when the connection is disconnected
+   * or deleted so the record can't drift away from `connections`.
+   */
+  connectionOverviewTab: Record<string, OverviewTabId>;
 
   setActiveConnectionId: (id: string) => void;
+  setConnectionOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   loadConnections: () => Promise<void>;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
@@ -114,8 +123,21 @@ export const createConnectionsSlice: StateCreator<
 > = (set, get) => ({
   connections: [],
   activeConnectionId: "",
+  connectionOverviewTab: {},
 
   setActiveConnectionId: (id) => set({ activeConnectionId: id }),
+
+  setConnectionOverviewTab: (connectionId, tab) => {
+    if (!connectionId) {
+      return;
+    }
+    set((state) => ({
+      connectionOverviewTab: {
+        ...state.connectionOverviewTab,
+        [connectionId]: tab,
+      },
+    }));
+  },
 
   loadConnections: async () => {
     if (!isTauri()) {
@@ -124,6 +146,7 @@ export const createConnectionsSlice: StateCreator<
     try {
       const stored = await tauriInvoke<StoredConnection[]>("load_connections");
       const connections = stored.map(hydrateConnection);
+      const liveIds = new Set(connections.map((c) => c.id));
       set((state) => ({
         connections,
         activeConnectionId: connections.some(
@@ -131,6 +154,11 @@ export const createConnectionsSlice: StateCreator<
         )
           ? state.activeConnectionId
           : (connections[0]?.id ?? ""),
+        connectionOverviewTab: Object.fromEntries(
+          Object.entries(state.connectionOverviewTab).filter(([key]) =>
+            liveIds.has(key),
+          ),
+        ),
       }));
     } catch (error) {
       console.error("Failed to load connections", error);
@@ -212,6 +240,8 @@ export const createConnectionsSlice: StateCreator<
           state.activeConnectionId === connectionId
             ? (connections[0]?.id ?? "")
             : state.activeConnectionId;
+        const { [connectionId]: _droppedTab, ...remainingTabs } =
+          state.connectionOverviewTab;
         return {
           connections,
           activeConnectionId: newActiveId,
@@ -220,6 +250,7 @@ export const createConnectionsSlice: StateCreator<
               ([key]) => key !== connectionId,
             ),
           ),
+          connectionOverviewTab: remainingTabs,
         };
       });
       return;
@@ -237,6 +268,8 @@ export const createConnectionsSlice: StateCreator<
           state.activeConnectionId === connectionId
             ? (connections[0]?.id ?? "")
             : state.activeConnectionId;
+        const { [connectionId]: _droppedTab, ...remainingTabs } =
+          state.connectionOverviewTab;
         return {
           connections,
           activeConnectionId: newActiveId,
@@ -245,6 +278,7 @@ export const createConnectionsSlice: StateCreator<
               ([key]) => key !== connectionId,
             ),
           ),
+          connectionOverviewTab: remainingTabs,
         };
       });
     } catch (error) {
@@ -417,13 +451,18 @@ export const createConnectionsSlice: StateCreator<
     state.closePubSubSessionsForConnection(connectionId);
     state.closeTabsForConnection(connectionId);
 
-    set((state) => ({
-      connections: applyConnectionUpdate(state.connections, connectionId, {
-        status: "Disconnected",
-        latency: "--",
-        lastSync: "Never",
-        errorMessage: undefined,
-      }),
-    }));
+    set((state) => {
+      const { [connectionId]: _droppedTab, ...remainingTabs } =
+        state.connectionOverviewTab;
+      return {
+        connections: applyConnectionUpdate(state.connections, connectionId, {
+          status: "Disconnected",
+          latency: "--",
+          lastSync: "Never",
+          errorMessage: undefined,
+        }),
+        connectionOverviewTab: remainingTabs,
+      };
+    });
   },
 });
