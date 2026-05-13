@@ -18,6 +18,7 @@ import {
   PostgresOnlyPanel,
 } from "@/components/workspace-overview/placeholder-panel";
 import { RecentQueriesCard } from "@/components/workspace-overview/recent-queries-card";
+import { SettingsTab } from "@/components/workspace-overview/settings-tab";
 import { useDatabaseOverview } from "@/components/workspace-overview/use-database-overview";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { storageClassFor } from "@/lib/engine-policy";
@@ -397,10 +398,5 @@ function OverviewTabBody({
   }
 
   // activeTab === "settings"
-  return (
-    <PlaceholderPanel
-      title="Settings"
-      description="Read-only view of the connection's existing fields with an Edit button to the existing connection dialog. Coming in Phase 1 — Step 2."
-    />
-  );
+  return <SettingsTab connection={activeConnection} />;
 }
