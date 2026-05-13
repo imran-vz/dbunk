@@ -36,9 +36,9 @@ pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fet
 
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, DatabaseOverviewStats,
-    DeleteRowsResult, ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo,
-    SchemaExplorer, SchemaRelationships, ServerDetails, StorageClass, StoredConnection,
-    TableStructure,
+    DeleteRowsResult, ExecuteDdlResult, ImportRowsResult, InsertRowResult, MutationStatus,
+    QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships, ServerDetails, StorageClass,
+    StoredConnection, TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -170,6 +170,22 @@ pub async fn insert_row(
     match connection.engine().storage_class() {
         StorageClass::Relational => relational::insert_row(connection, schema, table, values).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Row insert")),
+    }
+}
+
+pub async fn import_rows(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+    use_copy: bool,
+) -> Result<ImportRowsResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::import_rows(connection, schema, table, columns, rows, use_copy).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "Row import")),
     }
 }
 

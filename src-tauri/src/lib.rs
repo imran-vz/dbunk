@@ -386,6 +386,34 @@ async fn insert_row(
 }
 
 #[tauri::command]
+async fn import_rows(
+    state: State<'_, AppState>,
+    payload: ImportRowsPayload,
+) -> Result<ImportRowsResult, String> {
+    let ImportRowsPayload {
+        connection_id,
+        schema,
+        table,
+        columns,
+        rows,
+        use_copy,
+    } = payload;
+    if columns.is_empty() {
+        return Err("no columns mapped for import".to_string());
+    }
+    if rows.is_empty() {
+        return Ok(ImportRowsResult {
+            runtime_ms: 0,
+            rows_affected: 0,
+        });
+    }
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::import_rows(&connection, &schema, &table, &columns, &rows, use_copy).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn delete_rows(
     state: State<'_, AppState>,
     payload: DeleteRowsPayload,
@@ -1047,6 +1075,7 @@ pub fn run() {
             execute_ddl,
             commit_cell_edits,
             insert_row,
+            import_rows,
             delete_rows,
             poll_mutation_status,
             load_query_history,

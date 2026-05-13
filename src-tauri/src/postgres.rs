@@ -39,8 +39,8 @@ use sqlx::{
 use crate::{
     bytes_to_hex, dispatch::should_fetch_rows, quote_double, CellEdit, CellEditKeyValue,
     ColumnInfo, CommitCellEditsResult, ConstraintInfo, DatabaseOverviewStats, DeleteRowsResult,
-    ExecuteDdlResult, ForeignKeyInfo, IndexInfo, InsertRowResult, QueryResult, SchemaForeignKey,
-    SchemaRelationships, SchemaTableColumn, SchemaTableNode, StoredConnection,
+    ExecuteDdlResult, ForeignKeyInfo, ImportRowsResult, IndexInfo, InsertRowResult, QueryResult,
+    SchemaForeignKey, SchemaRelationships, SchemaTableColumn, SchemaTableNode, StoredConnection,
     StructureCapabilities, TableStructure,
 };
 
@@ -309,6 +309,68 @@ fn build_insert(
     (sql, params)
 }
 
+fn build_bulk_insert(
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+) -> (String, Vec<Option<String>>) {
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
+    let column_list = columns
+        .iter()
+        .map(|column| quote_double(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut params = Vec::with_capacity(columns.len() * rows.len());
+    let values = rows
+        .iter()
+        .enumerate()
+        .map(|(row_index, row)| {
+            let placeholders = columns
+                .iter()
+                .enumerate()
+                .map(|(column_index, _)| {
+                    params.push(row.get(column_index).cloned().unwrap_or(None));
+                    format!("${}", row_index * columns.len() + column_index + 1)
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({})", placeholders)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    (
+        format!(
+            "INSERT INTO {} ({}) VALUES {}",
+            qualified, column_list, values
+        ),
+        params,
+    )
+}
+
+fn csv_copy_field(value: &Option<String>) -> String {
+    match value {
+        None => "\\N".to_string(),
+        Some(value) => {
+            let escaped = value.replace('"', "\"\"");
+            format!("\"{}\"", escaped)
+        }
+    }
+}
+
+fn build_copy_csv(rows: &[Vec<Option<String>>]) -> Vec<u8> {
+    rows.iter()
+        .map(|row| {
+            row.iter()
+                .map(csv_copy_field)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes()
+}
+
 fn build_delete(
     schema: &str,
     table: &str,
@@ -458,6 +520,88 @@ pub async fn insert_row(
     Ok(InsertRowResult {
         rows_affected,
         runtime_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+pub async fn import_rows(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+) -> Result<ImportRowsResult, String> {
+    if columns.is_empty() {
+        return Err("import has no mapped columns".to_string());
+    }
+    if rows.is_empty() {
+        return Ok(ImportRowsResult {
+            runtime_ms: 0,
+            rows_affected: 0,
+        });
+    }
+    let mut conn = connect(connection).await?;
+    let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
+    let start = Instant::now();
+    let mut rows_affected = 0;
+    for chunk in rows.chunks(500) {
+        let (sql, params) = build_bulk_insert(schema, table, columns, chunk);
+        let mut query = sqlx::query(&sql);
+        for param in &params {
+            query = query.bind(param.as_deref());
+        }
+        rows_affected += query
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?
+            .rows_affected();
+    }
+    tx.commit().await.map_err(|error| error.to_string())?;
+    Ok(ImportRowsResult {
+        runtime_ms: start.elapsed().as_millis() as u64,
+        rows_affected,
+    })
+}
+
+pub async fn copy_import_rows(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+) -> Result<ImportRowsResult, String> {
+    if columns.is_empty() {
+        return Err("import has no mapped columns".to_string());
+    }
+    if rows.is_empty() {
+        return Ok(ImportRowsResult {
+            runtime_ms: 0,
+            rows_affected: 0,
+        });
+    }
+    let mut conn = connect(connection).await?;
+    let start = Instant::now();
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
+    let column_list = columns
+        .iter()
+        .map(|column| quote_double(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let statement = format!(
+        "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '\\N')",
+        qualified, column_list
+    );
+    let payload = build_copy_csv(rows);
+    let mut copy = conn
+        .copy_in_raw(&statement)
+        .await
+        .map_err(|error| error.to_string())?;
+    copy.send(payload)
+        .await
+        .map_err(|error| error.to_string())?;
+    let rows_affected = copy.finish().await.map_err(|error| error.to_string())?;
+    Ok(ImportRowsResult {
+        runtime_ms: start.elapsed().as_millis() as u64,
+        rows_affected,
     })
 }
 

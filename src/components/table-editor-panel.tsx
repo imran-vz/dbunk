@@ -8,6 +8,7 @@ import {
 import { StatusBar } from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
 import { TableEditorBody } from "@/components/table-editor/body";
+import { DataImportWizard } from "@/components/table-editor/data-import-wizard";
 import {
   type SubTab,
   TableEditorHeader,
@@ -98,6 +99,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   } = useAppStore();
 
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const rowDetails = useRowDetailsVisibility(bodyWidth);
 
   // Reset the terminal-outcome badge on table switch — the panel instance
@@ -137,6 +139,61 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     setLastOutcome(outcome);
     if (outcome.kind === "completed") {
       setIsAddRowOpen(false);
+    }
+  };
+
+  const handleImportRows = async (payload: {
+    columns: string[];
+    rows: Array<Array<string | null>>;
+    useCopy: boolean;
+  }) => {
+    if (!isTauri()) {
+      for (const row of payload.rows) {
+        const outcome = await addTableRow(
+          tableName,
+          payload.columns.map((column, index) => ({
+            column,
+            value: row[index] ?? null,
+          })),
+        );
+        if (outcome.kind !== "completed") {
+          setLastOutcome(outcome);
+          return;
+        }
+      }
+      setLastOutcome({
+        kind: "completed",
+        runtimeMs: 0,
+        rowsAffected: payload.rows.length,
+      });
+      setIsImportOpen(false);
+      return;
+    }
+    try {
+      const result = await tauriInvoke<{
+        runtimeMs: number;
+        rowsAffected: number;
+      }>("import_rows", {
+        payload: {
+          connectionId: tab.connectionId,
+          schema: tab.schema,
+          table: tab.table ?? "",
+          columns: payload.columns,
+          rows: payload.rows,
+          useCopy: payload.useCopy,
+        },
+      });
+      setLastOutcome({
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: result.rowsAffected,
+      });
+      setIsImportOpen(false);
+      if (dataKey) {
+        await refreshTableData(dataKey);
+      }
+    } catch (error) {
+      setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
     }
   };
 
@@ -267,6 +324,16 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         />
       ) : null}
 
+      {isImportOpen && structure && connection ? (
+        <DataImportWizard
+          columns={structure.columns}
+          engine={connection.engine}
+          isWriting={caps.isWriting}
+          onClose={() => setIsImportOpen(false)}
+          onImportRows={handleImportRows}
+        />
+      ) : null}
+
       <TableEditorBody
         bodyRef={bodyRef}
         bodyWidth={bodyWidth}
@@ -288,6 +355,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         exportFilenameBase={exportFilenameBase}
         onRefresh={onRefresh}
         onOpenAddRow={() => setIsAddRowOpen(true)}
+        onOpenImport={() => setIsImportOpen(true)}
         onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
         onCellEdit={(rowIndex, colIndex, value) =>
           setTableEdit(tableName, rowIndex, colIndex, value)

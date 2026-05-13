@@ -517,6 +517,13 @@ pub(crate) struct InsertRowResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ImportRowsResult {
+    pub runtime_ms: u64,
+    pub rows_affected: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DeleteRowsResult {
     pub runtime_ms: u64,
     pub rows_affected: u64,
@@ -705,6 +712,17 @@ pub(crate) struct InsertRowPayload {
     // get the database default — that lets users insert rows that rely on
     // SERIAL/identity columns or DEFAULT NOW() etc.
     pub values: Vec<CellEditKeyValue>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportRowsPayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Option<String>>>,
+    pub use_copy: bool,
 }
 
 #[derive(Debug, Deserialize)]
