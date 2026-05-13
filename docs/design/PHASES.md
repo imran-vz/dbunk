@@ -6,31 +6,37 @@ Phases are ordered by user-facing pain first, then by dependency.
 
 ## Summary
 
-| # | Phase | Why this slot |
-|---|---|---|
-| 1 | Wire the connection-level tabs | Smallest scope, biggest perceived completeness win; most views are thin wrappers over data the store already has |
-| 2 | Schema map overhaul | Directly addresses the "schema map is really not great" pain |
-| 3 | Data export upgrade | First half of the import/export pain — lay the transfer foundation |
-| 4 | Data import wizard | Second half — bulk inbound; pairs with Phase 3's transfer surface |
-| 5 | DDL + dump/restore | Schema-level export and full `pg_dump`/`pg_restore` backups |
-| 6 | Object navigator depth | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
-| 7 | Admin tools | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
-| 8 | SQL editor depth | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
-| 9 | Compare + generate | Schema compare, data compare, mock data — depends on Phase 6 coverage |
-| 10 | Specialized editors | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
+| # | Phase | Status | Why this slot |
+|---|---|---|---|
+| 1 | Wire the connection-level tabs | ✅ shipped | Smallest scope, biggest perceived completeness win; most views are thin wrappers over data the store already has |
+| 2 | Schema map overhaul | next | Directly addresses the "schema map is really not great" pain |
+| 3 | Data export upgrade | planned | First half of the import/export pain — lay the transfer foundation |
+| 4 | Data import wizard | planned | Second half — bulk inbound; pairs with Phase 3's transfer surface |
+| 5 | DDL + dump/restore | planned | Schema-level export and full `pg_dump`/`pg_restore` backups |
+| 6 | Object navigator depth | planned | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
+| 7 | Admin tools | planned | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
+| 8 | SQL editor depth | planned | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
+| 9 | Compare + generate | planned | Schema compare, data compare, mock data — depends on Phase 6 coverage |
+| 10 | Specialized editors | planned | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
 
 Phases 1–4 cover the three pain points named explicitly when setting the parity goal.
 
 ---
 
-## Phase 1 — Wire the connection-level tabs
-Make the existing `OverviewHeader` tabs real views. Smallest scope, biggest perceived completeness win, and several views are thin wrappers around data the store already holds.
+## Phase 1 — Wire the connection-level tabs — ✅ shipped
+Made the `OverviewHeader` tabs real views.
 
-- Tables tab: flat searchable list of all tables in the connection
-- Schemas tab: schema list with object counts and sizes
-- Query History tab: dedicated view backed by existing `queryHistory`
-- Details tab: server version, encoding, locale, timezone, extensions, `SHOW ALL`
-- Settings tab: read-only view of the connection's existing fields (host, port, database, user, role, engine-specific TLS), with an Edit button that opens the existing `EditConnectionDialog`. SSH tunnel, keepalive, statement-timeout, and other driver-level fields are explicitly **out of scope** for Phase 1 — they need new connection-record fields and backend wiring, and are tracked as a follow-up phase.
+What landed:
+- Tables tab: flat list with Schema/Name/Kind columns on every relational engine; adds Rows + Size columns on Postgres (via `load_relation_stats`). Views included with a kind badge. Sortable headers, free-text search, transient schema filter chip set by the Schemas tab.
+- Schemas tab (Postgres-only): per-schema aggregates (tables, views, materialised views, rows ≈, size) derived from the same `relationStats` cache. Click a row to jump to the Tables tab pre-filtered.
+- Query History tab: persisted log scoped to the current connection by default with a "Showing all connections" toggle, free-text SQL search, success/error chips, Open-in-editor + Copy SQL row actions. Persistence cap raised 200 → 2000 in both the in-memory slice and the SQLite trim.
+- Details tab (Postgres-only): summary panel (trimmed `version()`, encoding, locale, timezone) plus a `pg_settings`-backed table with category grouping, search, modified-only filter, and short-desc tooltips; installed extensions table sourced from `pg_extension`.
+- Settings tab: read-only view of the connection's existing fields (name, engine, host, port, database, user, role, engine-specific TLS row) with an Edit button that opens the existing `EditConnectionDialog`. SSH tunnel, keepalive, statement-timeout, and other driver-level fields were explicitly out of scope — they need new connection-record fields and backend wiring, and are tracked as a follow-up phase.
+
+Cross-cutting:
+- New per-connection `connectionOverviewTab` state on `ConnectionsSlice` drives the sub-tab nav; the existing Overview cards' "View all" buttons jump to the matching deep tabs.
+- Postgres-only sub-tabs (Schemas, Details) render a degraded explainer panel on MySQL/SQLite/ClickHouse rather than disappearing from the nav.
+- Two new Tauri commands (`load_relation_stats`, `load_server_details`) — lazy on first sub-tab activation, dropped on disconnect, invalidated on DDL commit (relation stats).
 
 ## Phase 2 — Schema map overhaul
 Address the explicit "schema map is not great" pain.
