@@ -127,6 +127,10 @@ export const createRelationalQueriesSlice: StateCreator<
       ),
     })),
 
+  // cyclo/cog under threshold; CRAP stays high because fallow's
+  // static_estimated model caps slice methods at the file's "partial"
+  // tier regardless of branch tests (6 in store.test.ts cover all paths).
+  // fallow-ignore-next-line complexity
   runQuery: async (tabId, options): Promise<QueryOutcome> => {
     const state = get();
     const tab = state.workspaceTabs.find((item) => item.id === tabId);

@@ -14,12 +14,7 @@
 import type { StateCreator } from "zustand";
 
 import { generateDdlForEngine, type PendingChange } from "@/lib/ddl";
-import {
-  type MutationOutcome,
-  pendingMutationsFromResult,
-  trackMutations,
-} from "@/lib/pending-mutations";
-import { pickRowIdentity } from "@/lib/row-identity";
+import { pendingMutationsFromResult } from "@/lib/pending-mutations";
 import {
   type SchemaForeignKey,
   type SchemaRelationships,
@@ -29,6 +24,13 @@ import {
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
+import {
+  buildDeleteRowsPayload,
+  buildEditPayload,
+  pollMutationsToCompletion,
+  resolveEditContext,
+  resolveStructureCommitContext,
+} from "./edit-strategies";
 import type {
   AppStoreState,
   ColumnChangeKind,
@@ -62,12 +64,6 @@ type TableDataResult = {
   runtimeMs: number;
 };
 
-type CellEditPayload = {
-  rowIndex: number;
-  identity: Array<{ column: string; value: string | null }>;
-  set: Array<{ column: string; value: string | null }>;
-};
-
 type CommitCellEditsResult = {
   rowsAffected: number;
   runtimeMs: number;
@@ -88,32 +84,6 @@ const generatePendingId = (): string => {
     ).crypto.randomUUID();
   }
   return `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-};
-
-/**
- * Map the CH-internal `MutationOutcome` (terminal result of a Pending
- * Mutation batch) onto the caller-facing `EditOutcome` shape. Keeps
- * `MutationOutcome` CH-specific while every store action exposes
- * `EditOutcome` uniformly.
- */
-const mutationOutcomeToEditOutcome = (
-  outcome: MutationOutcome,
-  ctx: { startedAt: number },
-): EditOutcome => {
-  if (outcome.kind === "completed") {
-    return {
-      kind: "completed",
-      runtimeMs: Date.now() - ctx.startedAt,
-    };
-  }
-  if (outcome.kind === "failed") {
-    return {
-      kind: "failed",
-      reason: outcome.reason,
-      mutationId: outcome.mutationId,
-    };
-  }
-  return { kind: "timeout", remaining: outcome.remaining };
 };
 
 // ---------------------------------------------------------------------------
@@ -288,108 +258,24 @@ export const createRelationalTablesSlice: StateCreator<
       return { kind: "noop" };
     }
 
-    const dataEntry = Object.entries(state.tableData).find(
-      ([, data]) => data.table === tableName,
-    );
-    if (!dataEntry) {
-      return {
-        kind: "failed",
-        reason: "Table data is not loaded; cannot commit edits.",
-      };
-    }
-    const [dataKeyForTable, data] = dataEntry;
-    const structureKeyForTable = tableStructureKey(
-      data.connectionId,
-      data.schema,
-      data.table,
-    );
-    const structure = state.tableStructure[structureKeyForTable];
-    const identity = pickRowIdentity(structure);
-    if (!identity) {
-      return {
-        kind: "failed",
-        reason:
-          "This table has no primary key or non-null unique index — it is read-only.",
-      };
-    }
-
-    const connection = state.connections.find(
-      (c) => c.id === data.connectionId,
-    );
-    if (!connection) {
-      return { kind: "failed", reason: "Connection not found for this table." };
-    }
-    if (!structure.capabilities.canUpdateRows) {
-      return {
-        kind: "failed",
-        reason: `This table does not support cell edits on ${connection.engine}.`,
-      };
-    }
-
-    const columnIndexByName = new Map<string, number>();
-    data.columns.forEach((name, index) => {
-      columnIndexByName.set(name, index);
+    const ctx = resolveEditContext({
+      tableData: state.tableData,
+      tableStructure: state.tableStructure,
+      connections: state.connections,
+      tableName,
+      capability: "canUpdateRows",
+      action: "cell edits",
     });
+    if (!ctx.ok) {
+      return { kind: "failed", reason: ctx.reason };
+    }
 
-    const identityMissing: string[] = identity.columns.filter(
-      (col) => !columnIndexByName.has(col),
+    const editsPayload = buildEditPayload(
+      editsForTable,
+      ctx.data,
+      ctx.identity,
+      ctx.columnIndexByName,
     );
-    if (identityMissing.length > 0) {
-      return {
-        kind: "failed",
-        reason: `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
-      };
-    }
-
-    const editsPayload: CellEditPayload[] = [];
-    const sortedRowIndices = Object.keys(editsForTable)
-      .map((k) => Number.parseInt(k, 10))
-      .filter((n) => Number.isFinite(n))
-      .sort((a, b) => a - b);
-
-    for (const rowIndex of sortedRowIndices) {
-      const row = data.rows[rowIndex];
-      if (!row) {
-        continue;
-      }
-      const colChanges = editsForTable[rowIndex] ?? {};
-      const sortedColIndices = Object.keys(colChanges)
-        .map((k) => Number.parseInt(k, 10))
-        .filter((n) => Number.isFinite(n))
-        .sort((a, b) => a - b);
-
-      const setEntries: Array<{ column: string; value: string | null }> = [];
-      for (const colIndex of sortedColIndices) {
-        const newValue = colChanges[colIndex];
-        if (newValue === undefined) {
-          continue;
-        }
-        const original = row[colIndex];
-        if (newValue === original) {
-          continue;
-        }
-        const columnName = data.columns[colIndex];
-        if (!columnName) {
-          continue;
-        }
-        setEntries.push({ column: columnName, value: newValue });
-      }
-      if (setEntries.length === 0) {
-        continue;
-      }
-
-      const identityEntries = identity.columns.map((col) => {
-        const idx = columnIndexByName.get(col) as number;
-        return { column: col, value: row[idx] ?? null };
-      });
-
-      editsPayload.push({
-        rowIndex,
-        identity: identityEntries,
-        set: setEntries,
-      });
-    }
-
     if (editsPayload.length === 0) {
       set((s) => {
         const { [tableName]: _, ...rest } = s.tableEdits;
@@ -404,7 +290,6 @@ export const createRelationalTablesSlice: StateCreator<
         [tableName]: { state: "running" },
       },
     }));
-
     const clearLifecycle = () =>
       clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
 
@@ -421,21 +306,19 @@ export const createRelationalTablesSlice: StateCreator<
         "commit_cell_edits",
         {
           payload: {
-            connectionId: data.connectionId,
-            schema: data.schema,
-            table: data.table,
+            connectionId: ctx.data.connectionId,
+            schema: ctx.data.schema,
+            table: ctx.data.table,
             edits: editsPayload,
           },
         },
       );
       const pendingMutations = pendingMutationsFromResult(result, {
-        connectionId: data.connectionId,
-        database: data.schema,
-        table: data.table,
+        connectionId: ctx.data.connectionId,
+        database: ctx.data.schema,
+        table: ctx.data.table,
       });
       if (pendingMutations.length > 0) {
-        const queuedDatabase = pendingMutations[0].database;
-        const queuedTable = pendingMutations[0].table;
         set((s) => {
           const { [tableName]: _, ...restEdits } = s.tableEdits;
           return {
@@ -444,22 +327,18 @@ export const createRelationalTablesSlice: StateCreator<
               ...s.tableEditsCommitStatus,
               [tableName]: {
                 state: "queued",
-                database: queuedDatabase,
-                table: queuedTable,
+                database: pendingMutations[0].database,
+                table: pendingMutations[0].table,
                 mutationIds: pendingMutations.map((m) => m.id),
                 runtimeMs: result.runtimeMs,
               },
             },
           };
         });
-        const startedAt = Date.now();
-        const outcome = await trackMutations(pendingMutations);
-        const editOutcome = mutationOutcomeToEditOutcome(outcome, {
-          startedAt,
-        });
+        const editOutcome = await pollMutationsToCompletion(pendingMutations);
         clearLifecycle();
         if (editOutcome.kind === "completed") {
-          await get().refreshTableData(dataKeyForTable);
+          await get().refreshTableData(ctx.dataKey);
         }
         return editOutcome;
       }
@@ -470,7 +349,7 @@ export const createRelationalTablesSlice: StateCreator<
           s.tableEditsCommitStatus;
         return { tableEdits: restEdits, tableEditsCommitStatus: restStatus };
       });
-      await get().refreshTableData(dataKeyForTable);
+      await get().refreshTableData(ctx.dataKey);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -577,74 +456,24 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     const state = get();
-    const dataEntry = Object.entries(state.tableData).find(
-      ([, data]) => data.table === tableName,
-    );
-    if (!dataEntry) {
-      return {
-        kind: "failed",
-        reason: "Table data is not loaded; cannot delete rows.",
-      };
-    }
-    const [dataKeyForTable, data] = dataEntry;
-    const structureKeyForTable = tableStructureKey(
-      data.connectionId,
-      data.schema,
-      data.table,
-    );
-    const structure = state.tableStructure[structureKeyForTable];
-    const identity = pickRowIdentity(structure);
-    if (!identity) {
-      return {
-        kind: "failed",
-        reason:
-          "This table has no primary key or non-null unique index — it is read-only.",
-      };
-    }
-
-    const connection = state.connections.find(
-      (c) => c.id === data.connectionId,
-    );
-    if (!connection) {
-      return { kind: "failed", reason: "Connection not found for this table." };
-    }
-    if (structure && !structure.capabilities.canDeleteRows) {
-      return {
-        kind: "failed",
-        reason: `This table does not support row deletes on ${connection.engine}.`,
-      };
-    }
-
-    const columnIndexByName = new Map<string, number>();
-    data.columns.forEach((name, index) => {
-      columnIndexByName.set(name, index);
+    const ctx = resolveEditContext({
+      tableData: state.tableData,
+      tableStructure: state.tableStructure,
+      connections: state.connections,
+      tableName,
+      capability: "canDeleteRows",
+      action: "row deletes",
     });
-    const identityMissing = identity.columns.filter(
-      (col) => !columnIndexByName.has(col),
+    if (!ctx.ok) {
+      return { kind: "failed", reason: ctx.reason };
+    }
+
+    const rowsPayload = buildDeleteRowsPayload(
+      rowIndices,
+      ctx.data,
+      ctx.identity,
+      ctx.columnIndexByName,
     );
-    if (identityMissing.length > 0) {
-      return {
-        kind: "failed",
-        reason: `Identity column(s) not present in loaded data: ${identityMissing.join(", ")}`,
-      };
-    }
-
-    const rowsPayload: Array<Array<{ column: string; value: string | null }>> =
-      [];
-    const sortedIndices = [...rowIndices].sort((a, b) => a - b);
-    for (const rowIndex of sortedIndices) {
-      const row = data.rows[rowIndex];
-      if (!row) {
-        continue;
-      }
-      rowsPayload.push(
-        identity.columns.map((col) => {
-          const idx = columnIndexByName.get(col) as number;
-          return { column: col, value: row[idx] ?? null };
-        }),
-      );
-    }
-
     if (rowsPayload.length === 0) {
       return { kind: "noop" };
     }
@@ -655,7 +484,6 @@ export const createRelationalTablesSlice: StateCreator<
         [tableName]: { state: "running" },
       },
     }));
-
     const clearLifecycle = () =>
       clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
 
@@ -670,45 +498,39 @@ export const createRelationalTablesSlice: StateCreator<
     try {
       const result = await tauriInvoke<CommitCellEditsResult>("delete_rows", {
         payload: {
-          connectionId: data.connectionId,
-          schema: data.schema,
-          table: data.table,
+          connectionId: ctx.data.connectionId,
+          schema: ctx.data.schema,
+          table: ctx.data.table,
           rows: rowsPayload,
         },
       });
       const pendingMutations = pendingMutationsFromResult(result, {
-        connectionId: data.connectionId,
-        database: data.schema,
-        table: data.table,
+        connectionId: ctx.data.connectionId,
+        database: ctx.data.schema,
+        table: ctx.data.table,
       });
       if (pendingMutations.length > 0) {
-        const queuedDatabase = pendingMutations[0].database;
-        const queuedTable = pendingMutations[0].table;
         set((s) => ({
           tableEditsCommitStatus: {
             ...s.tableEditsCommitStatus,
             [tableName]: {
               state: "queued",
-              database: queuedDatabase,
-              table: queuedTable,
+              database: pendingMutations[0].database,
+              table: pendingMutations[0].table,
               mutationIds: pendingMutations.map((m) => m.id),
               runtimeMs: result.runtimeMs,
             },
           },
         }));
-        const startedAt = Date.now();
-        const outcome = await trackMutations(pendingMutations);
-        const editOutcome = mutationOutcomeToEditOutcome(outcome, {
-          startedAt,
-        });
+        const editOutcome = await pollMutationsToCompletion(pendingMutations);
         clearLifecycle();
         if (editOutcome.kind === "completed") {
-          await get().refreshTableData(dataKeyForTable);
+          await get().refreshTableData(ctx.dataKey);
         }
         return editOutcome;
       }
       clearLifecycle();
-      await get().refreshTableData(dataKeyForTable);
+      await get().refreshTableData(ctx.dataKey);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -1014,19 +836,16 @@ export const createRelationalTablesSlice: StateCreator<
     if (!pending || pending.length === 0) {
       return { kind: "noop" };
     }
-    const { schema, table } = pending[0];
-    const connectionId = key.split("::")[0] ?? "";
-    const connection = state.connections.find((c) => c.id === connectionId);
-    if (!connection) {
-      return { kind: "failed", reason: "Connection not found for this table." };
+    const ctx = resolveStructureCommitContext({
+      pending,
+      key,
+      connections: state.connections,
+      tableStructure: state.tableStructure,
+    });
+    if (!ctx.ok) {
+      return { kind: "failed", reason: ctx.reason };
     }
-    const ddlStructure = state.tableStructure[key];
-    if (ddlStructure && !ddlStructure.capabilities.canAlterSchema) {
-      return {
-        kind: "failed",
-        reason: `This table does not support schema edits on ${connection.engine}.`,
-      };
-    }
+    const { connection, ddlStructure, schema, table, connectionId } = ctx;
 
     const sql = generateDdlForEngine(
       connection.engine,

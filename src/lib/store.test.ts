@@ -1196,6 +1196,8 @@ describe("query history", () => {
     });
   };
 
+  // Sequential assertions in a test body; cog 0.
+  // fallow-ignore-next-line complexity
   it("appends a success entry to queryHistory after a successful runQuery", async () => {
     seedConnection();
     const tabId = seedQueryTab({ query: "select 1;" });
@@ -2138,7 +2140,8 @@ describe("store.commitTableEdits", () => {
 
     const call = mockedInvoke.mock.calls[0];
     expect(call?.[0]).toBe("commit_cell_edits");
-    const payload = (call?.[1] as { payload: { edits: unknown[] } }).payload;
+    const [, payloadArg] = call as [string, { payload: { edits: unknown[] } }];
+    const payload = payloadArg.payload;
     expect(payload.edits).toHaveLength(1);
     expect(payload.edits[0]).toMatchObject({
       rowIndex: 1,
@@ -2576,5 +2579,204 @@ describe("store.deleteSelectedTableRows", () => {
     expect(outcome.reason).toContain("row not found");
     // No refresh on failure.
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runQuery branch coverage", () => {
+  it("returns noop when the tabId does not match any workspace tab", async () => {
+    useAppStore.setState({ workspaceTabs: [] });
+    const outcome = await useAppStore.getState().runQuery("missing-tab");
+    expect(outcome.kind).toBe("noop");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("records empty connectionName/database when the tab's connection is missing", async () => {
+    const tabId = seedQueryTab({ query: "select 1;" });
+    // No connection seeded under conn-1, so connectionAtRun is undefined.
+    useAppStore.setState({ connections: [] });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: [],
+        rows: [],
+        runtimeMs: 3,
+        rowCount: 0,
+      })
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const entry = useAppStore.getState().queryHistory[0];
+    expect(entry).toBeDefined();
+    expect(entry?.connectionName).toBe("");
+    expect(entry?.database).toBe("");
+    // Defaults to PostgreSQL when no connection found.
+    expect(entry?.engine).toBe("PostgreSQL");
+  });
+
+  it("captures non-Error rejections (string thrown) in the failure entry", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          ssl: true,
+        },
+      ],
+    });
+    const tabId = seedQueryTab({ query: "select 1;" });
+    mockedInvoke
+      .mockRejectedValueOnce("network unreachable")
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const entry = useAppStore.getState().queryHistory[0];
+    expect(entry?.status).toBe("error");
+    expect(entry?.errorMessage).toBe("network unreachable");
+  });
+
+  it("does not break runQuery failure when append_query_history rejects", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          ssl: true,
+        },
+      ],
+    });
+    const tabId = seedQueryTab({ query: "broken;" });
+    mockedInvoke
+      .mockRejectedValueOnce(new Error("syntax error"))
+      .mockRejectedValueOnce(new Error("disk full"));
+
+    let outcome!: QueryOutcome;
+    await act(async () => {
+      outcome = await useAppStore.getState().runQuery(tabId);
+    });
+
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toContain("syntax error");
+    // The in-memory entry should still be present even if persistence fails.
+    expect(useAppStore.getState().queryHistory[0]?.status).toBe("error");
+  });
+
+  it("caps queryHistory at 200 entries when appending", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          ssl: true,
+        },
+      ],
+      queryHistory: Array.from({ length: 200 }, (_, idx) => ({
+        id: `seed-${idx}`,
+        sql: `select ${idx};`,
+        connectionId: "conn-1",
+        connectionName: "Local",
+        database: "postgres",
+        engine: "PostgreSQL" as const,
+        status: "success" as const,
+        runtimeMs: 1,
+        rowCount: 0,
+        startedAt: "2026-05-09T12:00:00.000Z",
+      })),
+    });
+    const tabId = seedQueryTab({ query: "select fresh;" });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: [],
+        rows: [],
+        runtimeMs: 7,
+        rowCount: 0,
+      })
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const history = useAppStore.getState().queryHistory;
+    expect(history).toHaveLength(200);
+    expect(history[0]?.sql).toBe("select fresh;");
+    // Oldest seed should have been dropped.
+    expect(history.find((h) => h.id === "seed-199")).toBeUndefined();
+  });
+
+  it("bumps the connection's lastActivityAt on a successful run", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          lastSync: "Never",
+          ssl: true,
+        },
+      ],
+    });
+    const tabId = seedQueryTab({ query: "select 1;" });
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: [],
+        rows: [],
+        runtimeMs: 3,
+        rowCount: 0,
+      })
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      await useAppStore.getState().runQuery(tabId);
+    });
+
+    const conn = useAppStore
+      .getState()
+      .connections.find((c) => c.id === "conn-1");
+    expect(conn?.lastActivityAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });

@@ -35,34 +35,39 @@ const initialScannerState = (): SqlScannerState => ({
   blockComment: false,
 });
 
-const advanceScanner = (
-  text: string,
-  index: number,
+const advanceInLineComment = (
+  char: string | undefined,
+  state: SqlScannerState,
+): SqlScannerState =>
+  char === "\n" ? { ...state, lineComment: false } : state;
+
+const advanceInBlockComment = (
+  char: string | undefined,
+  next: string | undefined,
+  state: SqlScannerState,
+): SqlScannerState =>
+  char === "*" && next === "/" ? { ...state, blockComment: false } : state;
+
+const advanceInQuote = (
+  char: string | undefined,
+  next: string | undefined,
   state: SqlScannerState,
 ): SqlScannerState => {
-  const char = text[index];
-  const next = text[index + 1];
-
-  if (state.lineComment) {
-    return char === "\n" ? { ...state, lineComment: false } : state;
-  }
-
-  if (state.blockComment) {
-    return char === "*" && next === "/"
-      ? { ...state, blockComment: false }
-      : state;
-  }
-
-  if (state.quote) {
-    if (char === state.quote) {
-      if (text[index + 1] === state.quote) {
-        return state;
-      }
-      return { ...state, quote: null };
-    }
+  if (char !== state.quote) {
     return state;
   }
+  // SQL doubles the quote character to escape it (e.g. 'it''s'); stay in quote.
+  if (next === state.quote) {
+    return state;
+  }
+  return { ...state, quote: null };
+};
 
+const advanceInCode = (
+  char: string | undefined,
+  next: string | undefined,
+  state: SqlScannerState,
+): SqlScannerState => {
   if (char === "-" && next === "-") {
     return { ...state, lineComment: true };
   }
@@ -73,6 +78,26 @@ const advanceScanner = (
     return { ...state, quote: char };
   }
   return state;
+};
+
+const advanceScanner = (
+  text: string,
+  index: number,
+  state: SqlScannerState,
+): SqlScannerState => {
+  const char = text[index];
+  const next = text[index + 1];
+
+  if (state.lineComment) {
+    return advanceInLineComment(char, state);
+  }
+  if (state.blockComment) {
+    return advanceInBlockComment(char, next, state);
+  }
+  if (state.quote) {
+    return advanceInQuote(char, next, state);
+  }
+  return advanceInCode(char, next, state);
 };
 
 const lineNumberAtOffset = (text: string, offset: number): number =>
