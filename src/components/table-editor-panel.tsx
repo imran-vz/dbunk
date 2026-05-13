@@ -1,4 +1,4 @@
-import { IconMaximize, IconX } from "@tabler/icons-react";
+import { IconCopy, IconMaximize, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -30,12 +30,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   type SchemaMapExportFormat,
   SchemaMapToolbar,
   schemaMapExportFilename,
 } from "@/components/workspace-overview/schema-map-toolbar";
-import { downloadBlob } from "@/lib/download";
+import { downloadBlob, downloadFile } from "@/lib/download";
 import {
   type ExportCompression,
   type ExportEncoding,
@@ -52,6 +53,7 @@ import {
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
 import {
+  type Connection,
   type EditOutcome,
   type TablePreviewData,
   useAppStore,
@@ -100,6 +102,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
 
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isCopyOpen, setIsCopyOpen] = useState(false);
   const rowDetails = useRowDetailsVisibility(bodyWidth);
 
   // Reset the terminal-outcome badge on table switch — the panel instance
@@ -270,6 +273,72 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     await exportWholeTable(savedExportTask);
   };
 
+  const handleExportTableDdl = async () => {
+    if (!isTauri()) {
+      setTableExportError("DDL export requires the desktop runtime.");
+      return;
+    }
+    try {
+      const result = await tauriInvoke<{ sql: string; runtimeMs: number }>(
+        "export_ddl",
+        {
+          payload: {
+            connectionId: tab.connectionId,
+            scope: "table",
+            schema: tab.schema,
+            table: tab.table ?? "",
+          },
+        },
+      );
+      downloadFile(
+        `${exportFilenameBase}.ddl.sql`,
+        "application/sql;charset=utf-8",
+        result.sql,
+      );
+      setTableExportError(null);
+    } catch (error) {
+      setTableExportError(errorToMessage(error));
+    }
+  };
+
+  const handleCopyTable = async (payload: {
+    destinationConnectionId: string;
+    destinationSchema: string;
+    destinationTable: string;
+  }) => {
+    if (!isTauri()) {
+      setLastOutcome({
+        kind: "failed",
+        reason: "Table copy requires the desktop runtime.",
+      });
+      return;
+    }
+    try {
+      const result = await tauriInvoke<{
+        runtimeMs: number;
+        rowsCopied: number;
+      }>("copy_table_rows", {
+        payload: {
+          sourceConnectionId: tab.connectionId,
+          sourceSchema: tab.schema,
+          sourceTable: tab.table ?? "",
+          destinationConnectionId: payload.destinationConnectionId,
+          destinationSchema: payload.destinationSchema,
+          destinationTable: payload.destinationTable,
+          pageSize: 1000,
+        },
+      });
+      setLastOutcome({
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: result.rowsCopied,
+      });
+      setIsCopyOpen(false);
+    } catch (error) {
+      setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
+    }
+  };
+
   const isLoading = status?.state === "loading";
   const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -304,6 +373,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onToggleRowDetails={rowDetails.onToggle}
         onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
         onRefresh={onRefresh}
+        onExportTableDdl={handleExportTableDdl}
+        onOpenCopyTable={() => setIsCopyOpen(true)}
       />
 
       <TableStatusBanners
@@ -331,6 +402,18 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
           isWriting={caps.isWriting}
           onClose={() => setIsImportOpen(false)}
           onImportRows={handleImportRows}
+        />
+      ) : null}
+
+      {isCopyOpen ? (
+        <CopyTablePanel
+          connections={connections}
+          currentConnectionId={tab.connectionId}
+          defaultSchema={tab.schema}
+          defaultTable={tab.table ?? ""}
+          isWriting={caps.isWriting}
+          onClose={() => setIsCopyOpen(false)}
+          onSubmit={handleCopyTable}
         />
       ) : null}
 
@@ -375,6 +458,99 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       />
 
       <StatusBar items={statusItems} />
+    </div>
+  );
+}
+
+function CopyTablePanel({
+  connections,
+  currentConnectionId,
+  defaultSchema,
+  defaultTable,
+  isWriting,
+  onClose,
+  onSubmit,
+}: {
+  connections: Connection[];
+  currentConnectionId: string;
+  defaultSchema: string;
+  defaultTable: string;
+  isWriting: boolean;
+  onClose: () => void;
+  onSubmit: (payload: {
+    destinationConnectionId: string;
+    destinationSchema: string;
+    destinationTable: string;
+  }) => Promise<void>;
+}) {
+  const relationalConnections = connections.filter(
+    (connection) => connection.engine !== "Redis",
+  );
+  const [destinationConnectionId, setDestinationConnectionId] =
+    useState(currentConnectionId);
+  const [destinationSchema, setDestinationSchema] = useState(defaultSchema);
+  const [destinationTable, setDestinationTable] = useState(defaultTable);
+
+  return (
+    <div className="border-b border-border-subtle bg-surface-window px-3 py-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">Copy table rows</div>
+          <div className="text-xs text-text-muted">
+            Source columns are copied into matching destination columns
+          </div>
+        </div>
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
+          <IconX className="size-3.5" />
+        </Button>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+        <select
+          aria-label="Destination connection"
+          className="h-8 rounded-sm border border-border-subtle bg-surface-input px-2 text-xs"
+          value={destinationConnectionId}
+          onChange={(event) => setDestinationConnectionId(event.target.value)}
+        >
+          {relationalConnections.map((connection) => (
+            <option key={connection.id} value={connection.id}>
+              {connection.name}
+            </option>
+          ))}
+        </select>
+        <Input
+          aria-label="Destination schema"
+          value={destinationSchema}
+          onChange={(event) => setDestinationSchema(event.target.value)}
+          placeholder="Schema"
+        />
+        <Input
+          aria-label="Destination table"
+          value={destinationTable}
+          onChange={(event) => setDestinationTable(event.target.value)}
+          placeholder="Table"
+        />
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button
+          type="button"
+          disabled={
+            isWriting ||
+            destinationConnectionId.length === 0 ||
+            destinationSchema.trim().length === 0 ||
+            destinationTable.trim().length === 0
+          }
+          onClick={() =>
+            void onSubmit({
+              destinationConnectionId,
+              destinationSchema: destinationSchema.trim(),
+              destinationTable: destinationTable.trim(),
+            })
+          }
+        >
+          <IconCopy className="size-3.5" />
+          Copy rows
+        </Button>
+      </div>
     </div>
   );
 }
