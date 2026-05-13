@@ -181,6 +181,8 @@ function FieldError({
 }: React.ComponentProps<"div"> & {
   errors?: Array<{ message?: string } | undefined>;
 }) {
+  // UI scaffold (shadcn FieldError) kept for future use; not yet wired up.
+  // fallow-ignore-next-line complexity
   const content = useMemo(() => {
     if (children) {
       return children;
