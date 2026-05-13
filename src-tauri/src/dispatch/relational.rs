@@ -21,7 +21,7 @@ use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
     CommitCellEditsResult, ConnectResult, DatabaseEngine, DatabaseOverviewStats, DeleteRowsResult,
     ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo, SchemaExplorer,
-    SchemaRelationships, StoredConnection, StructureCapabilities, TableStructure,
+    SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities, TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -664,6 +664,22 @@ pub async fn fetch_relation_stats(
     match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::load_relation_stats(connection).await,
         DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Ok(Vec::new()),
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+/// Server-info snapshot for the Details sub-tab — pg_settings, pg_extension,
+/// plus server version / encoding / locale / timezone. Postgres-only;
+/// other relational engines return an explicit not-implemented error
+/// since the UI gates the Details sub-tab to PG and never calls this.
+pub async fn fetch_server_details(
+    connection: &StoredConnection,
+) -> Result<ServerDetails, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => postgres::load_server_details(connection).await,
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Server details"))
+        }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }

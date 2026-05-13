@@ -2819,6 +2819,66 @@ describe("store.loadRelationStats", () => {
   });
 });
 
+describe("store.loadServerDetails", () => {
+  it("invokes load_server_details and stores the result on success", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      serverVersion: "PostgreSQL 16.2",
+      encoding: "UTF8",
+      locale: "en_US.UTF-8",
+      timezone: "UTC",
+      settings: [
+        {
+          name: "max_connections",
+          setting: "100",
+          unit: null,
+          category: "Connections",
+          shortDesc: "Sets the maximum number of concurrent connections.",
+          source: "configuration file",
+          bootVal: "100",
+          resetVal: "100",
+        },
+      ],
+      extensions: [
+        {
+          name: "pg_stat_statements",
+          version: "1.10",
+          schema: "public",
+          description: "track planning and execution statistics",
+        },
+      ],
+    });
+
+    await useAppStore.getState().loadServerDetails("conn-1");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_server_details", {
+      payload: { connectionId: "conn-1" },
+    });
+    expect(useAppStore.getState().serverDetails["conn-1"]?.encoding).toBe(
+      "UTF8",
+    );
+    expect(useAppStore.getState().serverDetailsStatus["conn-1"]).toEqual({
+      state: "success",
+    });
+  });
+
+  it("records an error when the invoke rejects", async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error("connect refused"));
+
+    await useAppStore.getState().loadServerDetails("conn-1");
+
+    expect(useAppStore.getState().serverDetails["conn-1"]).toBeUndefined();
+    expect(useAppStore.getState().serverDetailsStatus["conn-1"]).toEqual({
+      state: "error",
+      error: "connect refused",
+    });
+  });
+
+  it("no-ops when connectionId is empty", async () => {
+    await useAppStore.getState().loadServerDetails("");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
 describe("disconnectConnection drops relationStats caches", () => {
   it("drops relationStats and relationStatsStatus for the disconnected connection", () => {
     useAppStore.setState({

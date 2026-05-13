@@ -37,7 +37,8 @@ pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fet
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, DatabaseOverviewStats,
     DeleteRowsResult, ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo,
-    SchemaExplorer, SchemaRelationships, StorageClass, StoredConnection, TableStructure,
+    SchemaExplorer, SchemaRelationships, ServerDetails, StorageClass, StoredConnection,
+    TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -124,6 +125,15 @@ pub async fn fetch_relation_stats(
     match connection.engine().storage_class() {
         StorageClass::Relational => relational::fetch_relation_stats(connection).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Relation stats")),
+    }
+}
+
+pub async fn fetch_server_details(
+    connection: &StoredConnection,
+) -> Result<ServerDetails, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => relational::fetch_server_details(connection).await,
+        StorageClass::KeyValue => Err(not_applicable(connection, "Server details")),
     }
 }
 

@@ -1065,6 +1065,112 @@ pub async fn load_relation_stats(
         .collect())
 }
 
+// ---------------------------------------------------------------------------
+// Server details (Details sub-tab)
+// ---------------------------------------------------------------------------
+
+/// Aggregated server-info snapshot for the Details sub-tab. Pulls
+/// from `pg_settings` and `pg_extension` plus four lightweight
+/// `SHOW`-style lookups for the summary panel. The combined payload
+/// is small enough (~400 settings rows + a handful of extensions) to
+/// ship in a single round-trip; the frontend paginates the settings
+/// table in the UI rather than at the API layer.
+pub async fn load_server_details(
+    connection: &StoredConnection,
+) -> Result<crate::ServerDetails, String> {
+    let mut conn = connect(connection).await?;
+
+    // Summary panel: server version, encoding, locale, timezone. One
+    // round-trip via four current_setting() calls.
+    let summary = sqlx::query(
+        r#"
+        SELECT
+            version() AS server_version,
+            current_setting('server_encoding') AS encoding,
+            current_setting('lc_collate') AS locale,
+            current_setting('timezone') AS timezone
+        "#,
+    )
+    .fetch_one(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    // pg_settings is the read-only view over every GUC. We pull the
+    // fields the UI actually uses; rows are returned ordered so the
+    // frontend grouping is stable across reloads.
+    let settings_rows = sqlx::query(
+        r#"
+        SELECT
+            name,
+            setting,
+            unit,
+            category,
+            short_desc,
+            source,
+            boot_val,
+            reset_val
+        FROM pg_settings
+        ORDER BY category, name
+        "#,
+    )
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    // pg_extension: installed extensions only. Available-but-not-installed
+    // is a separate concern, deferred to Phase 6's object-navigator depth.
+    let extension_rows = sqlx::query(
+        r#"
+        SELECT
+            e.extname AS name,
+            e.extversion AS version,
+            n.nspname AS schema,
+            pg_catalog.obj_description(e.oid, 'pg_extension') AS description
+        FROM pg_extension e
+        JOIN pg_namespace n ON n.oid = e.extnamespace
+        ORDER BY e.extname
+        "#,
+    )
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let settings = settings_rows
+        .into_iter()
+        .map(|row| crate::PgSetting {
+            name: row.try_get("name").unwrap_or_default(),
+            setting: row.try_get("setting").unwrap_or_default(),
+            unit: row.try_get::<Option<String>, _>("unit").unwrap_or(None),
+            category: row.try_get("category").unwrap_or_default(),
+            short_desc: row.try_get::<Option<String>, _>("short_desc").unwrap_or(None),
+            source: row.try_get("source").unwrap_or_default(),
+            boot_val: row.try_get::<Option<String>, _>("boot_val").unwrap_or(None),
+            reset_val: row.try_get::<Option<String>, _>("reset_val").unwrap_or(None),
+        })
+        .collect();
+
+    let extensions = extension_rows
+        .into_iter()
+        .map(|row| crate::PgExtension {
+            name: row.try_get("name").unwrap_or_default(),
+            version: row.try_get("version").unwrap_or_default(),
+            schema: row.try_get("schema").unwrap_or_default(),
+            description: row
+                .try_get::<Option<String>, _>("description")
+                .unwrap_or(None),
+        })
+        .collect();
+
+    Ok(crate::ServerDetails {
+        server_version: summary.try_get("server_version").unwrap_or_default(),
+        encoding: summary.try_get("encoding").unwrap_or_default(),
+        locale: summary.try_get("locale").unwrap_or_default(),
+        timezone: summary.try_get("timezone").unwrap_or_default(),
+        settings,
+        extensions,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests cover the pure SQL builders only — every other public function

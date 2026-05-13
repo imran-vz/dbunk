@@ -6,6 +6,7 @@ import { StatusBar } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import { ConnectionDetailsCard } from "@/components/workspace-overview/connection-details-card";
 import { DatabaseStatsCard } from "@/components/workspace-overview/database-stats-card";
+import { DetailsTab } from "@/components/workspace-overview/details-tab";
 import {
   DisconnectedConnectionCard,
   NoConnectionCard,
@@ -13,10 +14,7 @@ import {
 import { FavoriteTablesCard } from "@/components/workspace-overview/favorite-tables-card";
 import { HealthBanner } from "@/components/workspace-overview/health-banner";
 import { OverviewHeader } from "@/components/workspace-overview/overview-header";
-import {
-  PlaceholderPanel,
-  PostgresOnlyPanel,
-} from "@/components/workspace-overview/placeholder-panel";
+import { PostgresOnlyPanel } from "@/components/workspace-overview/placeholder-panel";
 import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { RecentQueriesCard } from "@/components/workspace-overview/recent-queries-card";
 import { SchemasTab } from "@/components/workspace-overview/schemas-tab";
@@ -34,6 +32,8 @@ import {
   type RelationInfo,
   type RelationStatsStatus,
   type SchemaExplorer,
+  type ServerDetails,
+  type ServerDetailsStatus,
   useAppStore,
 } from "@/lib/store";
 
@@ -57,10 +57,13 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     disconnectConnection,
     loadDatabaseOverviewStats,
     loadRelationStats,
+    loadServerDetails,
     openTableTab,
     relationStats,
     relationStatsStatus,
     reopenHistoryEntry,
+    serverDetails,
+    serverDetailsStatus,
     setConnectionOverviewTab,
   } = useAppStore();
 
@@ -135,9 +138,18 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
                 ? relationStatsStatus[activeConnection.id]
                 : undefined
             }
+            serverDetails={
+              activeConnection ? serverDetails[activeConnection.id] : undefined
+            }
+            serverDetailsStatus={
+              activeConnection
+                ? serverDetailsStatus[activeConnection.id]
+                : undefined
+            }
             onSetOverviewTab={setConnectionOverviewTab}
             onLoadStats={loadDatabaseOverviewStats}
             onLoadRelationStats={loadRelationStats}
+            onLoadServerDetails={loadServerDetails}
             onOpenTable={openTableTab}
             onNewQuery={createNewQueryTab}
             onConnectConnection={connectConnection}
@@ -167,9 +179,12 @@ type WorkspaceDatabaseOverviewProps = {
   overviewTab: OverviewTabId;
   relationStats: RelationInfo[] | undefined;
   relationStatsStatus: RelationStatsStatus | undefined;
+  serverDetails: ServerDetails | undefined;
+  serverDetailsStatus: ServerDetailsStatus | undefined;
   onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
+  onLoadServerDetails: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onNewQuery: () => void;
   onConnectConnection: (connectionId: string) => Promise<void>;
@@ -186,9 +201,12 @@ function WorkspaceDatabaseOverview({
   overviewTab,
   relationStats,
   relationStatsStatus,
+  serverDetails,
+  serverDetailsStatus,
   onSetOverviewTab,
   onLoadStats,
   onLoadRelationStats,
+  onLoadServerDetails,
   onOpenTable,
   onNewQuery,
   onConnectConnection,
@@ -235,9 +253,12 @@ function WorkspaceDatabaseOverview({
       overviewTab={overviewTab}
       relationStats={relationStats}
       relationStatsStatus={relationStatsStatus}
+      serverDetails={serverDetails}
+      serverDetailsStatus={serverDetailsStatus}
       onSetOverviewTab={onSetOverviewTab}
       onLoadStats={onLoadStats}
       onLoadRelationStats={onLoadRelationStats}
+      onLoadServerDetails={onLoadServerDetails}
       onOpenTable={onOpenTable}
       onDisconnectConnection={onDisconnectConnection}
       onReopenHistoryEntry={onReopenHistoryEntry}
@@ -255,9 +276,12 @@ type ConnectedOverviewProps = {
   overviewTab: OverviewTabId;
   relationStats: RelationInfo[] | undefined;
   relationStatsStatus: RelationStatsStatus | undefined;
+  serverDetails: ServerDetails | undefined;
+  serverDetailsStatus: ServerDetailsStatus | undefined;
   onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
+  onLoadServerDetails: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onDisconnectConnection: (connectionId: string) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
@@ -273,9 +297,12 @@ function ConnectedOverview({
   overviewTab,
   relationStats,
   relationStatsStatus,
+  serverDetails,
+  serverDetailsStatus,
   onSetOverviewTab,
   onLoadStats,
   onLoadRelationStats,
+  onLoadServerDetails,
   onOpenTable,
   onDisconnectConnection,
   onReopenHistoryEntry,
@@ -331,10 +358,13 @@ function ConnectedOverview({
             schemas={schemas}
             relationStats={relationStats}
             relationStatsStatus={relationStatsStatus}
+            serverDetails={serverDetails}
+            serverDetailsStatus={serverDetailsStatus}
             tablesSchemaFilter={tablesSchemaFilter}
             onClearTablesSchemaFilter={() => setTablesSchemaFilter(null)}
             onSelectSchemaFromSchemasTab={handleSelectSchemaFromSchemasTab}
             onLoadRelationStats={onLoadRelationStats}
+            onLoadServerDetails={onLoadServerDetails}
             onOpenTable={onOpenTable}
             onSwitchTab={handleTabChange}
             onReopenHistoryEntry={onReopenHistoryEntry}
@@ -355,10 +385,13 @@ type OverviewTabBodyProps = {
   schemas: SchemaExplorer[];
   relationStats: RelationInfo[] | undefined;
   relationStatsStatus: RelationStatsStatus | undefined;
+  serverDetails: ServerDetails | undefined;
+  serverDetailsStatus: ServerDetailsStatus | undefined;
   tablesSchemaFilter: string | null;
   onClearTablesSchemaFilter: () => void;
   onSelectSchemaFromSchemasTab: (schema: string) => void;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
+  onLoadServerDetails: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onSwitchTab: (tab: OverviewTabId) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
@@ -381,10 +414,13 @@ function OverviewTabBody({
   schemas,
   relationStats,
   relationStatsStatus,
+  serverDetails,
+  serverDetailsStatus,
   tablesSchemaFilter,
   onClearTablesSchemaFilter,
   onSelectSchemaFromSchemasTab,
   onLoadRelationStats,
+  onLoadServerDetails,
   onOpenTable,
   onSwitchTab,
   onReopenHistoryEntry,
@@ -483,9 +519,11 @@ function OverviewTabBody({
       );
     }
     return (
-      <PlaceholderPanel
-        title="Details"
-        description="Server version, encoding, locale, timezone, installed extensions, and the full pg_settings catalogue with category grouping and modified-from-default highlights. Coming in Phase 1 — Step 5."
+      <DetailsTab
+        activeConnection={activeConnection}
+        details={serverDetails}
+        status={serverDetailsStatus}
+        onLoad={onLoadServerDetails}
       />
     );
   }
