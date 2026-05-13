@@ -2,22 +2,29 @@ import { IconDatabaseOff } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
+import type { OverviewTabId } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-const OVERVIEW_TABS = [
-  "Overview",
-  "Tables",
-  "Schemas",
-  "Query History",
-  "Details",
-  "Settings",
+type OverviewTab = { id: OverviewTabId; label: string };
+
+export const OVERVIEW_TABS: readonly OverviewTab[] = [
+  { id: "overview", label: "Overview" },
+  { id: "tables", label: "Tables" },
+  { id: "schemas", label: "Schemas" },
+  { id: "query-history", label: "Query History" },
+  { id: "details", label: "Details" },
+  { id: "settings", label: "Settings" },
 ] as const;
 
 export function OverviewHeader({
   name,
+  activeTab,
+  onTabChange,
   onDisconnect,
 }: {
   name: string;
+  activeTab: OverviewTabId;
+  onTabChange: (tab: OverviewTabId) => void;
   onDisconnect: () => void;
 }) {
   return (
@@ -36,13 +43,14 @@ export function OverviewHeader({
           aria-label="Connection sections"
           className="mt-3 flex flex-wrap items-center gap-1 text-xs"
         >
-          {OVERVIEW_TABS.map((label, index) => {
-            const isActive = index === 0;
+          {OVERVIEW_TABS.map((tab) => {
+            const isActive = tab.id === activeTab;
             return (
               <button
-                key={label}
+                key={tab.id}
                 type="button"
                 aria-current={isActive ? "page" : undefined}
+                onClick={() => onTabChange(tab.id)}
                 className={cn(
                   "rounded-md px-2.5 py-1 transition-colors",
                   isActive
@@ -50,7 +58,7 @@ export function OverviewHeader({
                     : "text-text-muted hover:bg-surface-panel hover:text-foreground",
                 )}
               >
-                {label}
+                {tab.label}
               </button>
             );
           })}

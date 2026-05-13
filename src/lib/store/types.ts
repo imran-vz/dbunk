@@ -478,6 +478,24 @@ export type QueryPreviewData = {
 
 export type ActiveView = "workspace" | "connections" | "settings";
 
+/**
+ * Sub-tab inside a relational connection's Overview surface. The
+ * Overview header's tab nav switches the body region between these
+ * views; selection is persisted per connection on
+ * `ConnectionsSlice.connectionOverviewTab` so a user landing back on
+ * a connection lands on the same sub-tab they left.
+ *
+ * `"overview"` keeps the existing dashboard cards. The other ids back
+ * the Phase 1 deep views (see `docs/design/PHASES.md` — Phase 1).
+ */
+export type OverviewTabId =
+  | "overview"
+  | "tables"
+  | "schemas"
+  | "query-history"
+  | "details"
+  | "settings";
+
 // ---------------------------------------------------------------------------
 // AppStoreState — the full store shape
 // ---------------------------------------------------------------------------

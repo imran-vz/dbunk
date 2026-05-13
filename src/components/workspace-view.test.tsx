@@ -161,3 +161,88 @@ describe("WorkspaceView database overview", () => {
     expect(screen.getByText("users")).toBeTruthy();
   });
 });
+
+describe("WorkspaceView overview sub-tabs", () => {
+  it("clicking a sub-tab swaps the body and updates the store", () => {
+    useAppStore.setState({
+      activeConnectionId: "conn-1",
+      activeTabId: "",
+      connections: [connectedConnection],
+      workspaceTabs: [],
+      schemaExplorer: {
+        "conn-1": [{ name: "public", tables: ["users"], views: [] }],
+      },
+    });
+
+    render(<WorkspaceView isClient={false} />);
+
+    // Overview is the default body — the dashboard cards are visible.
+    expect(screen.getByText("Recent Queries")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Tables" }));
+
+    // Placeholder body for the Tables sub-tab is up; the cards are gone.
+    expect(screen.queryByText("Recent Queries")).toBeNull();
+    expect(screen.getAllByText("Tables").length).toBeGreaterThan(0);
+    expect(useAppStore.getState().connectionOverviewTab["conn-1"]).toBe(
+      "tables",
+    );
+  });
+
+  it("Schemas sub-tab shows the Postgres-only panel on non-PG engines", () => {
+    const mysqlConnection: Connection = {
+      id: "conn-mysql",
+      name: "MySQL Reports",
+      database: "reports",
+      status: "Connected",
+      engine: "MySQL",
+      host: "localhost",
+      port: 3306,
+      user: "root",
+      password: "",
+      role: "",
+      latency: "8 ms",
+      lastSync: "Just now",
+      ssl: false,
+    };
+
+    useAppStore.setState({
+      activeConnectionId: "conn-mysql",
+      activeTabId: "",
+      connections: [mysqlConnection],
+      workspaceTabs: [],
+      schemaExplorer: {
+        "conn-mysql": [{ name: "reports", tables: ["events"], views: [] }],
+      },
+    });
+
+    render(<WorkspaceView isClient={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Schemas" }));
+
+    expect(screen.getByText(/Schemas is Postgres-only/)).toBeTruthy();
+  });
+
+  it("the Recent Queries 'View all' button switches to the Query History sub-tab", () => {
+    useAppStore.setState({
+      activeConnectionId: "conn-1",
+      activeTabId: "",
+      connections: [connectedConnection],
+      workspaceTabs: [],
+      schemaExplorer: {
+        "conn-1": [{ name: "public", tables: ["users"], views: [] }],
+      },
+    });
+
+    render(<WorkspaceView isClient={false} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "View all" }));
+
+    expect(useAppStore.getState().connectionOverviewTab["conn-1"]).toBe(
+      "query-history",
+    );
+    // The placeholder body has rendered (matches the description's unique
+    // "Show-all toggle" phrase rather than the heading, which also appears
+    // in the tab nav).
+    expect(screen.getByText(/Show-all toggle/)).toBeTruthy();
+  });
+});

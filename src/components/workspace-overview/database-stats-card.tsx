@@ -29,6 +29,7 @@ type DatabaseStatsCardProps = {
    * different engines).
    */
   rowCountKind: "estimate" | "exact";
+  onViewAll: () => void;
 };
 
 export function DatabaseStatsCard({
@@ -40,6 +41,7 @@ export function DatabaseStatsCard({
   rows,
   statsStatus,
   rowCountKind,
+  onViewAll,
 }: DatabaseStatsCardProps) {
   const rowsLabel = rowCountKind === "estimate" ? "Rows (≈)" : "Rows";
   const metrics: Array<[string, ReactNode]> = [
@@ -78,7 +80,12 @@ export function DatabaseStatsCard({
         ))}
       </CardContent>
       <div className="px-4 pt-1">
-        <Button size="sm" variant="ghost" className="px-1 text-text-muted">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="px-1 text-text-muted"
+          onClick={onViewAll}
+        >
           View all metrics
           <IconArrowRight className="size-3" />
         </Button>

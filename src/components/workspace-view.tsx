@@ -13,6 +13,10 @@ import {
 import { FavoriteTablesCard } from "@/components/workspace-overview/favorite-tables-card";
 import { HealthBanner } from "@/components/workspace-overview/health-banner";
 import { OverviewHeader } from "@/components/workspace-overview/overview-header";
+import {
+  PlaceholderPanel,
+  PostgresOnlyPanel,
+} from "@/components/workspace-overview/placeholder-panel";
 import { RecentQueriesCard } from "@/components/workspace-overview/recent-queries-card";
 import { useDatabaseOverview } from "@/components/workspace-overview/use-database-overview";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
@@ -21,6 +25,7 @@ import {
   type Connection,
   type DatabaseOverviewStats,
   type DatabaseOverviewStatsStatus,
+  type OverviewTabId,
   type QueryHistoryEntry,
   type SchemaExplorer,
   useAppStore,
@@ -35,6 +40,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     activeConnectionId,
     activeTabId,
     connections,
+    connectionOverviewTab,
     databaseOverviewStats,
     databaseOverviewStatsStatus,
     queryHistory,
@@ -45,6 +51,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     disconnectConnection,
     loadDatabaseOverviewStats,
     openTableTab,
+    setConnectionOverviewTab,
   } = useAppStore();
 
   const activeConnection = useMemo(
@@ -105,6 +112,12 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
                 : undefined
             }
             queryHistory={queryHistory}
+            overviewTab={
+              activeConnection
+                ? (connectionOverviewTab[activeConnection.id] ?? "overview")
+                : "overview"
+            }
+            onSetOverviewTab={setConnectionOverviewTab}
             onLoadStats={loadDatabaseOverviewStats}
             onOpenTable={openTableTab}
             onNewQuery={createNewQueryTab}
@@ -131,6 +144,8 @@ type WorkspaceDatabaseOverviewProps = {
   stats?: DatabaseOverviewStats;
   statsStatus?: DatabaseOverviewStatsStatus;
   queryHistory: QueryHistoryEntry[];
+  overviewTab: OverviewTabId;
+  onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onNewQuery: () => void;
@@ -144,6 +159,8 @@ function WorkspaceDatabaseOverview({
   stats,
   statsStatus,
   queryHistory,
+  overviewTab,
+  onSetOverviewTab,
   onLoadStats,
   onOpenTable,
   onNewQuery,
@@ -187,6 +204,8 @@ function WorkspaceDatabaseOverview({
       statsStatus={statsStatus}
       queryHistory={queryHistory}
       isConnected={isConnected}
+      overviewTab={overviewTab}
+      onSetOverviewTab={onSetOverviewTab}
       onLoadStats={onLoadStats}
       onOpenTable={onOpenTable}
       onDisconnectConnection={onDisconnectConnection}
@@ -201,6 +220,8 @@ type ConnectedOverviewProps = {
   statsStatus: DatabaseOverviewStatsStatus | undefined;
   queryHistory: QueryHistoryEntry[];
   isConnected: boolean;
+  overviewTab: OverviewTabId;
+  onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onDisconnectConnection: (connectionId: string) => void;
@@ -213,6 +234,8 @@ function ConnectedOverview({
   statsStatus,
   queryHistory,
   isConnected,
+  overviewTab,
+  onSetOverviewTab,
   onLoadStats,
   onOpenTable,
   onDisconnectConnection,
@@ -227,43 +250,157 @@ function ConnectedOverview({
     onLoadStats,
   });
 
+  const handleTabChange = (tab: OverviewTabId) => {
+    onSetOverviewTab(activeConnection.id, tab);
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex w-full max-w-384 flex-col gap-5 p-6">
           <OverviewHeader
             name={activeConnection.name}
+            activeTab={overviewTab}
+            onTabChange={handleTabChange}
             onDisconnect={() => onDisconnectConnection(activeConnection.id)}
           />
 
-          {/* Top row: Connection Details + Database Stats */}
-          <section className="grid gap-4 lg:grid-cols-2">
-            <ConnectionDetailsCard connection={activeConnection} />
-            <DatabaseStatsCard
-              tableCount={view.tableCount}
-              schemaCount={view.schemaCount}
-              databaseSize={view.databaseSize}
-              indexes={view.indexCount}
-              connections={view.connectionCount}
-              rows={view.rowCount}
-              statsStatus={statsStatus}
-              rowCountKind={view.rowCountKind}
-            />
-          </section>
-
-          {/* Mid row: Recent Queries + Favorite Tables */}
-          <section className="grid gap-4 lg:grid-cols-2">
-            <RecentQueriesCard queries={view.recentQueries} />
-            <FavoriteTablesCard
-              tables={view.favoriteTables}
-              onOpenTable={onOpenTable}
-            />
-          </section>
-
-          <HealthBanner connection={activeConnection} />
+          <OverviewTabBody
+            activeConnection={activeConnection}
+            activeTab={overviewTab}
+            view={view}
+            statsStatus={statsStatus}
+            onOpenTable={onOpenTable}
+            onSwitchTab={handleTabChange}
+          />
         </div>
       </div>
       <StatusBar items={view.overviewStatus} />
     </div>
+  );
+}
+
+type OverviewTabBodyProps = {
+  activeConnection: Connection;
+  activeTab: OverviewTabId;
+  view: ReturnType<typeof useDatabaseOverview>;
+  statsStatus: DatabaseOverviewStatsStatus | undefined;
+  onOpenTable: (schemaName: string, tableName: string) => void;
+  onSwitchTab: (tab: OverviewTabId) => void;
+};
+
+/**
+ * Body region for the connection overview surface. Switches its
+ * content based on the active sub-tab from the header. The Overview
+ * sub-tab keeps the original four-card dashboard; the other Phase 1
+ * sub-tabs render placeholders today and get filled in by their
+ * respective Phase 1 steps. Engine-gated sub-tabs (Schemas, Details)
+ * render the Postgres-only explainer for non-PG connections.
+ */
+function OverviewTabBody({
+  activeConnection,
+  activeTab,
+  view,
+  statsStatus,
+  onOpenTable,
+  onSwitchTab,
+}: OverviewTabBodyProps) {
+  const isPostgres = activeConnection.engine === "PostgreSQL";
+
+  if (activeTab === "overview") {
+    return (
+      <>
+        {/* Top row: Connection Details + Database Stats */}
+        <section className="grid gap-4 lg:grid-cols-2">
+          <ConnectionDetailsCard connection={activeConnection} />
+          <DatabaseStatsCard
+            tableCount={view.tableCount}
+            schemaCount={view.schemaCount}
+            databaseSize={view.databaseSize}
+            indexes={view.indexCount}
+            connections={view.connectionCount}
+            rows={view.rowCount}
+            statsStatus={statsStatus}
+            rowCountKind={view.rowCountKind}
+            onViewAll={() => onSwitchTab("schemas")}
+          />
+        </section>
+
+        {/* Mid row: Recent Queries + Favorite Tables */}
+        <section className="grid gap-4 lg:grid-cols-2">
+          <RecentQueriesCard
+            queries={view.recentQueries}
+            onViewAll={() => onSwitchTab("query-history")}
+          />
+          <FavoriteTablesCard
+            tables={view.favoriteTables}
+            onOpenTable={onOpenTable}
+            onViewAll={() => onSwitchTab("tables")}
+          />
+        </section>
+
+        <HealthBanner connection={activeConnection} />
+      </>
+    );
+  }
+
+  if (activeTab === "tables") {
+    return (
+      <PlaceholderPanel
+        title="Tables"
+        description="Flat searchable list of every table in this connection, with row-count and size columns on Postgres. Coming in Phase 1 — Step 4."
+      />
+    );
+  }
+
+  if (activeTab === "schemas") {
+    if (!isPostgres) {
+      return (
+        <PostgresOnlyPanel
+          engine={activeConnection.engine}
+          tabLabel="Schemas"
+        />
+      );
+    }
+    return (
+      <PlaceholderPanel
+        title="Schemas"
+        description="Per-schema breakdown with table/view/matview counts and total size. Click a schema to jump into the Tables tab filtered to it. Coming in Phase 1 — Step 4."
+      />
+    );
+  }
+
+  if (activeTab === "query-history") {
+    return (
+      <PlaceholderPanel
+        title="Query History"
+        description="Dedicated view of the persisted query log, scoped to this connection by default with a Show-all toggle, free-text search, and success/error filter. Coming in Phase 1 — Step 3."
+      />
+    );
+  }
+
+  if (activeTab === "details") {
+    if (!isPostgres) {
+      return (
+        <PostgresOnlyPanel
+          engine={activeConnection.engine}
+          tabLabel="Details"
+        />
+      );
+    }
+    return (
+      <PlaceholderPanel
+        title="Details"
+        description="Server version, encoding, locale, timezone, installed extensions, and the full pg_settings catalogue with category grouping and modified-from-default highlights. Coming in Phase 1 — Step 5."
+      />
+    );
+  }
+
+  // activeTab === "settings"
+  return (
+    <PlaceholderPanel
+      title="Settings"
+      description="Read-only view of the connection's existing fields with an Edit button to the existing connection dialog. Coming in Phase 1 — Step 2."
+    />
   );
 }

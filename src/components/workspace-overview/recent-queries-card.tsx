@@ -13,15 +13,17 @@ import { cn } from "@/lib/utils";
 
 export function RecentQueriesCard({
   queries,
+  onViewAll,
 }: {
   queries: QueryHistoryEntry[];
+  onViewAll: () => void;
 }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Recent Queries</CardTitle>
         <CardAction>
-          <Button size="sm" variant="ghost">
+          <Button size="sm" variant="ghost" onClick={onViewAll}>
             View all
           </Button>
         </CardAction>
@@ -34,7 +36,12 @@ export function RecentQueriesCard({
         )}
       </CardContent>
       <div className="px-4 pt-1">
-        <Button size="sm" variant="ghost" className="px-1 text-text-muted">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="px-1 text-text-muted"
+          onClick={onViewAll}
+        >
           Open Query History
           <IconArrowRight className="size-3" />
         </Button>

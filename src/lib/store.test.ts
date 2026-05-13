@@ -2777,3 +2777,80 @@ describe("runQuery branch coverage", () => {
     expect(conn?.lastActivityAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
+
+describe("connectionOverviewTab", () => {
+  const connectedPostgres = (id: string): Connection => ({
+    id,
+    name: id,
+    database: "postgres",
+    status: "Connected",
+    engine: "PostgreSQL",
+    host: "localhost",
+    port: 5432,
+    user: "postgres",
+    password: "",
+    role: "",
+    latency: "12 ms",
+    lastSync: "Just now",
+    ssl: true,
+  });
+
+  it("setConnectionOverviewTab stores the active sub-tab per connection", () => {
+    useAppStore.setState({
+      connections: [connectedPostgres("conn-1"), connectedPostgres("conn-2")],
+      connectionOverviewTab: {},
+    });
+
+    useAppStore.getState().setConnectionOverviewTab("conn-1", "tables");
+    useAppStore.getState().setConnectionOverviewTab("conn-2", "details");
+
+    expect(useAppStore.getState().connectionOverviewTab).toEqual({
+      "conn-1": "tables",
+      "conn-2": "details",
+    });
+  });
+
+  it("setConnectionOverviewTab is a no-op when connectionId is empty", () => {
+    useAppStore.setState({ connectionOverviewTab: { "conn-1": "tables" } });
+
+    useAppStore.getState().setConnectionOverviewTab("", "schemas");
+
+    expect(useAppStore.getState().connectionOverviewTab).toEqual({
+      "conn-1": "tables",
+    });
+  });
+
+  it("disconnectConnection drops the connection's sub-tab entry", () => {
+    useAppStore.setState({
+      connections: [connectedPostgres("conn-1"), connectedPostgres("conn-2")],
+      connectionOverviewTab: {
+        "conn-1": "schemas",
+        "conn-2": "details",
+      },
+    });
+
+    useAppStore.getState().disconnectConnection("conn-1");
+
+    expect(useAppStore.getState().connectionOverviewTab).toEqual({
+      "conn-2": "details",
+    });
+  });
+
+  it("deleteConnection (non-Tauri branch) drops the connection's sub-tab entry", async () => {
+    mockedIsTauri.mockReturnValue(false);
+    useAppStore.setState({
+      connections: [connectedPostgres("conn-1"), connectedPostgres("conn-2")],
+      activeConnectionId: "conn-1",
+      connectionOverviewTab: {
+        "conn-1": "tables",
+        "conn-2": "details",
+      },
+    });
+
+    await useAppStore.getState().deleteConnection("conn-1");
+
+    expect(useAppStore.getState().connectionOverviewTab).toEqual({
+      "conn-2": "details",
+    });
+  });
+});
