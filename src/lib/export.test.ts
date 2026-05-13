@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { type ExportTable, toCsv, toJson } from "@/lib/export";
+import {
+  type ExportTable,
+  prepareExport,
+  toCsv,
+  toHtml,
+  toJson,
+  toMarkdown,
+  toSqlInserts,
+  toTxt,
+  toXlsx,
+} from "@/lib/export";
 
 describe("toCsv", () => {
   it("emits a header row followed by data rows", () => {
@@ -143,5 +153,51 @@ describe("toJson", () => {
       rows: [],
     };
     expect(toJson(table, { pretty: true })).toBe("[]");
+  });
+});
+
+describe("additional export formats", () => {
+  const table: ExportTable = {
+    columns: ["id", "name", "note"],
+    rows: [
+      ["1", "Ada", "hello"],
+      ["2", "Grace", null],
+    ],
+  };
+
+  it("emits SQL insert statements with quoted identifiers and literals", () => {
+    expect(toSqlInserts(table, { tableName: "public.people" })).toBe(
+      `INSERT INTO "public"."people" ("id", "name", "note") VALUES ('1', 'Ada', 'hello');\n` +
+        `INSERT INTO "public"."people" ("id", "name", "note") VALUES ('2', 'Grace', NULL);`,
+    );
+  });
+
+  it("emits HTML, Markdown, and TXT table exports", () => {
+    expect(toHtml(table, "NULL")).toContain("<td>NULL</td>");
+    expect(toMarkdown(table, "NULL")).toContain("| 2 | Grace | NULL |");
+    expect(toTxt(table, "NULL")).toBe(
+      "id\tname\tnote\n1\tAda\thello\n2\tGrace\tNULL",
+    );
+  });
+
+  it("emits a valid XLSX zip payload", () => {
+    const payload = toXlsx(table);
+    expect(payload[0]).toBe(0x50);
+    expect(payload[1]).toBe(0x4b);
+    expect(new TextDecoder().decode(payload)).toContain(
+      "xl/worksheets/sheet1.xml",
+    );
+  });
+
+  it("prepares encoded filenames and content", () => {
+    const prepared = prepareExport(table, {
+      format: "txt",
+      filenameBase: "people",
+      encoding: "utf-16le",
+      compression: "none",
+      nullAs: "NULL",
+    });
+    expect(prepared.filename).toBe("people.txt");
+    expect(prepared.content).toBeInstanceOf(Uint8Array);
   });
 });

@@ -4,6 +4,11 @@ import type * as React from "react";
 import { DataGrid } from "@/components/data-grid";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Button } from "@/components/ui/button";
+import type {
+  ExportCompression,
+  ExportEncoding,
+  ExportFormat,
+} from "@/lib/export";
 import type { TableDataState, TableStructure } from "@/lib/store";
 
 import type { SubTab } from "./header";
@@ -42,6 +47,20 @@ interface TableEditorBodyProps {
   onDiscardEdits: () => void;
   onSaveEdits: () => Promise<void>;
   onDeleteSelected: () => void;
+  onExportWholeTable?: (options: {
+    format: ExportFormat;
+    encoding: ExportEncoding;
+    compression: ExportCompression;
+    nullAs: string;
+  }) => Promise<void>;
+  onSaveExportTask?: (options: {
+    format: ExportFormat;
+    encoding: ExportEncoding;
+    compression: ExportCompression;
+    nullAs: string;
+  }) => void;
+  onRunSavedExportTask?: () => Promise<void>;
+  hasSavedExportTask?: boolean;
 }
 
 export function TableEditorBody({
@@ -70,6 +89,10 @@ export function TableEditorBody({
   onDiscardEdits,
   onSaveEdits,
   onDeleteSelected,
+  onExportWholeTable,
+  onSaveExportTask,
+  onRunSavedExportTask,
+  hasSavedExportTask,
 }: TableEditorBodyProps) {
   const columns = data?.columns ?? [];
   const rows = data?.rows ?? [];
@@ -100,6 +123,10 @@ export function TableEditorBody({
               exportFilenameBase={exportFilenameBase}
               rowSelection={selection.rowSelection}
               onRowSelectionChange={selection.setRowSelection}
+              onExportWholeTable={onExportWholeTable}
+              onSaveExportTask={onSaveExportTask}
+              onRunSavedExportTask={onRunSavedExportTask}
+              hasSavedExportTask={hasSavedExportTask}
               toolbarLeading={
                 <DataToolbar
                   canAddRow={caps.canAddRow}

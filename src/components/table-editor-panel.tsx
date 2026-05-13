@@ -34,6 +34,20 @@ import {
   SchemaMapToolbar,
   schemaMapExportFilename,
 } from "@/components/workspace-overview/schema-map-toolbar";
+import { downloadBlob } from "@/lib/download";
+import {
+  type ExportCompression,
+  type ExportEncoding,
+  type ExportFormat,
+  type ExportTable,
+  prepareExportBlob,
+} from "@/lib/export";
+import {
+  createExportTask,
+  findExportTask,
+  type SavedExportTask,
+  saveExportTask,
+} from "@/lib/export-tasks";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
 import {
@@ -42,6 +56,7 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import { useContainerWidth } from "@/lib/use-resizable-width";
 
 interface TableEditorPanelProps {
@@ -60,6 +75,15 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   // Terminal outcome lives component-local. Disappears on tab unmount,
   // which is the intended trade-off (CONTEXT.md — Edit Outcome).
   const [lastOutcome, setLastOutcome] = useState<EditOutcome | null>(null);
+  const [exportError, setTableExportError] = useState<string | null>(null);
+  const [savedExportTask, setSavedExportTask] =
+    useState<SavedExportTask | null>(() =>
+      findExportTask({
+        connectionId: tab.connectionId,
+        schema: tab.schema,
+        table: tab.table ?? "",
+      }),
+    );
 
   const {
     tableEdits,
@@ -130,6 +154,65 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     if (outcome.kind === "completed") selection.clear();
   };
 
+  const exportWholeTable = async (options: {
+    format: ExportFormat;
+    encoding: ExportEncoding;
+    compression: ExportCompression;
+    nullAs: string;
+  }) => {
+    setTableExportError(null);
+    try {
+      const table = await loadWholeTableForExport({
+        connectionId: tab.connectionId,
+        schema: tab.schema,
+        table: tab.table ?? "",
+        fallback: data
+          ? { columns: data.columns, rows: data.rows }
+          : { columns: [], rows: [] },
+      });
+      const { filename, blob } = await prepareExportBlob(table, {
+        format: options.format,
+        filenameBase: `${exportFilenameBase}-whole-table`,
+        encoding: options.encoding,
+        compression: options.compression,
+        nullAs: options.nullAs,
+        sqlTableName: `${tab.schema}.${tab.table ?? tab.label}`,
+      });
+      downloadBlob(filename, blob);
+    } catch (error) {
+      setTableExportError(errorToMessage(error));
+    }
+  };
+
+  const handleSaveExportTask = (options: {
+    format: ExportFormat;
+    encoding: ExportEncoding;
+    compression: ExportCompression;
+    nullAs: string;
+  }) => {
+    const task = createExportTask(
+      {
+        connectionId: tab.connectionId,
+        schema: tab.schema,
+        table: tab.table ?? "",
+      },
+      options.format,
+      options.encoding,
+      options.compression,
+      options.nullAs,
+    );
+    saveExportTask(task);
+    setSavedExportTask(task);
+    setTableExportError(null);
+  };
+
+  const handleRunSavedExportTask = async () => {
+    if (!savedExportTask) {
+      return;
+    }
+    await exportWholeTable(savedExportTask);
+  };
+
   const isLoading = status?.state === "loading";
   const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -167,7 +250,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       />
 
       <TableStatusBanners
-        errorMessage={errorMessage}
+        errorMessage={exportError ?? errorMessage}
         showReadOnlyBanner={caps.isReadOnly && caps.structureLoaded}
         commitStatus={commitStatus}
         lastOutcome={lastOutcome}
@@ -217,11 +300,63 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onDeleteSelected={() => {
           void handleDeleteSelected();
         }}
+        onExportWholeTable={exportWholeTable}
+        onSaveExportTask={handleSaveExportTask}
+        onRunSavedExportTask={handleRunSavedExportTask}
+        hasSavedExportTask={savedExportTask !== null}
       />
 
       <StatusBar items={statusItems} />
     </div>
   );
+}
+
+type TableDataResult = {
+  columns: string[];
+  rows: string[][];
+  page: number;
+  pageSize: number;
+  totalRows?: number | null;
+};
+
+async function loadWholeTableForExport(params: {
+  connectionId: string;
+  schema: string;
+  table: string;
+  fallback: ExportTable;
+}): Promise<ExportTable> {
+  if (!isTauri()) {
+    return params.fallback;
+  }
+  const pageSize = 1000;
+  let page = 1;
+  let columns: string[] = [];
+  const rows: string[][] = [];
+  while (true) {
+    const result = await tauriInvoke<TableDataResult>("load_table_data", {
+      payload: {
+        connectionId: params.connectionId,
+        schema: params.schema,
+        table: params.table,
+        page,
+        pageSize,
+      },
+    });
+    if (columns.length === 0) {
+      columns = result.columns;
+    }
+    rows.push(...result.rows);
+    const totalRows = result.totalRows ?? null;
+    if (
+      result.rows.length === 0 ||
+      result.rows.length < pageSize ||
+      (totalRows !== null && rows.length >= totalRows)
+    ) {
+      break;
+    }
+    page += 1;
+  }
+  return { columns, rows };
 }
 
 export interface TableSidebarProps {

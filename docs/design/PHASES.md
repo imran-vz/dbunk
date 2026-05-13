@@ -10,7 +10,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 |---|---|---|---|
 | 1 | Wire the connection-level tabs | ✅ shipped | Smallest scope, biggest perceived completeness win; most views are thin wrappers over data the store already has |
 | 2 | Schema map overhaul | ✅ shipped | Directly addresses the "schema map is really not great" pain |
-| 3 | Data export upgrade | planned | First half of the import/export pain — lay the transfer foundation |
+| 3 | Data export upgrade | ✅ shipped | First half of the import/export pain — lay the transfer foundation |
 | 4 | Data import wizard | planned | Second half — bulk inbound; pairs with Phase 3's transfer surface |
 | 5 | DDL + dump/restore | planned | Schema-level export and full `pg_dump`/`pg_restore` backups |
 | 6 | Object navigator depth | planned | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
@@ -58,7 +58,7 @@ Deferred:
 
 Tracking: [Schema map Phase 2 deferred follow-ups](https://github.com/imran-vz/dbunk/issues/17).
 
-## Phase 3 — Data export upgrade
+## Phase 3 — Data export upgrade — ✅ shipped
 Lay the foundation for a real data-transfer surface. Result-set export stays; this phase adds whole-table export and more formats.
 
 - Whole-table export pipeline (streaming, not just current page)
@@ -66,6 +66,12 @@ Lay the foundation for a real data-transfer surface. Result-set export stays; th
 - XLSX (Excel) export
 - Compression + encoding options
 - Save export config as a re-runnable task
+
+What landed:
+- Existing result-set export now supports CSV, JSON, SQL INSERTs, HTML, Markdown, TXT, and valid XLSX downloads for all visible rows and selected rows.
+- Whole-table export is wired into the table editor and pages through `load_table_data` in 1000-row chunks until the table is exhausted, so it is no longer limited to the current grid page.
+- Export options include NULL token, UTF-8 / UTF-16LE encoding, and gzip compression when supported by the webview.
+- Export task configs are saved to localStorage per table and can be rerun from the table export menu.
 
 ## Phase 4 — Data import wizard
 Bulk inbound. Pairs naturally with Phase 3's transfer surface.
