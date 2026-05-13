@@ -30,6 +30,14 @@ type RunQueryResult = {
   rowCount: number;
 };
 
+/**
+ * Cap on the in-memory query history list. Mirrors the SQLite trim
+ * in `src-tauri/src/storage.rs` — keep both in sync. Phase 1 bumped
+ * this from 200 to 2000 so the dedicated Query History sub-tab can
+ * surface more than just a day or two of activity.
+ */
+const QUERY_HISTORY_CAP = 2000;
+
 const generateHistoryId = (): string => {
   if (
     typeof globalThis !== "undefined" &&
@@ -208,7 +216,7 @@ export const createRelationalQueriesSlice: StateCreator<
             },
           },
           queryStatus: restStatus,
-          queryHistory: [entry, ...s.queryHistory].slice(0, 200),
+          queryHistory: [entry, ...s.queryHistory].slice(0, QUERY_HISTORY_CAP),
           workspaceTabs: s.workspaceTabs.map((item) =>
             item.id === tabId
               ? { ...item, lastRun: "Just now", isDirty: false }
@@ -244,7 +252,7 @@ export const createRelationalQueriesSlice: StateCreator<
         const { [tabId]: _status, ...restStatus } = s.queryStatus;
         return {
           queryStatus: restStatus,
-          queryHistory: [entry, ...s.queryHistory].slice(0, 200),
+          queryHistory: [entry, ...s.queryHistory].slice(0, QUERY_HISTORY_CAP),
           workspaceTabs: s.workspaceTabs.map((item) =>
             item.id === tabId
               ? { ...item, lastRun: "Failed", isDirty: false }

@@ -616,11 +616,18 @@ pub async fn clear_verifier(pool: &SqlitePool) -> Result<(), String> {
 // Query history
 // ---------------------------------------------------------------------------
 
+/// Maximum number of query-history rows kept in SQLite. Mirrors the
+/// `QUERY_HISTORY_CAP` constant in `src/lib/store/relational-queries.ts`;
+/// keep both in sync. Phase 1 raised this from 200 to 2000 so the
+/// dedicated Query History sub-tab can surface more than a day or
+/// two of activity on a busy connection.
+pub const QUERY_HISTORY_CAP: u32 = 2000;
+
 pub async fn read_query_history(
     pool: &SqlitePool,
     limit: Option<u32>,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    let limit = limit.unwrap_or(200);
+    let limit = limit.unwrap_or(QUERY_HISTORY_CAP);
     let rows = sqlx::query(
         "SELECT id, sql, connection_id, connection_name, database_name, engine,
                 status, error_message, runtime_ms, row_count, started_at
@@ -684,12 +691,13 @@ pub async fn insert_query_history(
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
-    sqlx::query(
+    sqlx::query(&format!(
         "DELETE FROM query_history
          WHERE id NOT IN (
-           SELECT id FROM query_history ORDER BY started_at DESC LIMIT 200
+           SELECT id FROM query_history ORDER BY started_at DESC LIMIT {}
          )",
-    )
+        QUERY_HISTORY_CAP
+    ))
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;

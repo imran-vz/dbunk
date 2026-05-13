@@ -16,7 +16,7 @@ use tauri::{Manager, State};
 
 use crate::storage::Paths;
 
-const MAX_QUERY_HISTORY: usize = 200;
+const MAX_QUERY_HISTORY: usize = storage::QUERY_HISTORY_CAP as usize;
 
 const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
 const MAX_TABLE_PAGE_SIZE: u32 = 1000;
