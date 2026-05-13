@@ -22,9 +22,44 @@ export interface ToCsvOptions {
   nullAs?: string;
 }
 
+export type ExportFormat =
+  | "csv"
+  | "json"
+  | "sql"
+  | "html"
+  | "markdown"
+  | "txt"
+  | "xlsx";
+
+export type ExportScope =
+  | { kind: "result-set" }
+  | { kind: "whole-table"; schema: string; table: string };
+
+export type ExportEncoding = "utf-8" | "utf-16le";
+export type ExportCompression = "none" | "gzip";
+
 export interface ToJsonOptions {
   /** When true, indents the output with 2 spaces. */
   pretty?: boolean;
+}
+
+export interface ToSqlInsertOptions {
+  schema?: string;
+  table: string;
+  nullAsDefault?: boolean;
+}
+
+export interface ExportTaskConfig {
+  id: string;
+  name: string;
+  connectionId: string;
+  scope: ExportScope;
+  format: ExportFormat;
+  encoding: ExportEncoding;
+  compression: ExportCompression;
+  nullAs?: string;
+  includeHeader: boolean;
+  createdAt: string;
 }
 
 const CSV_LINE_TERMINATOR = "\n";
@@ -69,4 +104,118 @@ export function toJson(table: ExportTable, options?: ToJsonOptions): string {
     return obj;
   });
   return JSON.stringify(objects, null, options?.pretty ? 2 : undefined);
+}
+
+const quoteSqlIdentifier = (identifier: string): string =>
+  `"${identifier.replace(/"/g, '""')}"`;
+
+const quoteSqlLiteral = (value: string): string =>
+  `'${value.replace(/'/g, "''")}'`;
+
+const qualifiedSqlTable = (
+  schema: string | undefined,
+  table: string,
+): string =>
+  schema && schema.length > 0
+    ? `${quoteSqlIdentifier(schema)}.${quoteSqlIdentifier(table)}`
+    : quoteSqlIdentifier(table);
+
+export function toSqlInserts(
+  table: ExportTable,
+  options: ToSqlInsertOptions,
+): string {
+  const columns = table.columns.map(quoteSqlIdentifier).join(", ");
+  const target = qualifiedSqlTable(options.schema, options.table);
+  return table.rows
+    .map((row) => {
+      const values = table.columns.map((_column, index) => {
+        const cell = row[index];
+        if (cell === null || cell === undefined) {
+          return options.nullAsDefault ? "DEFAULT" : "NULL";
+        }
+        return quoteSqlLiteral(cell);
+      });
+      return `INSERT INTO ${target} (${columns}) VALUES (${values.join(", ")});`;
+    })
+    .join("\n");
+}
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+export function toHtmlTable(table: ExportTable, nullAs = ""): string {
+  const header = table.columns
+    .map((column) => `<th>${escapeHtml(column)}</th>`)
+    .join("");
+  const rows = table.rows
+    .map((row) => {
+      const cells = table.columns
+        .map((_column, index) => {
+          const cell = row[index] ?? null;
+          return `<td>${escapeHtml(cell === null ? nullAs : cell)}</td>`;
+        })
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("\n");
+  return `<table>\n<thead><tr>${header}</tr></thead>\n<tbody>${rows}</tbody>\n</table>`;
+}
+
+const escapeMarkdownCell = (value: string): string =>
+  value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+
+export function toMarkdownTable(table: ExportTable, nullAs = ""): string {
+  const header = `| ${table.columns.map(escapeMarkdownCell).join(" | ")} |`;
+  const separator = `| ${table.columns.map(() => "---").join(" | ")} |`;
+  const rows = table.rows.map((row) => {
+    const values = table.columns.map((_column, index) => {
+      const cell = row[index] ?? null;
+      return escapeMarkdownCell(cell === null ? nullAs : cell);
+    });
+    return `| ${values.join(" | ")} |`;
+  });
+  return [header, separator, ...rows].join("\n");
+}
+
+export function toTxtTable(table: ExportTable, nullAs = ""): string {
+  return [
+    table.columns.join("\t"),
+    ...table.rows.map((row) =>
+      table.columns
+        .map((_column, index) => {
+          const cell = row[index] ?? null;
+          return cell === null ? nullAs : cell.replace(/\r?\n/g, " ");
+        })
+        .join("\t"),
+    ),
+  ].join("\n");
+}
+
+export function toExcelWorkbookXml(table: ExportTable, nullAs = ""): string {
+  const rows = [
+    table.columns,
+    ...table.rows.map((row) =>
+      table.columns.map((_column, index) => row[index] ?? nullAs),
+    ),
+  ];
+  const xmlRows = rows
+    .map((row) => {
+      const cells = row
+        .map(
+          (cell) =>
+            `<Cell><Data ss:Type="String">${escapeHtml(cell ?? nullAs)}</Data></Cell>`,
+        )
+        .join("");
+      return `<Row>${cells}</Row>`;
+    })
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Export"><Table>${xmlRows}</Table></Worksheet></Workbook>`;
+}
+
+export function serializeExportTask(config: ExportTaskConfig): string {
+  return JSON.stringify(config, null, 2);
 }
