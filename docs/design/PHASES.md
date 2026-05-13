@@ -17,7 +17,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 7 | Admin tools | ✅ shipped | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
 | 8 | SQL editor depth | ✅ shipped | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
 | 9 | Compare + generate | ✅ shipped | Schema compare, data compare, mock data — depends on Phase 6 coverage |
-| 10 | Specialized editors | planned | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
+| 10 | Specialized editors | ✅ shipped | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
 
 Phases 1–4 cover the three pain points named explicitly when setting the parity goal.
 
@@ -169,7 +169,7 @@ What landed:
 - Data compare loads the first 100 rows from two chosen tables through the existing paged table-data command and reports column and sampled row differences.
 - Mock data generator emits ready-to-run INSERT statements for a selected table name.
 
-## Phase 10 — Specialized editors
+## Phase 10 — Specialized editors — ✅ shipped
 Final polish — object-creation UIs and cell-level editors for Postgres-shaped data.
 
 - Permissions / GRANT editor (per object)
@@ -180,3 +180,12 @@ Final polish — object-creation UIs and cell-level editors for Postgres-shaped 
 - Postgres `array` cell editor
 - `json` / `jsonb` tree editor
 - PostGIS / geometry visualization
+
+What landed:
+- Table editor now has a Specialized sub-tab for PostgreSQL-oriented table helpers.
+- Permissions editor builds per-object GRANT SQL with selectable privileges, roles, and WITH GRANT OPTION.
+- Row-Level Security editor builds ENABLE/FORCE RLS plus CREATE POLICY SQL with command, role, USING, and WITH CHECK controls.
+- Index, foreign-key, and trigger editors generate ready-to-review DDL using the current table columns.
+- JSON/jsonb helper validates, formats, minifies, and renders parsed values as a tree before copying a literal.
+- Array helper converts comma/newline values into escaped PostgreSQL array literals.
+- PostGIS helper previews POINT, LINESTRING, and POLYGON WKT geometry and copies an EWKT/text literal.

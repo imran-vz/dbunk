@@ -14,6 +14,7 @@ import type { TableDataState, TableStructure } from "@/lib/store";
 import type { SubTab } from "./header";
 import { Pagination } from "./pagination";
 import { RowDetailsPanel } from "./row-details-panel";
+import { SpecializedEditors } from "./specialized-editors";
 import { SubTabPlaceholder } from "./sub-tab-placeholder";
 import type { TableRef } from "./table-ref";
 import type { RowDetailsVisibility } from "./use-row-details-visibility";
@@ -145,6 +146,12 @@ export function TableEditorBody({
               schema={schema}
               tableName={tableName}
               className="h-full"
+            />
+          ) : activeSubTab === "specialized" ? (
+            <SpecializedEditors
+              schema={schema}
+              table={tableName}
+              structure={structure}
             />
           ) : (
             <SubTabPlaceholder kind={activeSubTab} />

@@ -14,13 +14,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export type SubTab = "data" | "schema" | "indexes" | "relations";
+export type SubTab =
+  | "data"
+  | "schema"
+  | "indexes"
+  | "relations"
+  | "specialized";
 
 export const SUB_TABS: ReadonlyArray<{ id: SubTab; label: string }> = [
   { id: "data", label: "Data" },
   { id: "schema", label: "Schema" },
   { id: "indexes", label: "Indexes" },
   { id: "relations", label: "Relations" },
+  { id: "specialized", label: "Specialized" },
 ];
 
 interface TableEditorHeaderProps {
