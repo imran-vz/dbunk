@@ -48,6 +48,42 @@ function classifyForFilter(status: Connection["status"]): FilterKind {
   return "all";
 }
 
+function matchesFilter(connection: Connection, filter: FilterKind): boolean {
+  if (filter === "healthy") return connection.status === "Connected";
+  if (filter === "warning") return connection.status === "Read only";
+  if (filter === "error") return Boolean(connection.errorMessage);
+  return true;
+}
+
+function matchesSearch(connection: Connection, needle: string): boolean {
+  if (!needle) return true;
+  return (
+    connection.name.toLowerCase().includes(needle) ||
+    connection.host.toLowerCase().includes(needle) ||
+    connection.database.toLowerCase().includes(needle) ||
+    connection.engine.toLowerCase().includes(needle)
+  );
+}
+
+function derivePillTone(
+  status: Connection["status"],
+  errorMessage: string | undefined,
+): StatusTone {
+  if (errorMessage) return "danger";
+  const tone = statusToTone(status);
+  return tone === "neutral" ? "neutral" : tone;
+}
+
+function deriveStatusLabel(
+  status: Connection["status"],
+  errorMessage: string | undefined,
+): string {
+  if (errorMessage) return "Error";
+  if (status === "Connected") return "Healthy";
+  if (status === "Read only") return "Warning";
+  return "Idle";
+}
+
 export function ConnectionsView() {
   const [editingConnection, setEditingConnection] = useState<Connection | null>(
     null,
@@ -83,18 +119,9 @@ export function ConnectionsView() {
 
   const filteredConnections = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return connections.filter((c) => {
-      if (filter === "healthy" && c.status !== "Connected") return false;
-      if (filter === "warning" && c.status !== "Read only") return false;
-      if (filter === "error" && !c.errorMessage) return false;
-      if (!needle) return true;
-      return (
-        c.name.toLowerCase().includes(needle) ||
-        c.host.toLowerCase().includes(needle) ||
-        c.database.toLowerCase().includes(needle) ||
-        c.engine.toLowerCase().includes(needle)
-      );
-    });
+    return connections.filter(
+      (c) => matchesFilter(c, filter) && matchesSearch(c, needle),
+    );
   }, [connections, filter, search]);
 
   return (
@@ -286,13 +313,12 @@ function ConnectionCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const tone = statusToTone(connection.status);
   const filterKind = classifyForFilter(connection.status);
-  const pillTone = connection.errorMessage
-    ? "danger"
-    : tone === "neutral"
-      ? "neutral"
-      : tone;
+  const pillTone = derivePillTone(connection.status, connection.errorMessage);
+  const pillLabel = deriveStatusLabel(
+    connection.status,
+    connection.errorMessage,
+  );
 
   return (
     <div
@@ -324,18 +350,7 @@ function ConnectionCard({
               <span className="truncate text-sm font-semibold text-foreground">
                 {connection.name}
               </span>
-              <HealthPill
-                tone={pillTone}
-                label={
-                  connection.errorMessage
-                    ? "Error"
-                    : connection.status === "Connected"
-                      ? "Healthy"
-                      : connection.status === "Read only"
-                        ? "Warning"
-                        : "Idle"
-                }
-              />
+              <HealthPill tone={pillTone} label={pillLabel} />
             </span>
             <span className="mt-0.5 block truncate text-[0.6875rem] text-text-muted">
               {connection.engine}
@@ -389,7 +404,9 @@ function ConnectionCard({
           className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1.5 text-xs text-danger"
         >
           <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <div className="flex-1 break-words">{connection.errorMessage}</div>
+          <div className="flex-1 wrap-break-word">
+            {connection.errorMessage}
+          </div>
         </div>
       ) : null}
     </div>
