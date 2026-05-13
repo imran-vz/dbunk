@@ -559,6 +559,7 @@ pub async fn fetch_schema_relationships(
             nullable,
             is_primary_key: in_sorting,
             ordinal_position: parse_int(cell(row, position_idx).unwrap_or("0")) as i32,
+            comment: None,
         });
     }
 

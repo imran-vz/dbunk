@@ -410,3 +410,32 @@
 .dbunk-query-run-glyph:hover::before {
     color: var(--primary);
 }
+
+.export-light {
+    --surface-app: #ffffff;
+    --surface-window: #ffffff;
+    --surface-panel: #f6f8fa;
+    --surface-panel-elevated: #eef2f5;
+    --surface-row: #ffffff;
+    --surface-row-hover: #eef6ee;
+    --border-subtle: #d8dee4;
+    --border-strong: #8c959f;
+    --text-primary: #1f2328;
+    --text-secondary: #57606a;
+    --text-muted: #6e7781;
+    --accent-green: #2f7d32;
+    --accent-green-hover: #1f6f2a;
+    --background: #ffffff;
+    --foreground: #1f2328;
+    --card: #ffffff;
+    --card-foreground: #1f2328;
+    --muted: #f6f8fa;
+    --muted-foreground: #6e7781;
+    --primary: #2f7d32;
+    --primary-foreground: #ffffff;
+    --border: #d8dee4;
+    --input: #d8dee4;
+    --ring: #2f7d32;
+    color: #1f2328;
+    background: #ffffff;
+}

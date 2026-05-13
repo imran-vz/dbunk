@@ -16,7 +16,10 @@ import type { StateCreator } from "zustand";
 import { generateDdlForEngine, type PendingChange } from "@/lib/ddl";
 import { pendingMutationsFromResult } from "@/lib/pending-mutations";
 import {
+  DEFAULT_SCHEMA_MAP_PREFS,
   type SchemaForeignKey,
+  type SchemaMapPosition,
+  type SchemaMapPrefs,
   type SchemaRelationships,
   type SchemaTableNode,
   schemaRelationshipsKey,
@@ -38,6 +41,7 @@ import type {
   DatabaseOverviewStatsStatus,
   DDLOutcome,
   EditOutcome,
+  LoadingStatus,
   QueryStatus,
   RelationInfo,
   RelationStatsStatus,
@@ -77,6 +81,28 @@ type CommitCellEditsResult = {
   mutationIds?: string[];
 };
 
+type PositionRow = {
+  tableId: string;
+  x: number;
+  y: number;
+};
+
+type SchemaMapPrefsWire = {
+  routing: SchemaMapPrefs["routing"];
+  attrMode: SchemaMapPrefs["attrMode"];
+  showTypes: boolean;
+  showNulls: boolean;
+  showComments: boolean;
+};
+
+const schemaMapPrefsFromWire = (prefs: SchemaMapPrefsWire): SchemaMapPrefs => ({
+  routing: prefs.routing,
+  attrMode: prefs.attrMode,
+  showTypes: prefs.showTypes,
+  showNulls: prefs.showNulls,
+  showComments: prefs.showComments,
+});
+
 const generatePendingId = (): string => {
   if (
     typeof globalThis !== "undefined" &&
@@ -108,6 +134,13 @@ export type RelationalTablesSlice = {
   tableEditsCommitStatus: Record<string, TableEditsCommitStatus>;
   schemaRelationships: Record<string, SchemaRelationships>;
   schemaRelationshipsStatus: Record<string, SchemaRelationshipsStatus>;
+  schemaMapPositions: Record<
+    string,
+    Record<string, Record<string, SchemaMapPosition>>
+  >;
+  schemaMapPositionsStatus: Record<string, Record<string, LoadingStatus>>;
+  schemaMapPrefs: Record<string, Record<string, SchemaMapPrefs>>;
+  schemaMapPrefsStatus: Record<string, Record<string, LoadingStatus>>;
   databaseOverviewStats: Record<string, DatabaseOverviewStats>;
   databaseOverviewStatsStatus: Record<string, DatabaseOverviewStatsStatus>;
   /**
@@ -154,6 +187,27 @@ export type RelationalTablesSlice = {
   loadSchemaRelationships: (
     connectionId: string,
     schema: string,
+  ) => Promise<void>;
+  loadSchemaMapPositions: (
+    connectionId: string,
+    schema: string,
+  ) => Promise<void>;
+  saveSchemaMapPosition: (
+    connectionId: string,
+    schema: string,
+    tableId: string,
+    x: number,
+    y: number,
+  ) => Promise<void>;
+  resetSchemaMapPositions: (
+    connectionId: string,
+    schema: string,
+  ) => Promise<void>;
+  loadSchemaMapPrefs: (connectionId: string, schema: string) => Promise<void>;
+  setSchemaMapPref: (
+    connectionId: string,
+    schema: string,
+    patch: Partial<SchemaMapPrefs>,
   ) => Promise<void>;
   loadDatabaseOverviewStats: (connectionId: string) => Promise<void>;
   loadRelationStats: (connectionId: string) => Promise<void>;
@@ -206,6 +260,27 @@ const dropMatching = <T>(
   return next;
 };
 
+const withNestedValue = <T>(
+  bag: Record<string, Record<string, T>>,
+  connectionId: string,
+  schema: string,
+  value: T,
+): Record<string, Record<string, T>> => ({
+  ...bag,
+  [connectionId]: {
+    ...(bag[connectionId] ?? {}),
+    [schema]: value,
+  },
+});
+
+const withoutConnection = <T>(
+  bag: Record<string, T>,
+  connectionId: string,
+): Record<string, T> => {
+  const { [connectionId]: _dropped, ...rest } = bag;
+  return rest;
+};
+
 export const createRelationalTablesSlice: StateCreator<
   AppStoreState,
   [],
@@ -225,6 +300,10 @@ export const createRelationalTablesSlice: StateCreator<
   tableEditsCommitStatus: {},
   schemaRelationships: {},
   schemaRelationshipsStatus: {},
+  schemaMapPositions: {},
+  schemaMapPositionsStatus: {},
+  schemaMapPrefs: {},
+  schemaMapPrefsStatus: {},
   databaseOverviewStats: {},
   databaseOverviewStatsStatus: {},
   relationStats: {},
@@ -770,6 +849,264 @@ export const createRelationalTablesSlice: StateCreator<
     }
   },
 
+  loadSchemaMapPositions: async (connectionId, schema) => {
+    if (!connectionId || !schema) {
+      return;
+    }
+    if (get().schemaMapPositions[connectionId]?.[schema]) {
+      return;
+    }
+    const current = get().schemaMapPositionsStatus[connectionId]?.[schema];
+    if (current?.state === "loading" || current?.state === "success") {
+      return;
+    }
+    set((state) => ({
+      schemaMapPositionsStatus: withNestedValue(
+        state.schemaMapPositionsStatus,
+        connectionId,
+        schema,
+        { state: "loading" },
+      ),
+    }));
+    if (!isTauri()) {
+      set((state) => ({
+        schemaMapPositionsStatus: withNestedValue(
+          state.schemaMapPositionsStatus,
+          connectionId,
+          schema,
+          { state: "idle" },
+        ),
+      }));
+      return;
+    }
+    try {
+      const rows = await tauriInvoke<PositionRow[]>(
+        "load_schema_map_positions",
+        {
+          payload: { connectionId, schema },
+        },
+      );
+      const positions = Object.fromEntries(
+        rows.map((row) => [row.tableId, { x: row.x, y: row.y }]),
+      );
+      set((state) => ({
+        schemaMapPositions: withNestedValue(
+          state.schemaMapPositions,
+          connectionId,
+          schema,
+          positions,
+        ),
+        schemaMapPositionsStatus: withNestedValue(
+          state.schemaMapPositionsStatus,
+          connectionId,
+          schema,
+          { state: "success" },
+        ),
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load schema map positions", error);
+      set((state) => ({
+        schemaMapPositionsStatus: withNestedValue(
+          state.schemaMapPositionsStatus,
+          connectionId,
+          schema,
+          { state: "error", error: message },
+        ),
+      }));
+    }
+  },
+
+  saveSchemaMapPosition: async (connectionId, schema, tableId, x, y) => {
+    if (!connectionId || !schema || !tableId) {
+      return;
+    }
+    set((state) => ({
+      schemaMapPositions: withNestedValue(
+        state.schemaMapPositions,
+        connectionId,
+        schema,
+        {
+          ...(state.schemaMapPositions[connectionId]?.[schema] ?? {}),
+          [tableId]: { x, y },
+        },
+      ),
+    }));
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      await tauriInvoke("save_schema_map_position", {
+        payload: { connectionId, schema, tableId, x, y },
+      });
+    } catch (error) {
+      console.error("Failed to save schema map position", error);
+    }
+  },
+
+  resetSchemaMapPositions: async (connectionId, schema) => {
+    if (!connectionId || !schema) {
+      return;
+    }
+    set((state) => ({
+      schemaMapPositions: withNestedValue(
+        state.schemaMapPositions,
+        connectionId,
+        schema,
+        {},
+      ),
+      schemaMapPositionsStatus: withNestedValue(
+        state.schemaMapPositionsStatus,
+        connectionId,
+        schema,
+        { state: "success" },
+      ),
+    }));
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      await tauriInvoke("reset_schema_map_positions", {
+        payload: { connectionId, schema },
+      });
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to reset schema map positions", error);
+      set((state) => ({
+        schemaMapPositionsStatus: withNestedValue(
+          state.schemaMapPositionsStatus,
+          connectionId,
+          schema,
+          { state: "error", error: message },
+        ),
+      }));
+    }
+  },
+
+  loadSchemaMapPrefs: async (connectionId, schema) => {
+    if (!connectionId || !schema) {
+      return;
+    }
+    if (get().schemaMapPrefs[connectionId]?.[schema]) {
+      return;
+    }
+    const current = get().schemaMapPrefsStatus[connectionId]?.[schema];
+    if (current?.state === "loading" || current?.state === "success") {
+      return;
+    }
+    set((state) => ({
+      schemaMapPrefsStatus: withNestedValue(
+        state.schemaMapPrefsStatus,
+        connectionId,
+        schema,
+        { state: "loading" },
+      ),
+    }));
+    if (!isTauri()) {
+      set((state) => ({
+        schemaMapPrefs: withNestedValue(
+          state.schemaMapPrefs,
+          connectionId,
+          schema,
+          DEFAULT_SCHEMA_MAP_PREFS,
+        ),
+        schemaMapPrefsStatus: withNestedValue(
+          state.schemaMapPrefsStatus,
+          connectionId,
+          schema,
+          { state: "idle" },
+        ),
+      }));
+      return;
+    }
+    try {
+      const prefs = await tauriInvoke<SchemaMapPrefsWire>(
+        "load_schema_map_prefs",
+        {
+          payload: { connectionId, schema },
+        },
+      );
+      set((state) => ({
+        schemaMapPrefs: withNestedValue(
+          state.schemaMapPrefs,
+          connectionId,
+          schema,
+          schemaMapPrefsFromWire(prefs),
+        ),
+        schemaMapPrefsStatus: withNestedValue(
+          state.schemaMapPrefsStatus,
+          connectionId,
+          schema,
+          { state: "success" },
+        ),
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load schema map preferences", error);
+      set((state) => ({
+        schemaMapPrefsStatus: withNestedValue(
+          state.schemaMapPrefsStatus,
+          connectionId,
+          schema,
+          { state: "error", error: message },
+        ),
+      }));
+    }
+  },
+
+  setSchemaMapPref: async (connectionId, schema, patch) => {
+    if (!connectionId || !schema) {
+      return;
+    }
+    const current =
+      get().schemaMapPrefs[connectionId]?.[schema] ?? DEFAULT_SCHEMA_MAP_PREFS;
+    const next: SchemaMapPrefs = { ...current, ...patch };
+    set((state) => ({
+      schemaMapPrefs: withNestedValue(
+        state.schemaMapPrefs,
+        connectionId,
+        schema,
+        next,
+      ),
+    }));
+    if (!isTauri()) {
+      return;
+    }
+    try {
+      const saved = await tauriInvoke<SchemaMapPrefsWire>(
+        "save_schema_map_prefs",
+        {
+          payload: { connectionId, schema, patch },
+        },
+      );
+      set((state) => ({
+        schemaMapPrefs: withNestedValue(
+          state.schemaMapPrefs,
+          connectionId,
+          schema,
+          schemaMapPrefsFromWire(saved),
+        ),
+        schemaMapPrefsStatus: withNestedValue(
+          state.schemaMapPrefsStatus,
+          connectionId,
+          schema,
+          { state: "success" },
+        ),
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to save schema map preferences", error);
+      set((state) => ({
+        schemaMapPrefsStatus: withNestedValue(
+          state.schemaMapPrefsStatus,
+          connectionId,
+          schema,
+          { state: "error", error: message },
+        ),
+      }));
+    }
+  },
+
   loadDatabaseOverviewStats: async (connectionId) => {
     if (!connectionId) {
       return;
@@ -1071,6 +1408,19 @@ export const createRelationalTablesSlice: StateCreator<
         schemaRelationshipsStatus: dropMatching(
           state.schemaRelationshipsStatus,
           matches,
+        ),
+        schemaMapPositions: withoutConnection(
+          state.schemaMapPositions,
+          connectionId,
+        ),
+        schemaMapPositionsStatus: withoutConnection(
+          state.schemaMapPositionsStatus,
+          connectionId,
+        ),
+        schemaMapPrefs: withoutConnection(state.schemaMapPrefs, connectionId),
+        schemaMapPrefsStatus: withoutConnection(
+          state.schemaMapPrefsStatus,
+          connectionId,
         ),
         databaseOverviewStats: dropMatching(
           state.databaseOverviewStats,

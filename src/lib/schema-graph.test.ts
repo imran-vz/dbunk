@@ -29,8 +29,62 @@ const tables: SchemaTableNode[] = [
       },
     ],
   },
-  { schema: "public", name: "orders", columnCount: 6 },
-  { schema: "public", name: "order_items", columnCount: 5 },
+  {
+    schema: "public",
+    name: "orders",
+    columnCount: 6,
+    columns: [
+      {
+        name: "id",
+        dataType: "integer",
+        nullable: false,
+        isPrimaryKey: true,
+        ordinalPosition: 1,
+      },
+      {
+        name: "user_id",
+        dataType: "integer",
+        nullable: false,
+        isPrimaryKey: false,
+        ordinalPosition: 2,
+      },
+      {
+        name: "note",
+        dataType: "text",
+        nullable: true,
+        isPrimaryKey: false,
+        ordinalPosition: 3,
+      },
+    ],
+  },
+  {
+    schema: "public",
+    name: "order_items",
+    columnCount: 5,
+    columns: [
+      {
+        name: "id",
+        dataType: "integer",
+        nullable: false,
+        isPrimaryKey: true,
+        ordinalPosition: 1,
+      },
+      {
+        name: "order_id",
+        dataType: "integer",
+        nullable: true,
+        isPrimaryKey: false,
+        ordinalPosition: 2,
+      },
+      {
+        name: "sku",
+        dataType: "text",
+        nullable: false,
+        isPrimaryKey: false,
+        ordinalPosition: 3,
+      },
+    ],
+  },
 ];
 
 const foreignKeys: SchemaForeignKey[] = [
@@ -133,6 +187,39 @@ describe("buildSchemaGraph", () => {
     const graph = buildSchemaGraph(tables, foreignKeys);
     const edge = graph.edges.find((e) => e.id === "fk:orders_user_id_fkey");
     expect(edge?.label).toBe("user_id → id");
+    expect(edge?.labelStyle).not.toMatchObject({ display: "none" });
+  });
+
+  it("connects FK edges to the expected first-column handles", () => {
+    const graph = buildSchemaGraph(tables, foreignKeys);
+    const edge = graph.edges.find((e) => e.id === "fk:orders_user_id_fkey");
+    expect(edge?.sourceHandle).toBe("public.orders.user_id.right");
+    expect(edge?.targetHandle).toBe("public.users.id.left");
+  });
+
+  it("formats multi-column FK labels with paired column lists", () => {
+    const multiColFk: SchemaForeignKey = {
+      constraintName: "compound_fk",
+      fromSchema: "public",
+      fromTable: "order_items",
+      fromColumns: ["order_id", "sku"],
+      toSchema: "public",
+      toTable: "orders",
+      toColumns: ["id", "note"],
+    };
+    const graph = buildSchemaGraph(tables, [multiColFk]);
+    expect(graph.edges[0].label).toBe("(order_id, sku) → (id, note)");
+  });
+
+  it("assigns crow's foot markers from FK column nullability", () => {
+    const graph = buildSchemaGraph(tables, foreignKeys);
+    const required = graph.edges.find((e) => e.id === "fk:orders_user_id_fkey");
+    const optional = graph.edges.find(
+      (e) => e.id === "fk:order_items_order_id_fkey",
+    );
+    expect(required?.markerStart).toBe("url(#crowsfoot-one)");
+    expect(optional?.markerStart).toBe("url(#crowsfoot-zero-or-one)");
+    expect(required?.markerEnd).toBe("url(#crowsfoot-many)");
   });
 
   it("creates a synthetic node for FK targets that are not in the tables list", () => {
@@ -159,6 +246,35 @@ describe("buildSchemaGraph", () => {
       const nodeB = b.nodes.find((node) => node.id === nodeA.id);
       expect(nodeB?.position).toEqual(nodeA.position);
     }
+  });
+
+  it("honors persisted positions over dagre positions", () => {
+    const graph = buildSchemaGraph(tables, foreignKeys, null, {
+      positions: { "public.orders": { x: 101, y: 202 } },
+    });
+    expect(
+      graph.nodes.find((node) => node.id === "public.orders")?.position,
+    ).toEqual({ x: 101, y: 202 });
+  });
+
+  it("filters node columns in keys-only mode", () => {
+    const graph = buildSchemaGraph(tables, foreignKeys, null, {
+      prefs: { attrMode: "keys-only" },
+    });
+    const orders = graph.nodes.find((node) => node.id === "public.orders");
+    expect(orders?.data.columns.map((column) => column.name)).toEqual([
+      "id",
+      "user_id",
+    ]);
+  });
+
+  it("switches routing to step and removes handles in none mode", () => {
+    const graph = buildSchemaGraph(tables, foreignKeys, null, {
+      prefs: { routing: "step", attrMode: "none" },
+    });
+    expect(graph.edges[0].type).toBe("step");
+    expect(graph.edges[0].sourceHandle).toBeUndefined();
+    expect(graph.nodes[0].data.columns).toEqual([]);
   });
 
   it("returns empty graph when tables and FKs are empty", () => {

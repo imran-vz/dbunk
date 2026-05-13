@@ -36,6 +36,7 @@ afterEach(() => {
 describe("SchemasTab", () => {
   it("aggregates relationStats into per-schema rows and fires onSelectSchema on click", () => {
     const onSelectSchema = vi.fn();
+    const onViewSchemaMap = vi.fn();
 
     render(
       <SchemasTab
@@ -80,6 +81,7 @@ describe("SchemasTab", () => {
         relationStatsStatus={{ state: "success" }}
         onLoadRelationStats={vi.fn().mockResolvedValue(undefined)}
         onSelectSchema={onSelectSchema}
+        onViewSchemaMap={onViewSchemaMap}
       />,
     );
 
@@ -91,6 +93,35 @@ describe("SchemasTab", () => {
     expect(onSelectSchema).toHaveBeenCalledWith("audit");
   });
 
+  it("fires onViewSchemaMap from the row map action without selecting the table filter", () => {
+    const onSelectSchema = vi.fn();
+    const onViewSchemaMap = vi.fn();
+
+    render(
+      <SchemasTab
+        activeConnection={pgConnection}
+        relationStats={[
+          {
+            schema: "public",
+            name: "users",
+            kind: "table",
+            rowCountEstimate: 100,
+            totalSizeBytes: 4096,
+          },
+        ]}
+        relationStatsStatus={{ state: "success" }}
+        onLoadRelationStats={vi.fn().mockResolvedValue(undefined)}
+        onSelectSchema={onSelectSchema}
+        onViewSchemaMap={onViewSchemaMap}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("View public schema map"));
+
+    expect(onViewSchemaMap).toHaveBeenCalledWith("public");
+    expect(onSelectSchema).not.toHaveBeenCalled();
+  });
+
   it("shows the loading state when the cache is missing", () => {
     render(
       <SchemasTab
@@ -99,6 +130,7 @@ describe("SchemasTab", () => {
         relationStatsStatus={{ state: "loading" }}
         onLoadRelationStats={vi.fn().mockResolvedValue(undefined)}
         onSelectSchema={vi.fn()}
+        onViewSchemaMap={vi.fn()}
       />,
     );
 
@@ -113,6 +145,7 @@ describe("SchemasTab", () => {
         relationStatsStatus={{ state: "error", error: "connect refused" }}
         onLoadRelationStats={vi.fn().mockResolvedValue(undefined)}
         onSelectSchema={vi.fn()}
+        onViewSchemaMap={vi.fn()}
       />,
     );
 

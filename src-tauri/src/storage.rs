@@ -14,8 +14,8 @@ use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 use crate::{
     ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
-    PgStoredConnection, QueryHistoryEntry, RedisStoredConnection, SavedQuery,
-    SqliteStoredConnection, StoredConnection,
+    PgStoredConnection, PositionRow, QueryHistoryEntry, RedisStoredConnection, SavedQuery,
+    SchemaMapPrefs, SchemaMapPrefsPatch, SqliteStoredConnection, StoredConnection,
 };
 
 const DB_FILE: &str = "dbunk.sqlite";
@@ -112,6 +112,32 @@ ALTER TABLE connections ADD COLUMN verify_tls_cert INTEGER NOT NULL DEFAULT 1;
         // the column when their variant is constructed.
         r#"
 ALTER TABLE connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 1;
+"#,
+    ),
+    (
+        4,
+        r#"
+CREATE TABLE schema_map_positions (
+  connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  schema        TEXT NOT NULL,
+  table_id      TEXT NOT NULL,
+  x             REAL NOT NULL,
+  y             REAL NOT NULL,
+  updated_at    TEXT NOT NULL,
+  PRIMARY KEY (connection_id, schema, table_id)
+);
+
+CREATE TABLE schema_map_prefs (
+  connection_id  TEXT    NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  schema         TEXT    NOT NULL,
+  routing        TEXT    NOT NULL DEFAULT 'bezier',
+  attr_mode      TEXT    NOT NULL DEFAULT 'all',
+  show_types     INTEGER NOT NULL DEFAULT 1,
+  show_nulls     INTEGER NOT NULL DEFAULT 0,
+  show_comments  INTEGER NOT NULL DEFAULT 0,
+  updated_at     TEXT    NOT NULL,
+  PRIMARY KEY (connection_id, schema)
+);
 "#,
     ),
 ];
@@ -225,6 +251,10 @@ fn bool_to_i64(value: bool) -> i64 {
     } else {
         0
     }
+}
+
+fn i64_to_bool(value: i64) -> bool {
+    value != 0
 }
 
 fn i64_to_u16(value: i64) -> u16 {
@@ -498,6 +528,184 @@ pub async fn touch_connection_activity(
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Schema map positions + prefs
+// ---------------------------------------------------------------------------
+
+pub fn default_schema_map_prefs() -> SchemaMapPrefs {
+    SchemaMapPrefs {
+        routing: "bezier".to_string(),
+        attr_mode: "all".to_string(),
+        show_types: true,
+        show_nulls: false,
+        show_comments: false,
+    }
+}
+
+fn validate_schema_map_prefs(prefs: &SchemaMapPrefs) -> Result<(), String> {
+    if !matches!(prefs.routing.as_str(), "bezier" | "step") {
+        return Err(format!("invalid schema map routing '{}'", prefs.routing));
+    }
+    if !matches!(prefs.attr_mode.as_str(), "all" | "keys-only" | "none") {
+        return Err(format!(
+            "invalid schema map attribute mode '{}'",
+            prefs.attr_mode
+        ));
+    }
+    Ok(())
+}
+
+pub async fn read_schema_map_positions(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+) -> Result<Vec<PositionRow>, String> {
+    let rows = sqlx::query(
+        "SELECT table_id, x, y
+         FROM schema_map_positions
+         WHERE connection_id = ? AND schema = ?
+         ORDER BY table_id COLLATE NOCASE ASC",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PositionRow {
+            table_id: row.get("table_id"),
+            x: row.get("x"),
+            y: row.get("y"),
+        })
+        .collect())
+}
+
+pub async fn upsert_schema_map_position(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table_id: &str,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO schema_map_positions (connection_id, schema, table_id, x, y, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(connection_id, schema, table_id) DO UPDATE SET
+            x = excluded.x,
+            y = excluded.y,
+            updated_at = excluded.updated_at",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(table_id)
+    .bind(x)
+    .bind(y)
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn clear_schema_map_positions(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM schema_map_positions WHERE connection_id = ? AND schema = ?")
+        .bind(connection_id)
+        .bind(schema)
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn read_schema_map_prefs(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+) -> Result<SchemaMapPrefs, String> {
+    let row = sqlx::query(
+        "SELECT routing, attr_mode, show_types, show_nulls, show_comments
+         FROM schema_map_prefs
+         WHERE connection_id = ? AND schema = ?",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let Some(row) = row else {
+        return Ok(default_schema_map_prefs());
+    };
+
+    let prefs = SchemaMapPrefs {
+        routing: row.get("routing"),
+        attr_mode: row.get("attr_mode"),
+        show_types: i64_to_bool(row.get("show_types")),
+        show_nulls: i64_to_bool(row.get("show_nulls")),
+        show_comments: i64_to_bool(row.get("show_comments")),
+    };
+    validate_schema_map_prefs(&prefs)?;
+    Ok(prefs)
+}
+
+pub async fn upsert_schema_map_prefs(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    patch: SchemaMapPrefsPatch,
+) -> Result<SchemaMapPrefs, String> {
+    let mut prefs = read_schema_map_prefs(pool, connection_id, schema).await?;
+    if let Some(routing) = patch.routing {
+        prefs.routing = routing;
+    }
+    if let Some(attr_mode) = patch.attr_mode {
+        prefs.attr_mode = attr_mode;
+    }
+    if let Some(show_types) = patch.show_types {
+        prefs.show_types = show_types;
+    }
+    if let Some(show_nulls) = patch.show_nulls {
+        prefs.show_nulls = show_nulls;
+    }
+    if let Some(show_comments) = patch.show_comments {
+        prefs.show_comments = show_comments;
+    }
+    validate_schema_map_prefs(&prefs)?;
+
+    sqlx::query(
+        "INSERT INTO schema_map_prefs (
+            connection_id, schema, routing, attr_mode,
+            show_types, show_nulls, show_comments, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(connection_id, schema) DO UPDATE SET
+            routing = excluded.routing,
+            attr_mode = excluded.attr_mode,
+            show_types = excluded.show_types,
+            show_nulls = excluded.show_nulls,
+            show_comments = excluded.show_comments,
+            updated_at = excluded.updated_at",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(&prefs.routing)
+    .bind(&prefs.attr_mode)
+    .bind(bool_to_i64(prefs.show_types))
+    .bind(bool_to_i64(prefs.show_nulls))
+    .bind(bool_to_i64(prefs.show_comments))
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(prefs)
 }
 
 // ---------------------------------------------------------------------------
@@ -775,4 +983,150 @@ pub async fn delete_saved_query(pool: &SqlitePool, id: &str) -> Result<(), Strin
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    async fn test_pool() -> SqlitePool {
+        let dir = tempdir().expect("temp dir");
+        let paths = Paths::from_dir(dir.path().to_path_buf());
+        let pool = open_pool(&paths).await.expect("pool");
+        std::mem::forget(dir);
+        pool
+    }
+
+    fn connection(id: &str) -> StoredConnection {
+        StoredConnection::PostgreSQL(PgStoredConnection {
+            id: id.to_string(),
+            name: "Primary".to_string(),
+            database: "postgres".to_string(),
+            host: "localhost".to_string(),
+            port: 5432,
+            user: "postgres".to_string(),
+            password: String::new(),
+            role: String::new(),
+            last_activity_at: None,
+            ssl: true,
+        })
+    }
+
+    #[tokio::test]
+    async fn schema_map_positions_round_trip_and_reset() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+
+        upsert_schema_map_position(&pool, "conn-1", "public", "public.users", 10.0, 20.0)
+            .await
+            .expect("position");
+
+        assert_eq!(
+            read_schema_map_positions(&pool, "conn-1", "public")
+                .await
+                .expect("positions"),
+            vec![PositionRow {
+                table_id: "public.users".to_string(),
+                x: 10.0,
+                y: 20.0,
+            }]
+        );
+
+        clear_schema_map_positions(&pool, "conn-1", "public")
+            .await
+            .expect("reset");
+        assert!(
+            read_schema_map_positions(&pool, "conn-1", "public")
+                .await
+                .expect("positions")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn schema_map_prefs_default_and_patch_round_trip() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+
+        assert_eq!(
+            read_schema_map_prefs(&pool, "conn-1", "public")
+                .await
+                .expect("default prefs"),
+            default_schema_map_prefs()
+        );
+
+        let prefs = upsert_schema_map_prefs(
+            &pool,
+            "conn-1",
+            "public",
+            SchemaMapPrefsPatch {
+                routing: Some("step".to_string()),
+                attr_mode: Some("keys-only".to_string()),
+                show_types: Some(false),
+                show_nulls: Some(true),
+                show_comments: Some(true),
+            },
+        )
+        .await
+        .expect("prefs");
+
+        assert_eq!(
+            prefs,
+            SchemaMapPrefs {
+                routing: "step".to_string(),
+                attr_mode: "keys-only".to_string(),
+                show_types: false,
+                show_nulls: true,
+                show_comments: true,
+            }
+        );
+        assert_eq!(
+            read_schema_map_prefs(&pool, "conn-1", "public")
+                .await
+                .expect("saved prefs"),
+            prefs
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_connection_cascades_schema_map_rows() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        upsert_schema_map_position(&pool, "conn-1", "public", "public.users", 10.0, 20.0)
+            .await
+            .expect("position");
+        upsert_schema_map_prefs(
+            &pool,
+            "conn-1",
+            "public",
+            SchemaMapPrefsPatch {
+                routing: Some("step".to_string()),
+                ..SchemaMapPrefsPatch::default()
+            },
+        )
+        .await
+        .expect("prefs");
+
+        assert!(delete_connection(&pool, "conn-1").await.expect("delete"));
+
+        assert!(
+            read_schema_map_positions(&pool, "conn-1", "public")
+                .await
+                .expect("positions")
+                .is_empty()
+        );
+        assert_eq!(
+            read_schema_map_prefs(&pool, "conn-1", "public")
+                .await
+                .expect("prefs"),
+            default_schema_map_prefs()
+        );
+    }
 }

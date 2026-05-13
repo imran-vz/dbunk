@@ -442,6 +442,71 @@ async fn load_schema_relationships(
 }
 
 #[tauri::command]
+async fn load_schema_map_positions(
+    state: State<'_, AppState>,
+    payload: SchemaMapScopePayload,
+) -> Result<Vec<PositionRow>, String> {
+    storage::read_schema_map_positions(
+        &state.inner().pool,
+        &payload.connection_id,
+        &payload.schema,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn save_schema_map_position(
+    state: State<'_, AppState>,
+    payload: SaveSchemaMapPositionPayload,
+) -> Result<(), String> {
+    storage::upsert_schema_map_position(
+        &state.inner().pool,
+        &payload.connection_id,
+        &payload.schema,
+        &payload.table_id,
+        payload.x,
+        payload.y,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn reset_schema_map_positions(
+    state: State<'_, AppState>,
+    payload: SchemaMapScopePayload,
+) -> Result<(), String> {
+    storage::clear_schema_map_positions(
+        &state.inner().pool,
+        &payload.connection_id,
+        &payload.schema,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn load_schema_map_prefs(
+    state: State<'_, AppState>,
+    payload: SchemaMapScopePayload,
+) -> Result<SchemaMapPrefs, String> {
+    storage::read_schema_map_prefs(&state.inner().pool, &payload.connection_id, &payload.schema)
+        .await
+}
+
+#[tauri::command]
+async fn save_schema_map_prefs(
+    state: State<'_, AppState>,
+    payload: SaveSchemaMapPrefsPayload,
+) -> Result<SchemaMapPrefs, String> {
+    storage::upsert_schema_map_prefs(
+        &state.inner().pool,
+        &payload.connection_id,
+        &payload.schema,
+        payload.patch,
+    )
+    .await
+}
+
+#[tauri::command]
 async fn load_database_overview_stats(
     state: State<'_, AppState>,
     payload: LoadDatabaseOverviewStatsPayload,
@@ -968,6 +1033,11 @@ pub fn run() {
             health_check_connection,
             load_schema_explorer,
             load_schema_relationships,
+            load_schema_map_positions,
+            save_schema_map_position,
+            reset_schema_map_positions,
+            load_schema_map_prefs,
+            save_schema_map_prefs,
             load_database_overview_stats,
             load_relation_stats,
             load_server_details,

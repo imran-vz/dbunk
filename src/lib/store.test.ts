@@ -1764,6 +1764,139 @@ describe("store.loadSchemaRelationships", () => {
   });
 });
 
+describe("store schema map positions and prefs", () => {
+  it("loads schema map positions into the nested cache", async () => {
+    mockedInvoke.mockResolvedValueOnce([
+      { tableId: "public.users", x: 10, y: 20 },
+      { tableId: "public.orders", x: 30, y: 40 },
+    ]);
+
+    await useAppStore.getState().loadSchemaMapPositions("conn-1", "public");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_schema_map_positions", {
+      payload: { connectionId: "conn-1", schema: "public" },
+    });
+    expect(useAppStore.getState().schemaMapPositions["conn-1"].public).toEqual({
+      "public.users": { x: 10, y: 20 },
+      "public.orders": { x: 30, y: 40 },
+    });
+    expect(
+      useAppStore.getState().schemaMapPositionsStatus["conn-1"].public,
+    ).toEqual({ state: "success" });
+  });
+
+  it("records schema map position load errors", async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error("disk full"));
+
+    await useAppStore.getState().loadSchemaMapPositions("conn-1", "public");
+
+    expect(
+      useAppStore.getState().schemaMapPositionsStatus["conn-1"].public,
+    ).toEqual({ state: "error", error: "disk full" });
+  });
+
+  it("saveSchemaMapPosition writes optimistically and flushes to Tauri", async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+
+    await useAppStore
+      .getState()
+      .saveSchemaMapPosition("conn-1", "public", "public.users", 50, 60);
+
+    expect(useAppStore.getState().schemaMapPositions["conn-1"].public).toEqual({
+      "public.users": { x: 50, y: 60 },
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith("save_schema_map_position", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        tableId: "public.users",
+        x: 50,
+        y: 60,
+      },
+    });
+  });
+
+  it("resetSchemaMapPositions clears local overrides and calls Tauri", async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+    useAppStore.setState({
+      schemaMapPositions: {
+        "conn-1": { public: { "public.users": { x: 10, y: 20 } } },
+      },
+    });
+
+    await useAppStore.getState().resetSchemaMapPositions("conn-1", "public");
+
+    expect(useAppStore.getState().schemaMapPositions["conn-1"].public).toEqual(
+      {},
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith("reset_schema_map_positions", {
+      payload: { connectionId: "conn-1", schema: "public" },
+    });
+  });
+
+  it("loads schema map prefs", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      routing: "step",
+      attrMode: "keys-only",
+      showTypes: false,
+      showNulls: true,
+      showComments: true,
+    });
+
+    await useAppStore.getState().loadSchemaMapPrefs("conn-1", "public");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_schema_map_prefs", {
+      payload: { connectionId: "conn-1", schema: "public" },
+    });
+    expect(useAppStore.getState().schemaMapPrefs["conn-1"].public).toEqual({
+      routing: "step",
+      attrMode: "keys-only",
+      showTypes: false,
+      showNulls: true,
+      showComments: true,
+    });
+  });
+
+  it("setSchemaMapPref updates locally and persists the patch", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      routing: "bezier",
+      attrMode: "all",
+      showTypes: true,
+      showNulls: true,
+      showComments: false,
+    });
+
+    await useAppStore
+      .getState()
+      .setSchemaMapPref("conn-1", "public", { showNulls: true });
+
+    expect(mockedInvoke).toHaveBeenCalledWith("save_schema_map_prefs", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        patch: { showNulls: true },
+      },
+    });
+    expect(useAppStore.getState().schemaMapPrefs["conn-1"].public).toEqual({
+      routing: "bezier",
+      attrMode: "all",
+      showTypes: true,
+      showNulls: true,
+      showComments: false,
+    });
+  });
+
+  it("schema map loaders no-op on empty ids", async () => {
+    await useAppStore.getState().loadSchemaMapPositions("", "public");
+    await useAppStore.getState().loadSchemaMapPrefs("conn-1", "");
+    await useAppStore
+      .getState()
+      .saveSchemaMapPosition("conn-1", "public", "", 1, 2);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
 describe("store.loadDatabaseOverviewStats", () => {
   const statsResult = {
     databaseSizeBytes: 10485760,
@@ -2973,6 +3106,25 @@ describe("connectionOverviewTab", () => {
         "conn-1": "schemas",
         "conn-2": "details",
       },
+      connectionSchemaMapSchema: {
+        "conn-1": "public",
+        "conn-2": "audit",
+      },
+      schemaMapPositions: {
+        "conn-1": { public: { "public.users": { x: 1, y: 2 } } },
+        "conn-2": { audit: { "audit.events": { x: 3, y: 4 } } },
+      },
+      schemaMapPrefs: {
+        "conn-1": {
+          public: {
+            routing: "step",
+            attrMode: "all",
+            showTypes: true,
+            showNulls: false,
+            showComments: false,
+          },
+        },
+      },
     });
 
     useAppStore.getState().disconnectConnection("conn-1");
@@ -2980,6 +3132,11 @@ describe("connectionOverviewTab", () => {
     expect(useAppStore.getState().connectionOverviewTab).toEqual({
       "conn-2": "details",
     });
+    expect(useAppStore.getState().connectionSchemaMapSchema).toEqual({
+      "conn-2": "audit",
+    });
+    expect(useAppStore.getState().schemaMapPositions["conn-1"]).toBeUndefined();
+    expect(useAppStore.getState().schemaMapPrefs["conn-1"]).toBeUndefined();
   });
 
   it("deleteConnection (non-Tauri branch) drops the connection's sub-tab entry", async () => {
@@ -2991,12 +3148,19 @@ describe("connectionOverviewTab", () => {
         "conn-1": "tables",
         "conn-2": "details",
       },
+      connectionSchemaMapSchema: {
+        "conn-1": "public",
+        "conn-2": "audit",
+      },
     });
 
     await useAppStore.getState().deleteConnection("conn-1");
 
     expect(useAppStore.getState().connectionOverviewTab).toEqual({
       "conn-2": "details",
+    });
+    expect(useAppStore.getState().connectionSchemaMapSchema).toEqual({
+      "conn-2": "audit",
     });
   });
 });

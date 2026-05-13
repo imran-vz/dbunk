@@ -97,9 +97,16 @@ export type ConnectionsSlice = {
    * or deleted so the record can't drift away from `connections`.
    */
   connectionOverviewTab: Record<string, OverviewTabId>;
+  /**
+   * Last schema selected inside the schema-map Overview sub-tab.
+   * Kept per connection so returning to a map resumes the graph the
+   * user was arranging without leaking across connections.
+   */
+  connectionSchemaMapSchema: Record<string, string>;
 
   setActiveConnectionId: (id: string) => void;
   setConnectionOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
+  setConnectionSchemaMapSchema: (connectionId: string, schema: string) => void;
   loadConnections: () => Promise<void>;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
@@ -124,6 +131,7 @@ export const createConnectionsSlice: StateCreator<
   connections: [],
   activeConnectionId: "",
   connectionOverviewTab: {},
+  connectionSchemaMapSchema: {},
 
   setActiveConnectionId: (id) => set({ activeConnectionId: id }),
 
@@ -135,6 +143,18 @@ export const createConnectionsSlice: StateCreator<
       connectionOverviewTab: {
         ...state.connectionOverviewTab,
         [connectionId]: tab,
+      },
+    }));
+  },
+
+  setConnectionSchemaMapSchema: (connectionId, schema) => {
+    if (!connectionId || !schema) {
+      return;
+    }
+    set((state) => ({
+      connectionSchemaMapSchema: {
+        ...state.connectionSchemaMapSchema,
+        [connectionId]: schema,
       },
     }));
   },
@@ -156,6 +176,11 @@ export const createConnectionsSlice: StateCreator<
           : (connections[0]?.id ?? ""),
         connectionOverviewTab: Object.fromEntries(
           Object.entries(state.connectionOverviewTab).filter(([key]) =>
+            liveIds.has(key),
+          ),
+        ),
+        connectionSchemaMapSchema: Object.fromEntries(
+          Object.entries(state.connectionSchemaMapSchema).filter(([key]) =>
             liveIds.has(key),
           ),
         ),
@@ -232,6 +257,7 @@ export const createConnectionsSlice: StateCreator<
     // schemaExplorer-filter / activeConnectionId-update logic moves to
     // get().dropRelationalCachesForConnection(id) etc.
     if (!isTauri()) {
+      get().dropRelationalCachesForConnection(connectionId);
       set((state) => {
         const connections = state.connections.filter(
           (c) => c.id !== connectionId,
@@ -242,6 +268,10 @@ export const createConnectionsSlice: StateCreator<
             : state.activeConnectionId;
         const { [connectionId]: _droppedTab, ...remainingTabs } =
           state.connectionOverviewTab;
+        const {
+          [connectionId]: _droppedSchemaMapSchema,
+          ...remainingSchemaMapSchemas
+        } = state.connectionSchemaMapSchema;
         return {
           connections,
           activeConnectionId: newActiveId,
@@ -251,6 +281,7 @@ export const createConnectionsSlice: StateCreator<
             ),
           ),
           connectionOverviewTab: remainingTabs,
+          connectionSchemaMapSchema: remainingSchemaMapSchemas,
         };
       });
       return;
@@ -263,6 +294,7 @@ export const createConnectionsSlice: StateCreator<
         },
       );
       const connections = stored.map(hydrateConnection);
+      get().dropRelationalCachesForConnection(connectionId);
       set((state) => {
         const newActiveId =
           state.activeConnectionId === connectionId
@@ -270,6 +302,10 @@ export const createConnectionsSlice: StateCreator<
             : state.activeConnectionId;
         const { [connectionId]: _droppedTab, ...remainingTabs } =
           state.connectionOverviewTab;
+        const {
+          [connectionId]: _droppedSchemaMapSchema,
+          ...remainingSchemaMapSchemas
+        } = state.connectionSchemaMapSchema;
         return {
           connections,
           activeConnectionId: newActiveId,
@@ -279,6 +315,7 @@ export const createConnectionsSlice: StateCreator<
             ),
           ),
           connectionOverviewTab: remainingTabs,
+          connectionSchemaMapSchema: remainingSchemaMapSchemas,
         };
       });
     } catch (error) {
@@ -454,6 +491,10 @@ export const createConnectionsSlice: StateCreator<
     set((state) => {
       const { [connectionId]: _droppedTab, ...remainingTabs } =
         state.connectionOverviewTab;
+      const {
+        [connectionId]: _droppedSchemaMapSchema,
+        ...remainingSchemaMapSchemas
+      } = state.connectionSchemaMapSchema;
       return {
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Disconnected",
@@ -462,6 +503,7 @@ export const createConnectionsSlice: StateCreator<
           errorMessage: undefined,
         }),
         connectionOverviewTab: remainingTabs,
+        connectionSchemaMapSchema: remainingSchemaMapSchemas,
       };
     });
   },

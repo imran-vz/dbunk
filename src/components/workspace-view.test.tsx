@@ -80,8 +80,9 @@ describe("WorkspaceView database overview", () => {
     expect(screen.getByText("Cocoa Comaa")).toBeTruthy();
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
 
-    // Page-level tab strip (visual-only, all six render)
+    // Page-level tab strip.
     expect(screen.getByText("Overview")).toBeTruthy();
+    expect(screen.getByText("Schema Map")).toBeTruthy();
     expect(screen.getByText("Query History")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();
 
@@ -220,6 +221,45 @@ describe("WorkspaceView overview sub-tabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Schemas" }));
 
     expect(screen.getByText(/Schemas is Postgres-only/)).toBeTruthy();
+  });
+
+  it("Schemas sub-tab map action switches to the Schema Map sub-tab", () => {
+    useAppStore.setState({
+      activeConnectionId: "conn-1",
+      activeTabId: "",
+      connections: [connectedConnection],
+      workspaceTabs: [],
+      connectionOverviewTab: { "conn-1": "schemas" },
+      schemaExplorer: {
+        "conn-1": [
+          { name: "public", tables: ["users"], views: [] },
+          { name: "audit", tables: ["events"], views: [] },
+        ],
+      },
+      relationStats: {
+        "conn-1": [
+          {
+            schema: "audit",
+            name: "events",
+            kind: "table",
+            rowCountEstimate: 10,
+            totalSizeBytes: 1024,
+          },
+        ],
+      },
+      relationStatsStatus: { "conn-1": { state: "success" } },
+    });
+
+    render(<WorkspaceView isClient={false} />);
+
+    fireEvent.click(screen.getByLabelText("View audit schema map"));
+
+    expect(useAppStore.getState().connectionOverviewTab["conn-1"]).toBe(
+      "schema-map",
+    );
+    expect(useAppStore.getState().connectionSchemaMapSchema["conn-1"]).toBe(
+      "audit",
+    );
   });
 
   it("the Recent Queries 'View all' button switches to the Query History sub-tab", () => {

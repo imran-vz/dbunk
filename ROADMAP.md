@@ -19,7 +19,7 @@ What already works:
 | Query editor + results grid | ✅ | `src/components/query-editor*`, `query-editor/*` |
 | Table editor (browse rows, inline cell commit, insert/delete, pending mutations) | ✅ | `src/components/table-editor*`, `src-tauri/src/postgres.rs` |
 | Table structure sub-tab (columns, indexes, FKs, constraints, pending DDL) | ✅ | `src/components/table-structure/*`, `fetch_table_structure` |
-| Schema relationship map (auto-layout, table nodes, FK edges) | 🟡 partial | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
+| Schema relationship map (auto-layout, table nodes, FK edges) | ✅ Phase 2 | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
 | Row export — CSV, JSON | 🟡 minimal | `src/lib/export.ts` (current result rows only) |
 | Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ✅ Phase 1 | `src/components/workspace-overview/{tables,schemas,query-history,details,settings}-tab.tsx` |
 | Connection-level settings page | ❌ | Sidebar gear-icon view exists but exposes no Postgres knobs |
@@ -38,15 +38,17 @@ Grouped by area. ❌ = absent, 🟡 = partial, ✅ = parity.
 - 🟡 "Settings" tab — read-only mirror of existing connection fields + Edit dialog launcher. SSH tunnel / keepalive / statement timeout / driver-level fields are deferred to a follow-up phase (new connection-record fields + backend wiring needed)
 
 ### 2. Schema relationship map
-- ❌ Cardinality notation (Crow's Foot / IDEF1X / Bachman)
-- ❌ Column-level edge anchors with `source.col → target.col` labels (currently table-box level only)
-- ❌ Persistent drag positions ("keep layout")
-- ❌ Attribute display modes (All / Keys-only / PK-only / None; toggles for types, NULL, comments)
-- ❌ Image export (PNG / SVG / GraphML)
+- ✅ Cardinality notation (Crow's Foot)
+- ✅ Column-level edge anchors with FK-column labels
+- ✅ Persistent drag positions ("keep layout")
+- ✅ Attribute display modes (All / Keys-only / None; toggles for types, NULL, comments)
+- ✅ Image export (PNG / SVG)
 - ❌ Virtual / user-drawn relationships
 - ❌ Notes / annotations on canvas
 - ❌ Multi-schema / custom-pick diagrams
-- ❌ Routing choice (shortest path vs orthogonal)
+- ✅ Routing choice (bezier vs orthogonal)
+
+Deferred schema-map items are tracked in [GitHub issue #17](https://github.com/imran-vz/dbunk/issues/17).
 
 ### 3. Object types in navigator
 Today: schemas → tables + views.
