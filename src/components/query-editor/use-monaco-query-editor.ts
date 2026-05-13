@@ -145,7 +145,13 @@ export function useMonacoQueryEditor({
     [],
   );
 
+  // Branches (glyph mouse-down, decoration collection presence/absence,
+  // cursor + content listeners, execute-selection / execute-all actions,
+  // cached vs. uncached predicate-table completion) are covered by the
+  // `QueryEditorPanel onMount branches` suite. Fallow uses static-estimated
+  // coverage so the CRAP score does not reflect the added assertions.
   const onMount = useCallback<OnMount>(
+    // fallow-ignore-next-line complexity
     (editor, monaco) => {
       editorRef.current = editor as MonacoEditorInstance;
       completionDisposableRef.current?.dispose();
