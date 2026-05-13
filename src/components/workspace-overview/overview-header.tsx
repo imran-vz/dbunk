@@ -1,0 +1,65 @@
+import { IconDatabaseOff } from "@tabler/icons-react";
+
+import { Button } from "@/components/ui/button";
+import { StatusDot } from "@/components/ui/status-dot";
+import { cn } from "@/lib/utils";
+
+const OVERVIEW_TABS = [
+  "Overview",
+  "Tables",
+  "Schemas",
+  "Query History",
+  "Details",
+  "Settings",
+] as const;
+
+export function OverviewHeader({
+  name,
+  onDisconnect,
+}: {
+  name: string;
+  onDisconnect: () => void;
+}) {
+  return (
+    <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border-subtle pb-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {name}
+          </h1>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-accent-green-hover">
+            <StatusDot tone="healthy" className="size-2" />
+            Connected
+          </span>
+        </div>
+        <nav
+          aria-label="Connection sections"
+          className="mt-3 flex flex-wrap items-center gap-1 text-xs"
+        >
+          {OVERVIEW_TABS.map((label, index) => {
+            const isActive = index === 0;
+            return (
+              <button
+                key={label}
+                type="button"
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  "rounded-md px-2.5 py-1 transition-colors",
+                  isActive
+                    ? "bg-accent-green/10 text-accent-green-hover"
+                    : "text-text-muted hover:bg-surface-panel hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onDisconnect}>
+        <IconDatabaseOff className="size-3.5" />
+        Disconnect
+      </Button>
+    </header>
+  );
+}
