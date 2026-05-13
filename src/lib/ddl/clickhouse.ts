@@ -73,7 +73,7 @@ const renderColumnDefinition = (column: NewColumn): string => {
   return parts.join(" ");
 };
 
-const renderChange = (
+export const renderChange = (
   schema: string,
   table: string,
   change: ColumnChangeKind,
