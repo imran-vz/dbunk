@@ -5,6 +5,7 @@ import { QueryEditorPanel } from "@/components/query-editor-panel";
 import { StatusBar } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import { AdminTab } from "@/components/workspace-overview/admin-tab";
+import { CompareTab } from "@/components/workspace-overview/compare-tab";
 import { ConnectionDetailsCard } from "@/components/workspace-overview/connection-details-card";
 import { DatabaseStatsCard } from "@/components/workspace-overview/database-stats-card";
 import { DetailsTab } from "@/components/workspace-overview/details-tab";
@@ -572,6 +573,10 @@ function OverviewTabBody({
       );
     }
     return <AdminTab connection={activeConnection} />;
+  }
+
+  if (activeTab === "compare") {
+    return <CompareTab connection={activeConnection} schemas={schemas} />;
   }
 
   // activeTab === "settings"

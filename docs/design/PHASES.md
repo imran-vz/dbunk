@@ -16,7 +16,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 6 | Object navigator depth | ✅ shipped | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
 | 7 | Admin tools | ✅ shipped | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
 | 8 | SQL editor depth | ✅ shipped | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
-| 9 | Compare + generate | planned | Schema compare, data compare, mock data — depends on Phase 6 coverage |
+| 9 | Compare + generate | ✅ shipped | Schema compare, data compare, mock data — depends on Phase 6 coverage |
 | 10 | Specialized editors | planned | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
 
 Phases 1–4 cover the three pain points named explicitly when setting the parity goal.
@@ -156,12 +156,18 @@ What landed:
 - EXPLAIN action runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)` for the current statement and displays the plan in the existing results grid.
 - Editor run hook now exposes current-statement and explicit-SQL execution so advanced toolbar actions share the same outcome/history path.
 
-## Phase 9 — Compare + generate
+## Phase 9 — Compare + generate — ✅ shipped
 Cross-cutting tools that depend on Phase 6's object coverage.
 
 - Schema compare (two schemas → diff + migration SQL)
 - Data compare (two tables → diff)
 - Mock data generator
+
+What landed:
+- New Compare overview tab.
+- Schema compare uses the enriched Phase 6 schema explorer to diff visible tables, views, materialized views, sequences, and functions between two schemas.
+- Data compare loads the first 100 rows from two chosen tables through the existing paged table-data command and reports column and sampled row differences.
+- Mock data generator emits ready-to-run INSERT statements for a selected table name.
 
 ## Phase 10 — Specialized editors
 Final polish — object-creation UIs and cell-level editors for Postgres-shaped data.
