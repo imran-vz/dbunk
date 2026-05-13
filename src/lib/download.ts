@@ -6,12 +6,19 @@
 export function downloadFile(
   filename: string,
   mime: string,
-  content: string,
+  content: BlobPart,
 ): void {
   if (typeof document === "undefined" || typeof URL === "undefined") {
     return;
   }
   const blob = new Blob([content], { type: mime });
+  downloadBlob(filename, blob);
+}
+
+export function downloadBlob(filename: string, blob: Blob): void {
+  if (typeof document === "undefined" || typeof URL === "undefined") {
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

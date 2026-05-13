@@ -40,8 +40,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { downloadFile } from "@/lib/download";
-import { type ExportTable, toCsv, toJson } from "@/lib/export";
+import { downloadBlob, downloadFile } from "@/lib/download";
+import {
+  type ExportCompression,
+  type ExportEncoding,
+  type ExportFormat,
+  type ExportTable,
+  prepareExport,
+  prepareExportBlob,
+} from "@/lib/export";
 import { cn } from "@/lib/utils";
 
 const FILTER_OPERATORS = [
@@ -195,6 +202,20 @@ export interface DataGridProps {
    */
   rowSelection?: RowSelectionState;
   onRowSelectionChange?: (selection: RowSelectionState) => void;
+  onExportWholeTable?: (options: {
+    format: ExportFormat;
+    encoding: ExportEncoding;
+    compression: ExportCompression;
+    nullAs: string;
+  }) => Promise<void>;
+  onSaveExportTask?: (options: {
+    format: ExportFormat;
+    encoding: ExportEncoding;
+    compression: ExportCompression;
+    nullAs: string;
+  }) => void;
+  onRunSavedExportTask?: () => Promise<void>;
+  hasSavedExportTask?: boolean;
 }
 
 export function DataGrid({
@@ -214,6 +235,10 @@ export function DataGrid({
   toolbarLeading,
   rowSelection: rowSelectionProp,
   onRowSelectionChange,
+  onExportWholeTable,
+  onSaveExportTask,
+  onRunSavedExportTask,
+  hasSavedExportTask,
 }: DataGridProps) {
   // When the grid is read-only we do not propagate the editor wiring to
   // cells. This both prevents `onEdit` from being called and makes the
@@ -256,6 +281,11 @@ export function DataGrid({
   const [draftColumn, setDraftColumn] = useState<string>(columnNames[0] ?? "");
   const [draftOperator, setDraftOperator] = useState("equals");
   const [draftValue, setDraftValue] = useState("");
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
+  const [exportEncoding, setExportEncoding] = useState<ExportEncoding>("utf-8");
+  const [exportCompression, setExportCompression] =
+    useState<ExportCompression>("none");
+  const [exportNullAs, setExportNullAs] = useState("");
 
   useEffect(() => {
     if (columnNames.length === 0) return;
@@ -395,38 +425,47 @@ export function DataGrid({
     [table, columnNames],
   );
 
-  const filenameFor = useCallback(
-    (mode: "all" | "selected", ext: "csv" | "json") => {
-      const base = exportFilenameBase || "export";
-      const suffix = mode === "selected" ? "-selected" : "";
-      return `${base}${suffix}.${ext}`;
+  const handleExport = useCallback(
+    async (mode: "all" | "selected", format: ExportFormat) => {
+      const exportTable = buildExportTable(mode);
+      const filenameBase = `${exportFilenameBase || "export"}${
+        mode === "selected" ? "-selected" : ""
+      }`;
+      const prepared = prepareExport(exportTable, {
+        format,
+        filenameBase,
+        encoding: exportEncoding,
+        compression: exportCompression,
+        nullAs: exportNullAs,
+      });
+      if (exportCompression === "gzip") {
+        const { filename, blob } = await prepareExportBlob(exportTable, {
+          format,
+          filenameBase,
+          encoding: exportEncoding,
+          compression: exportCompression,
+          nullAs: exportNullAs,
+        });
+        downloadBlob(filename, blob);
+        return;
+      }
+      downloadFile(prepared.filename, prepared.mime, prepared.content);
     },
-    [exportFilenameBase],
+    [
+      buildExportTable,
+      exportCompression,
+      exportEncoding,
+      exportFilenameBase,
+      exportNullAs,
+    ],
   );
 
-  const handleExportCsv = useCallback(
-    (mode: "all" | "selected") => {
-      const exportTable = buildExportTable(mode);
-      downloadFile(
-        filenameFor(mode, "csv"),
-        "text/csv;charset=utf-8",
-        toCsv(exportTable),
-      );
-    },
-    [buildExportTable, filenameFor],
-  );
-
-  const handleExportJson = useCallback(
-    (mode: "all" | "selected") => {
-      const exportTable = buildExportTable(mode);
-      downloadFile(
-        filenameFor(mode, "json"),
-        "application/json;charset=utf-8",
-        toJson(exportTable, { pretty: true }),
-      );
-    },
-    [buildExportTable, filenameFor],
-  );
+  const exportSettings = {
+    format: exportFormat,
+    encoding: exportEncoding,
+    compression: exportCompression,
+    nullAs: exportNullAs,
+  };
   const visibleDataColumnCount = Math.max(
     1,
     table.getVisibleLeafColumns().filter((column) => column.id !== "select")
@@ -587,39 +626,151 @@ export function DataGrid({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => handleExportJson("all")}>
-                  <IconDownload className="mr-2 size-3.5" />
-                  Export all to .json
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportCsv("all")}>
-                  <IconDownload className="mr-2 size-3.5" />
-                  Export all to .csv
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <IconDownload className="mr-2 size-3.5" />
-                  Export all to .xlsx
-                </DropdownMenuItem>
+                <div className="px-2 py-1.5 text-xs font-semibold">
+                  Current result rows
+                </div>
+                {(
+                  [
+                    "json",
+                    "csv",
+                    "sql",
+                    "html",
+                    "markdown",
+                    "txt",
+                    "xlsx",
+                  ] as const
+                ).map((format) => (
+                  <DropdownMenuItem
+                    key={`all-${format}`}
+                    onClick={() => {
+                      void handleExport("all", format);
+                    }}
+                  >
+                    <IconDownload className="mr-2 size-3.5" />
+                    Export all to .{format === "markdown" ? "md" : format}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuItem
-                  disabled={!hasSelection}
-                  onClick={() => handleExportJson("selected")}
+                <div className="px-2 py-1.5 text-xs font-semibold">
+                  Selected rows
+                </div>
+                {(
+                  [
+                    "json",
+                    "csv",
+                    "sql",
+                    "html",
+                    "markdown",
+                    "txt",
+                    "xlsx",
+                  ] as const
+                ).map((format) => (
+                  <DropdownMenuItem
+                    key={`selected-${format}`}
+                    disabled={!hasSelection}
+                    onClick={() => {
+                      void handleExport("selected", format);
+                    }}
+                  >
+                    <IconDownload className="mr-2 size-3.5" />
+                    Export selected to .{format === "markdown" ? "md" : format}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+              {onExportWholeTable ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <div className="px-2 py-1.5 text-xs font-semibold">
+                      Whole table
+                    </div>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        void onExportWholeTable(exportSettings);
+                      }}
+                    >
+                      <IconDownload className="mr-2 size-3.5" />
+                      Export whole table
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!onSaveExportTask}
+                      onClick={() => onSaveExportTask?.(exportSettings)}
+                    >
+                      <IconDeviceFloppy className="mr-2 size-3.5" />
+                      Save export task
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!hasSavedExportTask || !onRunSavedExportTask}
+                      onClick={() => {
+                        void onRunSavedExportTask?.();
+                      }}
+                    >
+                      <IconRefresh className="mr-2 size-3.5" />
+                      Run saved export task
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <div className="px-2 py-1.5 text-xs font-semibold">
+                  Export options
+                </div>
+                <DropdownMenuCheckboxItem
+                  checked={exportEncoding === "utf-16le"}
+                  onCheckedChange={(checked) =>
+                    setExportEncoding(checked ? "utf-16le" : "utf-8")
+                  }
                 >
-                  <IconDownload className="mr-2 size-3.5" />
-                  Export selected to .json
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!hasSelection}
-                  onClick={() => handleExportCsv("selected")}
+                  UTF-16LE encoding
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={exportCompression === "gzip"}
+                  onCheckedChange={(checked) =>
+                    setExportCompression(checked ? "gzip" : "none")
+                  }
                 >
-                  <IconDownload className="mr-2 size-3.5" />
-                  Export selected to .csv
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <IconDownload className="mr-2 size-3.5" />
-                  Export selected to .xlsx
-                </DropdownMenuItem>
+                  Gzip compression
+                </DropdownMenuCheckboxItem>
+                <div className="px-2 py-1.5">
+                  <Input
+                    className="h-7 text-xs"
+                    placeholder="NULL token"
+                    value={exportNullAs}
+                    onChange={(event) => setExportNullAs(event.target.value)}
+                  />
+                </div>
+                <div className="px-2 py-1.5">
+                  <Select
+                    value={exportFormat}
+                    onValueChange={(value) =>
+                      setExportFormat((value as ExportFormat) ?? "csv")
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(
+                        [
+                          "csv",
+                          "json",
+                          "sql",
+                          "html",
+                          "markdown",
+                          "txt",
+                          "xlsx",
+                        ] as const
+                      ).map((format) => (
+                        <SelectItem key={format} value={format}>
+                          {format}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
