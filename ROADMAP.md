@@ -21,7 +21,7 @@ What already works:
 | Table structure sub-tab (columns, indexes, FKs, constraints, pending DDL) | ✅ | `src/components/table-structure/*`, `fetch_table_structure` |
 | Schema relationship map (auto-layout, table nodes, FK edges) | 🟡 partial | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
 | Row export — CSV, JSON | 🟡 minimal | `src/lib/export.ts` (current result rows only) |
-| Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ❌ stub only | `overview-header.tsx` — static buttons, no click handler |
+| Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ✅ Phase 1 | `src/components/workspace-overview/{tables,schemas,query-history,details,settings}-tab.tsx` |
 | Connection-level settings page | ❌ | Sidebar gear-icon view exists but exposes no Postgres knobs |
 
 ---
@@ -30,12 +30,12 @@ What already works:
 
 Grouped by area. ❌ = absent, 🟡 = partial, ✅ = parity.
 
-### 1. Connection-level navigation
-- ❌ "Tables" tab — flat searchable list across the DB
-- ❌ "Schemas" tab — schema list with object counts/sizes
-- ❌ "Query History" tab — `queryHistory` exists in store, no dedicated view
-- ❌ "Details" tab — server version, encoding, locale, timezone, installed extensions, `SHOW ALL` settings
-- ❌ "Settings" tab — per-connection driver/SSL/SSH tunnel/keepalive/timeout/role
+### 1. Connection-level navigation — ✅ Phase 1
+- ✅ "Tables" tab — flat searchable list (degrades stats columns on non-PG)
+- ✅ "Schemas" tab — per-schema table/view/matview counts + size (PG-only)
+- ✅ "Query History" tab — current-connection-scoped view with search + status filters; cap raised to 2000 entries
+- ✅ "Details" tab — server version, encoding, locale, timezone, `pg_settings` catalogue with modified-only filter, installed extensions (PG-only)
+- 🟡 "Settings" tab — read-only mirror of existing connection fields + Edit dialog launcher. SSH tunnel / keepalive / statement timeout / driver-level fields are deferred to a follow-up phase (new connection-record fields + backend wiring needed)
 
 ### 2. Schema relationship map
 - ❌ Cardinality notation (Crow's Foot / IDEF1X / Bachman)
