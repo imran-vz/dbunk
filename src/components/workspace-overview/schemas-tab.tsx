@@ -2,6 +2,7 @@ import {
   IconArrowDown,
   IconArrowsSort,
   IconArrowUp,
+  IconMap,
   IconRefresh,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
@@ -41,12 +42,14 @@ export function SchemasTab({
   relationStatsStatus,
   onLoadRelationStats,
   onSelectSchema,
+  onViewSchemaMap,
 }: {
   activeConnection: Connection;
   relationStats: RelationInfo[] | undefined;
   relationStatsStatus: RelationStatsStatus | undefined;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
   onSelectSchema: (schema: string) => void;
+  onViewSchemaMap: (schema: string) => void;
 }) {
   const [sortColumn, setSortColumn] = useState<SortColumn>("schema");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -200,6 +203,9 @@ export function SchemasTab({
                     sortDirection={sortDirection}
                     onSort={handleSort}
                   />
+                  <th className="w-10 px-3 py-1.5 text-right font-medium">
+                    Map
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -228,6 +234,21 @@ export function SchemasTab({
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-text-muted">
                       {formatBytes(row.totalSizeBytes)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`View ${row.schema} schema map`}
+                        title="View schema map"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onViewSchemaMap(row.schema);
+                        }}
+                      >
+                        <IconMap className="size-3" />
+                      </Button>
                     </td>
                   </tr>
                 ))}

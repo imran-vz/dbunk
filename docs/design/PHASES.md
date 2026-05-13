@@ -9,7 +9,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | # | Phase | Status | Why this slot |
 |---|---|---|---|
 | 1 | Wire the connection-level tabs | ✅ shipped | Smallest scope, biggest perceived completeness win; most views are thin wrappers over data the store already has |
-| 2 | Schema map overhaul | next | Directly addresses the "schema map is really not great" pain |
+| 2 | Schema map overhaul | ✅ shipped | Directly addresses the "schema map is really not great" pain |
 | 3 | Data export upgrade | planned | First half of the import/export pain — lay the transfer foundation |
 | 4 | Data import wizard | planned | Second half — bulk inbound; pairs with Phase 3's transfer surface |
 | 5 | DDL + dump/restore | planned | Schema-level export and full `pg_dump`/`pg_restore` backups |
@@ -38,16 +38,25 @@ Cross-cutting:
 - Postgres-only sub-tabs (Schemas, Details) render a degraded explainer panel on MySQL/SQLite/ClickHouse rather than disappearing from the nav.
 - Two new Tauri commands (`load_relation_stats`, `load_server_details`) — lazy on first sub-tab activation, dropped on disconnect, invalidated on DDL commit (relation stats).
 
-## Phase 2 — Schema map overhaul
-Address the explicit "schema map is not great" pain.
+## Phase 2 — Schema map overhaul — ✅ shipped
+Made the schema map a durable, exportable graph surface rather than a static preview.
 
-- Crow's Foot cardinality notation on FK edges
-- Column-level handles + `source.col → target.col` edge labels
-- Persistent drag positions per (connection, schema)
-- Attribute display modes (All / Keys-only / None; toggles for type, NULL, comment)
-- Image export (PNG, SVG)
-- Routing choice (orthogonal as alternative to default)
-- Stretch: notes/annotations on canvas
+What landed:
+- Dedicated Schema Map overview sub-tab with per-connection last-viewed schema selection and deep-link actions from the Schemas tab.
+- Dagre LR auto-layout with SQLite-backed drag positions per `(connection, schema, table)` and a Reset layout action.
+- Column-level FK handles, always-visible FK labels, Crow's Foot markers inferred from FK nullability, and bezier/step routing preferences.
+- Attribute controls persisted per `(connection, schema)`: All / Keys-only / None plus Types, NULL, and Comments toggles.
+- PNG and SVG export with normalized filenames and a light export theme.
+- PostgreSQL column comments via `pg_description`; ClickHouse continues to render maps without FK edges and empty comments.
+
+Deferred:
+- Notes / annotations on canvas.
+- Virtual / user-drawn relationships.
+- MySQL / SQLite FK introspection.
+- 1:1 cardinality detection.
+- Multi-schema canvases.
+
+Tracking: [Schema map Phase 2 deferred follow-ups](https://github.com/imran-vz/dbunk/issues/17).
 
 ## Phase 3 — Data export upgrade
 Lay the foundation for a real data-transfer surface. Result-set export stays; this phase adds whole-table export and more formats.

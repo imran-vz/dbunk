@@ -600,6 +600,46 @@ pub(crate) struct LoadSchemaRelationshipsPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SchemaMapScopePayload {
+    pub connection_id: String,
+    pub schema: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveSchemaMapPositionPayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub table_id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SchemaMapPrefsPatch {
+    #[serde(default)]
+    pub routing: Option<String>,
+    #[serde(default)]
+    pub attr_mode: Option<String>,
+    #[serde(default)]
+    pub show_types: Option<bool>,
+    #[serde(default)]
+    pub show_nulls: Option<bool>,
+    #[serde(default)]
+    pub show_comments: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveSchemaMapPrefsPayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub patch: SchemaMapPrefsPatch,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct LoadDatabaseOverviewStatsPayload {
     pub connection_id: String,
 }
@@ -787,6 +827,7 @@ pub(crate) struct SchemaTableColumn {
     pub nullable: bool,
     pub is_primary_key: bool,
     pub ordinal_position: i32,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -815,6 +856,24 @@ pub(crate) struct SchemaForeignKey {
 pub(crate) struct SchemaRelationships {
     pub tables: Vec<SchemaTableNode>,
     pub foreign_keys: Vec<SchemaForeignKey>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PositionRow {
+    pub table_id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SchemaMapPrefs {
+    pub routing: String,
+    pub attr_mode: String,
+    pub show_types: bool,
+    pub show_nulls: bool,
+    pub show_comments: bool,
 }
 
 #[derive(Debug, Serialize)]

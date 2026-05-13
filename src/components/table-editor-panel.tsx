@@ -1,7 +1,10 @@
 import { IconMaximize, IconX } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { SchemaRelationshipMap } from "@/components/schema-relationship-map";
+import {
+  SchemaRelationshipMap,
+  type SchemaRelationshipMapHandle,
+} from "@/components/schema-relationship-map";
 import { StatusBar } from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
 import { TableEditorBody } from "@/components/table-editor/body";
@@ -26,7 +29,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  type SchemaMapExportFormat,
+  SchemaMapToolbar,
+  schemaMapExportFilename,
+} from "@/components/workspace-overview/schema-map-toolbar";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
+import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
 import {
   type EditOutcome,
   type TablePreviewData,
@@ -221,8 +230,19 @@ export interface TableSidebarProps {
 }
 
 export function TableSidebar({ tab, isClient }: TableSidebarProps) {
-  const { tablePreviews } = useAppStore();
+  const {
+    connectionSchemaMapSchema,
+    connections,
+    resetSchemaMapPositions,
+    schemaExplorer,
+    schemaMapPrefs,
+    setConnectionSchemaMapSchema,
+    setSchemaMapPref,
+    tablePreviews,
+  } = useAppStore();
   const [isSchemaMapFullscreen, setIsSchemaMapFullscreen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const fullscreenMapRef = useRef<SchemaRelationshipMapHandle>(null);
 
   const activeTablePreview: TablePreviewData | null = useMemo(() => {
     if (tab.kind !== "table") {
@@ -241,6 +261,18 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
   }, [tab, tablePreviews]);
 
   const activeTable = tab.kind === "table" ? (tab.table ?? null) : null;
+  const connection = connections.find((entry) => entry.id === tab.connectionId);
+  const schemaNames = useMemo(() => {
+    const names =
+      schemaExplorer[tab.connectionId]?.map((schema) => schema.name) ?? [];
+    const unique = [...new Set([tab.schema, ...names].filter(Boolean))];
+    return unique.sort();
+  }, [schemaExplorer, tab.connectionId, tab.schema]);
+  const fullscreenSchema =
+    connectionSchemaMapSchema[tab.connectionId] ?? tab.schema;
+  const fullscreenPrefs =
+    schemaMapPrefs[tab.connectionId]?.[fullscreenSchema] ??
+    DEFAULT_SCHEMA_MAP_PREFS;
 
   useEffect(() => {
     if (!isSchemaMapFullscreen) {
@@ -254,6 +286,22 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isSchemaMapFullscreen]);
+
+  const handleFullscreenExport = async (format: SchemaMapExportFormat) => {
+    setExportError(null);
+    try {
+      await fullscreenMapRef.current?.exportImage(
+        format,
+        schemaMapExportFilename(
+          connection?.name ?? tab.connectionId,
+          fullscreenSchema,
+          format,
+        ),
+      );
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <>
@@ -338,8 +386,10 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
             <div className="min-w-0">
               <div className="text-sm font-semibold">Schema map</div>
               <div className="truncate text-xs text-text-muted">
-                {tab.schema}
-                {activeTable ? ` / ${activeTable}` : ""}
+                {fullscreenSchema}
+                {activeTable && fullscreenSchema === tab.schema
+                  ? ` / ${activeTable}`
+                  : ""}
               </div>
             </div>
             <Button
@@ -352,12 +402,33 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
               Close
             </Button>
           </div>
+          <SchemaMapToolbar
+            schemas={schemaNames}
+            selectedSchema={fullscreenSchema}
+            prefs={fullscreenPrefs}
+            exportError={exportError}
+            onSchemaChange={(schema) =>
+              setConnectionSchemaMapSchema(tab.connectionId, schema)
+            }
+            onPrefsChange={(patch) => {
+              void setSchemaMapPref(tab.connectionId, fullscreenSchema, patch);
+            }}
+            onResetLayout={() => {
+              void resetSchemaMapPositions(tab.connectionId, fullscreenSchema);
+            }}
+            onExport={(format) => {
+              void handleFullscreenExport(format);
+            }}
+          />
           <div className="min-h-0 flex-1 p-3">
             <div className="h-full overflow-hidden rounded-md border border-border-subtle bg-surface-window">
               <SchemaRelationshipMap
+                ref={fullscreenMapRef}
                 connectionId={tab.connectionId}
-                schema={tab.schema}
-                activeTable={activeTable}
+                schema={fullscreenSchema}
+                activeTable={
+                  fullscreenSchema === tab.schema ? activeTable : null
+                }
                 isClient={isClient}
               />
             </div>

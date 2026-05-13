@@ -12,7 +12,13 @@
  */
 
 import type { ColumnChangeKind, PendingChange } from "@/lib/ddl";
-import type { SchemaRelationships } from "@/lib/schema-graph";
+import type {
+  SchemaMapAttrMode,
+  SchemaMapPosition,
+  SchemaMapPrefs,
+  SchemaMapRouting,
+  SchemaRelationships,
+} from "@/lib/schema-graph";
 
 // ---------------------------------------------------------------------------
 // Engine + storage class
@@ -199,6 +205,8 @@ export type TableLoadStatus =
   | { state: "loading" }
   | { state: "success" }
   | { state: "error"; error: string };
+
+export type LoadingStatus = TableLoadStatus;
 
 // ---------------------------------------------------------------------------
 // Table data + structure
@@ -460,7 +468,13 @@ export type ServerDetailsStatus =
 // state type (and slice files) can refer to them through one import
 // path.
 export type { ColumnChangeKind, PendingChange };
-export type { SchemaRelationships };
+export type {
+  SchemaMapAttrMode,
+  SchemaMapPosition,
+  SchemaMapPrefs,
+  SchemaMapRouting,
+  SchemaRelationships,
+};
 
 // ---------------------------------------------------------------------------
 // Schema explorer + saved queries + history
@@ -566,6 +580,7 @@ export type OverviewTabId =
   | "overview"
   | "tables"
   | "schemas"
+  | "schema-map"
   | "query-history"
   | "details"
   | "settings";

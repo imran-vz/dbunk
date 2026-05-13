@@ -838,8 +838,21 @@ pub async fn fetch_schema_relationships(
                c.udt_name::text AS udt_name,
                c.is_nullable::text AS is_nullable,
                c.ordinal_position::int AS ordinal_position,
-               (kcu.column_name IS NOT NULL) AS is_primary_key
+               (kcu.column_name IS NOT NULL) AS is_primary_key,
+               d.description::text AS comment
         FROM information_schema.columns c
+        LEFT JOIN pg_namespace pg_nsp
+          ON pg_nsp.nspname = c.table_schema
+        LEFT JOIN pg_class pg_cls
+          ON pg_cls.relnamespace = pg_nsp.oid
+         AND pg_cls.relname = c.table_name
+        LEFT JOIN pg_attribute a
+          ON a.attrelid = pg_cls.oid
+         AND a.attname = c.column_name
+         AND a.attnum > 0
+        LEFT JOIN pg_description d
+          ON d.objoid = pg_cls.oid
+         AND d.objsubid = a.attnum
         LEFT JOIN information_schema.table_constraints tc
           ON tc.constraint_type = 'PRIMARY KEY'
          AND tc.table_schema = c.table_schema
@@ -879,6 +892,7 @@ pub async fn fetch_schema_relationships(
                     .eq_ignore_ascii_case("YES"),
                 is_primary_key: row.try_get("is_primary_key").unwrap_or(false),
                 ordinal_position: row.try_get("ordinal_position").unwrap_or(0),
+                comment: row.try_get::<Option<String>, _>("comment").unwrap_or(None),
             });
     }
 

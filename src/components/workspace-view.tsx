@@ -17,6 +17,7 @@ import { OverviewHeader } from "@/components/workspace-overview/overview-header"
 import { PostgresOnlyPanel } from "@/components/workspace-overview/placeholder-panel";
 import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { RecentQueriesCard } from "@/components/workspace-overview/recent-queries-card";
+import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { SchemasTab } from "@/components/workspace-overview/schemas-tab";
 import { SettingsTab } from "@/components/workspace-overview/settings-tab";
 import { TablesTab } from "@/components/workspace-overview/tables-tab";
@@ -65,6 +66,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     serverDetails,
     serverDetailsStatus,
     setConnectionOverviewTab,
+    setConnectionSchemaMapSchema,
   } = useAppStore();
 
   const activeConnection = useMemo(
@@ -147,6 +149,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
                 : undefined
             }
             onSetOverviewTab={setConnectionOverviewTab}
+            onSetSchemaMapSchema={setConnectionSchemaMapSchema}
             onLoadStats={loadDatabaseOverviewStats}
             onLoadRelationStats={loadRelationStats}
             onLoadServerDetails={loadServerDetails}
@@ -155,6 +158,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
             onConnectConnection={connectConnection}
             onDisconnectConnection={disconnectConnection}
             onReopenHistoryEntry={reopenHistoryEntry}
+            isClient={isClient}
           />
         )}
       </div>
@@ -182,6 +186,7 @@ type WorkspaceDatabaseOverviewProps = {
   serverDetails: ServerDetails | undefined;
   serverDetailsStatus: ServerDetailsStatus | undefined;
   onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
+  onSetSchemaMapSchema: (connectionId: string, schema: string) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
   onLoadServerDetails: (connectionId: string) => Promise<void>;
@@ -190,6 +195,7 @@ type WorkspaceDatabaseOverviewProps = {
   onConnectConnection: (connectionId: string) => Promise<void>;
   onDisconnectConnection: (connectionId: string) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
+  isClient: boolean;
 };
 
 function WorkspaceDatabaseOverview({
@@ -204,6 +210,7 @@ function WorkspaceDatabaseOverview({
   serverDetails,
   serverDetailsStatus,
   onSetOverviewTab,
+  onSetSchemaMapSchema,
   onLoadStats,
   onLoadRelationStats,
   onLoadServerDetails,
@@ -212,6 +219,7 @@ function WorkspaceDatabaseOverview({
   onConnectConnection,
   onDisconnectConnection,
   onReopenHistoryEntry,
+  isClient,
 }: WorkspaceDatabaseOverviewProps) {
   if (!activeConnection) {
     return <NoConnectionCard />;
@@ -256,12 +264,14 @@ function WorkspaceDatabaseOverview({
       serverDetails={serverDetails}
       serverDetailsStatus={serverDetailsStatus}
       onSetOverviewTab={onSetOverviewTab}
+      onSetSchemaMapSchema={onSetSchemaMapSchema}
       onLoadStats={onLoadStats}
       onLoadRelationStats={onLoadRelationStats}
       onLoadServerDetails={onLoadServerDetails}
       onOpenTable={onOpenTable}
       onDisconnectConnection={onDisconnectConnection}
       onReopenHistoryEntry={onReopenHistoryEntry}
+      isClient={isClient}
     />
   );
 }
@@ -279,12 +289,14 @@ type ConnectedOverviewProps = {
   serverDetails: ServerDetails | undefined;
   serverDetailsStatus: ServerDetailsStatus | undefined;
   onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
+  onSetSchemaMapSchema: (connectionId: string, schema: string) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
   onLoadServerDetails: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onDisconnectConnection: (connectionId: string) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
+  isClient: boolean;
 };
 
 function ConnectedOverview({
@@ -300,12 +312,14 @@ function ConnectedOverview({
   serverDetails,
   serverDetailsStatus,
   onSetOverviewTab,
+  onSetSchemaMapSchema,
   onLoadStats,
   onLoadRelationStats,
   onLoadServerDetails,
   onOpenTable,
   onDisconnectConnection,
   onReopenHistoryEntry,
+  isClient,
 }: ConnectedOverviewProps) {
   const view = useDatabaseOverview({
     activeConnection,
@@ -338,6 +352,11 @@ function ConnectedOverview({
     onSetOverviewTab(activeConnection.id, "tables");
   };
 
+  const handleViewSchemaMapFromSchemasTab = (schema: string) => {
+    onSetSchemaMapSchema(activeConnection.id, schema);
+    onSetOverviewTab(activeConnection.id, "schema-map");
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-auto">
@@ -363,11 +382,13 @@ function ConnectedOverview({
             tablesSchemaFilter={tablesSchemaFilter}
             onClearTablesSchemaFilter={() => setTablesSchemaFilter(null)}
             onSelectSchemaFromSchemasTab={handleSelectSchemaFromSchemasTab}
+            onViewSchemaMapFromSchemasTab={handleViewSchemaMapFromSchemasTab}
             onLoadRelationStats={onLoadRelationStats}
             onLoadServerDetails={onLoadServerDetails}
             onOpenTable={onOpenTable}
             onSwitchTab={handleTabChange}
             onReopenHistoryEntry={onReopenHistoryEntry}
+            isClient={isClient}
           />
         </div>
       </div>
@@ -390,11 +411,13 @@ type OverviewTabBodyProps = {
   tablesSchemaFilter: string | null;
   onClearTablesSchemaFilter: () => void;
   onSelectSchemaFromSchemasTab: (schema: string) => void;
+  onViewSchemaMapFromSchemasTab: (schema: string) => void;
   onLoadRelationStats: (connectionId: string) => Promise<void>;
   onLoadServerDetails: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onSwitchTab: (tab: OverviewTabId) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
+  isClient: boolean;
 };
 
 /**
@@ -419,11 +442,13 @@ function OverviewTabBody({
   tablesSchemaFilter,
   onClearTablesSchemaFilter,
   onSelectSchemaFromSchemasTab,
+  onViewSchemaMapFromSchemasTab,
   onLoadRelationStats,
   onLoadServerDetails,
   onOpenTable,
   onSwitchTab,
   onReopenHistoryEntry,
+  isClient,
 }: OverviewTabBodyProps) {
   const isPostgres = activeConnection.engine === "PostgreSQL";
 
@@ -495,6 +520,17 @@ function OverviewTabBody({
         relationStatsStatus={relationStatsStatus}
         onLoadRelationStats={onLoadRelationStats}
         onSelectSchema={onSelectSchemaFromSchemasTab}
+        onViewSchemaMap={onViewSchemaMapFromSchemasTab}
+      />
+    );
+  }
+
+  if (activeTab === "schema-map") {
+    return (
+      <SchemaMapTab
+        activeConnection={activeConnection}
+        schemas={schemas}
+        isClient={isClient}
       />
     );
   }

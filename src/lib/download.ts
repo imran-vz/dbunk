@@ -26,3 +26,19 @@ export function downloadFile(
     URL.revokeObjectURL(url);
   }
 }
+
+export function downloadDataUrl(filename: string, dataUrl: string): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+  }
+}

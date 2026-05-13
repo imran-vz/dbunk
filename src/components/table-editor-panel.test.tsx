@@ -14,6 +14,12 @@ vi.mock("reactflow", () => ({
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
+  applyNodeChanges: (_changes: unknown, nodes: unknown) => nodes,
+}));
+
+vi.mock("@/components/workspace-overview/schema-map-toolbar", () => ({
+  SchemaMapToolbar: () => <div data-testid="schema-map-toolbar" />,
+  schemaMapExportFilename: () => "schema-map.png",
 }));
 
 import {

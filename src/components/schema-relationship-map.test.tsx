@@ -23,29 +23,77 @@ vi.mock("reactflow", () => {
     nodes: StubNode[];
     edges: Edge[];
     onNodeClick?: NodeMouseHandler;
+    onNodeDragStop?: (event: React.MouseEvent, node: StubNode) => void;
+    nodeTypes?: Record<string, React.ComponentType<{ data: unknown }>>;
+    children?: React.ReactNode;
   };
-  const ReactFlow = ({ nodes, edges, onNodeClick }: StubProps) => (
+  const Handle = ({
+    id,
+    type,
+    position,
+  }: {
+    id?: string;
+    type: string;
+    position: string;
+  }) => (
+    <span
+      data-testid={`schema-flow-handle-${id}`}
+      data-position={position}
+      data-type={type}
+    />
+  );
+  const ReactFlow = ({
+    nodes,
+    edges,
+    onNodeClick,
+    onNodeDragStop,
+    nodeTypes,
+    children,
+  }: StubProps) => (
     <div data-testid="schema-flow">
+      {children}
       <div data-testid="schema-flow-nodes">
-        {nodes.map((node) => (
-          <button
-            type="button"
-            key={node.id}
-            data-testid={`schema-flow-node-${node.id}`}
-            data-active={node.data?.isActive ? "true" : "false"}
-            onClick={(event) =>
-              onNodeClick?.(
-                event as unknown as React.MouseEvent,
-                node as unknown as Node,
-              )
-            }
-          >
-            {node.data?.label}
-            {node.data?.columns?.map((column) => (
-              <span key={column.name}>{column.name}</span>
-            ))}
-          </button>
-        ))}
+        {nodes.map((node) => {
+          const NodeComponent = nodeTypes?.[node.type ?? ""];
+          return (
+            <div key={node.id}>
+              <button
+                type="button"
+                data-testid={`schema-flow-node-${node.id}`}
+                data-active={node.data?.isActive ? "true" : "false"}
+                onClick={(event) =>
+                  onNodeClick?.(
+                    event as unknown as React.MouseEvent,
+                    node as unknown as Node,
+                  )
+                }
+              >
+                {NodeComponent ? (
+                  <NodeComponent data={node.data} />
+                ) : (
+                  <>
+                    {node.data?.label}
+                    {node.data?.columns?.map((column) => (
+                      <span key={column.name}>{column.name}</span>
+                    ))}
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                data-testid={`schema-flow-drag-${node.id}`}
+                onClick={(event) =>
+                  onNodeDragStop?.(event as unknown as React.MouseEvent, {
+                    ...node,
+                    position: { x: 77, y: 88 },
+                  })
+                }
+              >
+                drag
+              </button>
+            </div>
+          );
+        })}
       </div>
       <div data-testid="schema-flow-edges">
         {edges.map((edge) => (
@@ -53,7 +101,12 @@ vi.mock("reactflow", () => {
             key={edge.id}
             data-testid={`schema-flow-edge-${edge.id}`}
             data-source={edge.source}
+            data-source-handle={edge.sourceHandle ?? ""}
             data-target={edge.target}
+            data-target-handle={edge.targetHandle ?? ""}
+            data-marker-start={String(edge.markerStart ?? "")}
+            data-marker-end={String(edge.markerEnd ?? "")}
+            data-type={edge.type ?? ""}
           >
             {String(edge.label ?? "")}
           </div>
@@ -66,7 +119,10 @@ vi.mock("reactflow", () => {
     default: ReactFlow,
     Background: () => null,
     Controls: () => null,
+    Handle,
     MiniMap: () => null,
+    Position: { Left: "left", Right: "right" },
+    applyNodeChanges: (_changes: unknown, nodes: unknown) => nodes,
   };
 });
 
@@ -84,7 +140,28 @@ const seedRelationships = () => {
     schemaRelationships: {
       "conn-1::public": {
         tables: [
-          { schema: "public", name: "users", columnCount: 4 },
+          {
+            schema: "public",
+            name: "users",
+            columnCount: 4,
+            columns: [
+              {
+                name: "id",
+                dataType: "integer",
+                nullable: false,
+                isPrimaryKey: true,
+                ordinalPosition: 1,
+                comment: "Surrogate key",
+              },
+              {
+                name: "email",
+                dataType: "text",
+                nullable: false,
+                isPrimaryKey: false,
+                ordinalPosition: 2,
+              },
+            ],
+          },
           {
             schema: "public",
             name: "orders",
@@ -103,6 +180,14 @@ const seedRelationships = () => {
                 nullable: false,
                 isPrimaryKey: false,
                 ordinalPosition: 2,
+                comment: "Owner account",
+              },
+              {
+                name: "note",
+                dataType: "text",
+                nullable: true,
+                isPrimaryKey: false,
+                ordinalPosition: 3,
               },
             ],
           },
@@ -178,6 +263,131 @@ describe("SchemaRelationshipMap", () => {
     const edge = screen.getByTestId("schema-flow-edge-fk:orders_user_id_fkey");
     expect(edge.getAttribute("data-source")).toBe("public.orders");
     expect(edge.getAttribute("data-target")).toBe("public.users");
+  });
+
+  it("wires foreign keys to participating column handles", () => {
+    seedRelationships();
+
+    render(
+      <SchemaRelationshipMap
+        connectionId="conn-1"
+        schema="public"
+        activeTable={null}
+      />,
+    );
+
+    const edge = screen.getByTestId("schema-flow-edge-fk:orders_user_id_fkey");
+    expect(edge.getAttribute("data-source-handle")).toBe(
+      "public.orders.user_id.right",
+    );
+    expect(edge.getAttribute("data-target-handle")).toBe(
+      "public.users.id.left",
+    );
+    expect(
+      screen.getByTestId("schema-flow-handle-public.orders.user_id.right"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("schema-flow-handle-public.orders.note.right"),
+    ).toBeNull();
+  });
+
+  it("renders crow's foot markers from child nullability", () => {
+    seedRelationships();
+
+    render(
+      <SchemaRelationshipMap
+        connectionId="conn-1"
+        schema="public"
+        activeTable={null}
+      />,
+    );
+
+    const edge = screen.getByTestId("schema-flow-edge-fk:orders_user_id_fkey");
+    expect(edge.getAttribute("data-marker-start")).toBe("url(#crowsfoot-one)");
+    expect(edge.getAttribute("data-marker-end")).toBe("url(#crowsfoot-many)");
+  });
+
+  it("persists node positions when dragging stops", () => {
+    seedRelationships();
+    const savePosition = vi.fn(async () => {});
+    useAppStore.setState({ saveSchemaMapPosition: savePosition });
+
+    render(
+      <SchemaRelationshipMap
+        connectionId="conn-1"
+        schema="public"
+        activeTable={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("schema-flow-drag-public.orders"));
+
+    expect(savePosition).toHaveBeenCalledWith(
+      "conn-1",
+      "public",
+      "public.orders",
+      77,
+      88,
+    );
+  });
+
+  it("applies persisted prefs to routing and node attributes", () => {
+    seedRelationships();
+    useAppStore.setState({
+      schemaMapPrefs: {
+        "conn-1": {
+          public: {
+            routing: "step",
+            attrMode: "none",
+            showTypes: true,
+            showNulls: false,
+            showComments: false,
+          },
+        },
+      },
+    });
+
+    render(
+      <SchemaRelationshipMap
+        connectionId="conn-1"
+        schema="public"
+        activeTable={null}
+      />,
+    );
+
+    const edge = screen.getByTestId("schema-flow-edge-fk:orders_user_id_fkey");
+    expect(edge.getAttribute("data-type")).toBe("step");
+    expect(edge.getAttribute("data-source-handle")).toBe("");
+    expect(
+      screen.getByTestId("schema-flow-node-public.orders").textContent,
+    ).not.toContain("user_id");
+  });
+
+  it("renders comments only when the comments pref is enabled", () => {
+    seedRelationships();
+    useAppStore.setState({
+      schemaMapPrefs: {
+        "conn-1": {
+          public: {
+            routing: "bezier",
+            attrMode: "all",
+            showTypes: true,
+            showNulls: false,
+            showComments: true,
+          },
+        },
+      },
+    });
+
+    render(
+      <SchemaRelationshipMap
+        connectionId="conn-1"
+        schema="public"
+        activeTable={null}
+      />,
+    );
+
+    expect(screen.getByText("Owner account")).toBeTruthy();
   });
 
   it("flags the active table node with data-active=true", () => {

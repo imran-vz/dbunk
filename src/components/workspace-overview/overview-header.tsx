@@ -11,6 +11,7 @@ export const OVERVIEW_TABS: readonly OverviewTab[] = [
   { id: "overview", label: "Overview" },
   { id: "tables", label: "Tables" },
   { id: "schemas", label: "Schemas" },
+  { id: "schema-map", label: "Schema Map" },
   { id: "query-history", label: "Query History" },
   { id: "details", label: "Details" },
   { id: "settings", label: "Settings" },
