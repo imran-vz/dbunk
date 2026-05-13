@@ -1004,6 +1004,67 @@ pub async fn load_database_overview_stats(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Relation stats (Tables + Schemas sub-tabs)
+// ---------------------------------------------------------------------------
+
+/// One row per user-visible relation in the connection's catalogue.
+/// Filters out `pg_catalog`, `information_schema`, and `pg_toast*`
+/// namespaces. Includes ordinary tables, partitioned-table parents,
+/// views, and materialised views; partition leaves are skipped to
+/// avoid double-counting the rows already attributed to the parent.
+pub async fn load_relation_stats(
+    connection: &StoredConnection,
+) -> Result<Vec<crate::RelationInfo>, String> {
+    let mut conn = connect(connection).await?;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            n.nspname AS schema,
+            c.relname AS name,
+            CASE c.relkind
+                WHEN 'r' THEN 'table'
+                WHEN 'p' THEN 'table'
+                WHEN 'v' THEN 'view'
+                WHEN 'm' THEN 'materialized view'
+                ELSE c.relkind::text
+            END AS kind,
+            CASE
+                WHEN c.relkind IN ('r', 'p', 'm')
+                    THEN GREATEST(c.reltuples, 0)::bigint
+                ELSE 0::bigint
+            END AS row_count_estimate,
+            CASE
+                WHEN c.relkind IN ('r', 'p', 'm')
+                    THEN pg_total_relation_size(c.oid)::bigint
+                ELSE 0::bigint
+            END AS total_size_bytes
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'p', 'v', 'm')
+          AND c.relispartition IS NOT TRUE
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+        ORDER BY n.nspname, c.relname
+        "#,
+    )
+    .fetch_all(&mut conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| crate::RelationInfo {
+            schema: row.try_get("schema").unwrap_or_default(),
+            name: row.try_get("name").unwrap_or_default(),
+            kind: row.try_get("kind").unwrap_or_default(),
+            row_count_estimate: row.try_get("row_count_estimate").unwrap_or(0),
+            total_size_bytes: row.try_get("total_size_bytes").unwrap_or(0),
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests cover the pure SQL builders only — every other public function

@@ -2778,6 +2778,92 @@ describe("runQuery branch coverage", () => {
   });
 });
 
+describe("store.loadRelationStats", () => {
+  it("invokes load_relation_stats and stores the result on success", async () => {
+    mockedInvoke.mockResolvedValueOnce([
+      {
+        schema: "public",
+        name: "users",
+        kind: "table",
+        rowCountEstimate: 1024,
+        totalSizeBytes: 8192,
+      },
+    ]);
+
+    await useAppStore.getState().loadRelationStats("conn-1");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("load_relation_stats", {
+      payload: { connectionId: "conn-1" },
+    });
+    expect(useAppStore.getState().relationStats["conn-1"]).toHaveLength(1);
+    expect(useAppStore.getState().relationStatsStatus["conn-1"]).toEqual({
+      state: "success",
+    });
+  });
+
+  it("records an error when the invoke rejects", async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error("connect refused"));
+
+    await useAppStore.getState().loadRelationStats("conn-1");
+
+    expect(useAppStore.getState().relationStats["conn-1"]).toBeUndefined();
+    expect(useAppStore.getState().relationStatsStatus["conn-1"]).toEqual({
+      state: "error",
+      error: "connect refused",
+    });
+  });
+
+  it("no-ops when connectionId is empty", async () => {
+    await useAppStore.getState().loadRelationStats("");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("disconnectConnection drops relationStats caches", () => {
+  it("drops relationStats and relationStatsStatus for the disconnected connection", () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Primary",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "",
+          latency: "12 ms",
+          lastSync: "Just now",
+          ssl: true,
+        },
+      ],
+      relationStats: {
+        "conn-1": [
+          {
+            schema: "public",
+            name: "users",
+            kind: "table",
+            rowCountEstimate: 1,
+            totalSizeBytes: 1,
+          },
+        ],
+      },
+      relationStatsStatus: {
+        "conn-1": { state: "success" },
+      },
+    });
+
+    useAppStore.getState().disconnectConnection("conn-1");
+
+    expect(useAppStore.getState().relationStats["conn-1"]).toBeUndefined();
+    expect(
+      useAppStore.getState().relationStatsStatus["conn-1"],
+    ).toBeUndefined();
+  });
+});
+
 describe("connectionOverviewTab", () => {
   const connectedPostgres = (id: string): Connection => ({
     id,

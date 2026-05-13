@@ -382,6 +382,31 @@ export type DatabaseOverviewStatsStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
+/**
+ * One row per user-visible relation (table, view, materialised view)
+ * in a relational connection, populated by `loadRelationStats`. Drives
+ * the Tables and Schemas sub-tabs. On non-PG engines the action
+ * resolves to an empty list (the Schemas sub-tab is gated to PG; the
+ * Tables sub-tab degrades to schema/name/kind columns sourced from
+ * `schemaExplorer`).
+ */
+export type RelationInfo = {
+  schema: string;
+  name: string;
+  /** "table" | "view" | "materialized view" — drives the kind badge. */
+  kind: string;
+  /** PG planner estimate (`pg_class.reltuples`). Zero for views. */
+  rowCountEstimate: number;
+  /** `pg_total_relation_size` bytes (table + TOAST + indexes). */
+  totalSizeBytes: number;
+};
+
+export type RelationStatsStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: string };
+
 // Re-export domain types from their owning modules so the workspace
 // state type (and slice files) can refer to them through one import
 // path.

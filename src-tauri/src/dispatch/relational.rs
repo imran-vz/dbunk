@@ -20,7 +20,7 @@ use sqlx::{Any, AnyConnection, Column, Connection, Row};
 use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
     CommitCellEditsResult, ConnectResult, DatabaseEngine, DatabaseOverviewStats, DeleteRowsResult,
-    ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, SchemaExplorer,
+    ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo, SchemaExplorer,
     SchemaRelationships, StoredConnection, StructureCapabilities, TableStructure,
 };
 
@@ -648,6 +648,22 @@ pub async fn fetch_database_overview_stats(
             &connection.engine(),
             "Database overview stats",
         )),
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+/// Per-relation stats for the Tables + Schemas sub-tabs. Postgres-only
+/// in Phase 1; other relational engines return an empty list so the
+/// Tables sub-tab on MySQL / SQLite / ClickHouse can still render
+/// schema/name/kind columns from `schemaExplorer` without the call
+/// surfacing an error to the user. The Schemas sub-tab is gated to
+/// Postgres in the UI.
+pub async fn fetch_relation_stats(
+    connection: &StoredConnection,
+) -> Result<Vec<RelationInfo>, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => postgres::load_relation_stats(connection).await,
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Ok(Vec::new()),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }

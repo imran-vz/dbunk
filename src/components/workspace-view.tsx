@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { KeyValueWorkspace } from "@/components/keyvalue/KeyValueWorkspace";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
@@ -19,7 +19,9 @@ import {
 } from "@/components/workspace-overview/placeholder-panel";
 import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { RecentQueriesCard } from "@/components/workspace-overview/recent-queries-card";
+import { SchemasTab } from "@/components/workspace-overview/schemas-tab";
 import { SettingsTab } from "@/components/workspace-overview/settings-tab";
+import { TablesTab } from "@/components/workspace-overview/tables-tab";
 import { useDatabaseOverview } from "@/components/workspace-overview/use-database-overview";
 import { WorkspaceTabs } from "@/components/workspace-tabs";
 import { storageClassFor } from "@/lib/engine-policy";
@@ -29,6 +31,8 @@ import {
   type DatabaseOverviewStatsStatus,
   type OverviewTabId,
   type QueryHistoryEntry,
+  type RelationInfo,
+  type RelationStatsStatus,
   type SchemaExplorer,
   useAppStore,
 } from "@/lib/store";
@@ -52,7 +56,10 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     connectConnection,
     disconnectConnection,
     loadDatabaseOverviewStats,
+    loadRelationStats,
     openTableTab,
+    relationStats,
+    relationStatsStatus,
     reopenHistoryEntry,
     setConnectionOverviewTab,
   } = useAppStore();
@@ -120,8 +127,17 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
                 ? (connectionOverviewTab[activeConnection.id] ?? "overview")
                 : "overview"
             }
+            relationStats={
+              activeConnection ? relationStats[activeConnection.id] : undefined
+            }
+            relationStatsStatus={
+              activeConnection
+                ? relationStatsStatus[activeConnection.id]
+                : undefined
+            }
             onSetOverviewTab={setConnectionOverviewTab}
             onLoadStats={loadDatabaseOverviewStats}
+            onLoadRelationStats={loadRelationStats}
             onOpenTable={openTableTab}
             onNewQuery={createNewQueryTab}
             onConnectConnection={connectConnection}
@@ -149,8 +165,11 @@ type WorkspaceDatabaseOverviewProps = {
   statsStatus?: DatabaseOverviewStatsStatus;
   queryHistory: QueryHistoryEntry[];
   overviewTab: OverviewTabId;
+  relationStats: RelationInfo[] | undefined;
+  relationStatsStatus: RelationStatsStatus | undefined;
   onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
+  onLoadRelationStats: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onNewQuery: () => void;
   onConnectConnection: (connectionId: string) => Promise<void>;
@@ -165,8 +184,11 @@ function WorkspaceDatabaseOverview({
   statsStatus,
   queryHistory,
   overviewTab,
+  relationStats,
+  relationStatsStatus,
   onSetOverviewTab,
   onLoadStats,
+  onLoadRelationStats,
   onOpenTable,
   onNewQuery,
   onConnectConnection,
@@ -211,8 +233,11 @@ function WorkspaceDatabaseOverview({
       queryHistory={queryHistory}
       isConnected={isConnected}
       overviewTab={overviewTab}
+      relationStats={relationStats}
+      relationStatsStatus={relationStatsStatus}
       onSetOverviewTab={onSetOverviewTab}
       onLoadStats={onLoadStats}
+      onLoadRelationStats={onLoadRelationStats}
       onOpenTable={onOpenTable}
       onDisconnectConnection={onDisconnectConnection}
       onReopenHistoryEntry={onReopenHistoryEntry}
@@ -228,8 +253,11 @@ type ConnectedOverviewProps = {
   queryHistory: QueryHistoryEntry[];
   isConnected: boolean;
   overviewTab: OverviewTabId;
+  relationStats: RelationInfo[] | undefined;
+  relationStatsStatus: RelationStatsStatus | undefined;
   onSetOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   onLoadStats: (connectionId: string) => Promise<void>;
+  onLoadRelationStats: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onDisconnectConnection: (connectionId: string) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
@@ -243,8 +271,11 @@ function ConnectedOverview({
   queryHistory,
   isConnected,
   overviewTab,
+  relationStats,
+  relationStatsStatus,
   onSetOverviewTab,
   onLoadStats,
+  onLoadRelationStats,
   onOpenTable,
   onDisconnectConnection,
   onReopenHistoryEntry,
@@ -259,8 +290,25 @@ function ConnectedOverview({
     onLoadStats,
   });
 
+  // Transient cross-tab filter — set by Schemas-tab row click, cleared
+  // when the user leaves the Tables tab or clicks the chip. Lives in
+  // local state because (a) it's a UX nicety, not durable settings,
+  // and (b) it should reset between connections, which is implicit
+  // here because ConnectedOverview is keyed by activeConnection.id.
+  const [tablesSchemaFilter, setTablesSchemaFilter] = useState<string | null>(
+    null,
+  );
+
   const handleTabChange = (tab: OverviewTabId) => {
+    if (tab !== "tables") {
+      setTablesSchemaFilter(null);
+    }
     onSetOverviewTab(activeConnection.id, tab);
+  };
+
+  const handleSelectSchemaFromSchemasTab = (schema: string) => {
+    setTablesSchemaFilter(schema);
+    onSetOverviewTab(activeConnection.id, "tables");
   };
 
   return (
@@ -280,6 +328,13 @@ function ConnectedOverview({
             view={view}
             statsStatus={statsStatus}
             queryHistory={queryHistory}
+            schemas={schemas}
+            relationStats={relationStats}
+            relationStatsStatus={relationStatsStatus}
+            tablesSchemaFilter={tablesSchemaFilter}
+            onClearTablesSchemaFilter={() => setTablesSchemaFilter(null)}
+            onSelectSchemaFromSchemasTab={handleSelectSchemaFromSchemasTab}
+            onLoadRelationStats={onLoadRelationStats}
             onOpenTable={onOpenTable}
             onSwitchTab={handleTabChange}
             onReopenHistoryEntry={onReopenHistoryEntry}
@@ -297,6 +352,13 @@ type OverviewTabBodyProps = {
   view: ReturnType<typeof useDatabaseOverview>;
   statsStatus: DatabaseOverviewStatsStatus | undefined;
   queryHistory: QueryHistoryEntry[];
+  schemas: SchemaExplorer[];
+  relationStats: RelationInfo[] | undefined;
+  relationStatsStatus: RelationStatsStatus | undefined;
+  tablesSchemaFilter: string | null;
+  onClearTablesSchemaFilter: () => void;
+  onSelectSchemaFromSchemasTab: (schema: string) => void;
+  onLoadRelationStats: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onSwitchTab: (tab: OverviewTabId) => void;
   onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
@@ -316,6 +378,13 @@ function OverviewTabBody({
   view,
   statsStatus,
   queryHistory,
+  schemas,
+  relationStats,
+  relationStatsStatus,
+  tablesSchemaFilter,
+  onClearTablesSchemaFilter,
+  onSelectSchemaFromSchemasTab,
+  onLoadRelationStats,
   onOpenTable,
   onSwitchTab,
   onReopenHistoryEntry,
@@ -361,9 +430,15 @@ function OverviewTabBody({
 
   if (activeTab === "tables") {
     return (
-      <PlaceholderPanel
-        title="Tables"
-        description="Flat searchable list of every table in this connection, with row-count and size columns on Postgres. Coming in Phase 1 — Step 4."
+      <TablesTab
+        activeConnection={activeConnection}
+        schemas={schemas}
+        relationStats={relationStats}
+        relationStatsStatus={relationStatsStatus}
+        schemaFilter={tablesSchemaFilter}
+        onClearSchemaFilter={onClearTablesSchemaFilter}
+        onLoadRelationStats={onLoadRelationStats}
+        onOpenTable={onOpenTable}
       />
     );
   }
@@ -378,9 +453,12 @@ function OverviewTabBody({
       );
     }
     return (
-      <PlaceholderPanel
-        title="Schemas"
-        description="Per-schema breakdown with table/view/matview counts and total size. Click a schema to jump into the Tables tab filtered to it. Coming in Phase 1 — Step 4."
+      <SchemasTab
+        activeConnection={activeConnection}
+        relationStats={relationStats}
+        relationStatsStatus={relationStatsStatus}
+        onLoadRelationStats={onLoadRelationStats}
+        onSelectSchema={onSelectSchemaFromSchemasTab}
       />
     );
   }
