@@ -3,337 +3,115 @@
  * surface: pattern input, active-subscription chips, split-view
  * (channel summary + filtered message log). The discover-channels
  * sample flow is deferred.
+ *
+ * This file is intentionally a thin composition: the subscription
+ * lifecycle, sidebar geometry, toolbar, channel list, and message
+ * log each live in `./pubsub-tab/` siblings so the shell stays below
+ * fallow's cognitive-complexity threshold.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ResizerHandle } from "@/components/ui/resizer-handle";
-import {
-  closePubsubSession,
-  type DrainedMessage,
-  drainPubsub,
-  formatValueOneLine,
-  startPubsubSession,
-} from "@/lib/redis/api";
-import {
-  useContainerWidth,
-  useResizableWidth,
-} from "@/lib/use-resizable-width";
 
-const PUBSUB_SIDEBAR_MIN = 160;
-const PUBSUB_SIDEBAR_MAX = 360;
-const PUBSUB_SIDEBAR_DEFAULT = 224;
-const PUBSUB_AUTO_HIDE_BELOW_PX = 560;
+import { PUBSUB_SIDEBAR_MAX, PUBSUB_SIDEBAR_MIN } from "./pubsub-tab/constants";
+import { PubsubChannelSidebar } from "./pubsub-tab/pubsub-channel-sidebar";
+import { PubsubMessageLog } from "./pubsub-tab/pubsub-message-log";
+import { PubsubToolbar } from "./pubsub-tab/pubsub-toolbar";
+import { usePubsubSidebar } from "./pubsub-tab/use-pubsub-sidebar";
+import { usePubsubSubscription } from "./pubsub-tab/use-pubsub-subscription";
 
 interface PubsubTabProps {
   connectionId: string;
   tabId: string;
 }
 
-const DRAIN_INTERVAL_MS = 750;
-const MAX_BUFFER = 10_000;
-
 export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
-  const sessionId = useMemo(() => `${tabId}-${Date.now()}`, [tabId]);
+  const subscription = usePubsubSubscription(connectionId, tabId);
+  const sidebar = usePubsubSidebar();
   const [patternInput, setPatternInput] = useState("");
-  const [activePatterns, setActivePatterns] = useState<string[]>([]);
-  const [messages, setMessages] = useState<DrainedMessage[]>([]);
-  const [channelCounts, setChannelCounts] = useState<
-    Array<{ channel: string; count: number }>
-  >([]);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
-  const [paused, setPaused] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const sessionStartedRef = useRef(false);
 
-  const startSession = useCallback(
-    async (patterns: string[]) => {
-      if (sessionStartedRef.current) {
-        await closePubsubSession({ sessionId });
-      }
-      setError(null);
-      try {
-        await startPubsubSession({ connectionId, sessionId, patterns });
-        sessionStartedRef.current = true;
-        setPaused(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [connectionId, sessionId],
+  const filteredMessages = useMemo(
+    () =>
+      selectedChannel
+        ? subscription.messages.filter((m) => m.channel === selectedChannel)
+        : subscription.messages,
+    [subscription.messages, selectedChannel],
   );
 
-  useEffect(() => {
-    return () => {
-      if (sessionStartedRef.current) {
-        void closePubsubSession({ sessionId });
-      }
-    };
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (paused || activePatterns.length === 0) return;
-    const interval = window.setInterval(async () => {
-      try {
-        const result = await drainPubsub({ sessionId });
-        if (result.messages.length > 0) {
-          setMessages((prev) => {
-            const merged = [...prev, ...result.messages];
-            return merged.length > MAX_BUFFER
-              ? merged.slice(merged.length - MAX_BUFFER)
-              : merged;
-          });
-        }
-        setChannelCounts(result.channels);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }, DRAIN_INTERVAL_MS);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [paused, sessionId, activePatterns.length]);
-
-  const addPattern = async () => {
+  const handleSubscribe = () => {
     const trimmed = patternInput.trim();
     if (!trimmed) return;
-    const next = Array.from(new Set([...activePatterns, trimmed]));
     setPatternInput("");
-    setActivePatterns(next);
-    await startSession(next);
+    void subscription.addPattern(trimmed);
   };
 
-  const removePattern = async (pattern: string) => {
-    const next = activePatterns.filter((p) => p !== pattern);
-    setActivePatterns(next);
-    if (next.length === 0) {
-      await closePubsubSession({ sessionId });
-      sessionStartedRef.current = false;
-      setPaused(true);
-      return;
-    }
-    await startSession(next);
+  const handleRemovePattern = (pattern: string) => {
+    void subscription.removePattern(pattern);
   };
 
-  const filteredMessages = selectedChannel
-    ? messages.filter((m) => m.channel === selectedChannel)
-    : messages;
-
-  const {
-    width: sidebarWidth,
-    setWidth: setSidebarWidth,
-    collapsed: sidebarCollapsed,
-    setCollapsed: setSidebarCollapsed,
-  } = useResizableWidth({
-    storageKey: "dbunk.redis.pubsubSidebarWidth",
-    defaultWidth: PUBSUB_SIDEBAR_DEFAULT,
-    min: PUBSUB_SIDEBAR_MIN,
-    max: PUBSUB_SIDEBAR_MAX,
-  });
-  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
-  const [autoCollapsed, setAutoCollapsed] = useState(false);
-
-  useEffect(() => {
-    if (containerWidth === 0) return;
-    if (containerWidth < PUBSUB_AUTO_HIDE_BELOW_PX && !sidebarCollapsed) {
-      setSidebarCollapsed(true);
-      setAutoCollapsed(true);
-    } else if (containerWidth >= PUBSUB_AUTO_HIDE_BELOW_PX && autoCollapsed) {
-      setSidebarCollapsed(false);
-      setAutoCollapsed(false);
-    }
-  }, [containerWidth, sidebarCollapsed, autoCollapsed, setSidebarCollapsed]);
-
-  const effectiveSidebarWidth = useMemo(() => {
-    if (sidebarCollapsed) return 0;
-    if (containerWidth === 0) return sidebarWidth;
-    const maxForViewport = Math.max(
-      PUBSUB_SIDEBAR_MIN,
-      Math.floor(containerWidth * 0.4),
-    );
-    return Math.min(sidebarWidth, maxForViewport);
-  }, [sidebarCollapsed, containerWidth, sidebarWidth]);
+  const hasActivePatterns = subscription.activePatterns.length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-panel/60 px-4 py-2 text-xs">
-        <Input
-          value={patternInput}
-          onChange={(event) => setPatternInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void addPattern();
-            }
-          }}
-          placeholder="Channel pattern (e.g. notifications.*)"
-          className="h-7 max-w-xs text-xs"
-        />
-        <Button
-          size="sm"
-          className="h-7 px-2 text-xs"
-          disabled={!patternInput.trim()}
-          onClick={() => {
-            void addPattern();
-          }}
-        >
-          Subscribe
-        </Button>
-        {activePatterns.length > 0 ? (
-          <Button
-            size="sm"
-            variant={paused ? "default" : "outline"}
-            className="h-7 px-2 text-xs"
-            onClick={() => setPaused((prev) => !prev)}
-          >
-            {paused ? "Resume" : "Pause"}
-          </Button>
-        ) : null}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2 text-xs"
-          onClick={() => {
-            setMessages([]);
-            setChannelCounts([]);
-          }}
-        >
-          Clear
-        </Button>
-        <span className="ml-auto text-text-muted">
-          {messages.length.toLocaleString()} messages buffered
-        </span>
-      </header>
-      {activePatterns.length === 0 ? (
+      <PubsubToolbar
+        patternInput={patternInput}
+        onPatternInputChange={setPatternInput}
+        onSubscribe={handleSubscribe}
+        hasActivePatterns={hasActivePatterns}
+        paused={subscription.paused}
+        onTogglePaused={subscription.togglePaused}
+        onClear={subscription.clear}
+        bufferedCount={subscription.messages.length}
+      />
+      {!hasActivePatterns ? (
         <div className="flex flex-1 items-center justify-center p-6 text-xs text-text-muted">
           Add a channel pattern above to start watching messages.
         </div>
       ) : (
-        <div ref={containerRef} className="flex min-h-0 flex-1">
-          {!sidebarCollapsed ? (
-            <aside
-              style={{ width: `${effectiveSidebarWidth}px` }}
-              className="flex shrink-0 flex-col border-r border-border-subtle bg-surface-window"
-            >
-              <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-[0.65rem] uppercase text-text-muted">
-                <span className="truncate">Channels</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSidebarCollapsed(true);
-                    setAutoCollapsed(false);
-                  }}
-                  className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
-                  aria-label="Hide channels sidebar"
-                >
-                  ‹
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1 border-b border-border-subtle p-2 text-[0.65rem]">
-                {activePatterns.map((p) => (
-                  <Badge
-                    key={p}
-                    variant="secondary"
-                    className="cursor-pointer hover:bg-destructive/30"
-                    onClick={() => {
-                      void removePattern(p);
-                    }}
-                  >
-                    {p} ×
-                  </Badge>
-                ))}
-              </div>
-              <ul className="flex-1 overflow-auto text-[0.65rem]">
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedChannel(null)}
-                    className={`flex w-full justify-between px-2 py-1 hover:bg-white/5 ${
-                      selectedChannel === null
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-muted"
-                    }`}
-                  >
-                    <span>All channels</span>
-                    <span>{messages.length}</span>
-                  </button>
-                </li>
-                {channelCounts.map((c) => (
-                  <li key={c.channel}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedChannel(c.channel)}
-                      className={`flex w-full justify-between gap-2 px-2 py-1 font-mono hover:bg-white/5 ${
-                        selectedChannel === c.channel
-                          ? "bg-primary/10 text-primary"
-                          : ""
-                      }`}
-                    >
-                      <span className="truncate">{c.channel}</span>
-                      <span className="shrink-0 text-text-muted">
-                        {c.count}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </aside>
-          ) : (
+        <div ref={sidebar.containerRef} className="flex min-h-0 flex-1">
+          {sidebar.collapsed ? (
             <button
               type="button"
-              onClick={() => {
-                setSidebarCollapsed(false);
-                setAutoCollapsed(false);
-              }}
+              onClick={sidebar.expand}
               aria-label="Show channels sidebar"
               className="flex w-6 shrink-0 items-center justify-center border-r border-border-subtle bg-surface-window text-text-muted hover:bg-white/5 hover:text-foreground"
             >
               ›
             </button>
+          ) : (
+            <>
+              <PubsubChannelSidebar
+                width={sidebar.effectiveWidth}
+                activePatterns={subscription.activePatterns}
+                channelCounts={subscription.channelCounts}
+                totalMessageCount={subscription.messages.length}
+                selectedChannel={selectedChannel}
+                onSelectChannel={setSelectedChannel}
+                onRemovePattern={handleRemovePattern}
+                onCollapse={sidebar.collapse}
+              />
+              <ResizerHandle
+                width={sidebar.effectiveWidth}
+                onResize={sidebar.setWidth}
+                min={PUBSUB_SIDEBAR_MIN}
+                max={PUBSUB_SIDEBAR_MAX}
+                ariaLabel="Resize channels sidebar"
+              />
+            </>
           )}
-          {!sidebarCollapsed ? (
-            <ResizerHandle
-              width={effectiveSidebarWidth}
-              onResize={setSidebarWidth}
-              min={PUBSUB_SIDEBAR_MIN}
-              max={PUBSUB_SIDEBAR_MAX}
-              ariaLabel="Resize channels sidebar"
-            />
-          ) : null}
           <main className="flex min-w-0 flex-1 flex-col">
-            {error ? (
+            {subscription.error ? (
               <div className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {error}
+                {subscription.error}
               </div>
             ) : null}
             <div className="flex-1 overflow-auto p-3 font-mono text-xs">
-              {filteredMessages.length === 0 ? (
-                <p className="text-text-muted">
-                  Waiting for messages on {activePatterns.join(", ")}…
-                </p>
-              ) : (
-                <ul className="space-y-0.5">
-                  {filteredMessages.slice(-500).map((msg, idx) => (
-                    <li
-                      key={`${msg.receivedAtMs}-${msg.channel}-${idx}`}
-                      className="border-b border-border-subtle py-1"
-                    >
-                      <span className="text-text-muted">
-                        [
-                        {new Date(msg.receivedAtMs).toISOString().slice(11, 23)}
-                        ]
-                      </span>{" "}
-                      <span className="text-primary">{msg.channel}</span>{" "}
-                      <span className="break-all">
-                        {formatValueOneLine(msg.payload)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <PubsubMessageLog
+                messages={filteredMessages}
+                activePatterns={subscription.activePatterns}
+              />
             </div>
           </main>
         </div>
