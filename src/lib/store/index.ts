@@ -11,27 +11,12 @@ import { createWorkspaceTabsSlice } from "./workspace-tabs";
 
 // Public surface re-exports — every external `import … from "@/lib/store"`
 // resolves through this barrel.
-export type {
-  ColumnChangeKind,
-  NewColumn,
-  PendingChange,
-} from "@/lib/ddl";
-export type {
-  SchemaForeignKey,
-  SchemaRelationships,
-  SchemaTableNode,
-} from "@/lib/schema-graph";
 export { schemaRelationshipsKey } from "@/lib/schema-graph";
 export type {
-  ActiveView,
-  AppSettingsSnapshot,
-  AppSettingsStatus,
-  ClickHouseConnection,
   ClickHouseStoredConnection,
   ColumnInfo,
   Connection,
   ConstraintInfo,
-  CredentialState,
   CredentialStorageMode,
   DatabaseEngine,
   DatabaseOverviewStats,
@@ -42,21 +27,15 @@ export type {
   IndexInfo,
   MySqlConnection,
   MySqlStoredConnection,
-  PgConnection,
   PgStoredConnection,
   QueryHistoryEntry,
   QueryOutcome,
   QueryPreviewData,
   QueryStatus,
-  RedisCapabilities,
   RedisConnection,
-  RedisModuleInfo,
   RedisStoredConnection,
-  SavedQueriesStatus,
   SavedQuery,
   SchemaExplorer,
-  SchemaRelationshipsStatus,
-  SqliteConnection,
   SqliteStoredConnection,
   StorageClass,
   StoredConnection,
@@ -69,7 +48,6 @@ export type {
   TableStructure,
   TableStructureStatus,
   WorkspaceTab,
-  WorkspaceTabKind,
 } from "./types";
 export { tableDataKey, tableStructureKey } from "./types";
 
