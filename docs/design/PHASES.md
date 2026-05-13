@@ -11,7 +11,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 1 | Wire the connection-level tabs | ✅ shipped | Smallest scope, biggest perceived completeness win; most views are thin wrappers over data the store already has |
 | 2 | Schema map overhaul | ✅ shipped | Directly addresses the "schema map is really not great" pain |
 | 3 | Data export upgrade | ✅ shipped | First half of the import/export pain — lay the transfer foundation |
-| 4 | Data import wizard | planned | Second half — bulk inbound; pairs with Phase 3's transfer surface |
+| 4 | Data import wizard | ✅ shipped | Second half — bulk inbound; pairs with Phase 3's transfer surface |
 | 5 | DDL + dump/restore | planned | Schema-level export and full `pg_dump`/`pg_restore` backups |
 | 6 | Object navigator depth | planned | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
 | 7 | Admin tools | planned | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
@@ -73,7 +73,7 @@ What landed:
 - Export options include NULL token, UTF-8 / UTF-16LE encoding, and gzip compression when supported by the webview.
 - Export task configs are saved to localStorage per table and can be rerun from the table export menu.
 
-## Phase 4 — Data import wizard
+## Phase 4 — Data import wizard — ✅ shipped
 Bulk inbound. Pairs naturally with Phase 3's transfer surface.
 
 - CSV → existing table with column-mapping UI
@@ -81,6 +81,12 @@ Bulk inbound. Pairs naturally with Phase 3's transfer surface.
 - Header detection, date-format and NULL-token settings
 - `COPY FROM`-backed fast path for large CSVs
 - Multi-sheet imports
+
+What landed:
+- Table editor Import action opens a wizard for CSV and XLSX files.
+- CSV parser supports quoted cells, escaped quotes, header detection, NULL-token handling, and source-to-target column mapping.
+- XLSX imports support multi-sheet selection through the same mapping flow.
+- Imports submit through a backend `import_rows` command in one operation; Postgres large unmapped CSV imports use `COPY FROM STDIN`, while smaller or mapped imports use transactional bulk INSERT chunks.
 
 ## Phase 5 — DDL + dump/restore
 Schema-level export and full backup/restore via Postgres-native tooling.

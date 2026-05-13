@@ -20,8 +20,9 @@ use sqlx::{Any, AnyConnection, Column, Connection, Row};
 use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
     CommitCellEditsResult, ConnectResult, DatabaseEngine, DatabaseOverviewStats, DeleteRowsResult,
-    ExecuteDdlResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo, SchemaExplorer,
-    SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities, TableStructure,
+    ExecuteDdlResult, ImportRowsResult, InsertRowResult, MutationStatus, QueryResult, RelationInfo,
+    SchemaExplorer, SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities,
+    TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -731,6 +732,52 @@ pub async fn insert_row(
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             Err(not_implemented_yet(&connection.engine(), "Row insert"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn import_rows(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+    use_copy: bool,
+) -> Result<ImportRowsResult, String> {
+    if rows.is_empty() {
+        return Ok(ImportRowsResult {
+            runtime_ms: 0,
+            rows_affected: 0,
+        });
+    }
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL if use_copy => {
+            postgres::copy_import_rows(connection, schema, table, columns, rows).await
+        }
+        DatabaseEngine::PostgreSQL => {
+            postgres::import_rows(connection, schema, table, columns, rows).await
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            let start = Instant::now();
+            let mut rows_affected = 0;
+            for row in rows {
+                let values = columns
+                    .iter()
+                    .zip(row.iter())
+                    .map(|(column, value)| CellEditKeyValue {
+                        column: column.clone(),
+                        value: value.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                rows_affected += insert_row(connection, schema, table, &values)
+                    .await?
+                    .rows_affected;
+            }
+            Ok(ImportRowsResult {
+                runtime_ms: start.elapsed().as_millis() as u64,
+                rows_affected,
+            })
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }

@@ -42,6 +42,7 @@ interface TableEditorBodyProps {
   exportFilenameBase: string;
   onRefresh: () => void;
   onOpenAddRow: () => void;
+  onOpenImport: () => void;
   onOpenSql: () => void;
   onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
   onDiscardEdits: () => void;
@@ -84,6 +85,7 @@ export function TableEditorBody({
   exportFilenameBase,
   onRefresh,
   onOpenAddRow,
+  onOpenImport,
   onOpenSql,
   onCellEdit,
   onDiscardEdits,
@@ -132,6 +134,7 @@ export function TableEditorBody({
                   canAddRow={caps.canAddRow}
                   canDeleteSelected={caps.canDeleteSelected}
                   onOpenAddRow={onOpenAddRow}
+                  onOpenImport={onOpenImport}
                   onDeleteSelected={onDeleteSelected}
                 />
               }
@@ -197,6 +200,7 @@ interface DataToolbarProps {
   canAddRow: boolean;
   canDeleteSelected: boolean;
   onOpenAddRow: () => void;
+  onOpenImport: () => void;
   onDeleteSelected: () => void;
 }
 
@@ -204,6 +208,7 @@ function DataToolbar({
   canAddRow,
   canDeleteSelected,
   onOpenAddRow,
+  onOpenImport,
   onDeleteSelected,
 }: DataToolbarProps) {
   return (
@@ -217,6 +222,17 @@ function DataToolbar({
       >
         <IconPlus className="size-3.5" />{" "}
         <span className="dbunk-primary-label">Add row</span>
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!canAddRow}
+        onClick={onOpenImport}
+        aria-label="Import data"
+        title="Import data"
+      >
+        <IconPlus className="size-3.5" />{" "}
+        <span className="dbunk-primary-label">Import</span>
       </Button>
       <Button
         size="sm"
