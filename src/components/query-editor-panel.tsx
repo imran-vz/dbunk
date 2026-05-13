@@ -17,6 +17,7 @@ import {
 import { QuerySidebar } from "@/components/query-sidebar";
 import { StatusBar } from "@/components/status-bar";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
+import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import {
   type QueryPreviewData,
@@ -32,6 +33,7 @@ interface QueryEditorPanelProps {
 
 export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   const [resultsView, setResultsView] = useState<ResultsView>("results");
+  const [bindValues, setBindValues] = useState<Record<string, string>>({});
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
   const sidebar = useQuerySidebarVisibility(containerWidth);
 
@@ -111,6 +113,13 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   });
 
   const hasEdits = Object.keys(currentEdits).length > 0;
+  const bindNames = useMemo(
+    () => extractBindVariables(tab.query ?? ""),
+    [tab.query],
+  );
+  const runCurrentWithBinds = () => {
+    editor.runSql(applyBindVariables(editor.currentStatement(), bindValues));
+  };
 
   const editorOptions = useMemo(
     () =>
@@ -162,10 +171,47 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
           isRunning={isRunning}
           isSidebarOpen={sidebar.isOpen}
           onToggleSidebar={sidebar.onToggle}
-          onRunCurrent={editor.handleRunCurrent}
+          onRunCurrent={
+            bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent
+          }
           onRunSelection={editor.handleRunSelection}
           onRunAll={editor.handleRunAll}
+          onExplain={() =>
+            editor.runSql(
+              `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)\n${applyBindVariables(
+                editor.currentStatement(),
+                bindValues,
+              )}`,
+            )
+          }
+          onInsertSnippet={(sql) =>
+            updateQuery(
+              tab.id,
+              [tab.query ?? "", sql].filter(Boolean).join("\n\n"),
+            )
+          }
         />
+
+        {bindNames.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs">
+            <span className="text-text-muted">Bind variables</span>
+            {bindNames.map((name) => (
+              <label key={name} className="flex items-center gap-1">
+                <span className="font-mono text-text-muted">:{name}</span>
+                <input
+                  value={bindValues[name] ?? ""}
+                  onChange={(event) =>
+                    setBindValues((current) => ({
+                      ...current,
+                      [name]: event.target.value,
+                    }))
+                  }
+                  className="h-7 w-28 rounded-sm border border-border-subtle bg-surface-input px-2 font-mono text-xs"
+                />
+              </label>
+            ))}
+          </div>
+        ) : null}
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="relative h-[17.5rem] shrink-0 border-b border-border-subtle bg-surface-app">

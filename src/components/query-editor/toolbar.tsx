@@ -30,6 +30,8 @@ interface QueryEditorToolbarProps {
   onRunCurrent: () => void;
   onRunSelection: () => void;
   onRunAll: () => void;
+  onExplain: () => void;
+  onInsertSnippet: (sql: string) => void;
 }
 
 export function QueryEditorToolbar({
@@ -43,6 +45,8 @@ export function QueryEditorToolbar({
   onRunCurrent,
   onRunSelection,
   onRunAll,
+  onExplain,
+  onInsertSnippet,
 }: QueryEditorToolbarProps) {
   const SidebarIcon = isSidebarOpen
     ? IconLayoutSidebarRightCollapse
@@ -95,6 +99,30 @@ export function QueryEditorToolbar({
         <Button size="sm" variant="outline" aria-label="Format" title="Format">
           <IconSparkles className="size-3.5" />
           <span className="dbunk-optional-label">Format</span>
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground hover:bg-surface-panel-elevated">
+            Snippets
+            <IconChevronDown className="size-3 text-text-muted" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {SQL_SNIPPETS.map((snippet) => (
+              <DropdownMenuItem
+                key={snippet.label}
+                onClick={() => onInsertSnippet(snippet.sql)}
+              >
+                {snippet.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onExplain}
+          disabled={isRunning}
+        >
+          EXPLAIN
         </Button>
         <Button
           type="button"
@@ -154,3 +182,18 @@ export function QueryEditorToolbar({
     </div>
   );
 }
+
+const SQL_SNIPPETS = [
+  {
+    label: "Top rows",
+    sql: "select *\nfrom public.table_name\nlimit 100;",
+  },
+  {
+    label: "Grouped count",
+    sql: "select column_name, count(*)\nfrom public.table_name\ngroup by column_name\norder by count(*) desc;",
+  },
+  {
+    label: "Recent rows",
+    sql: "select *\nfrom public.table_name\nwhere created_at >= now() - interval '7 days'\norder by created_at desc;",
+  },
+] as const;
