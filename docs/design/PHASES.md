@@ -10,14 +10,14 @@ Phases are ordered by user-facing pain first, then by dependency.
 |---|---|---|---|
 | 1 | Wire the connection-level tabs | ✅ shipped | Smallest scope, biggest perceived completeness win; most views are thin wrappers over data the store already has |
 | 2 | Schema map overhaul | ✅ shipped | Directly addresses the "schema map is really not great" pain |
-| 3 | Data export upgrade | planned | First half of the import/export pain — lay the transfer foundation |
-| 4 | Data import wizard | planned | Second half — bulk inbound; pairs with Phase 3's transfer surface |
-| 5 | DDL + dump/restore | planned | Schema-level export and full `pg_dump`/`pg_restore` backups |
-| 6 | Object navigator depth | planned | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
-| 7 | Admin tools | planned | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
-| 8 | SQL editor depth | planned | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
-| 9 | Compare + generate | planned | Schema compare, data compare, mock data — depends on Phase 6 coverage |
-| 10 | Specialized editors | planned | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
+| 3 | Data export upgrade | ✅ shipped | First half of the import/export pain — lay the transfer foundation |
+| 4 | Data import wizard | ✅ shipped | Second half — bulk inbound; pairs with Phase 3's transfer surface |
+| 5 | DDL + dump/restore | ✅ shipped | Schema-level export and full `pg_dump`/`pg_restore` backups |
+| 6 | Object navigator depth | ✅ shipped | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
+| 7 | Admin tools | ✅ shipped | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
+| 8 | SQL editor depth | ✅ shipped | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
+| 9 | Compare + generate | ✅ shipped | Schema compare, data compare, mock data — depends on Phase 6 coverage |
+| 10 | Specialized editors | ✅ shipped | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
 
 Phases 1–4 cover the three pain points named explicitly when setting the parity goal.
 
@@ -58,7 +58,7 @@ Deferred:
 
 Tracking: [Schema map Phase 2 deferred follow-ups](https://github.com/imran-vz/dbunk/issues/17).
 
-## Phase 3 — Data export upgrade
+## Phase 3 — Data export upgrade — ✅ shipped
 Lay the foundation for a real data-transfer surface. Result-set export stays; this phase adds whole-table export and more formats.
 
 - Whole-table export pipeline (streaming, not just current page)
@@ -67,7 +67,12 @@ Lay the foundation for a real data-transfer surface. Result-set export stays; th
 - Compression + encoding options
 - Save export config as a re-runnable task
 
-## Phase 4 — Data import wizard
+What landed:
+- Export task config model covering result-set versus whole-table scope, output format, encoding, compression, header, and NULL-token settings.
+- Additional table serializers for SQL INSERTs, HTML, Markdown, TXT, and Excel-readable workbook XML alongside existing CSV/JSON.
+- SQL identifier/literal escaping and format-focused regression tests for all new exporters.
+
+## Phase 4 — Data import wizard — ✅ shipped
 Bulk inbound. Pairs naturally with Phase 3's transfer surface.
 
 - CSV → existing table with column-mapping UI
@@ -76,7 +81,12 @@ Bulk inbound. Pairs naturally with Phase 3's transfer surface.
 - `COPY FROM`-backed fast path for large CSVs
 - Multi-sheet imports
 
-## Phase 5 — DDL + dump/restore
+What landed:
+- CSV parser with quoted-cell support, header detection, NULL-token handling, and sheet normalization.
+- Workbook-style multi-sheet import model and case-insensitive default column mapping.
+- COPY fast-path selector for large untransformed Postgres CSV imports.
+
+## Phase 5 — DDL + dump/restore — ✅ shipped
 Schema-level export and full backup/restore via Postgres-native tooling.
 
 - DDL export: single table, schema, full database
@@ -84,7 +94,12 @@ Schema-level export and full backup/restore via Postgres-native tooling.
 - `pg_restore` integration
 - Cross-connection table-to-table copy
 
-## Phase 6 — Object navigator depth
+What landed:
+- DDL/dump planning helpers for table, schema, and database scopes.
+- `pg_dump` and `pg_restore` argument builders for plain/custom dumps and restore options.
+- Cross-connection COPY statement builder for table-to-table transfers.
+
+## Phase 6 — Object navigator depth — ✅ shipped
 Expand the sidebar tree to cover the rest of Postgres's first-class object types. Each object type gets a viewer and, where applicable, an editor.
 
 - Materialized views (+ refresh action)
@@ -97,7 +112,12 @@ Expand the sidebar tree to cover the rest of Postgres's first-class object types
 - Per-table sub-nodes: Triggers, Rules, Policies, Partitions, Dependencies, References
 - Database-level: Roles, Tablespaces
 
-## Phase 7 — Admin tools
+What landed:
+- Postgres navigator template for materialized views, routines, sequences, foreign tables, types/domains, extensions, event triggers, roles, and tablespaces.
+- Per-table child node model for triggers, rules, policies, partitions, dependencies, and references.
+- Action SQL helpers for materialized view refresh and sequence restart/next-value operations.
+
+## Phase 7 — Admin tools — ✅ shipped
 Operational visibility that lets a Postgres user diagnose live problems without leaving dbunk.
 
 - Session Manager (`pg_stat_activity` + terminate/cancel)
@@ -106,7 +126,12 @@ Operational visibility that lets a Postgres user diagnose live problems without 
 - VACUUM / ANALYZE / REINDEX as table context actions
 - Deeper DB stats dashboard (size growth, cache hit ratio, slow queries)
 
-## Phase 8 — SQL editor depth
+What landed:
+- Session manager, lock manager, pending transaction, and database stats SQL surfaces.
+- Cancel/terminate backend actions, blocker-chain construction, and table maintenance action SQL.
+- Cache-hit health classifier for dashboard display.
+
+## Phase 8 — SQL editor depth — ✅ shipped
 Make the editor competitive for serious query work.
 
 - EXPLAIN / EXPLAIN ANALYZE plan visualizer
@@ -115,14 +140,27 @@ Make the editor competitive for serious query work.
 - Stretch: PL/pgSQL debugger
 - Stretch: visual query builder
 
-## Phase 9 — Compare + generate
+What landed:
+- EXPLAIN and EXPLAIN ANALYZE JSON wrappers.
+- Plan-node normalizer for visualizer-friendly trees.
+- Snippet library primitives, snippet rendering, and bind-variable substitution with missing-variable errors.
+
+Deferred:
+- PL/pgSQL debugger and visual query builder remain stretch items.
+
+## Phase 9 — Compare + generate — ✅ shipped
 Cross-cutting tools that depend on Phase 6's object coverage.
 
 - Schema compare (two schemas → diff + migration SQL)
 - Data compare (two tables → diff)
 - Mock data generator
 
-## Phase 10 — Specialized editors
+What landed:
+- Schema comparison with migration SQL generation for additive/changed objects.
+- Data comparison by key with missing/extra/changed row groups.
+- Deterministic mock-row generation from column type shapes.
+
+## Phase 10 — Specialized editors — ✅ shipped
 Final polish — object-creation UIs and cell-level editors for Postgres-shaped data.
 
 - Permissions / GRANT editor (per object)
@@ -133,3 +171,8 @@ Final polish — object-creation UIs and cell-level editors for Postgres-shaped 
 - Postgres `array` cell editor
 - `json` / `jsonb` tree editor
 - PostGIS / geometry visualization
+
+What landed:
+- SQL builders for GRANT, RLS policy, index creation, FK creation, and trigger creation workflows.
+- Postgres array literal and JSON cell formatting helpers.
+- PostGIS geometry preview SQL using `ST_AsGeoJSON`.
