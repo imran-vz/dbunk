@@ -240,9 +240,7 @@ describe("WorkspaceView overview sub-tabs", () => {
     expect(useAppStore.getState().connectionOverviewTab["conn-1"]).toBe(
       "query-history",
     );
-    // The placeholder body has rendered (matches the description's unique
-    // "Show-all toggle" phrase rather than the heading, which also appears
-    // in the tab nav).
-    expect(screen.getByText(/Show-all toggle/)).toBeTruthy();
+    // The real Query History body has rendered (matches the card title).
+    expect(screen.getByText("Query history")).toBeTruthy();
   });
 });

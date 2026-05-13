@@ -17,6 +17,7 @@ import {
   PlaceholderPanel,
   PostgresOnlyPanel,
 } from "@/components/workspace-overview/placeholder-panel";
+import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { RecentQueriesCard } from "@/components/workspace-overview/recent-queries-card";
 import { SettingsTab } from "@/components/workspace-overview/settings-tab";
 import { useDatabaseOverview } from "@/components/workspace-overview/use-database-overview";
@@ -52,6 +53,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     disconnectConnection,
     loadDatabaseOverviewStats,
     openTableTab,
+    reopenHistoryEntry,
     setConnectionOverviewTab,
   } = useAppStore();
 
@@ -124,6 +126,7 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
             onNewQuery={createNewQueryTab}
             onConnectConnection={connectConnection}
             onDisconnectConnection={disconnectConnection}
+            onReopenHistoryEntry={reopenHistoryEntry}
           />
         )}
       </div>
@@ -152,6 +155,7 @@ type WorkspaceDatabaseOverviewProps = {
   onNewQuery: () => void;
   onConnectConnection: (connectionId: string) => Promise<void>;
   onDisconnectConnection: (connectionId: string) => void;
+  onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
 };
 
 function WorkspaceDatabaseOverview({
@@ -167,6 +171,7 @@ function WorkspaceDatabaseOverview({
   onNewQuery,
   onConnectConnection,
   onDisconnectConnection,
+  onReopenHistoryEntry,
 }: WorkspaceDatabaseOverviewProps) {
   if (!activeConnection) {
     return <NoConnectionCard />;
@@ -210,6 +215,7 @@ function WorkspaceDatabaseOverview({
       onLoadStats={onLoadStats}
       onOpenTable={onOpenTable}
       onDisconnectConnection={onDisconnectConnection}
+      onReopenHistoryEntry={onReopenHistoryEntry}
     />
   );
 }
@@ -226,6 +232,7 @@ type ConnectedOverviewProps = {
   onLoadStats: (connectionId: string) => Promise<void>;
   onOpenTable: (schemaName: string, tableName: string) => void;
   onDisconnectConnection: (connectionId: string) => void;
+  onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
 };
 
 function ConnectedOverview({
@@ -240,6 +247,7 @@ function ConnectedOverview({
   onLoadStats,
   onOpenTable,
   onDisconnectConnection,
+  onReopenHistoryEntry,
 }: ConnectedOverviewProps) {
   const view = useDatabaseOverview({
     activeConnection,
@@ -271,8 +279,10 @@ function ConnectedOverview({
             activeTab={overviewTab}
             view={view}
             statsStatus={statsStatus}
+            queryHistory={queryHistory}
             onOpenTable={onOpenTable}
             onSwitchTab={handleTabChange}
+            onReopenHistoryEntry={onReopenHistoryEntry}
           />
         </div>
       </div>
@@ -286,8 +296,10 @@ type OverviewTabBodyProps = {
   activeTab: OverviewTabId;
   view: ReturnType<typeof useDatabaseOverview>;
   statsStatus: DatabaseOverviewStatsStatus | undefined;
+  queryHistory: QueryHistoryEntry[];
   onOpenTable: (schemaName: string, tableName: string) => void;
   onSwitchTab: (tab: OverviewTabId) => void;
+  onReopenHistoryEntry: (entry: QueryHistoryEntry) => void;
 };
 
 /**
@@ -303,8 +315,10 @@ function OverviewTabBody({
   activeTab,
   view,
   statsStatus,
+  queryHistory,
   onOpenTable,
   onSwitchTab,
+  onReopenHistoryEntry,
 }: OverviewTabBodyProps) {
   const isPostgres = activeConnection.engine === "PostgreSQL";
 
@@ -373,9 +387,10 @@ function OverviewTabBody({
 
   if (activeTab === "query-history") {
     return (
-      <PlaceholderPanel
-        title="Query History"
-        description="Dedicated view of the persisted query log, scoped to this connection by default with a Show-all toggle, free-text search, and success/error filter. Coming in Phase 1 — Step 3."
+      <QueryHistoryTab
+        activeConnection={activeConnection}
+        queryHistory={queryHistory}
+        onReopenEntry={onReopenHistoryEntry}
       />
     );
   }

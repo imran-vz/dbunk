@@ -2684,7 +2684,7 @@ describe("runQuery branch coverage", () => {
     expect(useAppStore.getState().queryHistory[0]?.status).toBe("error");
   });
 
-  it("caps queryHistory at 200 entries when appending", async () => {
+  it("caps queryHistory at 2000 entries when appending", async () => {
     useAppStore.setState({
       connections: [
         {
@@ -2703,7 +2703,7 @@ describe("runQuery branch coverage", () => {
           ssl: true,
         },
       ],
-      queryHistory: Array.from({ length: 200 }, (_, idx) => ({
+      queryHistory: Array.from({ length: 2000 }, (_, idx) => ({
         id: `seed-${idx}`,
         sql: `select ${idx};`,
         connectionId: "conn-1",
@@ -2731,10 +2731,10 @@ describe("runQuery branch coverage", () => {
     });
 
     const history = useAppStore.getState().queryHistory;
-    expect(history).toHaveLength(200);
+    expect(history).toHaveLength(2000);
     expect(history[0]?.sql).toBe("select fresh;");
     // Oldest seed should have been dropped.
-    expect(history.find((h) => h.id === "seed-199")).toBeUndefined();
+    expect(history.find((h) => h.id === "seed-1999")).toBeUndefined();
   });
 
   it("bumps the connection's lastActivityAt on a successful run", async () => {
