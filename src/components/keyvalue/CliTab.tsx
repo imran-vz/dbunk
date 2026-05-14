@@ -220,17 +220,24 @@ export function CliTab({ connectionId }: CliTabProps) {
               window.setTimeout(() => setSuggestionsOpen(false), 80);
             }}
             onKeyDown={(event) => {
+              // Enter only accepts a suggestion when the user has typed
+              // a prefix of it. An exact-name match should submit so
+              // `GET foo` doesn't first rewrite the box to `GET `
+              // (review 2026-05-14 P1-3).
+              const focused = suggestions[suggestionIndex];
+              const exactMatch =
+                focused?.name.toUpperCase() === input.trim().toUpperCase();
               if (
                 suggestionsOpen &&
                 suggestions.length > 0 &&
+                focused &&
                 (event.key === "Tab" ||
                   (event.key === "Enter" &&
-                    suggestions[suggestionIndex] &&
-                    !input.endsWith(" ")))
+                    !input.endsWith(" ") &&
+                    !exactMatch))
               ) {
                 event.preventDefault();
-                const spec = suggestions[suggestionIndex];
-                if (spec) acceptSuggestion(spec);
+                acceptSuggestion(focused);
                 return;
               }
               if (suggestionsOpen && event.key === "ArrowDown") {
