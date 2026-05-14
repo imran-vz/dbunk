@@ -3,7 +3,13 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { Connection, SchemaExplorer } from "@/lib/store";
+import { generateMockInsertSql, splitQualifiedTable } from "@/lib/mock-data";
+import {
+  type Connection,
+  type SchemaExplorer,
+  tableStructureKey,
+  useAppStore,
+} from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 type TableDataResult = {
@@ -27,12 +33,69 @@ export function CompareTab({
   const [dataDiff, setDataDiff] = useState<string[]>([]);
   const [mockTable, setMockTable] = useState("");
   const [mockSql, setMockSql] = useState("");
+  const [mockRowCount, setMockRowCount] = useState(5);
+  const [mockBusy, setMockBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadTableStructure = useAppStore((state) => state.loadTableStructure);
+  const tableStructure = useAppStore((state) => state.tableStructure);
+  const openWorkspaceTab = useAppStore((state) => state.openWorkspaceTab);
 
   const schemaDiff = useMemo(
     () => compareSchemas(schemas, leftSchema, rightSchema),
     [schemas, leftSchema, rightSchema],
   );
+
+  const runMockGenerate = async () => {
+    setError(null);
+    const target = mockTable.trim()
+      ? splitQualifiedTable(mockTable, leftSchema)
+      : leftTable.trim()
+        ? { schema: leftSchema, table: leftTable.trim() }
+        : null;
+    if (!target) {
+      setError("Enter a target table as schema.table.");
+      return;
+    }
+    const qualified = `${target.schema}.${target.table}`;
+    const key = tableStructureKey(connection.id, target.schema, target.table);
+    let columns = tableStructure[key]?.columns ?? [];
+    if (columns.length === 0) {
+      if (!isTauri()) {
+        setError(
+          "Table structure isn't loaded yet. Open the table once or run the desktop app.",
+        );
+        return;
+      }
+      setMockBusy(true);
+      try {
+        await loadTableStructure(connection.id, target.schema, target.table);
+        columns = useAppStore.getState().tableStructure[key]?.columns ?? [];
+      } catch (error) {
+        setError(errorToMessage(error));
+        setMockBusy(false);
+        return;
+      }
+      setMockBusy(false);
+    }
+    if (columns.length === 0) {
+      setError(`No column metadata found for ${qualified}.`);
+      return;
+    }
+    setMockSql(
+      generateMockInsertSql(qualified, columns, { rowCount: mockRowCount }),
+    );
+  };
+
+  const openMockInSqlEditor = () => {
+    if (!mockSql) return;
+    openWorkspaceTab({
+      kind: "query",
+      label: `mock_${Date.now()}.sql`,
+      connectionId: connection.id,
+      schema: leftSchema,
+      query: mockSql,
+    });
+  };
 
   const runDataCompare = async () => {
     if (!isTauri()) {
@@ -114,23 +177,38 @@ export function CompareTab({
           <CardTitle>Mock data generator</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-xs">
-          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+          <div className="grid gap-2 md:grid-cols-[1fr_120px_auto_auto]">
             <Input
               value={mockTable}
               onChange={(event) => setMockTable(event.target.value)}
               placeholder="schema.table"
             />
-            <Button
-              size="sm"
-              onClick={() =>
-                setMockSql(
-                  generateMockSql(
-                    mockTable || `${leftSchema}.${leftTable || "table_name"}`,
-                  ),
+            <Input
+              type="number"
+              min={1}
+              max={500}
+              value={mockRowCount}
+              onChange={(event) =>
+                setMockRowCount(
+                  Math.max(1, Math.min(500, Number(event.target.value) || 1)),
                 )
               }
+              aria-label="Row count"
+            />
+            <Button
+              size="sm"
+              disabled={mockBusy}
+              onClick={() => void runMockGenerate()}
             >
-              Generate INSERTs
+              {mockBusy ? "Loading…" : "Generate INSERTs"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!mockSql}
+              onClick={openMockInSqlEditor}
+            >
+              Open in SQL editor
             </Button>
           </div>
           <pre className="max-h-56 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-[0.6875rem]">
@@ -245,11 +323,4 @@ function compareRows(left: TableDataResult, right: TableDataResult): string[] {
     }
   }
   return rows.slice(0, 100);
-}
-
-function generateMockSql(table: string): string {
-  return Array.from({ length: 5 }, (_, index) => {
-    const id = index + 1;
-    return `insert into ${table} (id, name, created_at) values (${id}, 'Sample ${id}', now());`;
-  }).join("\n");
 }

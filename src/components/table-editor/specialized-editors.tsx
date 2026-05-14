@@ -7,6 +7,7 @@ import {
   IconShieldLock,
   IconSitemap,
   IconSparkles,
+  IconTerminal2,
   IconTopologyStar,
 } from "@tabler/icons-react";
 import type * as React from "react";
@@ -17,12 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { ColumnInfo, TableStructure } from "@/lib/store";
+import { type ColumnInfo, type TableStructure, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type SpecializedEditorsProps = {
   schema: string;
   table: string;
+  connectionId: string;
   structure: TableStructure | undefined;
 };
 
@@ -48,8 +50,10 @@ const REFERENTIAL_ACTIONS = [
 export function SpecializedEditors({
   schema,
   table,
+  connectionId,
   structure,
 }: SpecializedEditorsProps) {
+  const openWorkspaceTab = useAppStore((state) => state.openWorkspaceTab);
   const columns = useMemo(() => structure?.columns ?? [], [structure]);
   const columnNames = useMemo(
     () => columns.map((column) => column.name),
@@ -129,6 +133,17 @@ export function SpecializedEditors({
     } catch {
       setCopyState("failed");
     }
+  };
+
+  const openInSqlEditor = () => {
+    if (!generatedSql) return;
+    openWorkspaceTab({
+      kind: "query",
+      label: `${table}_specialized.sql`,
+      connectionId,
+      schema,
+      query: generatedSql,
+    });
   };
 
   const generateGrant = () => {
@@ -708,19 +723,31 @@ export function SpecializedEditors({
                 Review before running in the SQL editor.
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!generatedSql}
-              onClick={copySql}
-            >
-              <IconCopy className="size-3.5" />
-              {copyState === "copied"
-                ? "Copied"
-                : copyState === "failed"
-                  ? "Copy failed"
-                  : "Copy"}
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!generatedSql}
+                onClick={copySql}
+                aria-label="Copy generated SQL"
+              >
+                <IconCopy className="size-3.5" />
+                {copyState === "copied"
+                  ? "Copied"
+                  : copyState === "failed"
+                    ? "Copy failed"
+                    : "Copy"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!generatedSql}
+                onClick={openInSqlEditor}
+                aria-label="Open generated SQL in editor"
+              >
+                <IconTerminal2 className="size-3.5" />
+                Open in SQL editor
+              </Button>
+            </div>
           </div>
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-foreground">
             {generatedSql || "-- Generate SQL from one of the editors above."}
