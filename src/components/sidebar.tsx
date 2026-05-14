@@ -605,15 +605,56 @@ export function Sidebar({ className }: { className?: string }) {
             </div>
           </div>
         </div>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Connection settings"
-          onClick={() => setActiveView("settings")}
-          className="size-7"
-        >
-          <IconSettings className="size-3.5" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            type="button"
+            aria-label="Connection quick actions"
+            className="inline-flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-surface-panel hover:text-foreground"
+          >
+            <IconSettings className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem
+              disabled={!activeConnection}
+              onClick={() => {
+                if (activeConnection)
+                  void connectConnection(activeConnection.id);
+              }}
+            >
+              Reconnect
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={
+                !activeConnection || activeConnection.status === "Disconnected"
+              }
+              onClick={() => {
+                if (activeConnection) disconnectConnection(activeConnection.id);
+              }}
+            >
+              Disconnect
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!activeConnection}
+              onClick={() => {
+                if (activeConnection) setEditingConnection(activeConnection);
+              }}
+            >
+              Edit…
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setActiveView("settings")}>
+              All connection settings…
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!activeConnection}
+              className="text-danger"
+              onClick={() => {
+                if (activeConnection) setDeletingConnection(activeConnection);
+              }}
+            >
+              Delete…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <EditConnectionDialog

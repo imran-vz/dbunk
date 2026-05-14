@@ -1,5 +1,4 @@
 import {
-  IconCommand,
   IconLayoutSidebarLeftCollapse,
   IconPlus,
   IconSearch,
@@ -9,9 +8,11 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
+import { AppPreferencesMenu } from "@/components/app-shell/app-preferences-menu";
 import { NewConnectionDialog } from "@/components/new-connection-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isMacPlatform, Kbd } from "@/components/ui/kbd";
 import type { Connection } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import logo from "../../assets/logo.png";
@@ -81,19 +82,17 @@ export function AppShellHeader({
       // The macOS window uses `titleBarStyle: Overlay` (see
       // src-tauri/tauri.conf.json), so the OS draws the red/yellow/green
       // controls on top of our content. The traffic lights are positioned
-      // at x=18, y=26 there. Reserve 78 px
-      // on the left so the sidebar toggle and `dbunk` mark don't sit under
-      // them. Other
-      // platforms render the OS chrome above our header so the spacer is
-      // dead weight there — addressed in designs/FOLLOWUPS.md (cross-
-      // platform window chrome) when we ship Windows/Linux builds.
+      // at x=18, y=26 there; reserve 78 px on the left so the sidebar
+      // toggle and `dbunk` mark don't sit under them. On Windows / Linux
+      // the OS chrome renders above our header, so the spacer is gated
+      // on `isMacPlatform()`.
       //
       // Drag behaviour stays on a private marker instead of
       // `data-tauri-drag-region`: Tauri's built-in titlebar double-click
       // handling would race our explicit `toggleMaximize()` call.
       className={cn(
         "flex h-12 shrink-0 items-center gap-2.5 border-b border-border-subtle bg-surface-window pr-2.5 select-none transition-[padding] duration-150",
-        isWindowFullscreen ? "pl-2.5" : "pl-22",
+        isWindowFullscreen || !isMacPlatform() ? "pl-2.5" : "pl-22",
       )}
       onDoubleClick={onDoubleClick}
       onPointerDown={onPointerDown}
@@ -124,11 +123,20 @@ export function AppShellHeader({
         <Input
           placeholder="Search tables"
           aria-label="Search tables"
-          className="h-8 pl-8 pr-13 text-xs"
+          className="h-8 cursor-pointer pl-8 pr-13 text-xs"
+          readOnly
+          onFocus={(event) => {
+            event.currentTarget.blur();
+            window.dispatchEvent(new CustomEvent("dbunk:open-command-palette"));
+          }}
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent("dbunk:open-command-palette"));
+          }}
         />
-        <span className="pointer-events-none absolute right-2 top-1/2 flex h-4.5 -translate-y-1/2 items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-app px-1.5 text-[0.58rem] text-text-muted">
-          <IconCommand className="size-2.5" />K
-        </span>
+        <Kbd
+          keys={["mod", "k"]}
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[0.58rem]"
+        />
       </div>
 
       {/* Explicit flexible drag spacer between the search and the right
@@ -169,15 +177,9 @@ export function AppShellHeader({
           <IconTerminal2 className="size-3.5" />
           <span className="dbunk-optional-label">Run Query</span>
         </Button>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="secondary"
-          aria-label="Account menu"
-          className="size-7 rounded-full text-[0.625rem] font-semibold"
-        >
-          {initialsFor(activeConnection?.user) ?? "AD"}
-        </Button>
+        <AppPreferencesMenu
+          initials={initialsFor(activeConnection?.user) ?? "AD"}
+        />
       </div>
     </header>
   );
