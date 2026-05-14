@@ -470,6 +470,48 @@
     color-scheme: dark;
 }
 
+/* -------------------------------------------------------------------------
+ * Theme switch animation — diagonal wipe from top-left.
+ *
+ * applyTheme() in src/lib/theme.ts swaps the `.dark` class / `data-theme`
+ * attribute inside `document.startViewTransition` when the browser
+ * supports it. The default cross-fade is suppressed and replaced with
+ * a clip-path animation that reveals the new theme as a triangle
+ * sweeping out from the top-left corner. The previous frame stays
+ * underneath, so the eye sees a smooth wipe instead of a flash of
+ * mismatched colours.
+ * ------------------------------------------------------------------------- */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+    z-index: 0;
+}
+
+::view-transition-new(root) {
+    z-index: 1;
+    animation: dbunk-theme-wipe 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes dbunk-theme-wipe {
+    from {
+        clip-path: polygon(0 0, 0 0, 0 0);
+    }
+    to {
+        clip-path: polygon(0 0, 200% 0, 0 200%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-new(root) {
+        animation: none;
+    }
+}
+
 @theme inline {
     --font-sans:
         "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter",

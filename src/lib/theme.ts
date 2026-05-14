@@ -45,19 +45,41 @@ export function resolveMode(mode: ThemeMode): "light" | "dark" {
     : "light";
 }
 
+type DocumentWithViewTransitions = Document & {
+  startViewTransition?: (callback: () => void) => unknown;
+};
+
 export function applyTheme(
   mode: ThemeMode,
   preset: ThemePreset = "default",
 ): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  const isDark =
+  const nextDark =
     isPresetIntrinsicallyDark(preset) || resolveMode(mode) === "dark";
-  root.classList.toggle("dark", isDark);
-  if (preset === "default") {
-    root.removeAttribute("data-theme");
+  const nextPresetAttr = preset === "default" ? null : preset;
+
+  // Bail when the resolved state already matches — keeps boot-time
+  // hydration and idempotent re-applies from triggering a no-op
+  // view-transition animation.
+  const currentDark = root.classList.contains("dark");
+  const currentPresetAttr = root.getAttribute("data-theme");
+  if (currentDark === nextDark && currentPresetAttr === nextPresetAttr) return;
+
+  const commit = () => {
+    root.classList.toggle("dark", nextDark);
+    if (nextPresetAttr === null) {
+      root.removeAttribute("data-theme");
+    } else {
+      root.setAttribute("data-theme", nextPresetAttr);
+    }
+  };
+
+  const start = (document as DocumentWithViewTransitions).startViewTransition;
+  if (typeof start === "function") {
+    start.call(document, commit);
   } else {
-    root.setAttribute("data-theme", preset);
+    commit();
   }
 }
 

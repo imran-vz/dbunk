@@ -14,6 +14,7 @@ import type { StateCreator } from "zustand";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import {
   applyTheme,
+  isPresetIntrinsicallyDark,
   type ThemeMode,
   type ThemePreset,
   writeStoredMode,
@@ -75,16 +76,25 @@ async function persistThemePatch(
   patch: ThemePatch,
 ) {
   const current = get().appSettings;
-  const mode = patch.mode ?? current?.theme ?? "system";
+  let mode = patch.mode ?? current?.theme ?? "system";
   const preset = patch.preset ?? current?.themePreset ?? "default";
+
+  // Selecting an intrinsically-dark preset (Dracula) while mode is
+  // light/system should advance the stored mode to "dark" so the radio
+  // reflects what's painted and, on switch back to a non-dark preset,
+  // the user lands in dark mode instead of snapping back to light.
+  const coerceMode =
+    isPresetIntrinsicallyDark(preset) && mode !== "dark" ? "dark" : null;
+  if (coerceMode) mode = coerceMode;
+
   applyTheme(mode, preset);
-  if (patch.mode !== undefined) writeStoredMode(patch.mode);
+  if (patch.mode !== undefined || coerceMode) writeStoredMode(mode);
   if (patch.preset !== undefined) writeStoredPreset(patch.preset);
   if (current) {
     set({
       appSettings: {
         ...current,
-        ...(patch.mode !== undefined ? { theme: patch.mode } : null),
+        ...(patch.mode !== undefined || coerceMode ? { theme: mode } : null),
         ...(patch.preset !== undefined ? { themePreset: patch.preset } : null),
       },
     });
@@ -93,7 +103,7 @@ async function persistThemePatch(
   try {
     await tauriInvoke<AppSettingsSnapshot>("save_app_settings", {
       payload: {
-        ...(patch.mode !== undefined ? { theme: patch.mode } : null),
+        ...(patch.mode !== undefined || coerceMode ? { theme: mode } : null),
         ...(patch.preset !== undefined ? { themePreset: patch.preset } : null),
       },
     });
