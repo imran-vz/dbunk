@@ -105,8 +105,7 @@ pub async fn fetch_overview(
         out.identity = ServerIdentity {
             version: info_field(&info, "redis_version"),
             mode: info_field(&info, "redis_mode"),
-            uptime_seconds: info_field(&info, "uptime_in_seconds")
-                .and_then(|v| v.parse().ok()),
+            uptime_seconds: info_field(&info, "uptime_in_seconds").and_then(|v| v.parse().ok()),
             os: info_field(&info, "os"),
             arch: info_field(&info, "arch_bits"),
         };
@@ -127,10 +126,8 @@ pub async fn fetch_overview(
     {
         out.memory = Some(MemoryInfo {
             used_memory: info_field(&info, "used_memory").and_then(|v| v.parse().ok()),
-            used_memory_rss: info_field(&info, "used_memory_rss")
-                .and_then(|v| v.parse().ok()),
-            used_memory_peak: info_field(&info, "used_memory_peak")
-                .and_then(|v| v.parse().ok()),
+            used_memory_rss: info_field(&info, "used_memory_rss").and_then(|v| v.parse().ok()),
+            used_memory_peak: info_field(&info, "used_memory_peak").and_then(|v| v.parse().ok()),
             fragmentation_ratio: info_field(&info, "mem_fragmentation_ratio")
                 .and_then(|v| v.parse().ok()),
             maxmemory: info_field(&info, "maxmemory").and_then(|v| v.parse().ok()),
@@ -151,8 +148,7 @@ pub async fn fetch_overview(
             blocked_clients: info_field(&info, "blocked_clients")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
-            tracking_clients: info_field(&info, "tracking_clients")
-                .and_then(|v| v.parse().ok()),
+            tracking_clients: info_field(&info, "tracking_clients").and_then(|v| v.parse().ok()),
         });
     }
 
@@ -164,8 +160,7 @@ pub async fn fetch_overview(
         let role = info_field(&info, "role").unwrap_or_else(|| "unknown".into());
         out.replication = Some(ReplicationInfo {
             role,
-            connected_slaves: info_field(&info, "connected_slaves")
-                .and_then(|v| v.parse().ok()),
+            connected_slaves: info_field(&info, "connected_slaves").and_then(|v| v.parse().ok()),
             master_link_status: info_field(&info, "master_link_status"),
             master_host: info_field(&info, "master_host"),
             master_port: info_field(&info, "master_port").and_then(|v| v.parse().ok()),

@@ -35,11 +35,11 @@ pub(crate) mod relational;
 pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fetch_rows};
 
 use crate::{
-    CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, DatabaseOverviewStats,
-    CopyTableResult, DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult,
+    CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, CopyTableResult,
+    DatabaseOverviewStats, DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult,
     InsertRowResult, MutationStatus, PgAdminSnapshot, PgBackendActionResult, PgDumpResult,
-    PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships,
-    ServerDetails, StorageClass, StoredConnection, TableStructure,
+    PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships, ServerDetails,
+    StorageClass, StoredConnection, TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -103,7 +103,9 @@ pub async fn fetch_schema_relationships(
     schema: &str,
 ) -> Result<SchemaRelationships, String> {
     match connection.engine().storage_class() {
-        StorageClass::Relational => relational::fetch_schema_relationships(connection, schema).await,
+        StorageClass::Relational => {
+            relational::fetch_schema_relationships(connection, schema).await
+        }
         StorageClass::KeyValue => Err(not_applicable(connection, "Schema relationships")),
     }
 }
@@ -129,9 +131,7 @@ pub async fn fetch_relation_stats(
     }
 }
 
-pub async fn fetch_server_details(
-    connection: &StoredConnection,
-) -> Result<ServerDetails, String> {
+pub async fn fetch_server_details(connection: &StoredConnection) -> Result<ServerDetails, String> {
     match connection.engine().storage_class() {
         StorageClass::Relational => relational::fetch_server_details(connection).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Server details")),

@@ -678,7 +678,9 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
             let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
             let _connection = AnyConnection::connect_with(&options)
                 .await
-                .map_err(|error| friendly_sqlx_error(error, connection.host(), connection.port()))?;
+                .map_err(|error| {
+                    friendly_sqlx_error(error, connection.host(), connection.port())
+                })?;
             Ok(ConnectResult {
                 latency_ms: start.elapsed().as_millis() as u64,
                 redis_capabilities: None,
@@ -792,7 +794,9 @@ pub async fn fetch_relation_stats(
 ) -> Result<Vec<RelationInfo>, String> {
     match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::load_relation_stats(connection).await,
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Ok(Vec::new()),
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Ok(Vec::new())
+        }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }
@@ -801,9 +805,7 @@ pub async fn fetch_relation_stats(
 /// plus server version / encoding / locale / timezone. Postgres-only;
 /// other relational engines return an explicit not-implemented error
 /// since the UI gates the Details sub-tab to PG and never calls this.
-pub async fn fetch_server_details(
-    connection: &StoredConnection,
-) -> Result<ServerDetails, String> {
+pub async fn fetch_server_details(connection: &StoredConnection) -> Result<ServerDetails, String> {
     match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::load_server_details(connection).await,
         DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
@@ -844,9 +846,9 @@ pub async fn terminate_backend(
 ) -> Result<PgBackendActionResult, String> {
     match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::terminate_backend(connection, pid).await,
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
-            Err(not_implemented_yet(&connection.engine(), "Backend terminate"))
-        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Err(
+            not_implemented_yet(&connection.engine(), "Backend terminate"),
+        ),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }
@@ -908,9 +910,9 @@ pub async fn run_pg_restore(
         DatabaseEngine::PostgreSQL => {
             postgres::run_pg_restore(connection, data_base64, format, clean).await
         }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
-            Err(not_implemented_yet(&connection.engine(), "PostgreSQL restore"))
-        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Err(
+            not_implemented_yet(&connection.engine(), "PostgreSQL restore"),
+        ),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }
@@ -925,9 +927,9 @@ pub async fn refresh_materialized_view(
         DatabaseEngine::PostgreSQL => {
             postgres::refresh_materialized_view(connection, schema, view, concurrently).await
         }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
-            Err(not_implemented_yet(&connection.engine(), "Materialized view refresh"))
-        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Err(
+            not_implemented_yet(&connection.engine(), "Materialized view refresh"),
+        ),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }
@@ -942,9 +944,9 @@ pub async fn run_maintenance(
         DatabaseEngine::PostgreSQL => {
             postgres::run_maintenance(connection, schema, table, action).await
         }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
-            Err(not_implemented_yet(&connection.engine(), "Table maintenance"))
-        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Err(
+            not_implemented_yet(&connection.engine(), "Table maintenance"),
+        ),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }
@@ -962,9 +964,10 @@ pub async fn commit_cell_edits(
         DatabaseEngine::ClickHouse => {
             clickhouse::commit_cell_edits(connection, schema, table, edits).await
         }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine(), "Cell edit commit"))
-        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite => Err(not_implemented_yet(
+            &connection.engine(),
+            "Cell edit commit",
+        )),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }
@@ -1139,9 +1142,9 @@ pub async fn poll_mutation_status(
         DatabaseEngine::ClickHouse => {
             clickhouse::poll_mutations(connection, database, table, mutation_ids).await
         }
-        DatabaseEngine::PostgreSQL | DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            Err(not_implemented_yet(&connection.engine(), "Mutation polling"))
-        }
+        DatabaseEngine::PostgreSQL | DatabaseEngine::MySQL | DatabaseEngine::SQLite => Err(
+            not_implemented_yet(&connection.engine(), "Mutation polling"),
+        ),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }

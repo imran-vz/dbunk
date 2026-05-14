@@ -43,8 +43,7 @@ pub struct DrainedMessage {
     pub payload: SerializedValue,
 }
 
-static SESSIONS: Lazy<Mutex<HashMap<String, Session>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static SESSIONS: Lazy<Mutex<HashMap<String, Session>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,12 +67,8 @@ pub async fn start_session(
 
     // Pub/Sub needs its own connection — can't multiplex with regular
     // commands (redis-rs hard constraint).
-    let client = redis::Client::open(
-        crate::redis::url::build(connection)?
-            .url
-            .as_str(),
-    )
-    .map_err(connection::redis_err)?;
+    let client = redis::Client::open(crate::redis::url::build(connection)?.url.as_str())
+        .map_err(connection::redis_err)?;
     let mut pubsub = client
         .get_async_pubsub()
         .await

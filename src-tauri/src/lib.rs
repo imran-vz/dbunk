@@ -357,13 +357,7 @@ async fn export_ddl(
         table,
     } = payload;
     with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::export_ddl(
-            &connection,
-            &scope,
-            schema.as_deref(),
-            table.as_deref(),
-        )
-        .await
+        dispatch::export_ddl(&connection, &scope, schema.as_deref(), table.as_deref()).await
     })
     .await
 }
@@ -604,12 +598,8 @@ async fn load_schema_map_positions(
     state: State<'_, AppState>,
     payload: SchemaMapScopePayload,
 ) -> Result<Vec<PositionRow>, String> {
-    storage::read_schema_map_positions(
-        &state.inner().pool,
-        &payload.connection_id,
-        &payload.schema,
-    )
-    .await
+    storage::read_schema_map_positions(&state.inner().pool, &payload.connection_id, &payload.schema)
+        .await
 }
 
 #[tauri::command]
@@ -721,9 +711,11 @@ async fn cancel_pg_backend(
     state: State<'_, AppState>,
     payload: PgBackendActionPayload,
 ) -> Result<PgBackendActionResult, String> {
-    with_active_connection(state.inner(), &payload.connection_id, |connection| async move {
-        dispatch::cancel_backend(&connection, payload.pid).await
-    })
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::cancel_backend(&connection, payload.pid).await },
+    )
     .await
 }
 
@@ -732,9 +724,11 @@ async fn terminate_pg_backend(
     state: State<'_, AppState>,
     payload: PgBackendActionPayload,
 ) -> Result<PgBackendActionResult, String> {
-    with_active_connection(state.inner(), &payload.connection_id, |connection| async move {
-        dispatch::terminate_backend(&connection, payload.pid).await
-    })
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::terminate_backend(&connection, payload.pid).await },
+    )
     .await
 }
 
@@ -993,9 +987,7 @@ async fn redis_pubsub_start(
 }
 
 #[tauri::command]
-fn redis_pubsub_drain(
-    payload: redis::pubsub::DrainPayload,
-) -> redis::pubsub::DrainResult {
+fn redis_pubsub_drain(payload: redis::pubsub::DrainPayload) -> redis::pubsub::DrainResult {
     dispatch::keyvalue::pubsub_drain(&payload)
 }
 

@@ -67,8 +67,9 @@ fn shared_client() -> &'static reqwest::Client {
 fn as_ch(connection: &StoredConnection) -> Result<&ClickHouseStoredConnection, String> {
     match connection {
         StoredConnection::ClickHouse(ch) => Ok(ch),
-        _ => Err("clickhouse module reached with a non-ClickHouse connection — dispatch bug"
-            .to_string()),
+        _ => Err(
+            "clickhouse module reached with a non-ClickHouse connection — dispatch bug".to_string(),
+        ),
     }
 }
 

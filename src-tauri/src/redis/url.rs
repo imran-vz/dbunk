@@ -38,7 +38,11 @@ pub fn build(connection: &RedisStoredConnection) -> Result<RedisUrl, String> {
         ));
     }
 
-    let scheme = if connection.use_tls { "rediss" } else { "redis" };
+    let scheme = if connection.use_tls {
+        "rediss"
+    } else {
+        "redis"
+    };
     let port = if connection.port == 0 {
         DEFAULT_PORT
     } else {

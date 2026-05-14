@@ -183,7 +183,10 @@ fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Comman
         .arg("--dbname")
         .arg(&connection.database)
         .env("PGPASSWORD", &connection.password)
-        .env("PGSSLMODE", if connection.ssl { "prefer" } else { "disable" })
+        .env(
+            "PGSSLMODE",
+            if connection.ssl { "prefer" } else { "disable" },
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     Ok(command)
@@ -461,12 +464,7 @@ fn csv_copy_field(value: &Option<String>) -> String {
 
 fn build_copy_csv(rows: &[Vec<Option<String>>]) -> Vec<u8> {
     rows.iter()
-        .map(|row| {
-            row.iter()
-                .map(csv_copy_field)
-                .collect::<Vec<_>>()
-                .join(",")
-        })
+        .map(|row| row.iter().map(csv_copy_field).collect::<Vec<_>>().join(","))
         .collect::<Vec<_>>()
         .join("\n")
         .into_bytes()
@@ -571,7 +569,9 @@ async fn export_relation_ddl(
 
     let mut definitions = Vec::new();
     for column in columns {
-        let name: String = column.try_get("attname").map_err(|error| error.to_string())?;
+        let name: String = column
+            .try_get("attname")
+            .map_err(|error| error.to_string())?;
         let data_type: String = column
             .try_get("data_type")
             .map_err(|error| error.to_string())?;
@@ -614,10 +614,17 @@ async fn export_relation_ddl(
         let definition: String = constraint
             .try_get("definition")
             .map_err(|error| error.to_string())?;
-        definitions.push(format!("  CONSTRAINT {} {}", quote_double(&name), definition));
+        definitions.push(format!(
+            "  CONSTRAINT {} {}",
+            quote_double(&name),
+            definition
+        ));
     }
 
-    let mut ddl = format!("CREATE TABLE {qualified} (\n{}\n);", definitions.join(",\n"));
+    let mut ddl = format!(
+        "CREATE TABLE {qualified} (\n{}\n);",
+        definitions.join(",\n")
+    );
     let indexes = sqlx::query_scalar::<_, String>(
         r#"
         SELECT i.indexdef
@@ -684,7 +691,10 @@ pub async fn export_ddl(
             let schema = schema.ok_or_else(|| "schema DDL export requires a schema".to_string())?;
             let names = relation_names(&mut conn, Some(schema)).await?;
             let mut parts = Vec::with_capacity(names.len() + 1);
-            parts.push(format!("CREATE SCHEMA IF NOT EXISTS {};", quote_double(schema)));
+            parts.push(format!(
+                "CREATE SCHEMA IF NOT EXISTS {};",
+                quote_double(schema)
+            ));
             for (schema, table) in names {
                 parts.push(export_relation_ddl(&mut conn, &schema, &table).await?);
             }
@@ -700,7 +710,10 @@ pub async fn export_ddl(
             }
             let mut parts = Vec::with_capacity(names.len() + schemas.len());
             for schema in schemas {
-                parts.push(format!("CREATE SCHEMA IF NOT EXISTS {};", quote_double(&schema)));
+                parts.push(format!(
+                    "CREATE SCHEMA IF NOT EXISTS {};",
+                    quote_double(&schema)
+                ));
             }
             for (schema, table) in names {
                 parts.push(export_relation_ddl(&mut conn, &schema, &table).await?);
@@ -805,7 +818,11 @@ pub async fn run_pg_restore(
     };
     if !output.status.success() {
         return Err(command_error(
-            if format == "plain" { "psql" } else { "pg_restore" },
+            if format == "plain" {
+                "psql"
+            } else {
+                "pg_restore"
+            },
             &output,
         ));
     }
@@ -1733,10 +1750,14 @@ pub async fn load_server_details(
             setting: row.try_get("setting").unwrap_or_default(),
             unit: row.try_get::<Option<String>, _>("unit").unwrap_or(None),
             category: row.try_get("category").unwrap_or_default(),
-            short_desc: row.try_get::<Option<String>, _>("short_desc").unwrap_or(None),
+            short_desc: row
+                .try_get::<Option<String>, _>("short_desc")
+                .unwrap_or(None),
             source: row.try_get("source").unwrap_or_default(),
             boot_val: row.try_get::<Option<String>, _>("boot_val").unwrap_or(None),
-            reset_val: row.try_get::<Option<String>, _>("reset_val").unwrap_or(None),
+            reset_val: row
+                .try_get::<Option<String>, _>("reset_val")
+                .unwrap_or(None),
         })
         .collect();
 

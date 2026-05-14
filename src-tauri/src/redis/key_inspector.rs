@@ -76,10 +76,26 @@ pub async fn fetch_key_metadata(
             .await
             .ok()
             .map(|n| n.max(0) as u64),
-        "hash" => conn.hlen::<_, i64>(&payload.key).await.ok().map(|n| n as u64),
-        "list" => conn.llen::<_, i64>(&payload.key).await.ok().map(|n| n as u64),
-        "set" => conn.scard::<_, i64>(&payload.key).await.ok().map(|n| n as u64),
-        "zset" => conn.zcard::<_, i64>(&payload.key).await.ok().map(|n| n as u64),
+        "hash" => conn
+            .hlen::<_, i64>(&payload.key)
+            .await
+            .ok()
+            .map(|n| n as u64),
+        "list" => conn
+            .llen::<_, i64>(&payload.key)
+            .await
+            .ok()
+            .map(|n| n as u64),
+        "set" => conn
+            .scard::<_, i64>(&payload.key)
+            .await
+            .ok()
+            .map(|n| n as u64),
+        "zset" => conn
+            .zcard::<_, i64>(&payload.key)
+            .await
+            .ok()
+            .map(|n| n as u64),
         "stream" => redis::cmd("XLEN")
             .arg(&payload.key)
             .query_async::<i64>(&mut conn)
@@ -151,7 +167,10 @@ pub async fn fetch_string(
         });
     }
 
-    let bytes: Option<Vec<u8>> = conn.get(&payload.key).await.map_err(connection::redis_err)?;
+    let bytes: Option<Vec<u8>> = conn
+        .get(&payload.key)
+        .await
+        .map_err(connection::redis_err)?;
     let bytes = bytes.unwrap_or_default();
     Ok(StringValuePayload {
         value: value::encode_string(bytes),
@@ -433,8 +452,14 @@ pub async fn fetch_sorted_set(
             })
         }
         ZsetMode::Byscore => {
-            let min = payload.score_min.clone().unwrap_or_else(|| "-inf".to_string());
-            let max = payload.score_max.clone().unwrap_or_else(|| "+inf".to_string());
+            let min = payload
+                .score_min
+                .clone()
+                .unwrap_or_else(|| "-inf".to_string());
+            let max = payload
+                .score_max
+                .clone()
+                .unwrap_or_else(|| "+inf".to_string());
             let cmd_name = if payload.reverse {
                 "ZREVRANGEBYSCORE"
             } else {
