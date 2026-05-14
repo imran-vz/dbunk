@@ -1,5 +1,5 @@
 import MonacoEditor from "@monaco-editor/react";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   type ExplainPlanData,
   type ExplainPlanNode,
@@ -66,6 +66,27 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   // with sibling panels. See CONTEXT.md — Query Outcome.
   const { errorMessage, setOutcome } = useQueryOutcome(tab.id);
 
+  // Auto-route EXPLAIN runs to the Explain tab so a user-typed
+  // `EXPLAIN ...` shows the plan visualizer, not just text rows.
+  // Non-EXPLAIN runs swing the tab back to Results so consecutive
+  // queries land on the relevant pane.
+  const handleQueryOutcome = useCallback(
+    (outcome: QueryOutcome, sql: string) => {
+      setOutcome(outcome);
+      if (isExplainStatement(sql)) {
+        setResultsView("explain");
+        if (outcome.kind === "completed") {
+          setExplainPlan(parseExplainPreview(outcome.preview, outcome));
+        } else if (outcome.kind === "failed") {
+          setExplainPlan(null);
+        }
+        return;
+      }
+      setResultsView("results");
+    },
+    [setOutcome],
+  );
+
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
     if (tab.kind !== "query") return null;
     return (
@@ -115,7 +136,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     isRunning,
     loadTableStructure,
     runQuery,
-    onOutcome: setOutcome,
+    onOutcome: handleQueryOutcome,
   });
 
   const hasEdits = Object.keys(currentEdits).length > 0;
@@ -129,8 +150,24 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
 
   const handleExplain = async () => {
     if (isRunning) return;
-    const statement = applyBindVariables(editor.currentStatement(), bindValues);
-    const sql = `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)\n${statement}`;
+    const currentStatement = applyBindVariables(
+      editor.currentStatement(),
+      bindValues,
+    ).trim();
+    // Fall back to the full editor text when the cursor isn't sitting
+    // on a parseable statement — clicking EXPLAIN with an empty current
+    // statement used to produce `EXPLAIN (...)\n` and a syntax error.
+    const fallbackStatement = applyBindVariables(
+      tab.query ?? "",
+      bindValues,
+    ).trim();
+    const baseStatement = currentStatement || fallbackStatement;
+    if (!baseStatement) return;
+    // Don't wrap a statement that already begins with EXPLAIN —
+    // nesting `EXPLAIN (...) EXPLAIN ...` is a syntax error.
+    const sql = isExplainStatement(baseStatement)
+      ? baseStatement
+      : `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)\n${baseStatement}`;
     setResultsView("explain");
     setExplainPlan(null);
     const requestedTabId = tab.id;
@@ -280,6 +317,10 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
       </ResponsiveEdgePanel>
     </div>
   );
+}
+
+function isExplainStatement(sql: string): boolean {
+  return /^\s*explain\b/i.test(sql);
 }
 
 function parseExplainPreview(

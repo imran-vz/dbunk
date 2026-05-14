@@ -261,6 +261,111 @@ describe("QueryEditorPanel feedback", () => {
     });
   });
 
+  it("does not double-wrap when current statement already starts with EXPLAIN", async () => {
+    const explainTab: WorkspaceTab = {
+      ...queryTab,
+      query: "EXPLAIN ANALYZE select 1;",
+    };
+    useAppStore.setState({
+      workspaceTabs: [explainTab],
+      activeConnectionId: "conn-1",
+      activeTabId: explainTab.id,
+      queryStatus: {},
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      columns: ["QUERY PLAN"],
+      rows: [["Seq Scan on users (cost=0.00..1.00 rows=1 width=4)"]],
+      runtimeMs: 1,
+      rowCount: 1,
+    });
+
+    render(<QueryEditorPanel tab={explainTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /run explain/i }));
+
+    await waitFor(() => {
+      expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
+        payload: {
+          connectionId: "conn-1",
+          query: "EXPLAIN ANALYZE select 1",
+        },
+      });
+    });
+  });
+
+  it("falls back to the full query when the cursor is off any statement", async () => {
+    const explainTab: WorkspaceTab = {
+      ...queryTab,
+      query: "select 1;",
+    };
+    useAppStore.setState({
+      workspaceTabs: [explainTab],
+      activeConnectionId: "conn-1",
+      activeTabId: explainTab.id,
+      queryStatus: {},
+    });
+    cursorState.lineNumber = 5;
+    cursorState.column = 1;
+    mockedInvoke.mockResolvedValueOnce({
+      columns: ["QUERY PLAN"],
+      rows: [["Plan output"]],
+      runtimeMs: 1,
+      rowCount: 1,
+    });
+
+    render(<QueryEditorPanel tab={explainTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /run explain/i }));
+
+    await waitFor(() => {
+      expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
+        payload: {
+          connectionId: "conn-1",
+          query: "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)\nselect 1;",
+        },
+      });
+    });
+  });
+
+  it("routes a user-typed EXPLAIN query to the Explain tab on Run", async () => {
+    const explainTab: WorkspaceTab = {
+      ...queryTab,
+      query: "EXPLAIN (FORMAT JSON) select 1;",
+    };
+    useAppStore.setState({
+      workspaceTabs: [explainTab],
+      activeConnectionId: "conn-1",
+      activeTabId: explainTab.id,
+      queryStatus: {},
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      columns: ["QUERY PLAN"],
+      rows: [
+        [
+          JSON.stringify([
+            {
+              Plan: {
+                "Node Type": "Index Scan",
+                "Relation Name": "orders",
+                "Startup Cost": 0,
+                "Total Cost": 4.2,
+                "Plan Rows": 1,
+              },
+            },
+          ]),
+        ],
+      ],
+      runtimeMs: 3,
+      rowCount: 1,
+    });
+
+    render(<QueryEditorPanel tab={explainTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Index Scan")).toBeTruthy();
+    });
+    expect(screen.getByText("orders")).toBeTruthy();
+  });
+
   it("disables the Run button while a query is running", () => {
     seedStatus({ state: "running" });
 
