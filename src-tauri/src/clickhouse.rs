@@ -275,7 +275,7 @@ fn column_index(result: &QueryResult, name: &str) -> Option<usize> {
     result.columns.iter().position(|column| column == name)
 }
 
-fn cell<'a>(row: &'a [String], index: Option<usize>) -> Option<&'a str> {
+fn cell(row: &[String], index: Option<usize>) -> Option<&str> {
     index.and_then(|i| row.get(i)).map(|value| value.as_str())
 }
 

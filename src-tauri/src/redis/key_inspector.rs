@@ -281,8 +281,7 @@ pub async fn fetch_list(
     payload: &FetchListPayload,
 ) -> Result<ListValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
-    let cmd_name = if payload.reverse { "LRANGE" } else { "LRANGE" };
-    let raw: Vec<redis::Value> = redis::cmd(cmd_name)
+    let raw: Vec<redis::Value> = redis::cmd("LRANGE")
         .arg(&payload.key)
         .arg(payload.start)
         .arg(payload.stop)

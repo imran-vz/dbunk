@@ -637,7 +637,7 @@ async fn export_relation_ddl(
     .await
     .map_err(|error| error.to_string())?;
     for index in indexes {
-        ddl.push_str("\n");
+        ddl.push('\n');
         ddl.push_str(index.trim_end_matches(';'));
         ddl.push(';');
     }

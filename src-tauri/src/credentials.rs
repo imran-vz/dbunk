@@ -281,9 +281,9 @@ fn backend_for(mode: CredentialStorageMode, pool: &SqlitePool) -> CredentialBack
 /// Three modes share **two** physical storage areas: the OS keychain
 /// (independent) and the SQLite `credentials` table (shared by Plain
 /// + Encrypted). Switching to Keychain means clearing the SQLite
-/// table once. Switching to either SQLite mode means clearing the
-/// keychain — and **not** also clearing SQLite, since `write_all`
-/// already overwrites the table.
+///   table once. Switching to either SQLite mode means clearing the
+///   keychain — and **not** also clearing SQLite, since `write_all`
+///   already overwrites the table.
 ///
 /// This is the single place encoding that topology. Iterating
 /// `ALL_MODES.filter(!= active)` and calling `clear()` per-mode

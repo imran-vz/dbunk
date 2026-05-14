@@ -1164,7 +1164,7 @@ pub(crate) struct RelationInfo {
 
 /// One row from `pg_settings` — a single GUC parameter. The category
 /// + short_desc + source fields drive the Details sub-tab's grouping,
-/// tooltip, and "modified from default" highlight.
+///   tooltip, and "modified from default" highlight.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PgSetting {
