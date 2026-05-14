@@ -2,9 +2,10 @@
  * Redis CLI tab — REPL with type-aware result rendering and
  * destructive-command typed-confirmation modal.
  *
- * Phase 1.3 ships the minimum-viable REPL: input box, scrolling
+ * Phase 1.3 shipped the minimum-viable REPL: input box, scrolling
  * history pane, Cmd/Ctrl+Enter or Enter to execute, Up/Down through
- * history. Command autocomplete catalog is deferred.
+ * history. Tier 2 adds an autocomplete dropdown driven by a static
+ * command catalog (`cli-catalog.ts`) with arity hints.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +17,7 @@ import {
   runRedisCommand,
   type SerializedValue,
 } from "@/lib/redis/api";
+import { type CommandSpec, suggestCommands } from "@/lib/redis/cli-catalog";
 import { cn } from "@/lib/utils";
 
 interface CliTabProps {
@@ -43,6 +45,11 @@ export function CliTab({ connectionId }: CliTabProps) {
   } | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const suggestions: CommandSpec[] = suggestionsOpen
+    ? suggestCommands(input)
+    : [];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -106,7 +113,13 @@ export function CliTab({ connectionId }: CliTabProps) {
     const tokens = trimmed.split(/\s+/);
     setInput("");
     setHistoryIndex(-1);
+    setSuggestionsOpen(false);
     await runTokens(tokens, false);
+  };
+
+  const acceptSuggestion = (spec: CommandSpec) => {
+    setInput(`${spec.name} `);
+    setSuggestionsOpen(false);
   };
 
   const navHistory = (direction: 1 | -1) => {
@@ -160,26 +173,98 @@ export function CliTab({ connectionId }: CliTabProps) {
           </div>
         ))}
       </div>
-      <div className="flex shrink-0 items-center gap-2 border-t border-border-subtle bg-surface-panel/60 px-3 py-2">
-        <span className="font-mono text-xs text-text-muted">{">"}</span>
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void handleSubmit();
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              navHistory(1);
-            } else if (event.key === "ArrowDown") {
-              event.preventDefault();
-              navHistory(-1);
-            }
-          }}
-          placeholder="GET key, HGETALL hash, INFO server, …"
-          className="flex-1 bg-transparent font-mono text-xs outline-none placeholder:text-text-muted/60"
-        />
+      <div className="relative shrink-0 border-t border-border-subtle bg-surface-panel/60">
+        {suggestionsOpen && suggestions.length > 0 ? (
+          <div className="absolute bottom-full left-0 right-0 z-10 max-h-64 overflow-auto border-t border-border-subtle bg-surface-window shadow-lg">
+            {suggestions.map((spec, idx) => (
+              <button
+                type="button"
+                key={spec.name}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  acceptSuggestion(spec);
+                }}
+                onMouseEnter={() => setSuggestionIndex(idx)}
+                className={cn(
+                  "flex w-full items-baseline gap-2 px-3 py-1 text-left font-mono text-[0.7rem]",
+                  idx === suggestionIndex
+                    ? "bg-primary/15 text-foreground"
+                    : "text-text-secondary",
+                )}
+              >
+                <span className="font-semibold text-foreground">
+                  {spec.name}
+                </span>
+                <span className="text-text-muted">{spec.args}</span>
+                <span className="ml-auto truncate text-[0.65rem] text-text-muted">
+                  {spec.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex items-center gap-2 px-3 py-2">
+          <span className="font-mono text-xs text-text-muted">{">"}</span>
+          <input
+            value={input}
+            onChange={(event) => {
+              setInput(event.target.value);
+              setSuggestionsOpen(event.target.value.trim().length > 0);
+              setSuggestionIndex(0);
+            }}
+            onFocus={() => {
+              if (input.trim().length > 0) setSuggestionsOpen(true);
+            }}
+            onBlur={() => {
+              // Defer so a mouse-down on a suggestion can still fire.
+              window.setTimeout(() => setSuggestionsOpen(false), 80);
+            }}
+            onKeyDown={(event) => {
+              if (
+                suggestionsOpen &&
+                suggestions.length > 0 &&
+                (event.key === "Tab" ||
+                  (event.key === "Enter" &&
+                    suggestions[suggestionIndex] &&
+                    !input.endsWith(" ")))
+              ) {
+                event.preventDefault();
+                const spec = suggestions[suggestionIndex];
+                if (spec) acceptSuggestion(spec);
+                return;
+              }
+              if (suggestionsOpen && event.key === "ArrowDown") {
+                event.preventDefault();
+                setSuggestionIndex((idx) =>
+                  Math.min(idx + 1, suggestions.length - 1),
+                );
+                return;
+              }
+              if (suggestionsOpen && event.key === "ArrowUp") {
+                event.preventDefault();
+                setSuggestionIndex((idx) => Math.max(0, idx - 1));
+                return;
+              }
+              if (event.key === "Escape" && suggestionsOpen) {
+                event.preventDefault();
+                setSuggestionsOpen(false);
+                return;
+              }
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleSubmit();
+              } else if (event.key === "ArrowUp" && !suggestionsOpen) {
+                event.preventDefault();
+                navHistory(1);
+              } else if (event.key === "ArrowDown" && !suggestionsOpen) {
+                event.preventDefault();
+                navHistory(-1);
+              }
+            }}
+            placeholder="GET key, HGETALL hash, INFO server, …"
+            className="flex-1 bg-transparent font-mono text-xs outline-none placeholder:text-text-muted/60"
+          />
+        </div>
       </div>
       {pendingConfirm ? (
         <div className="border-t border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs">

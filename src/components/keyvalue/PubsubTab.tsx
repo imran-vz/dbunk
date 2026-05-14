@@ -56,9 +56,13 @@ export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PubsubToolbar
+        connectionId={connectionId}
         patternInput={patternInput}
         onPatternInputChange={setPatternInput}
         onSubscribe={handleSubscribe}
+        onSubscribeChannel={(channel) => {
+          void subscription.addPattern(channel);
+        }}
         hasActivePatterns={hasActivePatterns}
         paused={subscription.paused}
         onTogglePaused={subscription.togglePaused}
