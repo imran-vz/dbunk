@@ -7,12 +7,16 @@ import appCss from "../styles.css?url";
 
 /**
  * Theme boot script — runs synchronously before React mounts so the
- * first paint has the right `.dark` class on <html> and there's no
- * flash of the wrong theme. localStorage is the boot cache;
- * AppSettings / SQLite is canonical and rehydrates on
+ * first paint has the right `.dark` class + `data-theme` on <html>
+ * and there's no flash of the wrong theme. localStorage is the boot
+ * cache; AppSettings / SQLite is canonical and rehydrates on
  * `loadAppSettings`. See docs/design/theme-support-plan.md.
+ *
+ * Intrinsically-dark presets (currently "dracula") force `.dark`
+ * regardless of the stored mode, matching `applyTheme` runtime
+ * behaviour.
  */
-const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem("dbunk.theme");var dark=t==="dark"||((t===null||t==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(dark)document.documentElement.classList.add("dark");}catch(e){}})();`;
+const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem("dbunk.theme");var p=localStorage.getItem("dbunk.theme.preset");var presetDark=p==="dracula";var dark=presetDark||t==="dark"||((t===null||t==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;if(dark)r.classList.add("dark");if(p&&p!=="default")r.setAttribute("data-theme",p);}catch(e){}})();`;
 
 export const Route = createRootRoute({
   head: () => ({

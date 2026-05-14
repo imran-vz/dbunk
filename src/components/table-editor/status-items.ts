@@ -1,4 +1,6 @@
+import { connectionStatusItem } from "@/components/connection-status";
 import type { StatusBarItem } from "@/components/status-bar";
+import type { Connection } from "@/lib/store";
 
 import type { TablePagination } from "./use-table-pagination";
 
@@ -7,7 +9,7 @@ interface BuildStatusItemsArgs {
   isLoading: boolean;
   rowCount: number;
   pagination: TablePagination;
-  connectionStatus: string | undefined;
+  activeConnection: Connection | undefined;
 }
 
 export function buildStatusItems({
@@ -15,9 +17,10 @@ export function buildStatusItems({
   isLoading,
   rowCount,
   pagination,
-  connectionStatus,
+  activeConnection,
 }: BuildStatusItemsArgs): StatusBarItem[] {
   return [
+    connectionStatusItem(activeConnection),
     {
       id: "query",
       label: "Query",
@@ -33,12 +36,6 @@ export function buildStatusItems({
       id: "page",
       label: "Page",
       value: pageValue(pagination.page, pagination.totalPages),
-    },
-    {
-      id: "connection",
-      label: "Connection",
-      tone: "healthy",
-      value: connectionStatus ?? "Healthy",
       align: "right",
     },
   ];

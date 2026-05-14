@@ -2,31 +2,20 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconPlus,
   IconSearch,
+  IconSettings,
   IconTerminal2,
 } from "@tabler/icons-react";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { AppPreferencesMenu } from "@/components/app-shell/app-preferences-menu";
 import { NewConnectionDialog } from "@/components/new-connection-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isMacPlatform, Kbd } from "@/components/ui/kbd";
-import type { Connection } from "@/lib/store";
+import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import logo from "../../assets/logo.png";
-
-function initialsFor(user: string | undefined): string | null {
-  if (!user) return null;
-  const stem = user.split("@")[0] ?? user;
-  const parts = stem.split(/[._-]/).filter(Boolean);
-  if (parts.length === 0) return null;
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
 
 function sidebarToggleLabel(
   isShellCompact: boolean,
@@ -46,7 +35,6 @@ export interface AppShellHeaderProps {
   isLeftSidebarOpen: boolean;
   newConnectionOpen: boolean;
   setNewConnectionOpen: (open: boolean) => void;
-  activeConnection: Connection | undefined;
   onLeftSidebarToggle: () => void;
   onCreateNewQueryTab: () => void;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -60,12 +48,12 @@ export function AppShellHeader({
   isLeftSidebarOpen,
   newConnectionOpen,
   setNewConnectionOpen,
-  activeConnection,
   onLeftSidebarToggle,
   onCreateNewQueryTab,
   onPointerDown,
   onDoubleClick,
 }: AppShellHeaderProps) {
+  const openSettings = useAppStore((state) => state.openSettings);
   const toggleLabel = sidebarToggleLabel(
     isShellCompact,
     leftSidebarOverlayOpen,
@@ -177,9 +165,17 @@ export function AppShellHeader({
           <IconTerminal2 className="size-3.5" />
           <span className="dbunk-optional-label">Run Query</span>
         </Button>
-        <AppPreferencesMenu
-          initials={initialsFor(activeConnection?.user) ?? "AD"}
-        />
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Open Settings"
+          title="Settings"
+          onClick={() => openSettings()}
+          className="text-text-muted"
+        >
+          <IconSettings className="size-4" />
+        </Button>
       </div>
     </header>
   );

@@ -19,6 +19,7 @@ import type {
   SchemaMapRouting,
   SchemaRelationships,
 } from "@/lib/schema-graph";
+import type { ThemeMode, ThemePreset } from "@/lib/theme";
 
 // ---------------------------------------------------------------------------
 // Engine + storage class
@@ -76,18 +77,21 @@ export type CredentialStorageMode =
 export type CredentialState = "needs-onboarding" | "needs-unlock" | "ready";
 
 /**
- * `theme` is canonical persistence for the user's chosen theme mode;
- * `localStorage["dbunk.theme"]` is a boot-cache mirror so a pre-paint
- * script can apply the resolved theme before React hydrates. The
- * Rust side omits the field when no choice is yet stored, which the
- * TS layer treats as `"system"`.
+ * `theme` and `themePreset` are canonical persistence for the user's
+ * theme choice; `localStorage["dbunk.theme"]` and
+ * `localStorage["dbunk.theme.preset"]` are boot-cache mirrors so a
+ * pre-paint script can apply the resolved theme before React
+ * hydrates. The Rust side omits a field when no choice is yet
+ * stored, which the TS layer treats as `"system"` / `"default"`
+ * respectively.
  */
 export type AppSettingsSnapshot = {
   onboardingCompleted: boolean;
   credentialStorageMode: CredentialStorageMode | null;
   credentialState: CredentialState;
   configDir: string;
-  theme?: "system" | "light" | "dark";
+  theme?: ThemeMode;
+  themePreset?: ThemePreset;
 };
 
 export type AppSettingsStatus =
@@ -609,7 +613,16 @@ export type QueryPreviewData = {
   cache: string;
 };
 
-export type ActiveView = "workspace" | "connections" | "settings";
+export type ActiveView = "workspace" | "settings";
+
+/**
+ * Sub-tab inside the unified Settings page. The Settings view's tab
+ * rail switches between these; the active id persists on
+ * `WorkspaceTabsSlice.settingsTab` so users land on the same tab they
+ * left and so other entry points (sidebar "manage connections" cog,
+ * future deep links) can open Settings on a specific tab.
+ */
+export type SettingsTab = "general" | "connections" | "security" | "about";
 
 /**
  * Sub-tab inside a relational connection's Overview surface. The

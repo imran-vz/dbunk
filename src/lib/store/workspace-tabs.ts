@@ -14,7 +14,12 @@
 
 import type { StateCreator } from "zustand";
 
-import type { ActiveView, AppStoreState, WorkspaceTab } from "./types";
+import type {
+  ActiveView,
+  AppStoreState,
+  SettingsTab,
+  WorkspaceTab,
+} from "./types";
 
 // Module-local counters survive across the slice's actions but are
 // scoped to the slice file — they were globals in the monolith.
@@ -28,8 +33,17 @@ export type WorkspaceTabsSlice = {
   isLeftSidebarOpen: boolean;
   editorTheme: string;
   selectedRowIndex: number;
+  settingsTab: SettingsTab;
 
   setActiveView: (view: ActiveView) => void;
+  setSettingsTab: (tab: SettingsTab) => void;
+  /**
+   * Convenience: switch to the Settings view and optionally focus a
+   * specific tab. Most entry points (header gear, sidebar cog) use
+   * this rather than calling `setActiveView` + `setSettingsTab`
+   * separately.
+   */
+  openSettings: (tab?: SettingsTab) => void;
   setActiveTabId: (id: string) => void;
   setWorkspaceTabs: (
     tabs: WorkspaceTab[] | ((prev: WorkspaceTab[]) => WorkspaceTab[]),
@@ -67,8 +81,15 @@ export const createWorkspaceTabsSlice: StateCreator<
   isLeftSidebarOpen: true,
   editorTheme: "vs",
   selectedRowIndex: 0,
+  settingsTab: "general",
 
   setActiveView: (view) => set({ activeView: view }),
+  setSettingsTab: (tab) => set({ settingsTab: tab }),
+  openSettings: (tab) =>
+    set((state) => ({
+      activeView: "settings",
+      settingsTab: tab ?? state.settingsTab,
+    })),
   setActiveTabId: (id) => set({ activeTabId: id, activeView: "workspace" }),
   setWorkspaceTabs: (tabs) =>
     set((state) => ({
