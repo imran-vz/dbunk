@@ -31,7 +31,7 @@ interface UseMonacoQueryEditorArgs {
     tabId: string,
     options?: { overrideSql?: string },
   ) => Promise<QueryOutcome>;
-  onOutcome: (outcome: QueryOutcome) => void;
+  onOutcome: (outcome: QueryOutcome, sql: string) => void;
 }
 
 export interface MonacoQueryEditor {
@@ -108,7 +108,7 @@ export function useMonacoQueryEditor({
       // Skip `noop` so a rapid double-click (the second call short-
       // circuits while the first is still running) can't wipe the
       // completed banner the first call just produced.
-      if (outcome.kind !== "noop") onOutcome(outcome);
+      if (outcome.kind !== "noop") onOutcome(outcome, sql);
     },
     [isRunning, onOutcome, runQuery, tabId],
   );
