@@ -151,6 +151,7 @@ export function TableEditorBody({
             <SpecializedEditors
               schema={schema}
               table={tableName}
+              connectionId={connectionId}
               structure={structure}
             />
           ) : (
