@@ -22,3 +22,4 @@ If a tradeoff is required, choose correctness and robustness over short-term con
 
 Task Completion Requirements
 - All of bun format, bun lint, and bun typecheck must pass before considering tasks completed.
+- Rust changes are complete only after `just fmt`, `just lint`, and `just test` run successfully.
