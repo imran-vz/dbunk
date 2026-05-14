@@ -70,6 +70,18 @@ pub(crate) struct AppSettingsSnapshot {
     pub credential_storage_mode: Option<CredentialStorageMode>,
     pub credential_state: CredentialState,
     pub config_dir: String,
+    /// User-chosen theme mode: `"system"`, `"light"`, or `"dark"`.
+    /// `None` resolves to `"system"` in the frontend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveAppSettingsPayload {
+    /// One of `"system" | "light" | "dark"`. Validated by the command
+    /// handler before being persisted.
+    pub theme: String,
 }
 
 #[derive(Debug, Serialize)]

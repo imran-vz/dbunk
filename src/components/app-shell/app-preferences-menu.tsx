@@ -1,12 +1,11 @@
 /**
- * Avatar dropdown — preferences, theme toggle, About. The theme is
- * persisted in localStorage and applied by toggling `data-theme` on
- * `document.documentElement`. The choice list reserves a slot for
- * future cloud sign-in / sign-out actions.
+ * Avatar dropdown — preferences, theme toggle, About. Theme is
+ * persisted via the credentials slice (`setTheme` → AppSettings /
+ * SQLite + `localStorage["dbunk.theme"]` boot cache). The choice
+ * list reserves a slot for future cloud sign-in / sign-out actions.
  */
 
 import { IconMoon, IconSettings, IconSun } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
 
 import {
   DropdownMenu,
@@ -19,42 +18,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/store";
-
-const THEME_STORAGE_KEY = "dbunk.theme";
-
-type ThemeChoice = "system" | "light" | "dark";
-
-function readStoredTheme(): ThemeChoice {
-  if (typeof window === "undefined") return "system";
-  const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (raw === "light" || raw === "dark" || raw === "system") return raw;
-  return "system";
-}
-
-function applyTheme(choice: ThemeChoice) {
-  if (typeof document === "undefined") return;
-  const root = document.documentElement;
-  if (choice === "system") {
-    root.removeAttribute("data-theme");
-    return;
-  }
-  root.setAttribute("data-theme", choice);
-}
+import { isThemeMode, type ThemeMode } from "@/lib/theme";
 
 export function AppPreferencesMenu({ initials }: { initials: string }) {
-  const [theme, setTheme] = useState<ThemeChoice>(() => readStoredTheme());
   const setActiveView = useAppStore((state) => state.setActiveView);
-
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+  const setTheme = useAppStore((state) => state.setTheme);
+  const theme: ThemeMode = useAppStore(
+    (state) => state.appSettings?.theme ?? "system",
+  );
 
   const handleThemeChange = (next: string) => {
-    if (next !== "system" && next !== "light" && next !== "dark") return;
-    setTheme(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(THEME_STORAGE_KEY, next);
-    }
+    if (!isThemeMode(next)) return;
+    void setTheme(next);
   };
 
   return (

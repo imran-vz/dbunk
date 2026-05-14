@@ -17,6 +17,7 @@ import { Sidebar } from "@/components/sidebar";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkspaceView } from "@/components/workspace-view";
 import { useAppStore } from "@/lib/store";
+import { applyTheme, subscribeSystem } from "@/lib/theme";
 import {
   useContainerWidth,
   useResizableWidth,
@@ -109,6 +110,7 @@ export function AppShell() {
     runHealthChecks,
     createNewQueryTab,
   } = useAppStore();
+  const themeMode = appSettings?.theme ?? "system";
 
   const activeConnection = useMemo(
     () =>
@@ -131,14 +133,34 @@ export function AppShell() {
 
   useEffect(() => {
     setIsClient(true);
-    if (typeof document === "undefined") {
-      return;
-    }
-    document.documentElement.classList.add("dark");
-    setEditorTheme(
-      document.documentElement.classList.contains("dark") ? "vs-dark" : "vs",
-    );
+  }, []);
+
+  // Keep Monaco's theme in sync with whatever owns the `.dark` class on
+  // <html>. The pre-paint script sets it on first load; the preferences
+  // menu (via `setTheme`) toggles it at runtime. Observing the class
+  // attribute makes the editor follow without each writer having to
+  // know Monaco exists.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const sync = () => {
+      setEditorTheme(
+        document.documentElement.classList.contains("dark") ? "vs-dark" : "vs",
+      );
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
   }, [setEditorTheme]);
+
+  // When the user picks "System", follow OS changes live.
+  useEffect(() => {
+    if (themeMode !== "system") return;
+    return subscribeSystem(() => applyTheme("system"));
+  }, [themeMode]);
 
   useEffect(() => {
     void loadAppSettings();

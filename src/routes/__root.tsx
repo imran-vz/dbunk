@@ -5,6 +5,15 @@ import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 
+/**
+ * Theme boot script — runs synchronously before React mounts so the
+ * first paint has the right `.dark` class on <html> and there's no
+ * flash of the wrong theme. localStorage is the boot cache;
+ * AppSettings / SQLite is canonical and rehydrates on
+ * `loadAppSettings`. See docs/design/theme-support-plan.md.
+ */
+const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem("dbunk.theme");var dark=t==="dark"||((t===null||t==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(dark)document.documentElement.classList.add("dark");}catch(e){}})();`;
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -21,12 +30,23 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script
+          id="dbunk-theme-boot"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: pre-paint theme script with a build-time-constant body — must execute before React hydrates to avoid a flash of the wrong theme.
+          dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
+        />
         <HeadContent />
       </head>
       <body>
         {children}
+        {/* Toaster reads `theme="system"` so it follows OS prefers-
+            color-scheme. If the user manually picks an explicit Light /
+            Dark mode that differs from OS, toasts can briefly mismatch
+            the app surface; the custom class names below pull from CSS
+            variables, so this drift is limited to sonner's built-in
+            chrome (icons / outline). */}
         <Toaster
-          theme="dark"
+          theme="system"
           position="bottom-right"
           richColors
           closeButton
