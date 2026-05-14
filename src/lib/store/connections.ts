@@ -37,39 +37,34 @@ const hydrateConnection = (connection: StoredConnection): Connection => ({
   ...connection,
   status: "Disconnected",
   latency: "--",
-  lastSync: "Never",
 });
 
 /**
- * Strip the runtime fields (`status`, `latency`, `lastSync`,
- * `errorMessage`) from a `Connection` to recover the `StoredConnection`
- * wire shape. The variant-specific fields (`ssl`, `useHttps`, etc.)
- * pass through untouched via the spread — TypeScript narrows on
- * `engine` so the returned union member matches the input variant.
+ * Strip the runtime fields (`status`, `latency`, `errorMessage`) from a
+ * `Connection` to recover the `StoredConnection` wire shape. The
+ * variant-specific fields (`ssl`, `useHttps`, etc.) pass through
+ * untouched via the spread — TypeScript narrows on `engine` so the
+ * returned union member matches the input variant.
  */
 const toStoredConnection = (connection: Connection): StoredConnection => {
-  const { status, latency, lastSync, errorMessage, ...stored } = connection;
+  const { status, latency, errorMessage, ...stored } = connection;
   // The runtime-field destructure leaves a shape whose engine tag plus
   // per-variant fields exactly satisfy `StoredConnection`; the cast is
   // narrowing the union the destructure widens.
   void status;
   void latency;
-  void lastSync;
   void errorMessage;
   return stored as StoredConnection;
 };
 
 /**
  * Updates to a Connection's runtime fields (`status`, `latency`,
- * `lastSync`, `errorMessage`, `lastActivityAt`). Variant-specific
- * fields are excluded because they're part of the Connection's
- * engine identity, not transient state.
+ * `errorMessage`, `lastActivityAt`). Variant-specific fields are
+ * excluded because they're part of the Connection's engine identity,
+ * not transient state.
  */
 type ConnectionRuntimeUpdate = Partial<
-  Pick<
-    Connection,
-    "status" | "latency" | "lastSync" | "errorMessage" | "lastActivityAt"
-  >
+  Pick<Connection, "status" | "latency" | "errorMessage" | "lastActivityAt">
 >;
 
 const applyConnectionUpdate = (
@@ -119,6 +114,14 @@ export type ConnectionsSlice = {
     | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
     | { ok: false; error: string }
   >;
+  /**
+   * Bump `lastActivityAt` on a connection record. Called from
+   * sibling slices (e.g., relational-queries `runQuery` success
+   * path) so they don't have to mutate `connections` directly.
+   * Owner-slice helper per the cross-slice write rule documented
+   * in `store/README.md`.
+   */
+  applyConnectionActivity: (connectionId: string, at?: string) => void;
   runHealthChecks: () => Promise<void>;
 };
 
@@ -238,7 +241,7 @@ export const createConnectionsSlice: StateCreator<
                 ...c,
                 status: currentConnection.status,
                 latency: currentConnection.latency,
-                lastSync: currentConnection.lastSync,
+                lastActivityAt: currentConnection.lastActivityAt,
               }
             : c,
         );
@@ -252,16 +255,21 @@ export const createConnectionsSlice: StateCreator<
   },
 
   deleteConnection: async (connectionId) => {
-    // Cascade cleanup is inline until the downstream slices land
-    // their cleanup methods (commits 6–9). Once they exist, the
-    // schemaExplorer-filter / activeConnectionId-update logic moves to
-    // get().dropRelationalCachesForConnection(id) etc.
-    if (!isTauri()) {
-      get().dropRelationalCachesForConnection(connectionId);
+    // Mirror the disconnect cascade so deleting a connection also
+    // closes its open workspace/key/pubsub tabs and drops cached
+    // query state. Without this, deleted connections leave orphan
+    // tabs that point at a connectionId that no longer exists.
+    const cascade = () => {
+      const state = get();
+      state.dropOpenQueryStateForConnection(connectionId);
+      state.dropRelationalCachesForConnection(connectionId);
+      state.closeKeyTabsForConnection(connectionId);
+      state.closePubSubSessionsForConnection(connectionId);
+      state.closeTabsForConnection(connectionId);
+    };
+
+    const finalize = (connections: ReturnType<typeof get>["connections"]) => {
       set((state) => {
-        const connections = state.connections.filter(
-          (c) => c.id !== connectionId,
-        );
         const newActiveId =
           state.activeConnectionId === connectionId
             ? (connections[0]?.id ?? "")
@@ -275,15 +283,15 @@ export const createConnectionsSlice: StateCreator<
         return {
           connections,
           activeConnectionId: newActiveId,
-          schemaExplorer: Object.fromEntries(
-            Object.entries(state.schemaExplorer).filter(
-              ([key]) => key !== connectionId,
-            ),
-          ),
           connectionOverviewTab: remainingTabs,
           connectionSchemaMapSchema: remainingSchemaMapSchemas,
         };
       });
+    };
+
+    if (!isTauri()) {
+      cascade();
+      finalize(get().connections.filter((c) => c.id !== connectionId));
       return;
     }
     try {
@@ -293,31 +301,8 @@ export const createConnectionsSlice: StateCreator<
           payload: { connectionId },
         },
       );
-      const connections = stored.map(hydrateConnection);
-      get().dropRelationalCachesForConnection(connectionId);
-      set((state) => {
-        const newActiveId =
-          state.activeConnectionId === connectionId
-            ? (connections[0]?.id ?? "")
-            : state.activeConnectionId;
-        const { [connectionId]: _droppedTab, ...remainingTabs } =
-          state.connectionOverviewTab;
-        const {
-          [connectionId]: _droppedSchemaMapSchema,
-          ...remainingSchemaMapSchemas
-        } = state.connectionSchemaMapSchema;
-        return {
-          connections,
-          activeConnectionId: newActiveId,
-          schemaExplorer: Object.fromEntries(
-            Object.entries(state.schemaExplorer).filter(
-              ([key]) => key !== connectionId,
-            ),
-          ),
-          connectionOverviewTab: remainingTabs,
-          connectionSchemaMapSchema: remainingSchemaMapSchemas,
-        };
-      });
+      cascade();
+      finalize(stored.map(hydrateConnection));
     } catch (error) {
       console.error("Failed to delete connection", error);
     }
@@ -400,7 +385,7 @@ export const createConnectionsSlice: StateCreator<
             ...connection,
             status,
             latency: formatLatencyMs(found.result.latencyMs),
-            lastSync: new Date().toISOString(),
+            lastActivityAt: new Date().toISOString(),
             errorMessage: undefined,
           };
         }
@@ -414,6 +399,16 @@ export const createConnectionsSlice: StateCreator<
     });
   },
 
+  applyConnectionActivity: (connectionId, at) => {
+    if (!connectionId) return;
+    const stamp = at ?? new Date().toISOString();
+    set((state) => ({
+      connections: applyConnectionUpdate(state.connections, connectionId, {
+        lastActivityAt: stamp,
+      }),
+    }));
+  },
+
   connectConnection: async (connectionId) => {
     if (!connectionId) {
       return;
@@ -423,7 +418,7 @@ export const createConnectionsSlice: StateCreator<
       set((state) => ({
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Connected",
-          lastSync: "Just now",
+          lastActivityAt: new Date().toISOString(),
           errorMessage: undefined,
         }),
       }));
@@ -451,7 +446,6 @@ export const createConnectionsSlice: StateCreator<
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Connected",
           latency: formatLatencyMs(result.latencyMs),
-          lastSync: "Just now",
           lastActivityAt: new Date().toISOString(),
           errorMessage: undefined,
         }),
@@ -499,7 +493,6 @@ export const createConnectionsSlice: StateCreator<
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Disconnected",
           latency: "--",
-          lastSync: "Never",
           errorMessage: undefined,
         }),
         connectionOverviewTab: remainingTabs,

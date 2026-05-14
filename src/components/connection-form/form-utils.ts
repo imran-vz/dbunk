@@ -153,7 +153,6 @@ export function buildConnectionFromForm(
   runtime: {
     status: Connection["status"];
     latency: string;
-    lastSync: string;
     errorMessage?: string;
     lastActivityAt?: string;
   },

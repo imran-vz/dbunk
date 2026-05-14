@@ -14,7 +14,7 @@ export function FavoriteTablesCard({
   onOpenTable,
   onViewAll,
 }: {
-  tables: Array<{ schema: string; name: string }>;
+  tables: Array<{ schema: string; name: string; rowCount: number | null }>;
   onOpenTable: (schema: string, table: string) => void;
   onViewAll: () => void;
 }) {
@@ -48,9 +48,17 @@ export function FavoriteTablesCard({
               <span className="text-[0.625rem] text-text-muted">
                 {table.schema}
               </span>
-              <span className="text-[0.625rem] tabular-nums text-text-muted">
-                {/* TODO(Phase 4 follow-up): real row counts */}
-                {/* eslint-disable-next-line no-magic-numbers */}—
+              <span
+                className="text-[0.625rem] tabular-nums text-text-muted"
+                title={
+                  table.rowCount === null
+                    ? "Row counts load from pg_stat — Postgres only"
+                    : "Planner estimate from pg_class.reltuples"
+                }
+              >
+                {table.rowCount === null
+                  ? "—"
+                  : `≈${table.rowCount.toLocaleString()}`}
               </span>
             </button>
           ))

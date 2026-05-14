@@ -71,7 +71,6 @@ export function useConnectionForm({
         const updated = buildConnectionFromForm(value, connection.id, {
           status: connection.status,
           latency: connection.latency,
-          lastSync: connection.lastSync,
           errorMessage: connection.errorMessage,
           lastActivityAt: connection.lastActivityAt,
         });
@@ -80,7 +79,6 @@ export function useConnectionForm({
         const created = buildConnectionFromForm(value, crypto.randomUUID(), {
           status: "Disconnected",
           latency: "--",
-          lastSync: "Never",
         });
         await addConnection(created);
       }

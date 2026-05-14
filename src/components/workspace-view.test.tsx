@@ -26,7 +26,6 @@ const connectedConnection: Connection = {
   password: "",
   role: "",
   latency: "12 ms",
-  lastSync: "Just now",
   ssl: true,
 };
 
@@ -203,7 +202,6 @@ describe("WorkspaceView overview sub-tabs", () => {
       password: "",
       role: "",
       latency: "8 ms",
-      lastSync: "Just now",
       ssl: false,
     };
 

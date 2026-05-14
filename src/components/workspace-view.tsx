@@ -331,6 +331,9 @@ function ConnectedOverview({
     queryHistory,
     isConnected,
     onLoadStats,
+    relationStats,
+    relationStatsStatus,
+    onLoadRelationStats,
   });
 
   // Transient cross-tab filter — set by Schemas-tab row click, cleared

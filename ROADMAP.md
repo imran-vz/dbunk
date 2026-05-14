@@ -20,7 +20,7 @@ What already works:
 | Table editor (browse rows, inline cell commit, insert/delete, pending mutations) | ✅ | `src/components/table-editor*`, `src-tauri/src/postgres.rs` |
 | Table structure sub-tab (columns, indexes, FKs, constraints, pending DDL) | ✅ | `src/components/table-structure/*`, `fetch_table_structure` |
 | Schema relationship map (auto-layout, table nodes, FK edges) | ✅ Phase 2 | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
-| Row export — CSV, JSON | 🟡 minimal | `src/lib/export.ts` (current result rows only) |
+| Data export — CSV, JSON, SQL, HTML, Markdown, TXT, XLSX | ✅ | `src/lib/export.ts`, `src/components/data-grid.tsx` (whole-table + selection, gzip, encoding picker, NULL token, saved tasks) |
 | Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ✅ Phase 1 | `src/components/workspace-overview/{tables,schemas,query-history,details,settings}-tab.tsx` |
 | Connection-level settings page | ❌ | Sidebar gear-icon view exists but exposes no Postgres knobs |
 
@@ -51,68 +51,70 @@ Grouped by area. ❌ = absent, 🟡 = partial, ✅ = parity.
 Deferred schema-map items are tracked in [GitHub issue #17](https://github.com/imran-vz/dbunk/issues/17).
 
 ### 3. Object types in navigator
-Today: schemas → tables + views.
+Today: schemas → tables + views + the items below.
 
-- ❌ Materialized views (+ refresh action)
-- ❌ Foreign tables
-- ❌ Functions, procedures, aggregate functions
-- ❌ Sequences (edit / restart / next value)
-- ❌ Custom types, domains
-- ❌ Event triggers
-- ❌ Extensions (with install/drop UI)
-- ❌ Per-table sub-nodes: Triggers, Rules, Policies, Partitions, Dependencies, References
-- ❌ Database-level: Roles / users, Tablespaces
+- ✅ Materialized views (+ refresh action via `refresh_materialized_view`)
+- ✅ Foreign tables
+- ✅ Functions, procedures, aggregate functions (open with `pg_get_functiondef`)
+- 🟡 Sequences — browsable, opens `pg_sequences` query; edit / restart / next-value flows still pending
+- ✅ Custom types, domains
+- ✅ Event triggers
+- ✅ Extensions (browse + open definition; install/drop UI not wired)
+- ✅ Per-table sub-nodes: Triggers, Rules, Policies, Partitions, Dependencies, References
+- ✅ Database-level: Roles / users, Tablespaces
 
 ### 4. Administration tools
-- ❌ Session Manager — `pg_stat_activity` with terminate/cancel
-- ❌ Lock Manager — `pg_locks` with blocker/blocked chains
-- ❌ Pending transactions view
-- ❌ VACUUM / ANALYZE / REINDEX as context-menu actions
-- ❌ Deeper database statistics (size growth, cache hit ratio, slow queries)
+- ✅ Session Manager — `pg_stat_activity` with terminate/cancel (`admin-tab.tsx`)
+- ✅ Lock Manager — `pg_locks` with blocker/blocked chains
+- ✅ Pending transactions view
+- ✅ VACUUM / ANALYZE / REINDEX as table-header actions (`run_pg_maintenance`)
+- 🟡 Deeper database statistics — cache-hit, idle-in-transaction, basic metrics shipped; size growth and slow-query digest are still pending
 
 ### 5. SQL editor depth
 - ✅ Basic SQL completion (`src/lib/sql-completions.ts`)
-- ✅ EXPLAIN / EXPLAIN ANALYZE plan visualizer (tree + cost)
+- ✅ EXPLAIN / EXPLAIN ANALYZE plan visualizer (tree + cost, JSON + text)
+- ✅ SQL templates / snippets library (toolbar dropdown)
+- ✅ Bind variables / parameterized executions (`src/lib/bind-variables.ts`)
 - ❌ PL/pgSQL debugger (breakpoints, step, variable inspect)
-- ❌ SQL templates / snippets library
-- ❌ Bind variables / parameterized executions
 - ❌ Visual query builder
+- ❌ SQL formatting (the "Format" toolbar button is currently a no-op)
 
 ### 6. Data export
-Have: result-set rows → CSV, JSON.
+Have: per-table or selection export through the data grid.
 
-- ❌ Whole-table export (not just current page)
-- ❌ SQL INSERTs export (with native date format option)
-- ❌ DDL export — table, schema, or database
-- ❌ HTML / XML / Markdown / TXT
-- ❌ XLSX (Excel)
+- ✅ Whole-table export (paginates `load_table_data`)
+- ✅ SQL INSERTs export
+- ✅ DDL export — table, schema, or database (`export_ddl`)
+- ✅ HTML / Markdown / TXT
+- ✅ XLSX (Excel) — hand-rolled single-sheet writer
+- ❌ XML
 - ❌ Parquet
-- ❌ Table-to-table copy (within / across connections)
-- ❌ Save export config as re-runnable task
-- ❌ `pg_dump` / `pg_restore` integration
-- ❌ Compression / split / encoding options
+- ✅ Table-to-table copy (`copy_table_rows` over `import_rows`)
+- ✅ Save export config as re-runnable task (`export-tasks.ts`)
+- ✅ `pg_dump` / `pg_restore` integration (spawns real binaries)
+- 🟡 Compression / split / encoding — gzip + encoding picker + NULL token shipped; split-file not yet
 
 ### 7. Data import
-Have: nothing beyond single-row inserts in the table editor.
+Have: CSV / XLSX import wizard with column mapping.
 
-- ❌ CSV → existing table with column-mapping wizard
-- ❌ XLSX → table
+- ✅ CSV → existing table with column-mapping wizard
+- ✅ XLSX → table (uses the `xlsx` package)
 - ❌ XML → table
-- ❌ Multi-sheet imports, header detection, date-format / NULL-token configuration
-- ❌ `COPY FROM` streaming (Postgres fast-path bulk load)
+- 🟡 Multi-sheet imports, header detection, date-format / NULL-token configuration — XLSX picks the first sheet today; richer multi-sheet + date-format options pending
+- ✅ `COPY FROM` streaming (Postgres fast-path bulk load)
 
 ### 8. Other Postgres-shaped tooling
-- ❌ Permissions / GRANT editor (per object)
-- ❌ Row-Level Security policies UI
-- ❌ Index creation UI (currently DDL-only via pending changes)
-- ❌ Cross-table FK creation UI
-- ❌ Trigger creation UI
-- ❌ Postgres `array` cell editor
-- ❌ `json` / `jsonb` tree editor
-- ❌ PostGIS / geometry visualization
-- ❌ Schema compare (two schemas → diff + migration SQL)
-- ❌ Data compare (two tables → diff)
-- ❌ Mock data generator
+- ✅ Permissions / GRANT editor (per object) — Specialized editors panel generates DDL, opens in SQL editor
+- ✅ Row-Level Security policies UI — same panel
+- ✅ Index creation UI — same panel
+- ✅ Cross-table FK creation UI — same panel
+- ✅ Trigger creation UI — same panel
+- 🟡 Postgres `array` cell editor — viewer/formatter exists; doesn't write back into the row
+- 🟡 `json` / `jsonb` tree editor — viewer/formatter exists; not yet wired to cell edits
+- 🟡 PostGIS / geometry visualization — viewer/preview exists; not yet wired to cell edits
+- ✅ Schema compare (two schemas → diff)
+- ✅ Data compare (two tables → diff, sampled)
+- ✅ Mock data generator (column-aware INSERTs from real `tableStructure`)
 
 ---
 

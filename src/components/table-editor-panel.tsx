@@ -1,5 +1,6 @@
 import { IconCopy, IconMaximize, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   SchemaRelationshipMap,
@@ -91,6 +92,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const {
     tableEdits,
     openQueryForTable,
+    openTableTab,
     loadTableData,
     refreshTableData,
     setTableEdit,
@@ -192,11 +194,18 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         rowsAffected: result.rowsAffected,
       });
       setIsImportOpen(false);
+      toast.success(
+        `Imported ${result.rowsAffected.toLocaleString()} row${
+          result.rowsAffected === 1 ? "" : "s"
+        } in ${result.runtimeMs} ms`,
+      );
       if (dataKey) {
         await refreshTableData(dataKey);
       }
     } catch (error) {
-      setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
+      const message = errorToMessage(error);
+      setLastOutcome({ kind: "failed", reason: message });
+      toast.error(`Import failed: ${message}`);
     }
   };
 
@@ -239,8 +248,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         sqlTableName: `${tab.schema}.${tab.table ?? tab.label}`,
       });
       downloadBlob(filename, blob);
+      toast.success(`Exported ${tab.table ?? tab.label} as ${options.format}`);
     } catch (error) {
-      setTableExportError(errorToMessage(error));
+      const message = errorToMessage(error);
+      setTableExportError(message);
+      toast.error(`Export failed: ${message}`);
     }
   };
 
@@ -264,6 +276,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     saveExportTask(task);
     setSavedExportTask(task);
     setTableExportError(null);
+    toast.success(`Saved export task (${options.format})`);
   };
 
   const handleRunSavedExportTask = async () => {
@@ -296,8 +309,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         result.sql,
       );
       setTableExportError(null);
+      toast.success("Exported DDL");
     } catch (error) {
-      setTableExportError(errorToMessage(error));
+      const message = errorToMessage(error);
+      setTableExportError(message);
+      toast.error(`DDL export failed: ${message}`);
     }
   };
 
@@ -473,6 +489,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onOpenAddRow={() => setIsAddRowOpen(true)}
         onOpenImport={() => setIsImportOpen(true)}
         onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
+        onOpenTable={openTableTab}
+        onSubTabChange={setActiveSubTab}
         onCellEdit={(rowIndex, colIndex, value) =>
           setTableEdit(tableName, rowIndex, colIndex, value)
         }

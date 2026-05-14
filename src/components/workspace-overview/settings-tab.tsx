@@ -4,6 +4,7 @@ import {
   IconEdit,
 } from "@tabler/icons-react";
 import { type ReactNode, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
 import { Button } from "@/components/ui/button";
@@ -225,8 +226,11 @@ async function runDump(
           format === "plain" ? "application/sql" : "application/octet-stream",
       }),
     );
+    toast.success(`Saved ${filename}`);
   } catch (error) {
-    setError(errorToMessage(error));
+    const message = errorToMessage(error);
+    setError(message);
+    toast.error(`pg_dump failed: ${message}`);
   } finally {
     setBusy(null);
   }
@@ -255,8 +259,11 @@ async function runRestore(
         clean,
       },
     });
+    toast.success(`Restored ${file.name}`);
   } catch (error) {
-    setError(errorToMessage(error));
+    const message = errorToMessage(error);
+    setError(message);
+    toast.error(`pg_restore failed: ${message}`);
   } finally {
     setBusy(null);
   }
