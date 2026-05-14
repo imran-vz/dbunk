@@ -1,6 +1,7 @@
 /**
- * Set viewer — same two-mode pattern as Hash, but for unordered
- * `SMEMBERS` / `SSCAN`.
+ * Set viewer + editor (Tier 2). Same two-mode pattern as Hash, but
+ * for unordered `SMEMBERS` / `SSCAN`. Edits queue SADD / SREM and
+ * commit together on Save.
  */
 
 import { useMemo, useState } from "react";
@@ -9,6 +10,7 @@ import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  applyRedisSetEdits,
   fetchSet,
   formatValueOneLine,
   type SerializedValue,
@@ -39,6 +41,12 @@ export function SetValueView({
   const [pattern, setPattern] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [pendingRemoves, setPendingRemoves] = useState<Set<string>>(new Set());
+  const [pendingAdds, setPendingAdds] = useState<string[]>([]);
+  const [newAdd, setNewAdd] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useRedisFetch({
     fetch: () =>
@@ -61,7 +69,7 @@ export function SetValueView({
     },
     onError: setError,
     onSettled: () => setLoading(false),
-    cacheKey: `${connectionId}|${keyName}|${mode}|${pattern}`,
+    cacheKey: `${connectionId}|${keyName}|${mode}|${pattern}|${reloadTick}`,
   });
 
   const loadMore = async () => {
@@ -85,6 +93,34 @@ export function SetValueView({
     }
   };
 
+  const resetEdits = () => {
+    setPendingRemoves(new Set());
+    setPendingAdds([]);
+    setNewAdd("");
+  };
+
+  const dirty = pendingRemoves.size > 0 || pendingAdds.length > 0;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await applyRedisSetEdits({
+        connectionId,
+        key: keyName,
+        adds: pendingAdds,
+        removes: Array.from(pendingRemoves),
+      });
+      resetEdits();
+      setEditing(false);
+      setReloadTick((t) => t + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
       <div className="flex items-center gap-2 text-[0.65rem] text-text-muted">
@@ -105,6 +141,43 @@ export function SetValueView({
             : ""}{" "}
           members · mode: {mode}
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          {!editing ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[0.65rem]"
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[0.65rem]"
+                disabled={saving}
+                onClick={() => {
+                  setEditing(false);
+                  resetEdits();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 px-2 text-[0.65rem]"
+                disabled={saving || !dirty}
+                onClick={() => {
+                  void handleSave();
+                }}
+              >
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -113,16 +186,84 @@ export function SetValueView({
       ) : null}
       <div className="flex-1 overflow-auto rounded-md border border-border-subtle">
         <ul className="divide-y divide-border-subtle font-mono text-xs">
-          {members.map((member) => (
-            <li
-              key={formatValueOneLine(member)}
-              className="break-all px-3 py-1 hover:bg-white/5"
-            >
-              {formatValueOneLine(member)}
-            </li>
-          ))}
+          {members.map((member) => {
+            const name = formatValueOneLine(member);
+            const isRemoved = pendingRemoves.has(name);
+            return (
+              <li
+                key={name}
+                className={`flex items-center justify-between gap-2 px-3 py-1 hover:bg-white/5 ${
+                  isRemoved ? "opacity-40 line-through" : ""
+                }`}
+              >
+                <span className="break-all">{name}</span>
+                {editing ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingRemoves((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(name)) next.delete(name);
+                        else next.add(name);
+                        return next;
+                      })
+                    }
+                    className="text-[0.65rem] text-destructive hover:underline"
+                  >
+                    {isRemoved ? "undo" : "remove"}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+          {editing
+            ? pendingAdds.map((value) => (
+                <li
+                  key={`add::${value}`}
+                  className="flex items-center justify-between gap-2 bg-accent-green/5 px-3 py-1"
+                >
+                  <span className="break-all text-accent-green">+ {value}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPendingAdds((prev) =>
+                        prev.filter((item) => item !== value),
+                      )
+                    }
+                    className="text-[0.65rem] text-destructive hover:underline"
+                  >
+                    remove
+                  </button>
+                </li>
+              ))
+            : null}
         </ul>
       </div>
+      {editing ? (
+        <div className="flex items-center gap-2 text-[0.65rem]">
+          <Input
+            value={newAdd}
+            onChange={(event) => setNewAdd(event.target.value)}
+            placeholder="new member (SADD)"
+            className="h-7 max-w-sm text-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 text-[0.65rem]"
+            disabled={!newAdd}
+            onClick={() => {
+              if (!newAdd) return;
+              setPendingAdds((prev) =>
+                prev.includes(newAdd) ? prev : [...prev, newAdd],
+              );
+              setNewAdd("");
+            }}
+          >
+            Add
+          </Button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between text-[0.65rem] text-text-muted">
         <span>
           {mode === "scan"
@@ -137,7 +278,7 @@ export function SetValueView({
             onClick={() => {
               void loadMore();
             }}
-            disabled={loading}
+            disabled={loading || editing}
           >
             {loading ? "Loading…" : "Load more"}
           </Button>

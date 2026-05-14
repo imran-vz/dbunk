@@ -938,6 +938,18 @@ async fn redis_fetch_stream(
 }
 
 #[tauri::command]
+async fn redis_fetch_stream_groups(
+    state: State<'_, AppState>,
+    payload: redis::key_inspector::FetchStreamGroupsPayload,
+) -> Result<redis::key_inspector::StreamGroupsPayload, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::fetch_stream_groups(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn redis_fetch_json(
     state: State<'_, AppState>,
     payload: redis::key_inspector::FetchJsonPayload,
@@ -975,6 +987,72 @@ async fn redis_fetch_overview(
 }
 
 #[tauri::command]
+async fn redis_fetch_client_list(
+    state: State<'_, AppState>,
+    payload: ConnectionPayload,
+) -> Result<redis::server_info::ClientListPayload, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::keyvalue::fetch_client_list(&connection).await },
+    )
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_acl_list(
+    state: State<'_, AppState>,
+    payload: ConnectionPayload,
+) -> Result<redis::server_info::AclListPayload, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::keyvalue::fetch_acl_list(&connection).await },
+    )
+    .await
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchConfigPayload {
+    connection_id: String,
+    #[serde(default = "default_star")]
+    pattern: String,
+}
+
+fn default_star() -> String {
+    "*".to_string()
+}
+
+#[tauri::command]
+async fn redis_fetch_config(
+    state: State<'_, AppState>,
+    payload: FetchConfigPayload,
+) -> Result<redis::server_info::ConfigPayload, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move {
+            dispatch::keyvalue::fetch_config(&connection, &payload.pattern).await
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+async fn redis_fetch_latency(
+    state: State<'_, AppState>,
+    payload: ConnectionPayload,
+) -> Result<redis::server_info::LatencyPayload, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::keyvalue::fetch_latency(&connection).await },
+    )
+    .await
+}
+
+#[tauri::command]
 async fn redis_pubsub_start(
     state: State<'_, AppState>,
     payload: redis::pubsub::StartSessionPayload,
@@ -982,6 +1060,18 @@ async fn redis_pubsub_start(
     let connection_id = payload.connection_id.clone();
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::keyvalue::pubsub_start(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_pubsub_discover(
+    state: State<'_, AppState>,
+    payload: redis::pubsub::DiscoverChannelsPayload,
+) -> Result<redis::pubsub::DiscoverChannelsResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::pubsub_discover(&connection, &payload).await
     })
     .await
 }
@@ -1076,6 +1166,78 @@ async fn redis_create_key(
     let connection_id = payload.connection_id.clone();
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::keyvalue::create_key(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_apply_list_edits(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::ApplyListEditsPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::apply_list_edits(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_apply_set_edits(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::SetMembersPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::apply_set_edits(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_apply_sorted_set_edits(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::SortedSetEditsPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::apply_sorted_set_edits(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_apply_stream_edits(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::StreamEditsPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::apply_stream_edits(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_set_json_path(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::JsonSetPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::set_json_path(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_delete_json_path(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::JsonDeletePayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::delete_json_path(&connection, &payload).await
     })
     .await
 }
@@ -1258,10 +1420,16 @@ pub fn run() {
             redis_fetch_set,
             redis_fetch_sorted_set,
             redis_fetch_stream,
+            redis_fetch_stream_groups,
             redis_fetch_json,
             redis_run_command,
             redis_fetch_overview,
+            redis_fetch_client_list,
+            redis_fetch_acl_list,
+            redis_fetch_config,
+            redis_fetch_latency,
             redis_pubsub_start,
+            redis_pubsub_discover,
             redis_pubsub_drain,
             redis_pubsub_close,
             redis_set_string,
@@ -1270,7 +1438,13 @@ pub fn run() {
             redis_del_keys,
             redis_set_expire,
             redis_rename_key,
-            redis_create_key
+            redis_create_key,
+            redis_apply_list_edits,
+            redis_apply_set_edits,
+            redis_apply_sorted_set_edits,
+            redis_apply_stream_edits,
+            redis_set_json_path,
+            redis_delete_json_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

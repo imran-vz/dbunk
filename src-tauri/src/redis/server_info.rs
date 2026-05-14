@@ -335,3 +335,200 @@ fn scalar(value: redis::Value) -> Option<String> {
         _ => None,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Admin extras (Tier 2 Server tab cards)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientListEntry {
+    pub id: u64,
+    pub addr: String,
+    pub name: String,
+    pub age_seconds: u64,
+    pub idle_seconds: u64,
+    pub flags: String,
+    pub db: u64,
+    pub command: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientListPayload {
+    pub entries: Vec<ClientListEntry>,
+}
+
+pub async fn fetch_client_list(
+    connection: &RedisStoredConnection,
+) -> Result<ClientListPayload, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let raw: String = redis::cmd("CLIENT")
+        .arg("LIST")
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    let entries = raw
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(parse_client_list_line)
+        .collect();
+    Ok(ClientListPayload { entries })
+}
+
+fn parse_client_list_line(line: &str) -> ClientListEntry {
+    let mut entry = ClientListEntry {
+        id: 0,
+        addr: String::new(),
+        name: String::new(),
+        age_seconds: 0,
+        idle_seconds: 0,
+        flags: String::new(),
+        db: 0,
+        command: String::new(),
+    };
+    for pair in line.split_whitespace() {
+        let mut kv = pair.splitn(2, '=');
+        let Some(key) = kv.next() else { continue };
+        let value = kv.next().unwrap_or("");
+        match key {
+            "id" => entry.id = value.parse().unwrap_or(0),
+            "addr" => entry.addr = value.to_string(),
+            "name" => entry.name = value.to_string(),
+            "age" => entry.age_seconds = value.parse().unwrap_or(0),
+            "idle" => entry.idle_seconds = value.parse().unwrap_or(0),
+            "flags" => entry.flags = value.to_string(),
+            "db" => entry.db = value.parse().unwrap_or(0),
+            "cmd" => entry.command = value.to_string(),
+            _ => {}
+        }
+    }
+    entry
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclListEntry {
+    pub username: String,
+    /// The raw `ACL GETUSER` rules string (or the `ACL LIST` line as
+    /// a fallback on older Redis versions).
+    pub rules: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclListPayload {
+    pub entries: Vec<AclListEntry>,
+}
+
+pub async fn fetch_acl_list(connection: &RedisStoredConnection) -> Result<AclListPayload, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let raw: Vec<String> = redis::cmd("ACL")
+        .arg("LIST")
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    let entries = raw
+        .into_iter()
+        .map(|line| {
+            // Lines come back as "user <name> ...rules". Split off the
+            // username for a cleaner table; keep the rules verbatim.
+            let mut iter = line.splitn(3, ' ');
+            let _user_keyword = iter.next();
+            let username = iter.next().unwrap_or("").to_string();
+            let rules = iter.next().unwrap_or("").to_string();
+            AclListEntry { username, rules }
+        })
+        .collect();
+    Ok(AclListPayload { entries })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigEntry {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigPayload {
+    pub entries: Vec<ConfigEntry>,
+}
+
+pub async fn fetch_config(
+    connection: &RedisStoredConnection,
+    pattern: &str,
+) -> Result<ConfigPayload, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let pairs: Vec<String> = redis::cmd("CONFIG")
+        .arg("GET")
+        .arg(pattern)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    let mut entries = Vec::with_capacity(pairs.len() / 2);
+    let mut iter = pairs.into_iter();
+    while let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+        entries.push(ConfigEntry { key, value });
+    }
+    entries.sort_by(|a, b| a.key.cmp(&b.key));
+    Ok(ConfigPayload { entries })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyEntry {
+    pub event: String,
+    pub timestamp: i64,
+    pub latest_latency_ms: i64,
+    pub max_latency_ms: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyPayload {
+    pub entries: Vec<LatencyEntry>,
+}
+
+pub async fn fetch_latency(connection: &RedisStoredConnection) -> Result<LatencyPayload, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let raw: redis::Value = redis::cmd("LATENCY")
+        .arg("LATEST")
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    let rows = match raw {
+        redis::Value::Array(rows) => rows,
+        _ => return Ok(LatencyPayload { entries: vec![] }),
+    };
+    let entries = rows
+        .into_iter()
+        .filter_map(|row| {
+            let redis::Value::Array(fields) = row else {
+                return None;
+            };
+            let mut iter = fields.into_iter();
+            let event = scalar(iter.next()?)?;
+            let timestamp = match iter.next()? {
+                redis::Value::Int(n) => n,
+                other => scalar(other)?.parse().ok()?,
+            };
+            let latest = match iter.next()? {
+                redis::Value::Int(n) => n,
+                other => scalar(other)?.parse().ok()?,
+            };
+            let max = match iter.next()? {
+                redis::Value::Int(n) => n,
+                other => scalar(other)?.parse().ok()?,
+            };
+            Some(LatencyEntry {
+                event,
+                timestamp,
+                latest_latency_ms: latest,
+                max_latency_ms: max,
+            })
+        })
+        .collect();
+    Ok(LatencyPayload { entries })
+}

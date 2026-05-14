@@ -189,6 +189,34 @@ export function fetchStream(payload: {
   return tauriInvoke<StreamValuePayload>("redis_fetch_stream", { payload });
 }
 
+export type StreamGroupInfo = {
+  name: string;
+  consumers: number;
+  pending: number;
+  lastDeliveredId: string;
+};
+
+export type StreamConsumerInfo = {
+  group: string;
+  name: string;
+  pending: number;
+  idleMs: number;
+};
+
+export type StreamGroupsPayload = {
+  groups: StreamGroupInfo[];
+  consumers: StreamConsumerInfo[];
+};
+
+export function fetchStreamGroups(payload: {
+  connectionId: string;
+  key: string;
+}): Promise<StreamGroupsPayload> {
+  return tauriInvoke<StreamGroupsPayload>("redis_fetch_stream_groups", {
+    payload,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // JSON
 // ---------------------------------------------------------------------------
@@ -282,6 +310,80 @@ export function createRedisKey(payload: {
 }
 
 // ---------------------------------------------------------------------------
+// List / Set / ZSet / Stream / JSON write ops (Tier 2)
+// ---------------------------------------------------------------------------
+
+export type ListEdit = {
+  index: number;
+  value: string;
+};
+
+export function applyRedisListEdits(payload: {
+  connectionId: string;
+  key: string;
+  sets?: ListEdit[];
+  deletes?: number[];
+  appends?: string[];
+}): Promise<void> {
+  return tauriInvoke<void>("redis_apply_list_edits", { payload });
+}
+
+export function applyRedisSetEdits(payload: {
+  connectionId: string;
+  key: string;
+  adds?: string[];
+  removes?: string[];
+}): Promise<void> {
+  return tauriInvoke<void>("redis_apply_set_edits", { payload });
+}
+
+export type SortedSetUpsert = {
+  member: string;
+  score: number;
+};
+
+export function applyRedisSortedSetEdits(payload: {
+  connectionId: string;
+  key: string;
+  upserts?: SortedSetUpsert[];
+  removes?: string[];
+}): Promise<void> {
+  return tauriInvoke<void>("redis_apply_sorted_set_edits", { payload });
+}
+
+export type StreamAppendEntry = {
+  id?: string | null;
+  fields: Array<[string, string]>;
+};
+
+export function applyRedisStreamEdits(payload: {
+  connectionId: string;
+  key: string;
+  appends?: StreamAppendEntry[];
+  deletes?: string[];
+  trimMaxlen?: number | null;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_apply_stream_edits", { payload });
+}
+
+export function setRedisJsonPath(payload: {
+  connectionId: string;
+  key: string;
+  path?: string;
+  value: string;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_set_json_path", { payload });
+}
+
+export function deleteRedisJsonPath(payload: {
+  connectionId: string;
+  key: string;
+  path: string;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_delete_json_path", { payload });
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -358,6 +460,74 @@ export function fetchKeyValueOverview(payload: {
 }
 
 // ---------------------------------------------------------------------------
+// Server tab extras (Tier 2 cards)
+// ---------------------------------------------------------------------------
+
+export type ClientListEntry = {
+  id: number;
+  addr: string;
+  name: string;
+  ageSeconds: number;
+  idleSeconds: number;
+  flags: string;
+  db: number;
+  command: string;
+};
+
+export function fetchRedisClientList(payload: {
+  connectionId: string;
+}): Promise<{ entries: ClientListEntry[] }> {
+  return tauriInvoke<{ entries: ClientListEntry[] }>(
+    "redis_fetch_client_list",
+    {
+      payload,
+    },
+  );
+}
+
+export type AclListEntry = {
+  username: string;
+  rules: string;
+};
+
+export function fetchRedisAclList(payload: {
+  connectionId: string;
+}): Promise<{ entries: AclListEntry[] }> {
+  return tauriInvoke<{ entries: AclListEntry[] }>("redis_fetch_acl_list", {
+    payload,
+  });
+}
+
+export type RedisConfigEntry = {
+  key: string;
+  value: string;
+};
+
+export function fetchRedisConfig(payload: {
+  connectionId: string;
+  pattern?: string;
+}): Promise<{ entries: RedisConfigEntry[] }> {
+  return tauriInvoke<{ entries: RedisConfigEntry[] }>("redis_fetch_config", {
+    payload,
+  });
+}
+
+export type LatencyEntry = {
+  event: string;
+  timestamp: number;
+  latestLatencyMs: number;
+  maxLatencyMs: number;
+};
+
+export function fetchRedisLatency(payload: {
+  connectionId: string;
+}): Promise<{ entries: LatencyEntry[] }> {
+  return tauriInvoke<{ entries: LatencyEntry[] }>("redis_fetch_latency", {
+    payload,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Pub/Sub
 // ---------------------------------------------------------------------------
 
@@ -393,6 +563,21 @@ export function closePubsubSession(payload: {
   sessionId: string;
 }): Promise<void> {
   return tauriInvoke<void>("redis_pubsub_close", { payload });
+}
+
+export type DiscoveredChannel = {
+  channel: string;
+  subscribers: number;
+};
+
+export function discoverPubsubChannels(payload: {
+  connectionId: string;
+  pattern?: string;
+}): Promise<{ channels: DiscoveredChannel[] }> {
+  return tauriInvoke<{ channels: DiscoveredChannel[] }>(
+    "redis_pubsub_discover",
+    { payload },
+  );
 }
 
 /** Render a `SerializedValue` as a single line — used by row gutters

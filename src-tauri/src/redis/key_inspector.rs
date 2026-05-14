@@ -590,6 +590,163 @@ pub async fn fetch_stream(
 }
 
 // ---------------------------------------------------------------------------
+// Stream consumer groups (XINFO GROUPS / XINFO CONSUMERS)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchStreamGroupsPayload {
+    pub connection_id: String,
+    pub key: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamGroupInfo {
+    pub name: String,
+    /// Total consumers in the group.
+    pub consumers: u64,
+    /// Pending entries (PEL size).
+    pub pending: u64,
+    /// Last-delivered stream id ("0-0" when none).
+    pub last_delivered_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamConsumerInfo {
+    pub group: String,
+    pub name: String,
+    pub pending: u64,
+    /// Milliseconds since the consumer last interacted (XREADGROUP etc.).
+    pub idle_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamGroupsPayload {
+    pub groups: Vec<StreamGroupInfo>,
+    pub consumers: Vec<StreamConsumerInfo>,
+}
+
+pub async fn fetch_stream_groups(
+    connection: &RedisStoredConnection,
+    payload: &FetchStreamGroupsPayload,
+) -> Result<StreamGroupsPayload, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let raw_groups: redis::Value = redis::cmd("XINFO")
+        .arg("GROUPS")
+        .arg(&payload.key)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    let group_rows = match raw_groups {
+        redis::Value::Array(rows) => rows,
+        _ => return Ok(StreamGroupsPayload::empty()),
+    };
+    let mut groups: Vec<StreamGroupInfo> = Vec::with_capacity(group_rows.len());
+    let mut consumers: Vec<StreamConsumerInfo> = Vec::new();
+    for row in group_rows {
+        let attrs = match row {
+            redis::Value::Array(fields) => stream_attrs(fields),
+            _ => continue,
+        };
+        let name = attrs
+            .get("name")
+            .and_then(redis_value_to_string)
+            .unwrap_or_default();
+        let info = StreamGroupInfo {
+            name: name.clone(),
+            consumers: attrs
+                .get("consumers")
+                .and_then(redis_value_to_u64)
+                .unwrap_or(0),
+            pending: attrs
+                .get("pending")
+                .and_then(redis_value_to_u64)
+                .unwrap_or(0),
+            last_delivered_id: attrs
+                .get("last-delivered-id")
+                .and_then(redis_value_to_string)
+                .unwrap_or_else(|| "0-0".to_string()),
+        };
+        // XINFO CONSUMERS — one round trip per group. Streams typically
+        // have a handful of groups; if this becomes a hotspot we can
+        // pipeline.
+        let raw_consumers: redis::Value = redis::cmd("XINFO")
+            .arg("CONSUMERS")
+            .arg(&payload.key)
+            .arg(&name)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+        if let redis::Value::Array(rows) = raw_consumers {
+            for consumer_row in rows {
+                if let redis::Value::Array(fields) = consumer_row {
+                    let attrs = stream_attrs(fields);
+                    consumers.push(StreamConsumerInfo {
+                        group: name.clone(),
+                        name: attrs
+                            .get("name")
+                            .and_then(redis_value_to_string)
+                            .unwrap_or_default(),
+                        pending: attrs
+                            .get("pending")
+                            .and_then(redis_value_to_u64)
+                            .unwrap_or(0),
+                        idle_ms: attrs.get("idle").and_then(redis_value_to_u64).unwrap_or(0),
+                    });
+                }
+            }
+        }
+        groups.push(info);
+    }
+    Ok(StreamGroupsPayload { groups, consumers })
+}
+
+impl StreamGroupsPayload {
+    fn empty() -> Self {
+        Self {
+            groups: vec![],
+            consumers: vec![],
+        }
+    }
+}
+
+fn stream_attrs(values: Vec<redis::Value>) -> std::collections::HashMap<String, redis::Value> {
+    let mut map = std::collections::HashMap::with_capacity(values.len() / 2);
+    let mut iter = values.into_iter();
+    while let (Some(key), Some(value)) = (iter.next(), iter.next()) {
+        if let Some(name) = match key {
+            redis::Value::BulkString(bytes) => String::from_utf8(bytes).ok(),
+            redis::Value::SimpleString(text) => Some(text),
+            _ => None,
+        } {
+            map.insert(name, value);
+        }
+    }
+    map
+}
+
+fn redis_value_to_string(value: &redis::Value) -> Option<String> {
+    match value {
+        redis::Value::BulkString(bytes) => String::from_utf8(bytes.clone()).ok(),
+        redis::Value::SimpleString(text) => Some(text.clone()),
+        redis::Value::Int(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+fn redis_value_to_u64(value: &redis::Value) -> Option<u64> {
+    match value {
+        redis::Value::Int(n) => u64::try_from(*n).ok(),
+        redis::Value::BulkString(bytes) => std::str::from_utf8(bytes).ok()?.parse().ok(),
+        redis::Value::SimpleString(text) => text.parse().ok(),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // JSON (RedisJSON / ReJSON)
 // ---------------------------------------------------------------------------
 

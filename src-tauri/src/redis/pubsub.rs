@@ -7,9 +7,11 @@
 //! forwarding at 1000 msg/sec; excess messages are dropped with a
 //! sampling indicator.
 //!
-//! The discover-channels sampling flow from Q16 is deferred — Phase
-//! 1.3 ships pattern-input only; the discover button + 5s sample
-//! lands in a follow-up.
+//! Tier 2 adds `discover_channels` — a `PUBSUB CHANNELS`-backed lookup
+//! that returns the currently-active channel list. Channels Redis
+//! knows about only become visible once at least one subscriber is
+//! listening, so the discovery output is "what subscribers see right
+//! now" rather than "what publishers might use".
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -220,4 +222,85 @@ fn close_session_internal(session_id: &str) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Channel discovery (Tier 2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverChannelsPayload {
+    pub connection_id: String,
+    #[serde(default)]
+    pub pattern: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredChannel {
+    pub channel: String,
+    pub subscribers: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverChannelsResult {
+    pub channels: Vec<DiscoveredChannel>,
+}
+
+pub async fn discover_channels(
+    connection: &RedisStoredConnection,
+    payload: &DiscoverChannelsPayload,
+) -> Result<DiscoverChannelsResult, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let pattern = payload.pattern.as_deref().unwrap_or("*");
+    let channels: Vec<String> = redis::cmd("PUBSUB")
+        .arg("CHANNELS")
+        .arg(pattern)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    if channels.is_empty() {
+        return Ok(DiscoverChannelsResult { channels: vec![] });
+    }
+    // One round trip for the subscriber counts; PUBSUB NUMSUB returns
+    // an alternating [channel, count, channel, count, …] array.
+    let mut numsub = redis::cmd("PUBSUB");
+    numsub.arg("NUMSUB");
+    for channel in &channels {
+        numsub.arg(channel);
+    }
+    let pairs: redis::Value = numsub
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    let mut subscribers: HashMap<String, u64> = HashMap::new();
+    if let redis::Value::Array(values) = pairs {
+        let mut iter = values.into_iter();
+        while let (Some(channel), Some(count)) = (iter.next(), iter.next()) {
+            let channel = match channel {
+                redis::Value::BulkString(bytes) => String::from_utf8(bytes).unwrap_or_default(),
+                redis::Value::SimpleString(s) => s,
+                _ => continue,
+            };
+            let count = match count {
+                redis::Value::Int(n) => u64::try_from(n).unwrap_or(0),
+                _ => 0,
+            };
+            subscribers.insert(channel, count);
+        }
+    }
+    let mut result: Vec<DiscoveredChannel> = channels
+        .into_iter()
+        .map(|channel| {
+            let subscribers = subscribers.remove(&channel).unwrap_or(0);
+            DiscoveredChannel {
+                channel,
+                subscribers,
+            }
+        })
+        .collect();
+    result.sort_by(|a, b| b.subscribers.cmp(&a.subscribers));
+    Ok(DiscoverChannelsResult { channels: result })
 }

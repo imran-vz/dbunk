@@ -142,6 +142,329 @@ pub async fn delete_hash_fields(
 }
 
 // ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
+//
+// The editor needs index-aware deletes. Redis only deletes by value, so
+// we use the canonical tag-and-LREM trick: rewrite each doomed index
+// via `LSET` to a per-key sentinel and then `LREM key 0 sentinel`.
+// Concurrent writers can't observe a half-deleted list because the
+// tags carry a UUID; even if two `apply_list_edits` overlap, they
+// only `LREM` their own tags. Per-edit `LSET` calls are pipelined.
+
+const LIST_DELETE_TAG_PREFIX: &str = "__dbunk_del_";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListEdit {
+    pub index: i64,
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyListEditsPayload {
+    pub connection_id: String,
+    pub key: String,
+    #[serde(default)]
+    pub sets: Vec<ListEdit>,
+    #[serde(default)]
+    pub deletes: Vec<i64>,
+    /// New items appended to the right of the list.
+    #[serde(default)]
+    pub appends: Vec<String>,
+}
+
+pub async fn apply_list_edits(
+    connection: &RedisStoredConnection,
+    payload: &ApplyListEditsPayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    if payload.sets.is_empty() && payload.deletes.is_empty() && payload.appends.is_empty() {
+        return Ok(());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    for edit in &payload.sets {
+        let _: redis::Value = redis::cmd("LSET")
+            .arg(&payload.key)
+            .arg(edit.index)
+            .arg(&edit.value)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    if !payload.deletes.is_empty() {
+        let tag = format!(
+            "{LIST_DELETE_TAG_PREFIX}{}__",
+            uuid::Uuid::new_v4().simple()
+        );
+        for index in &payload.deletes {
+            let _: redis::Value = redis::cmd("LSET")
+                .arg(&payload.key)
+                .arg(index)
+                .arg(&tag)
+                .query_async(&mut conn)
+                .await
+                .map_err(connection::redis_err)?;
+        }
+        let _: redis::Value = redis::cmd("LREM")
+            .arg(&payload.key)
+            .arg(0)
+            .arg(&tag)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    if !payload.appends.is_empty() {
+        let mut cmd = redis::cmd("RPUSH");
+        cmd.arg(&payload.key);
+        for value in &payload.appends {
+            cmd.arg(value);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Set
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetMembersPayload {
+    pub connection_id: String,
+    pub key: String,
+    #[serde(default)]
+    pub adds: Vec<String>,
+    #[serde(default)]
+    pub removes: Vec<String>,
+}
+
+pub async fn apply_set_edits(
+    connection: &RedisStoredConnection,
+    payload: &SetMembersPayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    let mut conn = connection::manager_for(connection).await?;
+    if !payload.adds.is_empty() {
+        let mut cmd = redis::cmd("SADD");
+        cmd.arg(&payload.key);
+        for member in &payload.adds {
+            cmd.arg(member);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    if !payload.removes.is_empty() {
+        let mut cmd = redis::cmd("SREM");
+        cmd.arg(&payload.key);
+        for member in &payload.removes {
+            cmd.arg(member);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Sorted set
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZSetEntry {
+    pub member: String,
+    pub score: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SortedSetEditsPayload {
+    pub connection_id: String,
+    pub key: String,
+    /// ZADD entries (also used for "edit score": ZADD replaces the
+    /// existing entry's score atomically).
+    #[serde(default)]
+    pub upserts: Vec<ZSetEntry>,
+    #[serde(default)]
+    pub removes: Vec<String>,
+}
+
+pub async fn apply_sorted_set_edits(
+    connection: &RedisStoredConnection,
+    payload: &SortedSetEditsPayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    let mut conn = connection::manager_for(connection).await?;
+    if !payload.upserts.is_empty() {
+        let mut cmd = redis::cmd("ZADD");
+        cmd.arg(&payload.key);
+        for entry in &payload.upserts {
+            cmd.arg(entry.score).arg(&entry.member);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    if !payload.removes.is_empty() {
+        let mut cmd = redis::cmd("ZREM");
+        cmd.arg(&payload.key);
+        for member in &payload.removes {
+            cmd.arg(member);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Stream
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamAppendEntry {
+    /// Defaults to `*` (auto-generated server-side id).
+    #[serde(default)]
+    pub id: Option<String>,
+    pub fields: Vec<(String, String)>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamEditsPayload {
+    pub connection_id: String,
+    pub key: String,
+    #[serde(default)]
+    pub appends: Vec<StreamAppendEntry>,
+    #[serde(default)]
+    pub deletes: Vec<String>,
+    /// `MAXLEN` cap for the whole stream — applied via `XTRIM ~`
+    /// (approximate trim). `None` means no trim.
+    #[serde(default)]
+    pub trim_maxlen: Option<i64>,
+}
+
+pub async fn apply_stream_edits(
+    connection: &RedisStoredConnection,
+    payload: &StreamEditsPayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    let mut conn = connection::manager_for(connection).await?;
+    for entry in &payload.appends {
+        if entry.fields.is_empty() {
+            return Err("stream append requires at least one field".to_string());
+        }
+        let mut cmd = redis::cmd("XADD");
+        cmd.arg(&payload.key)
+            .arg(entry.id.as_deref().unwrap_or("*"));
+        for (field, value) in &entry.fields {
+            cmd.arg(field).arg(value);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    if !payload.deletes.is_empty() {
+        let mut cmd = redis::cmd("XDEL");
+        cmd.arg(&payload.key);
+        for id in &payload.deletes {
+            cmd.arg(id);
+        }
+        let _: redis::Value = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+    }
+    if let Some(maxlen) = payload.trim_maxlen {
+        if maxlen >= 0 {
+            let _: redis::Value = redis::cmd("XTRIM")
+                .arg(&payload.key)
+                .arg("MAXLEN")
+                .arg("~")
+                .arg(maxlen)
+                .query_async(&mut conn)
+                .await
+                .map_err(connection::redis_err)?;
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// JSON (RedisJSON)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonSetPayload {
+    pub connection_id: String,
+    pub key: String,
+    /// JSONPath expression. Defaults to `$` (whole document).
+    #[serde(default = "json_root")]
+    pub path: String,
+    /// Raw JSON text (validated client-side).
+    pub value: String,
+}
+
+fn json_root() -> String {
+    "$".to_string()
+}
+
+pub async fn set_json_path(
+    connection: &RedisStoredConnection,
+    payload: &JsonSetPayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    let mut conn = connection::manager_for(connection).await?;
+    let _: redis::Value = redis::cmd("JSON.SET")
+        .arg(&payload.key)
+        .arg(&payload.path)
+        .arg(&payload.value)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonDeletePayload {
+    pub connection_id: String,
+    pub key: String,
+    pub path: String,
+}
+
+pub async fn delete_json_path(
+    connection: &RedisStoredConnection,
+    payload: &JsonDeletePayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    let mut conn = connection::manager_for(connection).await?;
+    let _: redis::Value = redis::cmd("JSON.DEL")
+        .arg(&payload.key)
+        .arg(&payload.path)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Key-level ops
 // ---------------------------------------------------------------------------
 

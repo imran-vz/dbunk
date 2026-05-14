@@ -9,19 +9,24 @@ use crate::redis::capabilities;
 use crate::redis::cli::{self, RunCommandPayload, RunCommandResult};
 use crate::redis::key_inspector::{
     self, FetchHashPayload, FetchJsonPayload, FetchListPayload, FetchSetPayload,
-    FetchSortedSetPayload, FetchStreamPayload, FetchStringPayload, HashValuePayload,
-    JsonValuePayload, KeyMetadata, KeyPayload, ListValuePayload, SetValuePayload,
-    SortedSetValuePayload, StreamValuePayload, StringValuePayload,
+    FetchSortedSetPayload, FetchStreamGroupsPayload, FetchStreamPayload, FetchStringPayload,
+    HashValuePayload, JsonValuePayload, KeyMetadata, KeyPayload, ListValuePayload, SetValuePayload,
+    SortedSetValuePayload, StreamGroupsPayload, StreamValuePayload, StringValuePayload,
 };
 use crate::redis::key_ops::{
-    self, CreateKeyPayload, DelKeysPayload, DelKeysResult, DeleteHashFieldsPayload,
-    RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetStringPayload, SetStringResult,
+    self, ApplyListEditsPayload, CreateKeyPayload, DelKeysPayload, DelKeysResult,
+    DeleteHashFieldsPayload, JsonDeletePayload, JsonSetPayload, RenameKeyPayload, SetExpirePayload,
+    SetHashFieldsPayload, SetMembersPayload, SetStringPayload, SetStringResult,
+    SortedSetEditsPayload, StreamEditsPayload,
 };
 use crate::redis::keyspace::{self, ScanKeysPayload, ScanKeysResult};
 use crate::redis::pubsub::{
-    self, CloseSessionPayload, DrainPayload, DrainResult, StartSessionPayload, StartSessionResult,
+    self, CloseSessionPayload, DiscoverChannelsPayload, DiscoverChannelsResult, DrainPayload,
+    DrainResult, StartSessionPayload, StartSessionResult,
 };
-use crate::redis::server_info::{self, KeyValueOverviewStats};
+use crate::redis::server_info::{
+    self, AclListPayload, ClientListPayload, ConfigPayload, KeyValueOverviewStats, LatencyPayload,
+};
 use crate::{ConnectResult, RedisStoredConnection, StoredConnection};
 
 /// Narrow a `StoredConnection` to its Redis variant. Every function
@@ -105,6 +110,13 @@ pub async fn fetch_stream(
     key_inspector::fetch_stream(as_redis(connection)?, payload).await
 }
 
+pub async fn fetch_stream_groups(
+    connection: &StoredConnection,
+    payload: &FetchStreamGroupsPayload,
+) -> Result<StreamGroupsPayload, String> {
+    key_inspector::fetch_stream_groups(as_redis(connection)?, payload).await
+}
+
 pub async fn fetch_json(
     connection: &StoredConnection,
     payload: &FetchJsonPayload,
@@ -125,11 +137,37 @@ pub async fn fetch_overview(
     server_info::fetch_overview(as_redis(connection)?).await
 }
 
+pub async fn fetch_client_list(connection: &StoredConnection) -> Result<ClientListPayload, String> {
+    server_info::fetch_client_list(as_redis(connection)?).await
+}
+
+pub async fn fetch_acl_list(connection: &StoredConnection) -> Result<AclListPayload, String> {
+    server_info::fetch_acl_list(as_redis(connection)?).await
+}
+
+pub async fn fetch_config(
+    connection: &StoredConnection,
+    pattern: &str,
+) -> Result<ConfigPayload, String> {
+    server_info::fetch_config(as_redis(connection)?, pattern).await
+}
+
+pub async fn fetch_latency(connection: &StoredConnection) -> Result<LatencyPayload, String> {
+    server_info::fetch_latency(as_redis(connection)?).await
+}
+
 pub async fn pubsub_start(
     connection: &StoredConnection,
     payload: &StartSessionPayload,
 ) -> Result<StartSessionResult, String> {
     pubsub::start_session(as_redis(connection)?, payload).await
+}
+
+pub async fn pubsub_discover(
+    connection: &StoredConnection,
+    payload: &DiscoverChannelsPayload,
+) -> Result<DiscoverChannelsResult, String> {
+    pubsub::discover_channels(as_redis(connection)?, payload).await
 }
 
 pub fn pubsub_drain(payload: &DrainPayload) -> DrainResult {
@@ -187,4 +225,46 @@ pub async fn create_key(
     payload: &CreateKeyPayload,
 ) -> Result<(), String> {
     key_ops::create_key(as_redis(connection)?, payload).await
+}
+
+pub async fn apply_list_edits(
+    connection: &StoredConnection,
+    payload: &ApplyListEditsPayload,
+) -> Result<(), String> {
+    key_ops::apply_list_edits(as_redis(connection)?, payload).await
+}
+
+pub async fn apply_set_edits(
+    connection: &StoredConnection,
+    payload: &SetMembersPayload,
+) -> Result<(), String> {
+    key_ops::apply_set_edits(as_redis(connection)?, payload).await
+}
+
+pub async fn apply_sorted_set_edits(
+    connection: &StoredConnection,
+    payload: &SortedSetEditsPayload,
+) -> Result<(), String> {
+    key_ops::apply_sorted_set_edits(as_redis(connection)?, payload).await
+}
+
+pub async fn apply_stream_edits(
+    connection: &StoredConnection,
+    payload: &StreamEditsPayload,
+) -> Result<(), String> {
+    key_ops::apply_stream_edits(as_redis(connection)?, payload).await
+}
+
+pub async fn set_json_path(
+    connection: &StoredConnection,
+    payload: &JsonSetPayload,
+) -> Result<(), String> {
+    key_ops::set_json_path(as_redis(connection)?, payload).await
+}
+
+pub async fn delete_json_path(
+    connection: &StoredConnection,
+    payload: &JsonDeletePayload,
+) -> Result<(), String> {
+    key_ops::delete_json_path(as_redis(connection)?, payload).await
 }
