@@ -31,6 +31,7 @@ interface QueryEditorToolbarProps {
   onRunSelection: () => void;
   onRunAll: () => void;
   onExplain: () => void;
+  onFormat: () => void;
   onInsertSnippet: (sql: string) => void;
 }
 
@@ -46,6 +47,7 @@ export function QueryEditorToolbar({
   onRunSelection,
   onRunAll,
   onExplain,
+  onFormat,
   onInsertSnippet,
 }: QueryEditorToolbarProps) {
   const SidebarIcon = isSidebarOpen
@@ -101,7 +103,14 @@ export function QueryEditorToolbar({
           </>
         ) : null}
 
-        <Button size="sm" variant="outline" aria-label="Format" title="Format">
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label="Format SQL"
+          title="Format SQL (Cmd/Ctrl+Shift+F)"
+          onClick={onFormat}
+          disabled={isRunning}
+        >
           <IconSparkles className="size-3.5" />
           <span className="dbunk-optional-label">Format</span>
         </Button>

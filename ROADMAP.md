@@ -35,7 +35,7 @@ Grouped by area. ❌ = absent, 🟡 = partial, ✅ = parity.
 - ✅ "Schemas" tab — per-schema table/view/matview counts + size (PG-only)
 - ✅ "Query History" tab — current-connection-scoped view with search + status filters; cap raised to 2000 entries
 - ✅ "Details" tab — server version, encoding, locale, timezone, `pg_settings` catalogue with modified-only filter, installed extensions (PG-only)
-- 🟡 "Settings" tab — read-only mirror of existing connection fields + Edit dialog launcher. SSH tunnel / keepalive / statement timeout / driver-level fields are deferred to a follow-up phase (new connection-record fields + backend wiring needed)
+- 🟡 "Settings" tab — read-only mirror of existing connection fields + Edit dialog launcher. Driver-options scaffold landed (ADR-0013): `PgDriverOptions` struct on the connection record + SET-statement plumbing for `statement_timeout`, `idle_in_transaction_session_timeout`, `search_path`, `ROLE`. Form expander, SSH tunnel, TCP-level connect timeout / keepalive remain pending follow-ups.
 
 ### 2. Schema relationship map
 - ✅ Cardinality notation (Crow's Foot)
@@ -56,7 +56,7 @@ Today: schemas → tables + views + the items below.
 - ✅ Materialized views (+ refresh action via `refresh_materialized_view`)
 - ✅ Foreign tables
 - ✅ Functions, procedures, aggregate functions (open with `pg_get_functiondef`)
-- 🟡 Sequences — browsable, opens `pg_sequences` query; edit / restart / next-value flows still pending
+- ✅ Sequences — browse + per-item actions (Inspect, Advance via `nextval`, Set value, Restart from) via sidebar dropdown
 - ✅ Custom types, domains
 - ✅ Event triggers
 - ✅ Extensions (browse + open definition; install/drop UI not wired)
@@ -77,7 +77,7 @@ Today: schemas → tables + views + the items below.
 - ✅ Bind variables / parameterized executions (`src/lib/bind-variables.ts`)
 - ❌ PL/pgSQL debugger (breakpoints, step, variable inspect)
 - ❌ Visual query builder
-- ❌ SQL formatting (the "Format" toolbar button is currently a no-op)
+- ✅ SQL formatting (Format toolbar button + Cmd/Ctrl+Shift+F via `sql-formatter`)
 
 ### 6. Data export
 Have: per-table or selection export through the data grid.
@@ -109,9 +109,9 @@ Have: CSV / XLSX import wizard with column mapping.
 - ✅ Index creation UI — same panel
 - ✅ Cross-table FK creation UI — same panel
 - ✅ Trigger creation UI — same panel
-- 🟡 Postgres `array` cell editor — viewer/formatter exists; doesn't write back into the row
-- 🟡 `json` / `jsonb` tree editor — viewer/formatter exists; not yet wired to cell edits
-- 🟡 PostGIS / geometry visualization — viewer/preview exists; not yet wired to cell edits
+- ✅ Postgres `array` cell editor — list editor in the data grid; writes a PG array literal back into pending edits
+- ✅ `json` / `jsonb` tree editor — modal editor with `JSON.parse` validation + Pretty print; writes into pending edits
+- ✅ PostGIS / geometry visualization — WKT modal editor with sanity validation; writes into pending edits
 - ✅ Schema compare (two schemas → diff)
 - ✅ Data compare (two tables → diff, sampled)
 - ✅ Mock data generator (column-aware INSERTs from real `tableStructure`)

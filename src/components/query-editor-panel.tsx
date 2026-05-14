@@ -1,5 +1,6 @@
 import MonacoEditor from "@monaco-editor/react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   type ExplainPlanData,
   type ExplainPlanNode,
@@ -21,6 +22,7 @@ import { StatusBar } from "@/components/status-bar";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
+import { formatSql } from "@/lib/sql-format";
 import {
   type QueryOutcome,
   type QueryPreviewData,
@@ -137,6 +139,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     loadTableStructure,
     runQuery,
     onOutcome: handleQueryOutcome,
+    onFormat: () => handleFormat(),
   });
 
   const hasEdits = Object.keys(currentEdits).length > 0;
@@ -146,6 +149,21 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   );
   const runCurrentWithBinds = () => {
     editor.runSql(applyBindVariables(editor.currentStatement(), bindValues));
+  };
+
+  const handleFormat = () => {
+    const engine = activeConnection?.engine ?? "PostgreSQL";
+    const result = formatSql(tab.query ?? "", engine);
+    if (result.kind === "empty") return;
+    if (result.kind === "failed") {
+      toast.error(`Format failed: ${result.reason}`);
+      return;
+    }
+    if (result.kind === "unchanged") {
+      toast.info("SQL is already formatted.");
+      return;
+    }
+    updateQuery(tab.id, result.sql);
   };
 
   const handleExplain = async () => {
@@ -235,6 +253,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
           onRunSelection={editor.handleRunSelection}
           onRunAll={editor.handleRunAll}
           onExplain={handleExplain}
+          onFormat={handleFormat}
           onInsertSnippet={(sql) =>
             updateQuery(
               tab.id,

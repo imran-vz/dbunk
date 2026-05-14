@@ -333,7 +333,10 @@ pub async fn upsert(
         return Ok(());
     }
     let mut all = read_all_cached(pool, mode).await?;
-    all.insert(connection.id().to_string(), connection.password().to_string());
+    all.insert(
+        connection.id().to_string(),
+        connection.password().to_string(),
+    );
     write_all(pool, mode, &all).await
 }
 
@@ -486,10 +489,7 @@ async fn setup_mode(
 /// `configure` (clean slate). Cross-backend cleanup elsewhere goes
 /// through [`clear_inactive_storage`] which knows the shared-table
 /// topology.
-async fn clear_storage_for(
-    mode: CredentialStorageMode,
-    pool: &SqlitePool,
-) -> Result<(), String> {
+async fn clear_storage_for(mode: CredentialStorageMode, pool: &SqlitePool) -> Result<(), String> {
     match mode {
         CredentialStorageMode::Keychain => keychain::clear_all(),
         CredentialStorageMode::PlainSqlite | CredentialStorageMode::EncryptedSqlite => {
@@ -622,6 +622,7 @@ mod tests {
                 role: "read/write".into(),
                 last_activity_at: None,
                 ssl: true,
+                driver_options: None,
             });
             storage::upsert_connection(pool, &connection)
                 .await
@@ -690,10 +691,7 @@ mod tests {
         let (_dir, pool) = fixture().await;
         clear_session_key();
         let backend = backend_for(CredentialStorageMode::EncryptedSqlite, &pool);
-        let error = backend
-            .read_all()
-            .await
-            .expect_err("expected locked error");
+        let error = backend.read_all().await.expect_err("expected locked error");
         assert!(error.contains("locked"));
     }
 

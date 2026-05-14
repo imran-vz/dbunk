@@ -100,9 +100,11 @@ vi.mock("@monaco-editor/react", () => ({
     const fakeMonaco = {
       KeyCode: {
         Enter: 3,
+        KeyF: 36,
       },
       KeyMod: {
         CtrlCmd: 2048,
+        Shift: 1024,
       },
       Range: class {
         constructor(

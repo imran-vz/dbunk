@@ -114,11 +114,32 @@ type ConnectionCommon = {
   lastActivityAt?: string;
 };
 
+/**
+ * Per-connection driver/session knobs, persisted as a JSON blob on
+ * the Postgres connection record. See ADR-0013. Each field is
+ * optional — `undefined` means "use the server default".
+ *
+ * `connectTimeoutMs` and `keepaliveSeconds` are reserved on the
+ * struct but not yet applied at connect time (sqlx 0.8 doesn't
+ * expose those setters directly).
+ */
+export type PgDriverOptions = {
+  statementTimeoutMs?: number;
+  idleInTransactionTimeoutMs?: number;
+  connectTimeoutMs?: number;
+  keepaliveSeconds?: number;
+  defaultSearchPath?: string[];
+  defaultRole?: string;
+};
+
 export type PgStoredConnection = ConnectionCommon & {
   engine: "PostgreSQL";
   /** TLS upgrade on the wire protocol. PG/MySQL only — distinct from
    *  ClickHouse `useHttps` and Redis `useTls`. */
   ssl: boolean;
+  /** Optional driver/session knobs applied after every connect.
+   *  See ADR-0013. Missing or empty fields fall back to PG defaults. */
+  driverOptions?: PgDriverOptions;
 };
 export type MySqlStoredConnection = ConnectionCommon & {
   engine: "MySQL";

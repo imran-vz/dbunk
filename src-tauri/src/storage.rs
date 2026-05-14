@@ -140,6 +140,16 @@ CREATE TABLE schema_map_prefs (
 );
 "#,
     ),
+    (
+        5,
+        // ADR-0013: optional Postgres driver/session knobs serialised
+        // as one JSON blob. Adding a new knob is a struct field, not
+        // a schema migration. Engines other than PG ignore the
+        // column (it stays NULL on their rows).
+        r#"
+ALTER TABLE connections ADD COLUMN driver_options TEXT;
+"#,
+    ),
 ];
 
 pub struct Paths {
@@ -334,7 +344,7 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
     let rows = sqlx::query(
         "SELECT id, name, database_name, engine, host, port, user_name, role,
                 last_activity_at, use_https, url_path,
-                db_number, use_tls, verify_tls_cert, ssl
+                db_number, use_tls, verify_tls_cert, ssl, driver_options
          FROM connections
          ORDER BY name COLLATE NOCASE ASC",
     )
@@ -358,6 +368,25 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
             let role: String = row.get("role");
             let last_activity_at: Option<String> = row.get("last_activity_at");
 
+            let driver_options_json: Option<String> = row.get("driver_options");
+            // Parse the JSON blob lazily; a corrupted blob falls back
+            // to "no options" rather than failing the whole load. We
+            // log to stderr so the bad row is discoverable.
+            let driver_options = driver_options_json.and_then(|raw| {
+                if raw.is_empty() {
+                    return None;
+                }
+                match serde_json::from_str::<crate::types::PgDriverOptions>(&raw) {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        eprintln!(
+                            "warning: ignoring malformed driver_options for connection: {error}"
+                        );
+                        None
+                    }
+                }
+            });
+
             Ok(match engine {
                 DatabaseEngine::PostgreSQL => StoredConnection::PostgreSQL(PgStoredConnection {
                     id,
@@ -370,6 +399,7 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
                     role,
                     last_activity_at,
                     ssl: row.get::<i64, _>("ssl") != 0,
+                    driver_options,
                 }),
                 DatabaseEngine::MySQL => StoredConnection::MySQL(MySqlStoredConnection {
                     id,
@@ -463,14 +493,26 @@ pub async fn upsert_connection(
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
         _ => 1,
     };
+    // ADR-0013: PG driver_options serialise to one JSON blob; other
+    // engines persist NULL so the column stays variant-aware without
+    // adding per-engine columns.
+    let driver_options: Option<String> = match connection {
+        StoredConnection::PostgreSQL(c) => match &c.driver_options {
+            Some(options) => Some(
+                serde_json::to_string(options).map_err(|error| error.to_string())?,
+            ),
+            None => None,
+        },
+        _ => None,
+    };
 
     sqlx::query(
         "INSERT INTO connections (
             id, name, database_name, engine, host, port, user_name, role,
             last_activity_at, use_https, url_path,
-            db_number, use_tls, verify_tls_cert, ssl
+            db_number, use_tls, verify_tls_cert, ssl, driver_options
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -485,7 +527,8 @@ pub async fn upsert_connection(
             db_number = excluded.db_number,
             use_tls = excluded.use_tls,
             verify_tls_cert = excluded.verify_tls_cert,
-            ssl = excluded.ssl",
+            ssl = excluded.ssl,
+            driver_options = excluded.driver_options",
     )
     .bind(id)
     .bind(name)
@@ -502,6 +545,7 @@ pub async fn upsert_connection(
     .bind(use_tls)
     .bind(verify_tls_cert)
     .bind(ssl)
+    .bind(driver_options)
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -1010,6 +1054,7 @@ mod tests {
             role: String::new(),
             last_activity_at: None,
             ssl: true,
+            driver_options: None,
         })
     }
 

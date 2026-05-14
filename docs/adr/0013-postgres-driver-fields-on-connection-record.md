@@ -41,9 +41,12 @@ pub struct PgDriverOptions {
 
 The connection-pool builder (`postgres::connect`) reads these and:
 
-- Calls `SET statement_timeout`, `SET idle_in_transaction_session_timeout`, `SET search_path`, `SET ROLE` after every `connect()`.
-- Threads `keepalive_seconds` into `PgConnectOptions::keepalives_idle`.
-- Threads `connect_timeout_ms` into the existing connect deadline.
+- Calls `SET statement_timeout`, `SET idle_in_transaction_session_timeout`, `SET search_path`, `SET ROLE` after every successful handshake (shipped).
+- Reserves `keepalive_seconds` and `connect_timeout_ms` on the struct
+  but does not yet apply them — sqlx 0.8's `PgConnectOptions` doesn't
+  expose direct setters for either. A follow-up wraps `connect_with`
+  in `tokio::time::timeout` for the latter and threads keepalives via
+  the socket layer for the former.
 - Routes through the SSH tunnel when configured (see §SSH below).
 
 **SSH tunnel is its own follow-up ADR.** It introduces a credential

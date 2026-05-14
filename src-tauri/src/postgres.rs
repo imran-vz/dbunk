@@ -96,9 +96,66 @@ async fn connect(connection: &StoredConnection) -> Result<PgConnection, String> 
     }
 
     let host_for_err = connection.host.clone();
-    PgConnection::connect_with(&options)
+    // ADR-0013: `connect_timeout_ms` and `keepalive_seconds` are
+    // TCP-level concerns; sqlx 0.8's `PgConnectOptions` doesn't
+    // expose them as direct setters, so they stay reserved on the
+    // struct until a follow-up wraps connect in `tokio::time::timeout`
+    // and threads keepalives via the socket layer. The session-level
+    // knobs below are applied after a successful handshake.
+    let mut conn = PgConnection::connect_with(&options)
         .await
-        .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))
+        .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))?;
+
+    if let Some(driver) = &connection.driver_options {
+        apply_driver_options(&mut conn, driver).await?;
+    }
+
+    Ok(conn)
+}
+
+/// ADR-0013: apply the post-connect SET statements that mirror the
+/// driver knobs. Skipped fields fall back to whatever the server
+/// (or the user's `postgresql.conf`) decided. Each statement is
+/// `SET` (not `SET LOCAL`) so it survives across queries on this
+/// session.
+async fn apply_driver_options(
+    conn: &mut PgConnection,
+    options: &crate::types::PgDriverOptions,
+) -> Result<(), String> {
+    if let Some(ms) = options.statement_timeout_ms {
+        sqlx::query(&format!("SET statement_timeout = {ms}"))
+            .execute(&mut *conn)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(ms) = options.idle_in_transaction_timeout_ms {
+        sqlx::query(&format!("SET idle_in_transaction_session_timeout = {ms}"))
+            .execute(&mut *conn)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(path) = options
+        .default_search_path
+        .as_ref()
+        .filter(|items| !items.is_empty())
+    {
+        let joined = path
+            .iter()
+            .map(|name| quote_double(name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sqlx::query(&format!("SET search_path TO {joined}"))
+            .execute(&mut *conn)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(role) = options.default_role.as_ref().filter(|s| !s.is_empty()) {
+        sqlx::query(&format!("SET ROLE {}", quote_double(role)))
+            .execute(&mut *conn)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn pg_connection(connection: &StoredConnection) -> Result<&crate::PgStoredConnection, String> {

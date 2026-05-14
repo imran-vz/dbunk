@@ -22,6 +22,10 @@ import {
 } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  CELL_EDITORS,
+  specializedCellKind,
+} from "@/components/data-grid/cell-editors";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -88,6 +92,8 @@ interface EditableCellProps {
   initialValue: string;
   rowIndex: number;
   columnIndex: number;
+  columnName: string;
+  columnType?: string;
   editValue?: string;
   onEdit?: (rowIndex: number, columnIndex: number, value: string) => void;
 }
@@ -96,13 +102,20 @@ function EditableCell({
   initialValue,
   rowIndex,
   columnIndex,
+  columnName,
+  columnType,
   editValue,
   onEdit,
 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
   const displayValue = editValue ?? initialValue;
   const previewValue = formatCellDisplayValue(displayValue);
   const isDirty = editValue !== undefined;
+  const specializedKind = specializedCellKind(columnType);
+  const SpecializedEditor = specializedKind
+    ? CELL_EDITORS[specializedKind]
+    : null;
 
   const onBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     setIsEditing(false);
@@ -122,6 +135,44 @@ function EditableCell({
       setIsEditing(false);
     }
   };
+
+  const openEditor = () => {
+    if (!onEdit) return;
+    if (SpecializedEditor) {
+      setOverlayOpen(true);
+      return;
+    }
+    setIsEditing(true);
+  };
+
+  if (overlayOpen && SpecializedEditor) {
+    return (
+      <>
+        <button
+          type="button"
+          className={cn(
+            "h-full w-full truncate px-2 py-1 text-left text-muted-foreground",
+            isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+          )}
+          tabIndex={-1}
+          title={displayValue}
+        >
+          {previewValue}
+        </button>
+        <SpecializedEditor
+          initialValue={displayValue}
+          columnName={columnName}
+          onSave={(literal) => {
+            setOverlayOpen(false);
+            if (literal !== initialValue || isDirty) {
+              onEdit?.(rowIndex, columnIndex, literal);
+            }
+          }}
+          onCancel={() => setOverlayOpen(false)}
+        />
+      </>
+    );
+  }
 
   if (isEditing && onEdit) {
     return (
@@ -144,10 +195,10 @@ function EditableCell({
         !isEditing && onEdit && "cursor-pointer",
         !onEdit && "cursor-default",
       )}
-      onClick={() => onEdit && setIsEditing(true)}
+      onClick={openEditor}
       onKeyDown={(e) => {
         if (onEdit && (e.key === "Enter" || e.key === " ")) {
-          setIsEditing(true);
+          openEditor();
         }
       }}
       tabIndex={onEdit ? 0 : -1}
@@ -163,6 +214,14 @@ export type TableViewMode = "data" | "structure";
 export interface DataGridProps {
   data: string[][];
   columns: string[];
+  /**
+   * Optional per-column Postgres data types, aligned to `columns`.
+   * When a column's type matches a specialized cell editor
+   * (`json`/`jsonb`, `*[]`, `geometry`/`geography`), the grid opens
+   * the registry editor instead of the inline single-line editor.
+   * See ADR-0014.
+   */
+  columnTypes?: Array<string | undefined>;
   edits?: Record<number, Record<number, string>>;
   onEdit?: (rowIndex: number, colIndex: number, value: string) => void;
   className?: string;
@@ -221,6 +280,7 @@ export interface DataGridProps {
 export function DataGrid({
   data,
   columns: columnNames,
+  columnTypes,
   edits,
   onEdit,
   className,
@@ -375,6 +435,8 @@ export function DataGrid({
             initialValue={props.getValue() as string}
             rowIndex={props.row.index}
             columnIndex={index}
+            columnName={colName}
+            columnType={columnTypes?.[index]}
             editValue={edits?.[props.row.index]?.[index]}
             onEdit={effectiveOnEdit}
           />
@@ -383,7 +445,7 @@ export function DataGrid({
     });
 
     return cols;
-  }, [columnNames, edits, effectiveOnEdit]);
+  }, [columnNames, columnTypes, edits, effectiveOnEdit]);
 
   const table = useReactTable({
     data,

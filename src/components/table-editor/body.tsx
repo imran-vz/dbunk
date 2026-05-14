@@ -104,6 +104,9 @@ export function TableEditorBody({
 }: TableEditorBodyProps) {
   const columns = data?.columns ?? [];
   const rows = data?.rows ?? [];
+  const columnTypes = columns.map(
+    (name) => structure?.columns.find((c) => c.name === name)?.dataType,
+  );
   const density = bodyWidth > 0 && bodyWidth < 760 ? "compact" : "cozy";
   const showFooter = activeSubTab === "data" && tableRef !== null;
 
@@ -119,6 +122,7 @@ export function TableEditorBody({
             <DataGrid
               data={rows}
               columns={columns}
+              columnTypes={columnTypes}
               edits={currentEdits}
               onEdit={onCellEdit}
               hasEdits={hasEdits}
