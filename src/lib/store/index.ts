@@ -29,6 +29,7 @@ export type {
   MySqlConnection,
   MySqlStoredConnection,
   OverviewTabId,
+  PgDriverOptions,
   PgExtension,
   PgSetting,
   PgStoredConnection,

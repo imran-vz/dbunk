@@ -82,6 +82,36 @@ function routineName(signature: string): string {
   return parenIndex >= 0 ? signature.slice(0, parenIndex) : signature;
 }
 
+/**
+ * Per-sequence menu items. Each entry produces a query template that
+ * lands in a new query tab; the user clicks Run themselves. Inspect
+ * uses a SELECT on the sequence relation so `last_value` /
+ * `increment_by` are visible. The mutating actions (`nextval`,
+ * `setval`, `ALTER SEQUENCE ... RESTART WITH`) use bind variables
+ * where there's user input.
+ */
+function sequenceActions(schemaName: string, name: string) {
+  const qualified = `${schemaName}.${name}`;
+  return [
+    {
+      label: "Inspect",
+      sql: `select * from ${qualified};`,
+    },
+    {
+      label: "Advance (nextval)",
+      sql: `select nextval('${qualified}');`,
+    },
+    {
+      label: "Set value…",
+      sql: `select setval('${qualified}', :new_value, false);`,
+    },
+    {
+      label: "Restart from…",
+      sql: `alter sequence ${qualified} restart with :new_value;`,
+    },
+  ];
+}
+
 function objectGroups(schema: SchemaExplorer) {
   return [
     {
@@ -525,24 +555,33 @@ export function Sidebar({ className }: { className?: string }) {
                         <div className="pl-7 pr-2 text-[0.625rem] font-medium uppercase text-text-muted">
                           {group.label}
                         </div>
-                        {group.items.map((item) => (
-                          <button
-                            key={`${group.label}:${item}`}
-                            type="button"
-                            onClick={() =>
-                              openObjectQuery(
-                                schema.name,
-                                item,
-                                `${item}.sql`,
-                                group.query(schema.name, item),
-                              )
-                            }
-                            className="flex h-7 w-full items-center gap-2 rounded-md pl-7 pr-2 text-left text-[0.8125rem] text-text-secondary transition-colors hover:bg-surface-panel hover:text-foreground"
-                          >
-                            <IconTable className="size-3.5 shrink-0 text-text-muted" />
-                            <span className="truncate">{item}</span>
-                          </button>
-                        ))}
+                        {group.items.map((item) =>
+                          group.label === "Sequences" ? (
+                            <SequenceRow
+                              key={`Sequences:${item}`}
+                              schema={schema.name}
+                              name={item}
+                              onOpenQuery={openObjectQuery}
+                            />
+                          ) : (
+                            <button
+                              key={`${group.label}:${item}`}
+                              type="button"
+                              onClick={() =>
+                                openObjectQuery(
+                                  schema.name,
+                                  item,
+                                  `${item}.sql`,
+                                  group.query(schema.name, item),
+                                )
+                              }
+                              className="flex h-7 w-full items-center gap-2 rounded-md pl-7 pr-2 text-left text-[0.8125rem] text-text-secondary transition-colors hover:bg-surface-panel hover:text-foreground"
+                            >
+                              <IconTable className="size-3.5 shrink-0 text-text-muted" />
+                              <span className="truncate">{item}</span>
+                            </button>
+                          ),
+                        )}
                       </div>
                     ) : null,
                   )}
@@ -592,5 +631,55 @@ export function Sidebar({ className }: { className?: string }) {
         }}
       />
     </aside>
+  );
+}
+
+function SequenceRow({
+  schema,
+  name,
+  onOpenQuery,
+}: {
+  schema: string;
+  name: string;
+  onOpenQuery: (
+    schema: string,
+    name: string,
+    label: string,
+    query: string,
+  ) => void;
+}) {
+  const actions = sequenceActions(schema, name);
+  const inspectSql = actions[0].sql;
+  return (
+    <div className="group flex h-7 w-full items-center gap-1 rounded-md pl-7 pr-2 text-[0.8125rem] text-text-secondary transition-colors hover:bg-surface-panel hover:text-foreground">
+      <button
+        type="button"
+        onClick={() => onOpenQuery(schema, name, `${name}.sql`, inspectSql)}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <IconTable className="size-3.5 shrink-0 text-text-muted" />
+        <span className="truncate">{name}</span>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`Sequence actions for ${name}`}
+          className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-text-muted opacity-0 transition-opacity hover:bg-surface-panel-elevated hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <IconDots className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          {actions.map((action) => (
+            <DropdownMenuItem
+              key={action.label}
+              onClick={() =>
+                onOpenQuery(schema, name, `${name}.sql`, action.sql)
+              }
+            >
+              {action.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

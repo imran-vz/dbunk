@@ -74,6 +74,17 @@ export function useConnectionForm({
           errorMessage: connection.errorMessage,
           lastActivityAt: connection.lastActivityAt,
         });
+        // Preserve PG `driverOptions` round-trip — the form
+        // expander (ADR-0013) hasn't landed yet, so the form
+        // schema doesn't carry the field. Without this merge the
+        // existing knobs would silently wipe on every save.
+        if (
+          updated.engine === "PostgreSQL" &&
+          connection.engine === "PostgreSQL" &&
+          connection.driverOptions
+        ) {
+          updated.driverOptions = connection.driverOptions;
+        }
         await updateConnection(updated);
       } else {
         const created = buildConnectionFromForm(value, crypto.randomUUID(), {

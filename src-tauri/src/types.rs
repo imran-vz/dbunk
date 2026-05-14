@@ -145,6 +145,34 @@ pub(crate) struct PgStoredConnection {
     /// `useTls` (`rediss://` scheme) — see CONTEXT.md `Connection`.
     #[serde(default = "default_true")]
     pub ssl: bool,
+    /// Optional driver/session knobs applied after every connect.
+    /// See ADR-0013. Missing or empty fields fall back to PG defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver_options: Option<PgDriverOptions>,
+}
+
+/// Per-connection driver/session knobs persisted on the Postgres
+/// connection record. Reads as a single JSON blob in SQLite so adding
+/// a new knob is a struct field, not a schema migration. See
+/// ADR-0013.
+///
+/// Every field is optional — `None` means "use the server default".
+/// Empty `default_search_path` is treated the same as `None`.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgDriverOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statement_timeout_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_in_transaction_timeout_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_ms: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_seconds: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_search_path: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_role: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

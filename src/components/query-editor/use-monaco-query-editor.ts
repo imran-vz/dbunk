@@ -32,6 +32,7 @@ interface UseMonacoQueryEditorArgs {
     options?: { overrideSql?: string },
   ) => Promise<QueryOutcome>;
   onOutcome: (outcome: QueryOutcome, sql: string) => void;
+  onFormat: () => void;
 }
 
 export interface MonacoQueryEditor {
@@ -53,7 +54,10 @@ export function useMonacoQueryEditor({
   loadTableStructure,
   runQuery,
   onOutcome,
+  onFormat,
 }: UseMonacoQueryEditorArgs): MonacoQueryEditor {
+  const onFormatRef = useRef(onFormat);
+  onFormatRef.current = onFormat;
   const [cursor, setCursor] = useState<MonacoPosition>({
     lineNumber: 1,
     column: 1,
@@ -237,6 +241,18 @@ export function useMonacoQueryEditor({
           void runSql(editor.getModel()?.getValue() ?? "");
         },
       });
+      const formatAction = editor.addAction?.({
+        id: "dbunk.formatQuery",
+        label: "Format SQL",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
+        ],
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 4,
+        run: () => {
+          onFormatRef.current();
+        },
+      });
       const mouseDisposable = editor.onMouseDown?.((event) => {
         if (event.target.type !== 2 || !event.target.position) return;
         const latestModel = editor.getModel() as MonacoTextModel | null;
@@ -256,9 +272,13 @@ export function useMonacoQueryEditor({
         void runSql(statement.sql);
       });
       editorDisposablesRef.current.push(
-        ...[currentAction, selectionAction, allAction, mouseDisposable].filter(
-          (item): item is MonacoCompletionDisposable => Boolean(item),
-        ),
+        ...[
+          currentAction,
+          selectionAction,
+          allAction,
+          formatAction,
+          mouseDisposable,
+        ].filter((item): item is MonacoCompletionDisposable => Boolean(item)),
       );
 
       completionDisposableRef.current =
