@@ -372,10 +372,7 @@ pub async fn create_key(
                 .and_then(|v| v.as_array())
                 .ok_or("stream create requires `payload.entries`")?;
             for entry in entries {
-                let id = entry
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("*");
+                let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("*");
                 let fields = entry
                     .get("fields")
                     .and_then(|v| v.as_array())

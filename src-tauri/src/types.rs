@@ -383,7 +383,6 @@ impl StoredConnection {
             Self::Redis(c) => c.password = password,
         }
     }
-
 }
 
 /// Connect-time pipeline result for Redis. Surfaced in the connection-

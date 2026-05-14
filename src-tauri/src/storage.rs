@@ -498,9 +498,9 @@ pub async fn upsert_connection(
     // adding per-engine columns.
     let driver_options: Option<String> = match connection {
         StoredConnection::PostgreSQL(c) => match &c.driver_options {
-            Some(options) => Some(
-                serde_json::to_string(options).map_err(|error| error.to_string())?,
-            ),
+            Some(options) => {
+                Some(serde_json::to_string(options).map_err(|error| error.to_string())?)
+            }
             None => None,
         },
         _ => None,
@@ -1083,12 +1083,10 @@ mod tests {
         clear_schema_map_positions(&pool, "conn-1", "public")
             .await
             .expect("reset");
-        assert!(
-            read_schema_map_positions(&pool, "conn-1", "public")
-                .await
-                .expect("positions")
-                .is_empty()
-        );
+        assert!(read_schema_map_positions(&pool, "conn-1", "public")
+            .await
+            .expect("positions")
+            .is_empty());
     }
 
     #[tokio::test]
@@ -1161,12 +1159,10 @@ mod tests {
 
         assert!(delete_connection(&pool, "conn-1").await.expect("delete"));
 
-        assert!(
-            read_schema_map_positions(&pool, "conn-1", "public")
-                .await
-                .expect("positions")
-                .is_empty()
-        );
+        assert!(read_schema_map_positions(&pool, "conn-1", "public")
+            .await
+            .expect("positions")
+            .is_empty());
         assert_eq!(
             read_schema_map_prefs(&pool, "conn-1", "public")
                 .await

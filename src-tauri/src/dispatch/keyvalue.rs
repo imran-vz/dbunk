@@ -19,8 +19,7 @@ use crate::redis::key_ops::{
 };
 use crate::redis::keyspace::{self, ScanKeysPayload, ScanKeysResult};
 use crate::redis::pubsub::{
-    self, CloseSessionPayload, DrainPayload, DrainResult, StartSessionPayload,
-    StartSessionResult,
+    self, CloseSessionPayload, DrainPayload, DrainResult, StartSessionPayload, StartSessionResult,
 };
 use crate::redis::server_info::{self, KeyValueOverviewStats};
 use crate::{ConnectResult, RedisStoredConnection, StoredConnection};

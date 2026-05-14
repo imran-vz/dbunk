@@ -50,10 +50,7 @@ static MANAGER_CACHE: Lazy<Mutex<HashMap<String, ConnectionManager>>> =
 /// connection, opening and caching one if necessary.
 pub async fn manager_for(connection: &RedisStoredConnection) -> Result<ConnectionManager, String> {
     if let Some(manager) = lookup(&connection.id) {
-        log::debug!(
-            "manager_for: cache hit for connection_id={}",
-            connection.id
-        );
+        log::debug!("manager_for: cache hit for connection_id={}", connection.id);
         return Ok(manager);
     }
 
@@ -255,7 +252,11 @@ fn handshake_err(connection: &RedisStoredConnection, error: RedisError) -> Strin
 
     let host = connection.host.as_str();
     let port = effective_port(connection);
-    let scheme = if connection.use_tls { "rediss" } else { "redis" };
+    let scheme = if connection.use_tls {
+        "rediss"
+    } else {
+        "redis"
+    };
 
     match error.kind() {
         ErrorKind::AuthenticationFailed => format!(
