@@ -1202,7 +1202,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             log::info!("dbunk starting up");
-            let paths = Paths::from_app(&app.handle())
+            let paths = Paths::from_app(app.handle())
                 .map_err(|error| format!("Failed to resolve config dir: {error}"))?;
             log::info!("config dir: {}", paths.config_dir().display());
             let pool = tauri::async_runtime::block_on(storage::open_pool(&paths))
