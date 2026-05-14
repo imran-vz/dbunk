@@ -7,6 +7,8 @@ import type {
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
   QueryHistoryEntry,
+  RelationInfo,
+  RelationStatsStatus,
   SchemaExplorer,
 } from "@/lib/store";
 
@@ -20,11 +22,15 @@ interface UseDatabaseOverviewArgs {
   queryHistory: QueryHistoryEntry[];
   isConnected: boolean;
   onLoadStats: (connectionId: string) => Promise<void>;
+  relationStats: RelationInfo[] | undefined;
+  relationStatsStatus: RelationStatsStatus | undefined;
+  onLoadRelationStats: (connectionId: string) => Promise<void>;
 }
 
 interface FavoriteTable {
   schema: string;
   name: string;
+  rowCount: number | null;
 }
 
 export interface DatabaseOverviewView {
@@ -57,6 +63,9 @@ export function useDatabaseOverview({
   queryHistory,
   isConnected,
   onLoadStats,
+  relationStats,
+  relationStatsStatus,
+  onLoadRelationStats,
 }: UseDatabaseOverviewArgs): DatabaseOverviewView {
   const tables = useMemo(
     () =>
@@ -81,6 +90,30 @@ export function useDatabaseOverview({
     statsStatus?.state,
   ]);
 
+  useEffect(() => {
+    if (
+      isConnected &&
+      !relationStats &&
+      relationStatsStatus?.state !== "loading"
+    ) {
+      void onLoadRelationStats(activeConnection.id);
+    }
+  }, [
+    activeConnection.id,
+    isConnected,
+    onLoadRelationStats,
+    relationStats,
+    relationStatsStatus?.state,
+  ]);
+
+  const rowCountByTable = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of relationStats ?? []) {
+      map.set(`${row.schema}.${row.name}`, row.rowCountEstimate);
+    }
+    return map;
+  }, [relationStats]);
+
   const tableCount = stats?.tableCount ?? tables.length;
   const schemaCount = stats?.schemaCount ?? schemas.length;
   const databaseSize = formatByteStat(stats?.databaseSizeBytes, statsStatus);
@@ -89,7 +122,10 @@ export function useDatabaseOverview({
   const connectionCount = metricCount(stats?.connectionCount, statsStatus);
 
   const recentQueries = queryHistory.slice(0, 4);
-  const favoriteTables = tables.slice(0, 5);
+  const favoriteTables: FavoriteTable[] = tables.slice(0, 5).map((table) => ({
+    ...table,
+    rowCount: rowCountByTable.get(`${table.schema}.${table.name}`) ?? null,
+  }));
   const lastQuery = queryHistory[0];
 
   const overviewStatus: StatusBarItem[] = [

@@ -234,7 +234,6 @@ describe("buildConnectionFromForm", () => {
       {
         status: "Connected",
         latency: "12ms",
-        lastSync: "2024-01-01T00:00:00Z",
         errorMessage: undefined,
         lastActivityAt: "2024-01-02T00:00:00Z",
       },
@@ -244,7 +243,6 @@ describe("buildConnectionFromForm", () => {
       engine: "PostgreSQL",
       status: "Connected",
       latency: "12ms",
-      lastSync: "2024-01-01T00:00:00Z",
       lastActivityAt: "2024-01-02T00:00:00Z",
     });
   });
@@ -267,7 +265,6 @@ describe("defaultValuesFromConnection", () => {
       verifyTlsCert: false,
       status: "Connected",
       latency: "1ms",
-      lastSync: "Never",
     });
     expect(values.password).toBe("");
     expect(values).toMatchObject({

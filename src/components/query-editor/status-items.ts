@@ -28,12 +28,6 @@ export function buildQueryStatusItems({
       id: "diagnostics",
       tone: errorMessage ? "danger" : "healthy",
       value: errorMessage ? "Has errors" : "No errors",
-    },
-    {
-      id: "tx",
-      label: "Auto-commit",
-      tone: "healthy",
-      value: "ON",
       align: "right",
     },
   ];

@@ -71,11 +71,16 @@ export function QueryEditorToolbar({
             <IconChevronDown className="size-3 text-text-muted" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
+            <div className="px-2 py-1.5 text-[0.6875rem] text-text-muted">
+              Retargeting the editor's connection isn't supported yet — open a
+              new query tab from the target connection's sidebar.
+            </div>
             {connections.map((connection) => (
               <DropdownMenuItem
                 key={connection.id}
-                // TODO(FOLLOWUPS): switch the editor's connection
-                onClick={() => {}}
+                disabled
+                aria-disabled
+                onSelect={(event) => event.preventDefault()}
               >
                 {connection.name} · {connection.engine}
               </DropdownMenuItem>

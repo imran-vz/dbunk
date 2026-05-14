@@ -24,7 +24,6 @@ const pgConnection: Connection = {
   password: "",
   role: "",
   latency: "12 ms",
-  lastSync: "Just now",
   ssl: true,
 };
 

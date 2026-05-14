@@ -33,7 +33,6 @@ const seedConnection = (engine: Connection["engine"] = "PostgreSQL") => {
     password: "",
     role: "admin",
     latency: "10 ms",
-    lastSync: "Just now",
   };
   let connection: Connection;
   switch (engine) {

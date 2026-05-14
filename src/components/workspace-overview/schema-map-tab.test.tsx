@@ -48,7 +48,6 @@ const connection: Connection = {
   password: "",
   role: "",
   latency: "10 ms",
-  lastSync: "Just now",
   ssl: true,
 };
 

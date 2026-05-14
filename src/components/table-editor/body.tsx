@@ -12,10 +12,11 @@ import type {
 import type { TableDataState, TableStructure } from "@/lib/store";
 
 import type { SubTab } from "./header";
+import { IndexesSubTab } from "./indexes-sub-tab";
 import { Pagination } from "./pagination";
+import { RelationsSubTab } from "./relations-sub-tab";
 import { RowDetailsPanel } from "./row-details-panel";
 import { SpecializedEditors } from "./specialized-editors";
-import { SubTabPlaceholder } from "./sub-tab-placeholder";
 import type { TableRef } from "./table-ref";
 import type { RowDetailsVisibility } from "./use-row-details-visibility";
 import type { RowSelection } from "./use-row-selection";
@@ -45,6 +46,8 @@ interface TableEditorBodyProps {
   onOpenAddRow: () => void;
   onOpenImport: () => void;
   onOpenSql: () => void;
+  onOpenTable: (schema: string, tableName: string) => void;
+  onSubTabChange: (next: SubTab) => void;
   onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
   onDiscardEdits: () => void;
   onSaveEdits: () => Promise<void>;
@@ -88,6 +91,8 @@ export function TableEditorBody({
   onOpenAddRow,
   onOpenImport,
   onOpenSql,
+  onOpenTable,
+  onSubTabChange,
   onCellEdit,
   onDiscardEdits,
   onSaveEdits,
@@ -154,8 +159,21 @@ export function TableEditorBody({
               connectionId={connectionId}
               structure={structure}
             />
+          ) : activeSubTab === "indexes" ? (
+            <IndexesSubTab
+              connectionId={connectionId}
+              schema={schema}
+              tableName={tableName}
+              onOpenSpecialized={onSubTabChange}
+            />
           ) : (
-            <SubTabPlaceholder kind={activeSubTab} />
+            <RelationsSubTab
+              connectionId={connectionId}
+              schema={schema}
+              tableName={tableName}
+              onOpenTable={onOpenTable}
+              onOpenSpecialized={onSubTabChange}
+            />
           )}
         </div>
 

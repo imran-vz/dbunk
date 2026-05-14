@@ -13,7 +13,7 @@ export function HealthBanner({ connection }: { connection: Connection }) {
     return (
       <HealthyBanner
         latency={formatConnectionLatency(connection.latency)}
-        lastChecked={formatLastChecked(connection.lastSync)}
+        lastChecked={formatLastChecked(connection.lastActivityAt)}
       />
     );
   }

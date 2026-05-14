@@ -30,7 +30,6 @@ const baseConnection: Connection = {
   password: "",
   role: "admin",
   latency: "--",
-  lastSync: "Never",
   ssl: true,
 };
 

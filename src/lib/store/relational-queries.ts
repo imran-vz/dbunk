@@ -208,7 +208,6 @@ export const createRelationalQueriesSlice: StateCreator<
         rowCount: result.rowCount.toString(),
         cache: "Cold",
       };
-      const nowIso = new Date().toISOString();
       set((s) => {
         const { [tabId]: _status, ...restStatus } = s.queryStatus;
         return {
@@ -223,14 +222,12 @@ export const createRelationalQueriesSlice: StateCreator<
               ? { ...item, lastRun: "Just now", isDirty: false }
               : item,
           ),
-          // Cross-slice write: bumps the Connection's lastActivityAt.
-          // Belongs as `get().applyConnectionActivity()` once the
-          // Connections slice exposes a helper for it (follow-up).
-          connections: s.connections.map((c) =>
-            c.id === tab.connectionId ? { ...c, lastActivityAt: nowIso } : c,
-          ),
         };
       });
+      // Owner-slice write — Connections slice updates the Connection
+      // record. Lives outside the set above so each slice is
+      // responsible for mutating its own state.
+      get().applyConnectionActivity(tab.connectionId);
       await persistEntry(entry);
       return {
         kind: "completed",

@@ -231,7 +231,6 @@ const postgresConnection: Connection = {
   password: "",
   role: "admin",
   latency: "10 ms",
-  lastSync: "Just now",
   ssl: true,
 };
 

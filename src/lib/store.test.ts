@@ -597,7 +597,6 @@ describe("connectConnection error feedback", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -635,7 +634,6 @@ describe("connectConnection error feedback", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
           errorMessage: "previous failure",
         },
@@ -672,7 +670,6 @@ describe("connectConnection error feedback", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -706,7 +703,6 @@ describe("connectConnection error feedback", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           useTls: false,
           verifyTlsCert: false,
           dbNumber: 0,
@@ -748,7 +744,6 @@ describe("disconnectConnection cleanup", () => {
     password: "",
     role: "admin",
     latency: "12 ms",
-    lastSync: "Just now",
     ssl: true,
   });
 
@@ -896,7 +891,6 @@ describe("disconnectConnection cleanup", () => {
     const disconnected = state.connections.find((c) => c.id === "conn-1");
     expect(disconnected?.status).toBe("Disconnected");
     expect(disconnected?.latency).toBe("--");
-    expect(disconnected?.lastSync).toBe("Never");
     expect(state.workspaceTabs.map((tab) => tab.id)).toEqual(["tab-query-2"]);
     expect(state.activeTabId).toBe("tab-query-2");
     expect(state.activeConnectionId).toBe("conn-2");
@@ -934,7 +928,6 @@ describe("runHealthChecks latency", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -968,7 +961,6 @@ describe("runHealthChecks latency", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
         {
@@ -983,7 +975,6 @@ describe("runHealthChecks latency", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           useTls: false,
           verifyTlsCert: false,
           dbNumber: 0,
@@ -1109,7 +1100,6 @@ describe("runQuery overrideSql", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -1207,7 +1197,6 @@ describe("query history", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -1384,7 +1373,6 @@ const seedPostgresConnection = () => {
     password: "",
     role: "admin",
     latency: "10 ms",
-    lastSync: "Just now",
     ssl: true,
   };
   useAppStore.setState({
@@ -1634,7 +1622,6 @@ describe("store.commitStructureChanges", () => {
               password: c.password,
               role: c.role,
               latency: c.latency,
-              lastSync: c.lastSync,
               engine: "MySQL",
               ssl: true,
             } satisfies import("@/lib/store").MySqlConnection)
@@ -2401,7 +2388,6 @@ describe("store.addTableRow", () => {
           password: "",
           role: "admin",
           latency: "10 ms",
-          lastSync: "Just now",
           ssl: true,
         },
       ],
@@ -2607,7 +2593,6 @@ describe("store.deleteSelectedTableRows", () => {
           password: "",
           role: "admin",
           latency: "10 ms",
-          lastSync: "Just now",
           ssl: true,
         },
       ],
@@ -2760,7 +2745,6 @@ describe("runQuery branch coverage", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -2794,7 +2778,6 @@ describe("runQuery branch coverage", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -2832,7 +2815,6 @@ describe("runQuery branch coverage", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -2885,7 +2867,6 @@ describe("runQuery branch coverage", () => {
           password: "",
           role: "admin",
           latency: "--",
-          lastSync: "Never",
           ssl: true,
         },
       ],
@@ -3028,7 +3009,6 @@ describe("disconnectConnection drops relationStats caches", () => {
           password: "",
           role: "",
           latency: "12 ms",
-          lastSync: "Just now",
           ssl: true,
         },
       ],
@@ -3070,7 +3050,6 @@ describe("connectionOverviewTab", () => {
     password: "",
     role: "",
     latency: "12 ms",
-    lastSync: "Just now",
     ssl: true,
   });
 

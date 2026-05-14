@@ -24,7 +24,6 @@ const pgConnection: Connection = {
   password: "",
   role: "readonly",
   latency: "12 ms",
-  lastSync: "Just now",
   ssl: true,
 };
 
@@ -40,7 +39,6 @@ const clickhouseConnection: Connection = {
   password: "",
   role: "",
   latency: "20 ms",
-  lastSync: "Just now",
   useHttps: true,
   urlPath: "/clickhouse",
 };
@@ -57,7 +55,6 @@ const sqliteConnection: Connection = {
   password: "",
   role: "",
   latency: "1 ms",
-  lastSync: "Just now",
 };
 
 afterEach(() => {

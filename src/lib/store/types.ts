@@ -154,7 +154,6 @@ export type StoredConnection =
 type ConnectionRuntimeFields = {
   status: "Connected" | "Read only" | "Disconnected";
   latency: string;
-  lastSync: string;
   errorMessage?: string;
 };
 
