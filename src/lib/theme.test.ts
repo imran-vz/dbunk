@@ -3,12 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyTheme,
+  isPresetIntrinsicallyDark,
   isThemeMode,
+  isThemePreset,
   LOCAL_STORAGE_KEY,
+  LOCAL_STORAGE_PRESET_KEY,
   readStoredMode,
+  readStoredPreset,
   resolveMode,
   subscribeSystem,
   writeStoredMode,
+  writeStoredPreset,
 } from "@/lib/theme";
 
 type MatchMediaResult = {
@@ -54,6 +59,7 @@ describe("resolveMode", () => {
 describe("applyTheme", () => {
   afterEach(() => {
     document.documentElement.classList.remove("dark");
+    document.documentElement.removeAttribute("data-theme");
   });
 
   it("adds `.dark` for dark mode", () => {
@@ -76,6 +82,25 @@ describe("applyTheme", () => {
     applyTheme("system");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
+
+  it("omits the data-theme attribute when preset is 'default'", () => {
+    applyTheme("light", "default");
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  });
+
+  it("sets data-theme for non-default presets", () => {
+    applyTheme("light", "github");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("github");
+    applyTheme("dark", "gruvbox");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("gruvbox");
+  });
+
+  it("forces `.dark` for intrinsically-dark presets regardless of mode", () => {
+    mockMatchMedia(false);
+    applyTheme("light", "dracula");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dracula");
+  });
 });
 
 describe("subscribeSystem", () => {
@@ -90,8 +115,8 @@ describe("subscribeSystem", () => {
   });
 });
 
-describe("isThemeMode", () => {
-  it("accepts the three valid modes only", () => {
+describe("isThemeMode / isThemePreset / isPresetIntrinsicallyDark", () => {
+  it("accepts only the valid modes", () => {
     expect(isThemeMode("system")).toBe(true);
     expect(isThemeMode("light")).toBe(true);
     expect(isThemeMode("dark")).toBe(true);
@@ -99,9 +124,25 @@ describe("isThemeMode", () => {
     expect(isThemeMode(null)).toBe(false);
     expect(isThemeMode(undefined)).toBe(false);
   });
+
+  it("accepts only the valid presets", () => {
+    expect(isThemePreset("default")).toBe(true);
+    expect(isThemePreset("dracula")).toBe(true);
+    expect(isThemePreset("github")).toBe(true);
+    expect(isThemePreset("gruvbox")).toBe(true);
+    expect(isThemePreset("monokai")).toBe(false);
+    expect(isThemePreset(null)).toBe(false);
+  });
+
+  it("flags Dracula as intrinsically dark and others as not", () => {
+    expect(isPresetIntrinsicallyDark("dracula")).toBe(true);
+    expect(isPresetIntrinsicallyDark("default")).toBe(false);
+    expect(isPresetIntrinsicallyDark("github")).toBe(false);
+    expect(isPresetIntrinsicallyDark("gruvbox")).toBe(false);
+  });
 });
 
-describe("read/writeStoredMode", () => {
+describe("read/writeStoredMode + Preset", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -112,9 +153,23 @@ describe("read/writeStoredMode", () => {
     expect(window.localStorage.getItem(LOCAL_STORAGE_KEY)).toBe("light");
   });
 
-  it("falls back to 'system' when the stored value is missing or invalid", () => {
+  it("round-trips a valid preset", () => {
+    writeStoredPreset("dracula");
+    expect(readStoredPreset()).toBe("dracula");
+    expect(window.localStorage.getItem(LOCAL_STORAGE_PRESET_KEY)).toBe(
+      "dracula",
+    );
+  });
+
+  it("falls back to 'system' when the stored mode is missing or invalid", () => {
     expect(readStoredMode()).toBe("system");
     window.localStorage.setItem(LOCAL_STORAGE_KEY, "garbage");
     expect(readStoredMode()).toBe("system");
+  });
+
+  it("falls back to 'default' when the stored preset is missing or invalid", () => {
+    expect(readStoredPreset()).toBe("default");
+    window.localStorage.setItem(LOCAL_STORAGE_PRESET_KEY, "monokai");
+    expect(readStoredPreset()).toBe("default");
   });
 });

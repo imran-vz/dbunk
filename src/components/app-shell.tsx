@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppShellHeader } from "@/components/app-shell/app-shell-header";
 import { useTauriWindowControls } from "@/components/app-shell/use-tauri-window-controls";
 import { windowViewportZoomStyle } from "@/components/app-shell/use-window-viewport-zoom";
@@ -7,7 +7,6 @@ import {
   WindowDragSurface,
 } from "@/components/app-shell/window-drag";
 import { CommandPalette } from "@/components/command-palette/command-palette";
-import { ConnectionsView } from "@/components/connections-view";
 import {
   CredentialOnboarding,
   CredentialUnlock,
@@ -96,10 +95,8 @@ export function AppShell() {
 
   const {
     activeView,
-    activeConnectionId,
     appSettings,
     appSettingsStatus,
-    connections,
     isLeftSidebarOpen,
     setEditorTheme,
     toggleLeftSidebar,
@@ -111,13 +108,8 @@ export function AppShell() {
     createNewQueryTab,
   } = useAppStore();
   const themeMode = appSettings?.theme ?? "system";
+  const themePreset = appSettings?.themePreset ?? "default";
 
-  const activeConnection = useMemo(
-    () =>
-      connections.find((connection) => connection.id === activeConnectionId) ??
-      connections[0],
-    [activeConnectionId, connections],
-  );
   const isShellCompact =
     shellBodyWidth > 0 && shellBodyWidth < GLOBAL_SIDEBAR_COMPACT_BELOW;
   const density =
@@ -135,17 +127,19 @@ export function AppShell() {
     setIsClient(true);
   }, []);
 
-  // Keep Monaco's theme in sync with whatever owns the `.dark` class on
-  // <html>. The pre-paint script sets it on first load; the preferences
-  // menu (via `setTheme`) toggles it at runtime. Observing the class
-  // attribute makes the editor follow without each writer having to
-  // know Monaco exists.
+  // Mirror `<html>.dark` onto Monaco's theme. Bail when the resolved
+  // value hasn't changed so unrelated class mutations don't trigger a
+  // store write + re-render storm.
   useEffect(() => {
     if (typeof document === "undefined") return;
+    let last: "vs" | "vs-dark" | null = null;
     const sync = () => {
-      setEditorTheme(
-        document.documentElement.classList.contains("dark") ? "vs-dark" : "vs",
-      );
+      const next = document.documentElement.classList.contains("dark")
+        ? "vs-dark"
+        : "vs";
+      if (next === last) return;
+      last = next;
+      setEditorTheme(next);
     };
     sync();
     const observer = new MutationObserver(sync);
@@ -156,10 +150,14 @@ export function AppShell() {
     return () => observer.disconnect();
   }, [setEditorTheme]);
 
-  // When the user picks "System", follow OS changes live.
+  // Follow OS theme when mode is "system". Preset is read through a
+  // ref so changing presets doesn't tear down and re-add the matchMedia
+  // listener — only mode actually matters for the subscription.
+  const themePresetRef = useRef(themePreset);
+  themePresetRef.current = themePreset;
   useEffect(() => {
     if (themeMode !== "system") return;
-    return subscribeSystem(() => applyTheme("system"));
+    return subscribeSystem(() => applyTheme("system", themePresetRef.current));
   }, [themeMode]);
 
   useEffect(() => {
@@ -257,7 +255,6 @@ export function AppShell() {
         isLeftSidebarOpen={isLeftSidebarOpen}
         newConnectionOpen={newConnectionOpen}
         setNewConnectionOpen={setNewConnectionOpen}
-        activeConnection={activeConnection}
         onLeftSidebarToggle={handleLeftSidebarToggle}
         onCreateNewQueryTab={createNewQueryTab}
         onPointerDown={onTopBarPointerDown}
@@ -292,8 +289,6 @@ export function AppShell() {
         <div className="flex min-w-0 flex-1 flex-col bg-surface-app">
           {activeView === "workspace" ? (
             <WorkspaceView isClient={isClient} />
-          ) : activeView === "connections" ? (
-            <ConnectionsView />
           ) : (
             <SettingsView />
           )}

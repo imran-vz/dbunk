@@ -137,6 +137,339 @@
     color-scheme: dark;
 }
 
+/* -------------------------------------------------------------------------
+ * Theme presets (Phase 2 — see docs/design/theme-support-plan.md).
+ *
+ * Each preset is a `[data-theme]` scope that redefines the same token
+ * set as the default `:root` / `.dark` blocks. Presets and Mode are
+ * orthogonal: `.dark[data-theme="github"]` is the dark variant of the
+ * GitHub preset, etc. Dracula is intrinsically dark — applyTheme()
+ * forces `.dark` on `<html>` when Dracula is selected and we don't
+ * ship a light Dracula variant.
+ *
+ * Palettes are starting points; expect minor visual tuning over time.
+ * ------------------------------------------------------------------------- */
+
+/* Dracula — intrinsically dark only. Classic dracula-theme.com palette. */
+[data-theme="dracula"] {
+    --surface-app: #21222c;
+    --surface-window: #282a36;
+    --surface-sidebar: #1e1f29;
+    --surface-panel: #282a36;
+    --surface-panel-elevated: #343746;
+    --surface-input: #21222c;
+    --surface-row: #282a36;
+    --surface-row-hover: #343746;
+    --accent-overlay: #44475a;
+
+    --border-subtle: #343746;
+    --border-strong: #44475a;
+
+    --text-primary: #f8f8f2;
+    --text-secondary: #c5c6d0;
+    --text-muted: #6272a4;
+    --text-disabled: #4d537a;
+
+    --accent-green: #50fa7b;
+    --accent-green-hover: #5dffa0;
+    --accent-green-subdued: #1e3a2c;
+
+    --semantic-success: #50fa7b;
+    --semantic-warning: #f1fa8c;
+    --semantic-danger: #ff5555;
+    --semantic-info: #8be9fd;
+
+    --background: var(--surface-app);
+    --foreground: var(--text-primary);
+    --card: var(--surface-panel);
+    --card-foreground: var(--text-primary);
+    --popover: var(--surface-panel-elevated);
+    --popover-foreground: var(--text-primary);
+    --primary: #bd93f9;
+    --primary-foreground: #1e1f29;
+    --secondary: var(--surface-panel-elevated);
+    --secondary-foreground: var(--text-primary);
+    --muted: var(--surface-panel);
+    --muted-foreground: var(--text-muted);
+    --accent: #ff79c6;
+    --accent-foreground: #1e1f29;
+    --destructive: var(--semantic-danger);
+    --border: var(--border-subtle);
+    --input: var(--border-subtle);
+    --ring: #bd93f9;
+    --chart-1: #bd93f9;
+    --chart-2: #8be9fd;
+    --chart-3: #f1fa8c;
+    --chart-4: #ff5555;
+    --chart-5: #ff79c6;
+    --sidebar: var(--surface-sidebar);
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: #bd93f9;
+    --sidebar-primary-foreground: #1e1f29;
+    --sidebar-accent: #ff79c6;
+    --sidebar-accent-foreground: #1e1f29;
+    --sidebar-border: var(--border-subtle);
+    --sidebar-ring: #bd93f9;
+
+    color-scheme: dark;
+}
+
+/* GitHub light — primer-ish light palette. */
+[data-theme="github"] {
+    --surface-app: #ffffff;
+    --surface-window: #ffffff;
+    --surface-sidebar: #f6f8fa;
+    --surface-panel: #ffffff;
+    --surface-panel-elevated: #f6f8fa;
+    --surface-input: #ffffff;
+    --surface-row: #ffffff;
+    --surface-row-hover: #f3f4f6;
+    --accent-overlay: #ddf4ff;
+
+    --border-subtle: #d0d7de;
+    --border-strong: #afb8c1;
+
+    --text-primary: #1f2328;
+    --text-secondary: #424a53;
+    --text-muted: #656d76;
+    --text-disabled: #8c959f;
+
+    --accent-green: #1f883d;
+    --accent-green-hover: #1a7f37;
+    --accent-green-subdued: #dafbe1;
+
+    --semantic-success: #1a7f37;
+    --semantic-warning: #9a6700;
+    --semantic-danger: #cf222e;
+    --semantic-info: #0969da;
+
+    --background: var(--surface-app);
+    --foreground: var(--text-primary);
+    --card: var(--surface-panel);
+    --card-foreground: var(--text-primary);
+    --popover: var(--surface-panel-elevated);
+    --popover-foreground: var(--text-primary);
+    --primary: var(--semantic-info);
+    --primary-foreground: #ffffff;
+    --secondary: var(--surface-panel-elevated);
+    --secondary-foreground: var(--text-primary);
+    --muted: var(--surface-panel-elevated);
+    --muted-foreground: var(--text-muted);
+    --accent: var(--semantic-info);
+    --accent-foreground: #ffffff;
+    --destructive: var(--semantic-danger);
+    --border: var(--border-subtle);
+    --input: var(--border-subtle);
+    --ring: var(--semantic-info);
+    --chart-1: var(--semantic-info);
+    --chart-2: var(--accent-green);
+    --chart-3: var(--semantic-warning);
+    --chart-4: var(--semantic-danger);
+    --chart-5: #8250df;
+    --sidebar: var(--surface-sidebar);
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: var(--semantic-info);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: var(--semantic-info);
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: var(--border-subtle);
+    --sidebar-ring: var(--semantic-info);
+
+    color-scheme: light;
+}
+
+/* GitHub dark — dimmed variant, used when .dark is also set. */
+.dark[data-theme="github"] {
+    --surface-app: #0d1117;
+    --surface-window: #0d1117;
+    --surface-sidebar: #010409;
+    --surface-panel: #161b22;
+    --surface-panel-elevated: #21262d;
+    --surface-input: #0d1117;
+    --surface-row: #161b22;
+    --surface-row-hover: #1f242b;
+    --accent-overlay: #1c2128;
+
+    --border-subtle: #30363d;
+    --border-strong: #444c56;
+
+    --text-primary: #e6edf3;
+    --text-secondary: #c9d1d9;
+    --text-muted: #8b949e;
+    --text-disabled: #6e7681;
+
+    --accent-green: #3fb950;
+    --accent-green-hover: #56d364;
+    --accent-green-subdued: #0f2e1a;
+
+    --semantic-success: #3fb950;
+    --semantic-warning: #d29922;
+    --semantic-danger: #f85149;
+    --semantic-info: #58a6ff;
+
+    --background: var(--surface-app);
+    --foreground: var(--text-primary);
+    --card: var(--surface-panel);
+    --card-foreground: var(--text-primary);
+    --popover: var(--surface-panel-elevated);
+    --popover-foreground: var(--text-primary);
+    --primary: var(--semantic-info);
+    --primary-foreground: #0d1117;
+    --secondary: var(--surface-panel-elevated);
+    --secondary-foreground: var(--text-primary);
+    --muted: var(--surface-panel);
+    --muted-foreground: var(--text-muted);
+    --accent: var(--semantic-info);
+    --accent-foreground: #0d1117;
+    --destructive: var(--semantic-danger);
+    --border: var(--border-subtle);
+    --input: var(--border-subtle);
+    --ring: var(--semantic-info);
+    --chart-1: var(--semantic-info);
+    --chart-2: var(--accent-green);
+    --chart-3: var(--semantic-warning);
+    --chart-4: var(--semantic-danger);
+    --chart-5: #bc8cff;
+    --sidebar: var(--surface-sidebar);
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: var(--semantic-info);
+    --sidebar-primary-foreground: #0d1117;
+    --sidebar-accent: var(--semantic-info);
+    --sidebar-accent-foreground: #0d1117;
+    --sidebar-border: var(--border-subtle);
+    --sidebar-ring: var(--semantic-info);
+
+    color-scheme: dark;
+}
+
+/* Gruvbox light — soft, warm cream palette. */
+[data-theme="gruvbox"] {
+    --surface-app: #fbf1c7;
+    --surface-window: #f9f5d7;
+    --surface-sidebar: #f2e5bc;
+    --surface-panel: #f9f5d7;
+    --surface-panel-elevated: #ebdbb2;
+    --surface-input: #f9f5d7;
+    --surface-row: #f9f5d7;
+    --surface-row-hover: #ebdbb2;
+    --accent-overlay: #fce8c3;
+
+    --border-subtle: #d5c4a1;
+    --border-strong: #bdae93;
+
+    --text-primary: #3c3836;
+    --text-secondary: #504945;
+    --text-muted: #7c6f64;
+    --text-disabled: #a89984;
+
+    --accent-green: #79740e;
+    --accent-green-hover: #98971a;
+    --accent-green-subdued: #ebdbb2;
+
+    --semantic-success: #79740e;
+    --semantic-warning: #b57614;
+    --semantic-danger: #9d0006;
+    --semantic-info: #076678;
+
+    --background: var(--surface-app);
+    --foreground: var(--text-primary);
+    --card: var(--surface-panel);
+    --card-foreground: var(--text-primary);
+    --popover: var(--surface-panel-elevated);
+    --popover-foreground: var(--text-primary);
+    --primary: var(--accent-green);
+    --primary-foreground: #fbf1c7;
+    --secondary: var(--surface-panel-elevated);
+    --secondary-foreground: var(--text-primary);
+    --muted: var(--surface-panel-elevated);
+    --muted-foreground: var(--text-muted);
+    --accent: #af3a03;
+    --accent-foreground: #fbf1c7;
+    --destructive: var(--semantic-danger);
+    --border: var(--border-subtle);
+    --input: var(--border-subtle);
+    --ring: var(--accent-green);
+    --chart-1: var(--accent-green);
+    --chart-2: var(--semantic-info);
+    --chart-3: var(--semantic-warning);
+    --chart-4: var(--semantic-danger);
+    --chart-5: #8f3f71;
+    --sidebar: var(--surface-sidebar);
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: var(--accent-green);
+    --sidebar-primary-foreground: #fbf1c7;
+    --sidebar-accent: #af3a03;
+    --sidebar-accent-foreground: #fbf1c7;
+    --sidebar-border: var(--border-subtle);
+    --sidebar-ring: var(--accent-green);
+
+    color-scheme: light;
+}
+
+/* Gruvbox dark — hard contrast variant. */
+.dark[data-theme="gruvbox"] {
+    --surface-app: #1d2021;
+    --surface-window: #282828;
+    --surface-sidebar: #1d2021;
+    --surface-panel: #282828;
+    --surface-panel-elevated: #32302f;
+    --surface-input: #1d2021;
+    --surface-row: #282828;
+    --surface-row-hover: #3c3836;
+    --accent-overlay: #504945;
+
+    --border-subtle: #3c3836;
+    --border-strong: #504945;
+
+    --text-primary: #ebdbb2;
+    --text-secondary: #d5c4a1;
+    --text-muted: #a89984;
+    --text-disabled: #7c6f64;
+
+    --accent-green: #b8bb26;
+    --accent-green-hover: #d3d643;
+    --accent-green-subdued: #3c3836;
+
+    --semantic-success: #b8bb26;
+    --semantic-warning: #fabd2f;
+    --semantic-danger: #fb4934;
+    --semantic-info: #83a598;
+
+    --background: var(--surface-app);
+    --foreground: var(--text-primary);
+    --card: var(--surface-panel);
+    --card-foreground: var(--text-primary);
+    --popover: var(--surface-panel-elevated);
+    --popover-foreground: var(--text-primary);
+    --primary: var(--accent-green);
+    --primary-foreground: #1d2021;
+    --secondary: var(--surface-panel-elevated);
+    --secondary-foreground: var(--text-primary);
+    --muted: var(--surface-panel);
+    --muted-foreground: var(--text-muted);
+    --accent: #fe8019;
+    --accent-foreground: #1d2021;
+    --destructive: var(--semantic-danger);
+    --border: var(--border-subtle);
+    --input: var(--border-subtle);
+    --ring: var(--accent-green);
+    --chart-1: var(--accent-green);
+    --chart-2: var(--semantic-info);
+    --chart-3: var(--semantic-warning);
+    --chart-4: var(--semantic-danger);
+    --chart-5: #d3869b;
+    --sidebar: var(--surface-sidebar);
+    --sidebar-foreground: var(--text-primary);
+    --sidebar-primary: var(--accent-green);
+    --sidebar-primary-foreground: #1d2021;
+    --sidebar-accent: #fe8019;
+    --sidebar-accent-foreground: #1d2021;
+    --sidebar-border: var(--border-subtle);
+    --sidebar-ring: var(--accent-green);
+
+    color-scheme: dark;
+}
+
 @theme inline {
     --font-sans:
         "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter",

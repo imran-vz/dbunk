@@ -49,6 +49,7 @@ export type {
   SchemaMapRouting,
   ServerDetails,
   ServerDetailsStatus,
+  SettingsTab,
   SqliteStoredConnection,
   StorageClass,
   StoredConnection,

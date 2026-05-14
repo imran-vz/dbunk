@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 
+import { connectionStatusItem } from "@/components/connection-status";
 import type { StatusBarItem } from "@/components/status-bar";
 import { relationalPolicy } from "@/lib/engine-policy";
 import type {
@@ -129,6 +130,7 @@ export function useDatabaseOverview({
   const lastQuery = queryHistory[0];
 
   const overviewStatus: StatusBarItem[] = [
+    connectionStatusItem(activeConnection),
     {
       id: "checked",
       tone: "healthy",
@@ -144,13 +146,6 @@ export function useDatabaseOverview({
       id: "latency",
       label: "Latency",
       value: lastQuery ? `${lastQuery.runtimeMs} ms` : "—",
-      align: "right",
-    },
-    {
-      id: "connection",
-      label: "Connection",
-      value: activeConnection.status,
-      tone: "healthy",
       align: "right",
     },
   ];

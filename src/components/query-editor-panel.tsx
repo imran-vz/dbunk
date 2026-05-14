@@ -230,6 +230,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     tabLabel: tab.label,
     cursor: editor.cursor,
     errorMessage,
+    activeConnection,
   });
 
   return (

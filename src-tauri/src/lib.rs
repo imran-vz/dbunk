@@ -1242,13 +1242,21 @@ async fn redis_delete_json_path(
     .await
 }
 
-/// Persisted theme mode key on the shared `app_settings` table.
+/// Persisted theme keys on the shared `app_settings` table.
 const SETTING_THEME: &str = "theme";
+const SETTING_THEME_PRESET: &str = "themePreset";
 
 fn validate_theme(value: &str) -> Result<&str, String> {
     match value {
         "system" | "light" | "dark" => Ok(value),
         _ => Err(format!("unknown theme mode '{value}'")),
+    }
+}
+
+fn validate_theme_preset(value: &str) -> Result<&str, String> {
+    match value {
+        "default" | "dracula" | "github" | "gruvbox" => Ok(value),
+        _ => Err(format!("unknown theme preset '{value}'")),
     }
 }
 
@@ -1269,12 +1277,16 @@ async fn load_app_settings(state: State<'_, AppState>) -> Result<AppSettingsSnap
     let theme = storage::get_setting(&state.pool, SETTING_THEME)
         .await?
         .and_then(|raw| validate_theme(&raw).ok().map(str::to_string));
+    let theme_preset = storage::get_setting(&state.pool, SETTING_THEME_PRESET)
+        .await?
+        .and_then(|raw| validate_theme_preset(&raw).ok().map(str::to_string));
     Ok(AppSettingsSnapshot {
         onboarding_completed,
         credential_storage_mode,
         credential_state,
         config_dir: state.paths.config_dir().display().to_string(),
         theme,
+        theme_preset,
     })
 }
 
@@ -1283,8 +1295,15 @@ async fn save_app_settings(
     state: State<'_, AppState>,
     payload: SaveAppSettingsPayload,
 ) -> Result<AppSettingsSnapshot, String> {
-    validate_theme(&payload.theme)?;
-    storage::set_setting(&state.inner().pool, SETTING_THEME, &payload.theme).await?;
+    let inner = state.inner();
+    if let Some(theme) = payload.theme.as_deref() {
+        validate_theme(theme)?;
+        storage::set_setting(&inner.pool, SETTING_THEME, theme).await?;
+    }
+    if let Some(preset) = payload.theme_preset.as_deref() {
+        validate_theme_preset(preset)?;
+        storage::set_setting(&inner.pool, SETTING_THEME_PRESET, preset).await?;
+    }
     load_app_settings(state).await
 }
 

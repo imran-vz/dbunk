@@ -12,7 +12,13 @@
 import type { StateCreator } from "zustand";
 
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
-import { applyTheme, type ThemeMode, writeStoredMode } from "@/lib/theme";
+import {
+  applyTheme,
+  type ThemeMode,
+  type ThemePreset,
+  writeStoredMode,
+  writeStoredPreset,
+} from "@/lib/theme";
 
 import type {
   AppSettingsSnapshot,
@@ -41,17 +47,59 @@ export type CredentialsSlice = {
   }) => Promise<AppSettingsSnapshot | null>;
   resetCredentialStorage: () => Promise<AppSettingsSnapshot | null>;
   /**
-   * Persist the user's theme choice. Updates the boot cache + DOM
-   * class synchronously; the SQLite write is fire-and-forget so the
-   * menu stays snappy. AppSettings is updated optimistically.
+   * Persist the user's theme mode. Updates the boot cache + DOM class
+   * synchronously; the SQLite write is fire-and-forget so the menu
+   * stays snappy. AppSettings is updated optimistically.
    */
   setTheme: (mode: ThemeMode) => Promise<void>;
+  /**
+   * Persist the user's theme preset. Same write semantics as
+   * `setTheme` — DOM + cache first, SQLite after.
+   */
+  setThemePreset: (preset: ThemePreset) => Promise<void>;
 };
 
 function hydrateTheme(snapshot: AppSettingsSnapshot | null) {
   const mode: ThemeMode = snapshot?.theme ?? "system";
-  applyTheme(mode);
+  const preset: ThemePreset = snapshot?.themePreset ?? "default";
+  applyTheme(mode, preset);
   writeStoredMode(mode);
+  writeStoredPreset(preset);
+}
+
+type ThemePatch = { mode?: ThemeMode; preset?: ThemePreset };
+
+async function persistThemePatch(
+  get: () => AppStoreState,
+  set: (partial: Partial<AppStoreState>) => void,
+  patch: ThemePatch,
+) {
+  const current = get().appSettings;
+  const mode = patch.mode ?? current?.theme ?? "system";
+  const preset = patch.preset ?? current?.themePreset ?? "default";
+  applyTheme(mode, preset);
+  if (patch.mode !== undefined) writeStoredMode(patch.mode);
+  if (patch.preset !== undefined) writeStoredPreset(patch.preset);
+  if (current) {
+    set({
+      appSettings: {
+        ...current,
+        ...(patch.mode !== undefined ? { theme: patch.mode } : null),
+        ...(patch.preset !== undefined ? { themePreset: patch.preset } : null),
+      },
+    });
+  }
+  if (!isTauri()) return;
+  try {
+    await tauriInvoke<AppSettingsSnapshot>("save_app_settings", {
+      payload: {
+        ...(patch.mode !== undefined ? { theme: patch.mode } : null),
+        ...(patch.preset !== undefined ? { themePreset: patch.preset } : null),
+      },
+    });
+  } catch (error) {
+    console.error("Failed to persist theme settings", error);
+  }
 }
 
 export const createCredentialsSlice: StateCreator<
@@ -91,25 +139,8 @@ export const createCredentialsSlice: StateCreator<
     }
   },
 
-  setTheme: async (mode) => {
-    // Apply the DOM class and update the boot cache synchronously so
-    // the menu feels instant and a subsequent reload paints the right
-    // theme even if the SQLite write hasn't landed yet.
-    applyTheme(mode);
-    writeStoredMode(mode);
-    const current = get().appSettings;
-    if (current) {
-      set({ appSettings: { ...current, theme: mode } });
-    }
-    if (!isTauri()) return;
-    try {
-      await tauriInvoke<AppSettingsSnapshot>("save_app_settings", {
-        payload: { theme: mode },
-      });
-    } catch (error) {
-      console.error("Failed to persist theme", error);
-    }
-  },
+  setTheme: (mode) => persistThemePatch(get, set, { mode }),
+  setThemePreset: (preset) => persistThemePatch(get, set, { preset }),
 
   configureCredentialStorage: async (input) => {
     if (!isTauri()) {

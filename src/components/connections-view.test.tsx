@@ -1,11 +1,5 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
@@ -85,9 +79,7 @@ describe("ConnectionCard status pill and badge labels", () => {
 
     render(<ConnectionsView />);
 
-    // "Healthy" appears both as a filter tab and as the pill label.
-    const matches = screen.getAllByText("Healthy");
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Healthy")).toBeTruthy();
   });
 
   it("renders Warning pill when status is Read only", () => {
@@ -98,9 +90,7 @@ describe("ConnectionCard status pill and badge labels", () => {
 
     render(<ConnectionsView />);
 
-    // Two "Warning" strings appear: the filter tab label and the pill label.
-    const matches = screen.getAllByText("Warning");
-    expect(matches.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Warning")).toBeTruthy();
   });
 
   it("renders Idle label when status is Disconnected with no error", () => {
@@ -128,9 +118,7 @@ describe("ConnectionCard status pill and badge labels", () => {
 
     render(<ConnectionsView />);
 
-    // Pill label "Error" appears alongside the filter tab label "Error".
-    const matches = screen.getAllByText("Error");
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Error")).toBeTruthy();
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 });
@@ -330,7 +318,7 @@ describe("ConnectionCard isActive styling and onSelect", () => {
   });
 });
 
-describe("ConnectionsView filter callback (line 86)", () => {
+describe("ConnectionsView search", () => {
   const connections: Connection[] = [
     {
       ...baseConnection,
@@ -373,59 +361,7 @@ describe("ConnectionsView filter callback (line 86)", () => {
     },
   ] as Connection[];
 
-  function selectFilter(label: string) {
-    const tablist = screen.getByRole("tablist", {
-      name: /connection filters/i,
-    });
-    fireEvent.click(within(tablist).getByText(label));
-  }
-
-  it("keeps only Connected cards when filter=healthy", () => {
-    useAppStore.setState({
-      connections,
-      activeConnectionId: "c-connected",
-    });
-
-    render(<ConnectionsView />);
-    selectFilter("Healthy");
-
-    expect(screen.getByText("Alpha")).toBeTruthy();
-    expect(screen.queryByText("Beta replica")).toBeNull();
-    expect(screen.queryByText("Gamma")).toBeNull();
-    expect(screen.queryByText("Delta")).toBeNull();
-  });
-
-  it("keeps only Read-only cards when filter=warning", () => {
-    useAppStore.setState({
-      connections,
-      activeConnectionId: "c-readonly",
-    });
-
-    render(<ConnectionsView />);
-    selectFilter("Warning");
-
-    expect(screen.queryByText("Alpha")).toBeNull();
-    expect(screen.getByText("Beta replica")).toBeTruthy();
-    expect(screen.queryByText("Gamma")).toBeNull();
-    expect(screen.queryByText("Delta")).toBeNull();
-  });
-
-  it("keeps only error cards when filter=error", () => {
-    useAppStore.setState({
-      connections,
-      activeConnectionId: "c-error",
-    });
-
-    render(<ConnectionsView />);
-    selectFilter("Error");
-
-    expect(screen.queryByText("Alpha")).toBeNull();
-    expect(screen.queryByText("Beta replica")).toBeNull();
-    expect(screen.queryByText("Gamma")).toBeNull();
-    expect(screen.getByText("Delta")).toBeTruthy();
-  });
-
-  it("returns every connection when filter=all and search is blank", () => {
+  it("returns every connection when search is blank", () => {
     useAppStore.setState({
       connections,
       activeConnectionId: "c-connected",
@@ -514,39 +450,5 @@ describe("ConnectionsView filter callback (line 86)", () => {
     expect(screen.queryByText("Beta replica")).toBeNull();
     expect(screen.queryByText("Gamma")).toBeNull();
     expect(screen.queryByText("Delta")).toBeNull();
-  });
-
-  it("combines filter=error with a search needle that matches the error card", () => {
-    useAppStore.setState({
-      connections,
-      activeConnectionId: "c-error",
-    });
-
-    render(<ConnectionsView />);
-    selectFilter("Error");
-    typeSearch("delta");
-
-    expect(screen.getByText("Delta")).toBeTruthy();
-    expect(screen.queryByText("Alpha")).toBeNull();
-  });
-
-  it("filter=healthy excludes a card with errorMessage even if previously Connected", () => {
-    useAppStore.setState({
-      connections: [
-        {
-          ...baseConnection,
-          id: "x",
-          name: "X",
-          status: "Disconnected",
-          errorMessage: "bad",
-        },
-      ],
-      activeConnectionId: "x",
-    });
-
-    render(<ConnectionsView />);
-    selectFilter("Healthy");
-
-    expect(screen.queryByText("X")).toBeNull();
   });
 });

@@ -74,14 +74,21 @@ pub(crate) struct AppSettingsSnapshot {
     /// `None` resolves to `"system"` in the frontend.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    /// User-chosen preset: `"default" | "dracula" | "github" | "gruvbox"`.
+    /// `None` resolves to `"default"` in the frontend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_preset: Option<String>,
 }
 
+/// Both fields are optional so callers can update mode and preset
+/// independently. Validated by the command handler.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SaveAppSettingsPayload {
-    /// One of `"system" | "light" | "dark"`. Validated by the command
-    /// handler before being persisted.
-    pub theme: String,
+    #[serde(default)]
+    pub theme: Option<String>,
+    #[serde(default)]
+    pub theme_preset: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

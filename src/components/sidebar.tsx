@@ -6,13 +6,19 @@ import {
   IconDots,
   IconFilter,
   IconRefresh,
-  IconSettings,
   IconTable,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { connectionStatusTone } from "@/components/connection-status";
 import { DeleteConnectionDialog } from "@/components/delete-connection-dialog";
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,16 +26,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
+import { StatusDot } from "@/components/ui/status-dot";
 import { type Connection, type SchemaExplorer, useAppStore } from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-
-function statusTone(status: Connection["status"]): StatusTone {
-  if (status === "Connected") return "healthy";
-  if (status === "Read only") return "warning";
-  return "neutral";
-}
 
 type SchemaObjectKey = keyof Pick<
   SchemaExplorer,
@@ -226,7 +226,6 @@ export function Sidebar({ className }: { className?: string }) {
     expandedSchemas,
     connections,
     schemaExplorer,
-    setActiveView,
     setActiveConnectionId,
     connectConnection,
     disconnectConnection,
@@ -235,11 +234,6 @@ export function Sidebar({ className }: { className?: string }) {
     openTableTab,
     openViewTab,
   } = useAppStore();
-
-  const activeConnection = connections.find(
-    (connection) => connection.id === activeConnectionId,
-  );
-  const activeTone = statusTone(activeConnection?.status ?? "Disconnected");
 
   const explorerSchemas = schemaExplorer[activeConnectionId] ?? [];
   const filteredSchemas = useMemo(() => {
@@ -308,96 +302,117 @@ export function Sidebar({ className }: { className?: string }) {
       )}
     >
       {/* CONNECTIONS */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-2">
+      <div className="px-4 pt-4 pb-2">
         <div className="dbunk-section-title">Connections</div>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Manage connections"
-          onClick={() => setActiveView("connections")}
-          className="size-6"
-        >
-          <IconSettings className="size-3.5" />
-        </Button>
       </div>
 
       <div className="flex max-h-[34%] shrink-0 flex-col gap-0.5 overflow-auto px-2 pb-3">
         {connections.map((connection) => {
           const isActive = connection.id === activeConnectionId;
-          const tone = statusTone(connection.status);
+          const tone = connectionStatusTone(connection.status);
+          const isDisconnected = connection.status === "Disconnected";
           return (
-            <div
-              key={connection.id}
-              className={cn(
-                "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors",
-                isActive
-                  ? "bg-accent-green/10 text-foreground before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-accent-green"
-                  : "hover:bg-surface-panel",
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => setActiveConnectionId(connection.id)}
-                onDoubleClick={() => connectConnection(connection.id)}
-                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            <ContextMenu key={connection.id}>
+              <ContextMenuTrigger
+                render={
+                  <div
+                    className={cn(
+                      "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors",
+                      isActive
+                        ? "bg-accent-green/10 text-foreground before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-accent-green"
+                        : "hover:bg-surface-panel",
+                    )}
+                  />
+                }
               >
-                <span
-                  className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-md border",
-                    isActive
-                      ? "border-accent-green/40 bg-accent-green/15 text-accent-green"
-                      : "border-border-subtle bg-surface-panel text-text-muted",
-                  )}
+                <button
+                  type="button"
+                  onClick={() => setActiveConnectionId(connection.id)}
+                  onDoubleClick={() => connectConnection(connection.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <IconDatabase className="size-3.5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate text-[0.8125rem] font-medium leading-tight text-foreground">
-                      {connection.name}
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-md border",
+                      isActive
+                        ? "border-accent-green/40 bg-accent-green/15 text-accent-green"
+                        : "border-border-subtle bg-surface-panel text-text-muted",
+                    )}
+                  >
+                    <IconDatabase className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-[0.8125rem] font-medium leading-tight text-foreground">
+                        {connection.name}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block truncate text-[0.6875rem] text-text-muted">
+                      {connection.engine}{" "}
+                      {connection.role ? `· ${connection.role}` : ""}
                     </span>
                   </span>
-                  <span className="mt-0.5 block truncate text-[0.6875rem] text-text-muted">
-                    {connection.engine}{" "}
-                    {connection.role ? `· ${connection.role}` : ""}
-                  </span>
-                </span>
-              </button>
-              <StatusDot tone={tone} />
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  aria-label={`More actions for ${connection.name}`}
-                  className="invisible flex size-6 items-center justify-center rounded-md text-text-muted hover:bg-surface-panel-elevated hover:text-foreground group-hover:visible aria-expanded:visible aria-expanded:bg-surface-panel-elevated"
+                </button>
+                <StatusDot tone={tone} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    aria-label={`More actions for ${connection.name}`}
+                    className="invisible flex size-6 items-center justify-center rounded-md text-text-muted hover:bg-surface-panel-elevated hover:text-foreground group-hover:visible aria-expanded:visible aria-expanded:bg-surface-panel-elevated"
+                  >
+                    <IconDots className="size-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuItem
+                      onClick={() => connectConnection(connection.id)}
+                    >
+                      Connect
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={isDisconnected}
+                      onClick={() => disconnectConnection(connection.id)}
+                    >
+                      <IconDatabaseOff className="size-3.5" />
+                      Disconnect
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setEditingConnection(connection)}
+                    >
+                      Edit…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setDeletingConnection(connection)}
+                      className="text-danger"
+                    >
+                      Delete…
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-44">
+                <ContextMenuItem
+                  onClick={() => connectConnection(connection.id)}
                 >
-                  <IconDots className="size-3.5" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem
-                    onClick={() => connectConnection(connection.id)}
-                  >
-                    Connect
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={connection.status === "Disconnected"}
-                    onClick={() => disconnectConnection(connection.id)}
-                  >
-                    <IconDatabaseOff className="size-3.5" />
-                    Disconnect
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setEditingConnection(connection)}
-                  >
-                    Edit…
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setDeletingConnection(connection)}
-                    className="text-danger"
-                  >
-                    Delete…
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                  Connect
+                </ContextMenuItem>
+                <ContextMenuItem
+                  disabled={isDisconnected}
+                  onClick={() => disconnectConnection(connection.id)}
+                >
+                  Disconnect
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => setEditingConnection(connection)}
+                >
+                  Edit…
+                </ContextMenuItem>
+                <ContextMenuItem
+                  variant="destructive"
+                  onClick={() => setDeletingConnection(connection)}
+                >
+                  Delete…
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           );
         })}
       </div>
@@ -590,71 +605,6 @@ export function Sidebar({ className }: { className?: string }) {
             </div>
           );
         })}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t border-border-subtle bg-surface-window/60 px-4 py-3 text-xs">
-        <div className="flex min-w-0 items-center gap-2">
-          <StatusDot tone={activeTone} />
-          <div className="min-w-0">
-            <div className="truncate text-[0.8125rem] font-medium text-foreground">
-              {activeConnection?.name ?? "No connection"}
-            </div>
-            <div className="text-[0.6875rem] text-text-muted">
-              {activeConnection?.status ?? "Disconnected"}
-            </div>
-          </div>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            type="button"
-            aria-label="Connection quick actions"
-            className="inline-flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-surface-panel hover:text-foreground"
-          >
-            <IconSettings className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuItem
-              disabled={!activeConnection}
-              onClick={() => {
-                if (activeConnection)
-                  void connectConnection(activeConnection.id);
-              }}
-            >
-              Reconnect
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={
-                !activeConnection || activeConnection.status === "Disconnected"
-              }
-              onClick={() => {
-                if (activeConnection) disconnectConnection(activeConnection.id);
-              }}
-            >
-              Disconnect
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!activeConnection}
-              onClick={() => {
-                if (activeConnection) setEditingConnection(activeConnection);
-              }}
-            >
-              Edit…
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setActiveView("settings")}>
-              All connection settings…
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!activeConnection}
-              className="text-danger"
-              onClick={() => {
-                if (activeConnection) setDeletingConnection(activeConnection);
-              }}
-            >
-              Delete…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       <EditConnectionDialog

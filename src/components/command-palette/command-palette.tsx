@@ -32,7 +32,7 @@ export function CommandPalette() {
   const connections = useAppStore((state) => state.connections);
   const schemaExplorer = useAppStore((state) => state.schemaExplorer);
   const savedQueries = useAppStore((state) => state.savedQueries);
-  const setActiveView = useAppStore((state) => state.setActiveView);
+  const openSettings = useAppStore((state) => state.openSettings);
   const connectConnection = useAppStore((state) => state.connectConnection);
   const openTableTab = useAppStore((state) => state.openTableTab);
   const openWorkspaceTab = useAppStore((state) => state.openWorkspaceTab);
@@ -142,9 +142,9 @@ export function CommandPalette() {
             />
             <PaletteItem
               icon={<IconDatabase className="size-3.5" />}
-              label="Open Connections view"
+              label="Open Connections settings"
               onSelect={() => {
-                setActiveView("connections");
+                openSettings("connections");
                 close();
               }}
             />
@@ -152,7 +152,7 @@ export function CommandPalette() {
               icon={<IconSettings className="size-3.5" />}
               label="Open Settings"
               onSelect={() => {
-                setActiveView("settings");
+                openSettings();
                 close();
               }}
             />

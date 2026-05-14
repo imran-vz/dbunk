@@ -398,7 +398,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     isLoading,
     rowCount: rows.length,
     pagination,
-    connectionStatus: connection?.status,
+    activeConnection: connection,
   });
 
   return (
