@@ -1242,6 +1242,16 @@ async fn redis_delete_json_path(
     .await
 }
 
+/// Persisted theme mode key on the shared `app_settings` table.
+const SETTING_THEME: &str = "theme";
+
+fn validate_theme(value: &str) -> Result<&str, String> {
+    match value {
+        "system" | "light" | "dark" => Ok(value),
+        _ => Err(format!("unknown theme mode '{value}'")),
+    }
+}
+
 #[tauri::command]
 async fn load_app_settings(state: State<'_, AppState>) -> Result<AppSettingsSnapshot, String> {
     let state = state.inner();
@@ -1256,12 +1266,26 @@ async fn load_app_settings(state: State<'_, AppState>) -> Result<AppSettingsSnap
     } else {
         CredentialState::Ready
     };
+    let theme = storage::get_setting(&state.pool, SETTING_THEME)
+        .await?
+        .and_then(|raw| validate_theme(&raw).ok().map(str::to_string));
     Ok(AppSettingsSnapshot {
         onboarding_completed,
         credential_storage_mode,
         credential_state,
         config_dir: state.paths.config_dir().display().to_string(),
+        theme,
     })
+}
+
+#[tauri::command]
+async fn save_app_settings(
+    state: State<'_, AppState>,
+    payload: SaveAppSettingsPayload,
+) -> Result<AppSettingsSnapshot, String> {
+    validate_theme(&payload.theme)?;
+    storage::set_setting(&state.inner().pool, SETTING_THEME, &payload.theme).await?;
+    load_app_settings(state).await
 }
 
 #[tauri::command]
@@ -1368,6 +1392,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             restore_window_traffic_light_position,
             load_app_settings,
+            save_app_settings,
             configure_credential_storage,
             unlock_credentials,
             change_credential_storage,

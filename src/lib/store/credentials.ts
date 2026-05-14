@@ -12,6 +12,7 @@
 import type { StateCreator } from "zustand";
 
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
+import { applyTheme, type ThemeMode, writeStoredMode } from "@/lib/theme";
 
 import type {
   AppSettingsSnapshot,
@@ -39,7 +40,19 @@ export type CredentialsSlice = {
     password?: string;
   }) => Promise<AppSettingsSnapshot | null>;
   resetCredentialStorage: () => Promise<AppSettingsSnapshot | null>;
+  /**
+   * Persist the user's theme choice. Updates the boot cache + DOM
+   * class synchronously; the SQLite write is fire-and-forget so the
+   * menu stays snappy. AppSettings is updated optimistically.
+   */
+  setTheme: (mode: ThemeMode) => Promise<void>;
 };
+
+function hydrateTheme(snapshot: AppSettingsSnapshot | null) {
+  const mode: ThemeMode = snapshot?.theme ?? "system";
+  applyTheme(mode);
+  writeStoredMode(mode);
+}
 
 export const createCredentialsSlice: StateCreator<
   AppStoreState,
@@ -60,6 +73,7 @@ export const createCredentialsSlice: StateCreator<
         configDir: "~/.config/dbunk",
       };
       set({ appSettings: fallback, appSettingsStatus: { state: "ready" } });
+      hydrateTheme(fallback);
       return fallback;
     }
     set({ appSettingsStatus: { state: "loading" } });
@@ -67,12 +81,33 @@ export const createCredentialsSlice: StateCreator<
       const snapshot =
         await tauriInvoke<AppSettingsSnapshot>("load_app_settings");
       set({ appSettings: snapshot, appSettingsStatus: { state: "ready" } });
+      hydrateTheme(snapshot);
       return snapshot;
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load app settings", error);
       set({ appSettingsStatus: { state: "error", error: message } });
       return null;
+    }
+  },
+
+  setTheme: async (mode) => {
+    // Apply the DOM class and update the boot cache synchronously so
+    // the menu feels instant and a subsequent reload paints the right
+    // theme even if the SQLite write hasn't landed yet.
+    applyTheme(mode);
+    writeStoredMode(mode);
+    const current = get().appSettings;
+    if (current) {
+      set({ appSettings: { ...current, theme: mode } });
+    }
+    if (!isTauri()) return;
+    try {
+      await tauriInvoke<AppSettingsSnapshot>("save_app_settings", {
+        payload: { theme: mode },
+      });
+    } catch (error) {
+      console.error("Failed to persist theme", error);
     }
   },
 

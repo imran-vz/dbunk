@@ -75,11 +75,19 @@ export type CredentialStorageMode =
 
 export type CredentialState = "needs-onboarding" | "needs-unlock" | "ready";
 
+/**
+ * `theme` is canonical persistence for the user's chosen theme mode;
+ * `localStorage["dbunk.theme"]` is a boot-cache mirror so a pre-paint
+ * script can apply the resolved theme before React hydrates. The
+ * Rust side omits the field when no choice is yet stored, which the
+ * TS layer treats as `"system"`.
+ */
 export type AppSettingsSnapshot = {
   onboardingCompleted: boolean;
   credentialStorageMode: CredentialStorageMode | null;
   credentialState: CredentialState;
   configDir: string;
+  theme?: "system" | "light" | "dark";
 };
 
 export type AppSettingsStatus =
