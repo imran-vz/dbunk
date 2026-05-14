@@ -59,6 +59,7 @@
     "@tauri-apps/api": "^2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "dagre": "^0.8.5",
     "html-to-image": "^1.11.13",
     "nitro": "npm:nitro-nightly@3.0.1-20251230-165713-6e801e22",

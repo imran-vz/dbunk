@@ -108,6 +108,13 @@ const readySettings = {
 };
 
 beforeEach(() => {
+  // The macOS traffic-light gutter only renders on a mac platform.
+  // jsdom defaults to an empty `navigator.platform`, so stub it here
+  // for the dragging suite which asserts mac-only behaviour.
+  Object.defineProperty(window.navigator, "platform", {
+    value: "MacIntel",
+    configurable: true,
+  });
   window.localStorage.clear();
   useAppStore.setState(initialStoreState, true);
   useAppStore.setState({

@@ -6,6 +6,7 @@ import {
   WindowDragFrame,
   WindowDragSurface,
 } from "@/components/app-shell/window-drag";
+import { CommandPalette } from "@/components/command-palette/command-palette";
 import { ConnectionsView } from "@/components/connections-view";
 import {
   CredentialOnboarding,
@@ -276,6 +277,7 @@ export function AppShell() {
           )}
         </div>
       </div>
+      <CommandPalette />
     </div>
   );
 }

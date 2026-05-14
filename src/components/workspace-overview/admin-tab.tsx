@@ -134,7 +134,18 @@ export function AdminTab({ connection }: { connection: Connection }) {
 
       {error ? (
         <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
-          {error}
+          <div className="flex items-start justify-between gap-2">
+            <span className="whitespace-pre-wrap font-mono">{error}</span>
+            <button
+              type="button"
+              className="shrink-0 underline underline-offset-2 hover:text-foreground"
+              onClick={() => {
+                void load();
+              }}
+            >
+              Retry
+            </button>
+          </div>
         </div>
       ) : null}
 
