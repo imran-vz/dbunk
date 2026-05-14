@@ -148,9 +148,11 @@ pub async fn delete_hash_fields(
 // The editor needs index-aware deletes. Redis only deletes by value, so
 // we use the canonical tag-and-LREM trick: rewrite each doomed index
 // via `LSET` to a per-key sentinel and then `LREM key 0 sentinel`.
-// Concurrent writers can't observe a half-deleted list because the
-// tags carry a UUID; even if two `apply_list_edits` overlap, they
-// only `LREM` their own tags. Per-edit `LSET` calls are pipelined.
+// Concurrent writers can't observe a half-deleted list because (a) the
+// tags carry a UUID — even if two `apply_list_edits` overlap, they
+// only `LREM` their own tags — and (b) the whole batch is wrapped in
+// `MULTI`/`EXEC`, so an LSET that fails mid-batch can't leave sentinel
+// strings visible (review 2026-05-14 P1-1).
 
 const LIST_DELETE_TAG_PREFIX: &str = "__dbunk_del_";
 
@@ -184,14 +186,14 @@ pub async fn apply_list_edits(
         return Ok(());
     }
     let mut conn = connection::manager_for(connection).await?;
+    let mut pipe = redis::pipe();
+    pipe.atomic();
     for edit in &payload.sets {
-        let _: redis::Value = redis::cmd("LSET")
+        pipe.cmd("LSET")
             .arg(&payload.key)
             .arg(edit.index)
             .arg(&edit.value)
-            .query_async(&mut conn)
-            .await
-            .map_err(connection::redis_err)?;
+            .ignore();
     }
     if !payload.deletes.is_empty() {
         let tag = format!(
@@ -199,21 +201,13 @@ pub async fn apply_list_edits(
             uuid::Uuid::new_v4().simple()
         );
         for index in &payload.deletes {
-            let _: redis::Value = redis::cmd("LSET")
+            pipe.cmd("LSET")
                 .arg(&payload.key)
                 .arg(index)
                 .arg(&tag)
-                .query_async(&mut conn)
-                .await
-                .map_err(connection::redis_err)?;
+                .ignore();
         }
-        let _: redis::Value = redis::cmd("LREM")
-            .arg(&payload.key)
-            .arg(0)
-            .arg(&tag)
-            .query_async(&mut conn)
-            .await
-            .map_err(connection::redis_err)?;
+        pipe.cmd("LREM").arg(&payload.key).arg(0).arg(&tag).ignore();
     }
     if !payload.appends.is_empty() {
         let mut cmd = redis::cmd("RPUSH");
@@ -221,11 +215,12 @@ pub async fn apply_list_edits(
         for value in &payload.appends {
             cmd.arg(value);
         }
-        let _: redis::Value = cmd
-            .query_async(&mut conn)
-            .await
-            .map_err(connection::redis_err)?;
+        pipe.add_command(cmd).ignore();
     }
+    let _: redis::Value = pipe
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
     Ok(())
 }
 
@@ -363,21 +358,29 @@ pub async fn apply_stream_edits(
     payload: &StreamEditsPayload,
 ) -> Result<(), String> {
     assert_writable(connection).await?;
-    let mut conn = connection::manager_for(connection).await?;
+    // Validate up front — otherwise a mid-loop reject would leave
+    // preceding XADDs committed and only surface as an error (review
+    // 2026-05-14 P1-2).
     for entry in &payload.appends {
         if entry.fields.is_empty() {
             return Err("stream append requires at least one field".to_string());
         }
+    }
+    let has_trim = payload.trim_maxlen.is_some_and(|maxlen| maxlen >= 0);
+    if payload.appends.is_empty() && payload.deletes.is_empty() && !has_trim {
+        return Ok(());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let mut pipe = redis::pipe();
+    pipe.atomic();
+    for entry in &payload.appends {
         let mut cmd = redis::cmd("XADD");
         cmd.arg(&payload.key)
             .arg(entry.id.as_deref().unwrap_or("*"));
         for (field, value) in &entry.fields {
             cmd.arg(field).arg(value);
         }
-        let _: redis::Value = cmd
-            .query_async(&mut conn)
-            .await
-            .map_err(connection::redis_err)?;
+        pipe.add_command(cmd).ignore();
     }
     if !payload.deletes.is_empty() {
         let mut cmd = redis::cmd("XDEL");
@@ -385,23 +388,22 @@ pub async fn apply_stream_edits(
         for id in &payload.deletes {
             cmd.arg(id);
         }
-        let _: redis::Value = cmd
-            .query_async(&mut conn)
-            .await
-            .map_err(connection::redis_err)?;
+        pipe.add_command(cmd).ignore();
     }
     if let Some(maxlen) = payload.trim_maxlen {
         if maxlen >= 0 {
-            let _: redis::Value = redis::cmd("XTRIM")
+            pipe.cmd("XTRIM")
                 .arg(&payload.key)
                 .arg("MAXLEN")
                 .arg("~")
                 .arg(maxlen)
-                .query_async(&mut conn)
-                .await
-                .map_err(connection::redis_err)?;
+                .ignore();
         }
     }
+    let _: redis::Value = pipe
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
     Ok(())
 }
 

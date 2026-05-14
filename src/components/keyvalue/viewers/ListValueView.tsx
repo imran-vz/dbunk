@@ -94,9 +94,9 @@ export function ListValueView({
     setSaving(true);
     setError(null);
     try {
-      // When the page is rendered tail-first, the Redis-native index
-      // is negative (-1, -2, ...) relative to the tail. LSET/LREM
-      // accept those directly.
+      // Tail-first paging: absIndex 0 is the tail of the list, which
+      // Redis addresses as -1. The backend's tail-window LRANGE
+      // (key_inspector::fetch_list) ensures the displayed row matches.
       const toRedisIndex = (absIndex: number): number =>
         reverse ? -(absIndex + 1) : absIndex;
       await applyRedisListEdits({

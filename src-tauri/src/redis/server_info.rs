@@ -1,8 +1,12 @@
-//! Server-tab fetch — pipelined INFO sections + MODULE LIST +
-//! SLOWLOG. Returns [`KeyValueOverviewStats`] for the
-//! `fetch_keyvalue_overview` Tauri command. Per-section degradation
-//! (missing/restricted sections render as `None`) so a single ACL
-//! restriction doesn't blank the whole tab.
+//! Server-tab fetch — single `INFO` + MODULE LIST + SLOWLOG. Returns
+//! [`KeyValueOverviewStats`] for the `fetch_keyvalue_overview` Tauri
+//! command. `INFO` (no section arg) returns all default sections in
+//! one round trip, then we pluck out server / keyspace / memory /
+//! clients / replication / persistence client-side. MODULE LIST and
+//! SLOWLOG stay sequential so an ACL-restricted MODULE doesn't blank
+//! SLOWLOG (and vice versa); a pipeline propagates the first
+//! `-NOPERM` to all slots. Total 3 round trips, down from 8 (review
+//! 2026-05-14 P1-6).
 
 use serde::Serialize;
 
@@ -97,11 +101,7 @@ pub async fn fetch_overview(
 
     let mut out = KeyValueOverviewStats::default();
 
-    if let Ok(info) = redis::cmd("INFO")
-        .arg("server")
-        .query_async::<String>(&mut conn)
-        .await
-    {
+    if let Ok(info) = redis::cmd("INFO").query_async::<String>(&mut conn).await {
         out.identity = ServerIdentity {
             version: info_field(&info, "redis_version"),
             mode: info_field(&info, "redis_mode"),
@@ -109,21 +109,7 @@ pub async fn fetch_overview(
             os: info_field(&info, "os"),
             arch: info_field(&info, "arch_bits"),
         };
-    }
-
-    if let Ok(info) = redis::cmd("INFO")
-        .arg("keyspace")
-        .query_async::<String>(&mut conn)
-        .await
-    {
         out.keyspace = parse_keyspace(&info);
-    }
-
-    if let Ok(info) = redis::cmd("INFO")
-        .arg("memory")
-        .query_async::<String>(&mut conn)
-        .await
-    {
         out.memory = Some(MemoryInfo {
             used_memory: info_field(&info, "used_memory").and_then(|v| v.parse().ok()),
             used_memory_rss: info_field(&info, "used_memory_rss").and_then(|v| v.parse().ok()),
@@ -133,13 +119,6 @@ pub async fn fetch_overview(
             maxmemory: info_field(&info, "maxmemory").and_then(|v| v.parse().ok()),
             maxmemory_policy: info_field(&info, "maxmemory_policy"),
         });
-    }
-
-    if let Ok(info) = redis::cmd("INFO")
-        .arg("clients")
-        .query_async::<String>(&mut conn)
-        .await
-    {
         out.clients = Some(ClientsInfo {
             connected_clients: info_field(&info, "connected_clients")
                 .and_then(|v| v.parse().ok())
@@ -150,13 +129,6 @@ pub async fn fetch_overview(
                 .unwrap_or(0),
             tracking_clients: info_field(&info, "tracking_clients").and_then(|v| v.parse().ok()),
         });
-    }
-
-    if let Ok(info) = redis::cmd("INFO")
-        .arg("replication")
-        .query_async::<String>(&mut conn)
-        .await
-    {
         let role = info_field(&info, "role").unwrap_or_else(|| "unknown".into());
         out.replication = Some(ReplicationInfo {
             role,
@@ -165,13 +137,6 @@ pub async fn fetch_overview(
             master_host: info_field(&info, "master_host"),
             master_port: info_field(&info, "master_port").and_then(|v| v.parse().ok()),
         });
-    }
-
-    if let Ok(info) = redis::cmd("INFO")
-        .arg("persistence")
-        .query_async::<String>(&mut conn)
-        .await
-    {
         out.persistence = Some(PersistenceInfo {
             rdb_last_save_time: info_field(&info, "rdb_last_save_time")
                 .and_then(|v| v.parse().ok()),

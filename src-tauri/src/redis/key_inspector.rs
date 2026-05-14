@@ -300,10 +300,27 @@ pub async fn fetch_list(
     payload: &FetchListPayload,
 ) -> Result<ListValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    let (lrange_start, lrange_stop) = if payload.reverse {
+        // Tail-first paging needs head-indexed LRANGE bounds derived
+        // from LLEN — otherwise the displayed `absIndex` and the
+        // negative index the UI sends back on Save target different
+        // elements (see review 2026-05-14 P0-2).
+        let len: i64 = redis::cmd("LLEN")
+            .arg(&payload.key)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+        match tail_lrange_args(len, payload.start, payload.stop) {
+            Some(bounds) => bounds,
+            None => return Ok(ListValuePayload { items: vec![] }),
+        }
+    } else {
+        (payload.start, payload.stop)
+    };
     let raw: Vec<redis::Value> = redis::cmd("LRANGE")
         .arg(&payload.key)
-        .arg(payload.start)
-        .arg(payload.stop)
+        .arg(lrange_start)
+        .arg(lrange_stop)
         .query_async(&mut conn)
         .await
         .map_err(connection::redis_err)?;
@@ -312,6 +329,18 @@ pub async fn fetch_list(
         items.reverse();
     }
     Ok(ListValuePayload { items })
+}
+
+/// Translate page-relative `[start..=stop]` indices (0 = tail-most when
+/// reversed) to head-indexed LRANGE bounds. Returns `None` when the
+/// page is entirely past the list end.
+fn tail_lrange_args(len: i64, page_start: i64, page_stop: i64) -> Option<(i64, i64)> {
+    if len <= 0 || page_start >= len {
+        return None;
+    }
+    let start = (len - 1 - page_stop).max(0);
+    let stop = (len - 1 - page_start).max(0);
+    Some((start, stop))
 }
 
 // ---------------------------------------------------------------------------
@@ -645,7 +674,6 @@ pub async fn fetch_stream_groups(
         _ => return Ok(StreamGroupsPayload::empty()),
     };
     let mut groups: Vec<StreamGroupInfo> = Vec::with_capacity(group_rows.len());
-    let mut consumers: Vec<StreamConsumerInfo> = Vec::new();
     for row in group_rows {
         let attrs = match row {
             redis::Value::Array(fields) => stream_attrs(fields),
@@ -655,8 +683,8 @@ pub async fn fetch_stream_groups(
             .get("name")
             .and_then(redis_value_to_string)
             .unwrap_or_default();
-        let info = StreamGroupInfo {
-            name: name.clone(),
+        groups.push(StreamGroupInfo {
+            name,
             consumers: attrs
                 .get("consumers")
                 .and_then(redis_value_to_u64)
@@ -669,37 +697,46 @@ pub async fn fetch_stream_groups(
                 .get("last-delivered-id")
                 .and_then(redis_value_to_string)
                 .unwrap_or_else(|| "0-0".to_string()),
-        };
-        // XINFO CONSUMERS — one round trip per group. Streams typically
-        // have a handful of groups; if this becomes a hotspot we can
-        // pipeline.
-        let raw_consumers: redis::Value = redis::cmd("XINFO")
-            .arg("CONSUMERS")
-            .arg(&payload.key)
-            .arg(&name)
+        });
+    }
+    // Pipeline `XINFO CONSUMERS` per group into one round trip — was
+    // N serial awaits, see review 2026-05-14 P1-4.
+    let mut consumers: Vec<StreamConsumerInfo> = Vec::new();
+    if !groups.is_empty() {
+        let mut pipe = redis::pipe();
+        for group in &groups {
+            pipe.cmd("XINFO")
+                .arg("CONSUMERS")
+                .arg(&payload.key)
+                .arg(&group.name);
+        }
+        let responses: Vec<redis::Value> = pipe
             .query_async(&mut conn)
             .await
             .map_err(connection::redis_err)?;
-        if let redis::Value::Array(rows) = raw_consumers {
+        for (group, response) in groups.iter().zip(responses) {
+            let redis::Value::Array(rows) = response else {
+                continue;
+            };
             for consumer_row in rows {
-                if let redis::Value::Array(fields) = consumer_row {
-                    let attrs = stream_attrs(fields);
-                    consumers.push(StreamConsumerInfo {
-                        group: name.clone(),
-                        name: attrs
-                            .get("name")
-                            .and_then(redis_value_to_string)
-                            .unwrap_or_default(),
-                        pending: attrs
-                            .get("pending")
-                            .and_then(redis_value_to_u64)
-                            .unwrap_or(0),
-                        idle_ms: attrs.get("idle").and_then(redis_value_to_u64).unwrap_or(0),
-                    });
-                }
+                let redis::Value::Array(fields) = consumer_row else {
+                    continue;
+                };
+                let attrs = stream_attrs(fields);
+                consumers.push(StreamConsumerInfo {
+                    group: group.name.clone(),
+                    name: attrs
+                        .get("name")
+                        .and_then(redis_value_to_string)
+                        .unwrap_or_default(),
+                    pending: attrs
+                        .get("pending")
+                        .and_then(redis_value_to_u64)
+                        .unwrap_or(0),
+                    idle_ms: attrs.get("idle").and_then(redis_value_to_u64).unwrap_or(0),
+                });
             }
         }
-        groups.push(info);
     }
     Ok(StreamGroupsPayload { groups, consumers })
 }
@@ -790,4 +827,41 @@ pub async fn fetch_json(
         other => serde_json::to_string(&other).unwrap_or_else(|_| "null".to_string()),
     };
     Ok(JsonValuePayload { value: text })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tail_lrange_args;
+
+    // Page-0 of a 500-elt list with pageSize=200: we want the LAST 200
+    // entries (indices 300..=499) so that reversing the response yields
+    // [499, 498, …, 300] — which aligns with the UI's
+    // `toRedisIndex(absIndex) = -(absIndex + 1)` formula on Save.
+    #[test]
+    fn first_page_targets_tail_window() {
+        assert_eq!(tail_lrange_args(500, 0, 199), Some((300, 499)));
+    }
+
+    #[test]
+    fn second_page_targets_next_window() {
+        assert_eq!(tail_lrange_args(500, 200, 399), Some((100, 299)));
+    }
+
+    // Last page that doesn't fill a full window — LRANGE must clamp to
+    // 0 rather than slip negative (negative LRANGE bounds re-enter
+    // tail-relative addressing and we'd return the wrong slice).
+    #[test]
+    fn page_overlapping_head_clamps_to_zero() {
+        assert_eq!(tail_lrange_args(150, 0, 199), Some((0, 149)));
+    }
+
+    #[test]
+    fn page_entirely_past_end_returns_none() {
+        assert_eq!(tail_lrange_args(100, 200, 399), None);
+    }
+
+    #[test]
+    fn empty_list_returns_none() {
+        assert_eq!(tail_lrange_args(0, 0, 199), None);
+    }
 }
