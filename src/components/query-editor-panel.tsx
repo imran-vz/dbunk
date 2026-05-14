@@ -265,7 +265,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         ) : null}
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="relative h-[17.5rem] shrink-0 border-b border-border-subtle bg-surface-app">
+          <div className="relative h-70 shrink-0 border-b border-border-subtle bg-surface-app">
             {isClient ? (
               <MonacoEditor
                 height="100%"
