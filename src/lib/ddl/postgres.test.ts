@@ -101,6 +101,60 @@ describe("generatePostgresDdl", () => {
     );
   });
 
+  it("emits CURRENT_TIMESTAMP as a bareword without quoting", () => {
+    const change: ColumnChangeKind = {
+      kind: "add",
+      column: {
+        name: "created_at",
+        dataType: "timestamptz",
+        nullable: false,
+        defaultValue: "CURRENT_TIMESTAMP",
+      },
+    };
+
+    const sql = generatePostgresDdl("public", "users", [change]);
+
+    expect(sql).toBe(
+      'ALTER TABLE "public"."users" ADD COLUMN "created_at" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;',
+    );
+  });
+
+  it("matches the keyword bareword whitelist case-insensitively", () => {
+    const change: ColumnChangeKind = {
+      kind: "add",
+      column: {
+        name: "is_active",
+        dataType: "boolean",
+        nullable: false,
+        defaultValue: "true",
+      },
+    };
+
+    const sql = generatePostgresDdl("public", "users", [change]);
+
+    expect(sql).toBe(
+      'ALTER TABLE "public"."users" ADD COLUMN "is_active" boolean NOT NULL DEFAULT true;',
+    );
+  });
+
+  it("still quotes unrecognised barewords as string literals", () => {
+    const change: ColumnChangeKind = {
+      kind: "add",
+      column: {
+        name: "label",
+        dataType: "text",
+        nullable: false,
+        defaultValue: "draft",
+      },
+    };
+
+    const sql = generatePostgresDdl("public", "users", [change]);
+
+    expect(sql).toBe(
+      'ALTER TABLE "public"."users" ADD COLUMN "label" text NOT NULL DEFAULT \'draft\';',
+    );
+  });
+
   it("emits DROP COLUMN", () => {
     const change: ColumnChangeKind = {
       kind: "drop",

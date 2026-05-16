@@ -9,19 +9,40 @@ behavior should look like**.
 
 ---
 
+## Shipped (closed since 2026-05-13)
+
+Items below ship-checked against `main` on 2026-05-16. Bodies kept for archaeology — search for "✅ Done" markers inline.
+
+- Overview page-level tabs (Tables / Schemas / Query History / Details / Settings) — all routed.
+- Table editor `Indexes` and `Relations` sub-tabs — real panels at `indexes-sub-tab.tsx` / `relations-sub-tab.tsx`.
+- Query editor `Explain` tab — `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` plan tree.
+- Query editor Run dropdown — Run selection / current / all all wired.
+- Query editor `Format` button — pipes through `sql-formatter` with engine-aware dialect.
+- Query editor connection switcher — `retargetQueryTab` + dropQueryStateForTab cascade (2026-05-16).
+- ⌘K command palette, top-bar global search, avatar prefs menu, sidebar footer gear — landed in commit `0567311`.
+- `<Kbd>` component with `isMacPlatform` switch — `src/components/ui/kbd.tsx`.
+- Toast system — `sonner` `Toaster` in `src/routes/__root.tsx`.
+- Redis Tier 2 value editors — List, Set, Sorted Set, Stream, JSON all editable.
+- Redis Stream consumer-groups read-only panel — `ConsumerGroupsPanel` driven by `fetchStreamGroups`.
+- Redis CLI autocomplete — `cli-catalog.ts` with `suggestCommands`.
+- Pub/Sub channel discovery — `PUBSUB CHANNELS` panel in `pubsub-toolbar.tsx`.
+- `lastSync` removed; `lastActivityAt` is the canonical activity timestamp.
+- State shells (empty/loading/error) — initial pass shipped; surface-specific polish remains.
+
+Items still on the tracker: cross-platform window chrome (Windows/Linux conditional spacer), `Auto-commit` footer transaction-status, Redis Server-tab cards, Sentinel/Cluster, advanced Redis tabs (saved-command, bulk-edit, transaction-builder, scripting, monitor, keyspace notifications), per-key ACL gating, doc panel in CLI, static-map / bit-grid editors, CLI history persistence, destructive-commands TOML generator, pub/sub Tauri event channel, CLI MULTI/EXEC session, replica-role caching, `verifyTlsCert=false` honouring, production log-file target, and Settings tab SSH-tunnel / TCP-keepalive / connect-timeout fields.
+
+---
+
 ## Phase 4 — Overview dashboard
 
-### Page-level tabs (Overview / Tables / Schemas / Query History / Details / Settings)
+### Page-level tabs (Overview / Tables / Schemas / Query History / Details / Settings) ✅
 - **Where**: workspace overview header, new tab strip component.
-- **Faked**: only the `Overview` panel renders. Other tabs are visual-only chips
-  with no route binding.
-- **Real**: each tab routes to its own sub-view.
-  - `Tables` → list of tables for the active connection (separate from sidebar
-    tree, more like a sortable index).
-  - `Schemas` → relocate the existing `SchemaRelationshipMap` here.
-  - `Query History` → full history view (currently only a "Recent Queries" card).
-  - `Details` → expanded connection metadata (server version, uptime, parameters).
-  - `Settings` → per-connection settings (timeouts, default schema, role).
+- **Done**: every tab routes to its own sub-view —
+  - `Tables` → `workspace-overview/tables-tab.tsx`
+  - `Schemas` → `workspace-overview/schemas-tab.tsx` (Schema Map tab also shipped)
+  - `Query History` → `workspace-overview/query-history-tab.tsx`
+  - `Details` → `workspace-overview/details-tab.tsx`
+  - `Settings` → `workspace-overview/settings-tab.tsx`
 
 ### Connection Details card
 - **Where**: `WorkspaceDatabaseOverview`.
@@ -42,17 +63,13 @@ behavior should look like**.
 
 ## Phase 5 — Table data browser
 
-### `Indexes` sub-tab
-- **Where**: new sub-tab on `TableEditorPanel`.
-- **Faked**: placeholder panel.
-- **Real**: list indexes with name, columns, type (btree/gin/etc.), unique flag,
-  size. Source from `pg_indexes` + `pg_stat_user_indexes`.
+### `Indexes` sub-tab ✅
+- **Where**: `src/components/table-editor/indexes-sub-tab.tsx`.
+- **Done**: real panel rendering `IndexesSection` from `table-structure/read-only-sections`; opens the index builder via the specialized-editors panel.
 
-### `Relations` sub-tab
-- **Where**: new sub-tab on `TableEditorPanel`.
-- **Faked**: placeholder panel.
-- **Real**: list FK relationships in/out of this table; eventually a focused
-  graph view (subset of `SchemaRelationshipMap`).
+### `Relations` sub-tab ✅
+- **Where**: `src/components/table-editor/relations-sub-tab.tsx`.
+- **Done**: outbound FKs via `ForeignKeysSection` plus an inbound "Referenced by" section sourced from `schemaRelationships`; opens the FK builder via specialized editors.
 
 ### Status pills in the data grid
 - **Where**: `DataGrid` cells.
@@ -79,19 +96,13 @@ behavior should look like**.
 
 ## Phase 6 — Query editor
 
-### `Explain` tab
-- **Where**: results area below editor.
-- **Faked**: placeholder panel.
-- **Real**: run `EXPLAIN (ANALYZE, FORMAT JSON) ...` against PG, render the plan
-  tree (cost, rows, actual time, loops). Per-engine variants later.
+### `Explain` tab ✅
+- **Where**: `query-editor-panel.tsx` (`handleExplain`) + `query-editor/results-view.tsx`.
+- **Done**: `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` runs against PG with tree-cost-rows-time-loops rendering plus a text fallback.
 
-### Run dropdown (Run selection / current statement / all)
-- **Where**: green `Run` split button.
-- **Faked**: the dropdown options exist but the only path executed is the
-  whole-buffer run.
-- **Real**: respect Monaco selection range; for "current statement" detect the
-  statement under the cursor by parsing `;` boundaries (avoiding string/comment
-  contents).
+### Run dropdown (Run selection / current statement / all) ✅
+- **Where**: `query-editor/toolbar.tsx` (`onRunSelection` / `onRunCurrent` / `onRunAll`) wired through `use-monaco-query-editor.ts`.
+- **Done**: respects Monaco selection range and statement-under-cursor detection via `pickSqlToRun`.
 
 ### Bottom status `Auto-commit ON`
 - **Where**: editor footer.
@@ -114,85 +125,63 @@ behavior should look like**.
 
 ## Phase 2 — Top bar / shell
 
-### `⌘K` command palette
-- **Where**: top-bar search.
-- **Faked**: keybinding hint shown; pressing `⌘K` focuses the input but no
-  palette opens.
-- **Real**: command palette over tables, connections, saved queries, and
-  actions. Probably `cmdk` library.
+### `⌘K` command palette ✅
+- **Where**: command-palette component invoked from the top-bar search.
+- **Done**: cmdk-style palette over tables, connections, saved queries, and actions — landed in commit `0567311`.
 
-### `Search tables` global search
+### `Search tables` global search ✅
 - **Where**: top-bar search.
-- **Faked**: input is decorative.
-- **Real**: fuzzy search across the active connection's schemas/tables;
-  selecting a result opens the table browser tab.
+- **Done**: opens the command palette which fuzzy-searches the active connection's tables — landed in commit `0567311`.
 
-### Avatar `AD` button
-- **Where**: top-bar right.
-- **Faked**: static initials, no menu.
-- **Real**: dropdown for app preferences, theme toggle, sign-in (when cloud
-  sync arrives), logout.
+### Avatar `AD` button ✅
+- **Where**: top-bar right (`app-shell-header.tsx`).
+- **Done**: prefs dropdown with theme toggle / settings entry — landed in commit `0567311`.
 
 ---
 
 ## Phase 3 — Sidebar
 
-### Sidebar footer settings gear
+### Sidebar footer settings gear ✅
 - **Where**: bottom of sidebar.
-- **Faked**: opens nothing or routes to existing connections view.
-- **Real**: per-connection quick actions (Reconnect, Disconnect, Edit, View in
-  connections screen).
+- **Done**: per-connection quick actions menu — landed in commit `0567311`.
 
 ---
 
 ## Cross-cutting / Phase 8
 
-### Cross-platform window chrome
-- **Where**: `AppShell` top bar.
+### Cross-platform window chrome ✅
+- **Where**: `AppShell` top bar (`app-shell-header.tsx`).
 - **Done**: macOS uses native traffic lights via Tauri's
   `titleBarStyle: "Overlay"` (see `src-tauri/tauri.conf.json`); the React
-  placeholder dots are gone.
-- **Remaining**: the 78 px left padding is reserved unconditionally — looks
-  off on Windows/Linux where the OS draws controls above the header. Detect
-  platform and conditionally apply the spacer (or wrap behind a
-  `<WindowControls />` component). Also keep title-bar height variable so
-  Windows/Linux can shrink it.
+  placeholder dots are gone. The left spacer that reserves room for the
+  traffic lights is now gated on `isMacPlatform() && !isWindowFullscreen`
+  (`pl-22` on macOS, `pl-2.5` elsewhere), so Windows/Linux don't pay the
+  macOS padding tax.
 
-### Shortcut labels
-- **Where**: anywhere a chord is shown (`⌘K`, `⌘N`, `⌘Enter`, `⌘S`, `⌘F`).
-- **Faked**: macOS glyphs hardcoded.
-- **Real**: detect platform and render `Ctrl+...` on Windows/Linux. Single
-  `<Kbd>` component.
+### Shortcut labels ✅
+- **Where**: anywhere a chord is shown.
+- **Done**: `src/components/ui/kbd.tsx` exports `<Kbd keys={…} />` plus an `isMacPlatform()` helper; consumers in `app-shell-header.tsx` render `Ctrl+...` on Windows/Linux.
 
-### Empty / loading / error states
-- **Where**: every data-bound surface (data grid, history, saved queries,
-  cards).
-- **Faked**: most surfaces only render the happy path or a generic "No data".
-- **Real**: bespoke empty states (illustration + CTA), skeleton loaders for
-  initial fetch, inline error surfaces with retry.
+### Empty / loading / error states 🟡
+- **Where**: every data-bound surface.
+- **Done**: shared state shells (`state-panel.tsx` etc.) plus skeleton loaders + retry shells landed in commit `0567311`.
+- **Remaining**: surface-specific polish — bespoke empty illustrations and CTA copy for each data-bound view.
 
-### Toasts / notifications
+### Toasts / notifications ✅
 - **Where**: app-wide.
-- **Faked**: not present.
-- **Real**: connect/disconnect success, query failures, save-confirmations.
-  Likely `sonner`.
+- **Done**: `sonner` `<Toaster />` mounted in `src/routes/__root.tsx`; consumers (`query-editor-panel.tsx`, `table-editor-panel.tsx`, `settings-tab.tsx`) call `toast.error` / `toast.info` / `toast.success`.
 
 ---
 
 ## Items added during the visual pass
 
-### `Format` button
-- **Where**: query editor toolbar (`query-editor-panel.tsx`).
-- **Faked**: button does nothing — `handleFormat` is a no-op stub.
-- **Real**: pipe the buffer through a SQL formatter (`sql-formatter` package or
-  similar) and write back via `updateQuery`. Engine-aware dialect selection.
+### `Format` button ✅
+- **Where**: `query-editor-panel.tsx::handleFormat` + `src/lib/sql-format.ts`.
+- **Done**: pipes the buffer through `sql-formatter` (engine-aware dialect from `activeConnection.engine`), writes back via `updateQuery`, surfaces failure/unchanged states through `toast`.
 
-### Editor connection switcher (DB selector)
-- **Where**: query editor toolbar dropdown.
-- **Faked**: dropdown lists every connection but `onClick` is empty, so picking
-  a different connection does not retarget the editor.
-- **Real**: thread the selection through `tab.connectionId`, persist back
-  into `workspaceTabs`, and re-key `tableStructure` lookups for completions.
+### Editor connection switcher (DB selector) ✅
+- **Where**: `query-editor/toolbar.tsx` dropdown + `query-editor-panel.tsx::handleRetargetConnection`.
+- **Done**: filters to relational engines via `storageClassFor`, prompts `window.confirm` when pending grid edits exist, calls `WorkspaceTabsSlice.retargetQueryTab(tabId, connectionId)` which flips `tab.connectionId`, syncs `activeConnectionId`, and cascades through `RelationalQueriesSlice.dropQueryStateForTab` to clear stale queryStatus/edits/previews (2026-05-16).
 
 ### Status bar — `Auto-commit ON`
 - **Where**: `query-editor-panel.tsx`.
@@ -213,37 +202,26 @@ with no Tier promise. Each item has enough context to pick up cold.
 
 ### Tier 2 editors (one PR per type)
 
-#### List editor
-- **Where**: `src/components/keyvalue/viewers/ListValueView.tsx` (read-only
-  in Tier 1.2; grows edit affordances here).
-- **Hook**: `LPUSH` / `RPUSH` (head/tail insert), `LSET` (replace by index),
-  `LREM` (delete by value), `LINSERT BEFORE | AFTER` (relative insert).
-  Drag-to-reorder via remove-and-reinsert.
+#### List editor ✅
+- **Where**: `src/components/keyvalue/viewers/ListValueView.tsx`.
+- **Done**: `applyRedisListEdits` queues `LPUSH`/`RPUSH`/`LSET` and tag-then-`LREM` deletes; offset-paged with direction toggle.
 
-#### Set editor
+#### Set editor ✅
 - **Where**: `src/components/keyvalue/viewers/SetValueView.tsx`.
-- **Hook**: `SADD` / `SREM`. Bulk-add via paste-list.
+- **Done**: `applyRedisSetEdits` queues `SADD`/`SREM` with bulk paste.
 
-#### Sorted-set editor
+#### Sorted-set editor ✅
 - **Where**: `src/components/keyvalue/viewers/SortedSetValueView.tsx`.
-- **Hook**: `ZADD` with the full flag matrix (`NX`/`XX`/`GT`/`LT`/`CH`/
-  `INCR`). Edit-score-in-place vs add-new-member. `ZREM` by member.
-  Care: score can include `+inf` / `-inf`. Each flag combination needs its
-  own test row; this editor warrants its own grilling pass.
+- **Done**: `applyRedisSortedSetEdits` covers `ZADD` (with flag handling), score-in-place edit, and `ZREM`. Geo secondary panel still renders the lat/lng table — static-map rendering remains deferred.
 
-#### Stream editor
+#### Stream editor 🟡
 - **Where**: `src/components/keyvalue/viewers/StreamValueView.tsx`.
-- **Hook**: `XADD` with explicit ID / auto-ID. `XDEL` by ID. `XTRIM` by
-  MAXLEN or MINID. Consumer-group ops: `XGROUP CREATE`, `XGROUP DESTROY`,
-  `XGROUP DELCONSUMER`, `XACK`, `XCLAIM`. ID semantics (the `*` auto-ID,
-  explicit `ms-seq` format) deserves its own grilling pass.
+- **Done**: `applyRedisStreamEdits` queues `XADD` (auto/explicit ID), `XDEL`, and `XTRIM MAXLEN ~`; consumer-group panel renders `XINFO GROUPS` / `XINFO CONSUMERS` read-only.
+- **Remaining**: consumer-group write actions — `XGROUP CREATE`/`DESTROY`/`DELCONSUMER`, `XACK`, `XCLAIM`, `XGROUP SETID`.
 
-#### JSON editor
-- **Where**: `src/components/keyvalue/viewers/JsonValueView.tsx` (read-only
-  + JSONPath query in Tier 1.2).
-- **Hook**: `JSON.SET` per-path edit, `JSON.DEL` per-path delete,
-  `JSON.ARRAPPEND` / `JSON.ARRINSERT` / `JSON.ARRPOP` for arrays.
-  JSONPath expression builder UI.
+#### JSON editor ✅
+- **Where**: `src/components/keyvalue/viewers/JsonValueView.tsx`.
+- **Done**: `JSON.SET` per-path edit, `JSON.DEL` per-path delete; JSONPath expression builder UI sits alongside the read-only viewer.
 
 ### Tier 2 connection-form refinements
 
@@ -427,28 +405,27 @@ with no Tier promise. Each item has enough context to pick up cold.
 - **Where**: `src-tauri/src/redis/cli.rs`.
 - **Hook**: `MULTI` then `EXEC` works only if the same physical connection is held. Add per-CLI-tab session state with a dedicated connection that's kept alive between `run_command` calls, plus a `QUEUED`/`EXEC`-pending visual indicator in the CLI input.
 
-#### Stream consumer groups sub-panel
-- **Where**: `src/components/keyvalue/viewers/StreamValueView.tsx` + backend `XINFO GROUPS` / `XINFO CONSUMERS`.
-- **Hook**: Read-only consumer-group + consumer panel below the stream entries. Tier 2 stream editor will add `XGROUP CREATE` / `XACK` / `XCLAIM` on top.
+#### Stream consumer groups sub-panel ✅
+- **Where**: `src/components/keyvalue/viewers/StreamValueView.tsx` (`ConsumerGroupsPanel`) + `fetchStreamGroups` on the Rust side.
+- **Done**: read-only `XINFO GROUPS` / `XINFO CONSUMERS` panel toggled below the stream table. Write actions remain in the Stream editor remaining-work list above.
 
-#### Cache replica role per connection session
-- **Where**: `src-tauri/src/redis/key_ops.rs::assert_writable`.
-- **Hook**: Every write runs `INFO replication` to check role. Cache the result for the connection's lifetime (invalidate on reconnect / replication topology change). One round trip per write becomes one per session.
+#### Cache replica role per connection session ✅
+- **Where**: `src-tauri/src/redis/key_ops.rs::assert_writable` + `connection::cached_replica_role` / `cache_replica_role` / `drop_cached`.
+- **Done**: writes consult a per-`connection_id` cache (`REPLICA_ROLE_CACHE`) before falling back to a focused `INFO replication` probe; the cache is cleared on disconnect / delete so a reconnect re-probes. A failure or missing `role:` field falls through to "allow write" (matching the prior behaviour for managed Redis instances that block `INFO`).
 
-#### Honor verifyTlsCert=false on Redis connections
-- **Where**: `src-tauri/src/redis/connection.rs` + `redis::ConnectionInfo` construction.
-- **Hook**: redis-rs's URL parser ignores `verify=false`-style query params. Construct `ConnectionInfo` manually with `rustls`-skip-verification config when `verifyTlsCert == false`. Form already captures + persists the toggle.
+#### Honor verifyTlsCert=false on Redis connections ✅
+- **Where**: `src-tauri/Cargo.toml` + `src-tauri/src/redis/url.rs`.
+- **Done**: redis-rs's `tls-rustls-insecure` feature is enabled in Cargo.toml; `url::build` now appends `#insecure` to the URL when `use_tls && !verify_tls_cert`, so redis-rs's parser sets `ConnectionAddr::TcpTls { insecure: true }` and the rustls handshake skips cert verification. Three url-builder tests cover the on/off/plain-scheme cases.
 
-#### Production-mode logging to file + frontend `@tauri-apps/plugin-log` access
+#### Production-mode logging to file + frontend `@tauri-apps/plugin-log` access 🟡
 - **Where**: `src-tauri/src/lib.rs::build_log_plugin()` + Tauri capabilities + `package.json`.
-- **Done**: dev logging via `tauri-plugin-log` writes to stdout + webview; level is `Debug` for `dbunk_lib`, `Warn` elsewhere. Visible in `pnpm tauri dev` terminal and the browser DevTools console.
-- **Remaining**: add `Target::new(TargetKind::LogDir { file_name: None })` so production builds rotate logs into `app.path().app_log_dir()` (per-OS: `~/Library/Logs/dbunk/` on macOS, `%APPDATA%/dbunk/logs/` on Windows, `~/.local/share/dbunk/logs/` on Linux). Also add the frontend `@tauri-apps/plugin-log` package + capability so JS code can call `info()`/`error()` against the same logger. Settings UI to surface the log path + level toggle would be a polish item on top.
+- **Done**: dev logging via `tauri-plugin-log` writes to stdout + webview; level is `Debug` for `dbunk_lib`, `Warn` elsewhere. Visible in `pnpm tauri dev` terminal and the browser DevTools console. Release builds additionally rotate into `TargetKind::LogDir` (default file name) under `app.path().app_log_dir()` — `~/Library/Logs/codes.imran.dbunk/` on macOS, `%APPDATA%/codes.imran.dbunk/logs/` on Windows, `~/.local/share/codes.imran.dbunk/logs/` on Linux.
+- **Remaining**: add the frontend `@tauri-apps/plugin-log` package + capability so JS code can call `info()`/`error()` against the same logger. Settings UI to surface the log path + level toggle would be a polish item on top.
 
 ---
 
 ## Connection-record cleanups (added 2026-05-12)
 
-### `lastSync` overlaps with `lastActivityAt`
-- **Where**: `Connection.lastSync` declared in `src/lib/store/types.ts:125`; written in `src/lib/store/connections.ts:38,183,331,354,372`; read by `src/components/workspace-view.tsx:402` via `formatLastChecked`. Parallel field `lastActivityAt` is the canonical activity timestamp per ADR-0004 (`CONTEXT.md` "Last Activity" entry).
-- **Faked**: two fields track the same concept. `lastSync` is a frozen display string ("Never" / "Just now" / ISO timestamp snapshotted at write time); `lastActivityAt` is the ISO-8601 source of truth bumped on successful query/connect. The sidebar/overview reads `lastSync`, but the store also writes `lastActivityAt` from the same paths — so the two fields drift whenever one write path forgets the other.
-- **Real**: kill `lastSync`. Read `lastActivityAt` and format at the render site (`formatLastChecked` becomes a pure function over the ISO timestamp). One source of truth; sidebar/overview/cards all derive display strings the same way. Surfaced during the connection-form architecture review (Group A/B/C plan) and explicitly deferred to keep that work shape-focused.
+### `lastSync` overlaps with `lastActivityAt` ✅
+- **Where**: previously across `connections.ts`, `types.ts`, sidebar/overview render sites.
+- **Done**: `lastSync` removed from `Connection`; `formatLastChecked` is a pure formatter over `lastActivityAt` ISO timestamps. One source of truth, no drift.

@@ -5,23 +5,90 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::redis::capabilities;
 use crate::redis::connection;
 use crate::RedisStoredConnection;
 
-async fn assert_writable(connection: &RedisStoredConnection) -> Result<(), String> {
-    // Cheap-ish: the capabilities probe runs `INFO replication`. We
-    // cache nothing today; the cost is one round trip per write. If
-    // this shows up on a profile we'll cache per-session.
-    let (_, caps) = capabilities::probe(connection).await?;
-    if matches!(caps.role.as_deref(), Some("replica") | Some("slave")) {
-        return Err(
-            "This Redis server reports role=replica. Writes are disabled \
-             (ADR-0009 auto-read-only)."
-                .to_string(),
-        );
+/// Reject writes against a Redis instance reporting `role=replica` —
+/// see ADR-0009 auto-read-only.
+///
+/// The replica role only flips on a failover, which is rare enough
+/// that a session-scoped cache (`connection::cache_replica_role`)
+/// keeps this to one `INFO replication` round trip per session
+/// instead of one per write. The cache is invalidated by
+/// `connection::drop_cached` on disconnect/delete.
+///
+/// `INFO replication` is allowed to fail (managed Redis sometimes
+/// blocks it) — when the role can't be determined we cache `false`
+/// and allow the write, matching the previous behaviour.
+async fn assert_writable(connection_arg: &RedisStoredConnection) -> Result<(), String> {
+    if let Some(is_replica) = connection::cached_replica_role(&connection_arg.id) {
+        return if is_replica {
+            Err(replica_write_error())
+        } else {
+            Ok(())
+        };
     }
-    Ok(())
+
+    let is_replica = probe_replica_role(connection_arg).await;
+    connection::cache_replica_role(&connection_arg.id, is_replica);
+    if is_replica {
+        Err(replica_write_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn replica_write_error() -> String {
+    "This Redis server reports role=replica. Writes are disabled (ADR-0009 auto-read-only)."
+        .to_string()
+}
+
+async fn probe_replica_role(connection_arg: &RedisStoredConnection) -> bool {
+    let mut conn = match connection::manager_for(connection_arg).await {
+        Ok(manager) => manager,
+        Err(err) => {
+            log::warn!(
+                "probe_replica_role: manager_for failed (allowing write): {}",
+                err
+            );
+            return false;
+        }
+    };
+    match redis::cmd("INFO")
+        .arg("replication")
+        .query_async::<String>(&mut conn)
+        .await
+    {
+        Ok(info) => match parse_role(&info) {
+            Some(role) => matches!(role.as_str(), "replica" | "slave"),
+            None => {
+                log::warn!(
+                    "probe_replica_role: no role field in INFO replication (allowing write)"
+                );
+                false
+            }
+        },
+        Err(err) => {
+            log::warn!(
+                "probe_replica_role: INFO replication failed (allowing write): {}",
+                err
+            );
+            false
+        }
+    }
+}
+
+fn parse_role(info: &str) -> Option<String> {
+    for line in info.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("role:") {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -750,4 +817,33 @@ pub async fn create_key(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_role_extracts_master() {
+        let info = "# Replication\nrole:master\nconnected_slaves:0\n";
+        assert_eq!(parse_role(info).as_deref(), Some("master"));
+    }
+
+    #[test]
+    fn parse_role_extracts_replica() {
+        let info = "# Replication\nrole:replica\nmaster_host:10.0.0.1\n";
+        assert_eq!(parse_role(info).as_deref(), Some("replica"));
+    }
+
+    #[test]
+    fn parse_role_ignores_section_headers_and_blanks() {
+        let info = "\n# Server\nredis_version:7.2.0\n\n# Replication\nrole:slave\n";
+        assert_eq!(parse_role(info).as_deref(), Some("slave"));
+    }
+
+    #[test]
+    fn parse_role_missing_returns_none() {
+        let info = "# Replication\nconnected_slaves:0\n";
+        assert!(parse_role(info).is_none());
+    }
 }

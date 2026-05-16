@@ -34,12 +34,22 @@ section at the bottom so the change is auditable.
 
 ## Source TODOs And No-Op Actions
 
-### Default-value expression model is limited
+### Default-value expression model still lacks a true literal/expression split
 - Source: `src/lib/ddl/shared.ts`
-- Current state: Default-value formatting uses a safe simple rule —
-  bareword SQL expressions without `()` are not represented well.
-- Expected work: Introduce a richer default-expression model that
-  distinguishes string literals from SQL expressions.
+- Current state: A SQL-keyword bareword whitelist
+  (`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `LOCALTIMESTAMP`,
+  `LOCALTIME`, `CURRENT_USER`, `SESSION_USER`, `USER`, `NULL`, `TRUE`,
+  `FALSE`) is emitted raw alongside numeric literals and `()` function
+  calls. Arbitrary SQL expressions still require the function form
+  (e.g., `now()`, `gen_random_uuid()`) — anything else is quoted as a
+  string literal.
+- Expected work (deferred): A tagged-union model on the column record
+  (`{ kind: "literal", text } | { kind: "expression", sql }`) plus a
+  Literal/Expression toggle in the column form. Lets users write
+  arbitrary defaults (`(some_function(args))::text`) without relying
+  on the whitelist or `()` heuristic. Cross-cutting — would touch
+  the column type, introspection round-trip, every form, and all
+  callers of `formatDefault`.
 
 ## Placeholder Or Reserved Store Slices
 
@@ -172,19 +182,10 @@ read-only panel shipped. Remaining Tier 2 / cross-cutting work:
   - Replace Pub/Sub polling drain with a Tauri event channel.
   - Preserve Redis CLI `MULTI`/`EXEC` state on a dedicated per-tab
     connection.
-  - Cache replica role per Redis connection session for write checks.
-  - Honor `verifyTlsCert=false` in Redis TLS connection construction.
-  - Add production log-file target and frontend
-    `@tauri-apps/plugin-log` access.
+  - Add frontend `@tauri-apps/plugin-log` access so JS code can
+    `info()`/`error()` into the same logger as the backend.
 
 ## Cross-Cutting UX Follow-Ups
-
-### Cross-platform window chrome
-- Source: `designs/FOLLOWUPS.md`
-- Current state: macOS titlebar spacing is reserved unconditionally;
-  no platform detection in the chrome layer.
-- Expected work: Detect platform and apply spacer/window-control
-  layout only where needed.
 
 ### Empty, loading, and error state polish
 - Source: `designs/FOLLOWUPS.md`
@@ -195,32 +196,15 @@ read-only panel shipped. Remaining Tier 2 / cross-cutting work:
   remaining surfaces.
 
 ### Query editor transaction status
-- Source: `designs/FOLLOWUPS.md`
-- Current state: Recheck — toolbar has changed since the visual pass.
-- Expected work: Reflect live transaction state per editor tab and add
-  future transaction controls.
-
-## Documentation Reconciliation
-
-### ROADMAP.md still shows shipped items as ❌
-- Source: `ROADMAP.md`
-- Current state: Object navigator depth, admin tools, snippets, bind
-  variables, import/export, dump/restore, compare, mock data, and
-  specialized editors all landed but several items still show ❌.
-- Expected work: Update `ROADMAP.md` to match the actual current app.
-  Keep only genuinely missing items: Settings driver/session fields,
-  schema-map deferrals (annotations, virtual FKs, MySQL/SQLite FK
-  introspection, 1:1 detection, multi-schema canvases), PL/pgSQL
-  debugger, visual query builder, Parquet, XML import/export.
-
-### `designs/FOLLOWUPS.md` still tracks shipped items
-- Source: `designs/FOLLOWUPS.md`
-- Current state: The tracker mixes shipped and pending work — e.g.,
-  list/set/zset/stream/JSON editors, command palette, Kbd component,
-  avatar prefs menu, sidebar gear, toast system, `lastSync` cleanup
-  and the Pub/Sub channel discovery flow all landed.
-- Expected work: Move shipped items to a "Done" section or strike them
-  through so the tracker reflects ground truth.
+- Source: `designs/FOLLOWUPS.md`,
+  `src/components/query-editor/status-items.ts`
+- Current state: The literal "Auto-commit ON" copy is gone — status
+  bar shows connection / tab / cursor / diagnostics. There is no
+  transaction-state indicator at all.
+- Expected work (feature, not placeholder): Track per-connection
+  transaction state on the Rust side, surface it in the editor footer
+  as `Auto-commit ON` / `In transaction` / `Failed transaction`, and
+  wire commit/rollback controls.
 
 ## Search Notes
 
@@ -278,3 +262,38 @@ listed as pending and are now done.
   with a working retarget action backed by
   `WorkspaceTabsSlice.retargetQueryTab` and
   `RelationalQueriesSlice.dropQueryStateForTab`.
+- **ROADMAP.md / `designs/FOLLOWUPS.md` reconciled** — ROADMAP top-line
+  flipped Connection settings ❌→🟡 to match § 1.5; FOLLOWUPS gained a
+  "Shipped" summary and ✅ markers on the sections that landed (page-level
+  tabs, Indexes/Relations sub-tabs, Explain tab, Run dropdown, Format
+  button, connection switcher, ⌘K palette, top-bar search, avatar prefs,
+  sidebar gear, Kbd component, toasts, all Redis Tier 2 value editors,
+  stream consumer-groups read-only panel, `lastSync` removal).
+- **Cross-platform window chrome** — `app-shell-header.tsx:83`
+  already gates the 88px left spacer on `isMacPlatform() && !isWindowFullscreen`,
+  so Windows / Linux don't reserve the macOS traffic-light padding.
+- **`verifyTlsCert=false` honoured on Redis** — `src-tauri/Cargo.toml`
+  enables the redis-rs `tls-rustls-insecure` feature; `redis/url.rs`
+  appends `#insecure` to the URL when `use_tls && !verify_tls_cert`
+  so the rustls handshake actually skips cert verification instead of
+  the toggle being persisted but ignored. Three new url.rs tests.
+- **Production log-file target** — `build_log_plugin()` in
+  `src-tauri/src/lib.rs` now adds `TargetKind::LogDir` to the targets
+  list in release builds, so shipped binaries rotate logs into the
+  per-OS app log directory (`~/Library/Logs/codes.imran.dbunk/` on
+  macOS, equivalents elsewhere) without the user re-running from a
+  terminal. Dev builds keep stdout + DevTools only.
+- **Replica-role caching for Redis writes** —
+  `src-tauri/src/redis/key_ops.rs::assert_writable` now consults a
+  per-`connection_id` cache (`REPLICA_ROLE_CACHE` in
+  `connection.rs`) before falling back to `INFO replication`. Cache
+  is cleared by `drop_cached` on disconnect/delete so reconnect
+  re-probes. One round trip per session instead of per write; four
+  new `parse_role` tests.
+- **DDL default-value bareword whitelist** —
+  `src/lib/ddl/shared.ts::formatDefault` now emits
+  `CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `LOCALTIMESTAMP`,
+  `LOCALTIME`, `CURRENT_USER`, `SESSION_USER`, `USER`, `NULL`, `TRUE`,
+  `FALSE` raw (case-insensitive). Three new tests in
+  `postgres.test.ts`. The full literal-vs-expression tagged-union
+  model remains deferred above.

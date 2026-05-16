@@ -22,7 +22,7 @@ What already works:
 | Schema relationship map (auto-layout, table nodes, FK edges) | ✅ Phase 2 | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
 | Data export — CSV, JSON, SQL, HTML, Markdown, TXT, XLSX | ✅ | `src/lib/export.ts`, `src/components/data-grid.tsx` (whole-table + selection, gzip, encoding picker, NULL token, saved tasks) |
 | Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ✅ Phase 1 | `src/components/workspace-overview/{tables,schemas,query-history,details,settings}-tab.tsx` |
-| Connection-level settings page | ❌ | Sidebar gear-icon view exists but exposes no Postgres knobs |
+| Connection-level settings page | 🟡 | Sidebar gear-icon view + driver-options scaffold (ADR-0013); SSH tunnel and connect-timeout / keepalive still pending — see § 1 below |
 
 ---
 

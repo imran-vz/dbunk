@@ -17,22 +17,45 @@ export function createIdentQuoter(quote: string): {
 }
 
 /**
- * Default-value quoting rule (v1):
+ * SQL keyword barewords that should pass through as raw expressions rather
+ * than be quoted as string literals. Matched case-insensitively so users can
+ * type `current_timestamp` or `CURRENT_TIMESTAMP` and get the same result.
+ *
+ * Anything not on this list is quoted — including unrecognised barewords —
+ * so an opt-in-only allowlist keeps the "safe for arbitrary text" guarantee.
+ */
+const RAW_DEFAULT_KEYWORDS = new Set([
+  "CURRENT_TIMESTAMP",
+  "CURRENT_DATE",
+  "CURRENT_TIME",
+  "LOCALTIMESTAMP",
+  "LOCALTIME",
+  "CURRENT_USER",
+  "SESSION_USER",
+  "USER",
+  "NULL",
+  "TRUE",
+  "FALSE",
+]);
+
+/**
+ * Default-value quoting rule:
  *   - All-numeric-or-decimal values (matches /^-?[0-9]+(\.[0-9]+)?$/) are
  *     emitted as raw literals.
  *   - Values that end with `()` are treated as function calls and emitted raw.
+ *   - Barewords matching `RAW_DEFAULT_KEYWORDS` (case-insensitive) are emitted
+ *     raw — covers `CURRENT_TIMESTAMP`, `NULL`, `TRUE`, etc.
  *   - Anything else is single-quoted; embedded `'` characters are escaped to
  *     `''`.
  *
- * This keeps the common cases (`42`, `12.50`, `now()`, `CURRENT_TIMESTAMP()`)
- * working without forcing the caller to think about quoting, while still
- * being safe for arbitrary text. Users who need an unquoted bareword like
- * `CURRENT_TIMESTAMP` (without parens) can append `()` or write a function
- * form. A richer expression model is a deliberate follow-up.
+ * A tagged-union "literal vs expression" model is a deliberate follow-up —
+ * for arbitrary SQL expressions the user can append `()` to a function name
+ * or write the full function form (e.g., `now()`, `gen_random_uuid()`).
  */
 export const formatDefault = (raw: string): string => {
   if (/^-?[0-9]+(\.[0-9]+)?$/.test(raw)) return raw;
   if (raw.endsWith("()")) return raw;
+  if (RAW_DEFAULT_KEYWORDS.has(raw.toUpperCase())) return raw;
   return `'${raw.replace(/'/g, "''")}'`;
 };
 
