@@ -5,12 +5,13 @@
  * toggles. This slice exists for cascade-contract clarity.
  *
  * Exposes `closePubSubSessionsForConnection(connectionId)` as its
- * piece of the delete-connection cleanup cascade. When the deferred
- * pub/sub auto-reconnect feature lands, this slice will track
- * per-session client state and the cleanup will tear down lingering
- * sessions. For now the method is a documented no-op — the backend's
- * session lifecycle is managed by the PubsubTab component's
- * `closePubsubSession` on unmount.
+ * piece of the delete-connection cleanup cascade (called from
+ * `Connections.deleteConnection`). The backend's session lifecycle
+ * is managed by the PubsubTab component's `closePubsubSession` on
+ * unmount, so this method is a documented no-op today. When the
+ * deferred pub/sub auto-reconnect feature lands, this slice will
+ * track per-session client state and the cleanup will tear down
+ * lingering sessions here.
  */
 
 import type { StateCreator } from "zustand";

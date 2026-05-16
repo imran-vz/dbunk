@@ -34,21 +34,6 @@ section at the bottom so the change is auditable.
 
 ## Source TODOs And No-Op Actions
 
-### Stale "cascade is not wired" comments
-- Sources: `src/lib/store/workspace-tabs.ts`,
-  `src/lib/store/keyvalue-workspace.ts`,
-  `src/lib/store/keyvalue-pubsub.ts`, `src/lib/store/README.md`
-- Current state: `Connections.deleteConnection` already calls the full
-  cascade (`closeTabsForConnection`, `closeKeyTabsForConnection`,
-  `closePubSubSessionsForConnection`,
-  `dropOpenQueryStateForConnection`, `dropRelationalCachesForConnection`),
-  but the slice docstrings and the README still claim "today this isn't
-  wired up." That misleads new contributors.
-- Expected work: Update the four docstrings/README to reflect that the
-  cascade is live; reword the no-op key-value cleanup methods as
-  "reserved for future per-key cache" without the "today the workspace
-  tabs slice already cleans..." preamble.
-
 ### Default-value expression model is limited
 - Source: `src/lib/ddl/shared.ts`
 - Current state: Default-value formatting uses a safe simple rule —
@@ -282,3 +267,14 @@ listed as pending and are now done.
   with `toast()` calls in query/table editors and settings.
 - **`lastSync` cleanup** — field removed from `Connection`; all
   consumers read `lastActivityAt`.
+- **Stale cascade docstrings** — `workspace-tabs.ts`,
+  `keyvalue-workspace.ts`, `keyvalue-pubsub.ts`, and
+  `src/lib/store/README.md` updated to reflect that
+  `deleteConnection` / `disconnectConnection` invoke the full cascade.
+- **NewKeyDialog warning text** — outdated "read-only until Tier 2"
+  copy replaced; all seven types have editors.
+- **OverviewTabBody stale placeholder comment** — removed.
+- **Query editor connection selector** — disabled dropdown replaced
+  with a working retarget action backed by
+  `WorkspaceTabsSlice.retargetQueryTab` and
+  `RelationalQueriesSlice.dropQueryStateForTab`.

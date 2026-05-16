@@ -11,11 +11,12 @@
  * where they'll live.
  *
  * Exposes `closeKeyTabsForConnection(connectionId)` as its piece of
- * the delete-connection cleanup cascade. Today the
- * Workspace Tabs slice already cleans key tabs via
- * `closeTabsForConnection` (key tabs live in the shared workspaceTabs
- * list), so this method is a documented no-op. Future per-key cache
- * state in this slice would clean up here.
+ * the delete-connection cleanup cascade (called from
+ * `Connections.deleteConnection`). Key tabs themselves are closed by
+ * the Workspace Tabs slice's `closeTabsForConnection` because they
+ * live in the shared `workspaceTabs` list, so this method is a
+ * documented no-op today. Future per-key cache state in this slice
+ * would clean up here.
  */
 
 import type { StateCreator } from "zustand";

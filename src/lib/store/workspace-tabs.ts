@@ -4,12 +4,12 @@
  * editor theme, selected row index).
  *
  * Exposes `closeTabsForConnection(connectionId)` as its piece of the
- * delete-connection cleanup cascade. Today `Connections.deleteConnection`
- * does NOT call this cleanup — preserving pre-refactor behaviour
- * (orphan tabs survive a connection delete). A follow-up wiring the
- * cascade end-to-end can fix that orphan-tab bug; that lands as a
- * deliberate behaviour change, not as part of this implementation
- * refactor.
+ * delete-connection cleanup cascade; `Connections.deleteConnection`
+ * invokes it alongside the other slice cleanups (see the cascade in
+ * `connections.ts`). Also exposes `retargetQueryTab(tabId, connectionId)`
+ * for the editor's connection selector — flipping the tab's
+ * `connectionId` and clearing the tab's stale per-tab query state via
+ * `dropQueryStateForTab`.
  */
 
 import type { StateCreator } from "zustand";

@@ -72,10 +72,12 @@ Each downstream slice exposes a named cleanup method:
 | `keyvalue-workspace.ts` | `closeKeyTabsForConnection(id)` | No-op today; reserved for future per-key cache. |
 | `keyvalue-pubsub.ts` | `closePubSubSessionsForConnection(id)` | No-op today; reserved for future pub/sub auto-reconnect state. |
 
-Today `deleteConnection` doesn't actually invoke the full cascade —
-it only cleans `schemaExplorer` inline, preserving the pre-slicing
-behaviour. Wiring the full cascade up is a deliberate
-behaviour-fix follow-up (orphan tabs etc.).
+`deleteConnection` invokes the full cascade — see the `cascade()`
+closure in `connections.ts` that calls `dropOpenQueryStateForConnection`,
+`dropRelationalCachesForConnection`, `closeKeyTabsForConnection`,
+`closePubSubSessionsForConnection`, and `closeTabsForConnection` in
+sequence before the connection record itself is dropped. Disconnect
+takes the same shape so orphan tabs / caches don't survive either path.
 
 Naming convention for cleanup methods: **`<verb><Noun>ForConnection(id)`**.
 Examples: `closeTabsForConnection`, `dropRelationalCachesForConnection`.
