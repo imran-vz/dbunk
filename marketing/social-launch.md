@@ -32,7 +32,7 @@ status explicitly. Update version numbers and the release link before posting.
 
 6/ Redis isn't a SQL afterthought — full keyspace browser (lazy prefix tree + SCAN), key inspector with TTL/encoding/refcount, CLI REPL, pub/sub monitor with capture-to-file.
 
-7/ Tauri + Rust backend, React + TypeScript frontend, Bun for tooling. MIT licensed. Contributions welcome — bug reports especially while it's this raw.
+7/ Tauri + Rust backend, React + TypeScript frontend, pnpm for tooling. MIT licensed. Contributions welcome — bug reports especially while it's this raw.
    👉 github.com/imran-vz/dbunk
 
 ## LinkedIn
@@ -49,7 +49,7 @@ status explicitly. Update version numbers and the release link before posting.
 > • Redis keyspace browser, key inspector, CLI, and pub/sub monitor
 > • Database overview dashboards per engine
 >
-> The stack: Tauri + Rust on the backend, React + TypeScript + Monaco on the frontend, Bun for tooling. Local-first — your data and credentials stay on your machine (encrypted SQLite, OS keychain, or plaintext with warning — your choice).
+> The stack: Tauri + Rust on the backend, React + TypeScript + Monaco on the frontend, pnpm for tooling. Local-first — your data and credentials stay on your machine (encrypted SQLite, OS keychain, or plaintext with warning — your choice).
 >
 > ⚠️ **Important caveat: dbunk is pre-alpha and still in heavy development.** Expect rough edges, missing features, and breaking changes. I'm sharing it now because feedback at this stage is the most valuable kind.
 >

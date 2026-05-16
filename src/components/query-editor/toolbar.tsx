@@ -1,4 +1,5 @@
 import {
+  IconCheck,
   IconChevronDown,
   IconDeviceFloppy,
   IconLayoutSidebarRightCollapse,
@@ -17,11 +18,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { storageClassFor } from "@/lib/engine-policy";
 import type { Connection } from "@/lib/store";
 
 interface QueryEditorToolbarProps {
   dbSelectorLabel: string;
   connections: Connection[];
+  currentConnectionId: string;
+  onRetargetConnection: (connectionId: string) => void;
   hasEdits: boolean;
   onDiscardEdits: () => void;
   isRunning: boolean;
@@ -38,6 +42,8 @@ interface QueryEditorToolbarProps {
 export function QueryEditorToolbar({
   dbSelectorLabel,
   connections,
+  currentConnectionId,
+  onRetargetConnection,
   hasEdits,
   onDiscardEdits,
   isRunning,
@@ -50,6 +56,9 @@ export function QueryEditorToolbar({
   onFormat,
   onInsertSnippet,
 }: QueryEditorToolbarProps) {
+  const relationalConnections = connections.filter(
+    (connection) => storageClassFor(connection.engine) === "relational",
+  );
   const SidebarIcon = isSidebarOpen
     ? IconLayoutSidebarRightCollapse
     : IconLayoutSidebarRightExpand;
@@ -73,20 +82,28 @@ export function QueryEditorToolbar({
             <IconChevronDown className="size-3 text-text-muted" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <div className="px-2 py-1.5 text-[0.6875rem] text-text-muted">
-              Retargeting the editor's connection isn't supported yet — open a
-              new query tab from the target connection's sidebar.
-            </div>
-            {connections.map((connection) => (
-              <DropdownMenuItem
-                key={connection.id}
-                disabled
-                aria-disabled
-                onSelect={(event) => event.preventDefault()}
-              >
-                {connection.name} · {connection.engine}
-              </DropdownMenuItem>
-            ))}
+            {relationalConnections.length === 0 ? (
+              <div className="px-2 py-1.5 text-[0.6875rem] text-text-muted">
+                No relational connections available.
+              </div>
+            ) : null}
+            {relationalConnections.map((connection) => {
+              const isCurrent = connection.id === currentConnectionId;
+              return (
+                <DropdownMenuItem
+                  key={connection.id}
+                  disabled={isRunning || isCurrent}
+                  onClick={() => onRetargetConnection(connection.id)}
+                >
+                  {isCurrent ? (
+                    <IconCheck className="size-3 text-accent-green" />
+                  ) : (
+                    <span className="size-3" />
+                  )}
+                  {connection.name} · {connection.engine}
+                </DropdownMenuItem>
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

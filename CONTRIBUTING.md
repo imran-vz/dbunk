@@ -15,16 +15,16 @@ Thanks for helping make dbunk better. Contributions of all sizes are welcome.
 ## Development Setup
 
 ```bash
-bun install
-bun run dev
+pnpm install
+pnpm run dev
 ```
 
 Before opening a pull request, run:
 
 ```bash
-bun run test
-bunx tsc --noEmit
-bun run lint
+pnpm run test
+pnpx tsc --noEmit
+pnpm run lint
 ```
 
 ## Pull Request Guidelines

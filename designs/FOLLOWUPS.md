@@ -417,7 +417,7 @@ with no Tier promise. Each item has enough context to pick up cold.
 
 #### Generate destructive-command lists from TOML at build time
 - **Where**: `src-tauri/src/redis/destructive-commands.toml` (source) → `destructive_commands.rs` + `src/lib/redis/destructive-commands.ts`.
-- **Hook**: Both lists are hand-mirrored today. Add a bun script to read the TOML and emit both files; CI asserts they match the TOML.
+- **Hook**: Both lists are hand-mirrored today. Add a node script to read the TOML and emit both files; CI asserts they match the TOML.
 
 #### Switch pub/sub to Tauri event channel
 - **Where**: `src-tauri/src/redis/pubsub.rs` + `src/components/keyvalue/PubsubTab.tsx`.
@@ -441,7 +441,7 @@ with no Tier promise. Each item has enough context to pick up cold.
 
 #### Production-mode logging to file + frontend `@tauri-apps/plugin-log` access
 - **Where**: `src-tauri/src/lib.rs::build_log_plugin()` + Tauri capabilities + `package.json`.
-- **Done**: dev logging via `tauri-plugin-log` writes to stdout + webview; level is `Debug` for `dbunk_lib`, `Warn` elsewhere. Visible in `bun tauri dev` terminal and the browser DevTools console.
+- **Done**: dev logging via `tauri-plugin-log` writes to stdout + webview; level is `Debug` for `dbunk_lib`, `Warn` elsewhere. Visible in `pnpm tauri dev` terminal and the browser DevTools console.
 - **Remaining**: add `Target::new(TargetKind::LogDir { file_name: None })` so production builds rotate logs into `app.path().app_log_dir()` (per-OS: `~/Library/Logs/dbunk/` on macOS, `%APPDATA%/dbunk/logs/` on Windows, `~/.local/share/dbunk/logs/` on Linux). Also add the frontend `@tauri-apps/plugin-log` package + capability so JS code can call `info()`/`error()` against the same logger. Settings UI to surface the log path + level toggle would be a polish item on top.
 
 ---

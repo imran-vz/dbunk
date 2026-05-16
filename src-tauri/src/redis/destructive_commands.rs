@@ -1,5 +1,5 @@
 //! Destructive-command list — generated from
-//! `destructive-commands.toml` by `bun run generate:redis-commands`.
+//! `destructive-commands.toml` by `pnpm run generate:redis-commands`.
 //!
 //! DO NOT EDIT BY HAND. The companion TS module
 //! (`src/lib/redis/destructive-commands.ts`) is generated from the

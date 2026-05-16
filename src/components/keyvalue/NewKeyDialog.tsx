@@ -1,7 +1,7 @@
 /**
  * New-key wizard — pick a type, supply an initial value, create.
- * Supports all seven types at create time even though only string/
- * hash get full editors after creation (the rest stay read-only).
+ * Supports all seven types at create time; each type has an inline
+ * editor after creation under `src/components/keyvalue/viewers/`.
  */
 
 import { useState } from "react";
@@ -101,9 +101,8 @@ export function NewKeyDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>New Redis key</AlertDialogTitle>
           <AlertDialogDescription>
-            Pick a type and provide an initial value. Lists, sets, sorted sets,
-            streams, and JSON keys can be created but only string and hash have
-            inline editors after creation — others are read-only until Tier 2.
+            Pick a type and provide an initial value. All seven types have
+            inline editors after creation.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="grid gap-3 py-4">

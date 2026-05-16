@@ -427,11 +427,9 @@ type OverviewTabBodyProps = {
 
 /**
  * Body region for the connection overview surface. Switches its
- * content based on the active sub-tab from the header. The Overview
- * sub-tab keeps the original four-card dashboard; the other Phase 1
- * sub-tabs render placeholders today and get filled in by their
- * respective Phase 1 steps. Engine-gated sub-tabs (Schemas, Details)
- * render the Postgres-only explainer for non-PG connections.
+ * content based on the active sub-tab from the header. Engine-gated
+ * sub-tabs (Schemas, Details) render the Postgres-only explainer for
+ * non-PG connections.
  */
 function OverviewTabBody({
   activeConnection,

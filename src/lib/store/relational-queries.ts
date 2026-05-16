@@ -86,6 +86,14 @@ export type RelationalQueriesSlice = {
   dropOpenQueryStateForConnection: (connectionId: string) => void;
 
   /**
+   * Tab-scoped cleanup — drops queryStatus, queryEdits, and (when the
+   * tab's query-label is provided) the queryPreviews entry that backs
+   * the results grid. Used by `retargetQueryTab` so results pinned to
+   * the old connection don't leak into the retargeted view.
+   */
+  dropQueryStateForTab: (tabId: string, queryLabel?: string) => void;
+
+  /**
    * Cascade cleanup — drops query-history rows for that connection
    * and any query-status entries for its open tabs (the tab cleanup
    * is best-effort because queryStatus is keyed by tab ID, not
@@ -389,4 +397,23 @@ export const createRelationalQueriesSlice: StateCreator<
       ),
     }));
   },
+
+  dropQueryStateForTab: (tabId, queryLabel) =>
+    set((state) => {
+      const { [tabId]: _droppedStatus, ...restStatus } = state.queryStatus;
+      const { [tabId]: _droppedEdits, ...restEdits } = state.queryEdits;
+      const nextPreviews =
+        queryLabel === undefined
+          ? state.queryPreviews
+          : (() => {
+              const { [queryLabel]: _droppedPreview, ...rest } =
+                state.queryPreviews;
+              return rest;
+            })();
+      return {
+        queryStatus: restStatus,
+        queryEdits: restEdits,
+        queryPreviews: nextPreviews,
+      };
+    }),
 });

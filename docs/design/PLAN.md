@@ -1,6 +1,6 @@
 # Phase 2 — Schema map overhaul — implementation plan
 
-This document breaks the Phase 2 brief from [`PHASES.md`](./PHASES.md) into five sequenced sub-phases that ship linearly on `main`. Each sub-phase is independently revertible and gated on `bun format && bun lint && bun typecheck && bun run test && cargo check`.
+This document breaks the Phase 2 brief from [`PHASES.md`](./PHASES.md) into five sequenced sub-phases that ship linearly on `main`. Each sub-phase is independently revertible and gated on `pnpm format && pnpm lint && pnpm typecheck && pnpm run test && cargo check`.
 
 The decisions captured below came out of a grilling session — they are the answers, not the questions. If the rationale isn't obvious from the spec, the [Decision log](#decision-log) at the bottom records the trade-off.
 
@@ -19,7 +19,7 @@ The decisions captured below came out of a grilling session — they are the ans
 | 5 — Image export | ✅ shipped | PNG/SVG export uses `html-to-image`, safe filenames, and a light export theme. |
 | Wrap-up | ✅ shipped | `ROADMAP.md` and `PHASES.md` were updated; deferred work is tracked in [GitHub issue #17](https://github.com/imran-vz/dbunk/issues/17). |
 
-Completion gates last run successfully: `bun format`, `bun lint`, `bun typecheck`, `bun run test -- --silent`, `cargo check`, `cargo test`, and `bun build:vite`.
+Completion gates last run successfully: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test -- --silent`, `cargo check`, `cargo test`, and `pnpm build:vite`.
 
 ---
 

@@ -21,7 +21,7 @@ jobs:
       - name: Preflight versions
         run: |
           set -euo pipefail
-          echo "bun:   $(bun --version)"
+          echo "pnpm:   $(pnpm --version)"
           echo "rustc: $(rustc --version)"
           echo "cargo: $(cargo --version)"
           rustup target list --installed | grep -q '^aarch64-apple-darwin$' \
@@ -53,7 +53,7 @@ jobs:
           echo "Versions in sync: ${tag_version}"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build macOS DMG (aarch64, unsigned)
         env:
@@ -62,7 +62,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ""
           APPLE_CERTIFICATE: ""
           APPLE_CERTIFICATE_PASSWORD: ""
-        run: bun run tauri build --target aarch64-apple-darwin --bundles dmg
+        run: pnpm run tauri build --target aarch64-apple-darwin --bundles dmg
 
       - name: Locate DMG
         id: locate

@@ -918,3 +918,129 @@ describe("QueryEditorPanel onMount branches", () => {
     expect(decorationState.values).toHaveLength(0);
   });
 });
+
+describe("QueryEditorPanel connection selector", () => {
+  const pgConnectionDefaults = {
+    database: "app",
+    host: "localhost",
+    port: 5432,
+    user: "postgres",
+    password: "",
+    role: "",
+    engine: "PostgreSQL" as const,
+    ssl: false,
+    status: "Connected" as const,
+    latency: "1ms",
+  };
+  const twoPgConnections = [
+    { ...pgConnectionDefaults, id: "conn-1", name: "Local Postgres" },
+    {
+      ...pgConnectionDefaults,
+      id: "conn-2",
+      name: "Staging Postgres",
+      host: "stg.example.com",
+    },
+  ];
+
+  beforeEach(() => {
+    mockedIsTauri.mockReturnValue(false);
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      connections: twoPgConnections,
+      queryStatus: {},
+      queryPreviews: {},
+      queryEdits: {},
+      queryHistory: [],
+    });
+  });
+
+  it("retargets the tab to the picked connection and clears stale per-tab state", () => {
+    useAppStore.setState({
+      queryPreviews: {
+        [queryTab.label]: {
+          columns: ["a"],
+          rows: [["1"]],
+          runtime: "1 ms",
+          rowCount: "1",
+          cache: "Cold",
+        },
+      },
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /connection selector/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /staging postgres/i }),
+    );
+
+    const state = useAppStore.getState();
+    expect(state.workspaceTabs[0].connectionId).toBe("conn-2");
+    expect(state.activeConnectionId).toBe("conn-2");
+    expect(state.queryPreviews[queryTab.label]).toBeUndefined();
+  });
+
+  it("prompts before discarding pending grid edits and bails on cancel", () => {
+    useAppStore.setState({
+      queryEdits: { [queryTab.id]: { 0: { 0: "edited" } } },
+    });
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => false);
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /connection selector/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /staging postgres/i }),
+    );
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(useAppStore.getState().workspaceTabs[0].connectionId).toBe("conn-1");
+    expect(useAppStore.getState().queryEdits[queryTab.id]).toBeDefined();
+    confirmSpy.mockRestore();
+  });
+
+  it("filters out keyvalue connections from the selector", () => {
+    useAppStore.setState({
+      connections: [
+        ...twoPgConnections,
+        {
+          id: "conn-redis",
+          name: "Cache",
+          database: "0",
+          host: "localhost",
+          engine: "Redis" as const,
+          port: 6379,
+          user: "",
+          password: "",
+          role: "",
+          dbNumber: 0,
+          useTls: false,
+          verifyTlsCert: true,
+          status: "Connected" as const,
+          latency: "1ms",
+        },
+      ],
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /connection selector/i }),
+    );
+
+    expect(
+      screen.queryByRole("menuitem", { name: /cache · redis/i }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: /staging postgres/i }),
+    ).toBeTruthy();
+  });
+});
