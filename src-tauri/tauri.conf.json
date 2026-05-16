@@ -4,9 +4,9 @@
   "version": "0.1.0-alpha.1",
   "identifier": "codes.imran.dbunk",
   "build": {
-    "beforeDevCommand": "bun run --bun dev:vite",
+    "beforeDevCommand": "pnpm run dev:vite",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "bun run --bun build:vite",
+    "beforeBuildCommand": "pnpm run build:vite",
     "frontendDist": "../.output/public"
   },
   "app": {

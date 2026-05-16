@@ -4,9 +4,9 @@ Describe what changed and why.
 
 ## Testing
 
-- [ ] `bun run test`
-- [ ] `bunx tsc --noEmit`
-- [ ] `bun run lint`
+- [ ] `pnpm run test`
+- [ ] `pnpx tsc --noEmit`
+- [ ] `pnpm run lint`
 
 ## Notes
 

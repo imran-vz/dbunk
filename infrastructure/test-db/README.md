@@ -7,10 +7,10 @@ and reseeds from its own fixture files on container creation.
 ## Run
 
 ```sh
-bun run db:postgres
-bun run db:clickhouse
-bun run db:redis
-bun run db:all
+pnpm run db:postgres
+pnpm run db:clickhouse
+pnpm run db:redis
+pnpm run db:all
 ```
 
 Or run from the infrastructure folder:
@@ -26,7 +26,7 @@ make -C infrastructure/test-db all
 Stop and remove containers with:
 
 ```sh
-bun run db:down
+pnpm run db:down
 make -C infrastructure/test-db down
 ```
 

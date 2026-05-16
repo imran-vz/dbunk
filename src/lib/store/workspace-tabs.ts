@@ -62,11 +62,20 @@ export type WorkspaceTabsSlice = {
 
   /**
    * Cascade cleanup — drops every Workspace Tab whose
-   * `connectionId` matches. Exposed for `Connections.deleteConnection`
-   * to call; today it isn't wired up (the monolith never cleaned
-   * tabs either).
+   * `connectionId` matches. Called by `Connections.deleteConnection`
+   * (see the cascade in `connections.ts`).
    */
   closeTabsForConnection: (connectionId: string) => void;
+
+  /**
+   * Retarget a query tab to a different connection. Resets the tab's
+   * grid edits / query status / preview (they belong to the old
+   * connection's run) and updates `activeConnectionId` so the sidebar
+   * reflects the new selection. SQL text is preserved — schema-qualified
+   * references that don't exist on the new connection are the user's
+   * problem to resolve.
+   */
+  retargetQueryTab: (tabId: string, newConnectionId: string) => void;
 };
 
 export const createWorkspaceTabsSlice: StateCreator<
@@ -260,4 +269,20 @@ export const createWorkspaceTabsSlice: StateCreator<
             : state.activeConnectionId,
       };
     }),
+
+  retargetQueryTab: (tabId, newConnectionId) => {
+    const state = get();
+    const tab = state.workspaceTabs.find((item) => item.id === tabId);
+    if (!tab || tab.kind !== "query") return;
+    if (tab.connectionId === newConnectionId) return;
+    get().dropQueryStateForTab(tab.id, tab.label);
+    set((s) => ({
+      activeConnectionId: newConnectionId,
+      workspaceTabs: s.workspaceTabs.map((item) =>
+        item.id === tabId
+          ? { ...item, connectionId: newConnectionId, lastRun: undefined }
+          : item,
+      ),
+    }));
+  },
 });

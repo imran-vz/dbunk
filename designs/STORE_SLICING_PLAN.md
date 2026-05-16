@@ -148,8 +148,8 @@ auto-reconnect would populate it.
 
 ## Commit plan
 
-Each commit is independently testable. `bun typecheck && bun lint &&
-bun run test && cargo test --lib` passes at every commit boundary. No
+Each commit is independently testable. `pnpm run typecheck && pnpm run lint &&
+pnpm run test && cargo test --lib` passes at every commit boundary. No
 behaviour change in any commit.
 
 ### Commit 1 — Extract types to `store/types.ts`
@@ -297,10 +297,10 @@ barrel.
 
 At every commit boundary:
 ```
-bun run format     # 0 fixes applied
-bun lint           # 0 errors
-bun typecheck      # 0 errors
-bun run test       # 262/262 frontend tests pass
+pnpm run format     # 0 fixes applied
+pnpm lint           # 0 errors
+pnpm typecheck      # 0 errors
+pnpm run test       # 262/262 frontend tests pass
 cargo test --lib   # 75/75 backend tests pass
 ```
 

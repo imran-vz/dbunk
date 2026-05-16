@@ -1361,7 +1361,7 @@ async fn reset_credential_storage(
 }
 
 /// Builds the application-wide logger via `tauri-plugin-log`. Dev
-/// targets are stdout (visible in the terminal where `bun tauri dev`
+/// targets are stdout (visible in the terminal where `pnpm tauri dev`
 /// runs) and the webview console (visible in browser DevTools so
 /// frontend developers see backend logs too). Production file
 /// logging is a deferred follow-up — see designs/FOLLOWUPS.md.

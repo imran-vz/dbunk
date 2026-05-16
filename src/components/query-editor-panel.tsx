@@ -59,6 +59,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     loadTableStructure,
     setQueryEdit,
     discardQueryEdits,
+    retargetQueryTab,
   } = useAppStore();
 
   const status = queryStatus[tab.id];
@@ -149,6 +150,18 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   );
   const runCurrentWithBinds = () => {
     editor.runSql(applyBindVariables(editor.currentStatement(), bindValues));
+  };
+
+  const handleRetargetConnection = (newConnectionId: string) => {
+    if (newConnectionId === tab.connectionId) return;
+    if (isRunning) return;
+    if (hasEdits) {
+      const ok = window.confirm(
+        "Switching connections will discard pending edits in the results grid. Continue?",
+      );
+      if (!ok) return;
+    }
+    retargetQueryTab(tab.id, newConnectionId);
   };
 
   const handleFormat = () => {
@@ -243,6 +256,8 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
         <QueryEditorToolbar
           dbSelectorLabel={dbSelectorLabel}
           connections={connections}
+          currentConnectionId={tab.connectionId}
+          onRetargetConnection={handleRetargetConnection}
           hasEdits={hasEdits}
           onDiscardEdits={() => discardQueryEdits(tab.id)}
           isRunning={isRunning}

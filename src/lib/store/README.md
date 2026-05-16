@@ -89,7 +89,7 @@ access happens through `get()` (typed against `AppStoreState`)
 inside actions. Only `store/index.ts` is allowed to import every
 slice — that's where they're composed.
 
-A CI grep check (`bun run check:slice-isolation` in `package.json`)
+A CI grep check (`pnpm run check:slice-isolation` in `package.json`)
 enforces this — any slice file importing from another slice file
 fails the check. The check is intentionally a one-line grep rather
 than a custom Biome rule because the maintenance cost is lower at

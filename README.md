@@ -2,7 +2,7 @@
 
 dbunk is an open-source desktop database workspace for exploring data, running SQL, inspecting schema structure, and editing table data from a fast local app.
 
-It is built with Tauri, React, TypeScript, Rust, Monaco Editor, SQLx, and Bun.
+It is built with Tauri, React, TypeScript, Rust, Monaco Editor, SQLx, and pnpm.
 
 ## Status
 
@@ -52,40 +52,39 @@ Some advanced features are engine-specific. PostgreSQL currently has the richest
 
 ### Requirements
 
-- [Bun](https://bun.sh/)
 - [Rust](https://www.rust-lang.org/tools/install)
 - System dependencies required by [Tauri](https://tauri.app/start/prerequisites/)
 
 ### Install
 
 ```bash
-bun install
+pnpm install
 ```
 
 ### Run The App
 
 ```bash
-bun run dev
+pnpm run dev
 ```
 
 ### Run The Web UI Only
 
 ```bash
-bun run dev:vite
+pnpm run dev:vite
 ```
 
 ### Test And Check
 
 ```bash
-bun run test
-bunx tsc --noEmit
-bun run lint
+pnpm run test
+pnpx tsc --noEmit
+pnpm run lint
 ```
 
 ### Build
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 ## Project Structure

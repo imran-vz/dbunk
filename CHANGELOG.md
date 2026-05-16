@@ -39,20 +39,20 @@ Completed on 2026-05-13.
 
 ## Verification checks run
 
-- Phase 3: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/lib/export.test.ts src/components/data-grid.test.tsx src/components/table-editor-panel.test.tsx`
-- Phase 4: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/lib/import.test.ts src/components/table-editor/data-import-wizard.test.tsx src/components/table-editor-panel.test.tsx`, `cargo check`
-- Phase 5: `bun format`, `bun lint`, `bun typecheck`, targeted table/settings/import tests, `cargo check`
-- Phase 6: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/components/workspace-view.test.tsx src/components/workspace-overview/tables-tab.test.tsx src/components/workspace-overview/schemas-tab.test.tsx src/lib/store.test.ts`, `cargo check`
-- Phase 7: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/components/workspace-view.test.tsx src/components/table-editor-panel.test.tsx`, `cargo check`
-- Phase 8: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/components/query-editor-panel.test.tsx`, `cargo check`
-- Phase 9: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/components/workspace-view.test.tsx src/components/workspace-overview/tables-tab.test.tsx`, `cargo check`
-- Phase 10: `bun format`, `bun lint`, `bun typecheck`, `bun run test src/components/table-editor-panel.test.tsx src/components/table-structure-view.test.tsx`, `cargo check`
+- Phase 3: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/lib/export.test.ts src/components/data-grid.test.tsx src/components/table-editor-panel.test.tsx`
+- Phase 4: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/lib/import.test.ts src/components/table-editor/data-import-wizard.test.tsx src/components/table-editor-panel.test.tsx`, `cargo check`
+- Phase 5: `pnpm format`, `pnpm lint`, `pnpm typecheck`, targeted table/settings/import tests, `cargo check`
+- Phase 6: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/components/workspace-view.test.tsx src/components/workspace-overview/tables-tab.test.tsx src/components/workspace-overview/schemas-tab.test.tsx src/lib/store.test.ts`, `cargo check`
+- Phase 7: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/components/workspace-view.test.tsx src/components/table-editor-panel.test.tsx`, `cargo check`
+- Phase 8: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/components/query-editor-panel.test.tsx`, `cargo check`
+- Phase 9: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/components/workspace-view.test.tsx src/components/workspace-overview/tables-tab.test.tsx`, `cargo check`
+- Phase 10: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm run test src/components/table-editor-panel.test.tsx src/components/table-structure-view.test.tsx`, `cargo check`
 
 Final verification:
-- `bun format`
-- `bun lint`
-- `bun typecheck`
-- `bun run test`
+- `pnpm format`
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm run test`
 - `cargo check`
 
 ## Assumptions

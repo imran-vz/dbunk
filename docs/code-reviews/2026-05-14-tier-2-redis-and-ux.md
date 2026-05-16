@@ -2,7 +2,7 @@
 
 **Scope**: `git diff origin/main..HEAD` covering commits `b2c00c5` (Group C — Redis Tier 2: inline editors, server cards, CLI autocomplete, pub/sub discovery) and `0567311` (Group D — command palette, Kbd, prefs menu, sidebar gear, state shells). 32 files, +4188/−167.
 
-**Review profile**: chill. Gates green at review time: bun format / lint / typecheck, just fmt / lint / test, vitest 575/575.
+**Review profile**: chill. Gates green at review time: pnpm format / lint / typecheck, just fmt / lint / test, vitest 575/575.
 
 ---
 
