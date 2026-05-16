@@ -8,12 +8,14 @@
 //!   ACL `default` user with password)
 //! - non-empty user + password → `user:password@` (Redis 6+ ACL)
 //!
-//! Verify-cert behaviour: `redis-rs`'s URL parser doesn't natively
-//! recognise a `verify=false` query parameter — when `use_tls` is on
-//! and `verify_tls_cert` is off, the caller is responsible for
-//! constructing a [`redis::TlsCertificates`] / explicit
-//! `ConnectionInfo` (Phase 1.1 trusts certs by default; the explicit
-//! cert-skip path is wired alongside the connection-test command).
+//! Verify-cert behaviour: redis-rs's URL parser does not recognise a
+//! `verify=false` query parameter, but it does recognise the
+//! `#insecure` URL fragment as a signal to set `ConnectionAddr::TcpTls
+//! { insecure: true }`. When `use_tls` is on and `verify_tls_cert` is
+//! off we append that fragment so the TLS handshake actually skips
+//! verification (gated on the `tls-rustls-insecure` redis-rs feature
+//! in Cargo.toml — without it the fragment is parsed but the
+//! handshake still verifies).
 
 use crate::RedisStoredConnection;
 
@@ -58,8 +60,19 @@ pub fn build(connection: &RedisStoredConnection) -> Result<RedisUrl, String> {
         ),
     };
 
+    // redis-rs honours `#insecure` to switch the rustls handshake to
+    // a no-verify path. We only append it when both TLS is on and the
+    // user has explicitly opted out of cert verification — outside
+    // those two conditions the fragment would be meaningless or
+    // dangerous to add.
+    let fragment = if connection.use_tls && !connection.verify_tls_cert {
+        "#insecure"
+    } else {
+        ""
+    };
+
     let url = format!(
-        "{scheme}://{auth}{host}:{port}/{db}",
+        "{scheme}://{auth}{host}:{port}/{db}{fragment}",
         host = connection.host,
         db = connection.db_number,
     );
@@ -73,7 +86,7 @@ pub fn build(connection: &RedisStoredConnection) -> Result<RedisUrl, String> {
         (false, _) => format!("{}:***@", connection.user),
     };
     let redacted = format!(
-        "{scheme}://{redacted_auth}{host}:{port}/{db}",
+        "{scheme}://{redacted_auth}{host}:{port}/{db}{fragment}",
         host = connection.host,
         db = connection.db_number,
     );
@@ -157,6 +170,36 @@ mod tests {
         let url = build(&conn).unwrap();
         assert!(url.url.starts_with("rediss://"));
         assert!(url.use_tls);
+    }
+
+    #[test]
+    fn tls_with_verify_off_appends_insecure_fragment() {
+        let mut conn = base();
+        conn.use_tls = true;
+        conn.verify_tls_cert = false;
+        let url = build(&conn).unwrap();
+        assert!(url.url.ends_with("#insecure"));
+    }
+
+    #[test]
+    fn tls_with_verify_on_omits_fragment() {
+        let mut conn = base();
+        conn.use_tls = true;
+        conn.verify_tls_cert = true;
+        let url = build(&conn).unwrap();
+        assert!(!url.url.contains("#insecure"));
+    }
+
+    #[test]
+    fn plain_with_verify_off_does_not_append_fragment() {
+        // Without TLS, the verify flag is meaningless — don't pollute
+        // the URL with a fragment that would parse to an insecure-TLS
+        // marker if scheme were rediss://.
+        let mut conn = base();
+        conn.use_tls = false;
+        conn.verify_tls_cert = false;
+        let url = build(&conn).unwrap();
+        assert!(!url.url.contains("#insecure"));
     }
 
     #[test]

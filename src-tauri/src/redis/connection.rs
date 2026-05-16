@@ -46,6 +46,17 @@ const TCP_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 static MANAGER_CACHE: Lazy<Mutex<HashMap<String, ConnectionManager>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Session-scoped cache of "is this Redis instance a replica?". The
+/// answer drives `assert_writable` in `key_ops.rs` and only changes
+/// across a failover — well outside the lifetime of an editor
+/// session — so a per-`connection_id` cache means one `INFO
+/// replication` round trip per session instead of one per write.
+///
+/// Cleared by [`drop_cached`] alongside the manager cache, so a
+/// reconnect re-probes.
+static REPLICA_ROLE_CACHE: Lazy<Mutex<HashMap<String, bool>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 /// Returns a clone of the cached `ConnectionManager` for this
 /// connection, opening and caching one if necessary.
 pub async fn manager_for(connection: &RedisStoredConnection) -> Result<ConnectionManager, String> {
@@ -63,14 +74,31 @@ pub async fn manager_for(connection: &RedisStoredConnection) -> Result<Connectio
     Ok(manager)
 }
 
-/// Drop the cached manager for a connection — used when the user
-/// disconnects or deletes the connection record. Best-effort.
+/// Drop the cached manager and replica-role for a connection — used
+/// when the user disconnects or deletes the connection record. A
+/// subsequent connect re-opens the manager and re-probes the role.
+/// Best-effort.
 #[allow(dead_code)]
 pub fn drop_cached(connection_id: &str) {
     if let Ok(mut cache) = MANAGER_CACHE.lock() {
         if cache.remove(connection_id).is_some() {
             log::debug!("drop_cached: removed manager for {}", connection_id);
         }
+    }
+    if let Ok(mut cache) = REPLICA_ROLE_CACHE.lock() {
+        cache.remove(connection_id);
+    }
+}
+
+/// Look up the cached "is this connection a replica?" flag.
+pub fn cached_replica_role(connection_id: &str) -> Option<bool> {
+    REPLICA_ROLE_CACHE.lock().ok()?.get(connection_id).copied()
+}
+
+/// Cache the replica-role flag for this connection.
+pub fn cache_replica_role(connection_id: &str, is_replica: bool) {
+    if let Ok(mut cache) = REPLICA_ROLE_CACHE.lock() {
+        cache.insert(connection_id.to_string(), is_replica);
     }
 }
 
