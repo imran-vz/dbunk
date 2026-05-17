@@ -31,6 +31,7 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
+import { ALL_SCHEMAS_SENTINEL } from "@/lib/schema-graph";
 import type { Connection } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 
@@ -61,7 +62,7 @@ afterEach(() => {
 });
 
 describe("SchemaMapTab", () => {
-  it("defaults to public and persists the selected schema", () => {
+  it("defaults to the all-schemas view and persists it", () => {
     render(
       <SchemaMapTab
         activeConnection={connection}
@@ -74,10 +75,31 @@ describe("SchemaMapTab", () => {
     );
 
     expect(screen.getByTestId("schema-map-mock").textContent).toBe(
-      "conn-1:public",
+      `conn-1:${ALL_SCHEMAS_SENTINEL}`,
     );
     expect(useAppStore.getState().connectionSchemaMapSchema["conn-1"]).toBe(
-      "public",
+      ALL_SCHEMAS_SENTINEL,
+    );
+  });
+
+  it("respects a stored individual-schema selection", () => {
+    useAppStore.setState({
+      connectionSchemaMapSchema: { "conn-1": "audit" },
+    });
+
+    render(
+      <SchemaMapTab
+        activeConnection={connection}
+        schemas={[
+          { name: "audit", tables: ["events"] },
+          { name: "public", tables: ["users"] },
+        ]}
+        isClient={false}
+      />,
+    );
+
+    expect(screen.getByTestId("schema-map-mock").textContent).toBe(
+      "conn-1:audit",
     );
   });
 

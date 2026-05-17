@@ -1,8 +1,14 @@
 /**
- * Vertical drag handle for resizing a side panel. Reports proposed
- * widths (in px) while the user drags; caller clamps and applies. Uses
- * pointer capture so the drag survives the cursor leaving the handle's
- * 1 px visual region.
+ * Drag handle for resizing a split-pane. Reports proposed sizes (in px)
+ * while the user drags; the caller clamps and applies. Uses pointer
+ * capture so the drag survives the cursor leaving the handle's 1 px
+ * visual region.
+ *
+ * Orientation describes the handle itself (matches the ARIA spec):
+ *   "vertical"   — a vertical line splitting left/right panes; drags on
+ *                  the X axis. Used with `side: "right" | "left"`.
+ *   "horizontal" — a horizontal line splitting top/bottom panes; drags
+ *                  on the Y axis. Used with `side: "bottom" | "top"`.
  */
 
 import { useRef } from "react";
@@ -10,16 +16,23 @@ import { useRef } from "react";
 import { cn } from "@/lib/utils";
 
 interface ResizerHandleProps {
-  /** Current width of the panel being resized; used as the drag origin. */
+  /** Current size of the pane being resized; used as the drag origin. */
   width: number;
   onResize: (next: number) => void;
   /**
-   * "right" — handle sits on the right edge of a left-anchored panel;
-   *           dragging right grows the panel.
-   * "left"  — handle sits on the left edge of a right-anchored panel;
-   *           dragging left grows the panel.
+   * For vertical orientation:
+   *   "right" — handle on the right edge of a left-anchored pane;
+   *             dragging right grows the pane.
+   *   "left"  — handle on the left edge of a right-anchored pane;
+   *             dragging left grows the pane.
+   * For horizontal orientation:
+   *   "bottom" — handle on the bottom edge of a top-anchored pane;
+   *              dragging down grows the pane.
+   *   "top"    — handle on the top edge of a bottom-anchored pane;
+   *              dragging up grows the pane.
    */
-  side?: "right" | "left";
+  side?: "right" | "left" | "bottom" | "top";
+  orientation?: "vertical" | "horizontal";
   /** Min/max for `aria-valuemin` / `aria-valuemax`; matches the caller's
    *  clamp range so AT users get accurate range info. */
   min?: number;
@@ -32,24 +45,37 @@ export function ResizerHandle({
   width,
   onResize,
   side = "right",
+  orientation = "vertical",
   min,
   max,
   className,
   ariaLabel,
 }: ResizerHandleProps) {
-  const startRef = useRef<{ x: number; width: number } | null>(null);
+  const startRef = useRef<{ pos: number; size: number } | null>(null);
+  const isVertical = orientation === "vertical";
+
+  const direction = isVertical
+    ? side === "right"
+      ? 1
+      : -1
+    : side === "bottom"
+      ? 1
+      : -1;
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    startRef.current = { x: event.clientX, width };
+    startRef.current = {
+      pos: isVertical ? event.clientX : event.clientY,
+      size: width,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!startRef.current) return;
-    const dx = event.clientX - startRef.current.x;
-    const direction = side === "right" ? 1 : -1;
-    onResize(startRef.current.width + dx * direction);
+    const current = isVertical ? event.clientX : event.clientY;
+    const delta = current - startRef.current.pos;
+    onResize(startRef.current.size + delta * direction);
   };
 
   const stop = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -61,11 +87,12 @@ export function ResizerHandle({
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 32 : 8;
-    const direction = side === "right" ? 1 : -1;
-    if (event.key === "ArrowLeft") {
+    const decKey = isVertical ? "ArrowLeft" : "ArrowUp";
+    const incKey = isVertical ? "ArrowRight" : "ArrowDown";
+    if (event.key === decKey) {
       event.preventDefault();
       onResize(width - step * direction);
-    } else if (event.key === "ArrowRight") {
+    } else if (event.key === incKey) {
       event.preventDefault();
       onResize(width + step * direction);
     }
@@ -76,8 +103,8 @@ export function ResizerHandle({
     <div
       role="separator"
       tabIndex={0}
-      aria-orientation="vertical"
-      aria-label={ariaLabel ?? "Resize panel"}
+      aria-orientation={orientation}
+      aria-label={ariaLabel ?? "Resize pane"}
       aria-valuenow={Math.round(width)}
       aria-valuemin={min}
       aria-valuemax={max}
@@ -87,12 +114,21 @@ export function ResizerHandle({
       onPointerCancel={stop}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group/resizer relative z-10 w-px shrink-0 cursor-col-resize touch-none select-none bg-border-subtle transition-colors hover:bg-accent-green/60 focus-visible:bg-accent-green/60 focus-visible:outline-none active:bg-accent-green",
+        "group/resizer relative z-10 shrink-0 touch-none select-none bg-border-subtle transition-colors hover:bg-accent-green/60 focus-visible:bg-accent-green/60 focus-visible:outline-none active:bg-accent-green",
+        isVertical ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
         className,
       )}
     >
       {/* Wider hit area so users don't need pixel-perfect aim. */}
-      <span aria-hidden className="absolute inset-y-0 -left-1.5 -right-1.5" />
+      <span
+        aria-hidden
+        className={cn(
+          "absolute",
+          isVertical
+            ? "inset-y-0 -left-1.5 -right-1.5"
+            : "inset-x-0 -top-1.5 -bottom-1.5",
+        )}
+      />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { IconExternalLink } from "@tabler/icons-react";
 import {
   forwardRef,
   useCallback,
@@ -25,11 +26,15 @@ import { relationalPolicy, storageClassFor } from "@/lib/engine-policy";
 import {
   buildSchemaGraph,
   DEFAULT_SCHEMA_MAP_PREFS,
+  isAllSchemas,
+  type SchemaForeignKey,
   type SchemaGraphNodeData,
   type SchemaMapPosition,
+  type SchemaRelationships,
+  type SchemaTableNode as SchemaTableNodeData,
   schemaRelationshipsKey,
 } from "@/lib/schema-graph";
-import { useAppStore } from "@/lib/store";
+import { type SchemaRelationshipsStatus, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface SchemaRelationshipMapProps {
@@ -40,6 +45,50 @@ interface SchemaRelationshipMapProps {
 }
 
 const EMPTY_POSITIONS: Record<string, SchemaMapPosition> = {};
+
+/**
+ * Combine per-schema relationship payloads into one. Tables are
+ * deduplicated by `(schema, name)`; FKs by `constraintName` so a single
+ * cross-schema FK shows up exactly once.
+ */
+function mergeSchemaRelationships(
+  entries: ReadonlyArray<SchemaRelationships | undefined>,
+): SchemaRelationships | undefined {
+  if (entries.length === 0) return undefined;
+  if (entries.some((entry) => entry === undefined)) return undefined;
+  const tables = new Map<string, SchemaTableNodeData>();
+  const foreignKeys = new Map<string, SchemaForeignKey>();
+  for (const entry of entries) {
+    if (!entry) continue;
+    for (const table of entry.tables) {
+      tables.set(`${table.schema}.${table.name}`, table);
+    }
+    for (const fk of entry.foreignKeys) {
+      foreignKeys.set(fk.constraintName, fk);
+    }
+  }
+  return {
+    tables: [...tables.values()],
+    foreignKeys: [...foreignKeys.values()],
+  };
+}
+
+/**
+ * Roll several per-schema statuses up into a single status for the
+ * aggregated map: any loading bubbles up first, then errors, then
+ * success only when every entry succeeded.
+ */
+function aggregateStatus(
+  statuses: ReadonlyArray<SchemaRelationshipsStatus | undefined>,
+): SchemaRelationshipsStatus | undefined {
+  if (statuses.length === 0) return undefined;
+  if (statuses.some((s) => s?.state === "loading")) return { state: "loading" };
+  const firstError = statuses.find((s) => s?.state === "error");
+  if (firstError?.state === "error") return firstError;
+  if (statuses.every((s) => s?.state === "success"))
+    return { state: "success" };
+  return undefined;
+}
 
 export type SchemaMapExportFormat = "png" | "svg";
 
@@ -126,22 +175,51 @@ function SchemaTableNode({ data }: NodeProps<SchemaGraphNodeData>) {
   const fkColumnNames = new Set(data.fkColumnNames);
   const hiddenColumnCount =
     data.prefs.attrMode === "none" ? data.columnCount : 0;
+  const showSchemaPrefix = data.hasMultipleSchemas || data.isExternal;
 
   return (
     <div
       data-active={data.isActive ? "true" : "false"}
+      data-external={data.isExternal ? "true" : "false"}
       className={cn(
         "group/schema-node w-[220px] overflow-hidden rounded-md border bg-card text-[0.625rem] text-card-foreground shadow-sm ring-1 ring-background/80",
         data.isActive
           ? "border-primary shadow-primary/20"
           : data.isExternal
-            ? "border-dashed border-primary/50"
+            ? "border-dashed border-warning/60 bg-card/80"
             : "border-primary/80",
       )}
     >
-      <div className="flex items-center justify-center gap-1.5 border-b border-primary/70 bg-muted/70 px-2 py-1 text-center text-[0.68rem] font-medium">
-        <span className="text-primary">tbl</span>
-        <span className="truncate">{data.label}</span>
+      <div
+        className={cn(
+          "flex items-center gap-1.5 border-b px-2 py-1 text-[0.68rem] font-medium",
+          data.isExternal
+            ? "border-warning/40 bg-warning/10"
+            : "justify-center border-primary/70 bg-muted/70 text-center",
+        )}
+      >
+        {data.isExternal ? (
+          <IconExternalLink
+            className="size-2.5 shrink-0 text-warning"
+            aria-hidden
+          />
+        ) : (
+          <span className="text-primary">tbl</span>
+        )}
+        <span
+          className="min-w-0 flex-1 truncate"
+          title={`${data.schema}.${data.table}`}
+        >
+          {showSchemaPrefix ? (
+            <span className="text-muted-foreground">{data.schema}.</span>
+          ) : null}
+          {data.label}
+        </span>
+        {data.isExternal ? (
+          <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-warning">
+            external
+          </span>
+        ) : null}
       </div>
       <div className="max-h-80 overflow-auto bg-card">
         {data.columns.length > 0 ? (
@@ -325,6 +403,7 @@ export const SchemaRelationshipMap = forwardRef<
     loadSchemaRelationships,
     focusTableInSchemaMap,
     connections,
+    schemaExplorer,
     schemaMapPositions,
     loadSchemaMapPositions,
     saveSchemaMapPosition,
@@ -335,16 +414,64 @@ export const SchemaRelationshipMap = forwardRef<
     (connection) => connection.id === connectionId,
   )?.engine;
 
+  const isAllMode = isAllSchemas(schema);
+  const databaseSchemas = useMemo(
+    () =>
+      isAllMode
+        ? [
+            ...new Set(
+              (schemaExplorer[connectionId] ?? []).map((entry) => entry.name),
+            ),
+          ].sort()
+        : [],
+    [isAllMode, schemaExplorer, connectionId],
+  );
+
   const key = schemaRelationshipsKey(connectionId, schema);
-  const relationships = schemaRelationships[key];
-  const status = schemaRelationshipsStatus[key];
   const positions =
     schemaMapPositions[connectionId]?.[schema] ?? EMPTY_POSITIONS;
   const prefs =
     schemaMapPrefs[connectionId]?.[schema] ?? DEFAULT_SCHEMA_MAP_PREFS;
 
+  // Memoise the merged relationships + rolled-up status in "Database"
+  // mode — the merge produces a fresh object every call, and feeding
+  // that into downstream `useMemo`s without memoising here triggers an
+  // infinite render loop via the `setInteractiveNodes(styledNodes)`
+  // effect below.
+  const relationships = useMemo<SchemaRelationships | undefined>(() => {
+    if (!isAllMode) return schemaRelationships[key];
+    const entries = databaseSchemas.map(
+      (name) => schemaRelationships[schemaRelationshipsKey(connectionId, name)],
+    );
+    return mergeSchemaRelationships(entries);
+  }, [isAllMode, schemaRelationships, key, connectionId, databaseSchemas]);
+
+  const status = useMemo<SchemaRelationshipsStatus | undefined>(() => {
+    if (!isAllMode) return schemaRelationshipsStatus[key];
+    const statuses = databaseSchemas.map(
+      (name) =>
+        schemaRelationshipsStatus[schemaRelationshipsKey(connectionId, name)],
+    );
+    return aggregateStatus(statuses);
+  }, [
+    isAllMode,
+    schemaRelationshipsStatus,
+    key,
+    connectionId,
+    databaseSchemas,
+  ]);
+
   useEffect(() => {
-    if (connectionId && schema) {
+    if (!connectionId) return;
+    if (isAllMode) {
+      for (const name of databaseSchemas) {
+        void loadSchemaRelationships(connectionId, name);
+      }
+      void loadSchemaMapPositions(connectionId, schema);
+      void loadSchemaMapPrefs(connectionId, schema);
+      return;
+    }
+    if (schema) {
       void loadSchemaRelationships(connectionId, schema);
       void loadSchemaMapPositions(connectionId, schema);
       void loadSchemaMapPrefs(connectionId, schema);
@@ -352,6 +479,8 @@ export const SchemaRelationshipMap = forwardRef<
   }, [
     connectionId,
     schema,
+    isAllMode,
+    databaseSchemas,
     loadSchemaRelationships,
     loadSchemaMapPositions,
     loadSchemaMapPrefs,
@@ -369,14 +498,28 @@ export const SchemaRelationshipMap = forwardRef<
     );
   }, [relationships, activeTable, positions, prefs]);
 
-  const styledNodes = useMemo<Node<SchemaGraphNodeData>[]>(
+  const hasMultipleSchemas = useMemo(
+    () => new Set(graph.nodes.map((node) => node.data.schema)).size > 1,
+    [graph.nodes],
+  );
+
+  const nodesWithSchemaContext = useMemo<Node<SchemaGraphNodeData>[]>(
     () =>
       graph.nodes.map((node) => ({
+        ...node,
+        data: { ...node.data, hasMultipleSchemas },
+      })),
+    [graph.nodes, hasMultipleSchemas],
+  );
+
+  const styledNodes = useMemo<Node<SchemaGraphNodeData>[]>(
+    () =>
+      nodesWithSchemaContext.map((node) => ({
         ...node,
         type: "schemaTable",
         style: { width: 220 },
       })),
-    [graph.nodes],
+    [nodesWithSchemaContext],
   );
   const [interactiveNodes, setInteractiveNodes] = useState(styledNodes);
 
