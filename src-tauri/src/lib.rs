@@ -871,6 +871,35 @@ async fn redis_scan_keys(
 }
 
 #[tauri::command]
+async fn redis_open_scan_session(
+    state: State<'_, AppState>,
+    payload: redis::keyspace::OpenScanSessionPayload,
+) -> Result<redis::keyspace::OpenScanSessionResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::open_scan_session(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_cancel_scan_session(
+    state: State<'_, AppState>,
+    payload: redis::keyspace::CancelScanSessionPayload,
+) -> Result<redis::keyspace::CancelScanSessionResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::cancel_scan_session(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+fn redis_close_scan_session(payload: redis::keyspace::CloseScanSessionPayload) {
+    dispatch::keyvalue::close_scan_session(&payload);
+}
+
+#[tauri::command]
 async fn redis_fetch_key_metadata(
     state: State<'_, AppState>,
     payload: redis::key_inspector::KeyPayload,
@@ -1554,6 +1583,9 @@ pub fn run() {
             save_saved_query,
             delete_saved_query,
             redis_scan_keys,
+            redis_open_scan_session,
+            redis_cancel_scan_session,
+            redis_close_scan_session,
             redis_fetch_key_metadata,
             redis_fetch_string,
             redis_fetch_hash,

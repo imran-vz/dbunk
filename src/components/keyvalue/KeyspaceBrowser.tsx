@@ -28,7 +28,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type ScannedKey, scanKeys } from "@/lib/redis/api";
+import {
+  cancelScanSession,
+  closeScanSession,
+  openScanSession,
+  type ScannedKey,
+  scanKeys,
+} from "@/lib/redis/api";
 import type { Connection } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -61,6 +67,13 @@ export function KeyspaceBrowser({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestSeq = useRef(0);
+  // Scan session: opened once per mount + connection. SCANs route
+  // through its dedicated connection so a Cancel click can issue
+  // CLIENT KILL ID against the in-flight server-side work.
+  const scanSessionIdRef = useRef(
+    `scan-${connection.id}-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+  );
+  const scanSessionReadyRef = useRef(false);
   // Replica-warning dismiss is session-local — a future migration can
   // persist `dismissed_replica_warning_at` on the connection record.
   const [replicaWarningDismissed, setReplicaWarningDismissed] = useState(false);
@@ -90,6 +103,9 @@ export function KeyspaceBrowser({
           count: 200,
           typeFilter: typeFilter ?? undefined,
           cursor: fromCursor,
+          sessionId: scanSessionReadyRef.current
+            ? scanSessionIdRef.current
+            : undefined,
         });
         if (requestSeq.current !== seq) return;
         setKeys((prev) =>
@@ -108,12 +124,63 @@ export function KeyspaceBrowser({
     [connection.id, pattern, typeFilter],
   );
 
+  // Open a dedicated scan session on mount so SCAN calls run on a
+  // killable connection. Falls back to the shared manager on open
+  // failure (e.g., the server rejects the second connection) —
+  // canceling won't kill in that case but the rest of the flow keeps
+  // working.
+  useEffect(() => {
+    const sessionId = scanSessionIdRef.current;
+    let cancelled = false;
+    openScanSession({ connectionId: connection.id, sessionId })
+      .then(() => {
+        if (!cancelled) scanSessionReadyRef.current = true;
+      })
+      .catch((err) => {
+        // Non-fatal — SCAN falls back to the shared manager.
+        console.warn("openScanSession failed", err);
+      });
+    return () => {
+      cancelled = true;
+      scanSessionReadyRef.current = false;
+      void closeScanSession({ sessionId }).catch(() => {});
+    };
+  }, [connection.id]);
+
   // Restart scan when pattern or filter changes.
   useEffect(() => {
     setKeys([]);
     setCursor(null);
     void runScan(null);
   }, [runScan]);
+
+  const handleCancelScan = async () => {
+    requestSeq.current++; // Invalidate the in-flight response.
+    setLoading(false);
+    if (!scanSessionReadyRef.current) return;
+    try {
+      await cancelScanSession({
+        connectionId: connection.id,
+        sessionId: scanSessionIdRef.current,
+      });
+    } catch (err) {
+      console.warn("cancelScanSession failed", err);
+    } finally {
+      // The cancelled session is dropped server-side. Open a fresh
+      // one so subsequent scans are also cancellable.
+      scanSessionReadyRef.current = false;
+      openScanSession({
+        connectionId: connection.id,
+        sessionId: scanSessionIdRef.current,
+      })
+        .then(() => {
+          scanSessionReadyRef.current = true;
+        })
+        .catch(() => {
+          // Non-fatal; fall back to shared manager.
+        });
+    }
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2 text-xs">
@@ -205,17 +272,27 @@ export function KeyspaceBrowser({
       </div>
       <div className="flex items-center justify-between text-[0.65rem] text-text-muted">
         <span>{keys.length.toLocaleString()} loaded</span>
-        {cursor ? (
+        {loading ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[0.65rem] text-destructive hover:text-destructive"
+            onClick={() => {
+              void handleCancelScan();
+            }}
+          >
+            Cancel scan
+          </Button>
+        ) : cursor ? (
           <Button
             size="sm"
             variant="ghost"
             className="h-6 px-2 text-[0.65rem]"
-            disabled={loading}
             onClick={() => {
               void runScan(cursor);
             }}
           >
-            {loading ? "Loading…" : "Load more"}
+            Load more
           </Button>
         ) : keys.length > 0 ? (
           <span>scan complete</span>

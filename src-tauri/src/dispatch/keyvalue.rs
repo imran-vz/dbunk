@@ -21,7 +21,10 @@ use crate::redis::key_ops::{
     JsonSetPayload, RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetMembersPayload,
     SetStringPayload, SetStringResult, SortedSetEditsPayload, StreamEditsPayload,
 };
-use crate::redis::keyspace::{self, ScanKeysPayload, ScanKeysResult};
+use crate::redis::keyspace::{
+    self, CancelScanSessionPayload, CancelScanSessionResult, CloseScanSessionPayload,
+    OpenScanSessionPayload, OpenScanSessionResult, ScanKeysPayload, ScanKeysResult,
+};
 use crate::redis::pubsub::{
     self, CloseSessionPayload, DiscoverChannelsPayload, DiscoverChannelsResult, DrainPayload,
     DrainResult, PublishPayload, PublishResult, StartSessionPayload, StartSessionResult,
@@ -61,6 +64,24 @@ pub async fn scan_keys(
     payload: &ScanKeysPayload,
 ) -> Result<ScanKeysResult, String> {
     keyspace::scan_keys(as_redis(connection)?, payload).await
+}
+
+pub async fn open_scan_session(
+    connection: &StoredConnection,
+    payload: &OpenScanSessionPayload,
+) -> Result<OpenScanSessionResult, String> {
+    keyspace::open_session(as_redis(connection)?, payload).await
+}
+
+pub async fn cancel_scan_session(
+    connection: &StoredConnection,
+    payload: &CancelScanSessionPayload,
+) -> Result<CancelScanSessionResult, String> {
+    keyspace::cancel_session(as_redis(connection)?, payload).await
+}
+
+pub fn close_scan_session(payload: &CloseScanSessionPayload) {
+    keyspace::close_session(payload);
 }
 
 pub async fn fetch_key_metadata(
