@@ -76,6 +76,17 @@ export function RedisAdvancedFields({ form }: { form: ConnectionFormApi }) {
           ) : null
         }
       </form.Subscribe>
+      <form.Field name="readOnly">
+        {(field) => (
+          <ToggleSwitchRow
+            id="connection-read-only"
+            title="Read-only"
+            description="Refuse every write on this connection — belt-and-braces safety for production servers (ADR-0009)."
+            checked={field.state.value ?? false}
+            onCheckedChange={(value) => field.handleChange(value)}
+          />
+        )}
+      </form.Field>
     </>
   );
 }

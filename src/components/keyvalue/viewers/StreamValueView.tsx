@@ -8,12 +8,15 @@
  */
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   applyRedisStreamEdits,
+  createStreamGroup,
+  destroyStreamGroup,
   fetchStream,
   fetchStreamGroups,
   formatValueOneLine,
@@ -364,10 +367,13 @@ export function StreamValueView({
       </div>
       {showGroups ? (
         <ConsumerGroupsPanel
+          connectionId={connectionId}
+          keyName={keyName}
           groups={groups}
           consumers={consumers}
           loading={groupsLoading}
           error={groupsError}
+          onChanged={() => setReloadTick((t) => t + 1)}
         />
       ) : null}
     </div>
@@ -463,21 +469,106 @@ function DraftEditor({
 }
 
 function ConsumerGroupsPanel({
+  connectionId,
+  keyName,
   groups,
   consumers,
   loading,
   error,
+  onChanged,
 }: {
+  connectionId: string;
+  keyName: string;
   groups: StreamGroupInfo[];
   consumers: StreamConsumerInfo[];
   loading: boolean;
   error: string | null;
+  onChanged: () => void;
 }) {
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupStartId, setNewGroupStartId] = useState("$");
+  const [mkstream, setMkstream] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async () => {
+    const group = newGroupName.trim();
+    const startId = newGroupStartId.trim();
+    if (!group || !startId) return;
+    setCreating(true);
+    try {
+      await createStreamGroup({
+        connectionId,
+        key: keyName,
+        group,
+        startId,
+        mkstream,
+      });
+      toast.success(`Created group ${group}`);
+      setNewGroupName("");
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDestroy = async (group: string) => {
+    if (
+      !window.confirm(`Destroy consumer group ${group}? This is permanent.`)
+    ) {
+      return;
+    }
+    try {
+      await destroyStreamGroup({ connectionId, key: keyName, group });
+      toast.success(`Destroyed group ${group}`);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <div className="rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2 text-[0.65rem]">
       <div className="flex items-center gap-2">
         <span className="font-semibold text-foreground">Consumer groups</span>
         {loading ? <span className="text-text-muted">loading…</span> : null}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <Input
+          value={newGroupName}
+          onChange={(event) => setNewGroupName(event.target.value)}
+          placeholder="group name"
+          className="h-6 max-w-[10rem] font-mono text-xs"
+          aria-label="New group name"
+        />
+        <Input
+          value={newGroupStartId}
+          onChange={(event) => setNewGroupStartId(event.target.value)}
+          placeholder="$"
+          className="h-6 max-w-[6rem] font-mono text-xs"
+          aria-label="New group start ID"
+          title="$ = new entries only · 0 = replay all · or a specific ms-seq ID"
+        />
+        <label className="flex items-center gap-1 text-text-muted">
+          <input
+            type="checkbox"
+            checked={mkstream}
+            onChange={(event) => setMkstream(event.target.checked)}
+          />
+          MKSTREAM
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[0.65rem]"
+          disabled={creating || !newGroupName.trim() || !newGroupStartId.trim()}
+          onClick={() => {
+            void handleCreate();
+          }}
+        >
+          {creating ? "Creating…" : "Create group"}
+        </Button>
       </div>
       {error ? (
         <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive">
@@ -496,6 +587,7 @@ function ConsumerGroupsPanel({
                 <th className="px-2 py-1 text-right">Consumers</th>
                 <th className="px-2 py-1 text-right">Pending</th>
                 <th className="px-2 py-1 text-left">Last delivered</th>
+                <th className="w-16 px-2 py-1"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
@@ -505,6 +597,17 @@ function ConsumerGroupsPanel({
                   <td className="px-2 py-1 text-right">{group.consumers}</td>
                   <td className="px-2 py-1 text-right">{group.pending}</td>
                   <td className="px-2 py-1">{group.lastDeliveredId}</td>
+                  <td className="px-2 py-1 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleDestroy(group.name);
+                      }}
+                      className="text-destructive hover:underline"
+                    >
+                      destroy
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

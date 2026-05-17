@@ -14,6 +14,7 @@
  */
 
 import {
+  IconAlertTriangle,
   IconBraces,
   IconDatabaseStar,
   IconHash,
@@ -21,6 +22,7 @@ import {
   IconList,
   IconSearch,
   IconWaveSine,
+  IconX,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -28,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { type ScannedKey, scanKeys } from "@/lib/redis/api";
 import type { Connection } from "@/lib/store";
+import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface KeyspaceBrowserProps {
@@ -58,6 +61,16 @@ export function KeyspaceBrowser({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestSeq = useRef(0);
+  // Replica-warning dismiss is session-local — a future migration can
+  // persist `dismissed_replica_warning_at` on the connection record.
+  const [replicaWarningDismissed, setReplicaWarningDismissed] = useState(false);
+  const capabilities = useAppStore(
+    (state) => state.redisCapabilitiesByConnection[connection.id],
+  );
+  const showReplicaWarning =
+    !replicaWarningDismissed &&
+    capabilities?.role === "master" &&
+    (capabilities.connectedSlaves ?? 0) > 0;
 
   const pattern = useMemo(() => {
     const trimmed = search.trim();
@@ -104,6 +117,29 @@ export function KeyspaceBrowser({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2 text-xs">
+      {showReplicaWarning ? (
+        <output className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[0.65rem] text-warning">
+          <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <div className="flex-1">
+            This is a primary with{" "}
+            <span className="font-semibold">
+              {capabilities?.connectedSlaves}
+            </span>{" "}
+            replica{capabilities?.connectedSlaves === 1 ? "" : "s"} attached —
+            writes propagate. Be especially careful with destructive commands
+            like <code className="font-mono">FLUSHDB</code> /{" "}
+            <code className="font-mono">FLUSHALL</code>.
+          </div>
+          <button
+            type="button"
+            onClick={() => setReplicaWarningDismissed(true)}
+            aria-label="Dismiss replica warning"
+            className="text-warning/70 hover:text-warning"
+          >
+            <IconX className="size-3" />
+          </button>
+        </output>
+      ) : null}
       <div className="relative">
         <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
         <Input

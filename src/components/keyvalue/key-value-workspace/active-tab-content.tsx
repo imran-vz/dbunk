@@ -39,7 +39,7 @@ export function ActiveTabContent({
   }
 
   if (activeTab?.kind === "cli") {
-    return <CliTab connectionId={activeConnection.id} />;
+    return <CliTab connectionId={activeConnection.id} tabId={activeTab.id} />;
   }
 
   if (activeTab?.kind === "server") {

@@ -441,6 +441,30 @@ pub async fn fetch_config(
     Ok(ConfigPayload { entries })
 }
 
+/// `CONFIG SET key value`. Destructive — every caller (CLI included)
+/// must surface a typed confirmation modal before invoking. The
+/// `read_only`-toggle / replica-role guards do not apply because
+/// CONFIG isn't a key-space write; this is intentional, mirroring
+/// redis-cli's permissive behaviour.
+pub async fn set_config(
+    connection: &RedisStoredConnection,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if key.trim().is_empty() {
+        return Err("CONFIG key is required".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let _: redis::Value = redis::cmd("CONFIG")
+        .arg("SET")
+        .arg(key)
+        .arg(value)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LatencyEntry {

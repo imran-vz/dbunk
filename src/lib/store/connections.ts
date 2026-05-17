@@ -453,6 +453,9 @@ export const createConnectionsSlice: StateCreator<
           ? { ...state.schemaExplorer, [connectionId]: schema }
           : state.schemaExplorer,
       }));
+      if (result.redisCapabilities) {
+        get().setRedisCapabilities(connectionId, result.redisCapabilities);
+      }
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to connect", error);

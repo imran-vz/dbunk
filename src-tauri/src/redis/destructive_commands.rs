@@ -1,14 +1,16 @@
-//! Destructive-command list — generated from
-//! `destructive-commands.toml` by `pnpm run generate:redis-commands`.
+//! Destructive-command list — the two constants below come from
+//! `destructive-commands.toml` (the single source of truth, shared
+//! with the TS mirror at `src/lib/redis/destructive-commands.ts`).
 //!
-//! DO NOT EDIT BY HAND. The companion TS module
-//! (`src/lib/redis/destructive-commands.ts`) is generated from the
-//! same source.
+//! Edit the TOML, then run `pnpm run generate:redis-commands` to
+//! regenerate the block between the `<generated:destructive-commands>`
+//! sentinels in this file and the TS mirror file. CI re-runs the
+//! generator in --check mode to enforce parity.
 //!
 //! Backend enforcement of the list happens in `redis/cli.rs` (Phase
-//! 1.3) — until then this list exists so the codegen pipeline is wired
-//! end-to-end and the frontend can read its TS mirror.
+//! 1.3+).
 
+// <generated:destructive-commands>
 /// Commands that require typed-confirmation before execution. The
 /// frontend renders a modal that asks the user to type the command's
 /// canonical name to confirm.
@@ -27,6 +29,7 @@ pub const DESTRUCTIVE_HARD: &[&str] = &[
 /// Commands that are fine in moderation but can be a performance
 /// footgun. The frontend renders a softer warning before sending.
 pub const DESTRUCTIVE_SOFT: &[&str] = &["KEYS"];
+// </generated:destructive-commands>
 
 /// Membership check used by `cli.rs` and `key_inspector.rs` (Phase 1.3+).
 /// Compares the first whitespace-delimited token of the command, plus

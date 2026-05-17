@@ -356,6 +356,85 @@ export const REDIS_COMMANDS: ReadonlyArray<CommandSpec> = [
  * also match two-token names like `XINFO GROUPS`. Sorted by exact-
  * prefix first, then by name length to push the shortest hit up.
  */
+/**
+ * Look up the canonical `CommandSpec` for a token list (e.g.
+ * `["PUBSUB", "CHANNELS"]`). Tries the two-token name first so
+ * `PUBSUB CHANNELS` wins over a hypothetical bare `PUBSUB`, then
+ * falls back to the single-token name. Match is case-insensitive.
+ *
+ * Returns `null` when nothing in the catalog matches — callers should
+ * let unknown commands through to the server unchallenged (the
+ * catalog is intentionally incomplete; the server is authoritative).
+ */
+export function findCommand(tokens: string[]): CommandSpec | null {
+  if (tokens.length === 0) return null;
+  const upper = tokens.map((token) => token.toUpperCase());
+  if (upper.length >= 2) {
+    const twoWord = `${upper[0]} ${upper[1]}`;
+    const match = REDIS_COMMANDS.find((spec) => spec.name === twoWord);
+    if (match) return match;
+  }
+  return REDIS_COMMANDS.find((spec) => spec.name === upper[0]) ?? null;
+}
+
+/**
+ * Count "required" tokens in a `CommandSpec.args` hint by ignoring
+ * anything inside `[...]` brackets. Whitespace separates tokens.
+ *
+ * Examples:
+ *   "key"                                    → 1
+ *   "key value"                              → 2
+ *   "key value [EX seconds | …]"             → 2 (EX/seconds bracketed)
+ *   "channel [channel …]"                    → 1 (tail is variadic)
+ *   "[message]"                              → 0
+ */
+export function requiredArgCount(spec: CommandSpec): number {
+  let depth = 0;
+  let count = 0;
+  let inToken = false;
+  for (const ch of spec.args) {
+    if (ch === "[") {
+      depth++;
+      inToken = false;
+      continue;
+    }
+    if (ch === "]") {
+      depth = Math.max(0, depth - 1);
+      inToken = false;
+      continue;
+    }
+    if (depth > 0) continue;
+    if (/\s/.test(ch)) {
+      inToken = false;
+      continue;
+    }
+    if (!inToken) {
+      count++;
+      inToken = true;
+    }
+  }
+  return count;
+}
+
+/**
+ * Pre-flight arity check. Tokens include the command name (and its
+ * subcommand for two-word names). Returns a human-readable error
+ * string when arity is short; `null` when the command can be sent —
+ * either because arity is sufficient or because the command isn't in
+ * the catalog (server-authoritative path).
+ */
+export function validateArgs(tokens: string[]): string | null {
+  const spec = findCommand(tokens);
+  if (!spec) return null;
+  const specNameTokens = spec.name.split(" ").length;
+  const supplied = tokens.length - specNameTokens;
+  const required = requiredArgCount(spec);
+  if (supplied < required) {
+    return `${spec.name} expects ${required} argument${required === 1 ? "" : "s"} (${spec.args}); got ${supplied}.`;
+  }
+  return null;
+}
+
 export function suggestCommands(input: string): CommandSpec[] {
   const trimmed = input.trim().toUpperCase();
   if (trimmed === "") return [];

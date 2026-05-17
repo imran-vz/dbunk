@@ -389,9 +389,9 @@ with no Tier promise. Each item has enough context to pick up cold.
 
 ### Reality-vs-plan deltas from Tier 1 implementation (added 2026-05-12)
 
-#### Persist CLI history across app restart
-- **Where**: `src/components/keyvalue/CliTab.tsx` + new `redis_command_history` SQLite table.
-- **Hook**: Tier 1 keeps CLI history in component state only — closing the tab drops it. Add the table from the original plan plus read/write helpers and a 1000-entry cap.
+#### Persist CLI history across app restart ✅
+- **Where**: `src/components/keyvalue/CliTab.tsx` + `redis_cli_history` SQLite table (migration 6) + `load_redis_cli_history` / `append_redis_cli_history` Tauri commands.
+- **Done**: SQLite-backed history with a global 1000-entry cap trimmed on every insert. `CliTab` hydrates a `recallHistory` array on mount (per connection) and prepends each submission, so arrow-up recall survives tab close. Scrollback (commands + their results) is still session-scoped — old commands don't backfill the pane without their original output.
 
 #### Generate destructive-command lists from TOML at build time
 - **Where**: `src-tauri/src/redis/destructive-commands.toml` (source) → `destructive_commands.rs` + `src/lib/redis/destructive-commands.ts`.

@@ -1,13 +1,22 @@
 /**
  * Owns the Pub/Sub session lifecycle for a single workspace tab:
  * starting/restarting the server-side subscription as patterns
- * change, polling the drain endpoint, capping the in-memory buffer,
- * and exposing pause/resume + clear.
+ * change, listening for push-delivered messages via Tauri's event
+ * channel, capping the in-memory buffer, and exposing pause/resume +
+ * clear.
+ *
+ * Push model (replaces the older 750ms polling drain): the backend
+ * emits each Pub/Sub message as a `pubsub-message` event tagged with
+ * the session ID; this hook filters by session ID. Right after
+ * starting a session we still issue one `drain` to catch up on
+ * anything the backend buffered between worker-spawn and our
+ * listener attaching.
  *
  * Extracted from `PubsubTab` so the component stays a thin
  * presentational shell below fallow's cognitive-complexity threshold.
  */
 
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -16,8 +25,9 @@ import {
   drainPubsub,
   startPubsubSession,
 } from "@/lib/redis/api";
+import { isTauri } from "@/lib/tauri";
 
-import { DRAIN_INTERVAL_MS, MAX_BUFFER } from "./constants";
+import { MAX_BUFFER } from "./constants";
 
 export interface PubsubChannelCount {
   channel: string;
@@ -36,6 +46,11 @@ export interface PubsubSubscriptionState {
   clear: () => void;
 }
 
+type PubsubEventPayload = {
+  sessionId: string;
+  message: DrainedMessage;
+};
+
 function appendBounded(
   prev: DrainedMessage[],
   incoming: DrainedMessage[],
@@ -48,6 +63,16 @@ function appendBounded(
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function recountChannels(messages: DrainedMessage[]): PubsubChannelCount[] {
+  const counts = new Map<string, number>();
+  for (const message of messages) {
+    counts.set(message.channel, (counts.get(message.channel) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([channel, count]) => ({ channel, count }))
+    .sort((a, b) => b.count - a.count);
 }
 
 export function usePubsubSubscription(
@@ -72,6 +97,23 @@ export function usePubsubSubscription(
         await startPubsubSession({ connectionId, sessionId, patterns });
         sessionStartedRef.current = true;
         setPaused(false);
+        // Catch-up drain: backend buffers between worker-spawn and
+        // listener-attach so messages emitted in that ~ms gap are
+        // recoverable. Once drained, the listener takes over.
+        try {
+          const result = await drainPubsub({ sessionId });
+          if (result.messages.length > 0) {
+            setMessages((prev) => {
+              const next = appendBounded(prev, result.messages);
+              setChannelCounts(recountChannels(next));
+              return next;
+            });
+          }
+        } catch (err) {
+          // Catch-up drain failures are non-fatal — the listener
+          // alone is enough for the live stream.
+          console.warn("pubsub catch-up drain failed", err);
+        }
       } catch (err) {
         setError(describeError(err));
       }
@@ -89,24 +131,37 @@ export function usePubsubSubscription(
     };
   }, [sessionId]);
 
+  // Single push-message listener — filters by sessionId so multiple
+  // pub/sub tabs can coexist on the same Tauri event channel.
   useEffect(() => {
-    if (paused || activePatterns.length === 0) return;
-    const tick = async () => {
-      try {
-        const result = await drainPubsub({ sessionId });
-        if (result.messages.length > 0) {
-          setMessages((prev) => appendBounded(prev, result.messages));
+    if (!isTauri()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    listen<PubsubEventPayload>("pubsub-message", (event) => {
+      if (cancelled) return;
+      if (event.payload.sessionId !== sessionId) return;
+      if (paused) return;
+      setMessages((prev) => {
+        const next = appendBounded(prev, [event.payload.message]);
+        setChannelCounts(recountChannels(next));
+        return next;
+      });
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
         }
-        setChannelCounts(result.channels);
-      } catch (err) {
-        setError(describeError(err));
-      }
-    };
-    const interval = window.setInterval(tick, DRAIN_INTERVAL_MS);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(describeError(err));
+      });
     return () => {
-      window.clearInterval(interval);
+      cancelled = true;
+      if (unlisten) unlisten();
     };
-  }, [paused, sessionId, activePatterns.length]);
+  }, [sessionId, paused]);
 
   const addPattern = useCallback(
     async (pattern: string) => {

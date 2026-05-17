@@ -12,16 +12,28 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  appendRedisCliHistory,
+  closeRedisCliSession,
   formatValueOneLine,
+  loadRedisCliHistory,
   type RunCommandResult,
   runRedisCommand,
   type SerializedValue,
 } from "@/lib/redis/api";
-import { type CommandSpec, suggestCommands } from "@/lib/redis/cli-catalog";
+import {
+  type CommandSpec,
+  findCommand,
+  suggestCommands,
+  validateArgs,
+} from "@/lib/redis/cli-catalog";
 import { cn } from "@/lib/utils";
 
 interface CliTabProps {
   connectionId: string;
+  /** Stable workspace-tab ID. Used as the backend session ID so
+   *  `MULTI ... EXEC` routes through one physical connection across
+   *  multiple `run_command` calls. */
+  tabId: string;
 }
 
 type HistoryEntry =
@@ -34,9 +46,15 @@ type HistoryEntry =
   | { kind: "rejected"; reason: string }
   | { kind: "needs-confirmation"; command: string; severity: "hard" | "soft" };
 
-export function CliTab({ connectionId }: CliTabProps) {
+export function CliTab({ connectionId, tabId }: CliTabProps) {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // Newest-first list of submitted command text, hydrated from SQLite
+  // on mount and prepended to on each submit. Kept separate from
+  // `history` (the visible scrollback) so the cross-session arrow-up
+  // recall doesn't backfill the pane with old commands that have no
+  // results attached.
+  const [recallHistory, setRecallHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingConfirm, setPendingConfirm] = useState<{
     tokens: string[];
@@ -50,25 +68,72 @@ export function CliTab({ connectionId }: CliTabProps) {
   const suggestions: CommandSpec[] = suggestionsOpen
     ? suggestCommands(input)
     : [];
+  // Doc-strip: once the user has typed a recognised command we surface
+  // its signature + description right above the input so they don't
+  // have to commit to a suggestion or hit a separate help key. Distinct
+  // from `suggestions` (the dropdown) — the strip persists after
+  // accepting a suggestion as long as the typed prefix still matches.
+  const docSpec: CommandSpec | null = (() => {
+    const trimmed = input.trim();
+    if (trimmed === "") return null;
+    return findCommand(trimmed.split(/\s+/));
+  })();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, []);
 
-  const submittedCommands = history
-    .filter((entry) => entry.kind === "command")
-    .map((entry) => (entry as { text: string }).text);
+  useEffect(() => {
+    return () => {
+      void closeRedisCliSession({ sessionId: tabId }).catch(() => {
+        // Best-effort cleanup — the backend will GC orphan sessions
+        // when the connection is dropped.
+      });
+    };
+  }, [tabId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadRedisCliHistory(connectionId)
+      .then((entries) => {
+        if (cancelled) return;
+        setRecallHistory(entries.map((entry) => entry.command));
+      })
+      .catch((err) => {
+        // Non-fatal — arrow-up recall just won't include persisted
+        // entries this session. Log so dev devs see it.
+        console.warn("loadRedisCliHistory failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId]);
 
   const runTokens = async (tokens: string[], confirmed: boolean) => {
-    setHistory((prev) => [
-      ...prev,
-      { kind: "command", text: tokens.join(" ") },
-    ]);
+    const commandText = tokens.join(" ");
+    setHistory((prev) => [...prev, { kind: "command", text: commandText }]);
+    setRecallHistory((prev) => [commandText, ...prev]);
+    const arityError = validateArgs(tokens);
+    if (arityError) {
+      setHistory((prev) => [...prev, { kind: "rejected", reason: arityError }]);
+      return;
+    }
+    void appendRedisCliHistory({
+      id:
+        globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      connectionId,
+      command: commandText,
+      submittedAt: new Date().toISOString(),
+    }).catch((err) => {
+      console.warn("appendRedisCliHistory failed", err);
+    });
     try {
       const result = await runRedisCommand({
         connectionId,
         tokens,
         confirmed,
+        sessionId: tabId,
       });
       handleResult(result, tokens);
     } catch (err) {
@@ -123,17 +188,14 @@ export function CliTab({ connectionId }: CliTabProps) {
   };
 
   const navHistory = (direction: 1 | -1) => {
-    if (submittedCommands.length === 0) return;
+    if (recallHistory.length === 0) return;
+    // `recallHistory` is newest-first; index 0 = most recent.
     const nextIdx = Math.max(
       -1,
-      Math.min(submittedCommands.length - 1, historyIndex + direction),
+      Math.min(recallHistory.length - 1, historyIndex + direction),
     );
     setHistoryIndex(nextIdx);
-    setInput(
-      nextIdx < 0
-        ? ""
-        : (submittedCommands[submittedCommands.length - 1 - nextIdx] ?? ""),
-    );
+    setInput(nextIdx < 0 ? "" : (recallHistory[nextIdx] ?? ""));
   };
 
   return (
@@ -174,6 +236,17 @@ export function CliTab({ connectionId }: CliTabProps) {
         ))}
       </div>
       <div className="relative shrink-0 border-t border-border-subtle bg-surface-panel/60">
+        {docSpec ? (
+          <div className="flex items-baseline gap-2 border-b border-border-subtle bg-surface-window/40 px-3 py-1 font-mono text-[0.65rem]">
+            <span className="font-semibold text-foreground">
+              {docSpec.name}
+            </span>
+            <span className="text-text-muted">{docSpec.args}</span>
+            <span className="ml-auto truncate text-text-muted">
+              {docSpec.description}
+            </span>
+          </div>
+        ) : null}
         {suggestionsOpen && suggestions.length > 0 ? (
           <div className="absolute bottom-full left-0 right-0 z-10 max-h-64 overflow-auto border-t border-border-subtle bg-surface-window shadow-lg">
             {suggestions.map((spec, idx) => (

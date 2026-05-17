@@ -136,6 +136,7 @@ mod tests {
             db_number: 0,
             use_tls: false,
             verify_tls_cert: true,
+            read_only: false,
         }
     }
 
