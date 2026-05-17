@@ -96,6 +96,27 @@ export function bulkDeleteByPattern(payload: {
   );
 }
 
+export type BulkExpireByPatternResult = {
+  scanned: number;
+  matched: number;
+  expired: number;
+  sample: string[];
+  truncated: boolean;
+};
+
+export function bulkExpireByPattern(payload: {
+  connectionId: string;
+  pattern: string;
+  ttlSeconds: number;
+  dryRun: boolean;
+  maxKeys?: number;
+}): Promise<BulkExpireByPatternResult> {
+  return tauriInvoke<BulkExpireByPatternResult>(
+    "redis_bulk_expire_by_pattern",
+    { payload },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Key metadata
 // ---------------------------------------------------------------------------
