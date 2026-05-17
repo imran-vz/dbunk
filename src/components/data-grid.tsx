@@ -50,6 +50,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { downloadBlob, downloadFile } from "@/lib/download";
 import {
   type ExportCompression,
@@ -145,20 +150,26 @@ function ColumnHeaderLabel({
   meta: ColumnHeaderMeta | undefined;
 }) {
   if (!meta) return <span>{name}</span>;
-  const tooltipParts: string[] = [];
-  if (meta.dataType) tooltipParts.push(meta.dataType);
-  if (meta.isPrimaryKey) tooltipParts.push("primary key");
-  if (meta.isForeignKey) tooltipParts.push("foreign key");
-  if (meta.isUnique) tooltipParts.push("unique");
-  else if (meta.isIndexed) tooltipParts.push("indexed");
-  if (meta.notNull) tooltipParts.push("NOT NULL");
-  if (meta.hasDefault) tooltipParts.push("has default");
-  if (meta.derivationKind) tooltipParts.push(meta.derivationKind.toLowerCase());
-  if (meta.description) tooltipParts.push(meta.description);
-  const tooltip =
-    tooltipParts.length > 0 ? tooltipParts.join(" · ") : undefined;
-  return (
-    <span className="flex items-center gap-1" title={tooltip}>
+  const lines: Array<{ key: string; value: string }> = [];
+  if (meta.dataType) lines.push({ key: "type", value: meta.dataType });
+  if (meta.isPrimaryKey) lines.push({ key: "pk", value: "Primary key" });
+  if (meta.isForeignKey)
+    lines.push({
+      key: "fk",
+      value: meta.description ?? "Foreign key",
+    });
+  if (meta.isUnique) lines.push({ key: "unique", value: "Unique index" });
+  else if (meta.isIndexed) lines.push({ key: "indexed", value: "Indexed" });
+  if (meta.notNull) lines.push({ key: "notnull", value: "NOT NULL" });
+  if (meta.hasDefault) lines.push({ key: "default", value: "Has default" });
+  if (meta.derivationKind)
+    lines.push({
+      key: "derived",
+      value: `Derived (${meta.derivationKind})`,
+    });
+
+  const trigger = (
+    <span className="flex items-center gap-1">
       {meta.isPrimaryKey ? (
         <IconKey
           className="size-3 shrink-0 text-warning"
@@ -196,6 +207,34 @@ function ColumnHeaderLabel({
       ) : null}
       <span className="truncate">{name}</span>
     </span>
+  );
+
+  if (lines.length === 0) return trigger;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={(props) => (
+          <button
+            type="button"
+            {...props}
+            className="cursor-help bg-transparent p-0 text-left outline-none"
+          >
+            {trigger}
+          </button>
+        )}
+      />
+      <TooltipContent>
+        <div className="font-semibold text-foreground">{name}</div>
+        <ul className="mt-0.5 space-y-0.5">
+          {lines.map((line) => (
+            <li key={line.key} className="text-text-secondary">
+              {line.value}
+            </li>
+          ))}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
