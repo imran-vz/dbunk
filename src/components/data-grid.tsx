@@ -1,6 +1,7 @@
 import {
   IconArrowsMaximize,
   IconArrowsSort,
+  IconCircleDot,
   IconColumns,
   IconDeviceFloppy,
   IconDownload,
@@ -142,6 +143,77 @@ interface EditableCellProps {
  * not-null, then default, then derivation. Absent flags simply
  * skip their slot.
  */
+type MetaRow = {
+  key: string;
+  Icon: typeof IconKey;
+  iconClass: string;
+  label: string;
+  /** Optional inline text rendered after the label in muted color. */
+  detail?: string;
+};
+
+function buildMetaRows(meta: ColumnHeaderMeta): MetaRow[] {
+  const rows: MetaRow[] = [];
+  if (meta.isPrimaryKey) {
+    rows.push({
+      key: "pk",
+      Icon: IconKey,
+      iconClass: "text-warning",
+      label: "Primary key",
+    });
+  }
+  if (meta.isForeignKey) {
+    rows.push({
+      key: "fk",
+      Icon: IconLink,
+      iconClass: "text-primary",
+      label: "Foreign key",
+      detail: meta.description,
+    });
+  }
+  if (meta.isUnique) {
+    rows.push({
+      key: "unique",
+      Icon: IconStar,
+      iconClass: "text-accent-green",
+      label: "Unique index",
+    });
+  } else if (meta.isIndexed) {
+    rows.push({
+      key: "indexed",
+      Icon: IconTerminal2,
+      iconClass: "text-text-muted",
+      label: "Indexed",
+    });
+  }
+  if (meta.notNull) {
+    rows.push({
+      key: "notnull",
+      Icon: IconExclamationCircle,
+      iconClass: "text-rose-400",
+      label: "NOT NULL",
+    });
+  }
+  if (meta.hasDefault) {
+    rows.push({
+      key: "default",
+      Icon: IconCircleDot,
+      iconClass: "text-amber-400",
+      label: "Has default",
+    });
+  }
+  if (meta.derivationKind) {
+    rows.push({
+      key: "derived",
+      Icon: IconMath,
+      iconClass: "text-indigo-400",
+      label: "Derived",
+      detail: meta.derivationKind,
+    });
+  }
+  return rows;
+}
+
 function ColumnHeaderLabel({
   name,
   meta,
@@ -150,26 +222,10 @@ function ColumnHeaderLabel({
   meta: ColumnHeaderMeta | undefined;
 }) {
   if (!meta) return <span>{name}</span>;
-  const lines: Array<{ key: string; value: string }> = [];
-  if (meta.dataType) lines.push({ key: "type", value: meta.dataType });
-  if (meta.isPrimaryKey) lines.push({ key: "pk", value: "Primary key" });
-  if (meta.isForeignKey)
-    lines.push({
-      key: "fk",
-      value: meta.description ?? "Foreign key",
-    });
-  if (meta.isUnique) lines.push({ key: "unique", value: "Unique index" });
-  else if (meta.isIndexed) lines.push({ key: "indexed", value: "Indexed" });
-  if (meta.notNull) lines.push({ key: "notnull", value: "NOT NULL" });
-  if (meta.hasDefault) lines.push({ key: "default", value: "Has default" });
-  if (meta.derivationKind)
-    lines.push({
-      key: "derived",
-      value: `Derived (${meta.derivationKind})`,
-    });
+  const rows = buildMetaRows(meta);
 
-  const trigger = (
-    <span className="flex items-center gap-1">
+  const headerIcons = (
+    <>
       {meta.isPrimaryKey ? (
         <IconKey
           className="size-3 shrink-0 text-warning"
@@ -205,11 +261,17 @@ function ColumnHeaderLabel({
           aria-label={`${meta.derivationKind.toLowerCase()} column`}
         />
       ) : null}
+    </>
+  );
+
+  const trigger = (
+    <span className="flex items-center gap-1">
+      {headerIcons}
       <span className="truncate">{name}</span>
     </span>
   );
 
-  if (lines.length === 0) return trigger;
+  if (rows.length === 0 && !meta.dataType) return trigger;
 
   return (
     <Tooltip>
@@ -224,15 +286,38 @@ function ColumnHeaderLabel({
           </button>
         )}
       />
-      <TooltipContent>
-        <div className="font-semibold text-foreground">{name}</div>
-        <ul className="mt-0.5 space-y-0.5">
-          {lines.map((line) => (
-            <li key={line.key} className="text-text-secondary">
-              {line.value}
-            </li>
-          ))}
-        </ul>
+      <TooltipContent className="w-64 p-0">
+        <div className="flex items-baseline gap-2 border-b border-border-subtle/60 px-3 py-2">
+          <span className="truncate font-mono text-[0.75rem] font-semibold text-foreground">
+            {name}
+          </span>
+          {meta.dataType ? (
+            <span className="ml-auto shrink-0 rounded-sm bg-primary/15 px-1.5 py-0.5 font-mono text-[0.6rem] text-primary">
+              {meta.dataType}
+            </span>
+          ) : null}
+        </div>
+        {rows.length > 0 ? (
+          <ul className="space-y-1 px-3 py-2">
+            {rows.map(({ key, Icon, iconClass, label, detail }) => (
+              <li
+                key={key}
+                className="flex items-baseline gap-2 text-[0.65rem]"
+              >
+                <Icon
+                  className={cn("size-3 shrink-0 self-center", iconClass)}
+                  aria-hidden
+                />
+                <span className="text-foreground">{label}</span>
+                {detail ? (
+                  <span className="truncate font-mono text-text-muted">
+                    {detail}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </TooltipContent>
     </Tooltip>
   );
