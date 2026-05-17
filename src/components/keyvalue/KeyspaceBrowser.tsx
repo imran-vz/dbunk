@@ -18,6 +18,7 @@ import {
   IconBraces,
   IconDatabaseStar,
   IconHash,
+  IconKey,
   IconLayoutList,
   IconList,
   IconSearch,
@@ -80,10 +81,15 @@ export function KeyspaceBrowser({
   const capabilities = useAppStore(
     (state) => state.redisCapabilitiesByConnection[connection.id],
   );
+  const aclSelf = useAppStore(
+    (state) => state.redisAclSelfByConnection[connection.id],
+  );
   const showReplicaWarning =
     !replicaWarningDismissed &&
     capabilities?.role === "master" &&
     (capabilities.connectedSlaves ?? 0) > 0;
+  const showAclHint =
+    aclSelf !== undefined && !aclSelf.allKeys && aclSelf.keyPatterns.length > 0;
 
   const pattern = useMemo(() => {
     const trimmed = search.trim();
@@ -205,6 +211,26 @@ export function KeyspaceBrowser({
           >
             <IconX className="size-3" />
           </button>
+        </output>
+      ) : null}
+      {showAclHint ? (
+        <output className="flex items-start gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated/60 px-2 py-1.5 text-[0.65rem] text-text-secondary">
+          <IconKey className="mt-0.5 size-3.5 shrink-0 text-text-muted" />
+          <div className="flex-1">
+            Connected as{" "}
+            <span className="font-mono text-foreground">{aclSelf.username}</span>
+            . Visible keys are restricted to:
+            <div className="mt-1 flex flex-wrap gap-1 font-mono">
+              {aclSelf.keyPatterns.map((pattern) => (
+                <span
+                  key={pattern}
+                  className="rounded bg-surface-panel px-1.5 py-0.5 text-[0.6rem] text-foreground"
+                >
+                  {pattern}
+                </span>
+              ))}
+            </div>
+          </div>
         </output>
       ) : null}
       <div className="relative">

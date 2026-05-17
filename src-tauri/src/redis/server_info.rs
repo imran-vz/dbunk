@@ -408,6 +408,182 @@ pub async fn fetch_acl_list(connection: &RedisStoredConnection) -> Result<AclLis
     Ok(AclListPayload { entries })
 }
 
+/// The current user's ACL surface — drives the "this connection can't
+/// access keys outside <patterns>" hint in the keyspace browser.
+///
+/// `allKeys = true` means the user has no key restrictions (the ACL
+/// `allkeys` flag, or no `~*` patterns at all). Otherwise
+/// `keyPatterns` lists the glob patterns the user is allowed to
+/// touch.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclSelfPayload {
+    pub username: String,
+    pub all_keys: bool,
+    pub key_patterns: Vec<String>,
+}
+
+pub async fn fetch_acl_self(connection: &RedisStoredConnection) -> Result<AclSelfPayload, String> {
+    let mut conn = connection::manager_for(connection).await?;
+    let username: String = match redis::cmd("ACL").arg("WHOAMI").query_async(&mut conn).await {
+        Ok(name) => name,
+        Err(err) => {
+            // Pre-6.0 servers don't support ACL WHOAMI. Degrade
+            // gracefully — assume default user with no restrictions.
+            log::debug!("ACL WHOAMI unsupported: {}", err);
+            return Ok(AclSelfPayload {
+                username: "default".into(),
+                all_keys: true,
+                key_patterns: Vec::new(),
+            });
+        }
+    };
+    let raw: Vec<redis::Value> = match redis::cmd("ACL")
+        .arg("GETUSER")
+        .arg(&username)
+        .query_async(&mut conn)
+        .await
+    {
+        Ok(value) => value,
+        Err(err) => {
+            log::debug!("ACL GETUSER unsupported: {}", err);
+            return Ok(AclSelfPayload {
+                username,
+                all_keys: true,
+                key_patterns: Vec::new(),
+            });
+        }
+    };
+    let (all_keys, key_patterns) = parse_acl_keys(&raw);
+    Ok(AclSelfPayload {
+        username,
+        all_keys,
+        key_patterns,
+    })
+}
+
+/// Pull the `keys` field out of an `ACL GETUSER` reply. The reply is
+/// an alternating `[field-name, field-value]` array; we scan for the
+/// `keys` field whose value is either `*` (allkeys) or an array of
+/// glob patterns.
+fn parse_acl_keys(raw: &[redis::Value]) -> (bool, Vec<String>) {
+    let mut iter = raw.iter();
+    while let (Some(field), Some(value)) = (iter.next(), iter.next()) {
+        let field_name = match field {
+            redis::Value::BulkString(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+            redis::Value::SimpleString(s) => s.clone(),
+            _ => continue,
+        };
+        if field_name != "keys" {
+            continue;
+        }
+        match value {
+            // Redis 7+ returns an array of patterns.
+            redis::Value::Array(items) => {
+                let patterns: Vec<String> = items
+                    .iter()
+                    .filter_map(|item| match item {
+                        redis::Value::BulkString(bytes) => {
+                            Some(String::from_utf8_lossy(bytes).into_owned())
+                        }
+                        redis::Value::SimpleString(s) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if patterns.iter().any(|p| p == "*" || p == "~*") {
+                    return (true, Vec::new());
+                }
+                return (false, patterns);
+            }
+            // Redis 6.x returns a space-separated string ("*" or "~user:*").
+            redis::Value::BulkString(bytes) => {
+                let text = String::from_utf8_lossy(bytes).into_owned();
+                return parse_acl_keys_string(&text);
+            }
+            redis::Value::SimpleString(text) => {
+                return parse_acl_keys_string(text);
+            }
+            _ => return (true, Vec::new()),
+        }
+    }
+    // `keys` field absent — treat as unrestricted.
+    (true, Vec::new())
+}
+
+fn parse_acl_keys_string(text: &str) -> (bool, Vec<String>) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed == "*" {
+        return (true, Vec::new());
+    }
+    let patterns: Vec<String> = trimmed.split_whitespace().map(str::to_string).collect();
+    if patterns.iter().any(|p| p == "*" || p == "~*") {
+        return (true, Vec::new());
+    }
+    (false, patterns)
+}
+
+#[cfg(test)]
+mod acl_tests {
+    use super::*;
+
+    #[test]
+    fn parses_redis7_array_keys() {
+        let raw = vec![
+            redis::Value::BulkString(b"keys".to_vec()),
+            redis::Value::Array(vec![
+                redis::Value::BulkString(b"~user:*".to_vec()),
+                redis::Value::BulkString(b"~session:*".to_vec()),
+            ]),
+        ];
+        let (all_keys, patterns) = parse_acl_keys(&raw);
+        assert!(!all_keys);
+        assert_eq!(patterns, vec!["~user:*", "~session:*"]);
+    }
+
+    #[test]
+    fn detects_allkeys_via_star() {
+        let raw = vec![
+            redis::Value::BulkString(b"keys".to_vec()),
+            redis::Value::Array(vec![redis::Value::BulkString(b"*".to_vec())]),
+        ];
+        let (all_keys, patterns) = parse_acl_keys(&raw);
+        assert!(all_keys);
+        assert!(patterns.is_empty());
+    }
+
+    #[test]
+    fn parses_redis6_string_keys() {
+        let raw = vec![
+            redis::Value::BulkString(b"keys".to_vec()),
+            redis::Value::BulkString(b"~user:* ~session:*".to_vec()),
+        ];
+        let (all_keys, patterns) = parse_acl_keys(&raw);
+        assert!(!all_keys);
+        assert_eq!(patterns, vec!["~user:*", "~session:*"]);
+    }
+
+    #[test]
+    fn empty_keys_field_means_unrestricted() {
+        let raw = vec![
+            redis::Value::BulkString(b"keys".to_vec()),
+            redis::Value::BulkString(b"".to_vec()),
+        ];
+        let (all_keys, _) = parse_acl_keys(&raw);
+        assert!(all_keys);
+    }
+
+    #[test]
+    fn missing_keys_field_means_unrestricted() {
+        let raw = vec![
+            redis::Value::BulkString(b"flags".to_vec()),
+            redis::Value::Array(vec![]),
+        ];
+        let (all_keys, patterns) = parse_acl_keys(&raw);
+        assert!(all_keys);
+        assert!(patterns.is_empty());
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigEntry {

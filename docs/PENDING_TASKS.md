@@ -55,8 +55,8 @@ before code lands.
   (visual `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR
   capture, Keyspace Notifications opt-in, Multi-key compare /
   watched-keys.
-- **Operational affordances** — per-key ACL gating hints, static-map
-  rendering for Geo keys, bit-grid editor for bitmap strings.
+- **Operational affordances** — static-map rendering for Geo keys,
+  bit-grid editor for bitmap strings.
 
 ### Cross-cutting UX
 

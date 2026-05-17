@@ -30,7 +30,8 @@ use crate::redis::pubsub::{
     DrainResult, PublishPayload, PublishResult, StartSessionPayload, StartSessionResult,
 };
 use crate::redis::server_info::{
-    self, AclListPayload, ClientListPayload, ConfigPayload, KeyValueOverviewStats, LatencyPayload,
+    self, AclListPayload, AclSelfPayload, ClientListPayload, ConfigPayload, KeyValueOverviewStats,
+    LatencyPayload,
 };
 use crate::{ConnectResult, RedisStoredConnection, StoredConnection};
 
@@ -170,6 +171,10 @@ pub async fn fetch_client_list(connection: &StoredConnection) -> Result<ClientLi
 
 pub async fn fetch_acl_list(connection: &StoredConnection) -> Result<AclListPayload, String> {
     server_info::fetch_acl_list(as_redis(connection)?).await
+}
+
+pub async fn fetch_acl_self(connection: &StoredConnection) -> Result<AclSelfPayload, String> {
+    server_info::fetch_acl_self(as_redis(connection)?).await
 }
 
 pub async fn fetch_config(

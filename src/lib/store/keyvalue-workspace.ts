@@ -24,6 +24,8 @@
 
 import type { StateCreator } from "zustand";
 
+import type { RedisAclSelf } from "@/lib/redis/api";
+
 import type { AppStoreState, RedisCapabilities } from "./types";
 
 export type KeyValueWorkspaceSlice = {
@@ -35,10 +37,21 @@ export type KeyValueWorkspaceSlice = {
    */
   redisCapabilitiesByConnection: Record<string, RedisCapabilities>;
 
+  /**
+   * ACL surface for the current user on each Redis connection —
+   * username + key-pattern restrictions. Populated by
+   * `connectConnection` via `fetch_acl_self`. Drives the "this
+   * connection can only see keys matching <patterns>" hint in the
+   * keyspace browser.
+   */
+  redisAclSelfByConnection: Record<string, RedisAclSelf>;
+
   setRedisCapabilities: (
     connectionId: string,
     capabilities: RedisCapabilities,
   ) => void;
+
+  setRedisAclSelf: (connectionId: string, acl: RedisAclSelf) => void;
 
   /**
    * Cascade cleanup — drops every keyvalue-owned per-connection
@@ -55,6 +68,7 @@ export const createKeyValueWorkspaceSlice: StateCreator<
   KeyValueWorkspaceSlice
 > = (set) => ({
   redisCapabilitiesByConnection: {},
+  redisAclSelfByConnection: {},
 
   setRedisCapabilities: (connectionId, capabilities) =>
     set((state) => ({
@@ -64,13 +78,31 @@ export const createKeyValueWorkspaceSlice: StateCreator<
       },
     })),
 
+  setRedisAclSelf: (connectionId, acl) =>
+    set((state) => ({
+      redisAclSelfByConnection: {
+        ...state.redisAclSelfByConnection,
+        [connectionId]: acl,
+      },
+    })),
+
   closeKeyTabsForConnection: (connectionId) =>
     set((state) => {
-      if (!(connectionId in state.redisCapabilitiesByConnection)) {
+      const hasCaps = connectionId in state.redisCapabilitiesByConnection;
+      const hasAcl = connectionId in state.redisAclSelfByConnection;
+      if (!hasCaps && !hasAcl) {
         return {};
       }
-      const { [connectionId]: _dropped, ...rest } =
-        state.redisCapabilitiesByConnection;
-      return { redisCapabilitiesByConnection: rest };
+      const next: Partial<KeyValueWorkspaceSlice> = {};
+      if (hasCaps) {
+        const { [connectionId]: _, ...rest } =
+          state.redisCapabilitiesByConnection;
+        next.redisCapabilitiesByConnection = rest;
+      }
+      if (hasAcl) {
+        const { [connectionId]: _, ...rest } = state.redisAclSelfByConnection;
+        next.redisAclSelfByConnection = rest;
+      }
+      return next;
     }),
 });
