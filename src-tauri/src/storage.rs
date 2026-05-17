@@ -15,8 +15,8 @@ use tauri::{path::BaseDirectory, AppHandle, Manager};
 use crate::{
     ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
     PgStoredConnection, PositionRow, QueryHistoryEntry, RedisCliHistoryEntry,
-    RedisStoredConnection, SavedQuery, SchemaMapPrefs, SchemaMapPrefsPatch, SqliteStoredConnection,
-    StoredConnection,
+    RedisStoredConnection, SavedQuery, SavedRedisCommand, SchemaMapPrefs, SchemaMapPrefsPatch,
+    SqliteStoredConnection, StoredConnection,
 };
 
 const DB_FILE: &str = "dbunk.sqlite";
@@ -177,6 +177,27 @@ CREATE INDEX idx_redis_cli_history_connection_submitted_at
         // without even consulting the replica-role cache.
         r#"
 ALTER TABLE connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;
+"#,
+    ),
+    (
+        8,
+        // Saved Redis CLI commands — analogous to `saved_queries` for
+        // SQL, but the connection ref is optional so users can save
+        // engine-portable commands. Parameter substitution is
+        // deferred — `body` is treated as-is by the CLI at load time.
+        r#"
+CREATE TABLE saved_redis_commands (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  body          TEXT NOT NULL,
+  connection_id TEXT,
+  is_favorite   INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX idx_saved_redis_commands_updated_at
+  ON saved_redis_commands(updated_at DESC);
 "#,
     ),
 ];
@@ -1124,6 +1145,73 @@ pub async fn upsert_saved_query(pool: &SqlitePool, query: &SavedQuery) -> Result
 
 pub async fn delete_saved_query(pool: &SqlitePool, id: &str) -> Result<(), String> {
     sqlx::query("DELETE FROM saved_queries WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Saved Redis commands (mirror of saved_queries for the Redis CLI)
+// ---------------------------------------------------------------------------
+
+pub async fn read_saved_redis_commands(
+    pool: &SqlitePool,
+) -> Result<Vec<SavedRedisCommand>, String> {
+    let rows = sqlx::query(
+        "SELECT id, name, body, connection_id, is_favorite, created_at, updated_at
+         FROM saved_redis_commands
+         ORDER BY updated_at DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| SavedRedisCommand {
+            id: row.get("id"),
+            name: row.get("name"),
+            body: row.get("body"),
+            connection_id: row.get("connection_id"),
+            is_favorite: row.get::<i64, _>("is_favorite") != 0,
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        })
+        .collect())
+}
+
+pub async fn upsert_saved_redis_command(
+    pool: &SqlitePool,
+    command: &SavedRedisCommand,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO saved_redis_commands (
+            id, name, body, connection_id, is_favorite, created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            body = excluded.body,
+            connection_id = excluded.connection_id,
+            is_favorite = excluded.is_favorite,
+            updated_at = excluded.updated_at",
+    )
+    .bind(&command.id)
+    .bind(&command.name)
+    .bind(&command.body)
+    .bind(&command.connection_id)
+    .bind(bool_to_i64(command.is_favorite))
+    .bind(&command.created_at)
+    .bind(&command.updated_at)
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub async fn delete_saved_redis_command(pool: &SqlitePool, id: &str) -> Result<(), String> {
+    sqlx::query("DELETE FROM saved_redis_commands WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await

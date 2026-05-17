@@ -854,6 +854,45 @@ async fn delete_saved_query(
     storage::read_saved_queries(&state.pool).await
 }
 
+#[tauri::command]
+async fn load_saved_redis_commands(
+    state: State<'_, AppState>,
+) -> Result<Vec<SavedRedisCommand>, String> {
+    storage::read_saved_redis_commands(&state.inner().pool).await
+}
+
+#[tauri::command]
+async fn save_saved_redis_command(
+    state: State<'_, AppState>,
+    command: SavedRedisCommand,
+) -> Result<Vec<SavedRedisCommand>, String> {
+    let state = state.inner();
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut next = command.clone();
+    next.updated_at = now.clone();
+    if command.created_at.is_empty() {
+        next.created_at = now;
+    }
+    storage::upsert_saved_redis_command(&state.pool, &next).await?;
+    storage::read_saved_redis_commands(&state.pool).await
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteSavedRedisCommandPayload {
+    id: String,
+}
+
+#[tauri::command]
+async fn delete_saved_redis_command(
+    state: State<'_, AppState>,
+    payload: DeleteSavedRedisCommandPayload,
+) -> Result<Vec<SavedRedisCommand>, String> {
+    let state = state.inner();
+    storage::delete_saved_redis_command(&state.pool, &payload.id).await?;
+    storage::read_saved_redis_commands(&state.pool).await
+}
+
 // ---------------------------------------------------------------------------
 // Redis commands (Phase 1.2)
 // ---------------------------------------------------------------------------
@@ -1601,6 +1640,9 @@ pub fn run() {
             load_saved_queries,
             save_saved_query,
             delete_saved_query,
+            load_saved_redis_commands,
+            save_saved_redis_command,
+            delete_saved_redis_command,
             redis_scan_keys,
             redis_open_scan_session,
             redis_cancel_scan_session,

@@ -50,10 +50,12 @@ before code lands.
   changes, dispatch-layer routing, slot-aware command routing.
 - **Module viewers** — RediSearch, RedisTimeSeries, RedisBloom (each
   warrants its own viewer / new tab kind).
-- **Advanced Redis tab kinds** — Saved Redis Commands, Bulk Edit
-  (multi-key rename/delete/expire with preview), Transaction Builder
-  (visual `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR
-  capture, Keyspace Notifications opt-in, Multi-key compare.
+- **Advanced Redis tab kinds** — Bulk Edit (multi-key
+  rename/delete/expire with preview), Transaction Builder (visual
+  `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR capture,
+  Keyspace Notifications opt-in, Multi-key compare. (Saved Redis
+  Commands shipped as a CLI-tab integration; parameter substitution
+  remains deferred.)
 - **Operational affordances** — static-map rendering for Geo keys,
   bit-grid editor for bitmap strings.
 
