@@ -44,8 +44,10 @@ before code lands.
 
 ### Redis Tier 2 + cross-cutting (designs/FOLLOWUPS.md)
 
-- **Per-session DB picker** in the keyspace sidebar — needs a
-  re-keying cascade across open key tabs.
+- **Cross-tab DB switching cascade** — the keyspace-browser picker
+  ships, but opening a key tab continues to use the connection's
+  default DB. A future pass can either re-key open key tabs or
+  reuse the scan session's connection for the key inspector.
 - **Sentinel discovery + Cluster awareness** — connection form
   changes, dispatch-layer routing, slot-aware command routing.
 - **Module viewers** — RediSearch, RedisTimeSeries, RedisBloom (each
