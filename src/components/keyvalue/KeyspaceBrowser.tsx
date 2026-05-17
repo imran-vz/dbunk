@@ -27,11 +27,12 @@ import {
   IconWaveSine,
   IconX,
 } from "@tabler/icons-react";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
 import {
   type BulkDeleteByPatternResult,
   type BulkExpireByPatternResult,
@@ -40,15 +41,18 @@ import {
   bulkExpireByPattern,
   bulkRenameByPrefix,
   cancelScanSession,
+  closePubsubSession,
   closeScanSession,
   fetchString,
   formatValueOneLine,
   openScanSession,
   type ScannedKey,
   scanKeys,
+  startPubsubSession,
 } from "@/lib/redis/api";
 import type { Connection } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
+import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface KeyspaceBrowserProps {
@@ -481,6 +485,11 @@ export function KeyspaceBrowser({
   // limitation is called out in the picker's title.
   const browseDb = connection.engine === "Redis" ? connection.dbNumber : 0;
   const [activeDb, setActiveDb] = useState<number>(browseDb);
+  const [liveUpdates, setLiveUpdates] = useState(false);
+  const [liveTick, setLiveTick] = useState(0);
+  const liveSessionIdRef = useRef(
+    `keyspace-live-${connection.id}-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+  );
   // Scan session: opened once per mount + connection. SCANs route
   // through its dedicated connection so a Cancel click can issue
   // CLIENT KILL ID against the in-flight server-side work.
@@ -577,16 +586,65 @@ export function KeyspaceBrowser({
     };
   }, [connection.id, activeDb]);
 
-  // Restart scan when pattern, filter, or DB changes. `activeDb`
-  // doesn't change `runScan`'s identity (it's read off the scan
-  // session, not the closure) but we still want to re-fire the
-  // SCAN when the user picks a new DB.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeDb intentionally triggers re-scan
+  // Restart scan when pattern, filter, DB, or a keyspace-notification
+  // tick fires. `activeDb` doesn't change `runScan`'s identity (it's
+  // read off the scan session, not the closure) and `liveTick` is a
+  // ref-like counter — both are listed explicitly so the SCAN re-runs.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeDb + liveTick intentionally trigger re-scan
   useEffect(() => {
     setKeys([]);
     setCursor(null);
     void runScan(null);
-  }, [runScan, activeDb]);
+  }, [runScan, activeDb, liveTick]);
+
+  // Optional live updates: subscribe to `__keyspace@<db>__:*` on the
+  // active DB and bump `liveTick` on every event. Requires
+  // `CONFIG SET notify-keyspace-events KEA` (or a subset that
+  // includes 'K') on the server — toggling the switch ON without
+  // that config is harmless (no events fire) but yields no refresh.
+  useEffect(() => {
+    if (!liveUpdates) return;
+    if (!isTauri()) return;
+    const sessionId = liveSessionIdRef.current;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    let sessionStarted = false;
+    startPubsubSession({
+      connectionId: connection.id,
+      sessionId,
+      patterns: [`__keyspace@${activeDb}__:*`],
+    })
+      .then(() => {
+        if (cancelled) return;
+        sessionStarted = true;
+      })
+      .catch((err) => {
+        console.warn("keyspace-notifications start failed", err);
+      });
+    listen("pubsub-message", (event) => {
+      if (cancelled) return;
+      const payload = event.payload as { sessionId: string } | undefined;
+      if (payload?.sessionId !== sessionId) return;
+      setLiveTick((tick) => tick + 1);
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((err) => {
+        console.warn("keyspace-notifications listen failed", err);
+      });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+      if (sessionStarted) {
+        void closePubsubSession({ sessionId }).catch(() => {});
+      }
+    };
+  }, [liveUpdates, connection.id, activeDb]);
 
   const handleCancelScan = async () => {
     requestSeq.current++; // Invalidate the in-flight response.
@@ -687,6 +745,23 @@ export function KeyspaceBrowser({
             className="h-8 pl-7 text-xs"
           />
         </div>
+        <label
+          className={cn(
+            "flex h-8 cursor-pointer items-center gap-1 rounded border border-border-subtle px-2 text-[0.6rem]",
+            liveUpdates
+              ? "border-accent-green/60 bg-accent-green/10 text-accent-green"
+              : "text-text-muted",
+          )}
+          title="Subscribe to keyspace notifications and refresh the SCAN on each key event. Requires `CONFIG SET notify-keyspace-events KEA` on the server."
+        >
+          <input
+            type="checkbox"
+            checked={liveUpdates}
+            onChange={(event) => setLiveUpdates(event.target.checked)}
+            className="size-3"
+          />
+          Live
+        </label>
       </div>
       <div className="flex flex-wrap gap-1">
         {KEY_TYPES.map((t) => (

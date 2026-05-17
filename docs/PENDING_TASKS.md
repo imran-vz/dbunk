@@ -53,13 +53,15 @@ before code lands.
 - **Module viewers** — RediSearch, RedisTimeSeries, RedisBloom (each
   warrants its own viewer / new tab kind).
 - **Advanced Redis tab kinds** — Transaction Builder (visual
-  `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR capture,
-  Keyspace Notifications opt-in. (Saved Redis Commands shipped as a
-  CLI-tab integration; parameter substitution remains deferred.
-  Bulk DEL / EXPIRE / RENAME-prefix shipped as keyspace-browser
-  affordances with dry-run preview + typed confirm. Multi-key
-  compare shipped as a side-by-side string viewer; hash/list/set/
-  zset/stream comparison is a follow-up.)
+  `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR capture.
+  (Saved Redis Commands shipped as a CLI-tab integration; parameter
+  substitution remains deferred. Bulk DEL / EXPIRE / RENAME-prefix
+  shipped as keyspace-browser affordances with dry-run preview +
+  typed confirm. Multi-key compare shipped as a side-by-side string
+  viewer; hash/list/set/zset/stream comparison is a follow-up.
+  Keyspace-notifications "Live" toggle shipped in the keyspace
+  browser — relies on the server-side `notify-keyspace-events`
+  config being non-empty.)
 - **Operational affordances** — static-map rendering for Geo keys,
   per-bit `SETBIT` editing in the bitmap view (view-only landed
   in the string viewer).
