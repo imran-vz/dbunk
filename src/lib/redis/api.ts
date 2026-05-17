@@ -76,6 +76,26 @@ export function closeScanSession(payload: {
   return tauriInvoke<void>("redis_close_scan_session", { payload });
 }
 
+export type BulkDeleteByPatternResult = {
+  scanned: number;
+  matched: number;
+  deleted: number;
+  sample: string[];
+  truncated: boolean;
+};
+
+export function bulkDeleteByPattern(payload: {
+  connectionId: string;
+  pattern: string;
+  dryRun: boolean;
+  maxKeys?: number;
+}): Promise<BulkDeleteByPatternResult> {
+  return tauriInvoke<BulkDeleteByPatternResult>(
+    "redis_bulk_delete_by_pattern",
+    { payload },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Key metadata
 // ---------------------------------------------------------------------------

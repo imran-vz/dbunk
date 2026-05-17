@@ -658,6 +658,127 @@ pub async fn del_keys(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BulkDeleteByPatternPayload {
+    pub connection_id: String,
+    /// Glob-style match pattern (passed to `SCAN MATCH`).
+    pub pattern: String,
+    /// When `true`, scans and returns the sample without deleting.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Safety cap. Both dry-run and apply stop scanning once
+    /// `matched >= max_keys`. Defaults to 10_000.
+    #[serde(default = "default_bulk_max")]
+    pub max_keys: u64,
+}
+
+fn default_bulk_max() -> u64 {
+    10_000
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkDeleteByPatternResult {
+    pub scanned: u64,
+    pub matched: u64,
+    pub deleted: u64,
+    /// First N matched keys (capped at 100) so the dry-run preview
+    /// has something to show without bloating the payload.
+    pub sample: Vec<String>,
+    /// `true` when the safety cap stopped the scan before
+    /// completion. The caller can decide whether to re-run with a
+    /// higher cap or a tighter pattern.
+    pub truncated: bool,
+}
+
+const BULK_DELETE_SAMPLE_CAP: usize = 100;
+const BULK_DELETE_BATCH: usize = 500;
+
+/// Scan + DEL all keys matching a pattern. Destructive — every
+/// caller surfaces a typed-confirmation modal before invoking with
+/// `dry_run = false`.
+pub async fn bulk_delete_by_pattern(
+    connection: &RedisStoredConnection,
+    payload: &BulkDeleteByPatternPayload,
+) -> Result<BulkDeleteByPatternResult, String> {
+    if !payload.dry_run {
+        assert_writable(connection).await?;
+    }
+    if payload.pattern.trim().is_empty() {
+        return Err("Pattern is required".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let mut cursor: String = "0".to_string();
+    let mut scanned: u64 = 0;
+    let mut matched: u64 = 0;
+    let mut deleted: u64 = 0;
+    let mut sample: Vec<String> = Vec::new();
+    let mut pending: Vec<String> = Vec::new();
+    let mut truncated = false;
+    loop {
+        let (next_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+            .arg(&cursor)
+            .arg("MATCH")
+            .arg(&payload.pattern)
+            .arg("COUNT")
+            .arg(500u32)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+        scanned = scanned.saturating_add(keys.len() as u64);
+        for key in keys {
+            if matched >= payload.max_keys {
+                truncated = true;
+                break;
+            }
+            matched += 1;
+            if sample.len() < BULK_DELETE_SAMPLE_CAP {
+                sample.push(key.clone());
+            }
+            if !payload.dry_run {
+                pending.push(key);
+                if pending.len() >= BULK_DELETE_BATCH {
+                    deleted += flush_del(&mut conn, &pending).await?;
+                    pending.clear();
+                }
+            }
+        }
+        if truncated {
+            break;
+        }
+        if next_cursor == "0" {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    if !payload.dry_run && !pending.is_empty() {
+        deleted += flush_del(&mut conn, &pending).await?;
+    }
+    Ok(BulkDeleteByPatternResult {
+        scanned,
+        matched,
+        deleted,
+        sample,
+        truncated,
+    })
+}
+
+async fn flush_del(
+    conn: &mut redis::aio::ConnectionManager,
+    keys: &[String],
+) -> Result<u64, String> {
+    if keys.is_empty() {
+        return Ok(0);
+    }
+    let mut cmd = redis::cmd("DEL");
+    for key in keys {
+        cmd.arg(key);
+    }
+    let n: i64 = cmd.query_async(conn).await.map_err(connection::redis_err)?;
+    Ok(n.max(0) as u64)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetExpirePayload {
     pub connection_id: String,
     pub key: String,

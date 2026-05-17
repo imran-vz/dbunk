@@ -16,10 +16,11 @@ use crate::redis::key_inspector::{
     SortedSetValuePayload, StreamGroupsPayload, StreamValuePayload, StringValuePayload,
 };
 use crate::redis::key_ops::{
-    self, ApplyListEditsPayload, CreateKeyPayload, CreateStreamGroupPayload, DelKeysPayload,
-    DelKeysResult, DeleteHashFieldsPayload, DestroyStreamGroupPayload, JsonDeletePayload,
-    JsonSetPayload, RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetMembersPayload,
-    SetStringPayload, SetStringResult, SortedSetEditsPayload, StreamEditsPayload,
+    self, ApplyListEditsPayload, BulkDeleteByPatternPayload, BulkDeleteByPatternResult,
+    CreateKeyPayload, CreateStreamGroupPayload, DelKeysPayload, DelKeysResult,
+    DeleteHashFieldsPayload, DestroyStreamGroupPayload, JsonDeletePayload, JsonSetPayload,
+    RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetMembersPayload, SetStringPayload,
+    SetStringResult, SortedSetEditsPayload, StreamEditsPayload,
 };
 use crate::redis::keyspace::{
     self, CancelScanSessionPayload, CancelScanSessionResult, CloseScanSessionPayload,
@@ -252,6 +253,13 @@ pub async fn del_keys(
     payload: &DelKeysPayload,
 ) -> Result<DelKeysResult, String> {
     key_ops::del_keys(as_redis(connection)?, payload).await
+}
+
+pub async fn bulk_delete_by_pattern(
+    connection: &StoredConnection,
+    payload: &BulkDeleteByPatternPayload,
+) -> Result<BulkDeleteByPatternResult, String> {
+    key_ops::bulk_delete_by_pattern(as_redis(connection)?, payload).await
 }
 
 pub async fn set_expire(
