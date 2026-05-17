@@ -5,11 +5,13 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
   fetchString,
   type StringValuePayload,
+  setRedisBit,
   setRedisString,
 } from "@/lib/redis/api";
 import { cn } from "@/lib/utils";
@@ -167,7 +169,13 @@ export function StringValueView({
         </Button>
       </div>
       {bitmapMode && !editing ? (
-        <BitmapGrid value={value} encoding={encoding} />
+        <BitmapGrid
+          connectionId={connectionId}
+          keyName={keyName}
+          value={value}
+          encoding={encoding}
+          onChanged={() => setReloadTick((t) => t + 1)}
+        />
       ) : (
         <textarea
           readOnly={!editing}
@@ -200,37 +208,75 @@ const MAX_BITS_RENDERED = 1024;
  * ASCII-shaped data; lossy for higher-codepoint strings but
  * acceptable for a view-only mode.
  */
-function BitmapGrid({ value, encoding }: { value: string; encoding: string }) {
+function BitmapGrid({
+  connectionId,
+  keyName,
+  value,
+  encoding,
+  onChanged,
+}: {
+  connectionId: string;
+  keyName: string;
+  value: string;
+  encoding: string;
+  onChanged: () => void;
+}) {
   const bits = useMemo(() => bytesToBits(value, encoding), [value, encoding]);
   const totalBits = bits.length;
   const visibleBits = bits.slice(0, MAX_BITS_RENDERED);
+  const [pending, setPending] = useState<number | null>(null);
+
+  const handleToggle = async (offset: number, current: 0 | 1) => {
+    setPending(offset);
+    try {
+      await setRedisBit({
+        connectionId,
+        key: keyName,
+        offset,
+        value: current === 1 ? 0 : 1,
+      });
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(null);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-[0.6rem]">
       <div className="grid grid-cols-[repeat(64,_minmax(0,_1fr))] gap-0.5">
         {visibleBits.map((bit, idx) => (
-          <span
+          <button
+            type="button"
             // biome-ignore lint/suspicious/noArrayIndexKey: bit position IS the identity
             key={idx}
-            title={`bit ${idx} = ${bit}`}
+            title={`bit ${idx} = ${bit} (click to toggle)`}
+            disabled={pending !== null}
+            onClick={() => {
+              void handleToggle(idx, bit);
+            }}
             className={cn(
-              "aspect-square w-full rounded-[2px] text-center leading-none",
+              "aspect-square w-full rounded-[2px] text-center leading-none hover:ring-1 hover:ring-foreground/40",
               bit === 1
                 ? "bg-accent-green/80 text-surface-window"
                 : "bg-surface-panel-elevated text-text-muted",
+              pending === idx && "opacity-60",
             )}
           >
             {bit}
-          </span>
+          </button>
         ))}
       </div>
       {totalBits > MAX_BITS_RENDERED ? (
         <p className="mt-2 text-[0.6rem] text-amber-400">
           Showing first {MAX_BITS_RENDERED.toLocaleString()} of{" "}
-          {totalBits.toLocaleString()} bits.
+          {totalBits.toLocaleString()} bits. Higher offsets are still editable
+          via the CLI.
         </p>
       ) : (
         <p className="mt-2 text-[0.6rem] text-text-muted">
-          {totalBits.toLocaleString()} bits
+          {totalBits.toLocaleString()} bits · click a cell to toggle (SETBIT)
         </p>
       )}
     </div>

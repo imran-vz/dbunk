@@ -1316,6 +1316,18 @@ async fn redis_bulk_rename_by_prefix(
 }
 
 #[tauri::command]
+async fn redis_set_bit(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::SetBitPayload,
+) -> Result<redis::key_ops::SetBitResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::set_bit(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn redis_set_expire(
     state: State<'_, AppState>,
     payload: redis::key_ops::SetExpirePayload,
@@ -1713,6 +1725,7 @@ pub fn run() {
             redis_bulk_delete_by_pattern,
             redis_bulk_expire_by_pattern,
             redis_bulk_rename_by_prefix,
+            redis_set_bit,
             redis_set_expire,
             redis_rename_key,
             redis_create_key,

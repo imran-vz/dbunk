@@ -139,6 +139,15 @@ export function bulkRenameByPrefix(payload: {
   });
 }
 
+export function setRedisBit(payload: {
+  connectionId: string;
+  key: string;
+  offset: number;
+  value: 0 | 1;
+}): Promise<{ previous: number }> {
+  return tauriInvoke<{ previous: number }>("redis_set_bit", { payload });
+}
+
 // ---------------------------------------------------------------------------
 // Key metadata
 // ---------------------------------------------------------------------------

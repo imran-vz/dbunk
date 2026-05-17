@@ -20,8 +20,9 @@ use crate::redis::key_ops::{
     BulkExpireByPatternPayload, BulkExpireByPatternResult, BulkRenameByPrefixPayload,
     BulkRenameByPrefixResult, CreateKeyPayload, CreateStreamGroupPayload, DelKeysPayload,
     DelKeysResult, DeleteHashFieldsPayload, DestroyStreamGroupPayload, JsonDeletePayload,
-    JsonSetPayload, RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetMembersPayload,
-    SetStringPayload, SetStringResult, SortedSetEditsPayload, StreamEditsPayload,
+    JsonSetPayload, RenameKeyPayload, SetBitPayload, SetBitResult, SetExpirePayload,
+    SetHashFieldsPayload, SetMembersPayload, SetStringPayload, SetStringResult,
+    SortedSetEditsPayload, StreamEditsPayload,
 };
 use crate::redis::keyspace::{
     self, CancelScanSessionPayload, CancelScanSessionResult, CloseScanSessionPayload,
@@ -275,6 +276,13 @@ pub async fn bulk_rename_by_prefix(
     payload: &BulkRenameByPrefixPayload,
 ) -> Result<BulkRenameByPrefixResult, String> {
     key_ops::bulk_rename_by_prefix(as_redis(connection)?, payload).await
+}
+
+pub async fn set_bit(
+    connection: &StoredConnection,
+    payload: &SetBitPayload,
+) -> Result<SetBitResult, String> {
+    key_ops::set_bit(as_redis(connection)?, payload).await
 }
 
 pub async fn set_expire(
