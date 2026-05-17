@@ -536,6 +536,18 @@ export function fetchRedisAclList(payload: {
   });
 }
 
+export type RedisAclSelf = {
+  username: string;
+  allKeys: boolean;
+  keyPatterns: string[];
+};
+
+export function fetchRedisAclSelf(payload: {
+  connectionId: string;
+}): Promise<RedisAclSelf> {
+  return tauriInvoke<RedisAclSelf>("redis_fetch_acl_self", { payload });
+}
+
 export type RedisConfigEntry = {
   key: string;
   value: string;

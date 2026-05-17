@@ -1051,6 +1051,25 @@ async fn redis_fetch_client_list(
 }
 
 #[tauri::command]
+async fn redis_fetch_acl_self(
+    state: State<'_, AppState>,
+    payload: FetchAclSelfPayload,
+) -> Result<redis::server_info::AclSelfPayload, String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move { dispatch::keyvalue::fetch_acl_self(&connection).await },
+    )
+    .await
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchAclSelfPayload {
+    connection_id: String,
+}
+
+#[tauri::command]
 async fn redis_fetch_acl_list(
     state: State<'_, AppState>,
     payload: ConnectionPayload,
@@ -1600,6 +1619,7 @@ pub fn run() {
             redis_fetch_overview,
             redis_fetch_client_list,
             redis_fetch_acl_list,
+            redis_fetch_acl_self,
             redis_fetch_config,
             redis_set_config,
             redis_fetch_latency,

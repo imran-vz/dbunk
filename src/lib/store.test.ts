@@ -710,10 +710,14 @@ describe("connectConnection error feedback", () => {
       ],
     });
 
-    // Single resolve for connect_connection; load_schema_explorer must NOT
-    // be invoked for Redis. If it is, the second invoke gets no mock and
-    // throws, which would flip status back to Disconnected.
+    // connect_connection + redis_fetch_acl_self (Redis-only,
+    // fire-and-forget). load_schema_explorer must NOT be invoked.
     mockedInvoke.mockResolvedValueOnce({ latencyMs: 3 });
+    mockedInvoke.mockResolvedValueOnce({
+      username: "default",
+      allKeys: true,
+      keyPatterns: [],
+    });
 
     await act(async () => {
       await useAppStore.getState().connectConnection("conn-redis");

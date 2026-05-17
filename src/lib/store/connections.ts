@@ -17,6 +17,7 @@ import type { StateCreator } from "zustand";
 
 import { storageClassFor } from "@/lib/engine-policy";
 import { formatLatencyMs } from "@/lib/format";
+import { fetchRedisAclSelf } from "@/lib/redis/api";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import type {
@@ -455,6 +456,20 @@ export const createConnectionsSlice: StateCreator<
       }));
       if (result.redisCapabilities) {
         get().setRedisCapabilities(connectionId, result.redisCapabilities);
+      }
+      const acltarget = get().connections.find((c) => c.id === connectionId);
+      if (acltarget && storageClassFor(acltarget.engine) === "keyvalue") {
+        // ACL self-probe — non-fatal on older servers / restricted
+        // users. The keyspace browser simply skips the gating banner
+        // when this is absent. Wrapped in try/Promise.resolve so a
+        // mocked-undefined return (test environment) can't break the
+        // outer try/catch.
+        Promise.resolve()
+          .then(() => fetchRedisAclSelf({ connectionId }))
+          .then((acl) => {
+            if (acl) get().setRedisAclSelf(connectionId, acl);
+          })
+          .catch(() => {});
       }
     } catch (error) {
       const message = errorToMessage(error);
