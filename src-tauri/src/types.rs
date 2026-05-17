@@ -460,6 +460,21 @@ pub(crate) struct RedisCliHistoryEntry {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SavedRedisCommand {
+    pub id: String,
+    pub name: String,
+    pub body: String,
+    /// `None` = engine-portable, not pinned to a specific connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<String>,
+    #[serde(default)]
+    pub is_favorite: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct QueryHistoryEntry {
     pub id: String,
     pub sql: String,

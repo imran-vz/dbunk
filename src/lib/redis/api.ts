@@ -693,6 +693,40 @@ export function appendRedisCliHistory(
   return tauriInvoke<void>("append_redis_cli_history", { entry });
 }
 
+// ---------------------------------------------------------------------------
+// Saved Redis CLI commands
+// ---------------------------------------------------------------------------
+
+export type SavedRedisCommand = {
+  id: string;
+  name: string;
+  body: string;
+  connectionId?: string | null;
+  isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function loadSavedRedisCommands(): Promise<SavedRedisCommand[]> {
+  return tauriInvoke<SavedRedisCommand[]>("load_saved_redis_commands");
+}
+
+export function saveSavedRedisCommand(
+  command: SavedRedisCommand,
+): Promise<SavedRedisCommand[]> {
+  return tauriInvoke<SavedRedisCommand[]>("save_saved_redis_command", {
+    command,
+  });
+}
+
+export function deleteSavedRedisCommand(payload: {
+  id: string;
+}): Promise<SavedRedisCommand[]> {
+  return tauriInvoke<SavedRedisCommand[]>("delete_saved_redis_command", {
+    payload,
+  });
+}
+
 /** Render a `SerializedValue` as a single line — used by row gutters
  * in the hash / list / set / zset viewers when the cell isn't being
  * inspected in detail. */

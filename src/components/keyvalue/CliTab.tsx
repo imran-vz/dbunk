@@ -9,16 +9,21 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
   appendRedisCliHistory,
   closeRedisCliSession,
+  deleteSavedRedisCommand,
   formatValueOneLine,
   loadRedisCliHistory,
+  loadSavedRedisCommands,
   type RunCommandResult,
   runRedisCommand,
+  type SavedRedisCommand,
   type SerializedValue,
+  saveSavedRedisCommand,
 } from "@/lib/redis/api";
 import {
   type CommandSpec,
@@ -65,6 +70,8 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [savedCommands, setSavedCommands] = useState<SavedRedisCommand[]>([]);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
   const suggestions: CommandSpec[] = suggestionsOpen
     ? suggestCommands(input)
     : [];
@@ -198,8 +205,125 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
     setInput(nextIdx < 0 ? "" : (recallHistory[nextIdx] ?? ""));
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    loadSavedRedisCommands()
+      .then((list) => {
+        if (!cancelled) setSavedCommands(list);
+      })
+      .catch(() => {
+        // Non-fatal — saved-commands panel just stays empty.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSaveCurrent = async () => {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      toast.info("Type a command before saving");
+      return;
+    }
+    const name = window.prompt("Name for this command:", trimmed.slice(0, 40));
+    if (!name?.trim()) return;
+    try {
+      const now = new Date().toISOString();
+      const updated = await saveSavedRedisCommand({
+        id:
+          globalThis.crypto?.randomUUID?.() ??
+          `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: name.trim(),
+        body: trimmed,
+        connectionId,
+        isFavorite: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      setSavedCommands(updated);
+      toast.success(`Saved as "${name.trim()}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleLoadSaved = (cmd: SavedRedisCommand) => {
+    setInput(cmd.body);
+    setSavedPanelOpen(false);
+  };
+
+  const handleDeleteSaved = async (cmd: SavedRedisCommand) => {
+    if (!window.confirm(`Delete saved command "${cmd.name}"?`)) return;
+    try {
+      const updated = await deleteSavedRedisCommand({ id: cmd.id });
+      setSavedCommands(updated);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-1 border-b border-border-subtle bg-surface-panel/40 px-3 py-1 text-[0.65rem]">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[0.65rem]"
+          onClick={() => {
+            void handleSaveCurrent();
+          }}
+        >
+          Save
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[0.65rem]"
+          onClick={() => setSavedPanelOpen((value) => !value)}
+        >
+          Saved ({savedCommands.length})
+        </Button>
+      </div>
+      {savedPanelOpen ? (
+        <div className="max-h-48 overflow-auto border-b border-border-subtle bg-surface-panel/60 text-[0.65rem]">
+          {savedCommands.length === 0 ? (
+            <div className="px-3 py-2 text-text-muted">
+              No saved commands yet. Use Save to pin the current input.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border-subtle">
+              {savedCommands.map((cmd) => (
+                <li
+                  key={cmd.id}
+                  className="flex items-center gap-2 px-3 py-1 hover:bg-white/5"
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleLoadSaved(cmd)}
+                    className="flex-1 text-left"
+                  >
+                    <div className="font-semibold text-foreground">
+                      {cmd.name}
+                    </div>
+                    <div className="truncate font-mono text-text-muted">
+                      {cmd.body}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleDeleteSaved(cmd);
+                    }}
+                    className="px-2 text-destructive hover:underline"
+                  >
+                    delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
       <div
         ref={scrollRef}
         className="flex-1 overflow-auto bg-surface-window p-3 font-mono text-xs"
