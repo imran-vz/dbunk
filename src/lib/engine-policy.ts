@@ -41,6 +41,10 @@
  * compiler will refuse to build until both halves agree.
  */
 
+import {
+  DESTRUCTIVE_HARD as KEYVALUE_REDIS_DESTRUCTIVE_HARD,
+  DESTRUCTIVE_SOFT as KEYVALUE_REDIS_DESTRUCTIVE_SOFT,
+} from "@/lib/redis/destructive-commands";
 import type { DatabaseEngine, StorageClass } from "@/lib/store";
 
 /**
@@ -186,20 +190,6 @@ const RELATIONAL_STRUCTURE_DEFAULTS: StructureLabels = {
   noPrimaryKey: "This table has no primary key.",
   noIndexes: "No indexes defined.",
 };
-
-const KEYVALUE_REDIS_DESTRUCTIVE_HARD = [
-  "FLUSHDB",
-  "FLUSHALL",
-  "DEBUG",
-  "SHUTDOWN",
-  "CONFIG SET",
-  "CONFIG RESETSTAT",
-  "SCRIPT FLUSH",
-  "SCRIPT KILL",
-  "CLIENT KILL",
-] as const;
-
-const KEYVALUE_REDIS_DESTRUCTIVE_SOFT = ["KEYS"] as const;
 
 const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
   PostgreSQL: {

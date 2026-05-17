@@ -1,210 +1,83 @@
 # Pending Tasks Inventory
 
-Last reconciled 2026-05-16 against the working tree. Items that shipped
-since the prior sweep (2026-05-13) are summarised in the "Recently shipped"
-section at the bottom so the change is auditable.
+Last reconciled 2026-05-16 against the working tree.
 
-## Visible In-App Placeholders
+This file used to be a mix of "small TODOs that should be polished
+off" and "future features the size of a multi-week project". The
+2026-05-16 session resolved every item in the first bucket
+(commit-by-commit history in "Recently Shipped" below). What remains
+is roadmap-level feature work that doesn't fit single-PR tasks — kept
+here as a hand-off list with one-line summaries; the deep detail
+lives in `designs/FOLLOWUPS.md`, `docs/design/PHASES.md`, and
+`ROADMAP.md`.
 
-### Query editor connection selector is disabled
-- Source: `src/components/query-editor/toolbar.tsx`
-- Current state: Dropdown opens a "Retargeting the editor's connection
-  isn't supported yet — open a new query tab from the target connection's
-  sidebar." message and lists connections as disabled items.
-- Expected work: Selecting a connection should retarget the editor tab,
-  persist the new `connectionId` into `workspaceTabs`, update completion
-  context, and re-key any per-connection query state.
+When picking up roadmap items, treat each bullet below as the seed
+for its own design pass — most will spawn an ADR or design doc
+before code lands.
 
-### New Redis key dialog warns about read-only types it now edits
-- Source: `src/components/keyvalue/NewKeyDialog.tsx`
-- Current state: Description still says "only string and hash have inline
-  editors after creation — others are read-only until Tier 2," but list,
-  set, sorted set, stream, and JSON all have editors today (see the seven
-  `*ValueView.tsx` siblings under `src/components/keyvalue/viewers/`).
-- Expected work: Drop the outdated warning. If a per-type caveat remains,
-  state it accurately (e.g., per-type capability flags) instead of
-  blanket "read-only".
+## Roadmap (feature-scope, queued)
 
-### `workspace-view.tsx` claims overview sub-tabs are placeholders
-- Source: `src/components/workspace-view.tsx:432`
-- Current state: Comment says "the other Phase 1 sub-tabs render
-  placeholders today and get filled in by their respective Phase 1
-  steps." All Phase 1 sub-tabs are now implemented.
-- Expected work: Remove or rewrite the stale comment.
+### Postgres / relational
 
-## Source TODOs And No-Op Actions
+- **Default-value tagged-union** (`src/lib/ddl/shared.ts`) — replace
+  the current "bareword whitelist + `()` heuristic" with a tagged
+  `{ kind: "literal", text } | { kind: "expression", sql }` model on
+  the column record + Literal/Expression toggle in the column form.
+  Cross-cutting: column type, introspection round-trip, every form,
+  all `formatDefault` callers.
+- **Connection Settings driver/session fields** —
+  `workspace-overview/settings-tab.tsx` is still a read-mostly mirror
+  even though `PgDriverOptions` (ADR-0013) ships statement-timeout /
+  search-path / role plumbing on the backend. Expand the Settings UI
+  to expose those knobs plus SSH tunnel, TCP keepalive, connect
+  timeout.
+- **Schema map deferred items** (issue #17) — notes / annotations on
+  canvas, virtual / user-drawn relationships, MySQL / SQLite FK
+  introspection, 1:1 cardinality detection, multi-schema canvases.
+- **PL/pgSQL debugger** — breakpoints, stepping, variable inspection,
+  server-extension capability detection.
+- **Visual query builder** — relational query builder that generates
+  SQL and round-trips with the text editor.
+- **Parquet export** — depends on adopting a suitable JS/Rust writer
+  with a streaming path.
+- **XML import/export** — only if XML is still in the parity scope.
 
-### Default-value expression model still lacks a true literal/expression split
-- Source: `src/lib/ddl/shared.ts`
-- Current state: A SQL-keyword bareword whitelist
-  (`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `LOCALTIMESTAMP`,
-  `LOCALTIME`, `CURRENT_USER`, `SESSION_USER`, `USER`, `NULL`, `TRUE`,
-  `FALSE`) is emitted raw alongside numeric literals and `()` function
-  calls. Arbitrary SQL expressions still require the function form
-  (e.g., `now()`, `gen_random_uuid()`) — anything else is quoted as a
-  string literal.
-- Expected work (deferred): A tagged-union model on the column record
-  (`{ kind: "literal", text } | { kind: "expression", sql }`) plus a
-  Literal/Expression toggle in the column form. Lets users write
-  arbitrary defaults (`(some_function(args))::text`) without relying
-  on the whitelist or `()` heuristic. Cross-cutting — would touch
-  the column type, introspection round-trip, every form, and all
-  callers of `formatDefault`.
+### Redis Tier 2 + cross-cutting (designs/FOLLOWUPS.md)
 
-## Placeholder Or Reserved Store Slices
+- **Per-session DB picker** in the keyspace sidebar — needs a
+  re-keying cascade across open key tabs.
+- **Sentinel discovery + Cluster awareness** — connection form
+  changes, dispatch-layer routing, slot-aware command routing.
+- **Module viewers** — RediSearch, RedisTimeSeries, RedisBloom (each
+  warrants its own viewer / new tab kind).
+- **Advanced Redis tab kinds** — Saved Redis Commands, Bulk Edit
+  (multi-key rename/delete/expire with preview), Transaction Builder
+  (visual `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR
+  capture, Keyspace Notifications opt-in, Multi-key compare /
+  watched-keys.
+- **Operational affordances** — Cancel long-running SCANs via
+  `CLIENT KILL`, per-key ACL gating hints, static-map rendering for
+  Geo keys, bit-grid editor for bitmap strings.
 
-### KeyValue workspace client cache
-- Source: `src/lib/store/keyvalue-workspace.ts`
-- Current state: Slice is a documented no-op reserved for keyspace
-  browser, key inspector, watched keys, per-session DB switching, and
-  per-key cache cleanup.
-- Expected work: Move Redis keyspace/key inspector session state into
-  the slice when watched keys or DB switching lands.
+### Cross-cutting UX
 
-### KeyValue Pub/Sub client metadata
-- Source: `src/lib/store/keyvalue-pubsub.ts`
-- Current state: Slice is a documented no-op reserved for Pub/Sub
-  auto-reconnect and per-session client metadata.
-- Expected work: Track Pub/Sub sessions client-side and clean them up
-  during connection deletion or tab closure.
+- **Empty / loading / error state polish** — generic state shells
+  shipped; replace with surface-specific empty illustrations + CTAs,
+  skeleton loaders, inline error + retry on every data-bound view.
+- **Query editor transaction status footer** — track per-connection
+  transaction state on the Rust side and surface
+  `Auto-commit ON / In transaction / Failed transaction` in the
+  editor footer with commit/rollback controls.
 
-## Postgres And Relational Follow-Ups
+### Reserved store slices (waiting on a feature)
 
-### Connection Settings tab is still read-mostly
-- Sources: `src/components/workspace-overview/settings-tab.tsx`,
-  `docs/design/PHASES.md`, `ROADMAP.md`
-- Current state: Settings mirrors existing connection fields and
-  launches edit. Phase 1 intentionally did not introduce SSH tunnel,
-  keepalive, statement timeout, default schema/search path, default
-  role, or other driver/session knobs.
-- Expected work: Add the connection-record fields and backend wiring
-  for SSH tunnel, keepalive, statement timeout, default schema/search
-  path, default role, and any other driver-level/session options.
-
-### Schema map deferred items
-- Sources: `docs/design/PHASES.md`, `docs/design/PLAN.md`,
-  GitHub issue #17, `ROADMAP.md`
-- Current state: Core schema map shipped, but these items remain
-  deferred (still ❌ in `ROADMAP.md`).
-- Expected work:
-  - Notes / annotations on canvas.
-  - Virtual / user-drawn relationships.
-  - MySQL / SQLite FK introspection.
-  - 1:1 cardinality detection.
-  - Multi-schema canvases and custom-pick diagrams.
-
-### PL/pgSQL debugger
-- Source: `ROADMAP.md`
-- Current state: Not implemented.
-- Expected work: Add debugger support for breakpoints, stepping,
-  variable inspection, and server-extension capability detection.
-
-### Visual query builder
-- Source: `ROADMAP.md`
-- Current state: Not implemented.
-- Expected work: Add a visual relational query builder that can
-  generate SQL and round-trip with the text editor where practical.
-
-### Parquet export
-- Source: `ROADMAP.md`
-- Current state: Not implemented.
-- Expected work: Add Parquet export if the app adopts a suitable
-  JS/Rust writer and streaming path.
-
-### XML import/export
-- Source: `ROADMAP.md`
-- Current state: Not implemented.
-- Expected work: Add XML export and XML-to-table import if still part
-  of the target parity scope.
-
-## Redis Tier 2 Work
-
-The list/set/zset/stream/JSON editors and the Stream consumer-groups
-read-only panel shipped. Remaining Tier 2 / cross-cutting work:
-
-### Redis connection-form refinements
-- Source: `designs/FOLLOWUPS.md`, ADR-0009
-- Expected work:
-  - Per-session DB picker in the keyspace sidebar.
-  - Explicit read-only toggle persisted on the connection record.
-  - Dismissible warning for masters with replicas.
-
-### Redis Server tab cards
-- Source: `designs/FOLLOWUPS.md`
-- Expected work:
-  - Auto-refresh interval.
-  - Client list card from `CLIENT LIST`.
-  - ACL list card from `ACL LIST`.
-  - Config viewer/editor from `CONFIG GET` / `CONFIG SET`.
-  - Latency stats from `LATENCY LATEST` / `LATENCY HISTORY`.
-
-### Redis deployment and module support
-- Source: `designs/FOLLOWUPS.md`, `designs/REDIS_PLAN.md`
-- Expected work:
-  - Sentinel discovery.
-  - Cluster-aware keyspace browsing and slot-aware command routing.
-  - Module viewers for RediSearch, RedisTimeSeries, RedisBloom, and
-    possibly RedisGraph.
-
-### Redis advanced tabs and workflows
-- Source: `designs/FOLLOWUPS.md`
-- Expected work:
-  - Saved Redis commands tab with parameter substitution.
-  - Bulk edit tab for multi-key rename/delete/expire with preview.
-  - Transaction builder for visual `MULTI`/`EXEC` composition.
-  - Lua / Redis Functions scripting tab.
-  - Monitor tab for rate-limited `MONITOR` capture.
-  - Keyspace notifications opt-in for live refresh.
-  - Publish-from-UI in Pub/Sub.
-  - Cancel long-running SCANs via `CLIENT KILL`.
-  - Multi-key compare and watched-keys UX.
-  - Per-key ACL gating hints.
-  - Client-side CLI argument validation.
-  - CLI command documentation side panel.
-  - Static map rendering for Geo keys.
-  - Bit-grid editing for bitmap strings.
-  - Stream consumer-group write actions
-    (`XGROUP CREATE`, `XACK`, `XCLAIM`) on top of the read-only panel.
-
-### Redis stream editor write actions on consumer groups
-- Source: `src/components/keyvalue/viewers/StreamValueView.tsx`
-- Current state: `XINFO GROUPS` / `XINFO CONSUMERS` render in a
-  read-only panel.
-- Expected work: Layer editing actions for groups and consumers —
-  `XGROUP CREATE`/`DESTROY`, `XACK`, `XCLAIM`, `XGROUP SETID`.
-
-### Redis implementation deltas
-- Source: `designs/FOLLOWUPS.md`
-- Expected work:
-  - Persist CLI history in SQLite with a cap.
-  - Generate destructive-command lists from TOML and assert
-    frontend/backend parity in CI.
-  - Replace Pub/Sub polling drain with a Tauri event channel.
-  - Preserve Redis CLI `MULTI`/`EXEC` state on a dedicated per-tab
-    connection.
-  - Add frontend `@tauri-apps/plugin-log` access so JS code can
-    `info()`/`error()` into the same logger as the backend.
-
-## Cross-Cutting UX Follow-Ups
-
-### Empty, loading, and error state polish
-- Source: `designs/FOLLOWUPS.md`
-- Current state: The cross-cutting UX pass shipped state shells;
-  surface-specific polish remains.
-- Expected work: Replace generic empty states with surface-specific
-  empty, skeleton loading, inline error, and retry states for the
-  remaining surfaces.
-
-### Query editor transaction status
-- Source: `designs/FOLLOWUPS.md`,
-  `src/components/query-editor/status-items.ts`
-- Current state: The literal "Auto-commit ON" copy is gone — status
-  bar shows connection / tab / cursor / diagnostics. There is no
-  transaction-state indicator at all.
-- Expected work (feature, not placeholder): Track per-connection
-  transaction state on the Rust side, surface it in the editor footer
-  as `Auto-commit ON` / `In transaction` / `Failed transaction`, and
-  wire commit/rollback controls.
+- `src/lib/store/keyvalue-pubsub.ts` is still a documented no-op —
+  meant to track Pub/Sub session client-side state when the auto-
+  reconnect feature lands.
+- `src/lib/store/keyvalue-workspace.ts` now caches
+  `redisCapabilitiesByConnection`; the rest of its surface
+  (watched keys, per-session DB switcher state) is reserved for the
+  features above.
 
 ## Search Notes
 
@@ -290,10 +163,87 @@ listed as pending and are now done.
   is cleared by `drop_cached` on disconnect/delete so reconnect
   re-probes. One round trip per session instead of per write; four
   new `parse_role` tests.
+- **Redis CLI history persisted in SQLite** — migration 6 adds
+  `redis_cli_history` (id / connection_id / command / submitted_at)
+  with a global 1000-entry cap trimmed on each insert. New
+  `load_redis_cli_history` / `append_redis_cli_history` Tauri
+  commands; `CliTab.tsx` hydrates a `recallHistory` array on mount
+  and prepends each submission, so arrow-up recall survives tab
+  close. Two new storage tests cover the connection filter and the
+  global trim.
 - **DDL default-value bareword whitelist** —
   `src/lib/ddl/shared.ts::formatDefault` now emits
   `CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `LOCALTIMESTAMP`,
   `LOCALTIME`, `CURRENT_USER`, `SESSION_USER`, `USER`, `NULL`, `TRUE`,
   `FALSE` raw (case-insensitive). Three new tests in
   `postgres.test.ts`. The full literal-vs-expression tagged-union
-  model remains deferred above.
+  model is in the roadmap section above.
+- **Frontend `@tauri-apps/plugin-log` access** — package installed +
+  `log:default` capability granted; `src/lib/log.ts` exports a tiny
+  `log.{debug,info,warn,error}` helper that routes to the backend
+  logger when in Tauri and falls back to `console.*` otherwise.
+- **Publish-from-UI in Pub/Sub** — `redis_pubsub_publish` Tauri
+  command issues `PUBLISH channel message`; the toolbar grows a
+  collapsible Publish row (channel + message + Send), Enter submits,
+  toast surfaces the subscriber count from the integer reply.
+- **Client-side CLI argument validation** — `findCommand`,
+  `requiredArgCount`, and `validateArgs` in
+  `src/lib/redis/cli-catalog.ts` provide bracket-aware arity counting
+  with two-word command awareness. CliTab calls `validateArgs` before
+  round-tripping; arity shortfalls become inline rejected entries
+  with the args hint, saving a server round trip on malformed
+  commands. 11 new tests.
+- **CLI command documentation strip** — `CliTab` renders a one-line
+  strip above the input showing the matched command's signature +
+  description (sourced from the static catalog) while the user
+  types. Persists after accepting a suggestion as long as the typed
+  prefix still resolves to a known command.
+- **Explicit Redis read-only toggle** — `RedisStoredConnection.read_only`
+  field + migration 7; `assert_writable` refuses writes when the flag
+  is set (independent of replica role). New `Read-only` switch in
+  `redis-fields.tsx` Advanced section; threaded through
+  `connectionSchema`, defaults, `buildRedis`, and
+  `defaultValuesFromConnection`.
+- **CLI MULTI/EXEC session state** — `cli::run_command` now accepts
+  an optional `session_id`; when present, the command routes through
+  a per-session dedicated `MultiplexedConnection` (held in a
+  `tokio::sync::Mutex` inside a module-static map) so `MULTI ...
+  EXEC` queues against one physical request stream instead of being
+  fan-shared with other tabs. `CliTab` passes its `tabId` as the
+  session ID and fires `closeRedisCliSession` on unmount.
+- **Pub/Sub Tauri event channel** — `pubsub::start_session` now takes
+  an `AppHandle`; the worker emits each message as a
+  `pubsub-message` Tauri event (with `sessionId` for routing) instead
+  of relying on the frontend to poll `drain`. `use-pubsub-subscription`
+  switched from a 750ms `setInterval` to a single `listen(...)` that
+  filters by session ID. The backend buffer + drain endpoint remain
+  as a catch-up path the frontend hits once on session-start to
+  recover messages received before the listener attached.
+- **Stream consumer-group write actions** —
+  `redis_create_stream_group` / `redis_destroy_stream_group` Tauri
+  commands wrap `XGROUP CREATE [MKSTREAM]` / `XGROUP DESTROY`.
+  `ConsumerGroupsPanel` grows an inline "New group" form (name +
+  start-ID + MKSTREAM checkbox) and a per-group destroy button with
+  typed-confirm. `XACK`/`XCLAIM` are intentionally not surfaced —
+  they're consumer-code operations, not interactive UI actions.
+- **Replica warning on Redis masters with attached replicas** —
+  KeyValue Workspace slice now stores
+  `redisCapabilitiesByConnection`; `connectConnection` populates it
+  from the capability probe; `closeKeyTabsForConnection` clears it on
+  disconnect/delete. KeyspaceBrowser renders a dismissable advisory
+  when `role === "master" && connected_slaves > 0`. Dismiss state is
+  session-local (a future migration can persist
+  `dismissed_replica_warning_at` on the connection record).
+- **Server tab `CONFIG SET` inline editor** — `redis_set_config`
+  Tauri command + per-row edit/save/cancel in `ConfigCard`. Guarded
+  by `window.confirm` since `CONFIG SET` is a destructive command.
+- **Destructive-commands TOML generator** —
+  `destructive-commands.toml` is now the single source of truth;
+  `scripts/generate-redis-commands.mjs` rewrites the
+  `<generated:destructive-commands>` block in
+  `destructive_commands.rs` and the whole
+  `src/lib/redis/destructive-commands.ts` file from it.
+  `engine-policy.ts` imports the generated TS constants instead of
+  hand-mirroring. `pnpm run generate:redis-commands` regenerates;
+  `pnpm run check:redis-commands` fails if the files drift (wire
+  into CI alongside `check:slice-isolation`).

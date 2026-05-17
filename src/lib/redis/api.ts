@@ -396,8 +396,17 @@ export function runRedisCommand(payload: {
   connectionId: string;
   tokens: string[];
   confirmed?: boolean;
+  /** Stable per-tab session ID. When present, commands route through
+   * the same physical connection so `MULTI ... EXEC` works. */
+  sessionId?: string;
 }): Promise<RunCommandResult> {
   return tauriInvoke<RunCommandResult>("redis_run_command", { payload });
+}
+
+export function closeRedisCliSession(payload: {
+  sessionId: string;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_cli_close_session", { payload });
 }
 
 // ---------------------------------------------------------------------------
@@ -512,6 +521,14 @@ export function fetchRedisConfig(payload: {
   });
 }
 
+export function setRedisConfig(payload: {
+  connectionId: string;
+  key: string;
+  value: string;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_set_config", { payload });
+}
+
 export type LatencyEntry = {
   event: string;
   timestamp: number;
@@ -578,6 +595,61 @@ export function discoverPubsubChannels(payload: {
     "redis_pubsub_discover",
     { payload },
   );
+}
+
+export function publishPubsubMessage(payload: {
+  connectionId: string;
+  channel: string;
+  message: string;
+}): Promise<{ receivers: number }> {
+  return tauriInvoke<{ receivers: number }>("redis_pubsub_publish", {
+    payload,
+  });
+}
+
+export function createStreamGroup(payload: {
+  connectionId: string;
+  key: string;
+  group: string;
+  startId: string;
+  mkstream?: boolean;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_create_stream_group", { payload });
+}
+
+export function destroyStreamGroup(payload: {
+  connectionId: string;
+  key: string;
+  group: string;
+}): Promise<number> {
+  return tauriInvoke<number>("redis_destroy_stream_group", { payload });
+}
+
+// ---------------------------------------------------------------------------
+// CLI history (SQLite-backed, 1000-entry global cap)
+// ---------------------------------------------------------------------------
+
+export type RedisCliHistoryEntry = {
+  id: string;
+  connectionId: string;
+  command: string;
+  submittedAt: string;
+};
+
+export function loadRedisCliHistory(
+  connectionId: string,
+  limit?: number,
+): Promise<RedisCliHistoryEntry[]> {
+  return tauriInvoke<RedisCliHistoryEntry[]>("load_redis_cli_history", {
+    connectionId,
+    limit,
+  });
+}
+
+export function appendRedisCliHistory(
+  entry: RedisCliHistoryEntry,
+): Promise<void> {
+  return tauriInvoke<void>("append_redis_cli_history", { entry });
 }
 
 /** Render a `SerializedValue` as a single line — used by row gutters

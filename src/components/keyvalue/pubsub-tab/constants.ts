@@ -10,5 +10,4 @@ export const PUBSUB_SIDEBAR_MAX = 360;
 export const PUBSUB_SIDEBAR_DEFAULT = 224;
 export const PUBSUB_AUTO_HIDE_BELOW_PX = 560;
 
-export const DRAIN_INTERVAL_MS = 750;
 export const MAX_BUFFER = 10_000;

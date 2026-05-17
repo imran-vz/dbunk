@@ -18,10 +18,16 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 
 use crate::redis::connection;
 use crate::redis::value::{self, SerializedValue};
 use crate::RedisStoredConnection;
+
+/// Tauri event channel name. Frontend listens for these via
+/// `listen("pubsub-message", ...)` — replaces the older 750ms polling
+/// drain (`drain` is kept around as a deprecated fallback / catch-up).
+pub const PUBSUB_EVENT: &str = "pubsub-message";
 
 const BUFFER_CAP: usize = 10_000;
 
@@ -61,7 +67,18 @@ pub struct StartSessionResult {
     pub session_id: String,
 }
 
+/// Envelope emitted on the `pubsub-message` Tauri channel. Frontend
+/// filters by `session_id` so multiple Pub/Sub tabs can share one
+/// global listener.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PubsubEvent {
+    session_id: String,
+    message: DrainedMessage,
+}
+
 pub async fn start_session(
+    app: &AppHandle,
     connection: &RedisStoredConnection,
     payload: &StartSessionPayload,
 ) -> Result<StartSessionResult, String> {
@@ -85,6 +102,7 @@ pub async fn start_session(
 
     let session_id = payload.session_id.clone();
     let session_id_for_task = session_id.clone();
+    let app_for_task = app.clone();
 
     let handle = tokio::spawn(async move {
         let mut stream = pubsub.on_message();
@@ -95,18 +113,30 @@ pub async fn start_session(
                 .ok()
                 .unwrap_or_else(|| channel.clone());
             let payload_value: redis::Value = msg.get_payload().unwrap_or(redis::Value::Nil);
-            push_message(
-                &session_id_for_task,
-                DrainedMessage {
-                    received_at_ms: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis())
-                        .unwrap_or(0),
-                    channel,
-                    pattern_matched: pattern,
-                    payload: value::serialize(payload_value),
+            let message = DrainedMessage {
+                received_at_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0),
+                channel,
+                pattern_matched: pattern,
+                payload: value::serialize(payload_value),
+            };
+            // Buffer first so a frontend that hasn't attached its
+            // listener yet (a few ms window during session-start)
+            // can catch up via the `drain` endpoint. Then emit so a
+            // listener that's already attached sees the message
+            // without polling.
+            push_message(&session_id_for_task, message.clone());
+            if let Err(err) = app_for_task.emit(
+                PUBSUB_EVENT,
+                PubsubEvent {
+                    session_id: session_id_for_task.clone(),
+                    message,
                 },
-            );
+            ) {
+                log::warn!("pubsub emit failed: {}", err);
+            }
         }
     });
 
@@ -303,4 +333,44 @@ pub async fn discover_channels(
         .collect();
     result.sort_by(|a, b| b.subscribers.cmp(&a.subscribers));
     Ok(DiscoverChannelsResult { channels: result })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishPayload {
+    pub connection_id: String,
+    pub channel: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishResult {
+    /// Number of clients that received the message (from `PUBLISH`'s
+    /// integer reply). On a fresh server with no subscribers this is
+    /// 0, which is informational rather than an error.
+    pub receivers: u64,
+}
+
+/// Issue `PUBLISH channel message` against the connection. Uses the
+/// shared multiplexed manager — Pub/Sub-subscriber sessions are
+/// separate (one connection per subscriber), so publishing doesn't
+/// interact with the subscribe-side ring buffer.
+pub async fn publish(
+    connection: &RedisStoredConnection,
+    payload: &PublishPayload,
+) -> Result<PublishResult, String> {
+    if payload.channel.trim().is_empty() {
+        return Err("Channel is required".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let receivers: i64 = redis::cmd("PUBLISH")
+        .arg(&payload.channel)
+        .arg(&payload.message)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(PublishResult {
+        receivers: u64::try_from(receivers).unwrap_or(0),
+    })
 }

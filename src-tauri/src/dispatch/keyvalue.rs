@@ -6,7 +6,9 @@
 //! type fetchers. Phase 1.3+ adds CLI, pub/sub, server info.
 
 use crate::redis::capabilities;
-use crate::redis::cli::{self, RunCommandPayload, RunCommandResult};
+use crate::redis::cli::{
+    self, CloseSessionPayload as CliCloseSessionPayload, RunCommandPayload, RunCommandResult,
+};
 use crate::redis::key_inspector::{
     self, FetchHashPayload, FetchJsonPayload, FetchListPayload, FetchSetPayload,
     FetchSortedSetPayload, FetchStreamGroupsPayload, FetchStreamPayload, FetchStringPayload,
@@ -14,15 +16,15 @@ use crate::redis::key_inspector::{
     SortedSetValuePayload, StreamGroupsPayload, StreamValuePayload, StringValuePayload,
 };
 use crate::redis::key_ops::{
-    self, ApplyListEditsPayload, CreateKeyPayload, DelKeysPayload, DelKeysResult,
-    DeleteHashFieldsPayload, JsonDeletePayload, JsonSetPayload, RenameKeyPayload, SetExpirePayload,
-    SetHashFieldsPayload, SetMembersPayload, SetStringPayload, SetStringResult,
-    SortedSetEditsPayload, StreamEditsPayload,
+    self, ApplyListEditsPayload, CreateKeyPayload, CreateStreamGroupPayload, DelKeysPayload,
+    DelKeysResult, DeleteHashFieldsPayload, DestroyStreamGroupPayload, JsonDeletePayload,
+    JsonSetPayload, RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetMembersPayload,
+    SetStringPayload, SetStringResult, SortedSetEditsPayload, StreamEditsPayload,
 };
 use crate::redis::keyspace::{self, ScanKeysPayload, ScanKeysResult};
 use crate::redis::pubsub::{
     self, CloseSessionPayload, DiscoverChannelsPayload, DiscoverChannelsResult, DrainPayload,
-    DrainResult, StartSessionPayload, StartSessionResult,
+    DrainResult, PublishPayload, PublishResult, StartSessionPayload, StartSessionResult,
 };
 use crate::redis::server_info::{
     self, AclListPayload, ClientListPayload, ConfigPayload, KeyValueOverviewStats, LatencyPayload,
@@ -131,6 +133,10 @@ pub async fn run_command(
     cli::run_command(as_redis(connection)?, payload).await
 }
 
+pub fn cli_close_session(payload: &CliCloseSessionPayload) {
+    cli::close_session(payload);
+}
+
 pub async fn fetch_overview(
     connection: &StoredConnection,
 ) -> Result<KeyValueOverviewStats, String> {
@@ -152,15 +158,24 @@ pub async fn fetch_config(
     server_info::fetch_config(as_redis(connection)?, pattern).await
 }
 
+pub async fn set_config(
+    connection: &StoredConnection,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    server_info::set_config(as_redis(connection)?, key, value).await
+}
+
 pub async fn fetch_latency(connection: &StoredConnection) -> Result<LatencyPayload, String> {
     server_info::fetch_latency(as_redis(connection)?).await
 }
 
 pub async fn pubsub_start(
+    app: &tauri::AppHandle,
     connection: &StoredConnection,
     payload: &StartSessionPayload,
 ) -> Result<StartSessionResult, String> {
-    pubsub::start_session(as_redis(connection)?, payload).await
+    pubsub::start_session(app, as_redis(connection)?, payload).await
 }
 
 pub async fn pubsub_discover(
@@ -176,6 +191,13 @@ pub fn pubsub_drain(payload: &DrainPayload) -> DrainResult {
 
 pub fn pubsub_close(payload: &CloseSessionPayload) {
     pubsub::close_session(payload);
+}
+
+pub async fn pubsub_publish(
+    connection: &StoredConnection,
+    payload: &PublishPayload,
+) -> Result<PublishResult, String> {
+    pubsub::publish(as_redis(connection)?, payload).await
 }
 
 pub async fn set_string(
@@ -253,6 +275,20 @@ pub async fn apply_stream_edits(
     payload: &StreamEditsPayload,
 ) -> Result<(), String> {
     key_ops::apply_stream_edits(as_redis(connection)?, payload).await
+}
+
+pub async fn create_stream_group(
+    connection: &StoredConnection,
+    payload: &CreateStreamGroupPayload,
+) -> Result<(), String> {
+    key_ops::create_stream_group(as_redis(connection)?, payload).await
+}
+
+pub async fn destroy_stream_group(
+    connection: &StoredConnection,
+    payload: &DestroyStreamGroupPayload,
+) -> Result<u64, String> {
+    key_ops::destroy_stream_group(as_redis(connection)?, payload).await
 }
 
 pub async fn set_json_path(

@@ -9,6 +9,7 @@
 
 import { IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
   type KeyValueOverviewStats,
   type LatencyEntry,
   type RedisConfigEntry,
+  setRedisConfig,
 } from "@/lib/redis/api";
 
 interface ServerTabProps {
@@ -287,10 +289,40 @@ function ConfigCard({
 }) {
   const [pattern, setPattern] = useState("*max*");
   const [submitted, setSubmitted] = useState(pattern);
+  const [localTick, setLocalTick] = useState(0);
   const { data, error, loading } = useFetched(
     () => fetchRedisConfig({ connectionId, pattern: submitted }),
-    `config|${connectionId}|${submitted}|${refreshTick}`,
+    `config|${connectionId}|${submitted}|${refreshTick}|${localTick}`,
   );
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const startEdit = (entry: RedisConfigEntry) => {
+    setEditKey(entry.key);
+    setEditValue(entry.value);
+  };
+  const cancelEdit = () => {
+    setEditKey(null);
+    setEditValue("");
+  };
+  const saveEdit = async () => {
+    if (!editKey) return;
+    const confirmed = window.confirm(
+      `Run CONFIG SET ${editKey} ${editValue}? This changes server-wide configuration.`,
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      await setRedisConfig({ connectionId, key: editKey, value: editValue });
+      toast.success(`CONFIG SET ${editKey}`);
+      cancelEdit();
+      setLocalTick((tick) => tick + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -336,7 +368,49 @@ function ConfigCard({
               {data?.entries.map((entry: RedisConfigEntry) => (
                 <tr key={entry.key}>
                   <td className="px-2 py-1 text-text-muted">{entry.key}</td>
-                  <td className="px-2 py-1 break-all">{entry.value || "—"}</td>
+                  <td className="px-2 py-1 break-all">
+                    {editKey === entry.key ? (
+                      <input
+                        value={editValue}
+                        onChange={(event) => setEditValue(event.target.value)}
+                        className="h-6 w-full rounded border border-border-subtle bg-surface-panel px-1 font-mono text-[0.65rem]"
+                        aria-label={`Value for ${entry.key}`}
+                      />
+                    ) : (
+                      entry.value || "—"
+                    )}
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    {editKey === entry.key ? (
+                      <span className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => {
+                            void saveEdit();
+                          }}
+                          className="text-accent-green hover:underline disabled:opacity-50"
+                        >
+                          save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          className="text-text-muted hover:underline"
+                        >
+                          cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(entry)}
+                        className="text-text-muted hover:text-foreground hover:underline"
+                      >
+                        edit
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

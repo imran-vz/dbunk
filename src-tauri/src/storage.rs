@@ -14,8 +14,9 @@ use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 use crate::{
     ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
-    PgStoredConnection, PositionRow, QueryHistoryEntry, RedisStoredConnection, SavedQuery,
-    SchemaMapPrefs, SchemaMapPrefsPatch, SqliteStoredConnection, StoredConnection,
+    PgStoredConnection, PositionRow, QueryHistoryEntry, RedisCliHistoryEntry,
+    RedisStoredConnection, SavedQuery, SchemaMapPrefs, SchemaMapPrefsPatch, SqliteStoredConnection,
+    StoredConnection,
 };
 
 const DB_FILE: &str = "dbunk.sqlite";
@@ -148,6 +149,34 @@ CREATE TABLE schema_map_prefs (
         // column (it stays NULL on their rows).
         r#"
 ALTER TABLE connections ADD COLUMN driver_options TEXT;
+"#,
+    ),
+    (
+        6,
+        // Redis CLI command history. One row per submitted command,
+        // scoped to the connection. Results are NOT persisted — only
+        // the command text + when it was submitted, mirroring the
+        // shell-history idea. Capped globally at 1000 rows via
+        // `REDIS_CLI_HISTORY_CAP` (trimmed on every insert).
+        r#"
+CREATE TABLE redis_cli_history (
+  id            TEXT NOT NULL PRIMARY KEY,
+  connection_id TEXT NOT NULL,
+  command       TEXT NOT NULL,
+  submitted_at  TEXT NOT NULL
+);
+
+CREATE INDEX idx_redis_cli_history_connection_submitted_at
+  ON redis_cli_history(connection_id, submitted_at DESC);
+"#,
+    ),
+    (
+        7,
+        // Belt-and-braces Redis read-only toggle (ADR-0009). Default
+        // 0 (not read-only). When 1, `assert_writable` rejects writes
+        // without even consulting the replica-role cache.
+        r#"
+ALTER TABLE connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;
 "#,
     ),
 ];
@@ -344,7 +373,8 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
     let rows = sqlx::query(
         "SELECT id, name, database_name, engine, host, port, user_name, role,
                 last_activity_at, use_https, url_path,
-                db_number, use_tls, verify_tls_cert, ssl, driver_options
+                db_number, use_tls, verify_tls_cert, ssl, driver_options,
+                read_only
          FROM connections
          ORDER BY name COLLATE NOCASE ASC",
     )
@@ -452,6 +482,7 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
                     db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
                     use_tls: row.get::<i64, _>("use_tls") != 0,
                     verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
+                    read_only: row.get::<i64, _>("read_only") != 0,
                 }),
             })
         })
@@ -480,13 +511,14 @@ pub async fn upsert_connection(
         StoredConnection::ClickHouse(c) => (bool_to_i64(c.use_https), c.url_path.clone()),
         _ => (0, String::new()),
     };
-    let (db_number, use_tls, verify_tls_cert) = match connection {
+    let (db_number, use_tls, verify_tls_cert, read_only) = match connection {
         StoredConnection::Redis(c) => (
             i64::from(c.db_number),
             bool_to_i64(c.use_tls),
             bool_to_i64(c.verify_tls_cert),
+            bool_to_i64(c.read_only),
         ),
-        _ => (0, 0, 1),
+        _ => (0, 0, 1, 0),
     };
     let ssl = match connection {
         StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl),
@@ -510,9 +542,10 @@ pub async fn upsert_connection(
         "INSERT INTO connections (
             id, name, database_name, engine, host, port, user_name, role,
             last_activity_at, use_https, url_path,
-            db_number, use_tls, verify_tls_cert, ssl, driver_options
+            db_number, use_tls, verify_tls_cert, ssl, driver_options,
+            read_only
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -528,7 +561,8 @@ pub async fn upsert_connection(
             use_tls = excluded.use_tls,
             verify_tls_cert = excluded.verify_tls_cert,
             ssl = excluded.ssl,
-            driver_options = excluded.driver_options",
+            driver_options = excluded.driver_options,
+            read_only = excluded.read_only",
     )
     .bind(id)
     .bind(name)
@@ -546,6 +580,7 @@ pub async fn upsert_connection(
     .bind(verify_tls_cert)
     .bind(ssl)
     .bind(driver_options)
+    .bind(read_only)
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -956,6 +991,73 @@ pub async fn insert_query_history(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Redis CLI history
+// ---------------------------------------------------------------------------
+
+/// Maximum number of Redis CLI history rows kept in SQLite. The cap
+/// is global (not per-connection) — same shape as the query-history
+/// cap — and trimmed on every insert.
+pub const REDIS_CLI_HISTORY_CAP: u32 = 1000;
+
+pub async fn read_redis_cli_history(
+    pool: &SqlitePool,
+    connection_id: &str,
+    limit: Option<u32>,
+) -> Result<Vec<RedisCliHistoryEntry>, String> {
+    let limit = limit.unwrap_or(REDIS_CLI_HISTORY_CAP);
+    let rows = sqlx::query(
+        "SELECT id, connection_id, command, submitted_at
+         FROM redis_cli_history
+         WHERE connection_id = ?
+         ORDER BY submitted_at DESC
+         LIMIT ?",
+    )
+    .bind(connection_id)
+    .bind(i64::from(limit))
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| RedisCliHistoryEntry {
+            id: row.get("id"),
+            connection_id: row.get("connection_id"),
+            command: row.get("command"),
+            submitted_at: row.get("submitted_at"),
+        })
+        .collect())
+}
+
+pub async fn insert_redis_cli_history(
+    pool: &SqlitePool,
+    entry: &RedisCliHistoryEntry,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO redis_cli_history (id, connection_id, command, submitted_at)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(&entry.id)
+    .bind(&entry.connection_id)
+    .bind(&entry.command)
+    .bind(&entry.submitted_at)
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query(&format!(
+        "DELETE FROM redis_cli_history
+         WHERE id NOT IN (
+           SELECT id FROM redis_cli_history ORDER BY submitted_at DESC LIMIT {}
+         )",
+        REDIS_CLI_HISTORY_CAP
+    ))
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub async fn clear_query_history(pool: &SqlitePool) -> Result<(), String> {
     sqlx::query("DELETE FROM query_history")
         .execute(pool)
@@ -1169,5 +1271,72 @@ mod tests {
                 .expect("prefs"),
             default_schema_map_prefs()
         );
+    }
+
+    fn cli_entry(id: &str, connection_id: &str, command: &str, ts: &str) -> RedisCliHistoryEntry {
+        RedisCliHistoryEntry {
+            id: id.to_string(),
+            connection_id: connection_id.to_string(),
+            command: command.to_string(),
+            submitted_at: ts.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn redis_cli_history_round_trip_filters_by_connection() {
+        let pool = test_pool().await;
+        insert_redis_cli_history(
+            &pool,
+            &cli_entry("1", "conn-1", "GET foo", "2026-05-16T10:00:00Z"),
+        )
+        .await
+        .expect("insert");
+        insert_redis_cli_history(
+            &pool,
+            &cli_entry("2", "conn-2", "SET bar baz", "2026-05-16T10:01:00Z"),
+        )
+        .await
+        .expect("insert");
+        insert_redis_cli_history(
+            &pool,
+            &cli_entry("3", "conn-1", "HGETALL h", "2026-05-16T10:02:00Z"),
+        )
+        .await
+        .expect("insert");
+
+        let conn1 = read_redis_cli_history(&pool, "conn-1", None)
+            .await
+            .expect("read");
+        assert_eq!(conn1.len(), 2);
+        // Newest first.
+        assert_eq!(conn1[0].command, "HGETALL h");
+        assert_eq!(conn1[1].command, "GET foo");
+
+        let conn2 = read_redis_cli_history(&pool, "conn-2", None)
+            .await
+            .expect("read");
+        assert_eq!(conn2.len(), 1);
+        assert_eq!(conn2[0].command, "SET bar baz");
+    }
+
+    #[tokio::test]
+    async fn redis_cli_history_trims_to_cap_globally() {
+        let pool = test_pool().await;
+        // Insert REDIS_CLI_HISTORY_CAP + 5 rows so trim has work to do.
+        for i in 0..(REDIS_CLI_HISTORY_CAP + 5) {
+            // Lexicographic-sortable ISO-ish timestamp so ORDER BY DESC
+            // matches insertion order.
+            let ts = format!("2026-05-16T10:{:06}Z", i);
+            insert_redis_cli_history(&pool, &cli_entry(&format!("id-{i}"), "conn-1", "PING", &ts))
+                .await
+                .expect("insert");
+        }
+        let rows = read_redis_cli_history(&pool, "conn-1", None)
+            .await
+            .expect("read");
+        assert_eq!(rows.len(), REDIS_CLI_HISTORY_CAP as usize);
+        // The oldest 5 entries should have been trimmed.
+        assert!(rows.iter().all(|row| row.id != "id-0"));
+        assert!(rows.iter().all(|row| row.id != "id-4"));
     }
 }

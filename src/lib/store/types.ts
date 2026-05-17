@@ -175,6 +175,10 @@ export type RedisStoredConnection = ConnectionCommon & {
   useTls: boolean;
   /** Verify the TLS certificate when useTls is on. */
   verifyTlsCert: boolean;
+  /** Belt-and-braces safety toggle. When true, the backend refuses
+   *  every write for this connection, independent of the replica-role
+   *  check. See ADR-0009. */
+  readOnly: boolean;
 };
 
 export type StoredConnection =

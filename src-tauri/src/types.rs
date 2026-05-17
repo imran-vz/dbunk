@@ -283,6 +283,12 @@ pub(crate) struct RedisStoredConnection {
     /// true. Default true; users disable for self-signed dev servers.
     #[serde(default = "default_true")]
     pub verify_tls_cert: bool,
+    /// Belt-and-braces safety toggle: when `true`, the backend
+    /// rejects every write (`assert_writable`) for this connection,
+    /// independent of the replica-role check. Defaults to `false`.
+    /// See ADR-0009.
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 fn default_true() -> bool {
@@ -441,6 +447,15 @@ pub(crate) struct RedisCapabilities {
 pub(crate) struct RedisModuleInfo {
     pub name: String,
     pub version: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RedisCliHistoryEntry {
+    pub id: String,
+    pub connection_id: String,
+    pub command: String,
+    pub submitted_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

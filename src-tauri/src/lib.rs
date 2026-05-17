@@ -805,6 +805,23 @@ async fn clear_query_history(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn load_redis_cli_history(
+    state: State<'_, AppState>,
+    connection_id: String,
+    limit: Option<u32>,
+) -> Result<Vec<RedisCliHistoryEntry>, String> {
+    storage::read_redis_cli_history(&state.inner().pool, &connection_id, limit).await
+}
+
+#[tauri::command]
+async fn append_redis_cli_history(
+    state: State<'_, AppState>,
+    entry: RedisCliHistoryEntry,
+) -> Result<(), String> {
+    storage::insert_redis_cli_history(&state.inner().pool, &entry).await
+}
+
+#[tauri::command]
 async fn load_saved_queries(state: State<'_, AppState>) -> Result<Vec<SavedQuery>, String> {
     storage::read_saved_queries(&state.inner().pool).await
 }
@@ -962,6 +979,11 @@ async fn redis_fetch_json(
 }
 
 #[tauri::command]
+fn redis_cli_close_session(payload: redis::cli::CloseSessionPayload) {
+    dispatch::keyvalue::cli_close_session(&payload);
+}
+
+#[tauri::command]
 async fn redis_run_command(
     state: State<'_, AppState>,
     payload: redis::cli::RunCommandPayload,
@@ -1039,6 +1061,29 @@ async fn redis_fetch_config(
     .await
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetConfigPayload {
+    connection_id: String,
+    key: String,
+    value: String,
+}
+
+#[tauri::command]
+async fn redis_set_config(
+    state: State<'_, AppState>,
+    payload: SetConfigPayload,
+) -> Result<(), String> {
+    with_active_connection(
+        state.inner(),
+        &payload.connection_id,
+        |connection| async move {
+            dispatch::keyvalue::set_config(&connection, &payload.key, &payload.value).await
+        },
+    )
+    .await
+}
+
 #[tauri::command]
 async fn redis_fetch_latency(
     state: State<'_, AppState>,
@@ -1054,12 +1099,13 @@ async fn redis_fetch_latency(
 
 #[tauri::command]
 async fn redis_pubsub_start(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     payload: redis::pubsub::StartSessionPayload,
 ) -> Result<redis::pubsub::StartSessionResult, String> {
     let connection_id = payload.connection_id.clone();
     with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::keyvalue::pubsub_start(&connection, &payload).await
+        dispatch::keyvalue::pubsub_start(&app, &connection, &payload).await
     })
     .await
 }
@@ -1084,6 +1130,18 @@ fn redis_pubsub_drain(payload: redis::pubsub::DrainPayload) -> redis::pubsub::Dr
 #[tauri::command]
 fn redis_pubsub_close(payload: redis::pubsub::CloseSessionPayload) {
     dispatch::keyvalue::pubsub_close(&payload);
+}
+
+#[tauri::command]
+async fn redis_pubsub_publish(
+    state: State<'_, AppState>,
+    payload: redis::pubsub::PublishPayload,
+) -> Result<redis::pubsub::PublishResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::pubsub_publish(&connection, &payload).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1214,6 +1272,30 @@ async fn redis_apply_stream_edits(
     let connection_id = payload.connection_id.clone();
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::keyvalue::apply_stream_edits(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_create_stream_group(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::CreateStreamGroupPayload,
+) -> Result<(), String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::create_stream_group(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
+async fn redis_destroy_stream_group(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::DestroyStreamGroupPayload,
+) -> Result<u64, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::destroy_stream_group(&connection, &payload).await
     })
     .await
 }
@@ -1466,6 +1548,8 @@ pub fn run() {
             load_query_history,
             append_query_history,
             clear_query_history,
+            load_redis_cli_history,
+            append_redis_cli_history,
             load_saved_queries,
             save_saved_query,
             delete_saved_query,
@@ -1480,15 +1564,18 @@ pub fn run() {
             redis_fetch_stream_groups,
             redis_fetch_json,
             redis_run_command,
+            redis_cli_close_session,
             redis_fetch_overview,
             redis_fetch_client_list,
             redis_fetch_acl_list,
             redis_fetch_config,
+            redis_set_config,
             redis_fetch_latency,
             redis_pubsub_start,
             redis_pubsub_discover,
             redis_pubsub_drain,
             redis_pubsub_close,
+            redis_pubsub_publish,
             redis_set_string,
             redis_set_hash_fields,
             redis_delete_hash_fields,
@@ -1500,6 +1587,8 @@ pub fn run() {
             redis_apply_set_edits,
             redis_apply_sorted_set_edits,
             redis_apply_stream_edits,
+            redis_create_stream_group,
+            redis_destroy_stream_group,
             redis_set_json_path,
             redis_delete_json_path
         ])

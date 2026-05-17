@@ -40,6 +40,8 @@
     "fix": "biome check --write",
     "typecheck": "tsc --noEmit",
     "check:slice-isolation": "! grep -rE 'from \"\\./(connections|workspace-tabs|credentials|relational-tables|relational-queries|keyvalue-workspace|keyvalue-pubsub)\"' src/lib/store/connections.ts src/lib/store/workspace-tabs.ts src/lib/store/credentials.ts src/lib/store/relational-tables.ts src/lib/store/relational-queries.ts src/lib/store/keyvalue-workspace.ts src/lib/store/keyvalue-pubsub.ts",
+    "generate:redis-commands": "node scripts/generate-redis-commands.mjs",
+    "check:redis-commands": "node scripts/generate-redis-commands.mjs --check",
     "dev": "tauri dev",
     "build": "tauri build"
   },
@@ -57,6 +59,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/router-plugin": "^1.167.35",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-log": "^2.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

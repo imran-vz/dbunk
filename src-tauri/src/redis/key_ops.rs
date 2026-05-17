@@ -21,6 +21,9 @@ use crate::RedisStoredConnection;
 /// blocks it) — when the role can't be determined we cache `false`
 /// and allow the write, matching the previous behaviour.
 async fn assert_writable(connection_arg: &RedisStoredConnection) -> Result<(), String> {
+    if connection_arg.read_only {
+        return Err(read_only_toggle_error());
+    }
     if let Some(is_replica) = connection::cached_replica_role(&connection_arg.id) {
         return if is_replica {
             Err(replica_write_error())
@@ -41,6 +44,10 @@ async fn assert_writable(connection_arg: &RedisStoredConnection) -> Result<(), S
 fn replica_write_error() -> String {
     "This Redis server reports role=replica. Writes are disabled (ADR-0009 auto-read-only)."
         .to_string()
+}
+
+fn read_only_toggle_error() -> String {
+    "This connection is flagged read-only. Toggle off the read-only switch on the connection to write.".to_string()
 }
 
 async fn probe_replica_role(connection_arg: &RedisStoredConnection) -> bool {
@@ -472,6 +479,83 @@ pub async fn apply_stream_edits(
         .await
         .map_err(connection::redis_err)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Stream consumer-group write actions
+// ---------------------------------------------------------------------------
+//
+// XGROUP CREATE and XGROUP DESTROY are the two operations users actually
+// reach for interactively. XACK / XCLAIM are consumer-side operations
+// that don't make sense from a one-shot UI — they're left out.
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateStreamGroupPayload {
+    pub connection_id: String,
+    pub key: String,
+    pub group: String,
+    /// Start-ID for the new group. Accepts `$` (only new entries),
+    /// `0` (replay everything), or an explicit `ms-seq` ID.
+    pub start_id: String,
+    /// When `true`, append `MKSTREAM` so the call also creates the
+    /// stream if it doesn't yet exist.
+    #[serde(default)]
+    pub mkstream: bool,
+}
+
+pub async fn create_stream_group(
+    connection: &RedisStoredConnection,
+    payload: &CreateStreamGroupPayload,
+) -> Result<(), String> {
+    assert_writable(connection).await?;
+    if payload.group.trim().is_empty() {
+        return Err("Group name is required".to_string());
+    }
+    if payload.start_id.trim().is_empty() {
+        return Err("Start ID is required (use $ for new-only or 0 to replay)".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let mut cmd = redis::cmd("XGROUP");
+    cmd.arg("CREATE")
+        .arg(&payload.key)
+        .arg(&payload.group)
+        .arg(&payload.start_id);
+    if payload.mkstream {
+        cmd.arg("MKSTREAM");
+    }
+    let _: redis::Value = cmd
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DestroyStreamGroupPayload {
+    pub connection_id: String,
+    pub key: String,
+    pub group: String,
+}
+
+pub async fn destroy_stream_group(
+    connection: &RedisStoredConnection,
+    payload: &DestroyStreamGroupPayload,
+) -> Result<u64, String> {
+    assert_writable(connection).await?;
+    if payload.group.trim().is_empty() {
+        return Err("Group name is required".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let removed: i64 = redis::cmd("XGROUP")
+        .arg("DESTROY")
+        .arg(&payload.key)
+        .arg(&payload.group)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(u64::try_from(removed).unwrap_or(0))
 }
 
 // ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ export const connectionSchema = z.object({
   dbNumber: z.number().int().min(0).max(15).optional(),
   useTls: z.boolean().optional(),
   verifyTlsCert: z.boolean().optional(),
+  readOnly: z.boolean().optional(),
 });
 
 export type ConnectionFormData = z.infer<typeof connectionSchema>;
@@ -53,6 +54,7 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   dbNumber: 0,
   useTls: false,
   verifyTlsCert: true,
+  readOnly: false,
 };
 
 type CommonShape = {
@@ -119,6 +121,7 @@ function buildRedis(
     dbNumber: value.dbNumber ?? 0,
     useTls: value.useTls ?? false,
     verifyTlsCert: value.verifyTlsCert ?? true,
+    readOnly: value.readOnly ?? false,
   };
 }
 
@@ -184,6 +187,7 @@ export function defaultValuesFromConnection(
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
+        readOnly: false,
       };
     case "SQLite":
       return {
@@ -194,6 +198,7 @@ export function defaultValuesFromConnection(
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
+        readOnly: false,
       };
     case "ClickHouse":
       return {
@@ -204,6 +209,7 @@ export function defaultValuesFromConnection(
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
+        readOnly: false,
       };
     case "Redis":
       return {
@@ -214,6 +220,7 @@ export function defaultValuesFromConnection(
         dbNumber: connection.dbNumber,
         useTls: connection.useTls,
         verifyTlsCert: connection.verifyTlsCert,
+        readOnly: connection.readOnly,
       };
   }
 }
