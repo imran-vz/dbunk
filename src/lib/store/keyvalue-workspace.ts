@@ -54,6 +54,17 @@ export type KeyValueWorkspaceSlice = {
   setRedisAclSelf: (connectionId: string, acl: RedisAclSelf) => void;
 
   /**
+   * Per-connection pinned key list ("Watched keys"). Surfaced at the
+   * top of the keyspace browser so the user can keep favourites
+   * one-click away across sidebar scans. In-memory for now — a
+   * follow-up can persist to SQLite alongside `saved_queries`.
+   */
+  watchedKeysByConnection: Record<string, string[]>;
+
+  pinKey: (connectionId: string, key: string) => void;
+  unpinKey: (connectionId: string, key: string) => void;
+
+  /**
    * Cascade cleanup — drops every keyvalue-owned per-connection
    * cache entry. Called by `deleteConnection` /
    * `disconnectConnection`.
@@ -69,6 +80,7 @@ export const createKeyValueWorkspaceSlice: StateCreator<
 > = (set) => ({
   redisCapabilitiesByConnection: {},
   redisAclSelfByConnection: {},
+  watchedKeysByConnection: {},
 
   setRedisCapabilities: (connectionId, capabilities) =>
     set((state) => ({
@@ -86,11 +98,37 @@ export const createKeyValueWorkspaceSlice: StateCreator<
       },
     })),
 
+  pinKey: (connectionId, key) =>
+    set((state) => {
+      const current = state.watchedKeysByConnection[connectionId] ?? [];
+      if (current.includes(key)) return {};
+      return {
+        watchedKeysByConnection: {
+          ...state.watchedKeysByConnection,
+          [connectionId]: [...current, key],
+        },
+      };
+    }),
+
+  unpinKey: (connectionId, key) =>
+    set((state) => {
+      const current = state.watchedKeysByConnection[connectionId];
+      if (!current || !current.includes(key)) return {};
+      const next = current.filter((existing) => existing !== key);
+      return {
+        watchedKeysByConnection: {
+          ...state.watchedKeysByConnection,
+          [connectionId]: next,
+        },
+      };
+    }),
+
   closeKeyTabsForConnection: (connectionId) =>
     set((state) => {
       const hasCaps = connectionId in state.redisCapabilitiesByConnection;
       const hasAcl = connectionId in state.redisAclSelfByConnection;
-      if (!hasCaps && !hasAcl) {
+      const hasWatched = connectionId in state.watchedKeysByConnection;
+      if (!hasCaps && !hasAcl && !hasWatched) {
         return {};
       }
       const next: Partial<KeyValueWorkspaceSlice> = {};
@@ -102,6 +140,10 @@ export const createKeyValueWorkspaceSlice: StateCreator<
       if (hasAcl) {
         const { [connectionId]: _, ...rest } = state.redisAclSelfByConnection;
         next.redisAclSelfByConnection = rest;
+      }
+      if (hasWatched) {
+        const { [connectionId]: _, ...rest } = state.watchedKeysByConnection;
+        next.watchedKeysByConnection = rest;
       }
       return next;
     }),

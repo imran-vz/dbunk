@@ -22,6 +22,8 @@ import {
   IconLayoutList,
   IconList,
   IconSearch,
+  IconStar,
+  IconStarFilled,
   IconWaveSine,
   IconX,
 } from "@tabler/icons-react";
@@ -56,6 +58,8 @@ const KEY_TYPES = [
   { id: "ReJSON-RL", label: "JSON" },
 ] as const;
 
+const EMPTY_KEYS: string[] = [];
+
 export function KeyspaceBrowser({
   connection,
   onOpenKey,
@@ -84,6 +88,12 @@ export function KeyspaceBrowser({
   const aclSelf = useAppStore(
     (state) => state.redisAclSelfByConnection[connection.id],
   );
+  const watchedKeys = useAppStore(
+    (state) => state.watchedKeysByConnection[connection.id] ?? EMPTY_KEYS,
+  );
+  const pinKey = useAppStore((state) => state.pinKey);
+  const unpinKey = useAppStore((state) => state.unpinKey);
+  const watchedSet = useMemo(() => new Set(watchedKeys), [watchedKeys]);
   const showReplicaWarning =
     !replicaWarningDismissed &&
     capabilities?.role === "master" &&
@@ -218,7 +228,9 @@ export function KeyspaceBrowser({
           <IconKey className="mt-0.5 size-3.5 shrink-0 text-text-muted" />
           <div className="flex-1">
             Connected as{" "}
-            <span className="font-mono text-foreground">{aclSelf.username}</span>
+            <span className="font-mono text-foreground">
+              {aclSelf.username}
+            </span>
             . Visible keys are restricted to:
             <div className="mt-1 flex flex-wrap gap-1 font-mono">
               {aclSelf.keyPatterns.map((pattern) => (
@@ -270,29 +282,93 @@ export function KeyspaceBrowser({
         </div>
       ) : null}
       <div className="flex-1 overflow-auto rounded-md border border-border-subtle bg-surface-panel">
+        {watchedKeys.length > 0 ? (
+          <div className="border-b border-border-subtle bg-surface-panel-elevated/40">
+            <div className="px-2 py-1 text-[0.6rem] uppercase tracking-wide text-text-muted">
+              Watched ({watchedKeys.length})
+            </div>
+            <ul className="divide-y divide-border-subtle">
+              {watchedKeys.map((name) => {
+                const matched = keys.find((k) => k.name === name);
+                const type = matched?.type ?? "string";
+                return (
+                  <li key={`watched::${name}`} className="group flex">
+                    <button
+                      type="button"
+                      onClick={() => onOpenKey(name, type)}
+                      className={cn(
+                        "flex flex-1 items-center gap-2 px-2 py-1 text-left hover:bg-white/5",
+                        activeKey === name && "bg-primary/10 text-primary",
+                      )}
+                    >
+                      <KeyTypeIcon type={type} />
+                      <span className="truncate font-mono text-[0.65rem]">
+                        {name}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => unpinKey(connection.id, name)}
+                      aria-label={`Unwatch ${name}`}
+                      className="px-2 text-warning hover:text-warning/80"
+                    >
+                      <IconStarFilled className="size-3" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
         {keys.length === 0 && !loading ? (
           <div className="px-2 py-3 text-[0.65rem] text-text-muted">
             No keys match. Adjust the filter or clear the search.
           </div>
         ) : (
           <ul className="divide-y divide-border-subtle">
-            {keys.map((key) => (
-              <li key={`${key.name}::${key.type}`}>
-                <button
-                  type="button"
-                  onClick={() => onOpenKey(key.name, key.type)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-white/5",
-                    activeKey === key.name && "bg-primary/10 text-primary",
-                  )}
-                >
-                  <KeyTypeIcon type={key.type} />
-                  <span className="truncate font-mono text-[0.65rem]">
-                    {key.name}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {keys.map((key) => {
+              const isWatched = watchedSet.has(key.name);
+              return (
+                <li key={`${key.name}::${key.type}`} className="group flex">
+                  <button
+                    type="button"
+                    onClick={() => onOpenKey(key.name, key.type)}
+                    className={cn(
+                      "flex flex-1 items-center gap-2 px-2 py-1 text-left hover:bg-white/5",
+                      activeKey === key.name && "bg-primary/10 text-primary",
+                    )}
+                  >
+                    <KeyTypeIcon type={key.type} />
+                    <span className="truncate font-mono text-[0.65rem]">
+                      {key.name}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      isWatched
+                        ? unpinKey(connection.id, key.name)
+                        : pinKey(connection.id, key.name)
+                    }
+                    aria-label={
+                      isWatched ? `Unwatch ${key.name}` : `Watch ${key.name}`
+                    }
+                    className={cn(
+                      "px-2 opacity-0 transition-opacity group-hover:opacity-100",
+                      isWatched
+                        ? "text-warning opacity-100 hover:text-warning/80"
+                        : "text-text-muted hover:text-foreground",
+                    )}
+                  >
+                    {isWatched ? (
+                      <IconStarFilled className="size-3" />
+                    ) : (
+                      <IconStar className="size-3" />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
