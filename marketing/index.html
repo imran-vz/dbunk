@@ -6,7 +6,7 @@
     <title>Dbunk — The Database Tool for Serious Work</title>
     <meta
       name="description"
-      content="A fast, local database workspace. No cloud lock-in. No subscription fees. Open source."
+      content="A fast, local workspace for PostgreSQL, MySQL, SQLite, ClickHouse, and Redis. No cloud lock-in. No subscription fees. Open source."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -289,17 +289,16 @@
       }
 
       .feature-item {
-        padding: 24px 0;
+        padding: 4px 0 4px 16px;
         border-bottom: 1px solid rgba(0, 0, 0, 0.08);
         cursor: pointer;
-        transition: all 0.4s ease;
+        transition: opacity 0.4s ease;
         opacity: 0.4;
         position: relative;
       }
 
       .feature-item.active {
         opacity: 1;
-        padding-left: 16px;
       }
 
       .feature-item.active::before {
@@ -353,16 +352,12 @@
           system-ui,
           -apple-system,
           sans-serif;
-        max-height: 0;
-        overflow: hidden;
-        transition:
-          max-height 0.4s ease,
-          opacity 0.3s ease;
+        min-height: 64px;
         opacity: 0;
+        transition: opacity 0.3s ease;
       }
 
       .feature-item.active .feature-desc {
-        max-height: 80px;
         opacity: 1;
       }
 
@@ -431,6 +426,149 @@
         text-transform: uppercase;
       }
 
+      /* Security section */
+      .security {
+        position: relative;
+        z-index: 10;
+        padding: 120px 48px;
+        border-top: 1px solid var(--border);
+      }
+
+      .security-container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .security-header {
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 80px;
+        margin-bottom: 80px;
+      }
+
+      .security-label {
+        font-size: 0.7rem;
+        letter-spacing: 0.2em;
+        color: var(--red);
+        font-weight: 500;
+        padding-top: 8px;
+      }
+
+      .security-title {
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        font-weight: 300;
+        line-height: 1.2;
+        margin-bottom: 24px;
+      }
+
+      .security-accent {
+        width: 60px;
+        height: 3px;
+        background: var(--red);
+        margin-bottom: 32px;
+      }
+
+      .security-intro {
+        font-size: 1rem;
+        line-height: 1.7;
+        color: var(--gray);
+        max-width: 640px;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .security-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 60px;
+        align-items: center;
+      }
+
+      .security-modes {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .mode-card {
+        padding: 28px 32px;
+        border: 1px solid var(--border);
+        background: #fff;
+        transition: border-color 0.2s;
+      }
+
+      .mode-card.recommended {
+        border-color: var(--fg);
+        border-left: 3px solid var(--red);
+      }
+
+      .mode-card-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        gap: 16px;
+      }
+
+      .mode-name {
+        font-size: 1.15rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .mode-badge {
+        font-size: 0.6rem;
+        letter-spacing: 0.15em;
+        color: var(--red);
+        font-weight: 500;
+      }
+
+      .mode-desc {
+        font-size: 0.9rem;
+        line-height: 1.6;
+        color: var(--gray);
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .mode-desc strong {
+        color: var(--fg);
+        font-weight: 600;
+      }
+
+      .security-visual {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow:
+          0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 20px 40px -10px rgba(0, 0, 0, 0.15),
+          0 0 0 1px rgba(0, 0, 0, 0.05);
+        background: #0a0a0a;
+      }
+
+      .security-visual img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .security-caption {
+        margin-top: 16px;
+        font-size: 0.75rem;
+        color: var(--gray-light);
+        text-align: center;
+        letter-spacing: 0.05em;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
       /* Footer */
       footer {
         position: relative;
@@ -477,6 +615,11 @@
           grid-template-columns: repeat(2, 1fr);
           gap: 0 24px;
         }
+
+        .security-grid {
+          grid-template-columns: 1fr;
+          gap: 48px;
+        }
       }
 
       @media (max-width: 900px) {
@@ -494,7 +637,8 @@
           display: none;
         }
 
-        .features-header {
+        .features-header,
+        .security-header {
           grid-template-columns: 1fr;
           gap: 24px;
         }
@@ -515,6 +659,10 @@
       }
 
       @media (max-width: 500px) {
+        .security {
+          padding: 60px 24px;
+        }
+
         .hero-content {
           padding: 0 24px;
         }
@@ -547,6 +695,7 @@
       <div class="logo">dbunk</div>
       <nav>
         <a href="#features">Features</a>
+        <a href="#security">Security</a>
         <a href="#download">Download</a>
         <a href="/" class="app-link">App →</a>
       </nav>
@@ -569,8 +718,8 @@
       <div class="hero-visual">
         <div class="hero-zoom-container">
           <img
-            src="hero-home-concept.png"
-            alt="Dbunk app interface showing the main workspace"
+            src="images/pg-overview.jpeg"
+            alt="Dbunk PostgreSQL connection overview with stats, recent queries, and favourite tables"
           />
         </div>
       </div>
@@ -596,17 +745,18 @@
                 <span class="feature-name">SQL Editor</span>
               </div>
               <div class="feature-desc">
-                Write and execute queries with syntax highlighting and
-                autocomplete
+                Tabbed editor with syntax highlighting, autocomplete, and
+                one-click formatting
               </div>
             </li>
             <li class="feature-item" data-index="1">
               <div class="feature-row">
                 <span class="feature-num">02</span>
-                <span class="feature-name">Schema Maps</span>
+                <span class="feature-name">EXPLAIN Analysis</span>
               </div>
               <div class="feature-desc">
-                Visual relationship diagrams that reveal your database structure
+                Visual query plans that flag overestimates, sequential scans,
+                and planning overhead
               </div>
             </li>
             <li class="feature-item" data-index="2">
@@ -615,43 +765,181 @@
                 <span class="feature-name">Data Grid</span>
               </div>
               <div class="feature-desc">
-                Browse millions of rows with virtualized tables and instant
-                filtering
+                Browse, filter, sort, and edit rows with virtualised tables and
+                inline schema info
               </div>
             </li>
             <li class="feature-item" data-index="3">
               <div class="feature-row">
                 <span class="feature-num">04</span>
-                <span class="feature-name">Multi-Database</span>
+                <span class="feature-name">FK Drill-Down</span>
               </div>
               <div class="feature-desc">
-                PostgreSQL, MySQL, SQLite, ClickHouse — all in one workspace
+                Follow foreign keys inline as a mini-table under the clicked
+                row — never lose your place
+              </div>
+            </li>
+            <li class="feature-item" data-index="4">
+              <div class="feature-row">
+                <span class="feature-num">05</span>
+                <span class="feature-name">Schema Maps</span>
+              </div>
+              <div class="feature-desc">
+                Visual relationship diagrams that reveal your database structure
+              </div>
+            </li>
+            <li class="feature-item" data-index="5">
+              <div class="feature-row">
+                <span class="feature-num">06</span>
+                <span class="feature-name">Redis Workspace</span>
+              </div>
+              <div class="feature-desc">
+                First-class Redis: strings, hashes, lists, sets, streams,
+                pub/sub, and a built-in CLI
+              </div>
+            </li>
+            <li class="feature-item" data-index="6">
+              <div class="feature-row">
+                <span class="feature-num">07</span>
+                <span class="feature-name">Query History</span>
+              </div>
+              <div class="feature-desc">
+                Every query you've run — searchable, scoped by connection, and
+                replayable in one click
+              </div>
+            </li>
+            <li class="feature-item" data-index="7">
+              <div class="feature-row">
+                <span class="feature-num">08</span>
+                <span class="feature-name">Encrypted Credentials</span>
+              </div>
+              <div class="feature-desc">
+                Passwords encrypted in a local SQLite vault, or stored in the
+                OS keychain — your call
               </div>
             </li>
           </ul>
 
           <div class="feature-viewport" id="featureViewport">
             <img
-              src="sql-editor.png"
-              alt="SQL Editor with syntax highlighting"
+              src="images/pg-sql-editor.jpeg"
+              alt="SQL editor with syntax highlighting and query results"
               class="active"
               data-feature="0"
             />
             <img
-              src="schema-maps.png"
-              alt="Schema maps showing database structure"
+              src="images/explain-page.jpeg"
+              alt="EXPLAIN plan viewer highlighting overestimates and sequential scans"
               data-feature="1"
             />
             <img
-              src="home-1.png"
-              alt="Data grid browsing database rows"
+              src="images/pg-table-view-page.jpeg"
+              alt="Data grid browsing rows in a PostgreSQL table"
               data-feature="2"
             />
             <img
-              src="connections-tab.png"
-              alt="Multiple database connections"
+              src="images/pg-table-fk-dig-view.jpeg"
+              alt="Foreign-key drill-down rendered as a mini-table under the clicked row"
               data-feature="3"
             />
+            <img
+              src="images/schema-map.jpeg"
+              alt="Schema map with foreign-key relationships between tables"
+              data-feature="4"
+            />
+            <img
+              src="images/redis-home.jpeg"
+              alt="Redis workspace with keyspace browser and CLI"
+              data-feature="5"
+            />
+            <img
+              src="images/pg-query-history.jpeg"
+              alt="Query history view filtered by connection"
+              data-feature="6"
+            />
+            <img
+              src="images/security-page.jpeg"
+              alt="Security settings showing encrypted credential storage options"
+              data-feature="7"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="security" id="security">
+      <div class="security-container">
+        <div class="security-header">
+          <div class="security-label">SECURITY</div>
+          <div>
+            <h2 class="security-title">
+              Your credentials.<br />Your choice of vault.
+            </h2>
+            <div class="security-accent"></div>
+            <p class="security-intro">
+              Database passwords never leave your machine. Pick the storage
+              backend that fits your threat model — and if you pick encryption,
+              dbunk asks for the password on launch before any connection
+              wakes up.
+            </p>
+          </div>
+        </div>
+
+        <div class="security-grid">
+          <div class="security-modes">
+            <div class="mode-card recommended">
+              <div class="mode-card-head">
+                <div class="mode-name">Encrypted SQLite</div>
+                <div class="mode-badge">RECOMMENDED</div>
+              </div>
+              <div class="mode-desc">
+                Passwords are encrypted with a key derived from
+                <strong>your master password</strong> and stored in the local
+                SQLite vault. On launch, dbunk shows the unlock screen on the
+                right — nothing decrypts and no health checks run until you
+                enter it. Portable across machines if you copy the vault file.
+              </div>
+            </div>
+
+            <div class="mode-card">
+              <div class="mode-card-head">
+                <div class="mode-name">OS Keychain</div>
+              </div>
+              <div class="mode-desc">
+                Hands credentials to the
+                <strong>operating system's credential store</strong> —
+                Keychain on macOS, Credential Manager on Windows, Secret
+                Service on Linux. No master password to remember; the OS
+                gates access (and may prompt you the first time per session).
+                Best when you trust your logged-in OS account.
+              </div>
+            </div>
+
+            <div class="mode-card">
+              <div class="mode-card-head">
+                <div class="mode-name">Plaintext SQLite</div>
+                <div class="mode-badge">DEV ONLY</div>
+              </div>
+              <div class="mode-desc">
+                Stores passwords <strong>unencrypted</strong> in
+                <code>dbunk.sqlite</code>. Zero friction — no unlock prompt,
+                no keychain dialog — but anyone with file access reads them
+                in cleartext. Fine for throwaway local databases; avoid for
+                anything you'd be sad to leak.
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="security-visual">
+              <img
+                src="images/credentials-page.jpeg"
+                alt="Unlock credentials screen shown on launch when encrypted SQLite is selected"
+              />
+            </div>
+            <div class="security-caption">
+              ON LAUNCH · ENCRYPTED SQLITE MODE
+            </div>
           </div>
         </div>
       </div>
@@ -660,7 +948,7 @@
     <section class="stats">
       <div class="stats-grid">
         <div>
-          <div class="stat-value">4</div>
+          <div class="stat-value">5</div>
           <div class="stat-label">Database Engines</div>
         </div>
         <div>
@@ -692,33 +980,6 @@
     </footer>
 
     <script>
-      const features = [
-        {
-          num: "01",
-          title: "SQL Editor",
-          desc: "Write and execute queries with syntax highlighting and autocomplete",
-          image: "sql-editor.png",
-        },
-        {
-          num: "02",
-          title: "Schema Maps",
-          desc: "Visual relationship diagrams that reveal your database structure in real-time",
-          image: "schema-maps.png",
-        },
-        {
-          num: "03",
-          title: "Data Grid",
-          desc: "Browse millions of rows with virtualized tables, sorting, and instant filtering",
-          image: "home.png",
-        },
-        {
-          num: "04",
-          title: "Multi-Database",
-          desc: "PostgreSQL, MySQL, SQLite, ClickHouse — switch contexts without switching tools",
-          image: "add-conn.png",
-        },
-      ];
-
       const items = document.querySelectorAll(".feature-item");
       const viewport = document.getElementById("featureViewport");
       const featureImages = viewport.querySelectorAll("img[data-feature]");
@@ -738,7 +999,7 @@
 
       function startAutoRotate() {
         intervalId = setInterval(() => {
-          showFeature((activeIndex + 1) % features.length);
+          showFeature((activeIndex + 1) % items.length);
         }, 5000);
       }
 
