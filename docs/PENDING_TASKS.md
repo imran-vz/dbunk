@@ -53,8 +53,7 @@ before code lands.
 - **Advanced Redis tab kinds** — Saved Redis Commands, Bulk Edit
   (multi-key rename/delete/expire with preview), Transaction Builder
   (visual `MULTI`/`EXEC`), Lua / Redis Functions scripting, MONITOR
-  capture, Keyspace Notifications opt-in, Multi-key compare /
-  watched-keys.
+  capture, Keyspace Notifications opt-in, Multi-key compare.
 - **Operational affordances** — static-map rendering for Geo keys,
   bit-grid editor for bitmap strings.
 
