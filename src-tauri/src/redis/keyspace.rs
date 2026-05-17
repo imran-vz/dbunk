@@ -57,6 +57,13 @@ fn cached_session_conn(session_id: &str) -> Option<Arc<ScanConn>> {
 pub struct OpenScanSessionPayload {
     pub connection_id: String,
     pub session_id: String,
+    /// Optional override of the DB number the SCAN session targets.
+    /// When `None`, the session connects to the connection record's
+    /// default `db_number`. Lets the keyspace browser switch DBs
+    /// without reconnecting the shared manager (which would affect
+    /// every other tab on this connection).
+    #[serde(default)]
+    pub db_number: Option<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,7 +81,14 @@ pub async fn open_session(
     payload: &OpenScanSessionPayload,
 ) -> Result<OpenScanSessionResult, String> {
     close_session_internal(&payload.session_id);
-    let client = redis::Client::open(crate::redis::url::build(connection)?.url.as_str())
+    let mut stored = connection.clone();
+    if let Some(db) = payload.db_number {
+        if db > 15 {
+            return Err(format!("Redis DB number must be 0–15 (got {db})"));
+        }
+        stored.db_number = db;
+    }
+    let client = redis::Client::open(crate::redis::url::build(&stored)?.url.as_str())
         .map_err(connection::redis_err)?;
     let mut conn = client
         .get_multiplexed_async_connection()

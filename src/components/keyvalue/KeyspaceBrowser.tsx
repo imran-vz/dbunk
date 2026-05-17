@@ -345,6 +345,15 @@ export function KeyspaceBrowser({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestSeq = useRef(0);
+  // Per-session DB picker. Defaults to the connection record's
+  // `dbNumber`; switching reopens the scan session against the new
+  // DB so the keyspace browser can peek at other DBs without
+  // mutating the shared manager that the rest of the workspace
+  // (key inspector, CLI) routes through. Opening a key on a
+  // non-default DB will read from the manager's DB instead — that
+  // limitation is called out in the picker's title.
+  const browseDb = connection.engine === "Redis" ? connection.dbNumber : 0;
+  const [activeDb, setActiveDb] = useState<number>(browseDb);
   // Scan session: opened once per mount + connection. SCANs route
   // through its dedicated connection so a Cancel click can issue
   // CLIENT KILL ID against the in-flight server-side work.
@@ -413,20 +422,25 @@ export function KeyspaceBrowser({
     [connection.id, pattern, typeFilter],
   );
 
-  // Open a dedicated scan session on mount so SCAN calls run on a
-  // killable connection. Falls back to the shared manager on open
-  // failure (e.g., the server rejects the second connection) —
-  // canceling won't kill in that case but the rest of the flow keeps
-  // working.
+  // Open a dedicated scan session on mount (and whenever the user
+  // picks a different DB) so SCAN calls run on a killable
+  // connection scoped to the chosen DB. Falls back to the shared
+  // manager on open failure (e.g., the server rejects the second
+  // connection) — canceling won't kill and DB selection won't
+  // apply in that case but the rest of the flow keeps working.
   useEffect(() => {
     const sessionId = scanSessionIdRef.current;
     let cancelled = false;
-    openScanSession({ connectionId: connection.id, sessionId })
+    scanSessionReadyRef.current = false;
+    openScanSession({
+      connectionId: connection.id,
+      sessionId,
+      dbNumber: activeDb,
+    })
       .then(() => {
         if (!cancelled) scanSessionReadyRef.current = true;
       })
       .catch((err) => {
-        // Non-fatal — SCAN falls back to the shared manager.
         console.warn("openScanSession failed", err);
       });
     return () => {
@@ -434,14 +448,18 @@ export function KeyspaceBrowser({
       scanSessionReadyRef.current = false;
       void closeScanSession({ sessionId }).catch(() => {});
     };
-  }, [connection.id]);
+  }, [connection.id, activeDb]);
 
-  // Restart scan when pattern or filter changes.
+  // Restart scan when pattern, filter, or DB changes. `activeDb`
+  // doesn't change `runScan`'s identity (it's read off the scan
+  // session, not the closure) but we still want to re-fire the
+  // SCAN when the user picks a new DB.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeDb intentionally triggers re-scan
   useEffect(() => {
     setKeys([]);
     setCursor(null);
     void runScan(null);
-  }, [runScan]);
+  }, [runScan, activeDb]);
 
   const handleCancelScan = async () => {
     requestSeq.current++; // Invalidate the in-flight response.
@@ -518,14 +536,30 @@ export function KeyspaceBrowser({
           </div>
         </output>
       ) : null}
-      <div className="relative">
-        <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
-        <Input
-          placeholder="Filter keys… (≥2 chars)"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="h-8 pl-7 text-xs"
-        />
+      <div className="flex items-center gap-1.5">
+        <select
+          value={activeDb}
+          onChange={(event) => setActiveDb(Number(event.target.value))}
+          className="h-8 rounded border border-border-subtle bg-surface-panel px-1 text-[0.65rem]"
+          aria-label="Browse DB"
+          title="Switch the keyspace browser to a different DB. Key tabs continue to use the connection's default DB."
+        >
+          {Array.from({ length: 16 }, (_, n) => n).map((n) => (
+            <option key={`db-${n}`} value={n}>
+              db {n}
+              {n === browseDb ? " (default)" : ""}
+            </option>
+          ))}
+        </select>
+        <div className="relative flex-1">
+          <IconSearch className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
+          <Input
+            placeholder="Filter keys… (≥2 chars)"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
       </div>
       <div className="flex flex-wrap gap-1">
         {KEY_TYPES.map((t) => (

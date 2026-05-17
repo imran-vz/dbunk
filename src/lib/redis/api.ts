@@ -55,6 +55,7 @@ export function scanKeys(payload: ScanKeysPayload): Promise<ScanKeysResult> {
 export function openScanSession(payload: {
   connectionId: string;
   sessionId: string;
+  dbNumber?: number;
 }): Promise<{ clientId: number }> {
   return tauriInvoke<{ clientId: number }>("redis_open_scan_session", {
     payload,
