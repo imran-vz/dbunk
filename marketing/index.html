@@ -392,6 +392,11 @@
         opacity: 1;
       }
 
+      /* Mobile caption shown under the viewport (mobile only) */
+      .feature-caption {
+        display: none;
+      }
+
       /* Stats */
       .stats {
         position: relative;
@@ -601,6 +606,112 @@
         letter-spacing: 0.15em;
       }
 
+      /* Lightbox */
+      .zoomable {
+        cursor: zoom-in;
+      }
+
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        background: rgba(8, 8, 10, 0.94);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 48px;
+      }
+
+      .lightbox.open {
+        display: flex;
+      }
+
+      .lightbox-img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 6px;
+        box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.6);
+      }
+
+      .lightbox-close,
+      .lightbox-prev,
+      .lightbox-next {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #fff;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          background 0.2s,
+          transform 0.2s;
+        font-family: inherit;
+        line-height: 1;
+        padding: 0;
+      }
+
+      .lightbox-close:hover,
+      .lightbox-prev:hover,
+      .lightbox-next:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      .lightbox-close {
+        top: 24px;
+        right: 24px;
+        font-size: 1.5rem;
+      }
+
+      .lightbox-prev,
+      .lightbox-next {
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1.8rem;
+      }
+
+      .lightbox-prev {
+        left: 24px;
+      }
+
+      .lightbox-next {
+        right: 24px;
+      }
+
+      .lightbox-prev:hover,
+      .lightbox-next:hover {
+        transform: translateY(-50%) scale(1.06);
+      }
+
+      .lightbox-counter {
+        position: absolute;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #888;
+        font-size: 0.7rem;
+        letter-spacing: 0.2em;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .lightbox.solo .lightbox-prev,
+      .lightbox.solo .lightbox-next,
+      .lightbox.solo .lightbox-counter {
+        display: none;
+      }
+
+      body.lightbox-open {
+        overflow: hidden;
+      }
+
       /* Responsive */
       @media (max-width: 1100px) {
         .features-grid {
@@ -643,6 +754,73 @@
           gap: 24px;
         }
 
+        .features-grid {
+          gap: 20px;
+        }
+
+        /* Image first, caption second, list last */
+        .feature-viewport {
+          order: 1;
+        }
+
+        .feature-caption {
+          display: block;
+          order: 2;
+          padding: 4px 4px 0;
+        }
+
+        .feature-caption-head {
+          display: flex;
+          align-items: baseline;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+
+        .feature-caption-num {
+          font-size: 0.65rem;
+          letter-spacing: 0.1em;
+          color: var(--red);
+          font-weight: 500;
+        }
+
+        .feature-caption-name {
+          font-size: 1.25rem;
+          font-weight: 700;
+          letter-spacing: -0.01em;
+        }
+
+        .feature-caption-desc {
+          font-size: 0.9rem;
+          line-height: 1.55;
+          color: var(--gray);
+          font-family:
+            system-ui,
+            -apple-system,
+            sans-serif;
+          margin: 0;
+          min-height: 0;
+        }
+
+        /* Compact list: just num + name, descriptions hidden, tap to switch */
+        .feature-list {
+          order: 3;
+          margin-top: 4px;
+          border-top: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .feature-item {
+          padding: 12px 12px 12px 16px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        }
+
+        .feature-item .feature-desc {
+          display: none;
+        }
+
+        .feature-item .feature-name {
+          font-size: 0.95rem;
+        }
+
         .stats-grid {
           grid-template-columns: repeat(2, 1fr);
         }
@@ -661,6 +839,23 @@
       @media (max-width: 500px) {
         .security {
           padding: 60px 24px;
+        }
+
+        .lightbox {
+          padding: 16px;
+        }
+
+        .lightbox-close {
+          top: 12px;
+          right: 12px;
+        }
+
+        .lightbox-prev {
+          left: 12px;
+        }
+
+        .lightbox-next {
+          right: 12px;
         }
 
         .hero-content {
@@ -720,6 +915,8 @@
           <img
             src="images/pg-overview.jpeg"
             alt="Dbunk PostgreSQL connection overview with stats, recent queries, and favourite tables"
+            class="zoomable"
+            data-lightbox="solo"
           />
         </div>
       </div>
@@ -824,44 +1021,70 @@
             <img
               src="images/pg-sql-editor.jpeg"
               alt="SQL editor with syntax highlighting and query results"
-              class="active"
+              class="active zoomable"
               data-feature="0"
+              data-lightbox="features"
             />
             <img
               src="images/explain-page.jpeg"
               alt="EXPLAIN plan viewer highlighting overestimates and sequential scans"
+              class="zoomable"
               data-feature="1"
+              data-lightbox="features"
             />
             <img
               src="images/pg-table-view-page.jpeg"
               alt="Data grid browsing rows in a PostgreSQL table"
+              class="zoomable"
               data-feature="2"
+              data-lightbox="features"
             />
             <img
               src="images/pg-table-fk-dig-view.jpeg"
               alt="Foreign-key drill-down rendered as a mini-table under the clicked row"
+              class="zoomable"
               data-feature="3"
+              data-lightbox="features"
             />
             <img
               src="images/schema-map.jpeg"
               alt="Schema map with foreign-key relationships between tables"
+              class="zoomable"
               data-feature="4"
+              data-lightbox="features"
             />
             <img
               src="images/redis-home.jpeg"
               alt="Redis workspace with keyspace browser and CLI"
+              class="zoomable"
               data-feature="5"
+              data-lightbox="features"
             />
             <img
               src="images/pg-query-history.jpeg"
               alt="Query history view filtered by connection"
+              class="zoomable"
               data-feature="6"
+              data-lightbox="features"
             />
             <img
               src="images/security-page.jpeg"
               alt="Security settings showing encrypted credential storage options"
+              class="zoomable"
               data-feature="7"
+              data-lightbox="features"
             />
+          </div>
+
+          <div class="feature-caption" id="featureCaption" aria-live="polite">
+            <div class="feature-caption-head">
+              <span class="feature-caption-num">01</span>
+              <span class="feature-caption-name">SQL Editor</span>
+            </div>
+            <p class="feature-caption-desc">
+              Tabbed editor with syntax highlighting, autocomplete, and
+              one-click formatting
+            </p>
           </div>
         </div>
       </div>
@@ -935,6 +1158,8 @@
               <img
                 src="images/credentials-page.jpeg"
                 alt="Unlock credentials screen shown on launch when encrypted SQLite is selected"
+                class="zoomable"
+                data-lightbox="solo"
               />
             </div>
             <div class="security-caption">
@@ -966,6 +1191,34 @@
       </div>
     </section>
 
+    <div
+      class="lightbox"
+      id="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image viewer"
+    >
+      <button class="lightbox-close" id="lightboxClose" aria-label="Close">
+        ×
+      </button>
+      <button
+        class="lightbox-prev"
+        id="lightboxPrev"
+        aria-label="Previous image"
+      >
+        ‹
+      </button>
+      <button
+        class="lightbox-next"
+        id="lightboxNext"
+        aria-label="Next image"
+      >
+        ›
+      </button>
+      <img class="lightbox-img" id="lightboxImg" alt="" />
+      <div class="lightbox-counter" id="lightboxCounter"></div>
+    </div>
+
     <footer id="download">
       <div class="footer-title">Ready to work?</div>
       <p>Free, open source, and always local.</p>
@@ -983,6 +1236,9 @@
       const items = document.querySelectorAll(".feature-item");
       const viewport = document.getElementById("featureViewport");
       const featureImages = viewport.querySelectorAll("img[data-feature]");
+      const captionNum = document.querySelector(".feature-caption-num");
+      const captionName = document.querySelector(".feature-caption-name");
+      const captionDesc = document.querySelector(".feature-caption-desc");
       let activeIndex = 0;
       let intervalId;
 
@@ -995,6 +1251,13 @@
         featureImages.forEach((img, i) => {
           img.classList.toggle("active", i === index);
         });
+
+        const active = items[index];
+        if (active && captionNum && captionName && captionDesc) {
+          captionNum.textContent = active.querySelector(".feature-num").textContent;
+          captionName.textContent = active.querySelector(".feature-name").textContent;
+          captionDesc.textContent = active.querySelector(".feature-desc").textContent.trim();
+        }
       }
 
       function startAutoRotate() {
@@ -1012,6 +1275,84 @@
       });
 
       startAutoRotate();
+
+      // Lightbox
+      const lightbox = document.getElementById("lightbox");
+      const lightboxImg = document.getElementById("lightboxImg");
+      const lightboxClose = document.getElementById("lightboxClose");
+      const lightboxPrev = document.getElementById("lightboxPrev");
+      const lightboxNext = document.getElementById("lightboxNext");
+      const lightboxCounter = document.getElementById("lightboxCounter");
+
+      let lightboxGallery = [];
+      let lightboxIndex = 0;
+      let lightboxGroup = null;
+
+      function renderLightbox() {
+        const item = lightboxGallery[lightboxIndex];
+        if (!item) return;
+        lightboxImg.src = item.src;
+        lightboxImg.alt = item.alt || "";
+        lightboxCounter.textContent =
+          lightboxGallery.length > 1
+            ? `${lightboxIndex + 1} / ${lightboxGallery.length}`
+            : "";
+      }
+
+      function openLightbox(group, sourceImg) {
+        const groupImgs =
+          group === "features"
+            ? [...document.querySelectorAll('img[data-lightbox="features"]')]
+            : [sourceImg];
+        lightboxGallery = groupImgs.map((i) => ({ src: i.src, alt: i.alt }));
+        lightboxIndex = Math.max(
+          0,
+          groupImgs.findIndex((i) => i === sourceImg),
+        );
+        lightboxGroup = group;
+        lightbox.classList.add("open");
+        lightbox.classList.toggle("solo", lightboxGallery.length <= 1);
+        document.body.classList.add("lightbox-open");
+        clearInterval(intervalId);
+        renderLightbox();
+      }
+
+      function closeLightbox() {
+        lightbox.classList.remove("open");
+        document.body.classList.remove("lightbox-open");
+        if (lightboxGroup === "features") {
+          showFeature(lightboxIndex);
+        }
+        startAutoRotate();
+      }
+
+      function lightboxStep(delta) {
+        if (lightboxGallery.length <= 1) return;
+        lightboxIndex =
+          (lightboxIndex + delta + lightboxGallery.length) %
+          lightboxGallery.length;
+        renderLightbox();
+      }
+
+      lightboxClose.addEventListener("click", closeLightbox);
+      lightboxPrev.addEventListener("click", () => lightboxStep(-1));
+      lightboxNext.addEventListener("click", () => lightboxStep(1));
+      lightbox.addEventListener("click", (e) => {
+        if (e.target === lightbox) closeLightbox();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (!lightbox.classList.contains("open")) return;
+        if (e.key === "Escape") closeLightbox();
+        else if (e.key === "ArrowLeft") lightboxStep(-1);
+        else if (e.key === "ArrowRight") lightboxStep(1);
+      });
+
+      document.querySelectorAll("img.zoomable").forEach((img) => {
+        img.addEventListener("click", () => {
+          openLightbox(img.dataset.lightbox || "solo", img);
+        });
+      });
     </script>
   </body>
 </html>
