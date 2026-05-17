@@ -126,23 +126,46 @@ function DrilldownRows({
   rows: string[][];
 }) {
   return (
-    <div className="space-y-2">
-      {rows.map((row, rowIdx) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional row, no stable id
-          key={`row-${rowIdx}`}
-          className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border-subtle bg-surface-panel/60 px-2 py-1.5"
-        >
-          {columns.map((col, colIdx) => (
-            <div key={col} className="contents">
-              <span className="truncate font-mono text-text-muted">{col}</span>
-              <span className="truncate font-mono text-foreground">
-                {row[colIdx] ?? <span className="text-text-muted">NULL</span>}
-              </span>
-            </div>
-          ))}
-        </div>
-      ))}
+    <div className="space-y-1.5">
+      <div className="overflow-auto rounded-md border border-border-subtle bg-surface-app">
+        <table className="min-w-full divide-y divide-border-subtle font-mono text-[0.65rem]">
+          <thead className="bg-surface-panel-elevated/60 text-text-muted">
+            <tr>
+              {columns.map((col) => (
+                <th
+                  key={col}
+                  scope="col"
+                  className="whitespace-nowrap border-r border-border-subtle px-2 py-1 text-left font-normal last:border-r-0"
+                >
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
+            {rows.map((row, rowIdx) => (
+              <tr
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional row, no stable id
+                key={`row-${rowIdx}`}
+                className="hover:bg-surface-row-hover"
+              >
+                {columns.map((col, colIdx) => {
+                  const cell = row[colIdx];
+                  return (
+                    <td
+                      key={col}
+                      className="max-w-[18rem] truncate border-r border-border-subtle px-2 py-1 text-foreground last:border-r-0"
+                      title={cell ?? "NULL"}
+                    >
+                      {cell ?? <span className="text-text-muted">NULL</span>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {rows.length === ROW_LIMIT ? (
         <div className="text-[0.6rem] text-text-muted">
           Showing first {ROW_LIMIT} matching rows.
