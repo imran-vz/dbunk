@@ -36,6 +36,11 @@ export type ScanKeysPayload = {
   count?: number;
   typeFilter?: string;
   cursor?: string | null;
+  /** Optional scan-session ID. When the session is opened via
+   *  `openScanSession`, the SCAN routes through its dedicated
+   *  connection so `cancelScanSession` can abort the in-flight
+   *  server-side work via `CLIENT KILL`. */
+  sessionId?: string;
 };
 
 export type ScanKeysResult = {
@@ -45,6 +50,30 @@ export type ScanKeysResult = {
 
 export function scanKeys(payload: ScanKeysPayload): Promise<ScanKeysResult> {
   return tauriInvoke<ScanKeysResult>("redis_scan_keys", { payload });
+}
+
+export function openScanSession(payload: {
+  connectionId: string;
+  sessionId: string;
+}): Promise<{ clientId: number }> {
+  return tauriInvoke<{ clientId: number }>("redis_open_scan_session", {
+    payload,
+  });
+}
+
+export function cancelScanSession(payload: {
+  connectionId: string;
+  sessionId: string;
+}): Promise<{ killed: number }> {
+  return tauriInvoke<{ killed: number }>("redis_cancel_scan_session", {
+    payload,
+  });
+}
+
+export function closeScanSession(payload: {
+  sessionId: string;
+}): Promise<void> {
+  return tauriInvoke<void>("redis_close_scan_session", { payload });
 }
 
 // ---------------------------------------------------------------------------
