@@ -41,6 +41,8 @@ import {
   bulkRenameByPrefix,
   cancelScanSession,
   closeScanSession,
+  fetchString,
+  formatValueOneLine,
   openScanSession,
   type ScannedKey,
   scanKeys,
@@ -66,6 +68,131 @@ const KEY_TYPES = [
 ] as const;
 
 const EMPTY_KEYS: string[] = [];
+
+/**
+ * Side-by-side string-value comparison. v1: only works for string-
+ * typed keys (the most common ask). Hash / list / set / zset / stream
+ * comparison is a follow-up that needs per-type renderers.
+ */
+function CompareKeysButton({ connectionId }: { connectionId: string }) {
+  const [open, setOpen] = useState(false);
+  const [leftKey, setLeftKey] = useState("");
+  const [rightKey, setRightKey] = useState("");
+  const [leftValue, setLeftValue] = useState<string | null>(null);
+  const [rightValue, setRightValue] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setLeftKey("");
+    setRightKey("");
+    setLeftValue(null);
+    setRightValue(null);
+    setError(null);
+  };
+
+  const handleCompare = async () => {
+    if (!leftKey.trim() || !rightKey.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const [left, right] = await Promise.all([
+        fetchString({ connectionId, key: leftKey.trim() }),
+        fetchString({ connectionId, key: rightKey.trim() }),
+      ]);
+      setLeftValue(formatValueOneLine(left.value));
+      setRightValue(formatValueOneLine(right.value));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 px-2 text-[0.65rem]"
+        onClick={() => setOpen(true)}
+      >
+        Compare…
+      </Button>
+    );
+  }
+
+  const equal =
+    leftValue !== null && rightValue !== null && leftValue === rightValue;
+
+  return (
+    <div className="w-full rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Input
+          value={leftKey}
+          onChange={(event) => setLeftKey(event.target.value)}
+          placeholder="key A"
+          className="h-6 flex-1 font-mono text-[0.65rem]"
+          aria-label="Left key"
+        />
+        <Input
+          value={rightKey}
+          onChange={(event) => setRightKey(event.target.value)}
+          placeholder="key B"
+          className="h-6 flex-1 font-mono text-[0.65rem]"
+          aria-label="Right key"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[0.65rem]"
+          disabled={busy || !leftKey.trim() || !rightKey.trim()}
+          onClick={() => {
+            void handleCompare();
+          }}
+        >
+          {busy ? "Loading…" : "Compare"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[0.65rem]"
+          onClick={() => {
+            setOpen(false);
+            reset();
+          }}
+        >
+          Close
+        </Button>
+      </div>
+      {error ? (
+        <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[0.65rem] text-destructive">
+          {error}
+        </div>
+      ) : null}
+      {leftValue !== null && rightValue !== null ? (
+        <div className="mt-2 space-y-1">
+          <div
+            className={cn(
+              "text-[0.65rem] font-semibold",
+              equal ? "text-accent-green" : "text-warning",
+            )}
+          >
+            {equal ? "Values are identical." : "Values differ."}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-1 font-mono text-[0.6rem]">
+              {leftValue}
+            </pre>
+            <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-1 font-mono text-[0.6rem]">
+              {rightValue}
+            </pre>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 type BulkOp = "delete" | "expire" | "rename";
 type BulkPreview =
@@ -681,6 +808,7 @@ export function KeyspaceBrowser({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-[0.65rem] text-text-muted">
         <span>{keys.length.toLocaleString()} loaded</span>
+        <CompareKeysButton connectionId={connection.id} />
         <BulkDeleteButton connectionId={connection.id} />
         {loading ? (
           <Button
