@@ -2,7 +2,11 @@ import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type * as React from "react";
 import { useMemo } from "react";
 
-import { type ColumnHeaderMeta, DataGrid } from "@/components/data-grid";
+import {
+  type ColumnHeaderMeta,
+  DataGrid,
+  type ForeignKeyTarget,
+} from "@/components/data-grid";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Button } from "@/components/ui/button";
 import type {
@@ -53,6 +57,7 @@ interface TableEditorBodyProps {
   onDiscardEdits: () => void;
   onSaveEdits: () => Promise<void>;
   onDeleteSelected: () => void;
+  onFollowForeignKey?: (target: ForeignKeyTarget, value: string) => void;
   onExportWholeTable?: (options: {
     format: ExportFormat;
     encoding: ExportEncoding;
@@ -98,6 +103,7 @@ export function TableEditorBody({
   onDiscardEdits,
   onSaveEdits,
   onDeleteSelected,
+  onFollowForeignKey,
   onExportWholeTable,
   onSaveExportTask,
   onRunSavedExportTask,
@@ -129,6 +135,7 @@ export function TableEditorBody({
               columns={columns}
               columnTypes={columnTypes}
               columnMetadata={columnMetadata}
+              onFollowForeignKey={onFollowForeignKey}
               edits={currentEdits}
               onEdit={onCellEdit}
               hasEdits={hasEdits}
@@ -304,6 +311,10 @@ function buildColumnMetadata(
   if (!structure) return columnNames.map(() => undefined);
   const fkColumns = new Set<string>();
   const fkTargetByColumn = new Map<string, string>();
+  const fkStructuredTargetByColumn = new Map<
+    string,
+    { schema: string; table: string; column: string }
+  >();
   for (const fk of structure.foreignKeys) {
     for (let i = 0; i < fk.columns.length; i++) {
       const col = fk.columns[i];
@@ -311,8 +322,13 @@ function buildColumnMetadata(
       const targetCol = fk.referencedColumns[i] ?? "?";
       fkTargetByColumn.set(
         col,
-        `→ ${fk.referencedSchema}.${fk.referencedTable}.${targetCol}`,
+        `${fk.referencedSchema}.${fk.referencedTable}.${targetCol}`,
       );
+      fkStructuredTargetByColumn.set(col, {
+        schema: fk.referencedSchema,
+        table: fk.referencedTable,
+        column: targetCol,
+      });
     }
   }
   const indexedColumns = new Set<string>();
@@ -336,6 +352,7 @@ function buildColumnMetadata(
       dataType: info.dataType,
       derivationKind: info.derivationKind ?? null,
       description: fkTargetByColumn.get(name),
+      foreignKeyTarget: fkStructuredTargetByColumn.get(name),
     };
   });
 }

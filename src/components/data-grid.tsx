@@ -1,4 +1,5 @@
 import {
+  IconArrowRight,
   IconArrowsMaximize,
   IconArrowsSort,
   IconCircleDot,
@@ -73,6 +74,12 @@ import { cn } from "@/lib/utils";
  * column name; `dataType` and `derivationKind` flow into the
  * tooltip and a separate icon when relevant.
  */
+export type ForeignKeyTarget = {
+  schema: string;
+  table: string;
+  column: string;
+};
+
 export type ColumnHeaderMeta = {
   isPrimaryKey?: boolean;
   isForeignKey?: boolean;
@@ -87,6 +94,9 @@ export type ColumnHeaderMeta = {
   /** Free-form description appended to the tooltip — e.g. the
    *  referenced FK target or the default expression. */
   description?: string;
+  /** When present, FK cells render a hover arrow that calls
+   *  `onFollowForeignKey` with this target + the cell value. */
+  foreignKeyTarget?: ForeignKeyTarget;
 };
 
 const FILTER_OPERATORS = [
@@ -130,6 +140,11 @@ interface EditableCellProps {
   columnType?: string;
   editValue?: string;
   onEdit?: (rowIndex: number, columnIndex: number, value: string) => void;
+  /** When set, the cell renders a hover arrow that opens a
+   *  drill-down to the referenced row(s). Caller wires the click
+   *  through `onFollowForeignKey`. */
+  foreignKeyTarget?: ForeignKeyTarget;
+  onFollowForeignKey?: (target: ForeignKeyTarget, value: string) => void;
 }
 
 /**
@@ -331,6 +346,8 @@ function EditableCell({
   columnType,
   editValue,
   onEdit,
+  foreignKeyTarget,
+  onFollowForeignKey,
 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -411,26 +428,49 @@ function EditableCell({
     );
   }
 
+  const canFollowFk =
+    foreignKeyTarget !== undefined &&
+    onFollowForeignKey !== undefined &&
+    displayValue !== "" &&
+    displayValue !== "NULL";
+
   return (
-    <button
-      type="button"
-      className={cn(
-        "h-full w-full truncate px-2 py-1 text-left text-muted-foreground group-hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
-        isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-        !isEditing && onEdit && "cursor-pointer",
-        !onEdit && "cursor-default",
-      )}
-      onClick={openEditor}
-      onKeyDown={(e) => {
-        if (onEdit && (e.key === "Enter" || e.key === " ")) {
-          openEditor();
-        }
-      }}
-      tabIndex={onEdit ? 0 : -1}
-      title={displayValue}
-    >
-      {previewValue}
-    </button>
+    <div className="group/cell relative flex h-full w-full items-center">
+      <button
+        type="button"
+        className={cn(
+          "h-full w-full truncate px-2 py-1 text-left text-muted-foreground group-hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
+          isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+          !isEditing && onEdit && "cursor-pointer",
+          !onEdit && "cursor-default",
+          canFollowFk && "pr-6",
+        )}
+        onClick={openEditor}
+        onKeyDown={(e) => {
+          if (onEdit && (e.key === "Enter" || e.key === " ")) {
+            openEditor();
+          }
+        }}
+        tabIndex={onEdit ? 0 : -1}
+        title={displayValue}
+      >
+        {previewValue}
+      </button>
+      {canFollowFk ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onFollowForeignKey?.(foreignKeyTarget, displayValue);
+          }}
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm border border-border-subtle bg-surface-panel-elevated px-1 py-0.5 text-text-muted opacity-0 transition-opacity hover:text-foreground group-hover/cell:opacity-100 focus:opacity-100 focus:outline-none"
+          aria-label={`Follow foreign key to ${foreignKeyTarget.schema}.${foreignKeyTarget.table}`}
+          title={`Follow → ${foreignKeyTarget.schema}.${foreignKeyTarget.table}.${foreignKeyTarget.column}`}
+        >
+          <IconArrowRight className="size-3" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -455,6 +495,12 @@ export interface DataGridProps {
    * type. Absent metadata falls back to the bare column name.
    */
   columnMetadata?: Array<ColumnHeaderMeta | undefined>;
+  /**
+   * When provided, FK-marked cells render a hover arrow that calls
+   * this callback with the FK target + cell value. The owning
+   * component is expected to push a drill-down onto its own stack.
+   */
+  onFollowForeignKey?: (target: ForeignKeyTarget, value: string) => void;
   edits?: Record<number, Record<number, string>>;
   onEdit?: (rowIndex: number, colIndex: number, value: string) => void;
   className?: string;
@@ -515,6 +561,7 @@ export function DataGrid({
   columns: columnNames,
   columnTypes,
   columnMetadata,
+  onFollowForeignKey,
   edits,
   onEdit,
   className,
@@ -674,13 +721,22 @@ export function DataGrid({
             columnType={columnTypes?.[index]}
             editValue={edits?.[props.row.index]?.[index]}
             onEdit={effectiveOnEdit}
+            foreignKeyTarget={meta?.foreignKeyTarget}
+            onFollowForeignKey={onFollowForeignKey}
           />
         ),
       });
     });
 
     return cols;
-  }, [columnNames, columnTypes, columnMetadata, edits, effectiveOnEdit]);
+  }, [
+    columnNames,
+    columnTypes,
+    columnMetadata,
+    edits,
+    effectiveOnEdit,
+    onFollowForeignKey,
+  ]);
 
   const table = useReactTable({
     data,
