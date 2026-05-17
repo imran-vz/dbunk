@@ -57,7 +57,12 @@ interface TableEditorBodyProps {
   onDiscardEdits: () => void;
   onSaveEdits: () => Promise<void>;
   onDeleteSelected: () => void;
-  onFollowForeignKey?: (target: ForeignKeyTarget, value: string) => void;
+  onFollowForeignKey?: (
+    rowIndex: number,
+    target: ForeignKeyTarget,
+    value: string,
+  ) => void;
+  rowExpansion?: { rowIndex: number; content: React.ReactNode } | null;
   onExportWholeTable?: (options: {
     format: ExportFormat;
     encoding: ExportEncoding;
@@ -104,6 +109,7 @@ export function TableEditorBody({
   onSaveEdits,
   onDeleteSelected,
   onFollowForeignKey,
+  rowExpansion,
   onExportWholeTable,
   onSaveExportTask,
   onRunSavedExportTask,
@@ -136,6 +142,7 @@ export function TableEditorBody({
               columnTypes={columnTypes}
               columnMetadata={columnMetadata}
               onFollowForeignKey={onFollowForeignKey}
+              rowExpansion={rowExpansion}
               edits={currentEdits}
               onEdit={onCellEdit}
               hasEdits={hasEdits}
