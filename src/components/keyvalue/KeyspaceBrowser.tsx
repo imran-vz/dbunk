@@ -34,7 +34,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   type BulkDeleteByPatternResult,
+  type BulkExpireByPatternResult,
   bulkDeleteByPattern,
+  bulkExpireByPattern,
   cancelScanSession,
   closeScanSession,
   openScanSession,
@@ -63,20 +65,23 @@ const KEY_TYPES = [
 
 const EMPTY_KEYS: string[] = [];
 
+type BulkOp = "delete" | "expire";
+type BulkPreview =
+  | { kind: "delete"; result: BulkDeleteByPatternResult }
+  | { kind: "expire"; result: BulkExpireByPatternResult };
+
 /**
- * Pattern-based bulk delete with a forced dry-run preview step.
- * Opens an inline dialog with a pattern input, preview button, and
- * a typed-confirmation Apply button. Lives at the bottom of the
- * keyspace browser so the scan + delete operate on the same
- * connection without leaking the dialog state through the rest of
- * the tree.
+ * Pattern-based bulk DELETE / EXPIRE with a forced dry-run preview
+ * step. Lives at the bottom of the keyspace browser so the scan +
+ * mutation operate on the same connection without leaking dialog
+ * state through the rest of the tree.
  */
 function BulkDeleteButton({ connectionId }: { connectionId: string }) {
   const [open, setOpen] = useState(false);
+  const [op, setOp] = useState<BulkOp>("delete");
   const [pattern, setPattern] = useState("");
-  const [preview, setPreview] = useState<BulkDeleteByPatternResult | null>(
-    null,
-  );
+  const [ttlSeconds, setTtlSeconds] = useState("3600");
+  const [preview, setPreview] = useState<BulkPreview | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -87,16 +92,33 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
     setBusy(false);
   };
 
+  const ttlNumber = Number(ttlSeconds);
+  const ttlValid =
+    op === "delete" ||
+    (Number.isFinite(ttlNumber) &&
+      ttlNumber > 0 &&
+      Number.isInteger(ttlNumber));
+
   const handlePreview = async () => {
-    if (!pattern.trim()) return;
+    if (!pattern.trim() || !ttlValid) return;
     setBusy(true);
     try {
-      const result = await bulkDeleteByPattern({
-        connectionId,
-        pattern: pattern.trim(),
-        dryRun: true,
-      });
-      setPreview(result);
+      if (op === "delete") {
+        const result = await bulkDeleteByPattern({
+          connectionId,
+          pattern: pattern.trim(),
+          dryRun: true,
+        });
+        setPreview({ kind: "delete", result });
+      } else {
+        const result = await bulkExpireByPattern({
+          connectionId,
+          pattern: pattern.trim(),
+          ttlSeconds: ttlNumber,
+          dryRun: true,
+        });
+        setPreview({ kind: "expire", result });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -108,14 +130,26 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
     if (!preview) return;
     setBusy(true);
     try {
-      const result = await bulkDeleteByPattern({
-        connectionId,
-        pattern: pattern.trim(),
-        dryRun: false,
-      });
-      toast.success(
-        `Deleted ${result.deleted.toLocaleString()} key${result.deleted === 1 ? "" : "s"}`,
-      );
+      if (preview.kind === "delete") {
+        const result = await bulkDeleteByPattern({
+          connectionId,
+          pattern: pattern.trim(),
+          dryRun: false,
+        });
+        toast.success(
+          `Deleted ${result.deleted.toLocaleString()} key${result.deleted === 1 ? "" : "s"}`,
+        );
+      } else {
+        const result = await bulkExpireByPattern({
+          connectionId,
+          pattern: pattern.trim(),
+          ttlSeconds: ttlNumber,
+          dryRun: false,
+        });
+        toast.success(
+          `EXPIRE applied to ${result.expired.toLocaleString()} key${result.expired === 1 ? "" : "s"}`,
+        );
+      }
       setOpen(false);
       reset();
     } catch (err) {
@@ -133,26 +167,77 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         className="h-6 px-2 text-[0.65rem]"
         onClick={() => setOpen(true)}
       >
-        Bulk delete…
+        Bulk ops…
       </Button>
     );
   }
 
+  const matched =
+    preview?.kind === "delete"
+      ? preview.result.matched
+      : preview?.kind === "expire"
+        ? preview.result.matched
+        : 0;
+  const sample =
+    preview?.kind === "delete"
+      ? preview.result.sample
+      : preview?.kind === "expire"
+        ? preview.result.sample
+        : [];
+  const truncated =
+    preview?.kind === "delete"
+      ? preview.result.truncated
+      : preview?.kind === "expire"
+        ? preview.result.truncated
+        : false;
+  const scanned =
+    preview?.kind === "delete"
+      ? preview.result.scanned
+      : preview?.kind === "expire"
+        ? preview.result.scanned
+        : 0;
+  const confirmWord = op === "delete" ? "DELETE" : "EXPIRE";
+  const applyLabel =
+    op === "delete" ? `Delete ${matched}` : `EXPIRE ${matched}`;
+
   return (
     <div className="w-full rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2">
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select
+          value={op}
+          onChange={(event) => {
+            setOp(event.target.value as BulkOp);
+            setPreview(null);
+            setConfirmText("");
+          }}
+          className="h-6 rounded border border-border-subtle bg-surface-panel px-1 text-[0.65rem]"
+          aria-label="Bulk operation"
+        >
+          <option value="delete">DEL</option>
+          <option value="expire">EXPIRE</option>
+        </select>
         <Input
           value={pattern}
           onChange={(event) => setPattern(event.target.value)}
           placeholder="pattern (e.g. session:*)"
           className="h-6 flex-1 font-mono text-[0.65rem]"
-          aria-label="Bulk delete pattern"
+          aria-label="Bulk pattern"
         />
+        {op === "expire" ? (
+          <Input
+            type="number"
+            value={ttlSeconds}
+            onChange={(event) => setTtlSeconds(event.target.value)}
+            placeholder="ttl seconds"
+            className="h-6 w-24 font-mono text-[0.65rem]"
+            aria-label="TTL seconds"
+          />
+        ) : null}
         <Button
           size="sm"
           variant="outline"
           className="h-6 px-2 text-[0.65rem]"
-          disabled={busy || !pattern.trim()}
+          disabled={busy || !pattern.trim() || !ttlValid}
           onClick={() => {
             void handlePreview();
           }}
@@ -174,40 +259,40 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
       {preview ? (
         <div className="mt-2 text-[0.6rem]">
           <div className="text-text-secondary">
-            Scanned {preview.scanned.toLocaleString()} · matched{" "}
+            Scanned {scanned.toLocaleString()} · matched{" "}
             <span className="font-semibold text-warning">
-              {preview.matched.toLocaleString()}
+              {matched.toLocaleString()}
             </span>
-            {preview.truncated ? " (truncated at 10k)" : ""}
+            {truncated ? " (truncated at 10k)" : ""}
           </div>
-          {preview.sample.length > 0 ? (
+          {sample.length > 0 ? (
             <ul className="mt-1 max-h-32 overflow-auto font-mono text-text-muted">
-              {preview.sample.map((name) => (
+              {sample.map((name) => (
                 <li key={name} className="truncate">
                   {name}
                 </li>
               ))}
             </ul>
           ) : null}
-          {preview.matched > 0 ? (
+          {matched > 0 ? (
             <div className="mt-2 flex items-center gap-1.5">
               <Input
                 value={confirmText}
                 onChange={(event) => setConfirmText(event.target.value)}
-                placeholder='Type "DELETE" to confirm'
+                placeholder={`Type "${confirmWord}" to confirm`}
                 className="h-6 flex-1 font-mono text-[0.65rem]"
-                aria-label="Confirm bulk delete"
+                aria-label="Confirm bulk operation"
               />
               <Button
                 size="sm"
                 variant="destructive"
                 className="h-6 px-2 text-[0.65rem]"
-                disabled={busy || confirmText !== "DELETE"}
+                disabled={busy || confirmText !== confirmWord}
                 onClick={() => {
                   void handleApply();
                 }}
               >
-                {busy ? "Deleting…" : `Delete ${preview.matched}`}
+                {busy ? "Applying…" : applyLabel}
               </Button>
             </div>
           ) : null}

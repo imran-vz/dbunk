@@ -1292,6 +1292,18 @@ async fn redis_bulk_delete_by_pattern(
 }
 
 #[tauri::command]
+async fn redis_bulk_expire_by_pattern(
+    state: State<'_, AppState>,
+    payload: redis::key_ops::BulkExpireByPatternPayload,
+) -> Result<redis::key_ops::BulkExpireByPatternResult, String> {
+    let connection_id = payload.connection_id.clone();
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::keyvalue::bulk_expire_by_pattern(&connection, &payload).await
+    })
+    .await
+}
+
+#[tauri::command]
 async fn redis_set_expire(
     state: State<'_, AppState>,
     payload: redis::key_ops::SetExpirePayload,
@@ -1687,6 +1699,7 @@ pub fn run() {
             redis_delete_hash_fields,
             redis_del_keys,
             redis_bulk_delete_by_pattern,
+            redis_bulk_expire_by_pattern,
             redis_set_expire,
             redis_rename_key,
             redis_create_key,

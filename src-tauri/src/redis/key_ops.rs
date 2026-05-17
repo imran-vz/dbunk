@@ -779,6 +779,101 @@ async fn flush_del(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BulkExpireByPatternPayload {
+    pub connection_id: String,
+    pub pattern: String,
+    /// Positive integer: seconds-to-live. Use `0` (or negative) with
+    /// the dedicated PERSIST flow rather than this endpoint.
+    pub ttl_seconds: i64,
+    #[serde(default)]
+    pub dry_run: bool,
+    #[serde(default = "default_bulk_max")]
+    pub max_keys: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkExpireByPatternResult {
+    pub scanned: u64,
+    pub matched: u64,
+    pub expired: u64,
+    pub sample: Vec<String>,
+    pub truncated: bool,
+}
+
+/// Scan + EXPIRE all keys matching a pattern. Destructive enough to
+/// require typed confirmation on the caller side. EXPIRE returns 1
+/// for keys it updated, 0 otherwise (e.g. the key vanished mid-scan)
+/// — we sum those.
+pub async fn bulk_expire_by_pattern(
+    connection: &RedisStoredConnection,
+    payload: &BulkExpireByPatternPayload,
+) -> Result<BulkExpireByPatternResult, String> {
+    if !payload.dry_run {
+        assert_writable(connection).await?;
+    }
+    if payload.pattern.trim().is_empty() {
+        return Err("Pattern is required".to_string());
+    }
+    if payload.ttl_seconds <= 0 {
+        return Err("ttl_seconds must be positive".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let mut cursor: String = "0".to_string();
+    let mut scanned: u64 = 0;
+    let mut matched: u64 = 0;
+    let mut expired: u64 = 0;
+    let mut sample: Vec<String> = Vec::new();
+    let mut truncated = false;
+    loop {
+        let (next_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+            .arg(&cursor)
+            .arg("MATCH")
+            .arg(&payload.pattern)
+            .arg("COUNT")
+            .arg(500u32)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+        scanned = scanned.saturating_add(keys.len() as u64);
+        for key in keys {
+            if matched >= payload.max_keys {
+                truncated = true;
+                break;
+            }
+            matched += 1;
+            if sample.len() < BULK_DELETE_SAMPLE_CAP {
+                sample.push(key.clone());
+            }
+            if !payload.dry_run {
+                let updated: i64 = redis::cmd("EXPIRE")
+                    .arg(&key)
+                    .arg(payload.ttl_seconds)
+                    .query_async(&mut conn)
+                    .await
+                    .map_err(connection::redis_err)?;
+                expired += updated.max(0) as u64;
+            }
+        }
+        if truncated {
+            break;
+        }
+        if next_cursor == "0" {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    Ok(BulkExpireByPatternResult {
+        scanned,
+        matched,
+        expired,
+        sample,
+        truncated,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetExpirePayload {
     pub connection_id: String,
     pub key: String,
