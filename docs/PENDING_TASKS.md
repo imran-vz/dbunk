@@ -57,7 +57,8 @@ before code lands.
   Commands shipped as a CLI-tab integration; parameter substitution
   remains deferred.)
 - **Operational affordances** — static-map rendering for Geo keys,
-  bit-grid editor for bitmap strings.
+  per-bit `SETBIT` editing in the bitmap view (view-only landed
+  in the string viewer).
 
 ### Cross-cutting UX
 

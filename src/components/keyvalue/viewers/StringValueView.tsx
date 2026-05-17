@@ -4,7 +4,7 @@
  * separately via the key-header Expire modal.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import {
   type StringValuePayload,
   setRedisString,
 } from "@/lib/redis/api";
+import { cn } from "@/lib/utils";
 
 interface StringValueViewProps {
   connectionId: string;
@@ -33,6 +34,7 @@ export function StringValueView({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  const [bitmapMode, setBitmapMode] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is intentional
   useEffect(() => {
@@ -152,12 +154,28 @@ export function StringValueView({
           )}
         </div>
       </div>
-      <textarea
-        readOnly={!editing}
-        value={editing ? draft : value}
-        onChange={(event) => setDraft(event.target.value)}
-        className="flex-1 resize-none rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-xs leading-relaxed"
-      />
+      <div className="flex items-center gap-2 text-[0.65rem]">
+        <Button
+          size="sm"
+          variant={bitmapMode ? "default" : "outline"}
+          className="h-6 px-2 text-[0.65rem]"
+          onClick={() => setBitmapMode((value) => !value)}
+          disabled={editing}
+          title="Treat the value as a bitmap and render each byte as 8 bits"
+        >
+          {bitmapMode ? "Text view" : "Bitmap view"}
+        </Button>
+      </div>
+      {bitmapMode && !editing ? (
+        <BitmapGrid value={value} encoding={encoding} />
+      ) : (
+        <textarea
+          readOnly={!editing}
+          value={editing ? draft : value}
+          onChange={(event) => setDraft(event.target.value)}
+          className="flex-1 resize-none rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-xs leading-relaxed"
+        />
+      )}
       {data.truncated && !editing ? (
         <p className="text-[0.65rem] text-amber-400">
           Showing first {(maxBytes / 1024).toFixed(0)} KB of{" "}
@@ -166,4 +184,76 @@ export function StringValueView({
       ) : null}
     </div>
   );
+}
+
+const MAX_BITS_RENDERED = 1024;
+
+/**
+ * Render a string value as a grid of bits. Read-only view-mode for
+ * inspecting bitmap-typed Redis strings. Editing per-bit (`SETBIT`)
+ * is a separate follow-up — for now users can switch back to Text
+ * view, edit there, and save.
+ *
+ * `encoding === "hex"` means the value is a hex-string of the raw
+ * bytes; we parse pairs back into bytes. Otherwise we treat each
+ * char's code point as a byte (truncating to 8 bits) — accurate for
+ * ASCII-shaped data; lossy for higher-codepoint strings but
+ * acceptable for a view-only mode.
+ */
+function BitmapGrid({ value, encoding }: { value: string; encoding: string }) {
+  const bits = useMemo(() => bytesToBits(value, encoding), [value, encoding]);
+  const totalBits = bits.length;
+  const visibleBits = bits.slice(0, MAX_BITS_RENDERED);
+  return (
+    <div className="flex-1 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-[0.6rem]">
+      <div className="grid grid-cols-[repeat(64,_minmax(0,_1fr))] gap-0.5">
+        {visibleBits.map((bit, idx) => (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: bit position IS the identity
+            key={idx}
+            title={`bit ${idx} = ${bit}`}
+            className={cn(
+              "aspect-square w-full rounded-[2px] text-center leading-none",
+              bit === 1
+                ? "bg-accent-green/80 text-surface-window"
+                : "bg-surface-panel-elevated text-text-muted",
+            )}
+          >
+            {bit}
+          </span>
+        ))}
+      </div>
+      {totalBits > MAX_BITS_RENDERED ? (
+        <p className="mt-2 text-[0.6rem] text-amber-400">
+          Showing first {MAX_BITS_RENDERED.toLocaleString()} of{" "}
+          {totalBits.toLocaleString()} bits.
+        </p>
+      ) : (
+        <p className="mt-2 text-[0.6rem] text-text-muted">
+          {totalBits.toLocaleString()} bits
+        </p>
+      )}
+    </div>
+  );
+}
+
+function bytesToBits(value: string, encoding: string): (0 | 1)[] {
+  const bytes: number[] = [];
+  if (encoding === "hex") {
+    for (let i = 0; i + 1 < value.length; i += 2) {
+      const byte = Number.parseInt(value.slice(i, i + 2), 16);
+      if (Number.isFinite(byte)) bytes.push(byte & 0xff);
+    }
+  } else {
+    for (let i = 0; i < value.length; i++) {
+      bytes.push(value.charCodeAt(i) & 0xff);
+    }
+  }
+  const bits: (0 | 1)[] = [];
+  for (const byte of bytes) {
+    for (let bit = 7; bit >= 0; bit--) {
+      bits.push(((byte >> bit) & 1) as 0 | 1);
+    }
+  }
+  return bits;
 }
