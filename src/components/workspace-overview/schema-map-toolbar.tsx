@@ -1,4 +1,5 @@
 import {
+  IconDatabase,
   IconDownload,
   IconGitBranch,
   IconRoute,
@@ -12,9 +13,11 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ALL_SCHEMAS_SENTINEL, isAllSchemas } from "@/lib/schema-graph";
 import type {
   SchemaMapAttrMode,
   SchemaMapPrefs,
@@ -27,6 +30,11 @@ export type SchemaMapExportFormat = "png" | "svg";
 type SchemaMapToolbarProps = {
   schemas: string[];
   selectedSchema: string;
+  /**
+   * Label shown when the "all schemas" option is selected (typically the
+   * connection's database name, falling back to "Database").
+   */
+  databaseLabel?: string;
   prefs: SchemaMapPrefs;
   isBusy?: boolean;
   exportError?: string | null;
@@ -63,6 +71,7 @@ export const schemaMapExportFilename = (
 export function SchemaMapToolbar({
   schemas,
   selectedSchema,
+  databaseLabel,
   prefs,
   isBusy = false,
   exportError,
@@ -71,6 +80,16 @@ export function SchemaMapToolbar({
   onResetLayout,
   onExport,
 }: SchemaMapToolbarProps) {
+  const allMode = isAllSchemas(selectedSchema);
+  const triggerIcon = allMode ? (
+    <IconDatabase className="size-3 text-text-muted" />
+  ) : (
+    <IconSchema className="size-3 text-text-muted" />
+  );
+  const allLabel = databaseLabel?.trim()
+    ? `${databaseLabel} · all schemas`
+    : "Database (all schemas)";
+
   return (
     <div className="flex shrink-0 flex-col gap-2 border-b border-border-subtle bg-surface-window px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -85,13 +104,22 @@ export function SchemaMapToolbar({
           <SelectTrigger
             size="sm"
             aria-label="Schema"
-            disabled={schemas.length === 0}
+            disabled={schemas.length === 0 && !allMode}
             className="min-w-36"
           >
-            <IconSchema className="size-3 text-text-muted" />
-            <SelectValue placeholder="Schema" />
+            {triggerIcon}
+            <SelectValue placeholder="Schema">
+              {allMode ? allLabel : selectedSchema}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent align="start">
+            <SelectItem value={ALL_SCHEMAS_SENTINEL}>
+              <span className="inline-flex items-center gap-1.5">
+                <IconDatabase className="size-3 text-text-muted" />
+                {allLabel}
+              </span>
+            </SelectItem>
+            {schemas.length > 0 ? <SelectSeparator /> : null}
             {schemas.map((schema) => (
               <SelectItem key={schema} value={schema}>
                 {schema}

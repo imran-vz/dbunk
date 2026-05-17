@@ -251,10 +251,10 @@ describe("QueryEditorPanel feedback", () => {
     fireEvent.click(screen.getByRole("button", { name: /run explain/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Seq Scan")).toBeTruthy();
+      expect(screen.getAllByText("Seq Scan").length).toBeGreaterThan(0);
     });
-    expect(screen.getByText("users")).toBeTruthy();
-    expect(screen.getByText("Shared Hit: 3")).toBeTruthy();
+    expect(screen.getAllByText("users").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Shared Hit: 3").length).toBeGreaterThan(0);
     expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
       payload: {
         connectionId: "conn-1",
@@ -363,9 +363,9 @@ describe("QueryEditorPanel feedback", () => {
     fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Index Scan")).toBeTruthy();
+      expect(screen.getAllByText("Index Scan").length).toBeGreaterThan(0);
     });
-    expect(screen.getByText("orders")).toBeTruthy();
+    expect(screen.getAllByText("orders").length).toBeGreaterThan(0);
   });
 
   it("disables the Run button while a query is running", () => {

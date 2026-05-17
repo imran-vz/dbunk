@@ -8,6 +8,7 @@ import {
 } from "@tabler/icons-react";
 
 import { DataGrid } from "@/components/data-grid";
+import { ExplainView } from "@/components/query-editor/explain/explain-view";
 import { Button } from "@/components/ui/button";
 import type { QueryPreviewData } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -198,7 +199,7 @@ function ExplainContent({
       </div>
     );
   }
-  return <ExplainPlanTree data={explainPlan} />;
+  return <ExplainView data={explainPlan} />;
 }
 
 function ExplainEmptyState() {
@@ -215,118 +216,6 @@ function ExplainEmptyState() {
           Run EXPLAIN to render the active statement's plan tree here.
         </p>
       </div>
-    </div>
-  );
-}
-
-function ExplainPlanTree({
-  data,
-}: {
-  data: Extract<ExplainPlanData, { kind: "json" }>;
-}) {
-  return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="grid shrink-0 gap-2 border-b border-border-subtle bg-surface-window p-3 text-xs sm:grid-cols-3">
-        <Metric label="Runtime" value={`${data.runtimeMs} ms`} />
-        <Metric
-          label="Planning"
-          value={data.planningMs === null ? "—" : `${data.planningMs} ms`}
-        />
-        <Metric
-          label="Execution"
-          value={data.executionMs === null ? "—" : `${data.executionMs} ms`}
-        />
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        <ExplainNode node={data.root} depth={0} />
-      </div>
-    </div>
-  );
-}
-
-function ExplainNode({
-  node,
-  depth,
-}: {
-  node: ExplainPlanNode;
-  depth: number;
-}) {
-  return (
-    <div
-      className={cn(
-        "relative rounded-sm border border-border-subtle bg-surface-window p-3",
-        depth > 0 ? "mt-2" : "",
-      )}
-      style={{ marginLeft: depth > 0 ? 16 : 0 }}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-foreground">
-          {node.nodeType}
-        </span>
-        {node.relation ? (
-          <span className="rounded-sm bg-surface-panel px-1.5 py-0.5 font-mono text-[0.6875rem] text-text-secondary">
-            {node.relation}
-          </span>
-        ) : null}
-        {node.alias && node.alias !== node.relation ? (
-          <span className="text-[0.6875rem] text-text-muted">
-            alias {node.alias}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 grid gap-2 text-[0.6875rem] text-text-muted sm:grid-cols-4">
-        <Metric label="Cost" value={range(node.startupCost, node.totalCost)} />
-        <Metric label="Plan rows" value={formatNumber(node.planRows)} />
-        <Metric
-          label="Actual time"
-          value={range(node.actualStartupTime, node.actualTotalTime, " ms")}
-        />
-        <Metric
-          label="Actual rows"
-          value={[
-            formatNumber(node.actualRows),
-            node.actualLoops === undefined
-              ? null
-              : `${node.actualLoops.toLocaleString()} loops`,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        />
-      </div>
-      {node.buffers.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {node.buffers.map((buffer) => (
-            <span
-              key={buffer}
-              className="rounded-sm border border-border-subtle bg-surface-panel px-1.5 py-0.5 text-[0.625rem] text-text-muted"
-            >
-              {buffer}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {node.children.length > 0 ? (
-        <div className="mt-2 border-l border-border-subtle pl-2">
-          {node.children.map((child, index) => (
-            <ExplainNode
-              key={`${child.nodeType}-${child.relation ?? "node"}-${index}`}
-              node={child}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-sm border border-border-subtle bg-surface-panel px-2 py-1">
-      <div className="text-[0.625rem] uppercase tracking-normal text-text-muted">
-        {label}
-      </div>
-      <div className="truncate font-mono text-xs text-foreground">{value}</div>
     </div>
   );
 }
@@ -349,21 +238,6 @@ function NoResultsAfterError() {
       <div className="text-xs">Query did not return results</div>
     </div>
   );
-}
-
-function range(
-  start: number | undefined,
-  end: number | undefined,
-  suffix = "",
-): string {
-  if (start === undefined && end === undefined) return "—";
-  if (start === undefined) return `${formatNumber(end)}${suffix}`;
-  if (end === undefined) return `${formatNumber(start)}${suffix}`;
-  return `${formatNumber(start)}..${formatNumber(end)}${suffix}`;
-}
-
-function formatNumber(value: number | undefined): string {
-  return value === undefined ? "—" : value.toLocaleString();
 }
 
 function EmptyState() {

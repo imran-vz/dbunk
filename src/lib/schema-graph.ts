@@ -67,6 +67,12 @@ export type SchemaGraphNodeData = {
   prefs: SchemaMapPrefs;
   isActive: boolean;
   isExternal: boolean;
+  /**
+   * Set by the renderer (not the builder) when the graph spans more
+   * than one distinct schema, so every node header can carry its
+   * `schema.` prefix in a multi-schema map.
+   */
+  hasMultipleSchemas: boolean;
 };
 
 export type SchemaGraphNode = Node<SchemaGraphNodeData>;
@@ -76,6 +82,16 @@ export type SchemaGraph = {
   nodes: SchemaGraphNode[];
   edges: SchemaGraphEdge[];
 };
+
+/**
+ * Sentinel schema value meaning "render every schema in this connection
+ * in one combined map." Picked to be unlikely as a real schema name so we
+ * don't have to add a discriminated union throughout the store.
+ */
+export const ALL_SCHEMAS_SENTINEL = "__dbunk:all-schemas__";
+
+export const isAllSchemas = (schema: string): boolean =>
+  schema === ALL_SCHEMAS_SENTINEL;
 
 export const schemaRelationshipsKey = (
   connectionId: string,
@@ -325,6 +341,7 @@ export const buildSchemaGraph = (
         prefs,
         isActive: activeTable != null && meta.name === activeTable,
         isExternal: meta.isExternal,
+        hasMultipleSchemas: false,
       },
     };
   });

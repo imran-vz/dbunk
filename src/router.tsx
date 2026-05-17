@@ -1,4 +1,6 @@
-import { createRouter } from "@tanstack/react-router";
+import { createRouter, type ErrorComponentProps } from "@tanstack/react-router";
+
+import { RouteErrorBoundary } from "@/components/route-error-boundary";
 
 // Import the generated route tree
 import { routeTree } from "./routeTree.gen";
@@ -11,6 +13,9 @@ export const getRouter = () => {
 
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
+    defaultErrorComponent: ({ error, reset }: ErrorComponentProps) => (
+      <RouteErrorBoundary error={error} reset={reset} />
+    ),
   });
 
   return router;

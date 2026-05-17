@@ -9,7 +9,11 @@ import {
   SchemaMapToolbar,
   schemaMapExportFilename,
 } from "@/components/workspace-overview/schema-map-toolbar";
-import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
+import {
+  ALL_SCHEMAS_SENTINEL,
+  DEFAULT_SCHEMA_MAP_PREFS,
+  isAllSchemas,
+} from "@/lib/schema-graph";
 import type { Connection, SchemaExplorer } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 
@@ -36,21 +40,17 @@ export function SchemaMapTab({
     () => [...new Set(schemas.map((schema) => schema.name))].sort(),
     [schemas],
   );
-  const fallbackSchema = useMemo(() => {
-    if (schemaNames.includes("public")) {
-      return "public";
-    }
-    return schemaNames[0] ?? activeConnection.database;
-  }, [activeConnection.database, schemaNames]);
+  // "Database" (all schemas combined) is the default so users always
+  // land on a populated map — the previous fallback to the database
+  // name produced "No relationships" when no specific schema was set.
+  const fallbackSchema = ALL_SCHEMAS_SENTINEL;
   const storedSchema = connectionSchemaMapSchema[activeConnection.id];
   const selectedSchema =
     storedSchema &&
-    (schemaNames.length === 0 || schemaNames.includes(storedSchema))
+    (isAllSchemas(storedSchema) || schemaNames.includes(storedSchema))
       ? storedSchema
       : fallbackSchema;
-  const pickerSchemas = schemaNames.includes(selectedSchema)
-    ? schemaNames
-    : [selectedSchema, ...schemaNames].filter(Boolean);
+  const pickerSchemas = schemaNames;
   const prefs =
     schemaMapPrefs[activeConnection.id]?.[selectedSchema] ??
     DEFAULT_SCHEMA_MAP_PREFS;
@@ -83,6 +83,7 @@ export function SchemaMapTab({
       <SchemaMapToolbar
         schemas={pickerSchemas}
         selectedSchema={selectedSchema}
+        databaseLabel={activeConnection.database}
         prefs={prefs}
         exportError={exportError}
         onSchemaChange={(schema) =>

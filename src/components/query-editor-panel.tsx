@@ -1,5 +1,5 @@
 import MonacoEditor from "@monaco-editor/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type ExplainPlanData,
@@ -19,6 +19,7 @@ import {
 } from "@/components/query-editor/use-query-sidebar-visibility";
 import { QuerySidebar } from "@/components/query-sidebar";
 import { StatusBar } from "@/components/status-bar";
+import { ResizerHandle } from "@/components/ui/resizer-handle";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
@@ -29,7 +30,10 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
-import { useContainerWidth } from "@/lib/use-resizable-width";
+import {
+  useContainerWidth,
+  useResizableWidth,
+} from "@/lib/use-resizable-width";
 
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
@@ -44,6 +48,46 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
   activeTabIdRef.current = tab.id;
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
   const sidebar = useQuerySidebarVisibility(containerWidth);
+
+  // Split-pane resize: editor on top, results below. Storage key is
+  // global so the user's chosen height applies across every query tab.
+  const EDITOR_MIN_PX = 80;
+  const RESULTS_MIN_PX = 140;
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const [splitHeight, setSplitHeight] = useState(0);
+  const { width: editorHeight, setWidth: setEditorHeight } = useResizableWidth({
+    storageKey: "dbunk.query.editor.height",
+    defaultWidth: 280,
+    min: EDITOR_MIN_PX,
+    max: 1600,
+  });
+
+  useEffect(() => {
+    const el = splitRef.current;
+    if (!el) return;
+    const apply = (h: number) => {
+      setSplitHeight((prev) => (Math.round(prev) === Math.round(h) ? prev : h));
+    };
+    apply(el.getBoundingClientRect().height);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) apply(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const maxEditorHeight =
+    splitHeight > 0
+      ? Math.max(EDITOR_MIN_PX, splitHeight - RESULTS_MIN_PX)
+      : 1600;
+  const effectiveEditorHeight = Math.min(editorHeight, maxEditorHeight);
+  const handleEditorResize = useCallback(
+    (next: number) => {
+      setEditorHeight(Math.min(next, maxEditorHeight));
+    },
+    [maxEditorHeight, setEditorHeight],
+  );
 
   const {
     queryPreviews,
@@ -299,8 +343,11 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="relative h-70 shrink-0 border-b border-border-subtle bg-surface-app">
+        <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
+          <div
+            style={{ height: effectiveEditorHeight }}
+            className="relative shrink-0 bg-surface-app"
+          >
             {isClient ? (
               <MonacoEditor
                 height="100%"
@@ -317,6 +364,16 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
               </div>
             )}
           </div>
+
+          <ResizerHandle
+            width={effectiveEditorHeight}
+            onResize={handleEditorResize}
+            orientation="horizontal"
+            side="bottom"
+            min={EDITOR_MIN_PX}
+            max={maxEditorHeight}
+            ariaLabel="Resize query editor"
+          />
 
           <QueryResultsView
             view={resultsView}

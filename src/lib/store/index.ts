@@ -47,6 +47,7 @@ export type {
   SchemaMapPosition,
   SchemaMapPrefs,
   SchemaMapRouting,
+  SchemaRelationshipsStatus,
   ServerDetails,
   ServerDetailsStatus,
   SettingsTab,
