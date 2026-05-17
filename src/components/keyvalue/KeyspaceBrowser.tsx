@@ -35,8 +35,10 @@ import { Input } from "@/components/ui/input";
 import {
   type BulkDeleteByPatternResult,
   type BulkExpireByPatternResult,
+  type BulkRenameByPrefixResult,
   bulkDeleteByPattern,
   bulkExpireByPattern,
+  bulkRenameByPrefix,
   cancelScanSession,
   closeScanSession,
   openScanSession,
@@ -65,10 +67,11 @@ const KEY_TYPES = [
 
 const EMPTY_KEYS: string[] = [];
 
-type BulkOp = "delete" | "expire";
+type BulkOp = "delete" | "expire" | "rename";
 type BulkPreview =
   | { kind: "delete"; result: BulkDeleteByPatternResult }
-  | { kind: "expire"; result: BulkExpireByPatternResult };
+  | { kind: "expire"; result: BulkExpireByPatternResult }
+  | { kind: "rename"; result: BulkRenameByPrefixResult };
 
 /**
  * Pattern-based bulk DELETE / EXPIRE with a forced dry-run preview
@@ -80,6 +83,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
   const [open, setOpen] = useState(false);
   const [op, setOp] = useState<BulkOp>("delete");
   const [pattern, setPattern] = useState("");
+  const [newPrefix, setNewPrefix] = useState("");
   const [ttlSeconds, setTtlSeconds] = useState("3600");
   const [preview, setPreview] = useState<BulkPreview | null>(null);
   const [confirmText, setConfirmText] = useState("");
@@ -87,6 +91,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
 
   const reset = () => {
     setPattern("");
+    setNewPrefix("");
     setPreview(null);
     setConfirmText("");
     setBusy(false);
@@ -94,13 +99,15 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
 
   const ttlNumber = Number(ttlSeconds);
   const ttlValid =
-    op === "delete" ||
+    op !== "expire" ||
     (Number.isFinite(ttlNumber) &&
       ttlNumber > 0 &&
       Number.isInteger(ttlNumber));
+  const renameValid =
+    op !== "rename" || (newPrefix.length > 0 && newPrefix !== pattern);
 
   const handlePreview = async () => {
-    if (!pattern.trim() || !ttlValid) return;
+    if (!pattern.trim() || !ttlValid || !renameValid) return;
     setBusy(true);
     try {
       if (op === "delete") {
@@ -110,7 +117,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
           dryRun: true,
         });
         setPreview({ kind: "delete", result });
-      } else {
+      } else if (op === "expire") {
         const result = await bulkExpireByPattern({
           connectionId,
           pattern: pattern.trim(),
@@ -118,6 +125,14 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
           dryRun: true,
         });
         setPreview({ kind: "expire", result });
+      } else {
+        const result = await bulkRenameByPrefix({
+          connectionId,
+          oldPrefix: pattern,
+          newPrefix,
+          dryRun: true,
+        });
+        setPreview({ kind: "rename", result });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -139,7 +154,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         toast.success(
           `Deleted ${result.deleted.toLocaleString()} key${result.deleted === 1 ? "" : "s"}`,
         );
-      } else {
+      } else if (preview.kind === "expire") {
         const result = await bulkExpireByPattern({
           connectionId,
           pattern: pattern.trim(),
@@ -148,6 +163,16 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         });
         toast.success(
           `EXPIRE applied to ${result.expired.toLocaleString()} key${result.expired === 1 ? "" : "s"}`,
+        );
+      } else {
+        const result = await bulkRenameByPrefix({
+          connectionId,
+          oldPrefix: pattern,
+          newPrefix,
+          dryRun: false,
+        });
+        toast.success(
+          `Renamed ${result.renamed.toLocaleString()} key${result.renamed === 1 ? "" : "s"} (${result.skipped.toLocaleString()} skipped — destination existed)`,
         );
       }
       setOpen(false);
@@ -172,33 +197,17 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
     );
   }
 
-  const matched =
-    preview?.kind === "delete"
-      ? preview.result.matched
-      : preview?.kind === "expire"
-        ? preview.result.matched
-        : 0;
-  const sample =
-    preview?.kind === "delete"
-      ? preview.result.sample
-      : preview?.kind === "expire"
-        ? preview.result.sample
-        : [];
-  const truncated =
-    preview?.kind === "delete"
-      ? preview.result.truncated
-      : preview?.kind === "expire"
-        ? preview.result.truncated
-        : false;
-  const scanned =
-    preview?.kind === "delete"
-      ? preview.result.scanned
-      : preview?.kind === "expire"
-        ? preview.result.scanned
-        : 0;
-  const confirmWord = op === "delete" ? "DELETE" : "EXPIRE";
+  const matched = preview?.result.matched ?? 0;
+  const scanned = preview?.result.scanned ?? 0;
+  const truncated = preview?.result.truncated ?? false;
+  const confirmWord =
+    op === "delete" ? "DELETE" : op === "expire" ? "EXPIRE" : "RENAME";
   const applyLabel =
-    op === "delete" ? `Delete ${matched}` : `EXPIRE ${matched}`;
+    op === "delete"
+      ? `Delete ${matched}`
+      : op === "expire"
+        ? `EXPIRE ${matched}`
+        : `Rename ${matched}`;
 
   return (
     <div className="w-full rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2">
@@ -215,11 +224,14 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         >
           <option value="delete">DEL</option>
           <option value="expire">EXPIRE</option>
+          <option value="rename">RENAME prefix</option>
         </select>
         <Input
           value={pattern}
           onChange={(event) => setPattern(event.target.value)}
-          placeholder="pattern (e.g. session:*)"
+          placeholder={
+            op === "rename" ? "old prefix" : "pattern (e.g. session:*)"
+          }
           className="h-6 flex-1 font-mono text-[0.65rem]"
           aria-label="Bulk pattern"
         />
@@ -233,11 +245,20 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
             aria-label="TTL seconds"
           />
         ) : null}
+        {op === "rename" ? (
+          <Input
+            value={newPrefix}
+            onChange={(event) => setNewPrefix(event.target.value)}
+            placeholder="new prefix"
+            className="h-6 w-32 font-mono text-[0.65rem]"
+            aria-label="New prefix"
+          />
+        ) : null}
         <Button
           size="sm"
           variant="outline"
           className="h-6 px-2 text-[0.65rem]"
-          disabled={busy || !pattern.trim() || !ttlValid}
+          disabled={busy || !pattern.trim() || !ttlValid || !renameValid}
           onClick={() => {
             void handlePreview();
           }}
@@ -265,9 +286,19 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
             </span>
             {truncated ? " (truncated at 10k)" : ""}
           </div>
-          {sample.length > 0 ? (
+          {preview?.kind === "rename" ? (
+            preview.result.sample.length > 0 ? (
+              <ul className="mt-1 max-h-32 overflow-auto font-mono text-text-muted">
+                {preview.result.sample.map(([oldName, newName]) => (
+                  <li key={oldName} className="truncate">
+                    {oldName} → {newName}
+                  </li>
+                ))}
+              </ul>
+            ) : null
+          ) : (preview?.result.sample.length ?? 0) > 0 ? (
             <ul className="mt-1 max-h-32 overflow-auto font-mono text-text-muted">
-              {sample.map((name) => (
+              {(preview?.result.sample as string[] | undefined)?.map((name) => (
                 <li key={name} className="truncate">
                   {name}
                 </li>

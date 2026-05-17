@@ -117,6 +117,27 @@ export function bulkExpireByPattern(payload: {
   );
 }
 
+export type BulkRenameByPrefixResult = {
+  scanned: number;
+  matched: number;
+  renamed: number;
+  skipped: number;
+  sample: Array<[string, string]>;
+  truncated: boolean;
+};
+
+export function bulkRenameByPrefix(payload: {
+  connectionId: string;
+  oldPrefix: string;
+  newPrefix: string;
+  dryRun: boolean;
+  maxKeys?: number;
+}): Promise<BulkRenameByPrefixResult> {
+  return tauriInvoke<BulkRenameByPrefixResult>("redis_bulk_rename_by_prefix", {
+    payload,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Key metadata
 // ---------------------------------------------------------------------------
