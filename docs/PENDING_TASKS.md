@@ -62,9 +62,7 @@ before code lands.
   Keyspace-notifications "Live" toggle shipped in the keyspace
   browser — relies on the server-side `notify-keyspace-events`
   config being non-empty.)
-- **Operational affordances** — static-map rendering for Geo keys,
-  per-bit `SETBIT` editing in the bitmap view (view-only landed
-  in the string viewer).
+- **Operational affordances** — static-map rendering for Geo keys.
 
 ### Cross-cutting UX
 

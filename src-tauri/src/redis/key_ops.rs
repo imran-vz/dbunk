@@ -903,6 +903,49 @@ pub struct BulkRenameByPrefixResult {
 /// destination key that already exists is left alone — those count
 /// toward `skipped`. The caller surfaces a typed confirmation
 /// because RENAMENX is destructive on the source key.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetBitPayload {
+    pub connection_id: String,
+    pub key: String,
+    /// Bit offset (0-indexed from the most-significant bit of byte 0).
+    pub offset: u64,
+    /// New bit value — 0 or 1.
+    pub value: u8,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetBitResult {
+    /// Bit value that was previously stored at this offset, returned
+    /// by `SETBIT`.
+    pub previous: u8,
+}
+
+/// Wraps `SETBIT key offset value`. Destructive (writes to the key);
+/// passes through `assert_writable`. Accepts 0 / 1 — Redis rejects
+/// anything else with a server-side error.
+pub async fn set_bit(
+    connection: &RedisStoredConnection,
+    payload: &SetBitPayload,
+) -> Result<SetBitResult, String> {
+    assert_writable(connection).await?;
+    if payload.value != 0 && payload.value != 1 {
+        return Err("SETBIT value must be 0 or 1".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let previous: i64 = redis::cmd("SETBIT")
+        .arg(&payload.key)
+        .arg(payload.offset)
+        .arg(payload.value)
+        .query_async(&mut conn)
+        .await
+        .map_err(connection::redis_err)?;
+    Ok(SetBitResult {
+        previous: u8::try_from(previous).unwrap_or(0),
+    })
+}
+
 pub async fn bulk_rename_by_prefix(
     connection: &RedisStoredConnection,
     payload: &BulkRenameByPrefixPayload,
