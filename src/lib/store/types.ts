@@ -284,6 +284,10 @@ export type ColumnInfo = {
   defaultValue: string | null;
   isPrimaryKey: boolean;
   ordinalPosition: number;
+  /** ClickHouse-only: `"MATERIALIZED"` / `"ALIAS"` / `"EPHEMERAL"`
+   *  for derived columns. PostgreSQL leaves this `null`. Drives the
+   *  "derived" icon in the data-grid column header. */
+  derivationKind?: string | null;
 };
 
 export type ForeignKeyInfo = {

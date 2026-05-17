@@ -990,6 +990,12 @@ pub(crate) struct ColumnInfo {
     pub default_value: Option<String>,
     pub is_primary_key: bool,
     pub ordinal_position: i32,
+    /// Engine-specific derivation marker. ClickHouse populates this
+    /// with `"MATERIALIZED"` / `"ALIAS"` / `"EPHEMERAL"` for derived
+    /// columns; PostgreSQL leaves it `None`. Frontend uses it to
+    /// render a "derived" icon in the column header.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derivation_kind: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

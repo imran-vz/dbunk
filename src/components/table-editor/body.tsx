@@ -1,7 +1,8 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type * as React from "react";
+import { useMemo } from "react";
 
-import { DataGrid } from "@/components/data-grid";
+import { type ColumnHeaderMeta, DataGrid } from "@/components/data-grid";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Button } from "@/components/ui/button";
 import type {
@@ -107,6 +108,10 @@ export function TableEditorBody({
   const columnTypes = columns.map(
     (name) => structure?.columns.find((c) => c.name === name)?.dataType,
   );
+  const columnMetadata = useMemo<Array<ColumnHeaderMeta | undefined>>(
+    () => buildColumnMetadata(columns, structure),
+    [columns, structure],
+  );
   const density = bodyWidth > 0 && bodyWidth < 760 ? "compact" : "cozy";
   const showFooter = activeSubTab === "data" && tableRef !== null;
 
@@ -123,6 +128,7 @@ export function TableEditorBody({
               data={rows}
               columns={columns}
               columnTypes={columnTypes}
+              columnMetadata={columnMetadata}
               edits={currentEdits}
               onEdit={onCellEdit}
               hasEdits={hasEdits}
@@ -278,4 +284,58 @@ function DataToolbar({
       </Button>
     </div>
   );
+}
+
+/**
+ * Compute per-column header metadata from the table structure. Each
+ * entry aligns with `columnNames` (the data-grid's column list);
+ * missing structure leaves the entry undefined so the grid falls
+ * back to the bare column name.
+ *
+ * The cross-engine flags (PK / FK / indexed / unique / not-null /
+ * default) are derived purely from `TableStructure` and work for
+ * both Postgres and ClickHouse. The `derivationKind` field is
+ * ClickHouse-only — Postgres leaves it null.
+ */
+function buildColumnMetadata(
+  columnNames: string[],
+  structure: TableStructure | undefined,
+): Array<ColumnHeaderMeta | undefined> {
+  if (!structure) return columnNames.map(() => undefined);
+  const fkColumns = new Set<string>();
+  const fkTargetByColumn = new Map<string, string>();
+  for (const fk of structure.foreignKeys) {
+    for (let i = 0; i < fk.columns.length; i++) {
+      const col = fk.columns[i];
+      fkColumns.add(col);
+      const targetCol = fk.referencedColumns[i] ?? "?";
+      fkTargetByColumn.set(
+        col,
+        `→ ${fk.referencedSchema}.${fk.referencedTable}.${targetCol}`,
+      );
+    }
+  }
+  const indexedColumns = new Set<string>();
+  const uniqueColumns = new Set<string>();
+  for (const idx of structure.indexes) {
+    for (const col of idx.columns) {
+      indexedColumns.add(col);
+      if (idx.isUnique) uniqueColumns.add(col);
+    }
+  }
+  return columnNames.map((name) => {
+    const info = structure.columns.find((c) => c.name === name);
+    if (!info) return undefined;
+    return {
+      isPrimaryKey: info.isPrimaryKey,
+      isForeignKey: fkColumns.has(name),
+      isIndexed: indexedColumns.has(name) && !info.isPrimaryKey,
+      isUnique: uniqueColumns.has(name) && !info.isPrimaryKey,
+      notNull: !info.nullable,
+      hasDefault: info.defaultValue !== null,
+      dataType: info.dataType,
+      derivationKind: info.derivationKind ?? null,
+      description: fkTargetByColumn.get(name),
+    };
+  });
 }

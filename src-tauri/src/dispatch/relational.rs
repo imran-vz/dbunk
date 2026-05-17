@@ -627,6 +627,7 @@ async fn fetch_table_structure_columns_only(
             default_value: None,
             is_primary_key: false,
             ordinal_position: (index as i32) + 1,
+            derivation_kind: None,
         })
         .collect();
 
