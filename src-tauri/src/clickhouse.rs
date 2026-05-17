@@ -381,6 +381,12 @@ pub async fn fetch_table_structure(
             } else {
                 Some(format!("{} {}", default_kind, default_expression))
             };
+            // `default_kind` is `""` for plain `DEFAULT` and uppercase
+            // for the derived variants. Empty stays None on the wire.
+            let derivation_kind = match default_kind {
+                "" | "DEFAULT" => None,
+                other => Some(other.to_string()),
+            };
             let in_sorting = matches!(cell(row, in_sorting_idx), Some("1") | Some("true"));
             ColumnInfo {
                 name: cell_owned(row, name_idx),
@@ -389,6 +395,7 @@ pub async fn fetch_table_structure(
                 default_value,
                 is_primary_key: in_sorting,
                 ordinal_position: parse_int(cell(row, position_idx).unwrap_or("0")) as i32,
+                derivation_kind,
             }
         })
         .collect();

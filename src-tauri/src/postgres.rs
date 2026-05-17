@@ -1224,6 +1224,11 @@ pub async fn fetch_table_structure(
             default_value,
             is_primary_key: primary_key_cols.iter().any(|pk| pk == &name),
             ordinal_position,
+            // PG generated columns surface elsewhere; we don't probe
+            // `is_generated`/`generation_expression` here, so leave
+            // derivation_kind unset. ClickHouse populates this for
+            // MATERIALIZED / ALIAS / EPHEMERAL.
+            derivation_kind: None,
         });
     }
 

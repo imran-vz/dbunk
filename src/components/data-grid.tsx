@@ -4,9 +4,15 @@ import {
   IconColumns,
   IconDeviceFloppy,
   IconDownload,
+  IconExclamationCircle,
   IconFilter,
+  IconKey,
+  IconLink,
+  IconMath,
   IconRefresh,
   IconSearch,
+  IconStar,
+  IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
 import {
@@ -55,6 +61,28 @@ import {
 } from "@/lib/export";
 import { cn } from "@/lib/utils";
 
+/**
+ * Per-column structural metadata for the data-grid header. Aligned
+ * 1:1 with `columns`. Each flag drives a small icon next to the
+ * column name; `dataType` and `derivationKind` flow into the
+ * tooltip and a separate icon when relevant.
+ */
+export type ColumnHeaderMeta = {
+  isPrimaryKey?: boolean;
+  isForeignKey?: boolean;
+  isIndexed?: boolean;
+  isUnique?: boolean;
+  notNull?: boolean;
+  hasDefault?: boolean;
+  dataType?: string;
+  /** `"MATERIALIZED"` / `"ALIAS"` / `"EPHEMERAL"` for ClickHouse
+   *  derived columns; `undefined` otherwise. */
+  derivationKind?: string | null;
+  /** Free-form description appended to the tooltip — e.g. the
+   *  referenced FK target or the default expression. */
+  description?: string;
+};
+
 const FILTER_OPERATORS = [
   { label: "equals", symbol: "=" },
   { label: "not equals", symbol: "<>" },
@@ -96,6 +124,79 @@ interface EditableCellProps {
   columnType?: string;
   editValue?: string;
   onEdit?: (rowIndex: number, columnIndex: number, value: string) => void;
+}
+
+/**
+ * Header cell rendering for a data column: name + a small strip of
+ * icons keyed off `ColumnHeaderMeta`. The whole label carries a
+ * `title` attribute so users get the full data-type + role
+ * description on hover.
+ *
+ * Icon order is stable — left-to-right matches DBeaver-ish
+ * convention: PK first, then FK, then indexed/unique, then
+ * not-null, then default, then derivation. Absent flags simply
+ * skip their slot.
+ */
+function ColumnHeaderLabel({
+  name,
+  meta,
+}: {
+  name: string;
+  meta: ColumnHeaderMeta | undefined;
+}) {
+  if (!meta) return <span>{name}</span>;
+  const tooltipParts: string[] = [];
+  if (meta.dataType) tooltipParts.push(meta.dataType);
+  if (meta.isPrimaryKey) tooltipParts.push("primary key");
+  if (meta.isForeignKey) tooltipParts.push("foreign key");
+  if (meta.isUnique) tooltipParts.push("unique");
+  else if (meta.isIndexed) tooltipParts.push("indexed");
+  if (meta.notNull) tooltipParts.push("NOT NULL");
+  if (meta.hasDefault) tooltipParts.push("has default");
+  if (meta.derivationKind) tooltipParts.push(meta.derivationKind.toLowerCase());
+  if (meta.description) tooltipParts.push(meta.description);
+  const tooltip =
+    tooltipParts.length > 0 ? tooltipParts.join(" · ") : undefined;
+  return (
+    <span className="flex items-center gap-1" title={tooltip}>
+      {meta.isPrimaryKey ? (
+        <IconKey
+          className="size-3 shrink-0 text-warning"
+          aria-label="primary key"
+        />
+      ) : null}
+      {meta.isForeignKey ? (
+        <IconLink
+          className="size-3 shrink-0 text-primary"
+          aria-label="foreign key"
+        />
+      ) : null}
+      {meta.isUnique ? (
+        <IconStar
+          className="size-3 shrink-0 text-accent-green"
+          aria-label="unique index"
+        />
+      ) : meta.isIndexed ? (
+        <IconTerminal2
+          className="size-3 shrink-0 text-text-muted"
+          aria-label="indexed"
+        />
+      ) : null}
+      {meta.notNull ? (
+        <IconExclamationCircle
+          className="size-3 shrink-0 text-rose-400"
+          aria-label="NOT NULL"
+        />
+      ) : null}
+      {meta.derivationKind ? (
+        <IconMath
+          className="size-3 shrink-0 text-indigo-400"
+          aria-label={`${meta.derivationKind.toLowerCase()} column`}
+        />
+      ) : null}
+      <span className="truncate">{name}</span>
+    </span>
+  );
 }
 
 function EditableCell({
@@ -222,6 +323,14 @@ export interface DataGridProps {
    * See ADR-0014.
    */
   columnTypes?: Array<string | undefined>;
+  /**
+   * Per-column structural metadata, aligned to `columns`. When
+   * present, the grid renders icons in each header indicating the
+   * column's role in the table (primary key, foreign key, indexed,
+   * not-null, has-default, derived). Tooltips include the data
+   * type. Absent metadata falls back to the bare column name.
+   */
+  columnMetadata?: Array<ColumnHeaderMeta | undefined>;
   edits?: Record<number, Record<number, string>>;
   onEdit?: (rowIndex: number, colIndex: number, value: string) => void;
   className?: string;
@@ -281,6 +390,7 @@ export function DataGrid({
   data,
   columns: columnNames,
   columnTypes,
+  columnMetadata,
   edits,
   onEdit,
   className,
@@ -425,10 +535,11 @@ export function DataGrid({
     ];
 
     columnNames.forEach((colName, index) => {
+      const meta = columnMetadata?.[index];
       cols.push({
         accessorFn: (row) => row[index],
         id: colName,
-        header: colName,
+        header: () => <ColumnHeaderLabel name={colName} meta={meta} />,
         meta: { index },
         cell: (props) => (
           <EditableCell
@@ -445,7 +556,7 @@ export function DataGrid({
     });
 
     return cols;
-  }, [columnNames, columnTypes, edits, effectiveOnEdit]);
+  }, [columnNames, columnTypes, columnMetadata, edits, effectiveOnEdit]);
 
   const table = useReactTable({
     data,
