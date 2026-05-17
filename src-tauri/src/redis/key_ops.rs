@@ -874,6 +874,118 @@ pub async fn bulk_expire_by_pattern(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BulkRenameByPrefixPayload {
+    pub connection_id: String,
+    pub old_prefix: String,
+    pub new_prefix: String,
+    #[serde(default)]
+    pub dry_run: bool,
+    #[serde(default = "default_bulk_max")]
+    pub max_keys: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkRenameByPrefixResult {
+    pub scanned: u64,
+    pub matched: u64,
+    pub renamed: u64,
+    /// New keys that already existed and were skipped (RENAMENX
+    /// returned 0).
+    pub skipped: u64,
+    /// First few `[old, new]` pairs for the preview.
+    pub sample: Vec<(String, String)>,
+    pub truncated: bool,
+}
+
+/// Scan + RENAMENX every key whose name starts with `old_prefix` to
+/// `new_prefix + remainder`. RENAMENX is used (not RENAME) so any
+/// destination key that already exists is left alone — those count
+/// toward `skipped`. The caller surfaces a typed confirmation
+/// because RENAMENX is destructive on the source key.
+pub async fn bulk_rename_by_prefix(
+    connection: &RedisStoredConnection,
+    payload: &BulkRenameByPrefixPayload,
+) -> Result<BulkRenameByPrefixResult, String> {
+    if !payload.dry_run {
+        assert_writable(connection).await?;
+    }
+    if payload.old_prefix.is_empty() {
+        return Err("Old prefix is required".to_string());
+    }
+    if payload.new_prefix == payload.old_prefix {
+        return Err("New prefix must differ from old prefix".to_string());
+    }
+    let mut conn = connection::manager_for(connection).await?;
+    let pattern = format!("{}*", payload.old_prefix);
+    let mut cursor: String = "0".to_string();
+    let mut scanned: u64 = 0;
+    let mut matched: u64 = 0;
+    let mut renamed: u64 = 0;
+    let mut skipped: u64 = 0;
+    let mut sample: Vec<(String, String)> = Vec::new();
+    let mut truncated = false;
+    loop {
+        let (next_cursor, keys): (String, Vec<String>) = redis::cmd("SCAN")
+            .arg(&cursor)
+            .arg("MATCH")
+            .arg(&pattern)
+            .arg("COUNT")
+            .arg(500u32)
+            .query_async(&mut conn)
+            .await
+            .map_err(connection::redis_err)?;
+        scanned = scanned.saturating_add(keys.len() as u64);
+        for old_name in keys {
+            if matched >= payload.max_keys {
+                truncated = true;
+                break;
+            }
+            let Some(remainder) = old_name.strip_prefix(&payload.old_prefix) else {
+                continue;
+            };
+            let new_name = format!("{}{}", payload.new_prefix, remainder);
+            if new_name == old_name {
+                continue;
+            }
+            matched += 1;
+            if sample.len() < BULK_DELETE_SAMPLE_CAP {
+                sample.push((old_name.clone(), new_name.clone()));
+            }
+            if !payload.dry_run {
+                let ok: i64 = redis::cmd("RENAMENX")
+                    .arg(&old_name)
+                    .arg(&new_name)
+                    .query_async(&mut conn)
+                    .await
+                    .map_err(connection::redis_err)?;
+                if ok == 1 {
+                    renamed += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+        }
+        if truncated {
+            break;
+        }
+        if next_cursor == "0" {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    Ok(BulkRenameByPrefixResult {
+        scanned,
+        matched,
+        renamed,
+        skipped,
+        sample,
+        truncated,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetExpirePayload {
     pub connection_id: String,
     pub key: String,

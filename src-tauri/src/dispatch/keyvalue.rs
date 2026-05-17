@@ -17,11 +17,11 @@ use crate::redis::key_inspector::{
 };
 use crate::redis::key_ops::{
     self, ApplyListEditsPayload, BulkDeleteByPatternPayload, BulkDeleteByPatternResult,
-    BulkExpireByPatternPayload, BulkExpireByPatternResult, CreateKeyPayload,
-    CreateStreamGroupPayload, DelKeysPayload, DelKeysResult, DeleteHashFieldsPayload,
-    DestroyStreamGroupPayload, JsonDeletePayload, JsonSetPayload, RenameKeyPayload,
-    SetExpirePayload, SetHashFieldsPayload, SetMembersPayload, SetStringPayload, SetStringResult,
-    SortedSetEditsPayload, StreamEditsPayload,
+    BulkExpireByPatternPayload, BulkExpireByPatternResult, BulkRenameByPrefixPayload,
+    BulkRenameByPrefixResult, CreateKeyPayload, CreateStreamGroupPayload, DelKeysPayload,
+    DelKeysResult, DeleteHashFieldsPayload, DestroyStreamGroupPayload, JsonDeletePayload,
+    JsonSetPayload, RenameKeyPayload, SetExpirePayload, SetHashFieldsPayload, SetMembersPayload,
+    SetStringPayload, SetStringResult, SortedSetEditsPayload, StreamEditsPayload,
 };
 use crate::redis::keyspace::{
     self, CancelScanSessionPayload, CancelScanSessionResult, CloseScanSessionPayload,
@@ -268,6 +268,13 @@ pub async fn bulk_expire_by_pattern(
     payload: &BulkExpireByPatternPayload,
 ) -> Result<BulkExpireByPatternResult, String> {
     key_ops::bulk_expire_by_pattern(as_redis(connection)?, payload).await
+}
+
+pub async fn bulk_rename_by_prefix(
+    connection: &StoredConnection,
+    payload: &BulkRenameByPrefixPayload,
+) -> Result<BulkRenameByPrefixResult, String> {
+    key_ops::bulk_rename_by_prefix(as_redis(connection)?, payload).await
 }
 
 pub async fn set_expire(
