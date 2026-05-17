@@ -1,7 +1,7 @@
 import { IconCopy, IconMaximize, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-
+import type { ForeignKeyTarget } from "@/components/data-grid";
 import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
@@ -11,13 +11,10 @@ import { AddRowForm } from "@/components/table-editor/add-row-form";
 import { TableEditorBody } from "@/components/table-editor/body";
 import { DataImportWizard } from "@/components/table-editor/data-import-wizard";
 import {
-  type DrilldownEntry,
-  DrilldownPanel,
-} from "@/components/table-editor/drilldown-panel";
-import {
   type SubTab,
   TableEditorHeader,
 } from "@/components/table-editor/header";
+import { InlineDrilldown } from "@/components/table-editor/inline-drilldown";
 import { TableStatusBanners } from "@/components/table-editor/status-banners";
 import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
@@ -109,15 +106,32 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isCopyOpen, setIsCopyOpen] = useState(false);
-  const [drilldownStack, setDrilldownStack] = useState<DrilldownEntry[]>([]);
+  const [inlineDrilldown, setInlineDrilldown] = useState<{
+    rowIndex: number;
+    target: ForeignKeyTarget;
+    value: string;
+  } | null>(null);
   const rowDetails = useRowDetailsVisibility(bodyWidth);
 
-  // Reset drill-downs when the tab's table changes — otherwise a
-  // stale stack from the previous table leaks into the new one.
+  // Reset the inline drill-down when the tab's table changes —
+  // otherwise a stale expansion from the previous table leaks into
+  // the new one. Also close it on ESC.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tableName is the change trigger, not a value read inside
   useEffect(() => {
-    setDrilldownStack([]);
+    setInlineDrilldown(null);
   }, [tableName]);
+
+  useEffect(() => {
+    if (!inlineDrilldown) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setInlineDrilldown(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [inlineDrilldown]);
 
   // Reset the terminal-outcome badge on table switch — the panel instance
   // is reused across tab switches (no React key), so without this the
@@ -478,80 +492,79 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         />
       ) : null}
 
-      {drilldownStack.length > 0 && connection ? (
-        <DrilldownPanel
-          connectionId={tab.connectionId}
-          engine={connection.engine}
-          entry={drilldownStack[drilldownStack.length - 1]}
-          breadcrumb={[
-            { schema: tab.schema, table: tab.table ?? "" },
-            ...drilldownStack.map((entry) => ({
-              schema: entry.schema,
-              table: entry.table,
-            })),
-          ]}
-          onPushDrilldown={(entry) =>
-            setDrilldownStack((stack) => [...stack, entry])
-          }
-          onPopDrilldown={() =>
-            setDrilldownStack((stack) => stack.slice(0, -1))
-          }
-          onCloseAll={() => setDrilldownStack([])}
-        />
-      ) : (
-        <TableEditorBody
-          bodyRef={bodyRef}
-          bodyWidth={bodyWidth}
-          activeSubTab={activeSubTab}
-          tableRef={ref}
-          schema={tab.schema}
-          connectionId={tab.connectionId}
-          tableName={tab.table ?? ""}
-          data={data}
-          structure={structure}
-          currentEdits={currentEdits}
-          hasEdits={hasEdits}
-          selection={selection}
-          caps={caps}
-          rowDetails={rowDetails}
-          pagination={pagination}
-          isLoading={isLoading}
-          isSaving={isSaving}
-          exportFilenameBase={exportFilenameBase}
-          onRefresh={onRefresh}
-          onOpenAddRow={() => setIsAddRowOpen(true)}
-          onOpenImport={() => setIsImportOpen(true)}
-          onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
-          onOpenTable={openTableTab}
-          onSubTabChange={setActiveSubTab}
-          onCellEdit={(rowIndex, colIndex, value) =>
-            setTableEdit(tableName, rowIndex, colIndex, value)
-          }
-          onDiscardEdits={() => discardTableEdits(tableName)}
-          onSaveEdits={async () => {
-            const outcome = await commitTableEdits(tableName);
-            setLastOutcome(outcome);
-          }}
-          onDeleteSelected={() => {
-            void handleDeleteSelected();
-          }}
-          onFollowForeignKey={(target, value) =>
-            setDrilldownStack((stack) => [
-              ...stack,
-              {
-                schema: target.schema,
-                table: target.table,
-                filterColumn: target.column,
-                filterValue: value,
-              },
-            ])
-          }
-          onExportWholeTable={exportWholeTable}
-          onSaveExportTask={handleSaveExportTask}
-          onRunSavedExportTask={handleRunSavedExportTask}
-          hasSavedExportTask={savedExportTask !== null}
-        />
-      )}
+      <TableEditorBody
+        bodyRef={bodyRef}
+        bodyWidth={bodyWidth}
+        activeSubTab={activeSubTab}
+        tableRef={ref}
+        schema={tab.schema}
+        connectionId={tab.connectionId}
+        tableName={tab.table ?? ""}
+        data={data}
+        structure={structure}
+        currentEdits={currentEdits}
+        hasEdits={hasEdits}
+        selection={selection}
+        caps={caps}
+        rowDetails={rowDetails}
+        pagination={pagination}
+        isLoading={isLoading}
+        isSaving={isSaving}
+        exportFilenameBase={exportFilenameBase}
+        onRefresh={onRefresh}
+        onOpenAddRow={() => setIsAddRowOpen(true)}
+        onOpenImport={() => setIsImportOpen(true)}
+        onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
+        onOpenTable={openTableTab}
+        onSubTabChange={setActiveSubTab}
+        onCellEdit={(rowIndex, colIndex, value) =>
+          setTableEdit(tableName, rowIndex, colIndex, value)
+        }
+        onDiscardEdits={() => discardTableEdits(tableName)}
+        onSaveEdits={async () => {
+          const outcome = await commitTableEdits(tableName);
+          setLastOutcome(outcome);
+        }}
+        onDeleteSelected={() => {
+          void handleDeleteSelected();
+        }}
+        onFollowForeignKey={(rowIndex, target, value) =>
+          setInlineDrilldown((current) => {
+            // Clicking the same FK arrow twice closes the expansion.
+            if (
+              current &&
+              current.rowIndex === rowIndex &&
+              current.target.schema === target.schema &&
+              current.target.table === target.table &&
+              current.target.column === target.column &&
+              current.value === value
+            ) {
+              return null;
+            }
+            return { rowIndex, target, value };
+          })
+        }
+        rowExpansion={
+          inlineDrilldown && connection
+            ? {
+                rowIndex: inlineDrilldown.rowIndex,
+                content: (
+                  <InlineDrilldown
+                    connectionId={tab.connectionId}
+                    engine={connection.engine}
+                    target={inlineDrilldown.target}
+                    value={inlineDrilldown.value}
+                    onClose={() => setInlineDrilldown(null)}
+                  />
+                ),
+              }
+            : null
+        }
+        onExportWholeTable={exportWholeTable}
+        onSaveExportTask={handleSaveExportTask}
+        onRunSavedExportTask={handleRunSavedExportTask}
+        hasSavedExportTask={savedExportTask !== null}
+      />
 
       <StatusBar items={statusItems} />
     </div>

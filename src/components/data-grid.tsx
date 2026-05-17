@@ -28,7 +28,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   CELL_EDITORS,
@@ -144,7 +144,11 @@ interface EditableCellProps {
    *  drill-down to the referenced row(s). Caller wires the click
    *  through `onFollowForeignKey`. */
   foreignKeyTarget?: ForeignKeyTarget;
-  onFollowForeignKey?: (target: ForeignKeyTarget, value: string) => void;
+  onFollowForeignKey?: (
+    rowIndex: number,
+    target: ForeignKeyTarget,
+    value: string,
+  ) => void;
 }
 
 /**
@@ -461,7 +465,7 @@ function EditableCell({
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            onFollowForeignKey?.(foreignKeyTarget, displayValue);
+            onFollowForeignKey?.(rowIndex, foreignKeyTarget, displayValue);
           }}
           className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm border border-border-subtle bg-surface-panel-elevated px-1 py-0.5 text-text-muted opacity-0 transition-opacity hover:text-foreground group-hover/cell:opacity-100 focus:opacity-100 focus:outline-none"
           aria-label={`Follow foreign key to ${foreignKeyTarget.schema}.${foreignKeyTarget.table}`}
@@ -497,10 +501,15 @@ export interface DataGridProps {
   columnMetadata?: Array<ColumnHeaderMeta | undefined>;
   /**
    * When provided, FK-marked cells render a hover arrow that calls
-   * this callback with the FK target + cell value. The owning
-   * component is expected to push a drill-down onto its own stack.
+   * this callback with the row index, FK target, and cell value.
+   * The row index lets the owning component anchor an inline
+   * drill-down expansion at the right row.
    */
-  onFollowForeignKey?: (target: ForeignKeyTarget, value: string) => void;
+  onFollowForeignKey?: (
+    rowIndex: number,
+    target: ForeignKeyTarget,
+    value: string,
+  ) => void;
   edits?: Record<number, Record<number, string>>;
   onEdit?: (rowIndex: number, colIndex: number, value: string) => void;
   className?: string;
@@ -554,6 +563,16 @@ export interface DataGridProps {
   }) => void;
   onRunSavedExportTask?: () => Promise<void>;
   hasSavedExportTask?: boolean;
+  /**
+   * Inline row expansion — when set, the grid renders an extra
+   * `<tr>` directly under the row at `rowIndex` with `content`
+   * spanning all data columns. Drives the Drizzle-style FK
+   * drill-down preview without leaving the current view.
+   */
+  rowExpansion?: {
+    rowIndex: number;
+    content: React.ReactNode;
+  } | null;
 }
 
 export function DataGrid({
@@ -562,6 +581,7 @@ export function DataGrid({
   columnTypes,
   columnMetadata,
   onFollowForeignKey,
+  rowExpansion,
   edits,
   onEdit,
   className,
@@ -1333,42 +1353,60 @@ export function DataGrid({
               ))}
             </thead>
             <tbody className="bg-surface-app">
-              {table.getRowModel().rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    "group hover:bg-surface-row-hover",
-                    row.getIsSelected() && "bg-accent-overlay text-foreground",
-                  )}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
+              {table.getRowModel().rows.map((row) => {
+                const visibleCells = row.getVisibleCells();
+                const hasExpansion =
+                  rowExpansion?.rowIndex === row.index &&
+                  rowExpansion.content !== null;
+                return (
+                  <React.Fragment key={row.id}>
+                    <tr
                       className={cn(
-                        "h-8 border-b border-r border-border-subtle p-0 align-middle last:border-r-0",
-                        cell.column.id === "select" &&
-                          "sticky left-0 z-10 w-10 bg-surface-app group-hover:bg-surface-row-hover",
-                        cell.column.id === "select" &&
-                          row.getIsSelected() &&
-                          "bg-primary/10",
+                        "group hover:bg-surface-row-hover",
+                        row.getIsSelected() &&
+                          "bg-accent-overlay text-foreground",
                       )}
-                      style={{
-                        minWidth:
-                          cell.column.id === "select" ? "40px" : "150px",
-                        width:
-                          cell.column.id === "select"
-                            ? "40px"
-                            : dataColumnWidth,
-                      }}
                     >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+                      {visibleCells.map((cell) => (
+                        <td
+                          key={cell.id}
+                          className={cn(
+                            "h-8 border-b border-r border-border-subtle p-0 align-middle last:border-r-0",
+                            cell.column.id === "select" &&
+                              "sticky left-0 z-10 w-10 bg-surface-app group-hover:bg-surface-row-hover",
+                            cell.column.id === "select" &&
+                              row.getIsSelected() &&
+                              "bg-primary/10",
+                          )}
+                          style={{
+                            minWidth:
+                              cell.column.id === "select" ? "40px" : "150px",
+                            width:
+                              cell.column.id === "select"
+                                ? "40px"
+                                : dataColumnWidth,
+                          }}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                    {hasExpansion ? (
+                      <tr key={`${row.id}-expansion`}>
+                        <td
+                          colSpan={visibleCells.length}
+                          className="border-b border-border-subtle bg-surface-panel/40 p-0"
+                        >
+                          {rowExpansion?.content}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         ) : (
