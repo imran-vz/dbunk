@@ -28,10 +28,13 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  type BulkDeleteByPatternResult,
+  bulkDeleteByPattern,
   cancelScanSession,
   closeScanSession,
   openScanSession,
@@ -59,6 +62,160 @@ const KEY_TYPES = [
 ] as const;
 
 const EMPTY_KEYS: string[] = [];
+
+/**
+ * Pattern-based bulk delete with a forced dry-run preview step.
+ * Opens an inline dialog with a pattern input, preview button, and
+ * a typed-confirmation Apply button. Lives at the bottom of the
+ * keyspace browser so the scan + delete operate on the same
+ * connection without leaking the dialog state through the rest of
+ * the tree.
+ */
+function BulkDeleteButton({ connectionId }: { connectionId: string }) {
+  const [open, setOpen] = useState(false);
+  const [pattern, setPattern] = useState("");
+  const [preview, setPreview] = useState<BulkDeleteByPatternResult | null>(
+    null,
+  );
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const reset = () => {
+    setPattern("");
+    setPreview(null);
+    setConfirmText("");
+    setBusy(false);
+  };
+
+  const handlePreview = async () => {
+    if (!pattern.trim()) return;
+    setBusy(true);
+    try {
+      const result = await bulkDeleteByPattern({
+        connectionId,
+        pattern: pattern.trim(),
+        dryRun: true,
+      });
+      setPreview(result);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!preview) return;
+    setBusy(true);
+    try {
+      const result = await bulkDeleteByPattern({
+        connectionId,
+        pattern: pattern.trim(),
+        dryRun: false,
+      });
+      toast.success(
+        `Deleted ${result.deleted.toLocaleString()} key${result.deleted === 1 ? "" : "s"}`,
+      );
+      setOpen(false);
+      reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 px-2 text-[0.65rem]"
+        onClick={() => setOpen(true)}
+      >
+        Bulk delete…
+      </Button>
+    );
+  }
+
+  return (
+    <div className="w-full rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2">
+      <div className="flex items-center gap-1.5">
+        <Input
+          value={pattern}
+          onChange={(event) => setPattern(event.target.value)}
+          placeholder="pattern (e.g. session:*)"
+          className="h-6 flex-1 font-mono text-[0.65rem]"
+          aria-label="Bulk delete pattern"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[0.65rem]"
+          disabled={busy || !pattern.trim()}
+          onClick={() => {
+            void handlePreview();
+          }}
+        >
+          {busy && !preview ? "Scanning…" : "Preview"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[0.65rem]"
+          onClick={() => {
+            setOpen(false);
+            reset();
+          }}
+        >
+          Close
+        </Button>
+      </div>
+      {preview ? (
+        <div className="mt-2 text-[0.6rem]">
+          <div className="text-text-secondary">
+            Scanned {preview.scanned.toLocaleString()} · matched{" "}
+            <span className="font-semibold text-warning">
+              {preview.matched.toLocaleString()}
+            </span>
+            {preview.truncated ? " (truncated at 10k)" : ""}
+          </div>
+          {preview.sample.length > 0 ? (
+            <ul className="mt-1 max-h-32 overflow-auto font-mono text-text-muted">
+              {preview.sample.map((name) => (
+                <li key={name} className="truncate">
+                  {name}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {preview.matched > 0 ? (
+            <div className="mt-2 flex items-center gap-1.5">
+              <Input
+                value={confirmText}
+                onChange={(event) => setConfirmText(event.target.value)}
+                placeholder='Type "DELETE" to confirm'
+                className="h-6 flex-1 font-mono text-[0.65rem]"
+                aria-label="Confirm bulk delete"
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-6 px-2 text-[0.65rem]"
+                disabled={busy || confirmText !== "DELETE"}
+                onClick={() => {
+                  void handleApply();
+                }}
+              >
+                {busy ? "Deleting…" : `Delete ${preview.matched}`}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function KeyspaceBrowser({
   connection,
@@ -372,8 +529,9 @@ export function KeyspaceBrowser({
           </ul>
         )}
       </div>
-      <div className="flex items-center justify-between text-[0.65rem] text-text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[0.65rem] text-text-muted">
         <span>{keys.length.toLocaleString()} loaded</span>
+        <BulkDeleteButton connectionId={connection.id} />
         {loading ? (
           <Button
             size="sm"
