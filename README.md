@@ -4,6 +4,8 @@ dbunk is an open-source desktop database workspace for exploring data, running S
 
 It is built with Tauri, React, TypeScript, Rust, Monaco Editor, SQLx, and pnpm.
 
+![dbunk PostgreSQL overview](marketing/images/pg-overview.jpeg)
+
 ## Status
 
 dbunk is **pre-alpha** and under heavy development. Expect rough edges, missing features, and breaking changes between releases — and please do not point it at production databases yet. Contributions are welcome: bug reports, feature ideas, docs improvements, design polish, database engine support, tests, and small fixes are all useful.
@@ -47,6 +49,56 @@ The app currently has support paths for:
 - ClickHouse
 
 Some advanced features are engine-specific. PostgreSQL currently has the richest editing and schema-inspection support.
+
+## Screenshots
+
+### SQL Editor
+
+Tabbed editor with syntax highlighting, autocomplete, and one-click formatting.
+
+![SQL editor with syntax highlighting and query results](marketing/images/pg-sql-editor.jpeg)
+
+### EXPLAIN Analysis
+
+Visual query plans that flag overestimates, sequential scans, and planning overhead.
+
+![EXPLAIN plan viewer highlighting overestimates and sequential scans](marketing/images/explain-page.jpeg)
+
+### Data Grid
+
+Browse, filter, sort, and edit rows with virtualised tables and inline schema info.
+
+![Data grid browsing rows in a PostgreSQL table](marketing/images/pg-table-view-page.jpeg)
+
+### FK Drill-Down
+
+Follow foreign keys inline as a mini-table under the clicked row — never lose your place.
+
+![Foreign-key drill-down rendered as a mini-table under the clicked row](marketing/images/pg-table-fk-dig-view.jpeg)
+
+### Schema Maps
+
+Visual relationship diagrams that reveal your database structure.
+
+![Schema map with foreign-key relationships between tables](marketing/images/schema-map.jpeg)
+
+### Redis Workspace
+
+First-class Redis: strings, hashes, lists, sets, streams, pub/sub, and a built-in CLI.
+
+![Redis workspace with keyspace browser and CLI](marketing/images/redis-home.jpeg)
+
+### Query History
+
+Every query you've run — searchable, scoped by connection, and replayable in one click.
+
+![Query history view filtered by connection](marketing/images/pg-query-history.jpeg)
+
+### Encrypted Credentials
+
+Passwords encrypted in a local SQLite vault, or stored in the OS keychain — your call.
+
+![Security settings showing encrypted credential storage options](marketing/images/security-page.jpeg)
 
 ## Getting Started
 
