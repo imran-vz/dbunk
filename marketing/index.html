@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/webp" href="images/favicon.webp" />
     <link rel="icon" type="image/png" href="images/favicon.png" />
     <title>Dbunk — The Database Tool for Serious Work</title>
     <meta
@@ -913,12 +914,15 @@
 
       <div class="hero-visual">
         <div class="hero-zoom-container">
-          <img
-            src="images/pg-overview.jpeg"
-            alt="Dbunk PostgreSQL connection overview with stats, recent queries, and favourite tables"
-            class="zoomable"
-            data-lightbox="solo"
-          />
+          <picture>
+            <source srcset="images/pg-overview.webp" type="image/webp" />
+            <img
+              src="images/pg-overview.jpg"
+              alt="Dbunk PostgreSQL connection overview with stats, recent queries, and favourite tables"
+              class="zoomable"
+              data-lightbox="solo"
+            />
+          </picture>
         </div>
       </div>
     </section>
@@ -1019,62 +1023,86 @@
           </ul>
 
           <div class="feature-viewport" id="featureViewport">
-            <img
-              src="images/pg-sql-editor.jpeg"
-              alt="SQL editor with syntax highlighting and query results"
-              class="active zoomable"
-              data-feature="0"
-              data-lightbox="features"
-            />
-            <img
-              src="images/explain-page.jpeg"
-              alt="EXPLAIN plan viewer highlighting overestimates and sequential scans"
-              class="zoomable"
-              data-feature="1"
-              data-lightbox="features"
-            />
-            <img
-              src="images/pg-table-view-page.jpeg"
-              alt="Data grid browsing rows in a PostgreSQL table"
-              class="zoomable"
-              data-feature="2"
-              data-lightbox="features"
-            />
-            <img
-              src="images/pg-table-fk-dig-view.jpeg"
-              alt="Foreign-key drill-down rendered as a mini-table under the clicked row"
-              class="zoomable"
-              data-feature="3"
-              data-lightbox="features"
-            />
-            <img
-              src="images/schema-map.jpeg"
-              alt="Schema map with foreign-key relationships between tables"
-              class="zoomable"
-              data-feature="4"
-              data-lightbox="features"
-            />
-            <img
-              src="images/redis-home.jpeg"
-              alt="Redis workspace with keyspace browser and CLI"
-              class="zoomable"
-              data-feature="5"
-              data-lightbox="features"
-            />
-            <img
-              src="images/pg-query-history.jpeg"
-              alt="Query history view filtered by connection"
-              class="zoomable"
-              data-feature="6"
-              data-lightbox="features"
-            />
-            <img
-              src="images/security-page.jpeg"
-              alt="Security settings showing encrypted credential storage options"
-              class="zoomable"
-              data-feature="7"
-              data-lightbox="features"
-            />
+            <picture>
+              <source srcset="images/pg-sql-editor.webp" type="image/webp" />
+              <img
+                src="images/pg-sql-editor.jpg"
+                alt="SQL editor with syntax highlighting and query results"
+                class="active zoomable"
+                data-feature="0"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/explain-page.webp" type="image/webp" />
+              <img
+                src="images/explain-page.jpg"
+                alt="EXPLAIN plan viewer highlighting overestimates and sequential scans"
+                class="zoomable"
+                data-feature="1"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/pg-table-view-page.webp" type="image/webp" />
+              <img
+                src="images/pg-table-view-page.jpg"
+                alt="Data grid browsing rows in a PostgreSQL table"
+                class="zoomable"
+                data-feature="2"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/pg-table-fk-dig-view.webp" type="image/webp" />
+              <img
+                src="images/pg-table-fk-dig-view.jpg"
+                alt="Foreign-key drill-down rendered as a mini-table under the clicked row"
+                class="zoomable"
+                data-feature="3"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/schema-map.webp" type="image/webp" />
+              <img
+                src="images/schema-map.jpg"
+                alt="Schema map with foreign-key relationships between tables"
+                class="zoomable"
+                data-feature="4"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/redis-home.webp" type="image/webp" />
+              <img
+                src="images/redis-home.jpg"
+                alt="Redis workspace with keyspace browser and CLI"
+                class="zoomable"
+                data-feature="5"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/pg-query-history.webp" type="image/webp" />
+              <img
+                src="images/pg-query-history.jpg"
+                alt="Query history view filtered by connection"
+                class="zoomable"
+                data-feature="6"
+                data-lightbox="features"
+              />
+            </picture>
+            <picture>
+              <source srcset="images/security-page.webp" type="image/webp" />
+              <img
+                src="images/security-page.jpg"
+                alt="Security settings showing encrypted credential storage options"
+                class="zoomable"
+                data-feature="7"
+                data-lightbox="features"
+              />
+            </picture>
           </div>
 
           <div class="feature-caption" id="featureCaption" aria-live="polite">
@@ -1156,12 +1184,15 @@
 
           <div>
             <div class="security-visual">
-              <img
-                src="images/credentials-page.jpeg"
-                alt="Unlock credentials screen shown on launch when encrypted SQLite is selected"
-                class="zoomable"
-                data-lightbox="solo"
-              />
+              <picture>
+                <source srcset="images/credentials-page.webp" type="image/webp" />
+                <img
+                  src="images/credentials-page.jpg"
+                  alt="Unlock credentials screen shown on launch when encrypted SQLite is selected"
+                  class="zoomable"
+                  data-lightbox="solo"
+                />
+              </picture>
             </div>
             <div class="security-caption">
               ON LAUNCH · ENCRYPTED SQLITE MODE
@@ -1305,7 +1336,10 @@
           group === "features"
             ? [...document.querySelectorAll('img[data-lightbox="features"]')]
             : [sourceImg];
-        lightboxGallery = groupImgs.map((i) => ({ src: i.src, alt: i.alt }));
+        lightboxGallery = groupImgs.map((i) => ({
+          src: i.currentSrc || i.src,
+          alt: i.alt,
+        }));
         lightboxIndex = Math.max(
           0,
           groupImgs.findIndex((i) => i === sourceImg),

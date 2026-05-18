@@ -68,25 +68,25 @@ Some of these already exist in `marketing/` and `designs/images/`. Re-take any
 that have drifted from the current UI before posting.
 
 1. **Hero / overview dashboard** — landing view after picking a connection.
-   - **Relational overview** (Postgres ideally — richest data) ✅ `images/pg-overview.jpeg`
+   - **Relational overview** (Postgres ideally — richest data) ✅ `images/pg-overview.webp`
    - **Redis overview** (server identity, memory, clients, keyspace counts) — needed
-2. **Connections list / sidebar** — connections with live status badges (Connected / Read only / Disconnected) and latency. ✅ visible in `images/pg-overview.jpeg`
-3. **New connection dialog** — show that all 5 engines are pickable. Engine-specific fields visible. ✅ `images/connections.jpeg`
-4. **SQL editor with IntelliSense open** — autocomplete dropdown showing table or column suggestions mid-query. The money shot. — partial: `images/pg-sql-editor.jpeg` (no IntelliSense popover; re-shoot mid-completion)
-5. **Query results grid** — a query that returned a few hundred rows, runtime + row count visible in the footer. ✅ `images/pg-sql-editor.jpeg`
-6. **Schema explorer expanded** — sidebar tree with schemas → tables → views drilled open. ✅ visible in `images/pg-table-view-page.jpeg`
-7. **Schema map** — foreign-key graph rendered. Pick a schema with a few related tables so the edges are legible. ✅ `images/schema-map.jpeg`
-8. **Table structure inspector** — columns, primary key, indexes, constraints, relationships tab. ✅ `images/pg-table-view-page.jpeg`
+2. **Connections list / sidebar** — connections with live status badges (Connected / Read only / Disconnected) and latency. ✅ visible in `images/pg-overview.webp`
+3. **New connection dialog** — show that all 5 engines are pickable. Engine-specific fields visible. ✅ `images/connections.webp`
+4. **SQL editor with IntelliSense open** — autocomplete dropdown showing table or column suggestions mid-query. The money shot. — partial: `images/pg-sql-editor.webp` (no IntelliSense popover; re-shoot mid-completion)
+5. **Query results grid** — a query that returned a few hundred rows, runtime + row count visible in the footer. ✅ `images/pg-sql-editor.webp`
+6. **Schema explorer expanded** — sidebar tree with schemas → tables → views drilled open. ✅ visible in `images/pg-table-view-page.webp`
+7. **Schema map** — foreign-key graph rendered. Pick a schema with a few related tables so the edges are legible. ✅ `images/schema-map.webp`
+8. **Table structure inspector** — columns, primary key, indexes, constraints, relationships tab. ✅ `images/pg-table-view-page.webp`
 9. **Inline cell edit** — a cell mid-edit with the dirty/buffered state visible, plus the Commit button. — needed
-10. **Redis keyspace browser** — prefix tree expanded (e.g. `user:*`, `session:*`), type-filter chips visible. ✅ `images/redis-home.jpeg`
-11. **Redis key inspector** — open key with the value panel + right-side metadata drawer (type, TTL, encoding, refcount). ✅ `images/redis-hash-view.jpeg`
+10. **Redis keyspace browser** — prefix tree expanded (e.g. `user:*`, `session:*`), type-filter chips visible. ✅ `images/redis-home.webp`
+11. **Redis key inspector** — open key with the value panel + right-side metadata drawer (type, TTL, encoding, refcount). ✅ `images/redis-hash-view.webp`
 12. **Redis CLI tab** — a few commands run, history visible, ideally with a destructive-command warning shown. — needed
 13. **Redis pub/sub monitor** — active subscription with a few messages streaming in. — needed
-14. **Query history panel** — recent queries with status + runtime, to show persistence across sessions. ✅ `images/pg-query-history.jpeg`
-15. *(Optional)* **Settings → credentials backend picker** — to subtly signal the security/privacy story (keychain / encrypted SQLite / plaintext). ✅ `images/security-page.jpeg`
-16. **EXPLAIN plan viewer** — plan tree with self-time bars and at least one orange warning (overestimate / seq scan). ✅ `images/explain-page.jpeg`
-17. **FK drill-down** — inline mini-table rendered under a clicked row showing the resolved foreign-key target. ✅ `images/pg-table-fk-dig-view.jpeg`
-18. *(Optional)* **Theme presets** — settings page with Dracula / GitHub / Gruvbox swatches. ✅ `images/theme-selection-page.jpeg`
+14. **Query history panel** — recent queries with status + runtime, to show persistence across sessions. ✅ `images/pg-query-history.webp`
+15. *(Optional)* **Settings → credentials backend picker** — to subtly signal the security/privacy story (keychain / encrypted SQLite / plaintext). ✅ `images/security-page.webp`
+16. **EXPLAIN plan viewer** — plan tree with self-time bars and at least one orange warning (overestimate / seq scan). ✅ `images/explain-page.webp`
+17. **FK drill-down** — inline mini-table rendered under a clicked row showing the resolved foreign-key target. ✅ `images/pg-table-fk-dig-view.webp`
+18. *(Optional)* **Theme presets** — settings page with Dracula / GitHub / Gruvbox swatches. ✅ `images/theme-selection-page.webp`
 
 ## Suggested mapping
 
