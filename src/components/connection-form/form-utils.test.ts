@@ -263,6 +263,7 @@ describe("defaultValuesFromConnection", () => {
       dbNumber: 2,
       useTls: true,
       verifyTlsCert: false,
+      readOnly: false,
       status: "Connected",
       latency: "1ms",
     });

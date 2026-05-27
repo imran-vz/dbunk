@@ -1024,6 +1024,7 @@ describe("QueryEditorPanel connection selector", () => {
           dbNumber: 0,
           useTls: false,
           verifyTlsCert: true,
+          readOnly: false,
           status: "Connected" as const,
           latency: "1ms",
         },

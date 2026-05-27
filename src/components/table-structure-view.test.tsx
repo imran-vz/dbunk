@@ -58,6 +58,7 @@ const seedConnection = (engine: Connection["engine"] = "PostgreSQL") => {
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
+        readOnly: false,
       };
       break;
   }
