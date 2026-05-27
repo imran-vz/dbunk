@@ -220,8 +220,9 @@ async fn save_connection(
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
     storage::upsert_connection(&state.pool, &connection).await?;
-    if !connection.password().is_empty() {
-        credentials::upsert(&state.pool, mode, &connection).await?;
+    credentials::upsert(&state.pool, mode, &connection).await?;
+    if matches!(connection, StoredConnection::Redis(_)) {
+        redis::connection::drop_cached(connection.id());
     }
     public_connections(state).await
 }
@@ -242,6 +243,7 @@ async fn delete_connection(
             payload.connection_id
         );
     }
+    redis::connection::drop_cached(&payload.connection_id);
     public_connections(state).await
 }
 

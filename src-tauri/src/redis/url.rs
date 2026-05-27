@@ -3,10 +3,10 @@
 //! Translates a `StoredConnection` (host / port / user / password /
 //! `db_number` / `use_tls` / `verify_tls_cert`) into the `redis://` or
 //! `rediss://` URL `redis-rs` expects. Auth shape:
-//! - empty user + empty password → no auth
+//! - empty password → no auth (the username field is ignored)
 //! - empty user + non-empty password → `:password@` (Redis ≤5 compat,
 //!   ACL `default` user with password)
-//! - non-empty user + password → `user:password@` (Redis 6+ ACL)
+//! - non-empty user + non-empty password → `user:password@` (Redis 6+ ACL)
 //!
 //! Verify-cert behaviour: redis-rs's URL parser does not recognise a
 //! `verify=false` query parameter, but it does recognise the
@@ -51,9 +51,9 @@ pub fn build(connection: &RedisStoredConnection) -> Result<RedisUrl, String> {
         connection.port
     };
     let auth = match (connection.user.is_empty(), connection.password.is_empty()) {
-        (true, true) => String::new(),
+        (_, true) => String::new(),
         (true, false) => format!(":{}@", encode(&connection.password)),
-        (false, _) => format!(
+        (false, false) => format!(
             "{}:{}@",
             encode(&connection.user),
             encode(&connection.password)
@@ -81,9 +81,9 @@ pub fn build(connection: &RedisStoredConnection) -> Result<RedisUrl, String> {
     // reports a connection error — we want to see what was actually
     // sent without dumping their password.
     let redacted_auth = match (connection.user.is_empty(), connection.password.is_empty()) {
-        (true, true) => String::new(),
+        (_, true) => String::new(),
         (true, false) => ":***@".to_string(),
-        (false, _) => format!("{}:***@", connection.user),
+        (false, false) => format!("{}:***@", connection.user),
     };
     let redacted = format!(
         "{scheme}://{redacted_auth}{host}:{port}/{db}{fragment}",
@@ -153,6 +153,14 @@ mod tests {
         conn.password = "secret".into();
         let url = build(&conn).unwrap();
         assert_eq!(url.url, "redis://:secret@localhost:6379/0");
+    }
+
+    #[test]
+    fn username_without_password_is_no_auth() {
+        let mut conn = base();
+        conn.user = "default".into();
+        let url = build(&conn).unwrap();
+        assert_eq!(url.url, "redis://localhost:6379/0");
     }
 
     #[test]

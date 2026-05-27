@@ -329,14 +329,18 @@ pub async fn upsert(
     mode: CredentialStorageMode,
     connection: &StoredConnection,
 ) -> Result<(), String> {
-    if matches!(connection, StoredConnection::SQLite(_)) || connection.password().is_empty() {
+    if matches!(connection, StoredConnection::SQLite(_)) {
         return Ok(());
     }
     let mut all = read_all_cached(pool, mode).await?;
-    all.insert(
-        connection.id().to_string(),
-        connection.password().to_string(),
-    );
+    if connection.password().is_empty() {
+        all.remove(connection.id());
+    } else {
+        all.insert(
+            connection.id().to_string(),
+            connection.password().to_string(),
+        );
+    }
     write_all(pool, mode, &all).await
 }
 
@@ -693,6 +697,45 @@ mod tests {
         let backend = backend_for(CredentialStorageMode::EncryptedSqlite, &pool);
         let error = backend.read_all().await.expect_err("expected locked error");
         assert!(error.contains("locked"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn upsert_empty_password_deletes_stale_credential() {
+        let (_dir, pool) = fixture().await;
+        clear_session_key();
+        seed_connections(&pool, &["conn-1"]).await;
+        write_all(
+            &pool,
+            CredentialStorageMode::PlainSqlite,
+            &creds(&[("conn-1", "old-secret")]),
+        )
+        .await
+        .expect("seed credential");
+
+        let connection = StoredConnection::Redis(crate::RedisStoredConnection {
+            id: "conn-1".into(),
+            name: "redis".into(),
+            database: String::new(),
+            host: "localhost".into(),
+            port: 6379,
+            user: "default".into(),
+            password: String::new(),
+            role: "read/write".into(),
+            last_activity_at: None,
+            db_number: 0,
+            use_tls: false,
+            verify_tls_cert: true,
+            read_only: false,
+        });
+
+        upsert(&pool, CredentialStorageMode::PlainSqlite, &connection)
+            .await
+            .expect("clear credential");
+        let roundtrip = read_all(&pool, CredentialStorageMode::PlainSqlite)
+            .await
+            .expect("read_all");
+        assert!(!roundtrip.contains_key("conn-1"));
     }
 
     #[tokio::test]
