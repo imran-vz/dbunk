@@ -390,124 +390,138 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
 // Connections
 // ---------------------------------------------------------------------------
 
+/// Shared column list used by both `read_connections` and
+/// `read_connection_by_id`.
+const CONNECTION_COLUMNS: &str = "id, name, database_name, engine, host, port, user_name, role,
+     last_activity_at, use_https, url_path,
+     db_number, use_tls, verify_tls_cert, ssl, driver_options,
+     read_only";
+
+/// Map a single SQLite row into a `StoredConnection` variant.
+/// Row → variant construction. The SQLite schema stays flat
+/// (one row per connection, engine-irrelevant columns simply
+/// unread per variant); we match on the `engine` column to
+/// pick which variant to build. ADR-0010 covers the design.
+fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, String> {
+    let engine = DatabaseEngine::from_str(row.get::<String, _>("engine").as_str())?;
+    let id: String = row.get("id");
+    let name: String = row.get("name");
+    let database: String = row.get("database_name");
+    let host: String = row.get("host");
+    let port = i64_to_u16(row.get("port"));
+    let user: String = row.get("user_name");
+    let role: String = row.get("role");
+    let last_activity_at: Option<String> = row.get("last_activity_at");
+
+    let driver_options_json: Option<String> = row.get("driver_options");
+    let driver_options = driver_options_json.and_then(|raw| {
+        if raw.is_empty() {
+            return None;
+        }
+        match serde_json::from_str::<crate::types::PgDriverOptions>(&raw) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                log::warn!("ignoring malformed driver_options for connection {id}: {error}");
+                None
+            }
+        }
+    });
+
+    Ok(match engine {
+        DatabaseEngine::PostgreSQL => StoredConnection::PostgreSQL(PgStoredConnection {
+            id,
+            name,
+            database,
+            host,
+            port,
+            user,
+            password: String::new(),
+            role,
+            last_activity_at,
+            ssl: row.get::<i64, _>("ssl") != 0,
+            driver_options,
+        }),
+        DatabaseEngine::MySQL => StoredConnection::MySQL(MySqlStoredConnection {
+            id,
+            name,
+            database,
+            host,
+            port,
+            user,
+            password: String::new(),
+            role,
+            last_activity_at,
+            ssl: row.get::<i64, _>("ssl") != 0,
+        }),
+        DatabaseEngine::SQLite => StoredConnection::SQLite(SqliteStoredConnection {
+            id,
+            name,
+            database,
+            host,
+            port,
+            user,
+            password: String::new(),
+            role,
+            last_activity_at,
+        }),
+        DatabaseEngine::ClickHouse => StoredConnection::ClickHouse(ClickHouseStoredConnection {
+            id,
+            name,
+            database,
+            host,
+            port,
+            user,
+            password: String::new(),
+            role,
+            last_activity_at,
+            use_https: row.get::<i64, _>("use_https") != 0,
+            url_path: row.get("url_path"),
+        }),
+        DatabaseEngine::Redis => StoredConnection::Redis(RedisStoredConnection {
+            id,
+            name,
+            database,
+            host,
+            port,
+            user,
+            password: String::new(),
+            role,
+            last_activity_at,
+            db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
+            use_tls: row.get::<i64, _>("use_tls") != 0,
+            verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
+            read_only: row.get::<i64, _>("read_only") != 0,
+        }),
+    })
+}
+
 pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>, String> {
-    let rows = sqlx::query(
-        "SELECT id, name, database_name, engine, host, port, user_name, role,
-                last_activity_at, use_https, url_path,
-                db_number, use_tls, verify_tls_cert, ssl, driver_options,
-                read_only
-         FROM connections
-         ORDER BY name COLLATE NOCASE ASC",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|error| error.to_string())?;
+    let query =
+        format!("SELECT {CONNECTION_COLUMNS} FROM connections ORDER BY name COLLATE NOCASE ASC");
+    let rows = sqlx::query(&query)
+        .fetch_all(pool)
+        .await
+        .map_err(|error| error.to_string())?;
 
-    rows.into_iter()
-        .map(|row| {
-            // Row → variant construction. The SQLite schema stays flat
-            // (one row per connection, engine-irrelevant columns simply
-            // unread per variant); we match on the `engine` column to
-            // pick which variant to build. ADR-0010 covers the design.
-            let engine = DatabaseEngine::from_str(row.get::<String, _>("engine").as_str())?;
-            let id: String = row.get("id");
-            let name: String = row.get("name");
-            let database: String = row.get("database_name");
-            let host: String = row.get("host");
-            let port = i64_to_u16(row.get("port"));
-            let user: String = row.get("user_name");
-            let role: String = row.get("role");
-            let last_activity_at: Option<String> = row.get("last_activity_at");
+    rows.into_iter().map(row_to_connection).collect()
+}
 
-            let driver_options_json: Option<String> = row.get("driver_options");
-            // Parse the JSON blob lazily; a corrupted blob falls back
-            // to "no options" rather than failing the whole load. We
-            // log to stderr so the bad row is discoverable.
-            let driver_options = driver_options_json.and_then(|raw| {
-                if raw.is_empty() {
-                    return None;
-                }
-                match serde_json::from_str::<crate::types::PgDriverOptions>(&raw) {
-                    Ok(value) => Some(value),
-                    Err(error) => {
-                        eprintln!(
-                            "warning: ignoring malformed driver_options for connection: {error}"
-                        );
-                        None
-                    }
-                }
-            });
+/// Fetch a single connection by ID. Returns `None` when the ID doesn't
+/// exist — callers map that to a user-facing "Connection not found" error.
+/// This avoids reading and deserialising every stored connection when
+/// only one is needed (the hot path for every Tauri command).
+pub async fn read_connection_by_id(
+    pool: &SqlitePool,
+    connection_id: &str,
+) -> Result<Option<StoredConnection>, String> {
+    let query = format!("SELECT {CONNECTION_COLUMNS} FROM connections WHERE id = ?");
+    let row = sqlx::query(&query)
+        .bind(connection_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| error.to_string())?;
 
-            Ok(match engine {
-                DatabaseEngine::PostgreSQL => StoredConnection::PostgreSQL(PgStoredConnection {
-                    id,
-                    name,
-                    database,
-                    host,
-                    port,
-                    user,
-                    password: String::new(),
-                    role,
-                    last_activity_at,
-                    ssl: row.get::<i64, _>("ssl") != 0,
-                    driver_options,
-                }),
-                DatabaseEngine::MySQL => StoredConnection::MySQL(MySqlStoredConnection {
-                    id,
-                    name,
-                    database,
-                    host,
-                    port,
-                    user,
-                    password: String::new(),
-                    role,
-                    last_activity_at,
-                    ssl: row.get::<i64, _>("ssl") != 0,
-                }),
-                DatabaseEngine::SQLite => StoredConnection::SQLite(SqliteStoredConnection {
-                    id,
-                    name,
-                    database,
-                    host,
-                    port,
-                    user,
-                    password: String::new(),
-                    role,
-                    last_activity_at,
-                }),
-                DatabaseEngine::ClickHouse => {
-                    StoredConnection::ClickHouse(ClickHouseStoredConnection {
-                        id,
-                        name,
-                        database,
-                        host,
-                        port,
-                        user,
-                        password: String::new(),
-                        role,
-                        last_activity_at,
-                        use_https: row.get::<i64, _>("use_https") != 0,
-                        url_path: row.get("url_path"),
-                    })
-                }
-                DatabaseEngine::Redis => StoredConnection::Redis(RedisStoredConnection {
-                    id,
-                    name,
-                    database,
-                    host,
-                    port,
-                    user,
-                    password: String::new(),
-                    role,
-                    last_activity_at,
-                    db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
-                    use_tls: row.get::<i64, _>("use_tls") != 0,
-                    verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
-                    read_only: row.get::<i64, _>("read_only") != 0,
-                }),
-            })
-        })
-        .collect()
+    row.map(row_to_connection).transpose()
 }
 
 pub async fn upsert_connection(
