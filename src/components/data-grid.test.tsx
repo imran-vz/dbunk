@@ -3,13 +3,25 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/download", () => ({
-  downloadFile: vi.fn(),
+  downloadBlob: vi.fn(),
 }));
 
 import { DataGrid } from "@/components/data-grid";
-import { downloadFile } from "@/lib/download";
+import { downloadBlob } from "@/lib/download";
 
-const mockedDownloadFile = vi.mocked(downloadFile);
+const mockedDownloadBlob = vi.mocked(downloadBlob);
+
+/** Extract text content from the Blob passed to downloadBlob. */
+async function blobText(blob: Blob): Promise<string> {
+  // jsdom's Blob may not support .text() or .arrayBuffer(), but
+  // FileReader-style access works via the underlying buffer.
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
 
 const sampleColumns = ["id", "name"];
 const sampleRows = [
@@ -32,7 +44,7 @@ const findMenuItem = (label: RegExp): HTMLElement => {
 };
 
 beforeEach(() => {
-  mockedDownloadFile.mockClear();
+  mockedDownloadBlob.mockClear();
 });
 
 afterEach(() => {
@@ -75,7 +87,7 @@ describe("DataGrid export menu", () => {
     expect(exportSelectedCsv.getAttribute("data-disabled")).toBeNull();
   });
 
-  it("downloads a CSV with header and all rows when 'Export all to .csv' is clicked", () => {
+  it("downloads a CSV with header and all rows when 'Export all to .csv' is clicked", async () => {
     render(
       <DataGrid
         data={sampleRows}
@@ -86,14 +98,14 @@ describe("DataGrid export menu", () => {
     openMoreMenu();
     fireEvent.click(findMenuItem(/Export all to \.csv/i));
 
-    expect(mockedDownloadFile).toHaveBeenCalledTimes(1);
-    const [filename, mime, content] = mockedDownloadFile.mock.calls[0] ?? [];
+    await vi.waitFor(() => expect(mockedDownloadBlob).toHaveBeenCalledTimes(1));
+    const [filename, blob] = mockedDownloadBlob.mock.calls[0] ?? [];
     expect(filename).toBe("conn-public-users-2026-05-09.csv");
-    expect(mime).toContain("text/csv");
+    const content = await blobText(blob as Blob);
     expect(content).toBe("id,name\n1,Ada\n2,Grace\n3,Edsger");
   });
 
-  it("downloads JSON with all rows when 'Export all to .json' is clicked", () => {
+  it("downloads JSON with all rows when 'Export all to .json' is clicked", async () => {
     render(
       <DataGrid
         data={sampleRows}
@@ -104,18 +116,17 @@ describe("DataGrid export menu", () => {
     openMoreMenu();
     fireEvent.click(findMenuItem(/Export all to \.json/i));
 
-    expect(mockedDownloadFile).toHaveBeenCalledTimes(1);
-    const [filename, mime, content] = mockedDownloadFile.mock.calls[0] ?? [];
+    await vi.waitFor(() => expect(mockedDownloadBlob).toHaveBeenCalledTimes(1));
+    const [filename, blob] = mockedDownloadBlob.mock.calls[0] ?? [];
     expect(filename).toBe("conn-public-users-2026-05-09.json");
-    expect(mime).toContain("application/json");
+    const content = await blobText(blob as Blob);
     expect(content).toContain('"id": "1"');
     expect(content).toContain('"name": "Ada"');
-    // Should be valid JSON of all 3 rows.
-    const parsed = JSON.parse(content as string);
+    const parsed = JSON.parse(content);
     expect(parsed).toHaveLength(3);
   });
 
-  it("exports only selected rows when 'Export selected to .csv' is clicked", () => {
+  it("exports only selected rows when 'Export selected to .csv' is clicked", async () => {
     render(
       <DataGrid
         data={sampleRows}
@@ -132,13 +143,14 @@ describe("DataGrid export menu", () => {
     openMoreMenu();
     fireEvent.click(findMenuItem(/Export selected to \.csv/i));
 
-    expect(mockedDownloadFile).toHaveBeenCalledTimes(1);
-    const [filename, , content] = mockedDownloadFile.mock.calls[0] ?? [];
+    await vi.waitFor(() => expect(mockedDownloadBlob).toHaveBeenCalledTimes(1));
+    const [filename, blob] = mockedDownloadBlob.mock.calls[0] ?? [];
     expect(filename).toBe("conn-public-users-2026-05-09-selected.csv");
+    const content = await blobText(blob as Blob);
     expect(content).toBe("id,name\n1,Ada\n3,Edsger");
   });
 
-  it("exports only selected rows when 'Export selected to .json' is clicked", () => {
+  it("exports only selected rows when 'Export selected to .json' is clicked", async () => {
     render(
       <DataGrid
         data={sampleRows}
@@ -153,10 +165,11 @@ describe("DataGrid export menu", () => {
     openMoreMenu();
     fireEvent.click(findMenuItem(/Export selected to \.json/i));
 
-    expect(mockedDownloadFile).toHaveBeenCalledTimes(1);
-    const [filename, , content] = mockedDownloadFile.mock.calls[0] ?? [];
+    await vi.waitFor(() => expect(mockedDownloadBlob).toHaveBeenCalledTimes(1));
+    const [filename, blob] = mockedDownloadBlob.mock.calls[0] ?? [];
     expect(filename).toBe("conn-public-users-2026-05-09-selected.json");
-    const parsed = JSON.parse(content as string);
+    const content = await blobText(blob as Blob);
+    const parsed = JSON.parse(content);
     expect(parsed).toEqual([{ id: "2", name: "Grace" }]);
   });
 });

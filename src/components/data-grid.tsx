@@ -57,13 +57,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { downloadBlob, downloadFile } from "@/lib/download";
+import { downloadBlob } from "@/lib/download";
 import {
   type ExportCompression,
   type ExportEncoding,
   type ExportFormat,
   type ExportTable,
-  prepareExport,
   prepareExportBlob,
 } from "@/lib/export";
 import { cn } from "@/lib/utils";
@@ -804,26 +803,14 @@ export function DataGrid({
       const filenameBase = `${exportFilenameBase || "export"}${
         mode === "selected" ? "-selected" : ""
       }`;
-      // XLSX and gzip both require the async path (Tauri backend / CompressionStream).
-      if (format === "xlsx" || exportCompression === "gzip") {
-        const { filename, blob } = await prepareExportBlob(exportTable, {
-          format,
-          filenameBase,
-          encoding: exportEncoding,
-          compression: exportCompression,
-          nullAs: exportNullAs,
-        });
-        downloadBlob(filename, blob);
-        return;
-      }
-      const prepared = prepareExport(exportTable, {
+      const { filename, blob } = await prepareExportBlob(exportTable, {
         format,
         filenameBase,
         encoding: exportEncoding,
         compression: exportCompression,
         nullAs: exportNullAs,
       });
-      downloadFile(prepared.filename, prepared.mime, prepared.content);
+      downloadBlob(filename, blob);
     },
     [
       buildExportTable,

@@ -212,17 +212,18 @@ export function prepareExport(
   table: ExportTable,
   options: ExportOptions,
 ): PreparedExport {
+  if (options.format === "xlsx") {
+    throw new Error(
+      "XLSX export must use prepareExportBlob (requires async Tauri backend).",
+    );
+  }
+
   const nullAs = options.nullAs ?? "";
   const ext = options.format === "markdown" ? "md" : options.format;
   const filename =
     options.compression === "gzip"
       ? `${options.filenameBase}.${ext}.gz`
       : `${options.filenameBase}.${ext}`;
-  if (options.format === "xlsx") {
-    throw new Error(
-      "XLSX export must use prepareExportBlob (requires async Tauri backend).",
-    );
-  }
 
   const text = exportableText(options, table, nullAs);
   return {

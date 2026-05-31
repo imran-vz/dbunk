@@ -15,6 +15,7 @@
  */
 
 import {
+  IconBroadcast,
   IconDatabase,
   IconKey,
   IconPlus,
@@ -120,7 +121,8 @@ export function KeyValueWorkspace({
           {(
             [
               { id: "keys", icon: IconKey, label: "Keys" },
-              { id: "cli", icon: IconTerminal2, label: "Cli" },
+              { id: "cli", icon: IconTerminal2, label: "CLI" },
+              { id: "pubsub", icon: IconBroadcast, label: "Pub/Sub" },
               { id: "server", icon: IconServer, label: "Server" },
             ] as const
           ).map((section) => (
