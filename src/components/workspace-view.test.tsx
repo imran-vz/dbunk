@@ -9,6 +9,13 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
+vi.mock("@/lib/monaco-local", () => ({}));
+vi.mock("@monaco-editor/react", () => ({
+  __esModule: true,
+  default: () => null,
+  loader: { config: () => {} },
+}));
+
 import { WorkspaceView } from "@/components/workspace-view";
 import { type Connection, useAppStore } from "@/lib/store";
 
