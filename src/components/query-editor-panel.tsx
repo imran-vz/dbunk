@@ -1,6 +1,8 @@
 import MonacoEditor from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+
+import "@/lib/monaco-local";
 import {
   type ExplainPlanData,
   type ExplainPlanNode,

@@ -16,6 +16,12 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
+// Monaco is loaded locally in the real app but the heavy editor module
+// can't run in jsdom. The editor component itself is already mocked
+// below; this prevents the side-effectful local-loader from importing
+// the real monaco-editor package.
+vi.mock("@/lib/monaco-local", () => ({}));
+
 // Controllable selection that the mocked Monaco editor will return.
 const selectionState = { value: null as string | null };
 const cursorState = { lineNumber: 1, column: 1 };
