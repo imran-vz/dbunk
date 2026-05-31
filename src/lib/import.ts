@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 export type ImportCell = string | null;
 
@@ -99,16 +99,22 @@ export function parseCsvSheet(text: string): ParsedImportSheet {
   return normalizeRows("CSV import", rows);
 }
 
-export function parseXlsxSheets(data: ArrayBuffer): ParsedImportSheet[] {
-  const workbook = XLSX.read(data, { type: "array" });
-  return workbook.SheetNames.map((sheetName) => {
-    const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<string[]>(worksheet, {
-      header: 1,
-      raw: false,
-      defval: "",
-    });
-    return normalizeRows(sheetName, rows);
+export async function parseXlsxSheets(
+  data: ArrayBuffer,
+): Promise<ParsedImportSheet[]> {
+  if (!isTauri()) {
+    return [];
+  }
+  // Convert ArrayBuffer to base64 for the Tauri command
+  const bytes = new Uint8Array(data);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const dataBase64 = btoa(binary);
+
+  return tauriInvoke<ParsedImportSheet[]>("parse_xlsx", {
+    payload: { dataBase64 },
   });
 }
 
