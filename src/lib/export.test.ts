@@ -8,7 +8,6 @@ import {
   toMarkdown,
   toSqlInserts,
   toTxt,
-  toXlsx,
 } from "@/lib/export";
 
 describe("toCsv", () => {
@@ -180,13 +179,16 @@ describe("additional export formats", () => {
     );
   });
 
-  it("emits a valid XLSX zip payload", () => {
-    const payload = toXlsx(table);
-    expect(payload[0]).toBe(0x50);
-    expect(payload[1]).toBe(0x4b);
-    expect(new TextDecoder().decode(payload)).toContain(
-      "xl/worksheets/sheet1.xml",
-    );
+  it("throws for xlsx in sync prepareExport", () => {
+    expect(() =>
+      prepareExport(table, {
+        format: "xlsx",
+        filenameBase: "people",
+        encoding: "utf-8",
+        compression: "none",
+        nullAs: "",
+      }),
+    ).toThrow("prepareExportBlob");
   });
 
   it("prepares encoded filenames and content", () => {

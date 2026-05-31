@@ -12,6 +12,7 @@ use calamine::{open_workbook_from_rs, Reader, Xlsx};
 use rust_xlsxwriter::Workbook;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use tauri::ipc::Response;
 
 // ---------------------------------------------------------------------------
 // Import (read)
@@ -160,9 +161,16 @@ fn default_sheet_name() -> String {
     "Export".to_string()
 }
 
-/// Build an XLSX file from columns + rows and return it as base64.
+/// Build an XLSX file from columns + rows and return raw bytes.
 #[tauri::command]
-pub async fn export_xlsx(payload: ExportXlsxPayload) -> Result<String, String> {
+pub async fn export_xlsx(payload: ExportXlsxPayload) -> Result<Response, String> {
+    let buffer = build_xlsx_buffer(&payload)?;
+    Ok(Response::new(buffer))
+}
+
+/// Core XLSX construction logic, returns the raw xlsx bytes.
+/// Factored out so it's testable without a Tauri runtime.
+fn build_xlsx_buffer(payload: &ExportXlsxPayload) -> Result<Vec<u8>, String> {
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
     worksheet
@@ -193,11 +201,9 @@ pub async fn export_xlsx(payload: ExportXlsxPayload) -> Result<String, String> {
         }
     }
 
-    let buffer = workbook
+    workbook
         .save_to_buffer()
-        .map_err(|e| format!("Failed to save XLSX: {e}"))?;
-
-    Ok(B64.encode(&buffer))
+        .map_err(|e| format!("Failed to save XLSX: {e}"))
 }
 
 #[cfg(test)]
@@ -243,8 +249,8 @@ mod tests {
         assert_eq!(data[0], vec!["1", "", ""]);
     }
 
-    #[tokio::test]
-    async fn export_xlsx_roundtrip() {
+    #[test]
+    fn export_xlsx_roundtrip() {
         let payload = ExportXlsxPayload {
             columns: vec!["id".into(), "name".into()],
             rows: vec![
@@ -253,10 +259,9 @@ mod tests {
             ],
             sheet_name: "Test".into(),
         };
-        let base64 = export_xlsx(payload).await.unwrap();
-        // Should produce valid base64 that decodes to a ZIP (XLSX is a ZIP)
-        let bytes = B64.decode(&base64).unwrap();
-        assert_eq!(&bytes[0..4], b"PK\x03\x04"); // ZIP magic
+        let bytes = build_xlsx_buffer(&payload).unwrap();
+        // XLSX is a ZIP file
+        assert_eq!(&bytes[0..4], b"PK\x03\x04");
     }
 
     #[tokio::test]
@@ -270,10 +275,10 @@ mod tests {
             ],
             sheet_name: "Sheet1".into(),
         };
-        let base64 = export_xlsx(export_payload).await.unwrap();
+        let bytes = build_xlsx_buffer(&export_payload).unwrap();
 
         let parse_payload = ParseXlsxPayload {
-            data_base64: base64,
+            data_base64: B64.encode(&bytes),
         };
         let sheets = parse_xlsx(parse_payload).await.unwrap();
         assert_eq!(sheets.len(), 1);
