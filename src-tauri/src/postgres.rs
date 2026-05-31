@@ -30,12 +30,15 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::time::Instant;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use once_cell::sync::Lazy;
 use sqlx::{
-    postgres::{PgConnectOptions, PgConnection, PgRow},
-    Column, Connection, Executor, Row,
+    pool::PoolConnection,
+    postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions, PgRow},
+    Column, Connection, Executor, Postgres, Row,
 };
 
 use crate::{
@@ -49,36 +52,29 @@ use crate::{
 };
 
 // ---------------------------------------------------------------------------
-// Connection
+// Connection pool
 // ---------------------------------------------------------------------------
 
-/// Open a `PgConnection` from a stored Connection record.
-///
-/// Defaults the port to 5432 when the stored value is `0` (the sentinel we
-/// use for "use the engine default" — set when the user leaves the port
-/// field blank). This is the single seam where future PG connection
-/// concerns plug in: pooling, TLS modes, statement timeouts,
-/// `application_name`, etc.
-async fn connect(connection: &StoredConnection) -> Result<PgConnection, String> {
-    // Narrow to the PG variant — the dispatch layer guarantees this
-    // function is only reached for PostgreSQL connections, but we keep
-    // the runtime check to localize the contract here.
-    let StoredConnection::PostgreSQL(connection) = connection else {
-        return Err(
-            "postgres::connect reached with a non-PostgreSQL connection — dispatch bug".to_string(),
-        );
-    };
+/// Per-connection pool cache. Keyed by `connection_id`. Each pool allows
+/// up to 5 concurrent connections (enough for health checks, schema loads,
+/// and queries without exhausting PG's connection slots). Idle connections
+/// are reaped after 5 minutes.
+static POOL_CACHE: Lazy<Mutex<HashMap<String, PgPool>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Maximum connections per pool. Desktop app typically only needs a few
+/// concurrent operations against the same database.
+const MAX_POOL_SIZE: u32 = 5;
+
+/// Idle timeout before a pooled connection is closed.
+const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Build `PgConnectOptions` from a stored connection record.
+fn build_connect_options(connection: &crate::PgStoredConnection) -> PgConnectOptions {
     let port = if connection.port == 0 {
         5432
     } else {
         connection.port
     };
-    // ADR-0010 threads the `ssl` toggle into PG via sqlx's
-    // `PgSslMode::Prefer` (the historical implicit default) when on,
-    // and `Disable` when off. Users who need full verification can
-    // toggle a future "require + verify-full" mode; the current toggle
-    // is a two-state binary covering the common cases.
     let ssl_mode = if connection.ssl {
         sqlx::postgres::PgSslMode::Prefer
     } else {
@@ -94,45 +90,96 @@ async fn connect(connection: &StoredConnection) -> Result<PgConnection, String> 
     if !connection.password.is_empty() {
         options = options.password(&connection.password);
     }
+    options
+}
 
-    let host_for_err = connection.host.clone();
-    // ADR-0013: `connect_timeout_ms` and `keepalive_seconds` are
-    // TCP-level concerns; sqlx 0.8's `PgConnectOptions` doesn't
-    // expose them as direct setters, so they stay reserved on the
-    // struct until a follow-up wraps connect in `tokio::time::timeout`
-    // and threads keepalives via the socket layer. The session-level
-    // knobs below are applied after a successful handshake.
-    let mut conn = PgConnection::connect_with(&options)
+/// Get or create a `PgPool` for the given connection. Pools are cached
+/// per `connection_id` so repeated operations reuse TCP connections.
+async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
+    let StoredConnection::PostgreSQL(pg) = connection else {
+        return Err(
+            "postgres::pool_for reached with a non-PostgreSQL connection — dispatch bug"
+                .to_string(),
+        );
+    };
+
+    let id = pg.id.clone();
+
+    // Fast path: pool already exists.
+    {
+        let cache = POOL_CACHE.lock().expect("pg pool cache poisoned");
+        if let Some(pool) = cache.get(&id) {
+            return Ok(pool.clone());
+        }
+    }
+
+    // Slow path: build a new pool.
+    let options = build_connect_options(pg);
+    let driver_options = pg.driver_options.clone();
+    let host_for_err = pg.host.clone();
+    let port = if pg.port == 0 { 5432 } else { pg.port };
+
+    let pool = PgPoolOptions::new()
+        .max_connections(MAX_POOL_SIZE)
+        .idle_timeout(IDLE_TIMEOUT)
+        .after_connect(move |conn, _meta| {
+            let driver_options = driver_options.clone();
+            Box::pin(async move {
+                if let Some(ref opts) = driver_options {
+                    // Best-effort: apply driver options. If this fails the
+                    // connection is still valid, just without custom settings.
+                    let _ = apply_driver_options_raw(conn, opts).await;
+                }
+                Ok(())
+            })
+        })
+        .connect_with(options)
         .await
         .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))?;
 
-    if let Some(driver) = &connection.driver_options {
-        apply_driver_options(&mut conn, driver).await?;
+    // Store in cache.
+    {
+        let mut cache = POOL_CACHE.lock().expect("pg pool cache poisoned");
+        // Another thread may have raced us; prefer the existing pool.
+        cache.entry(id).or_insert(pool.clone());
     }
 
-    Ok(conn)
+    Ok(pool)
+}
+
+/// Acquire a connection from the cached pool.
+async fn connect(connection: &StoredConnection) -> Result<PoolConnection<Postgres>, String> {
+    let pool = pool_for(connection).await?;
+    pool.acquire().await.map_err(|error| error.to_string())
+}
+
+/// Evict a connection's pool from the cache. Called when the connection
+/// is saved (credentials/config may have changed) or deleted.
+pub fn drop_pool(connection_id: &str) {
+    let mut cache = POOL_CACHE.lock().expect("pg pool cache poisoned");
+    if let Some(pool) = cache.remove(connection_id) {
+        // Close the pool asynchronously — existing checked-out
+        // connections finish their work, but no new ones are issued.
+        tokio::spawn(async move { pool.close().await });
+    }
 }
 
 /// ADR-0013: apply the post-connect SET statements that mirror the
-/// driver knobs. Skipped fields fall back to whatever the server
-/// (or the user's `postgresql.conf`) decided. Each statement is
-/// `SET` (not `SET LOCAL`) so it survives across queries on this
-/// session.
-async fn apply_driver_options(
+/// driver knobs. Returns `sqlx::Error` for use inside the pool's
+/// `after_connect` callback.
+async fn apply_driver_options_raw(
     conn: &mut PgConnection,
     options: &crate::types::PgDriverOptions,
-) -> Result<(), String> {
+) -> Result<(), sqlx::Error> {
     if let Some(ms) = options.statement_timeout_ms {
         sqlx::query(&format!("SET statement_timeout = {ms}"))
             .execute(&mut *conn)
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
     }
     if let Some(ms) = options.idle_in_transaction_timeout_ms {
         sqlx::query(&format!("SET idle_in_transaction_session_timeout = {ms}"))
             .execute(&mut *conn)
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
     }
     if let Some(path) = options
         .default_search_path
@@ -146,14 +193,12 @@ async fn apply_driver_options(
             .join(", ");
         sqlx::query(&format!("SET search_path TO {joined}"))
             .execute(&mut *conn)
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
     }
     if let Some(role) = options.default_role.as_ref().filter(|s| !s.is_empty()) {
         sqlx::query(&format!("SET ROLE {}", quote_double(role)))
             .execute(&mut *conn)
-            .await
-            .map_err(|error| error.to_string())?;
+            .await?;
     }
     Ok(())
 }
@@ -306,7 +351,7 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
 
     if should_fetch_rows(query) {
         let rows = sqlx::query(query)
-            .fetch_all(&mut conn)
+            .fetch_all(&mut *conn)
             .await
             .map_err(|error| error.to_string())?;
         let columns = rows
@@ -328,7 +373,7 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
         })
     } else {
         let result = sqlx::query(query)
-            .execute(&mut conn)
+            .execute(&mut *conn)
             .await
             .map_err(|error| error.to_string())?;
         let runtime_ms = start.elapsed().as_millis() as u64;
@@ -1153,7 +1198,7 @@ pub async fn fetch_table_structure(
     )
     .bind(schema)
     .bind(table)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1181,7 +1226,7 @@ pub async fn fetch_table_structure(
     )
     .bind(schema)
     .bind(table)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1265,7 +1310,7 @@ pub async fn fetch_table_structure(
     )
     .bind(schema)
     .bind(table)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1316,7 +1361,7 @@ pub async fn fetch_table_structure(
     )
     .bind(schema)
     .bind(table)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1348,7 +1393,7 @@ pub async fn fetch_table_structure(
     )
     .bind(schema)
     .bind(table)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1425,7 +1470,7 @@ pub async fn fetch_schema_relationships(
         "#,
     )
     .bind(schema)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1466,7 +1511,7 @@ pub async fn fetch_schema_relationships(
         "#,
     )
     .bind(schema)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1544,7 +1589,7 @@ pub async fn fetch_schema_relationships(
         "#,
     )
     .bind(schema)
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1601,7 +1646,7 @@ pub async fn load_database_overview_stats(
         FROM user_relations
         "#,
     )
-    .fetch_one(&mut conn)
+    .fetch_one(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1662,7 +1707,7 @@ pub async fn load_relation_stats(
         ORDER BY n.nspname, c.relname
         "#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1704,7 +1749,7 @@ pub async fn load_server_details(
             current_setting('timezone') AS timezone
         "#,
     )
-    .fetch_one(&mut conn)
+    .fetch_one(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1726,7 +1771,7 @@ pub async fn load_server_details(
         ORDER BY category, name
         "#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1744,7 +1789,7 @@ pub async fn load_server_details(
         ORDER BY e.extname
         "#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
 
@@ -1802,7 +1847,7 @@ pub async fn load_admin_snapshot(connection: &StoredConnection) -> Result<PgAdmi
         ORDER BY state NULLS LAST, query_start NULLS LAST
         "#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
     let sessions = session_rows
@@ -1833,7 +1878,7 @@ pub async fn load_admin_snapshot(connection: &StoredConnection) -> Result<PgAdmi
         ORDER BY l.granted ASC, l.pid, l.locktype
         "#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
     let locks = lock_rows
@@ -1874,7 +1919,7 @@ pub async fn load_admin_snapshot(connection: &StoredConnection) -> Result<PgAdmi
         WHERE datname = current_database()
         "#,
     )
-    .fetch_one(&mut conn)
+    .fetch_one(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
     let stats = PgAdminStats {
@@ -1899,7 +1944,7 @@ pub async fn cancel_backend(
     let mut conn = connect(connection).await?;
     let ok = sqlx::query_scalar::<_, bool>("SELECT pg_cancel_backend($1)")
         .bind(pid)
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|error| error.to_string())?;
     Ok(PgBackendActionResult { ok })
@@ -1912,7 +1957,7 @@ pub async fn terminate_backend(
     let mut conn = connect(connection).await?;
     let ok = sqlx::query_scalar::<_, bool>("SELECT pg_terminate_backend($1)")
         .bind(pid)
-        .fetch_one(&mut conn)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|error| error.to_string())?;
     Ok(PgBackendActionResult { ok })
