@@ -217,7 +217,7 @@ async function runDump(
         format,
       },
     });
-    const bytes = base64ToBytes(result.dataBase64);
+    const bytes = new Uint8Array(base64ToBytes(result.dataBase64));
     const filename = `${connection.database || connection.name}.${result.extension}`;
     downloadBlob(
       filename,

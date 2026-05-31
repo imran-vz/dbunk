@@ -39,7 +39,7 @@ export type ExportOptions = {
 export type PreparedExport = {
   filename: string;
   mime: string;
-  content: BlobPart;
+  content: BlobPart | Uint8Array<ArrayBuffer>;
 };
 
 export interface ToCsvOptions {
@@ -234,7 +234,7 @@ const u32 = (value: number) => {
   return bytes;
 };
 
-const concatBytes = (chunks: Uint8Array[]): Uint8Array => {
+const concatBytes = (chunks: Uint8Array[]): Uint8Array<ArrayBuffer> => {
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const out = new Uint8Array(length);
   let offset = 0;
@@ -265,7 +265,7 @@ const sheetXml = (table: ExportTable): string => {
 </worksheet>`;
 };
 
-export function toXlsx(table: ExportTable): Uint8Array {
+export function toXlsx(table: ExportTable): Uint8Array<ArrayBuffer> {
   const files = new Map<string, string>([
     [
       "[Content_Types].xml",
@@ -396,25 +396,36 @@ export function prepareExport(
       content: toXlsx(table),
     };
   }
-  const text =
-    options.format === "csv"
-      ? toCsv(table, { nullAs })
-      : options.format === "json"
-        ? toJson(table, { pretty: true })
-        : options.format === "sql"
-          ? toSqlInserts(table, {
-              tableName: options.sqlTableName ?? options.filenameBase,
-            })
-          : options.format === "html"
-            ? toHtml(table, nullAs)
-            : options.format === "markdown"
-              ? toMarkdown(table, nullAs)
-              : toTxt(table, nullAs);
+
+  const text = exportableText(options, table, nullAs);
   return {
     filename,
     mime: mimeForFormat(options.format, options.encoding),
     content: encodeText(text, options.encoding),
   };
+}
+
+function exportableText(
+  options: ExportOptions,
+  table: ExportTable,
+  nullAs: string,
+) {
+  switch (options.format) {
+    case "csv":
+      return toCsv(table, { nullAs });
+    case "json":
+      return toJson(table, { pretty: true });
+    case "sql":
+      return toSqlInserts(table, {
+        tableName: options.sqlTableName ?? options.filenameBase,
+      });
+    case "html":
+      return toHtml(table, nullAs);
+    case "markdown":
+      return toMarkdown(table, nullAs);
+    default:
+      return toTxt(table, nullAs);
+  }
 }
 
 export async function prepareExportBlob(

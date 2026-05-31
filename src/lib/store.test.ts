@@ -706,6 +706,7 @@ describe("connectConnection error feedback", () => {
           useTls: false,
           verifyTlsCert: false,
           dbNumber: 0,
+          readOnly: false,
         },
       ],
     });
@@ -982,6 +983,7 @@ describe("runHealthChecks latency", () => {
           useTls: false,
           verifyTlsCert: false,
           dbNumber: 0,
+          readOnly: false,
         },
       ],
     });
