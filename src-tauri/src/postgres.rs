@@ -137,11 +137,17 @@ async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
         .await
         .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))?;
 
-    // Store in cache.
+    // Store in cache. If another task raced us, prefer its pool and
+    // close ours so we don't leak connections.
     {
         let mut cache = POOL_CACHE.lock().expect("pg pool cache poisoned");
-        // Another thread may have raced us; prefer the existing pool.
-        cache.entry(id).or_insert(pool.clone());
+        if let Some(existing) = cache.get(&id) {
+            let winner = existing.clone();
+            // Close the pool we just built — it lost the race.
+            tokio::spawn(async move { pool.close().await });
+            return Ok(winner);
+        }
+        cache.insert(id, pool.clone());
     }
 
     Ok(pool)

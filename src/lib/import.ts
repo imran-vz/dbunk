@@ -103,7 +103,7 @@ export async function parseXlsxSheets(
   data: ArrayBuffer,
 ): Promise<ParsedImportSheet[]> {
   if (!isTauri()) {
-    return [];
+    throw new Error("XLSX import requires the desktop app (Tauri backend).");
   }
   // Convert ArrayBuffer to base64 for the Tauri command
   const bytes = new Uint8Array(data);

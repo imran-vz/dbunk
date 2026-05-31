@@ -39,7 +39,7 @@ export type ExportOptions = {
 export type PreparedExport = {
   filename: string;
   mime: string;
-  content: BlobPart | Uint8Array<ArrayBuffer>;
+  content: BlobPart;
 };
 
 export interface ToCsvOptions {
@@ -193,175 +193,6 @@ export function toTxt(table: ExportTable, nullAs = ""): string {
   ].join("\n");
 }
 
-const crcTable = Array.from({ length: 256 }, (_value, index) => {
-  let crc = index;
-  for (let bit = 0; bit < 8; bit += 1) {
-    crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
-  }
-  return crc >>> 0;
-});
-
-const crc32 = (data: Uint8Array): number => {
-  let crc = 0xffffffff;
-  for (const byte of data) {
-    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-};
-
-const textEncoder = new TextEncoder();
-
-const dosDateTime = () => {
-  const now = new Date();
-  const time =
-    (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
-  const date =
-    ((now.getFullYear() - 1980) << 9) |
-    ((now.getMonth() + 1) << 5) |
-    now.getDate();
-  return { time, date };
-};
-
-const u16 = (value: number) => {
-  const bytes = new Uint8Array(2);
-  new DataView(bytes.buffer).setUint16(0, value, true);
-  return bytes;
-};
-
-const u32 = (value: number) => {
-  const bytes = new Uint8Array(4);
-  new DataView(bytes.buffer).setUint32(0, value, true);
-  return bytes;
-};
-
-const concatBytes = (chunks: Uint8Array[]): Uint8Array<ArrayBuffer> => {
-  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
-  const out = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return out;
-};
-
-const sheetXml = (table: ExportTable): string => {
-  const rows = [table.columns, ...table.rows];
-  const xmlRows = rows
-    .map((row, rowIndex) => {
-      const cells = row
-        .map((cell, columnIndex) => {
-          const value = cell === null ? "" : String(cell);
-          const ref = `${String.fromCharCode(65 + columnIndex)}${rowIndex + 1}`;
-          return `<c r="${ref}" t="inlineStr"><is><t>${escapeHtml(value)}</t></is></c>`;
-        })
-        .join("");
-      return `<row r="${rowIndex + 1}">${cells}</row>`;
-    })
-    .join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<sheetData>${xmlRows}</sheetData>
-</worksheet>`;
-};
-
-export function toXlsx(table: ExportTable): Uint8Array<ArrayBuffer> {
-  const files = new Map<string, string>([
-    [
-      "[Content_Types].xml",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>`,
-    ],
-    [
-      "_rels/.rels",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-    ],
-    [
-      "xl/workbook.xml",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets><sheet name="Export" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`,
-    ],
-    [
-      "xl/_rels/workbook.xml.rels",
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`,
-    ],
-    ["xl/worksheets/sheet1.xml", sheetXml(table)],
-  ]);
-  const localParts: Uint8Array[] = [];
-  const centralParts: Uint8Array[] = [];
-  const { time, date } = dosDateTime();
-  let offset = 0;
-  for (const [path, content] of files) {
-    const name = textEncoder.encode(path);
-    const data = textEncoder.encode(content);
-    const crc = crc32(data);
-    const local = concatBytes([
-      u32(0x04034b50),
-      u16(20),
-      u16(0),
-      u16(0),
-      u16(time),
-      u16(date),
-      u32(crc),
-      u32(data.length),
-      u32(data.length),
-      u16(name.length),
-      u16(0),
-      name,
-      data,
-    ]);
-    localParts.push(local);
-    centralParts.push(
-      concatBytes([
-        u32(0x02014b50),
-        u16(20),
-        u16(20),
-        u16(0),
-        u16(0),
-        u16(time),
-        u16(date),
-        u32(crc),
-        u32(data.length),
-        u32(data.length),
-        u16(name.length),
-        u16(0),
-        u16(0),
-        u16(0),
-        u16(0),
-        u32(0),
-        u32(offset),
-        name,
-      ]),
-    );
-    offset += local.length;
-  }
-  const central = concatBytes(centralParts);
-  const end = concatBytes([
-    u32(0x06054b50),
-    u16(0),
-    u16(0),
-    u16(files.size),
-    u16(files.size),
-    u32(central.length),
-    u32(offset),
-    u16(0),
-  ]);
-  return concatBytes([...localParts, central, end]);
-}
-
 const encodeText = (text: string, encoding: ExportEncoding): BlobPart => {
   if (encoding === "utf-8") {
     return text;
@@ -388,13 +219,9 @@ export function prepareExport(
       ? `${options.filenameBase}.${ext}.gz`
       : `${options.filenameBase}.${ext}`;
   if (options.format === "xlsx") {
-    // XLSX is handled async via prepareExportBlob; this path is a
-    // fallback that produces a basic file using the hand-rolled writer.
-    return {
-      filename,
-      mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      content: toXlsx(table),
-    };
+    throw new Error(
+      "XLSX export must use prepareExportBlob (requires async Tauri backend).",
+    );
   }
 
   const text = exportableText(options, table, nullAs);
@@ -428,11 +255,21 @@ function exportableText(
   }
 }
 
+async function compressGzip(blob: Blob): Promise<Blob> {
+  if (typeof CompressionStream === "undefined") {
+    throw new Error("Gzip compression is not supported in this webview.");
+  }
+  const compressed = await new Response(
+    blob.stream().pipeThrough(new CompressionStream("gzip")),
+  ).blob();
+  return new Blob([compressed], { type: "application/gzip" });
+}
+
 export async function prepareExportBlob(
   table: ExportTable,
   options: ExportOptions,
 ): Promise<{ filename: string; blob: Blob }> {
-  // For XLSX, prefer the Rust backend which produces a proper Excel file
+  // For XLSX, use the Rust backend which produces a proper Excel file
   // with numeric cells, correct shared-strings, etc.
   if (options.format === "xlsx" && isTauri()) {
     const nullAs = options.nullAs ?? "";
@@ -440,33 +277,21 @@ export async function prepareExportBlob(
     const rows = table.rows.map((row) =>
       row.map((cell) => (cell === null ? nullAs : cell)),
     );
-    const base64 = await tauriInvoke<string>("export_xlsx", {
+    // Tauri v2 returns raw bytes as ArrayBuffer when the backend
+    // uses `tauri::ipc::Response` with a Vec<u8> body.
+    const buffer = await tauriInvoke<ArrayBuffer>("export_xlsx", {
       payload: { columns, rows, sheetName: options.filenameBase || "Export" },
     });
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
     const ext = "xlsx";
     const filename =
       options.compression === "gzip"
         ? `${options.filenameBase}.${ext}.gz`
         : `${options.filenameBase}.${ext}`;
-    const blob = new Blob([bytes], {
+    const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     if (options.compression === "gzip") {
-      if (typeof CompressionStream === "undefined") {
-        throw new Error("Gzip compression is not supported in this webview.");
-      }
-      const compressed = await new Response(
-        blob.stream().pipeThrough(new CompressionStream("gzip")),
-      ).blob();
-      return {
-        filename,
-        blob: new Blob([compressed], { type: "application/gzip" }),
-      };
+      return { filename, blob: await compressGzip(blob) };
     }
     return { filename, blob };
   }
@@ -476,15 +301,9 @@ export async function prepareExportBlob(
   if (options.compression !== "gzip") {
     return { filename: prepared.filename, blob };
   }
-  if (typeof CompressionStream === "undefined") {
-    throw new Error("Gzip compression is not supported in this webview.");
-  }
-  const compressed = await new Response(
-    blob.stream().pipeThrough(new CompressionStream("gzip")),
-  ).blob();
   return {
     filename: prepared.filename,
-    blob: new Blob([compressed], { type: "application/gzip" }),
+    blob: await compressGzip(blob),
   };
 }
 

@@ -804,14 +804,8 @@ export function DataGrid({
       const filenameBase = `${exportFilenameBase || "export"}${
         mode === "selected" ? "-selected" : ""
       }`;
-      const prepared = prepareExport(exportTable, {
-        format,
-        filenameBase,
-        encoding: exportEncoding,
-        compression: exportCompression,
-        nullAs: exportNullAs,
-      });
-      if (exportCompression === "gzip") {
+      // XLSX and gzip both require the async path (Tauri backend / CompressionStream).
+      if (format === "xlsx" || exportCompression === "gzip") {
         const { filename, blob } = await prepareExportBlob(exportTable, {
           format,
           filenameBase,
@@ -822,6 +816,13 @@ export function DataGrid({
         downloadBlob(filename, blob);
         return;
       }
+      const prepared = prepareExport(exportTable, {
+        format,
+        filenameBase,
+        encoding: exportEncoding,
+        compression: exportCompression,
+        nullAs: exportNullAs,
+      });
       downloadFile(prepared.filename, prepared.mime, prepared.content);
     },
     [
