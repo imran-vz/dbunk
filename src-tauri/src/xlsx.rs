@@ -4,8 +4,8 @@
 //!   returns sheets as `Vec<Vec<String>>`. The frontend sends the file
 //!   as a base64 blob; we decode, parse, and return structured sheets.
 //! - **Export**: `rust_xlsxwriter` builds a proper `.xlsx` file from
-//!   columns + rows and returns it as base64 for the frontend to
-//!   trigger a download.
+//!   columns + rows and returns raw bytes to the frontend via
+//!   Tauri's IPC response.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use calamine::{open_workbook_from_rs, Reader, Xlsx};
