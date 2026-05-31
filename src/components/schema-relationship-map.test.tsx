@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { Edge, Node, NodeMouseHandler } from "reactflow";
+import type { Edge, Node, NodeMouseHandler } from "@xyflow/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
@@ -13,7 +13,7 @@ vi.mock("@/lib/tauri", () => ({
 // reactflow renders into an SVG/canvas tree that pulls in jsdom unsupported
 // APIs. For component-level tests we replace it with a tiny stub that
 // renders nodes/edges as DOM nodes we can query and click on.
-vi.mock("reactflow", () => {
+vi.mock("@xyflow/react", () => {
   type StubNode = Node<{
     label: string;
     columns?: Array<{ name: string }>;
@@ -117,6 +117,7 @@ vi.mock("reactflow", () => {
   return {
     __esModule: true,
     default: ReactFlow,
+    ReactFlow,
     Background: () => null,
     Controls: () => null,
     Handle,

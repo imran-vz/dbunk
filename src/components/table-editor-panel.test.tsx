@@ -8,7 +8,7 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
-vi.mock("reactflow", () => ({
+vi.mock("@xyflow/react", () => ({
   __esModule: true,
   default: () => null,
   Background: () => null,
