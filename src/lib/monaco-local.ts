@@ -11,6 +11,7 @@
  */
 
 import { loader } from "@monaco-editor/react";
+// @ts-expect-error — deep ESM import has no standalone type declarations
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 
 // Register the base editor worker. Language-specific workers (TS, CSS,
