@@ -181,7 +181,7 @@ export function KeyValueWorkspace({
 
             {/* Right slide-over inspector */}
             {selectedKey && (
-              <div className="flex h-full w-[440px] shrink-0 flex-col border-l border-border-subtle bg-surface-panel">
+              <div className="flex h-full w-110 shrink-0 flex-col border-l border-border-subtle bg-surface-panel">
                 <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] font-medium text-text-muted">
