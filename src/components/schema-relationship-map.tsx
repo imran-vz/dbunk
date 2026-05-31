@@ -1,5 +1,18 @@
 import { IconExternalLink } from "@tabler/icons-react";
 import {
+  applyNodeChanges,
+  Background,
+  Controls,
+  Handle,
+  type Node,
+  type NodeChange,
+  type NodeMouseHandler,
+  type NodeProps,
+  type OnNodeDrag,
+  Position,
+  ReactFlow,
+} from "@xyflow/react";
+import {
   forwardRef,
   useCallback,
   useEffect,
@@ -8,18 +21,6 @@ import {
   useRef,
   useState,
 } from "react";
-import ReactFlow, {
-  applyNodeChanges,
-  Background,
-  Controls,
-  Handle,
-  type Node,
-  type NodeChange,
-  type NodeDragHandler,
-  type NodeMouseHandler,
-  type NodeProps,
-  Position,
-} from "reactflow";
 
 import { downloadDataUrl } from "@/lib/download";
 import { relationalPolicy, storageClassFor } from "@/lib/engine-policy";
@@ -171,7 +172,7 @@ export const typeGlyph = (dataType: string): string => {
   return "A-Z";
 };
 
-function SchemaTableNode({ data }: NodeProps<SchemaGraphNodeData>) {
+function SchemaTableNode({ data }: NodeProps<Node<SchemaGraphNodeData>>) {
   const fkColumnNames = new Set(data.fkColumnNames);
   const hiddenColumnCount =
     data.prefs.attrMode === "none" ? data.columnCount : 0;
@@ -527,11 +528,14 @@ export const SchemaRelationshipMap = forwardRef<
     setInteractiveNodes(styledNodes);
   }, [styledNodes]);
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setInteractiveNodes((currentNodes) =>
-      applyNodeChanges(changes, currentNodes),
-    );
-  }, []);
+  const onNodesChange = useCallback(
+    (changes: NodeChange<Node<SchemaGraphNodeData>>[]) => {
+      setInteractiveNodes((currentNodes) =>
+        applyNodeChanges(changes, currentNodes),
+      );
+    },
+    [],
+  );
 
   const onNodeClick: NodeMouseHandler = (_event, node) => {
     const data = (node as Node<SchemaGraphNodeData>).data;
@@ -541,7 +545,7 @@ export const SchemaRelationshipMap = forwardRef<
     focusTableInSchemaMap(connectionId, data.schema, data.table);
   };
 
-  const onNodeDragStop: NodeDragHandler = useCallback(
+  const onNodeDragStop: OnNodeDrag = useCallback(
     (_event, node) => {
       if (!connectionId || !schema) {
         return;

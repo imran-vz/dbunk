@@ -1,5 +1,5 @@
+import type { Edge, Node } from "@xyflow/react";
 import * as dagre from "dagre";
-import type { Edge, Node } from "reactflow";
 
 export type SchemaMapRouting = "bezier" | "step";
 export type SchemaMapAttrMode = "all" | "keys-only" | "none";
