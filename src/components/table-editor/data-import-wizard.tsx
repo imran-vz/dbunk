@@ -69,7 +69,7 @@ export function DataImportWizard({
       const isXlsx = /\.xlsx$/i.test(file.name);
       setFileKind(isXlsx ? "xlsx" : "csv");
       const parsed = isXlsx
-        ? parseXlsxSheets(await file.arrayBuffer())
+        ? await parseXlsxSheets(await file.arrayBuffer())
         : [parseCsvSheet(await readFileText(file))];
       setSheets(parsed);
       setSheetIndex(0);

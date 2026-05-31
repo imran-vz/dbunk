@@ -6,6 +6,8 @@
  * empty strings stay distinct from nulls, and no numeric coercion is attempted.
  */
 
+import { isTauri, tauriInvoke } from "@/lib/tauri";
+
 export type ExportCell = string | null;
 export type ExportRow = ExportCell[];
 export type ExportTable = {
@@ -386,6 +388,8 @@ export function prepareExport(
       ? `${options.filenameBase}.${ext}.gz`
       : `${options.filenameBase}.${ext}`;
   if (options.format === "xlsx") {
+    // XLSX is handled async via prepareExportBlob; this path is a
+    // fallback that produces a basic file using the hand-rolled writer.
     return {
       filename,
       mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -417,6 +421,45 @@ export async function prepareExportBlob(
   table: ExportTable,
   options: ExportOptions,
 ): Promise<{ filename: string; blob: Blob }> {
+  // For XLSX, prefer the Rust backend which produces a proper Excel file
+  // with numeric cells, correct shared-strings, etc.
+  if (options.format === "xlsx" && isTauri()) {
+    const nullAs = options.nullAs ?? "";
+    const columns = table.columns;
+    const rows = table.rows.map((row) =>
+      row.map((cell) => (cell === null ? nullAs : cell)),
+    );
+    const base64 = await tauriInvoke<string>("export_xlsx", {
+      payload: { columns, rows, sheetName: options.filenameBase || "Export" },
+    });
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const ext = "xlsx";
+    const filename =
+      options.compression === "gzip"
+        ? `${options.filenameBase}.${ext}.gz`
+        : `${options.filenameBase}.${ext}`;
+    const blob = new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    if (options.compression === "gzip") {
+      if (typeof CompressionStream === "undefined") {
+        throw new Error("Gzip compression is not supported in this webview.");
+      }
+      const compressed = await new Response(
+        blob.stream().pipeThrough(new CompressionStream("gzip")),
+      ).blob();
+      return {
+        filename,
+        blob: new Blob([compressed], { type: "application/gzip" }),
+      };
+    }
+    return { filename, blob };
+  }
+
   const prepared = prepareExport(table, options);
   const blob = new Blob([prepared.content], { type: prepared.mime });
   if (options.compression !== "gzip") {
