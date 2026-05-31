@@ -1,106 +1,90 @@
 /**
- * Top-level shell for Redis (keyvalue-class) connections — mirrors
- * the relational workspace's layout but with a keyspace browser
- * sidebar and key/cli/pubsub/server tab kinds.
+ * Top-level shell for Redis (keyvalue-class) connections — the
+ * "Command Center" layout.
  *
- * Phase 1.3: full four-tab-kind support. CLI/Server/PubSub are
- * singletons (one per connection).
+ * No nested sidebar. Instead:
+ * - A top command bar with connection info, section switcher
+ *   (Keys / CLI / Server), and a key search.
+ * - The "keys" section renders the keyspace browser as a full-width
+ *   grid/table — clicking a key opens the inspector in a right
+ *   slide-over panel.
+ * - CLI and Server are full-pane views.
  *
- * This file is intentionally a thin composition: tab orchestration,
- * sidebar chrome, tab strip, and the active-tab switch each live in
- * `./key-value-workspace/` siblings so the shell stays below
- * fallow's cognitive-complexity threshold.
+ * This replaces the previous sidebar+tabs layout that created a
+ * sidebar-within-sidebar visual problem.
  */
 
-import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
+import {
+  IconDatabase,
+  IconKey,
+  IconPlus,
+  IconServer,
+  IconTerminal2,
+  IconX,
+} from "@tabler/icons-react";
 import { useCallback, useState } from "react";
 
+import { CliTab } from "@/components/keyvalue/CliTab";
+import { KeyInspectorTab } from "@/components/keyvalue/KeyInspectorTab";
+import { KeyspaceBrowser } from "@/components/keyvalue/KeyspaceBrowser";
 import { NewKeyDialog } from "@/components/keyvalue/NewKeyDialog";
+import { PubsubTab } from "@/components/keyvalue/PubsubTab";
+import { ServerTab } from "@/components/keyvalue/ServerTab";
 import { type RedisConnection, useAppStore } from "@/lib/store";
-import {
-  useContainerWidth,
-  useResizableWidth,
-} from "@/lib/use-resizable-width";
 
-import { ActiveTabContent } from "./key-value-workspace/active-tab-content";
-import {
-  KEYSPACE_COMPACT_BELOW,
-  KEYSPACE_DEFAULT_WIDTH,
-  KEYSPACE_MAX_WIDTH,
-  KEYSPACE_MIN_WIDTH,
-} from "./key-value-workspace/constants";
-import { KeyValueTabBar } from "./key-value-workspace/key-value-tab-bar";
-import { KeyspaceSidebarPanel } from "./key-value-workspace/keyspace-sidebar-panel";
-import { useKeyValueTabs } from "./key-value-workspace/use-key-value-tabs";
+type Section = "keys" | "cli" | "server" | "pubsub";
 
 interface KeyValueWorkspaceProps {
-  /** Narrowed at the workspace fork — see `workspace-view.tsx`'s
-   *  storage-class branch. KeyValueWorkspace is only rendered for
-   *  Redis connections so the prop carries the variant directly. */
   activeConnection: RedisConnection;
 }
 
 export function KeyValueWorkspace({
   activeConnection,
 }: KeyValueWorkspaceProps) {
-  const setActiveTabId = useAppStore((state) => state.setActiveTabId);
+  const [activeSection, setActiveSection] = useState<Section>("keys");
+  const [selectedKey, setSelectedKey] = useState<{
+    name: string;
+    type: string;
+  } | null>(null);
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [browserRefreshTick, setBrowserRefreshTick] = useState(0);
-  const [keyspaceSidebarVisible, setKeyspaceSidebarVisible] = useState(true);
-  const [keyspaceOverlayOpen, setKeyspaceOverlayOpen] = useState(false);
 
-  const { width: sidebarWidth, setWidth: setSidebarWidth } = useResizableWidth({
-    storageKey: "dbunk.redis.keyspaceSidebarWidth",
-    defaultWidth: KEYSPACE_DEFAULT_WIDTH,
-    min: KEYSPACE_MIN_WIDTH,
-    max: KEYSPACE_MAX_WIDTH,
-  });
+  // Stable tab ID for CLI session — one per connection mount
+  const [cliTabId] = useState(
+    () =>
+      `cli-${activeConnection.id}-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+  );
+  const [pubsubTabId] = useState(
+    () =>
+      `pubsub-${activeConnection.id}-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+  );
 
-  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
-  const isKeyspaceCompact =
-    containerWidth > 0 && containerWidth < KEYSPACE_COMPACT_BELOW;
+  const capabilities = useAppStore(
+    (state) => state.redisCapabilitiesByConnection[activeConnection.id],
+  );
 
-  const {
-    myTabs,
-    activeTab,
-    openSingleton,
-    handleOpenKey,
-    handleCloseTab,
-    setWorkspaceTabs,
-    workspaceTabs,
-  } = useKeyValueTabs(activeConnection);
+  const handleOpenKey = useCallback((key: string, type: string) => {
+    setSelectedKey({ name: key, type });
+  }, []);
 
-  // Inspector callbacks closed over `workspaceTabs` / `setWorkspaceTabs`
-  // live here rather than in the hook so the hook stays narrowly
-  // scoped to tab orchestration.
   const handleKeyDeleted = useCallback(
     (key: string) => {
-      const deletedTab = workspaceTabs.find(
-        (tab) =>
-          tab.kind === "key" &&
-          tab.connectionId === activeConnection.id &&
-          tab.redisKey === key,
-      );
-      if (deletedTab) handleCloseTab(deletedTab.id);
+      if (selectedKey?.name === key) {
+        setSelectedKey(null);
+      }
       setBrowserRefreshTick((t) => t + 1);
     },
-    [workspaceTabs, activeConnection.id, handleCloseTab],
+    [selectedKey],
   );
 
   const handleKeyRenamed = useCallback(
     (oldKey: string, newKey: string) => {
-      setWorkspaceTabs((prev) =>
-        prev.map((tab) =>
-          tab.kind === "key" &&
-          tab.connectionId === activeConnection.id &&
-          tab.redisKey === oldKey
-            ? { ...tab, label: newKey, redisKey: newKey }
-            : tab,
-        ),
-      );
+      if (selectedKey?.name === oldKey) {
+        setSelectedKey({ name: newKey, type: selectedKey.type });
+      }
       setBrowserRefreshTick((t) => t + 1);
     },
-    [setWorkspaceTabs, activeConnection.id],
+    [selectedKey],
   );
 
   const handleNewKeyCreated = useCallback(
@@ -111,53 +95,144 @@ export function KeyValueWorkspace({
     [handleOpenKey],
   );
 
-  const showExpandStub = !isKeyspaceCompact && !keyspaceSidebarVisible;
-
   return (
-    <div ref={containerRef} className="relative flex min-h-0 flex-1">
-      {showExpandStub ? (
-        <button
-          type="button"
-          onClick={() => setKeyspaceSidebarVisible(true)}
-          aria-label="Expand keyspace sidebar"
-          title="Expand keyspace sidebar"
-          className="flex w-7 shrink-0 items-center justify-center border-r border-border-subtle bg-surface-window text-text-muted hover:bg-white/5 hover:text-foreground"
-        >
-          <IconLayoutSidebarLeftExpand className="size-4" />
-        </button>
-      ) : null}
-      <KeyspaceSidebarPanel
-        activeConnection={activeConnection}
-        sidebarWidth={sidebarWidth}
-        containerWidth={containerWidth}
-        isKeyspaceCompact={isKeyspaceCompact}
-        keyspaceSidebarVisible={keyspaceSidebarVisible}
-        keyspaceOverlayOpen={keyspaceOverlayOpen}
-        browserRefreshTick={browserRefreshTick}
-        activeKey={activeTab?.kind === "key" ? activeTab.redisKey : undefined}
-        onResize={setSidebarWidth}
-        onOverlayOpenChange={setKeyspaceOverlayOpen}
-        onCollapse={() => setKeyspaceSidebarVisible(false)}
-        onOpenNewKey={() => setNewKeyOpen(true)}
-        onOpenSingleton={openSingleton}
-        onOpenKey={handleOpenKey}
-      />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <KeyValueTabBar
-          myTabs={myTabs}
-          activeTab={activeTab}
-          onActivate={setActiveTabId}
-          onClose={handleCloseTab}
-        />
-        <div className="flex min-h-0 flex-1">
-          <ActiveTabContent
-            activeConnection={activeConnection}
-            activeTab={activeTab}
-            onKeyDeleted={handleKeyDeleted}
-            onKeyRenamed={handleKeyRenamed}
-          />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Top command bar */}
+      <div className="flex items-center gap-3 border-b border-border-subtle bg-surface-window px-4 py-2">
+        <div className="flex items-center gap-2">
+          <IconDatabase className="size-4 text-accent-green" />
+          <span className="text-sm font-medium text-foreground">
+            {activeConnection.name}
+          </span>
+          <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+            {activeConnection.host}:{activeConnection.port}/db
+            {activeConnection.dbNumber}
+          </span>
+          {capabilities?.role && (
+            <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+              {capabilities.role}
+            </span>
+          )}
         </div>
-      </main>
+
+        {/* Section switcher */}
+        <div className="flex items-center gap-1 rounded-lg border border-border-subtle bg-surface-panel px-1 py-0.5">
+          {(
+            [
+              { id: "keys", icon: IconKey, label: "Keys" },
+              { id: "cli", icon: IconTerminal2, label: "Cli" },
+              { id: "server", icon: IconServer, label: "Server" },
+            ] as const
+          ).map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => setActiveSection(section.id)}
+              className={`flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                activeSection === section.id
+                  ? "bg-accent-green/15 text-accent-green"
+                  : "text-text-muted hover:text-foreground"
+              }`}
+            >
+              <section.icon className="size-3" />
+              {section.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Right side: stats + new key */}
+        <div className="ml-auto flex items-center gap-3">
+          {capabilities?.dbSize != null && (
+            <span className="text-[0.65rem] text-text-muted">
+              {capabilities.dbSize.toLocaleString()} keys
+            </span>
+          )}
+          {capabilities?.serverVersion && (
+            <span className="text-[0.65rem] text-text-muted">
+              v{capabilities.serverVersion}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setNewKeyOpen(true)}
+            className="flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-xs text-text-muted transition-colors hover:border-accent-green hover:text-accent-green"
+          >
+            <IconPlus className="size-3" />
+            New Key
+          </button>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex min-h-0 flex-1">
+        {activeSection === "keys" && (
+          <div className="flex min-h-0 flex-1">
+            {/* Keyspace browser as main content — no sidebar */}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <KeyspaceBrowser
+                key={browserRefreshTick}
+                connection={activeConnection}
+                onOpenKey={handleOpenKey}
+                activeKey={selectedKey?.name}
+              />
+            </div>
+
+            {/* Right slide-over inspector */}
+            {selectedKey && (
+              <div className="flex h-full w-[440px] shrink-0 flex-col border-l border-border-subtle bg-surface-panel">
+                <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] font-medium text-text-muted">
+                      {selectedKey.type}
+                    </span>
+                    <span className="truncate font-mono text-xs text-foreground">
+                      {selectedKey.name}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedKey(null)}
+                    className="rounded p-1 text-text-muted hover:bg-white/5 hover:text-foreground"
+                    aria-label="Close inspector"
+                  >
+                    <IconX className="size-4" />
+                  </button>
+                </div>
+                <div className="flex min-h-0 flex-1">
+                  <KeyInspectorTab
+                    connectionId={activeConnection.id}
+                    keyName={selectedKey.name}
+                    onKeyDeleted={handleKeyDeleted}
+                    onKeyRenamed={handleKeyRenamed}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSection === "cli" && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <CliTab connectionId={activeConnection.id} tabId={cliTabId} />
+          </div>
+        )}
+
+        {activeSection === "server" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <ServerTab
+              connectionId={activeConnection.id}
+              dbNumber={activeConnection.dbNumber ?? 0}
+            />
+          </div>
+        )}
+
+        {activeSection === "pubsub" && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <PubsubTab connectionId={activeConnection.id} tabId={pubsubTabId} />
+          </div>
+        )}
+      </div>
+
       <NewKeyDialog
         connectionId={activeConnection.id}
         open={newKeyOpen}
