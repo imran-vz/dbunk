@@ -499,6 +499,13 @@ export const createConnectionsSlice: StateCreator<
     state.closeKeyTabsForConnection(connectionId);
     state.closePubSubSessionsForConnection(connectionId);
     state.closeTabsForConnection(connectionId);
+    if (isTauri()) {
+      void tauriInvoke("disconnect_connection", {
+        payload: { connectionId },
+      }).catch((error) => {
+        console.error("Failed to disconnect backend connection", error);
+      });
+    }
 
     set((state) => {
       const { [connectionId]: _droppedTab, ...remainingTabs } =

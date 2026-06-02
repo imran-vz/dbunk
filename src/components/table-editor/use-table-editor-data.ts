@@ -5,6 +5,7 @@ import {
   type TableLoadStatus,
   type TableStructure,
   tableDataKey,
+  tableSessionKey,
   tableStructureKey,
   useAppStore,
   type WorkspaceTab,
@@ -54,6 +55,6 @@ export function useTableEditorData(tab: WorkspaceTab): TableEditorData {
     dataKey,
     data: dataKey ? tableData[dataKey] : undefined,
     structure: structureKey ? tableStructure[structureKey] : undefined,
-    status: tableName ? tableLoadStatus[tableName] : undefined,
+    status: ref ? tableLoadStatus[tableSessionKey(ref)] : undefined,
   };
 }

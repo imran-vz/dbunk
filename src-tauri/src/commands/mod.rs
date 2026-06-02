@@ -5,6 +5,7 @@
 //! modules need (connection lookup, activity tracking) and the public
 //! `handler_list!` invocations live in `lib.rs`.
 
+pub(crate) mod bastions;
 pub(crate) mod connections;
 pub(crate) mod keyvalue;
 pub(crate) mod relational;
@@ -44,7 +45,7 @@ pub(super) async fn find_connection(
         .await?
         .ok_or_else(|| "Connection not found".to_string())?;
     credentials::hydrate(&state.pool, mode, &mut connection).await?;
-    Ok(connection)
+    crate::tunnel::resolve_connection(&state.pool, mode, connection_id, &connection).await
 }
 
 /// Run `op` against a connection and bump its `lastActivityAt` on success.

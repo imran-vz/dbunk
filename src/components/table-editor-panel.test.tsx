@@ -59,7 +59,7 @@ const seed = (
   useAppStore.setState({
     activeConnectionId: data.connectionId,
     tableData: { [key]: data },
-    tableLoadStatus: { [data.table]: status },
+    tableLoadStatus: { [key]: status },
   });
   return key;
 };
@@ -88,7 +88,9 @@ const settleStatus = (table: string) => {
     useAppStore.setState((state) => ({
       tableLoadStatus: {
         ...state.tableLoadStatus,
-        [table]: { state: "success" },
+        [Object.entries(state.tableData).find(
+          ([, data]) => data.table === table,
+        )?.[0] ?? table]: { state: "success" },
       },
     }));
   });

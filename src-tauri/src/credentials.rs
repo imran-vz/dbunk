@@ -57,12 +57,18 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use sqlx::SqlitePool;
 
-use crate::{keychain, storage, CredentialStorageMode, StoredConnection};
+use crate::{
+    keychain, storage, BastionAuthMethod, CredentialStorageMode, SecretChange, StoredConnection,
+};
 
 const SETTING_ONBOARDING_COMPLETED: &str = "onboardingCompleted";
 const SETTING_CREDENTIAL_STORAGE_MODE: &str = "credentialStorageMode";
 const KDF_NAME: &str = "argon2id-v1";
 const VERIFIER_TEXT: &[u8] = b"dbunk-credential-verifier-v1";
+const BASTION_SECRET_NAMESPACE: &str = "bastion-secret";
+const PASSWORD_AUTH_SLOTS: &[&str] = &["password"];
+const PRIVATE_KEY_PATH_AUTH_SLOTS: &[&str] = &["passphrase"];
+const PRIVATE_KEY_CONTENT_AUTH_SLOTS: &[&str] = &["privateKeyContent", "passphrase"];
 
 const ALL_MODES: [CredentialStorageMode; 3] = [
     CredentialStorageMode::Keychain,
@@ -356,6 +362,94 @@ pub async fn delete(
     write_all(pool, mode, &all).await
 }
 
+pub fn bastion_secret_id(bastion_id: &str, slot: &str) -> String {
+    format!("{BASTION_SECRET_NAMESPACE}:{bastion_id}:{slot}")
+}
+
+pub(crate) struct BastionSecretPatch {
+    pub bastion_id: String,
+    pub auth_method: BastionAuthMethod,
+    pub password: SecretChange,
+    pub private_key_content: SecretChange,
+    pub passphrase: SecretChange,
+}
+
+pub async fn read_bastion_secret(
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    bastion_id: &str,
+    slot: &str,
+) -> Result<Option<String>, String> {
+    let all = read_all_cached(pool, mode).await?;
+    Ok(all.get(&bastion_secret_id(bastion_id, slot)).cloned())
+}
+
+pub fn apply_bastion_secret_patch(
+    mut all: HashMap<String, String>,
+    patch: &BastionSecretPatch,
+) -> HashMap<String, String> {
+    apply_secret_change(&mut all, &patch.bastion_id, "password", &patch.password);
+    apply_secret_change(
+        &mut all,
+        &patch.bastion_id,
+        "privateKeyContent",
+        &patch.private_key_content,
+    );
+    apply_secret_change(&mut all, &patch.bastion_id, "passphrase", &patch.passphrase);
+
+    let keep = match patch.auth_method {
+        BastionAuthMethod::Password => PASSWORD_AUTH_SLOTS,
+        BastionAuthMethod::PrivateKeyPath => PRIVATE_KEY_PATH_AUTH_SLOTS,
+        BastionAuthMethod::PrivateKeyContent => PRIVATE_KEY_CONTENT_AUTH_SLOTS,
+    };
+    let prefix = format!("{BASTION_SECRET_NAMESPACE}:{}:", patch.bastion_id);
+    all.retain(|key, _| {
+        let Some(slot) = key.strip_prefix(&prefix) else {
+            return true;
+        };
+        keep.contains(&slot)
+    });
+    all
+}
+
+fn apply_secret_change(
+    all: &mut HashMap<String, String>,
+    bastion_id: &str,
+    slot: &str,
+    change: &SecretChange,
+) {
+    let key = bastion_secret_id(bastion_id, slot);
+    match change {
+        SecretChange::Keep => {}
+        SecretChange::Set { value } => {
+            all.insert(key, value.to_string());
+        }
+        SecretChange::Clear => {
+            all.remove(&key);
+        }
+    }
+}
+
+pub fn bastion_secret_present(all: &HashMap<String, String>, bastion_id: &str, slot: &str) -> bool {
+    all.get(&bastion_secret_id(bastion_id, slot))
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
+pub async fn delete_bastion_secrets(
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    bastion_id: &str,
+) -> Result<(), String> {
+    let mut all = read_all_cached(pool, mode).await?;
+    let prefix = format!("{BASTION_SECRET_NAMESPACE}:{bastion_id}:");
+    let before = all.len();
+    all.retain(|key, _| !key.starts_with(&prefix));
+    if all.len() == before {
+        return Ok(());
+    }
+    write_all(pool, mode, &all).await
+}
+
 pub async fn hydrate(
     pool: &SqlitePool,
     mode: CredentialStorageMode,
@@ -609,10 +703,10 @@ mod tests {
         (dir, pool)
     }
 
-    /// Seed `connections` rows for the credential IDs we'll write —
-    /// the `credentials` table has a FK to `connections(id)` (ADR-0007:
-    /// credential row deletes when its connection deletes), so we have
-    /// to populate the parent first.
+    /// Seed `connections` rows for the database credential IDs we'll
+    /// write. The credentials table is generic after ADR-0018, but
+    /// keeping realistic parent records catches connection-storage
+    /// regressions in these tests too.
     async fn seed_connections(pool: &SqlitePool, ids: &[&str]) {
         for id in ids {
             let connection = StoredConnection::PostgreSQL(crate::PgStoredConnection {
@@ -627,6 +721,7 @@ mod tests {
                 last_activity_at: None,
                 ssl: true,
                 driver_options: None,
+                ssh_tunnel: crate::SshTunnelConfig::default(),
             });
             storage::upsert_connection(pool, &connection)
                 .await
@@ -727,6 +822,7 @@ mod tests {
             use_tls: false,
             verify_tls_cert: true,
             read_only: false,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
         });
 
         upsert(&pool, CredentialStorageMode::PlainSqlite, &connection)
@@ -736,6 +832,95 @@ mod tests {
             .await
             .expect("read_all");
         assert!(!roundtrip.contains_key("conn-1"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn bastion_secret_namespace_does_not_collide_with_database_password() {
+        let (_dir, pool) = fixture().await;
+        clear_session_key();
+        seed_connections(&pool, &["bastion-1"]).await;
+        write_all(
+            &pool,
+            CredentialStorageMode::PlainSqlite,
+            &creds(&[("bastion-1", "database-secret")]),
+        )
+        .await
+        .expect("seed database credential");
+
+        let original = read_all(&pool, CredentialStorageMode::PlainSqlite)
+            .await
+            .expect("read original");
+        let patched = apply_bastion_secret_patch(
+            original,
+            &BastionSecretPatch {
+                bastion_id: "bastion-1".to_string(),
+                auth_method: BastionAuthMethod::Password,
+                password: SecretChange::Set {
+                    value: "ssh-secret".to_string(),
+                },
+                private_key_content: SecretChange::Keep,
+                passphrase: SecretChange::Keep,
+            },
+        );
+        write_all(&pool, CredentialStorageMode::PlainSqlite, &patched)
+            .await
+            .expect("write bastion secret");
+
+        let roundtrip = read_all(&pool, CredentialStorageMode::PlainSqlite)
+            .await
+            .expect("read_all");
+        assert_eq!(
+            roundtrip.get("bastion-1"),
+            Some(&"database-secret".to_string())
+        );
+        assert_eq!(
+            roundtrip.get(&bastion_secret_id("bastion-1", "password")),
+            Some(&"ssh-secret".to_string())
+        );
+        assert_eq!(
+            read_bastion_secret(
+                &pool,
+                CredentialStorageMode::PlainSqlite,
+                "bastion-1",
+                "password"
+            )
+            .await
+            .expect("read bastion secret")
+            .as_deref(),
+            Some("ssh-secret")
+        );
+    }
+
+    #[test]
+    fn bastion_secret_patch_prunes_inactive_auth_and_clears_passphrase() {
+        let password_key = bastion_secret_id("bastion-1", "password");
+        let key_content_key = bastion_secret_id("bastion-1", "privateKeyContent");
+        let passphrase_key = bastion_secret_id("bastion-1", "passphrase");
+        let original = creds(&[
+            ("conn-1", "database-secret"),
+            (&password_key, "ssh-password"),
+            (&key_content_key, "old-key"),
+            (&passphrase_key, "old-phrase"),
+        ]);
+
+        let patched = apply_bastion_secret_patch(
+            original,
+            &BastionSecretPatch {
+                bastion_id: "bastion-1".to_string(),
+                auth_method: BastionAuthMethod::PrivateKeyContent,
+                password: SecretChange::Keep,
+                private_key_content: SecretChange::Set {
+                    value: "new-key".to_string(),
+                },
+                passphrase: SecretChange::Clear,
+            },
+        );
+
+        assert_eq!(patched.get("conn-1"), Some(&"database-secret".to_string()));
+        assert!(!patched.contains_key(&password_key));
+        assert_eq!(patched.get(&key_content_key), Some(&"new-key".to_string()));
+        assert!(!patched.contains_key(&passphrase_key));
     }
 
     #[tokio::test]

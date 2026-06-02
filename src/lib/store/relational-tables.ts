@@ -25,6 +25,11 @@ import {
   schemaRelationshipsKey,
 } from "@/lib/schema-graph";
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
+import {
+  buildTableSessionSnapshot,
+  resolveTableRefByName,
+  tableSessionStructureKey,
+} from "@/lib/table-session";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import {
@@ -54,10 +59,12 @@ import type {
   TableEditsCommitStatus,
   TableLoadStatus,
   TablePreviewData,
+  TableRef,
+  TableSessionSnapshot,
   TableStructure,
   TableStructureStatus,
 } from "./types";
-import { tableDataKey, tableStructureKey } from "./types";
+import { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
 
 // ---------------------------------------------------------------------------
 // Private helpers and shapes
@@ -184,6 +191,12 @@ export type RelationalTablesSlice = {
     schema: string,
     table: string,
   ) => Promise<void>;
+  readTableSession: (ref: TableRef) => TableSessionSnapshot;
+  openTableSession: (
+    ref: TableRef,
+    options?: { page?: number; pageSize?: number },
+  ) => Promise<void>;
+  refreshTableSession: (ref: TableRef) => Promise<void>;
   loadSchemaRelationships: (
     connectionId: string,
     schema: string,
@@ -219,14 +232,30 @@ export type RelationalTablesSlice = {
     colIndex: number,
     value: string,
   ) => void;
+  setTableCellEdit: (
+    ref: TableRef,
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => void;
   discardTableEdits: (tableName: string) => void;
+  discardTableCellEdits: (ref: TableRef) => void;
   commitTableEdits: (tableName: string) => Promise<EditOutcome>;
+  commitTableCellEdits: (ref: TableRef) => Promise<EditOutcome>;
   addTableRow: (
     tableName: string,
     values: Array<{ column: string; value: string | null }>,
   ) => Promise<EditOutcome>;
+  insertTableRow: (
+    ref: TableRef,
+    values: Array<{ column: string; value: string | null }>,
+  ) => Promise<EditOutcome>;
   deleteSelectedTableRows: (
     tableName: string,
+    rowIndices: number[],
+  ) => Promise<EditOutcome>;
+  deleteTableRows: (
+    ref: TableRef,
     rowIndices: number[],
   ) => Promise<EditOutcome>;
 
@@ -336,29 +365,91 @@ export const createRelationalTablesSlice: StateCreator<
     get().openTableTab(schema, table);
   },
 
-  setTableEdit: (tableName, rowIndex, colIndex, value) =>
+  readTableSession: (ref) => {
+    const state = get();
+    const key = tableSessionKey(ref);
+    const structureKey = tableSessionStructureKey(ref);
+    return buildTableSessionSnapshot({
+      ref,
+      data: state.tableData[key],
+      structure: state.tableStructure[structureKey],
+      loadStatus: state.tableLoadStatus[key],
+      structureStatus: state.tableStructureStatus[structureKey],
+      writeStatus: state.tableEditsCommitStatus[key],
+      edits: state.tableEdits[key],
+    });
+  },
+
+  openTableSession: async (ref, options) => {
+    await Promise.all([
+      get().loadTableData(
+        ref.connectionId,
+        ref.schema,
+        ref.table,
+        options?.page,
+        options?.pageSize,
+      ),
+      get().loadTableStructure(ref.connectionId, ref.schema, ref.table),
+    ]);
+  },
+
+  refreshTableSession: async (ref) => {
+    await get().refreshTableData(tableSessionKey(ref));
+  },
+
+  setTableEdit: (tableName, rowIndex, colIndex, value) => {
+    const resolution = resolveTableRefByName(get().tableData, tableName);
+    if (!resolution.ok) {
+      console.warn(resolution.reason);
+      return;
+    }
+    get().setTableCellEdit(resolution.ref, rowIndex, colIndex, value);
+  },
+
+  setTableCellEdit: (ref, rowIndex, colIndex, value) =>
     set((state) => ({
       tableEdits: {
         ...state.tableEdits,
-        [tableName]: {
-          ...state.tableEdits[tableName],
+        [tableSessionKey(ref)]: {
+          ...state.tableEdits[tableSessionKey(ref)],
           [rowIndex]: {
-            ...state.tableEdits[tableName]?.[rowIndex],
+            ...state.tableEdits[tableSessionKey(ref)]?.[rowIndex],
             [colIndex]: value,
           },
         },
       },
     })),
 
-  discardTableEdits: (tableName) =>
+  discardTableEdits: (tableName) => {
+    const resolution = resolveTableRefByName(get().tableData, tableName);
+    if (!resolution.ok) {
+      console.warn(resolution.reason);
+      return;
+    }
+    get().discardTableCellEdits(resolution.ref);
+  },
+
+  discardTableCellEdits: (ref) =>
     set((state) => {
-      const { [tableName]: _, ...rest } = state.tableEdits;
+      const { [tableSessionKey(ref)]: _, ...rest } = state.tableEdits;
       return { tableEdits: rest };
     }),
 
   commitTableEdits: async (tableName): Promise<EditOutcome> => {
+    const resolution = resolveTableRefByName(get().tableData, tableName);
+    if (!resolution.ok) {
+      if (!resolution.missing) {
+        return { kind: "failed", reason: resolution.reason };
+      }
+      return { kind: "noop" };
+    }
+    return get().commitTableCellEdits(resolution.ref);
+  },
+
+  commitTableCellEdits: async (ref): Promise<EditOutcome> => {
     const state = get();
-    const editsForTable = state.tableEdits[tableName];
+    const key = tableSessionKey(ref);
+    const editsForTable = state.tableEdits[key];
     if (!editsForTable || Object.keys(editsForTable).length === 0) {
       return { kind: "noop" };
     }
@@ -367,7 +458,7 @@ export const createRelationalTablesSlice: StateCreator<
       tableData: state.tableData,
       tableStructure: state.tableStructure,
       connections: state.connections,
-      tableName,
+      ref,
       capability: "canUpdateRows",
       action: "cell edits",
     });
@@ -383,7 +474,7 @@ export const createRelationalTablesSlice: StateCreator<
     );
     if (editsPayload.length === 0) {
       set((s) => {
-        const { [tableName]: _, ...rest } = s.tableEdits;
+        const { [key]: _, ...rest } = s.tableEdits;
         return { tableEdits: rest };
       });
       return { kind: "noop" };
@@ -392,11 +483,11 @@ export const createRelationalTablesSlice: StateCreator<
     set((s) => ({
       tableEditsCommitStatus: {
         ...s.tableEditsCommitStatus,
-        [tableName]: { state: "running" },
+        [key]: { state: "running" },
       },
     }));
     const clearLifecycle = () =>
-      clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
+      clearLifecycleSlot(set, "tableEditsCommitStatus", key);
 
     if (!isTauri()) {
       clearLifecycle();
@@ -425,12 +516,12 @@ export const createRelationalTablesSlice: StateCreator<
       });
       if (pendingMutations.length > 0) {
         set((s) => {
-          const { [tableName]: _, ...restEdits } = s.tableEdits;
+          const { [key]: _, ...restEdits } = s.tableEdits;
           return {
             tableEdits: restEdits,
             tableEditsCommitStatus: {
               ...s.tableEditsCommitStatus,
-              [tableName]: {
+              [key]: {
                 state: "queued",
                 database: pendingMutations[0].database,
                 table: pendingMutations[0].table,
@@ -449,9 +540,8 @@ export const createRelationalTablesSlice: StateCreator<
       }
 
       set((s) => {
-        const { [tableName]: _edit, ...restEdits } = s.tableEdits;
-        const { [tableName]: _status, ...restStatus } =
-          s.tableEditsCommitStatus;
+        const { [key]: _edit, ...restEdits } = s.tableEdits;
+        const { [key]: _status, ...restStatus } = s.tableEditsCommitStatus;
         return { tableEdits: restEdits, tableEditsCommitStatus: restStatus };
       });
       await get().refreshTableData(ctx.dataKey);
@@ -469,6 +559,19 @@ export const createRelationalTablesSlice: StateCreator<
   },
 
   addTableRow: async (tableName, values): Promise<EditOutcome> => {
+    const resolution = resolveTableRefByName(get().tableData, tableName);
+    if (!resolution.ok) {
+      return {
+        kind: "failed",
+        reason: resolution.missing
+          ? "Table data is not loaded; cannot insert a row."
+          : resolution.reason,
+      };
+    }
+    return get().insertTableRow(resolution.ref, values);
+  },
+
+  insertTableRow: async (ref, values): Promise<EditOutcome> => {
     if (values.length === 0) {
       return {
         kind: "failed",
@@ -477,16 +580,14 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     const state = get();
-    const dataEntry = Object.entries(state.tableData).find(
-      ([, data]) => data.table === tableName,
-    );
-    if (!dataEntry) {
+    const key = tableSessionKey(ref);
+    const data = state.tableData[key];
+    if (!data) {
       return {
         kind: "failed",
         reason: "Table data is not loaded; cannot insert a row.",
       };
     }
-    const [dataKeyForTable, data] = dataEntry;
 
     const connection = state.connections.find(
       (c) => c.id === data.connectionId,
@@ -494,12 +595,7 @@ export const createRelationalTablesSlice: StateCreator<
     if (!connection) {
       return { kind: "failed", reason: "Connection not found for this table." };
     }
-    const structureKeyForInsert = tableStructureKey(
-      data.connectionId,
-      data.schema,
-      data.table,
-    );
-    const insertStructure = state.tableStructure[structureKeyForInsert];
+    const insertStructure = state.tableStructure[tableSessionStructureKey(ref)];
     if (insertStructure && !insertStructure.capabilities.canInsertRows) {
       return {
         kind: "failed",
@@ -510,12 +606,12 @@ export const createRelationalTablesSlice: StateCreator<
     set((s) => ({
       tableEditsCommitStatus: {
         ...s.tableEditsCommitStatus,
-        [tableName]: { state: "running" },
+        [key]: { state: "running" },
       },
     }));
 
     const clearLifecycle = () =>
-      clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
+      clearLifecycleSlot(set, "tableEditsCommitStatus", key);
 
     if (!isTauri()) {
       clearLifecycle();
@@ -538,7 +634,7 @@ export const createRelationalTablesSlice: StateCreator<
         },
       });
       clearLifecycle();
-      await get().refreshTableData(dataKeyForTable);
+      await get().refreshTableData(key);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -556,16 +652,28 @@ export const createRelationalTablesSlice: StateCreator<
     tableName,
     rowIndices,
   ): Promise<EditOutcome> => {
+    const resolution = resolveTableRefByName(get().tableData, tableName);
+    if (!resolution.ok) {
+      if (!resolution.missing) {
+        return { kind: "failed", reason: resolution.reason };
+      }
+      return { kind: "noop" };
+    }
+    return get().deleteTableRows(resolution.ref, rowIndices);
+  },
+
+  deleteTableRows: async (ref, rowIndices): Promise<EditOutcome> => {
     if (rowIndices.length === 0) {
       return { kind: "noop" };
     }
 
     const state = get();
+    const key = tableSessionKey(ref);
     const ctx = resolveEditContext({
       tableData: state.tableData,
       tableStructure: state.tableStructure,
       connections: state.connections,
-      tableName,
+      ref,
       capability: "canDeleteRows",
       action: "row deletes",
     });
@@ -586,11 +694,11 @@ export const createRelationalTablesSlice: StateCreator<
     set((s) => ({
       tableEditsCommitStatus: {
         ...s.tableEditsCommitStatus,
-        [tableName]: { state: "running" },
+        [key]: { state: "running" },
       },
     }));
     const clearLifecycle = () =>
-      clearLifecycleSlot(set, "tableEditsCommitStatus", tableName);
+      clearLifecycleSlot(set, "tableEditsCommitStatus", key);
 
     if (!isTauri()) {
       clearLifecycle();
@@ -618,7 +726,7 @@ export const createRelationalTablesSlice: StateCreator<
         set((s) => ({
           tableEditsCommitStatus: {
             ...s.tableEditsCommitStatus,
-            [tableName]: {
+            [key]: {
               state: "queued",
               database: pendingMutations[0].database,
               table: pendingMutations[0].table,
@@ -671,14 +779,14 @@ export const createRelationalTablesSlice: StateCreator<
     set((state) => ({
       tableLoadStatus: {
         ...state.tableLoadStatus,
-        [table]: { state: "loading" },
+        [key]: { state: "loading" },
       },
     }));
     if (!isTauri()) {
       set((state) => ({
         tableLoadStatus: {
           ...state.tableLoadStatus,
-          [table]: { state: "idle" },
+          [key]: { state: "idle" },
         },
       }));
       return;
@@ -708,7 +816,7 @@ export const createRelationalTablesSlice: StateCreator<
         },
         tablePreviews: {
           ...state.tablePreviews,
-          [table]: {
+          [key]: {
             columns: result.columns,
             rows: result.rows,
             rowCount:
@@ -722,7 +830,7 @@ export const createRelationalTablesSlice: StateCreator<
         },
         tableLoadStatus: {
           ...state.tableLoadStatus,
-          [table]: { state: "success" },
+          [key]: { state: "success" },
         },
       }));
     } catch (error) {
@@ -731,7 +839,7 @@ export const createRelationalTablesSlice: StateCreator<
       set((state) => ({
         tableLoadStatus: {
           ...state.tableLoadStatus,
-          [table]: { state: "error", error: message },
+          [key]: { state: "error", error: message },
         },
       }));
     }
@@ -1375,18 +1483,11 @@ export const createRelationalTablesSlice: StateCreator<
     const matches = (key: string) =>
       key === connectionId || key.startsWith(prefix);
     set((state) => {
-      const tableNamesForConnection = new Set(
-        Object.values(state.tableData)
-          .filter((data) => data.connectionId === connectionId)
-          .map((data) => data.table),
-      );
-      const matchesTableName = (key: string) =>
-        tableNamesForConnection.has(key);
       return {
-        tableEdits: dropMatching(state.tableEdits, matchesTableName),
+        tableEdits: dropMatching(state.tableEdits, matches),
         tableEditsCommitStatus: dropMatching(
           state.tableEditsCommitStatus,
-          matchesTableName,
+          matches,
         ),
         schemaExplorer: dropMatching(
           state.schemaExplorer,

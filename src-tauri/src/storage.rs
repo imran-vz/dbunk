@@ -16,8 +16,10 @@ use crate::{
     ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
     PgStoredConnection, PositionRow, QueryHistoryEntry, RedisCliHistoryEntry,
     RedisStoredConnection, SavedQuery, SavedRedisCommand, SchemaMapPrefs, SchemaMapPrefsPatch,
-    SqliteStoredConnection, StoredConnection,
+    SqliteStoredConnection, SshTunnelConfig, StoredConnection,
 };
+
+pub(crate) mod bastions;
 
 const DB_FILE: &str = "dbunk.sqlite";
 
@@ -198,6 +200,58 @@ CREATE TABLE saved_redis_commands (
 
 CREATE INDEX idx_saved_redis_commands_updated_at
   ON saved_redis_commands(updated_at DESC);
+"#,
+    ),
+    (
+        9,
+        // ADR-0018: the credentials backend now stores database
+        // passwords and bastion secrets. Existing rows are database
+        // password credentials keyed by connection id; moving to a
+        // generic credential_id preserves them while removing the
+        // connection FK that would block bastion-secret keys.
+        r#"
+CREATE TABLE credentials_new (
+  credential_id TEXT PRIMARY KEY,
+  storage_mode TEXT NOT NULL,
+  nonce TEXT,
+  password_value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+INSERT INTO credentials_new (credential_id, storage_mode, nonce, password_value, updated_at)
+SELECT connection_id, storage_mode, nonce, password_value, updated_at FROM credentials;
+
+DROP TABLE credentials;
+
+ALTER TABLE credentials_new RENAME TO credentials;
+"#,
+    ),
+    (
+        10,
+        // ADR-0018 first slice: first-class bastion servers plus
+        // per-connection SSH tunnel config on network-backed engines.
+        // SQLite ignores these shared-table columns because it has no
+        // network transport and no SshTunnelConfig field.
+        r#"
+CREATE TABLE bastion_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  user_name TEXT NOT NULL,
+  auth_method TEXT NOT NULL,
+  private_key_path TEXT,
+  host_key_fingerprint TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_bastion_servers_name ON bastion_servers(name COLLATE NOCASE);
+
+ALTER TABLE connections ADD COLUMN ssh_tunnel_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_bastion_server_id TEXT;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_local_bind_host TEXT;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_local_port INTEGER;
 "#,
     ),
 ];
@@ -395,7 +449,20 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
 const CONNECTION_COLUMNS: &str = "id, name, database_name, engine, host, port, user_name, role,
      last_activity_at, use_https, url_path,
      db_number, use_tls, verify_tls_cert, ssl, driver_options,
-     read_only";
+     read_only,
+     ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
+     ssh_tunnel_local_bind_host, ssh_tunnel_local_port";
+
+fn row_to_ssh_tunnel(row: &sqlx::sqlite::SqliteRow) -> SshTunnelConfig {
+    SshTunnelConfig {
+        enabled: row.get::<i64, _>("ssh_tunnel_enabled") != 0,
+        bastion_server_id: row.get("ssh_tunnel_bastion_server_id"),
+        local_bind_host: row.get("ssh_tunnel_local_bind_host"),
+        local_port: row
+            .get::<Option<i64>, _>("ssh_tunnel_local_port")
+            .map(i64_to_u16),
+    }
+}
 
 /// Map a single SQLite row into a `StoredConnection` variant.
 /// Row → variant construction. The SQLite schema stays flat
@@ -412,6 +479,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
     let user: String = row.get("user_name");
     let role: String = row.get("role");
     let last_activity_at: Option<String> = row.get("last_activity_at");
+    let ssh_tunnel = row_to_ssh_tunnel(&row);
 
     let driver_options_json: Option<String> = row.get("driver_options");
     let driver_options = driver_options_json.and_then(|raw| {
@@ -440,6 +508,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             last_activity_at,
             ssl: row.get::<i64, _>("ssl") != 0,
             driver_options,
+            ssh_tunnel,
         }),
         DatabaseEngine::MySQL => StoredConnection::MySQL(MySqlStoredConnection {
             id,
@@ -452,6 +521,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             role,
             last_activity_at,
             ssl: row.get::<i64, _>("ssl") != 0,
+            ssh_tunnel,
         }),
         DatabaseEngine::SQLite => StoredConnection::SQLite(SqliteStoredConnection {
             id,
@@ -476,6 +546,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             last_activity_at,
             use_https: row.get::<i64, _>("use_https") != 0,
             url_path: row.get("url_path"),
+            ssh_tunnel,
         }),
         DatabaseEngine::Redis => StoredConnection::Redis(RedisStoredConnection {
             id,
@@ -491,6 +562,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             use_tls: row.get::<i64, _>("use_tls") != 0,
             verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
             read_only: row.get::<i64, _>("read_only") != 0,
+            ssh_tunnel,
         }),
     })
 }
@@ -560,6 +632,11 @@ pub async fn upsert_connection(
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
         _ => 1,
     };
+    let tunnel = connection.ssh_tunnel().cloned().unwrap_or_default();
+    let ssh_tunnel_enabled = bool_to_i64(tunnel.enabled);
+    let ssh_tunnel_bastion_server_id = tunnel.bastion_server_id;
+    let ssh_tunnel_local_bind_host = tunnel.local_bind_host;
+    let ssh_tunnel_local_port = tunnel.local_port.map(i64::from);
     // ADR-0013: PG driver_options serialise to one JSON blob; other
     // engines persist NULL so the column stays variant-aware without
     // adding per-engine columns.
@@ -578,9 +655,11 @@ pub async fn upsert_connection(
             id, name, database_name, engine, host, port, user_name, role,
             last_activity_at, use_https, url_path,
             db_number, use_tls, verify_tls_cert, ssl, driver_options,
-            read_only
+            read_only,
+            ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
+            ssh_tunnel_local_bind_host, ssh_tunnel_local_port
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -597,7 +676,11 @@ pub async fn upsert_connection(
             verify_tls_cert = excluded.verify_tls_cert,
             ssl = excluded.ssl,
             driver_options = excluded.driver_options,
-            read_only = excluded.read_only",
+            read_only = excluded.read_only,
+            ssh_tunnel_enabled = excluded.ssh_tunnel_enabled,
+            ssh_tunnel_bastion_server_id = excluded.ssh_tunnel_bastion_server_id,
+            ssh_tunnel_local_bind_host = excluded.ssh_tunnel_local_bind_host,
+            ssh_tunnel_local_port = excluded.ssh_tunnel_local_port",
     )
     .bind(id)
     .bind(name)
@@ -616,6 +699,10 @@ pub async fn upsert_connection(
     .bind(ssl)
     .bind(driver_options)
     .bind(read_only)
+    .bind(ssh_tunnel_enabled)
+    .bind(ssh_tunnel_bastion_server_id)
+    .bind(ssh_tunnel_local_bind_host)
+    .bind(ssh_tunnel_local_port)
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -829,7 +916,7 @@ pub async fn upsert_schema_map_prefs(
 pub async fn read_sqlite_credentials(
     pool: &SqlitePool,
 ) -> Result<Vec<(String, Option<String>, String)>, String> {
-    let rows = sqlx::query("SELECT connection_id, nonce, password_value FROM credentials")
+    let rows = sqlx::query("SELECT credential_id, nonce, password_value FROM credentials")
         .fetch_all(pool)
         .await
         .map_err(|error| error.to_string())?;
@@ -837,7 +924,7 @@ pub async fn read_sqlite_credentials(
         .into_iter()
         .map(|row| {
             (
-                row.get("connection_id"),
+                row.get("credential_id"),
                 row.get("nonce"),
                 row.get("password_value"),
             )
@@ -847,21 +934,21 @@ pub async fn read_sqlite_credentials(
 
 pub async fn upsert_sqlite_credential(
     pool: &SqlitePool,
-    connection_id: &str,
+    credential_id: &str,
     mode: CredentialStorageMode,
     nonce: Option<&str>,
     password_value: &str,
 ) -> Result<(), String> {
     sqlx::query(
-        "INSERT INTO credentials (connection_id, storage_mode, nonce, password_value, updated_at)
+        "INSERT INTO credentials (credential_id, storage_mode, nonce, password_value, updated_at)
          VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(connection_id) DO UPDATE SET
+         ON CONFLICT(credential_id) DO UPDATE SET
             storage_mode = excluded.storage_mode,
             nonce = excluded.nonce,
             password_value = excluded.password_value,
             updated_at = excluded.updated_at",
     )
-    .bind(connection_id)
+    .bind(credential_id)
     .bind(mode.as_str())
     .bind(nonce)
     .bind(password_value)
@@ -1236,6 +1323,7 @@ pub async fn delete_saved_redis_command(pool: &SqlitePool, id: &str) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BastionAuthMethod, BastionServer};
     use tempfile::tempdir;
 
     async fn test_pool() -> SqlitePool {
@@ -1259,7 +1347,24 @@ mod tests {
             last_activity_at: None,
             ssl: true,
             driver_options: None,
+            ssh_tunnel: SshTunnelConfig::default(),
         })
+    }
+
+    fn bastion(id: &str) -> BastionServer {
+        let timestamp = now();
+        BastionServer {
+            id: id.to_string(),
+            name: "Primary bastion".to_string(),
+            host: "bastion.example.com".to_string(),
+            port: 22,
+            user: "ubuntu".to_string(),
+            auth_method: BastionAuthMethod::PrivateKeyPath,
+            private_key_path: Some("/Users/me/.ssh/id_ed25519".to_string()),
+            host_key_fingerprint: Some("SHA256:abc".to_string()),
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+        }
     }
 
     #[tokio::test]
@@ -1291,6 +1396,60 @@ mod tests {
             .await
             .expect("positions")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn bastion_and_connection_tunnel_fields_round_trip() {
+        let pool = test_pool().await;
+        bastions::upsert_bastion_server(&pool, &bastion("bastion-1"))
+            .await
+            .expect("bastion");
+
+        let mut connection = connection("conn-1");
+        if let StoredConnection::PostgreSQL(pg) = &mut connection {
+            pg.ssh_tunnel = SshTunnelConfig {
+                enabled: true,
+                bastion_server_id: Some("bastion-1".to_string()),
+                local_bind_host: Some("127.0.0.2".to_string()),
+                local_port: Some(15432),
+            };
+        }
+        upsert_connection(&pool, &connection)
+            .await
+            .expect("connection");
+
+        let servers = bastions::read_bastion_servers(&pool)
+            .await
+            .expect("servers");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(
+            servers[0].private_key_path.as_deref(),
+            Some("/Users/me/.ssh/id_ed25519")
+        );
+        assert_eq!(
+            bastions::count_connections_referencing_bastion(&pool, "bastion-1")
+                .await
+                .expect("count"),
+            1
+        );
+        assert_eq!(
+            bastions::connection_ids_referencing_bastion(&pool, "bastion-1")
+                .await
+                .expect("ids"),
+            vec!["conn-1".to_string()]
+        );
+
+        let stored = read_connections(&pool).await.expect("connections");
+        let StoredConnection::PostgreSQL(pg) = &stored[0] else {
+            panic!("expected postgres");
+        };
+        assert!(pg.ssh_tunnel.enabled);
+        assert_eq!(
+            pg.ssh_tunnel.bastion_server_id.as_deref(),
+            Some("bastion-1")
+        );
+        assert_eq!(pg.ssh_tunnel.local_bind_host.as_deref(), Some("127.0.0.2"));
+        assert_eq!(pg.ssh_tunnel.local_port, Some(15432));
     }
 
     #[tokio::test]

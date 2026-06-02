@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { createBastionsSlice } from "./bastions";
 import { createConnectionsSlice } from "./connections";
 import { createCredentialsSlice } from "./credentials";
 import { createKeyValuePubSubSlice } from "./keyvalue-pubsub";
@@ -13,6 +14,9 @@ import { createWorkspaceTabsSlice } from "./workspace-tabs";
 // resolves through this barrel.
 export { schemaRelationshipsKey } from "@/lib/schema-graph";
 export type {
+  BastionAuthMethod,
+  BastionServer,
+  BastionStatus,
   ClickHouseStoredConnection,
   ColumnInfo,
   Connection,
@@ -41,6 +45,7 @@ export type {
   RedisStoredConnection,
   RelationInfo,
   RelationStatsStatus,
+  SaveBastionServerInput,
   SavedQuery,
   SchemaExplorer,
   SchemaMapAttrMode,
@@ -48,10 +53,12 @@ export type {
   SchemaMapPrefs,
   SchemaMapRouting,
   SchemaRelationshipsStatus,
+  SecretChange,
   ServerDetails,
   ServerDetailsStatus,
   SettingsTab,
   SqliteStoredConnection,
+  SshTunnelConfig,
   StorageClass,
   StoredConnection,
   StructureCapabilities,
@@ -60,11 +67,13 @@ export type {
   TableEditsCommitStatus,
   TableLoadStatus,
   TablePreviewData,
+  TableRef,
+  TableSessionSnapshot,
   TableStructure,
   TableStructureStatus,
   WorkspaceTab,
 } from "./types";
-export { tableDataKey, tableStructureKey } from "./types";
+export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
 
 /**
  * The workspace Zustand store — composed of seven domain-concept
@@ -79,6 +88,7 @@ export { tableDataKey, tableStructureKey } from "./types";
  */
 export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createCredentialsSlice(set, get, store),
+  ...createBastionsSlice(set, get, store),
   ...createConnectionsSlice(set, get, store),
   ...createWorkspaceTabsSlice(set, get, store),
   ...createRelationalTablesSlice(set, get, store),

@@ -15,6 +15,7 @@ import type {
   ExportFormat,
 } from "@/lib/export";
 import type { TableDataState, TableStructure } from "@/lib/store";
+import type { SelectedTableSessionCapabilities } from "@/lib/table-session";
 
 import type { SubTab } from "./header";
 import { IndexesSubTab } from "./indexes-sub-tab";
@@ -25,7 +26,6 @@ import { SpecializedEditors } from "./specialized-editors";
 import type { TableRef } from "./table-ref";
 import type { RowDetailsVisibility } from "./use-row-details-visibility";
 import type { RowSelection } from "./use-row-selection";
-import type { TableCapabilities } from "./use-table-capabilities";
 import type { TablePagination } from "./use-table-pagination";
 
 interface TableEditorBodyProps {
@@ -41,7 +41,7 @@ interface TableEditorBodyProps {
   currentEdits: Record<number, Record<number, string>> | undefined;
   hasEdits: boolean;
   selection: RowSelection<string[]>;
-  caps: TableCapabilities;
+  caps: SelectedTableSessionCapabilities;
   rowDetails: RowDetailsVisibility;
   pagination: TablePagination;
   isLoading: boolean;

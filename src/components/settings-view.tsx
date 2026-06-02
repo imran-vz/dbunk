@@ -4,11 +4,13 @@ import {
   IconInfoCircle,
   IconKey,
   IconMoon,
+  IconServer,
   IconShieldLock,
   IconSun,
 } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { BastionServersTab } from "@/components/bastion-servers-tab";
 import { ConnectionsView } from "@/components/connections-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +32,7 @@ const TABS: Array<{
 }> = [
   { id: "general", label: "General", icon: IconAdjustments },
   { id: "connections", label: "Connections", icon: IconDatabase },
+  { id: "bastions", label: "Bastion Servers", icon: IconServer },
   { id: "security", label: "Security", icon: IconShieldLock },
   { id: "about", label: "About", icon: IconInfoCircle },
 ];
@@ -71,6 +74,7 @@ export function SettingsView() {
       <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === "general" ? <GeneralTab /> : null}
         {activeTab === "connections" ? <ConnectionsView /> : null}
+        {activeTab === "bastions" ? <BastionServersTab /> : null}
         {activeTab === "security" ? <SecurityTab /> : null}
         {activeTab === "about" ? <AboutTab /> : null}
       </div>

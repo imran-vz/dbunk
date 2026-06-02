@@ -137,6 +137,7 @@ mod tests {
             use_tls: false,
             verify_tls_cert: true,
             read_only: false,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
         }
     }
 
