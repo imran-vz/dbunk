@@ -9,8 +9,7 @@
 
 use std::{
     collections::HashMap,
-    net::{TcpListener, TcpStream, ToSocketAddrs},
-    path::Path,
+    net::TcpListener,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -18,15 +17,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use base64::{engine::general_purpose::STANDARD_NO_PAD as B64_NO_PAD, Engine as _};
 use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
-use ssh2::{HashType, Session};
+use ssh2::Session;
 
-use crate::{
-    credentials, storage, BastionAuthMethod, BastionServer, CredentialStorageMode,
-    StoredConnection, TestBastionResult,
-};
+use crate::{credentials, storage, CredentialStorageMode, StoredConnection, TestBastionResult};
 
 const DEFAULT_LOCAL_BIND_HOST: &str = "127.0.0.1";
 const DEFAULT_SSH_PORT: u16 = 22;
@@ -40,18 +35,24 @@ pub(super) struct LocalEndpoint {
 
 mod endpoint;
 mod forwarding;
+mod route;
+mod session;
 
 use endpoint::{remote_endpoint, rewrite_connection_endpoint};
 use forwarding::spawn_forward_accept_loop;
+pub use route::validate_connection_tunnel;
+use route::{SshRoute, SshSessionKey};
+use session::{connect_route_session, ResolvedBastion, RouteSession};
 
 struct ForwardState {
-    bastion_id: String,
+    bastion_ids: Vec<String>,
+    session_key: SshSessionKey,
     endpoint: LocalEndpoint,
     stop: Arc<AtomicBool>,
 }
 
 struct Runtime {
-    sessions: HashMap<String, Session>,
+    sessions: HashMap<SshSessionKey, RouteSession>,
     forwards: HashMap<String, ForwardState>,
 }
 
@@ -61,28 +62,6 @@ static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
         forwards: HashMap::new(),
     })
 });
-
-struct ResolvedBastion {
-    server: BastionServer,
-    password: Option<String>,
-    private_key_content: Option<String>,
-    passphrase: Option<String>,
-}
-
-struct PasswordPrompter {
-    password: String,
-}
-
-impl ssh2::KeyboardInteractivePrompt for PasswordPrompter {
-    fn prompt<'a>(
-        &mut self,
-        _username: &str,
-        _instructions: &str,
-        prompts: &[ssh2::Prompt<'a>],
-    ) -> Vec<String> {
-        prompts.iter().map(|_| self.password.clone()).collect()
-    }
-}
 
 pub async fn resolve_connection(
     pool: &SqlitePool,
@@ -112,7 +91,7 @@ pub fn drop_bastion(bastion_id: &str) {
         .forwards
         .iter()
         .filter_map(|(key, forward)| {
-            if forward.bastion_id == bastion_id {
+            if forward.bastion_ids.iter().any(|id| id == bastion_id) {
                 Some(key.clone())
             } else {
                 None
@@ -122,7 +101,7 @@ pub fn drop_bastion(bastion_id: &str) {
     for route_key in route_keys {
         drop_forward_locked(&mut runtime, &route_key);
     }
-    runtime.sessions.remove(bastion_id);
+    drop_unused_sessions_locked(&mut runtime);
 }
 
 pub async fn test_bastion(
@@ -132,19 +111,26 @@ pub async fn test_bastion(
 ) -> Result<TestBastionResult, String> {
     let started = Instant::now();
     let bastion = load_bastion(pool, mode, bastion_id).await?;
-    let (session, accepted_fingerprint) =
-        tokio::task::spawn_blocking(move || connect_bastion_session(&bastion))
-            .await
-            .map_err(|error| error.to_string())??;
-    if let Some(fingerprint) = accepted_fingerprint {
+    let route = SshRoute::from_config(&crate::SshTunnelConfig {
+        enabled: true,
+        bastion_server_id: Some(bastion_id.to_string()),
+        ..crate::SshTunnelConfig::default()
+    })?;
+    let (mut route_session, accepted_fingerprints) = tokio::task::spawn_blocking(move || {
+        let bastions = vec![bastion];
+        connect_route_session(&bastions, &route)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    for (accepted_bastion_id, fingerprint) in accepted_fingerprints {
         storage::bastions::update_bastion_host_key_fingerprint(
             pool,
-            bastion_id,
+            &accepted_bastion_id,
             Some(&fingerprint),
         )
         .await?;
     }
-    let _ = session.disconnect(None, "dbunk test complete", None);
+    route_session.shutdown("dbunk test complete");
     Ok(TestBastionResult {
         latency_ms: started.elapsed().as_millis() as u64,
     })
@@ -163,12 +149,8 @@ async fn ensure_forward(
     let config = connection
         .ssh_tunnel()
         .ok_or_else(|| "SQLite connections do not support SSH tunnels".to_string())?;
-    let bastion_id = config
-        .bastion_server_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| "SSH tunnel is enabled but no Bastion Server is selected".to_string())?
-        .to_string();
+    let config = config.normalized();
+    let route = SshRoute::from_config(&config)?;
     let bind_host = config
         .local_bind_host
         .as_deref()
@@ -190,7 +172,7 @@ async fn ensure_forward(
         port: local_addr.port(),
     };
     let stop = Arc::new(AtomicBool::new(false));
-    let session = ensure_session(pool, mode, &bastion_id).await?;
+    let session = ensure_session(pool, mode, &route).await?;
     spawn_forward_accept_loop(listener, stop.clone(), session, remote_host, remote_port);
 
     let mut runtime = RUNTIME.lock().expect("ssh tunnel runtime poisoned");
@@ -201,7 +183,8 @@ async fn ensure_forward(
     runtime.forwards.insert(
         route_key.to_string(),
         ForwardState {
-            bastion_id,
+            bastion_ids: route.bastion_ids,
+            session_key: route.session_key,
             endpoint: endpoint.clone(),
             stop,
         },
@@ -221,41 +204,46 @@ fn lookup_forward(route_key: &str) -> Option<LocalEndpoint> {
 async fn ensure_session(
     pool: &SqlitePool,
     mode: CredentialStorageMode,
-    bastion_id: &str,
+    route: &SshRoute,
 ) -> Result<Session, String> {
     if let Some(session) = RUNTIME
         .lock()
         .expect("ssh tunnel runtime poisoned")
         .sessions
-        .get(bastion_id)
-        .cloned()
+        .get(&route.session_key)
+        .map(|state| state.session())
     {
         return Ok(session);
     }
 
-    let bastion = load_bastion(pool, mode, bastion_id).await?;
-    let (session, accepted_fingerprint) =
-        tokio::task::spawn_blocking(move || connect_bastion_session(&bastion))
+    let mut bastions = Vec::with_capacity(route.bastion_ids.len());
+    for bastion_id in &route.bastion_ids {
+        bastions.push(load_bastion(pool, mode, bastion_id).await?);
+    }
+    let route_for_connect = route.clone();
+    let (mut route_session, accepted_fingerprints) =
+        tokio::task::spawn_blocking(move || connect_route_session(&bastions, &route_for_connect))
             .await
             .map_err(|error| error.to_string())??;
 
-    if let Some(fingerprint) = accepted_fingerprint {
+    for (bastion_id, fingerprint) in accepted_fingerprints {
         storage::bastions::update_bastion_host_key_fingerprint(
             pool,
-            bastion_id,
+            &bastion_id,
             Some(&fingerprint),
         )
         .await?;
     }
 
     let mut runtime = RUNTIME.lock().expect("ssh tunnel runtime poisoned");
-    if let Some(existing) = runtime.sessions.get(bastion_id) {
-        let _ = session.disconnect(None, "dbunk duplicate session closed", None);
-        return Ok(existing.clone());
+    if let Some(existing) = runtime.sessions.get(&route.session_key) {
+        route_session.shutdown("dbunk duplicate session closed");
+        return Ok(existing.session());
     }
+    let session = route_session.session();
     runtime
         .sessions
-        .insert(bastion_id.to_string(), session.clone());
+        .insert(route.session_key.clone(), route_session);
     Ok(session)
 }
 
@@ -279,114 +267,6 @@ async fn load_bastion(
     })
 }
 
-fn connect_bastion_session(bastion: &ResolvedBastion) -> Result<(Session, Option<String>), String> {
-    let port = if bastion.server.port == 0 {
-        DEFAULT_SSH_PORT
-    } else {
-        bastion.server.port
-    };
-    let tcp = connect_tcp_with_timeout(&bastion.server.host, port)?;
-    let mut session = Session::new().map_err(|error| error.to_string())?;
-    session.set_timeout(SSH_CONNECT_TIMEOUT.as_millis() as u32);
-    session.set_tcp_stream(tcp);
-    session
-        .handshake()
-        .map_err(|error| format!("SSH handshake failed: {error}"))?;
-
-    let fingerprint = host_key_fingerprint(&session)?;
-    let accepted = match bastion.server.host_key_fingerprint.as_deref() {
-        Some(expected) if expected == fingerprint => None,
-        Some(expected) => {
-            return Err(format!(
-                "SSH host key mismatch for {}:{}. Expected {expected}, got {fingerprint}. Reset host-key trust before reconnecting if this change is expected.",
-                bastion.server.host, port
-            ));
-        }
-        None => Some(fingerprint),
-    };
-
-    authenticate(&session, bastion)?;
-    session.set_blocking(false);
-    Ok((session, accepted))
-}
-
-fn connect_tcp_with_timeout(host: &str, port: u16) -> Result<TcpStream, String> {
-    let target = format!("{host}:{port}");
-    let addresses = target
-        .to_socket_addrs()
-        .map_err(|error| format!("Could not resolve SSH host {target}: {error}"))?
-        .collect::<Vec<_>>();
-    if addresses.is_empty() {
-        return Err(format!("Could not resolve SSH host {target}"));
-    }
-    let mut last_error = None;
-    for address in addresses {
-        match TcpStream::connect_timeout(&address, SSH_CONNECT_TIMEOUT) {
-            Ok(stream) => return Ok(stream),
-            Err(error) => last_error = Some(error),
-        }
-    }
-    Err(format!(
-        "Could not connect to SSH host {target}: {}",
-        last_error
-            .map(|error| error.to_string())
-            .unwrap_or_else(|| "unknown network error".to_string())
-    ))
-}
-
-fn host_key_fingerprint(session: &Session) -> Result<String, String> {
-    let hash = session
-        .host_key_hash(HashType::Sha256)
-        .ok_or_else(|| "SSH server did not provide a host key".to_string())?;
-    Ok(format!("SHA256:{}", B64_NO_PAD.encode(hash)))
-}
-
-fn authenticate(session: &Session, bastion: &ResolvedBastion) -> Result<(), String> {
-    let user = bastion.server.user.as_str();
-    match bastion.server.auth_method {
-        BastionAuthMethod::Password => {
-            let password = bastion
-                .password
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "Bastion password is missing".to_string())?;
-            if session.userauth_password(user, password).is_err() {
-                let mut prompter = PasswordPrompter {
-                    password: password.to_string(),
-                };
-                session
-                    .userauth_keyboard_interactive(user, &mut prompter)
-                    .map_err(|error| format!("SSH password authentication failed: {error}"))?;
-            }
-        }
-        BastionAuthMethod::PrivateKeyPath => {
-            let path = bastion
-                .server
-                .private_key_path
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "Bastion private key path is missing".to_string())?;
-            session
-                .userauth_pubkey_file(user, None, Path::new(path), bastion.passphrase.as_deref())
-                .map_err(|error| format!("SSH private key authentication failed: {error}"))?;
-        }
-        BastionAuthMethod::PrivateKeyContent => {
-            let key = bastion
-                .private_key_content
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "Bastion private key content is missing".to_string())?;
-            session
-                .userauth_pubkey_memory(user, None, key, bastion.passphrase.as_deref())
-                .map_err(|error| format!("SSH private key authentication failed: {error}"))?;
-        }
-    }
-    if !session.authenticated() {
-        return Err("SSH authentication did not complete".to_string());
-    }
-    Ok(())
-}
-
 fn drop_forward_locked(runtime: &mut Runtime, route_key: &str) {
     if let Some(forward) = runtime.forwards.remove(route_key) {
         forward.stop.store(true, Ordering::SeqCst);
@@ -394,12 +274,16 @@ fn drop_forward_locked(runtime: &mut Runtime, route_key: &str) {
 }
 
 fn drop_unused_sessions_locked(runtime: &mut Runtime) {
-    let active_bastions = runtime
+    let active_session_keys = runtime
         .forwards
         .values()
-        .map(|forward| forward.bastion_id.clone())
+        .map(|forward| forward.session_key.clone())
         .collect::<std::collections::HashSet<_>>();
-    runtime
-        .sessions
-        .retain(|bastion_id, _| active_bastions.contains(bastion_id));
+    runtime.sessions.retain(|session_key, state| {
+        let keep = active_session_keys.contains(session_key);
+        if !keep {
+            state.shutdown("dbunk ssh session closed");
+        }
+        keep
+    });
 }

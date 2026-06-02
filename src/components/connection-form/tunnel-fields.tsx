@@ -1,5 +1,7 @@
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -9,6 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import type { BastionServer } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 
 import { FieldError, ToggleSwitchRow } from "./field-helpers";
@@ -117,6 +122,103 @@ export function TunnelFields({ form }: { form: ConnectionFormApi }) {
               )}
             </form.Field>
           </div>
+
+          <form.Field name="sshTunnelCompression">
+            {(field) => (
+              <ToggleSwitchRow
+                id="connection-ssh-tunnel-compression"
+                title="Compression"
+                description="Request SSH compression for this tunnel."
+                checked={field.state.value ?? false}
+                onCheckedChange={(next) => field.handleChange(next)}
+              />
+            )}
+          </form.Field>
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <form.Field name="sshTunnelKeepaliveIntervalSeconds">
+              {(field) => (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="connection-ssh-tunnel-keepalive-interval">
+                    Keepalive interval
+                  </Label>
+                  <Input
+                    id="connection-ssh-tunnel-keepalive-interval"
+                    type="number"
+                    min={2}
+                    max={3600}
+                    placeholder="disabled"
+                    value={field.state.value ?? ""}
+                    onChange={(event) =>
+                      field.handleChange(
+                        parseOptionalNumber(event.target.value),
+                      )
+                    }
+                    onBlur={field.handleBlur}
+                  />
+                  <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+                </div>
+              )}
+            </form.Field>
+
+            <form.Field name="sshTunnelKeepaliveWantReply">
+              {(field) => (
+                <label
+                  htmlFor="connection-ssh-tunnel-keepalive-reply"
+                  className="flex h-full min-h-14 items-center justify-between gap-3 rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2"
+                >
+                  <span className="grid gap-0.5">
+                    <span className="text-xs font-medium">Require reply</span>
+                    <span className="text-[0.6875rem] text-text-muted">
+                      Treat missing keepalive replies as SSH failure.
+                    </span>
+                  </span>
+                  <Switch
+                    id="connection-ssh-tunnel-keepalive-reply"
+                    checked={field.state.value ?? true}
+                    onCheckedChange={(next) => field.handleChange(next)}
+                  />
+                </label>
+              )}
+            </form.Field>
+          </div>
+
+          <form.Field name="sshTunnelJumpChain">
+            {(field) => (
+              <JumpChainField
+                bastions={bastions}
+                finalBastionId={
+                  form.state.values.sshTunnelBastionServerId ?? ""
+                }
+                value={field.state.value ?? []}
+                onChange={(value) => field.handleChange(value)}
+                errorText={FIELD_ERROR(field.state.meta.errors)}
+              />
+            )}
+          </form.Field>
+
+          <form.Field name="sshTunnelProxyCommand">
+            {(field) => (
+              <div className="grid gap-1.5">
+                <Label htmlFor="connection-ssh-tunnel-proxy-command">
+                  Proxy command
+                </Label>
+                <Textarea
+                  id="connection-ssh-tunnel-proxy-command"
+                  className="min-h-16 font-mono"
+                  placeholder="ssh -W %h:%p edge-gateway"
+                  value={field.state.value ?? ""}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  onBlur={field.handleBlur}
+                />
+                <p className="text-[0.6875rem] text-text-muted">
+                  Applied to the first SSH hop. Use %h and %p for the host and
+                  port.
+                </p>
+                <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+              </div>
+            )}
+          </form.Field>
         </>
       ) : null}
     </div>
@@ -124,9 +226,116 @@ export function TunnelFields({ form }: { form: ConnectionFormApi }) {
 }
 
 function parseOptionalPort(value: string): number | undefined {
+  return parseOptionalNumber(value);
+}
+
+function parseOptionalNumber(value: string): number | undefined {
   if (!value.trim()) {
     return undefined;
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function JumpChainField({
+  bastions,
+  finalBastionId,
+  value,
+  onChange,
+  errorText,
+}: {
+  bastions: BastionServer[];
+  finalBastionId: string;
+  value: string[];
+  onChange: (value: string[]) => void;
+  errorText: string | null;
+}) {
+  const chain = value;
+  const addHop = () => onChange([...chain, ""]);
+  const updateHop = (index: number, bastionId: string) => {
+    onChange(
+      chain.map((current, idx) => (idx === index ? bastionId : current)),
+    );
+  };
+  const removeHop = (index: number) => {
+    onChange(chain.filter((_, idx) => idx !== index));
+  };
+
+  return (
+    <div className="grid gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>Jump chain</Label>
+          <p className="mt-0.5 text-[0.6875rem] text-text-muted">
+            Optional intermediate Bastion Servers before the selected one.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={bastions.length === 0}
+          onClick={addHop}
+        >
+          <IconPlus className="size-3" />
+          Add hop
+        </Button>
+      </div>
+      {chain.length === 0 ? (
+        <div className="rounded-sm border border-dashed border-border-subtle px-3 py-2 text-[0.6875rem] text-text-muted">
+          No jump hops configured.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {chain.map((bastionId, index) => (
+            <div
+              key={`${index}-${bastionId || "empty"}`}
+              className="grid gap-2 sm:grid-cols-[1.5rem_1fr_auto]"
+            >
+              <div className="flex items-center text-[0.6875rem] text-text-muted">
+                {index + 1}
+              </div>
+              <Select
+                value={bastionId}
+                onValueChange={(next) => updateHop(index, next ?? "")}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select Bastion Server" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jumpOptions(bastions, finalBastionId, bastionId).map(
+                    (bastion) => (
+                      <SelectItem key={bastion.id} value={bastion.id}>
+                        {bastion.name}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove jump hop ${index + 1}`}
+                onClick={() => removeHop(index)}
+              >
+                <IconTrash className="size-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <FieldError text={errorText} />
+    </div>
+  );
+}
+
+function jumpOptions(
+  bastions: BastionServer[],
+  finalBastionId: string,
+  currentId: string,
+): BastionServer[] {
+  return bastions.filter(
+    (bastion) => bastion.id !== finalBastionId || bastion.id === currentId,
+  );
 }

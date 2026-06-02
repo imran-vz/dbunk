@@ -2,14 +2,13 @@ import type { StateCreator } from "zustand";
 
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
+import { connectionReferencesBastion } from "./bastion-references";
 import type {
   AppStoreState,
   BastionServer,
   BastionStatus,
-  Connection,
   SaveBastionServerInput,
   SecretChange,
-  SshTunnelConfig,
 } from "./types";
 
 type TestBastionResult = {
@@ -56,10 +55,8 @@ export const createBastionsSlice: StateCreator<
 
   saveBastionServer: async (input) => {
     const referencedConnectionIds = get()
-      .connections.filter(
-        (connection) =>
-          connectionSshTunnel(connection)?.enabled &&
-          connectionSshTunnel(connection)?.bastionServerId === input.id,
+      .connections.filter((connection) =>
+        connectionReferencesBastion(connection, input.id),
       )
       .map((connection) => connection.id);
 
@@ -115,10 +112,8 @@ export const createBastionsSlice: StateCreator<
 
   resetBastionHostKey: async (bastionServerId) => {
     const referencedConnectionIds = get()
-      .connections.filter(
-        (connection) =>
-          connectionSshTunnel(connection)?.enabled &&
-          connectionSshTunnel(connection)?.bastionServerId === bastionServerId,
+      .connections.filter((connection) =>
+        connectionReferencesBastion(connection, bastionServerId),
       )
       .map((connection) => connection.id);
 
@@ -228,13 +223,4 @@ function applySecretPresence(existing: boolean, change: SecretChange): boolean {
     case "clear":
       return false;
   }
-}
-
-function connectionSshTunnel(
-  connection: Connection,
-): SshTunnelConfig | undefined {
-  if (connection.engine === "SQLite") {
-    return undefined;
-  }
-  return connection.sshTunnel;
 }

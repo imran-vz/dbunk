@@ -40,6 +40,11 @@ export const connectionSchema = z.object({
   sshTunnelBastionServerId: z.string().optional(),
   sshTunnelLocalBindHost: z.string().optional(),
   sshTunnelLocalPort: z.number().int().optional(),
+  sshTunnelCompression: z.boolean().optional(),
+  sshTunnelKeepaliveIntervalSeconds: z.number().int().optional(),
+  sshTunnelKeepaliveWantReply: z.boolean().optional(),
+  sshTunnelJumpChain: z.array(z.string()).optional(),
+  sshTunnelProxyCommand: z.string().optional(),
 });
 
 export type ConnectionFormData = z.infer<typeof connectionSchema>;
@@ -64,6 +69,11 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   sshTunnelBastionServerId: "",
   sshTunnelLocalBindHost: "127.0.0.1",
   sshTunnelLocalPort: undefined,
+  sshTunnelCompression: false,
+  sshTunnelKeepaliveIntervalSeconds: undefined,
+  sshTunnelKeepaliveWantReply: true,
+  sshTunnelJumpChain: [],
+  sshTunnelProxyCommand: "",
 };
 
 type CommonShape = {
@@ -157,6 +167,10 @@ function tunnelFromForm(
     return undefined;
   }
   const bastionServerId = value.sshTunnelBastionServerId?.trim();
+  const jumpChain = (value.sshTunnelJumpChain ?? [])
+    .map((bastionId) => bastionId.trim())
+    .filter(Boolean);
+  const proxyCommand = value.sshTunnelProxyCommand?.trim();
   return {
     enabled: true,
     ...(bastionServerId ? { bastionServerId } : null),
@@ -166,6 +180,15 @@ function tunnelFromForm(
     ...(value.sshTunnelLocalPort
       ? { localPort: value.sshTunnelLocalPort }
       : null),
+    ...(value.sshTunnelCompression ? { compression: true } : null),
+    ...(value.sshTunnelKeepaliveIntervalSeconds
+      ? { keepaliveIntervalSeconds: value.sshTunnelKeepaliveIntervalSeconds }
+      : null),
+    ...(value.sshTunnelKeepaliveWantReply === false
+      ? { keepaliveWantReply: false }
+      : null),
+    ...(jumpChain.length > 0 ? { jumpChain } : null),
+    ...(proxyCommand ? { proxyCommand } : null),
   };
 }
 
@@ -227,6 +250,11 @@ export function defaultValuesFromConnection(
     sshTunnelBastionServerId: tunnel?.bastionServerId ?? "",
     sshTunnelLocalBindHost: tunnel?.localBindHost ?? "127.0.0.1",
     sshTunnelLocalPort: tunnel?.localPort,
+    sshTunnelCompression: tunnel?.compression ?? false,
+    sshTunnelKeepaliveIntervalSeconds: tunnel?.keepaliveIntervalSeconds,
+    sshTunnelKeepaliveWantReply: tunnel?.keepaliveWantReply ?? true,
+    sshTunnelJumpChain: tunnel?.jumpChain ?? [],
+    sshTunnelProxyCommand: tunnel?.proxyCommand ?? "",
   };
   switch (connection.engine) {
     case "PostgreSQL":

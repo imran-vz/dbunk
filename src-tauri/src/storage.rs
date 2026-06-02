@@ -254,6 +254,20 @@ ALTER TABLE connections ADD COLUMN ssh_tunnel_local_bind_host TEXT;
 ALTER TABLE connections ADD COLUMN ssh_tunnel_local_port INTEGER;
 "#,
     ),
+    (
+        11,
+        // ADR-0018 deferred polish: advanced per-Connection SSH
+        // Tunnel options. Jump chains store Bastion Server IDs as JSON
+        // so the first-class Bastion records and their separate secret
+        // namespace remain the source of truth for every hop.
+        r#"
+ALTER TABLE connections ADD COLUMN ssh_tunnel_compression INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_keepalive_interval_seconds INTEGER;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_keepalive_want_reply INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_jump_chain TEXT;
+ALTER TABLE connections ADD COLUMN ssh_tunnel_proxy_command TEXT;
+"#,
+    ),
 ];
 
 pub struct Paths {
@@ -451,17 +465,66 @@ const CONNECTION_COLUMNS: &str = "id, name, database_name, engine, host, port, u
      db_number, use_tls, verify_tls_cert, ssl, driver_options,
      read_only,
      ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
-     ssh_tunnel_local_bind_host, ssh_tunnel_local_port";
+     ssh_tunnel_local_bind_host, ssh_tunnel_local_port,
+     ssh_tunnel_compression, ssh_tunnel_keepalive_interval_seconds,
+     ssh_tunnel_keepalive_want_reply, ssh_tunnel_jump_chain,
+     ssh_tunnel_proxy_command";
 
-fn row_to_ssh_tunnel(row: &sqlx::sqlite::SqliteRow) -> SshTunnelConfig {
-    SshTunnelConfig {
+pub(super) fn parse_ssh_tunnel_jump_chain(
+    raw: Option<&str>,
+    connection_id: &str,
+) -> Result<Vec<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str::<Vec<String>>(raw).map_err(|error| {
+        format!("Malformed SSH jump chain for Connection '{connection_id}': {error}")
+    })
+}
+
+fn parse_ssh_keepalive_interval(
+    raw: Option<i64>,
+    connection_id: &str,
+) -> Result<Option<u32>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let interval = u32::try_from(raw).map_err(|_| {
+        format!("Malformed SSH keepalive interval for Connection '{connection_id}': {raw}")
+    })?;
+    if !(2..=3600).contains(&interval) {
+        return Err(format!(
+            "Malformed SSH keepalive interval for Connection '{connection_id}': {raw}"
+        ));
+    }
+    Ok(Some(interval))
+}
+
+fn row_to_ssh_tunnel(
+    row: &sqlx::sqlite::SqliteRow,
+    connection_id: &str,
+) -> Result<SshTunnelConfig, String> {
+    let jump_chain_json: Option<String> = row.get("ssh_tunnel_jump_chain");
+    Ok(SshTunnelConfig {
         enabled: row.get::<i64, _>("ssh_tunnel_enabled") != 0,
         bastion_server_id: row.get("ssh_tunnel_bastion_server_id"),
         local_bind_host: row.get("ssh_tunnel_local_bind_host"),
         local_port: row
             .get::<Option<i64>, _>("ssh_tunnel_local_port")
             .map(i64_to_u16),
+        compression: row.get::<i64, _>("ssh_tunnel_compression") != 0,
+        keepalive_interval_seconds: parse_ssh_keepalive_interval(
+            row.get("ssh_tunnel_keepalive_interval_seconds"),
+            connection_id,
+        )?,
+        keepalive_want_reply: row.get::<i64, _>("ssh_tunnel_keepalive_want_reply") != 0,
+        jump_chain: parse_ssh_tunnel_jump_chain(jump_chain_json.as_deref(), connection_id)?,
+        proxy_command: row.get("ssh_tunnel_proxy_command"),
     }
+    .normalized())
 }
 
 /// Map a single SQLite row into a `StoredConnection` variant.
@@ -479,7 +542,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
     let user: String = row.get("user_name");
     let role: String = row.get("role");
     let last_activity_at: Option<String> = row.get("last_activity_at");
-    let ssh_tunnel = row_to_ssh_tunnel(&row);
+    let ssh_tunnel = row_to_ssh_tunnel(&row, &id)?;
 
     let driver_options_json: Option<String> = row.get("driver_options");
     let driver_options = driver_options_json.and_then(|raw| {
@@ -632,11 +695,23 @@ pub async fn upsert_connection(
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
         _ => 1,
     };
-    let tunnel = connection.ssh_tunnel().cloned().unwrap_or_default();
+    let tunnel = connection
+        .ssh_tunnel()
+        .map(SshTunnelConfig::normalized)
+        .unwrap_or_default();
     let ssh_tunnel_enabled = bool_to_i64(tunnel.enabled);
     let ssh_tunnel_bastion_server_id = tunnel.bastion_server_id;
     let ssh_tunnel_local_bind_host = tunnel.local_bind_host;
     let ssh_tunnel_local_port = tunnel.local_port.map(i64::from);
+    let ssh_tunnel_compression = bool_to_i64(tunnel.compression);
+    let ssh_tunnel_keepalive_interval_seconds = tunnel.keepalive_interval_seconds.map(i64::from);
+    let ssh_tunnel_keepalive_want_reply = bool_to_i64(tunnel.keepalive_want_reply);
+    let ssh_tunnel_jump_chain = if tunnel.jump_chain.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&tunnel.jump_chain).map_err(|error| error.to_string())?)
+    };
+    let ssh_tunnel_proxy_command = tunnel.proxy_command;
     // ADR-0013: PG driver_options serialise to one JSON blob; other
     // engines persist NULL so the column stays variant-aware without
     // adding per-engine columns.
@@ -657,9 +732,12 @@ pub async fn upsert_connection(
             db_number, use_tls, verify_tls_cert, ssl, driver_options,
             read_only,
             ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
-            ssh_tunnel_local_bind_host, ssh_tunnel_local_port
+            ssh_tunnel_local_bind_host, ssh_tunnel_local_port,
+            ssh_tunnel_compression, ssh_tunnel_keepalive_interval_seconds,
+            ssh_tunnel_keepalive_want_reply, ssh_tunnel_jump_chain,
+            ssh_tunnel_proxy_command
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -680,7 +758,12 @@ pub async fn upsert_connection(
             ssh_tunnel_enabled = excluded.ssh_tunnel_enabled,
             ssh_tunnel_bastion_server_id = excluded.ssh_tunnel_bastion_server_id,
             ssh_tunnel_local_bind_host = excluded.ssh_tunnel_local_bind_host,
-            ssh_tunnel_local_port = excluded.ssh_tunnel_local_port",
+            ssh_tunnel_local_port = excluded.ssh_tunnel_local_port,
+            ssh_tunnel_compression = excluded.ssh_tunnel_compression,
+            ssh_tunnel_keepalive_interval_seconds = excluded.ssh_tunnel_keepalive_interval_seconds,
+            ssh_tunnel_keepalive_want_reply = excluded.ssh_tunnel_keepalive_want_reply,
+            ssh_tunnel_jump_chain = excluded.ssh_tunnel_jump_chain,
+            ssh_tunnel_proxy_command = excluded.ssh_tunnel_proxy_command",
     )
     .bind(id)
     .bind(name)
@@ -703,6 +786,11 @@ pub async fn upsert_connection(
     .bind(ssh_tunnel_bastion_server_id)
     .bind(ssh_tunnel_local_bind_host)
     .bind(ssh_tunnel_local_port)
+    .bind(ssh_tunnel_compression)
+    .bind(ssh_tunnel_keepalive_interval_seconds)
+    .bind(ssh_tunnel_keepalive_want_reply)
+    .bind(ssh_tunnel_jump_chain)
+    .bind(ssh_tunnel_proxy_command)
     .execute(pool)
     .await
     .map_err(|error| error.to_string())?;
@@ -1409,9 +1497,14 @@ mod tests {
         if let StoredConnection::PostgreSQL(pg) = &mut connection {
             pg.ssh_tunnel = SshTunnelConfig {
                 enabled: true,
-                bastion_server_id: Some("bastion-1".to_string()),
-                local_bind_host: Some("127.0.0.2".to_string()),
+                bastion_server_id: Some(" bastion-1 ".to_string()),
+                local_bind_host: Some(" 127.0.0.2 ".to_string()),
                 local_port: Some(15432),
+                compression: true,
+                keepalive_interval_seconds: Some(30),
+                keepalive_want_reply: false,
+                jump_chain: vec![" jump-1 ".to_string(), String::new()],
+                proxy_command: Some(" ssh -W %h:%p edge ".to_string()),
             };
         }
         upsert_connection(&pool, &connection)
@@ -1438,6 +1531,12 @@ mod tests {
                 .expect("ids"),
             vec!["conn-1".to_string()]
         );
+        assert_eq!(
+            bastions::connection_ids_referencing_bastion(&pool, "jump-1")
+                .await
+                .expect("jump ids"),
+            vec!["conn-1".to_string()]
+        );
 
         let stored = read_connections(&pool).await.expect("connections");
         let StoredConnection::PostgreSQL(pg) = &stored[0] else {
@@ -1450,6 +1549,104 @@ mod tests {
         );
         assert_eq!(pg.ssh_tunnel.local_bind_host.as_deref(), Some("127.0.0.2"));
         assert_eq!(pg.ssh_tunnel.local_port, Some(15432));
+        assert!(pg.ssh_tunnel.compression);
+        assert_eq!(pg.ssh_tunnel.keepalive_interval_seconds, Some(30));
+        assert!(!pg.ssh_tunnel.keepalive_want_reply);
+        assert_eq!(pg.ssh_tunnel.jump_chain, vec!["jump-1".to_string()]);
+        assert_eq!(
+            pg.ssh_tunnel.proxy_command.as_deref(),
+            Some("ssh -W %h:%p edge")
+        );
+    }
+
+    #[tokio::test]
+    async fn bastion_reference_lookup_normalizes_stored_tunnel_ids() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        sqlx::query(
+            "UPDATE connections
+             SET ssh_tunnel_enabled = 1,
+                 ssh_tunnel_bastion_server_id = ?,
+                 ssh_tunnel_jump_chain = ?
+             WHERE id = ?",
+        )
+        .bind(" bastion-1 ")
+        .bind(r#"[" jump-1 ",""]"#)
+        .bind("conn-1")
+        .execute(&pool)
+        .await
+        .expect("raw tunnel ids");
+
+        assert_eq!(
+            bastions::connection_ids_referencing_bastion(&pool, "bastion-1")
+                .await
+                .expect("final ids"),
+            vec!["conn-1".to_string()]
+        );
+        assert_eq!(
+            bastions::connection_ids_referencing_bastion(&pool, "jump-1")
+                .await
+                .expect("jump ids"),
+            vec!["conn-1".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_ssh_jump_chain_is_not_silently_dropped() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        sqlx::query(
+            "UPDATE connections
+             SET ssh_tunnel_enabled = 1,
+                 ssh_tunnel_bastion_server_id = ?,
+                 ssh_tunnel_jump_chain = ?
+             WHERE id = ?",
+        )
+        .bind("bastion-1")
+        .bind("not-json")
+        .bind("conn-1")
+        .execute(&pool)
+        .await
+        .expect("corrupt jump chain");
+
+        let read_error = read_connections(&pool).await.expect_err("read fails");
+        assert!(read_error.contains("Malformed SSH jump chain for Connection 'conn-1'"));
+
+        let refs_error = bastions::connection_ids_referencing_bastion(&pool, "jump-1")
+            .await
+            .expect_err("reference lookup fails");
+        assert!(refs_error.contains("Malformed SSH jump chain for Connection 'conn-1'"));
+
+        let final_ref_error = bastions::connection_ids_referencing_bastion(&pool, "bastion-1")
+            .await
+            .expect_err("final reference lookup fails");
+        assert!(final_ref_error.contains("Malformed SSH jump chain for Connection 'conn-1'"));
+    }
+
+    #[tokio::test]
+    async fn malformed_ssh_keepalive_interval_is_not_silently_dropped() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        sqlx::query(
+            "UPDATE connections
+             SET ssh_tunnel_enabled = 1,
+                 ssh_tunnel_keepalive_interval_seconds = ?
+             WHERE id = ?",
+        )
+        .bind(-1)
+        .bind("conn-1")
+        .execute(&pool)
+        .await
+        .expect("corrupt keepalive");
+
+        let read_error = read_connections(&pool).await.expect_err("read fails");
+        assert!(read_error.contains("Malformed SSH keepalive interval for Connection 'conn-1'"));
     }
 
     #[tokio::test]

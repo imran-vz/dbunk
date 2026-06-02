@@ -366,6 +366,11 @@ export type ConnectionFormValues = {
   sshTunnelBastionServerId?: string;
   sshTunnelLocalBindHost?: string;
   sshTunnelLocalPort?: number;
+  sshTunnelCompression?: boolean;
+  sshTunnelKeepaliveIntervalSeconds?: number;
+  sshTunnelKeepaliveWantReply?: boolean;
+  sshTunnelJumpChain?: string[];
+  sshTunnelProxyCommand?: string;
 };
 
 export type ConnectionFormIssue = {
@@ -507,6 +512,31 @@ function validateTunnelFields(
     issues.push({
       path: "sshTunnelLocalPort",
       message: "Local port must be between 1 and 65535",
+    });
+  }
+  if (
+    value.sshTunnelKeepaliveIntervalSeconds !== undefined &&
+    (value.sshTunnelKeepaliveIntervalSeconds < 2 ||
+      value.sshTunnelKeepaliveIntervalSeconds > 3600)
+  ) {
+    issues.push({
+      path: "sshTunnelKeepaliveIntervalSeconds",
+      message: "Keepalive interval must be between 2 and 3600 seconds",
+    });
+  }
+  const jumpChain = (value.sshTunnelJumpChain ?? [])
+    .map((bastionId) => bastionId.trim())
+    .filter(Boolean);
+  if (jumpChain.includes(value.sshTunnelBastionServerId?.trim() ?? "")) {
+    issues.push({
+      path: "sshTunnelJumpChain",
+      message: "Jump chain cannot include the selected Bastion Server",
+    });
+  }
+  if (new Set(jumpChain).size !== jumpChain.length) {
+    issues.push({
+      path: "sshTunnelJumpChain",
+      message: "Jump chain cannot include duplicate Bastion Servers",
     });
   }
 }

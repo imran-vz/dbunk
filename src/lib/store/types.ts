@@ -154,6 +154,11 @@ export type SshTunnelConfig = {
   bastionServerId?: string;
   localBindHost?: string;
   localPort?: number;
+  compression?: boolean;
+  keepaliveIntervalSeconds?: number;
+  keepaliveWantReply?: boolean;
+  jumpChain?: string[];
+  proxyCommand?: string;
 };
 
 // ---------------------------------------------------------------------------

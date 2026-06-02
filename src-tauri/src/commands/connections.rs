@@ -26,6 +26,7 @@ pub async fn save_connection(
 ) -> Result<Vec<StoredConnection>, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
+    tunnel::validate_connection_tunnel(&connection)?;
     storage::upsert_connection(&state.pool, &connection).await?;
     crate::credentials::upsert(&state.pool, mode, &connection).await?;
     // Invalidate cached pools/connections so next operation picks up
@@ -97,6 +98,7 @@ pub async fn test_connection(
 ) -> Result<ConnectResult, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
+    tunnel::validate_connection_tunnel(&payload.connection)?;
     let route_key = format!("test-{}", uuid::Uuid::new_v4());
     let connection =
         tunnel::resolve_connection(&state.pool, mode, &route_key, &payload.connection).await?;
