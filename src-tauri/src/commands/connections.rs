@@ -6,6 +6,7 @@ use crate::dispatch;
 use crate::postgres;
 use crate::redis;
 use crate::storage;
+use crate::tunnel;
 use crate::{
     AppState, ConnectResult, ConnectionPayload, DatabaseEngine, HealthCheckResult,
     StoredConnection, TestConnectionPayload,
@@ -29,6 +30,7 @@ pub async fn save_connection(
     crate::credentials::upsert(&state.pool, mode, &connection).await?;
     // Invalidate cached pools/connections so next operation picks up
     // any credential or config changes.
+    tunnel::drop_connection(connection.id());
     match connection.engine() {
         DatabaseEngine::PostgreSQL => postgres::drop_pool(connection.id()),
         DatabaseEngine::Redis => redis::connection::drop_cached(connection.id()),
@@ -56,7 +58,20 @@ pub async fn delete_connection(
     }
     postgres::drop_pool(&payload.connection_id);
     redis::connection::drop_cached(&payload.connection_id);
+    tunnel::drop_connection(&payload.connection_id);
     public_connections(state).await
+}
+
+#[tauri::command]
+pub async fn disconnect_connection(
+    state: State<'_, AppState>,
+    payload: ConnectionPayload,
+) -> Result<(), String> {
+    let _ = state.inner();
+    postgres::drop_pool(&payload.connection_id);
+    redis::connection::drop_cached(&payload.connection_id);
+    tunnel::drop_connection(&payload.connection_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -76,8 +91,18 @@ pub async fn connect_connection(
 /// side panel's `Test Connection` button — connects, runs `SELECT 1`,
 /// disconnects, returns latency or surfaces the underlying driver error.
 #[tauri::command]
-pub async fn test_connection(payload: TestConnectionPayload) -> Result<ConnectResult, String> {
-    dispatch::ping_connection(&payload.connection).await
+pub async fn test_connection(
+    state: State<'_, AppState>,
+    payload: TestConnectionPayload,
+) -> Result<ConnectResult, String> {
+    let state = state.inner();
+    let mode = current_credential_mode(state).await?;
+    let route_key = format!("test-{}", uuid::Uuid::new_v4());
+    let connection =
+        tunnel::resolve_connection(&state.pool, mode, &route_key, &payload.connection).await?;
+    let result = dispatch::ping_connection(&connection).await;
+    tunnel::drop_connection(&route_key);
+    result
 }
 
 /// Periodic poll: returns "healthy" + latency or "error" + message. Designed

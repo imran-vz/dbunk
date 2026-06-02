@@ -146,7 +146,7 @@ describe("store.loadTableData", () => {
       totalRows: 1,
       runtimeMs: 7,
     });
-    expect(state.tableLoadStatus.users).toEqual({ state: "success" });
+    expect(state.tableLoadStatus[key]).toEqual({ state: "success" });
   });
 
   it("records an error when the invoke rejects", async () => {
@@ -154,7 +154,8 @@ describe("store.loadTableData", () => {
 
     await useAppStore.getState().loadTableData("conn-1", "public", "users");
 
-    const status = useAppStore.getState().tableLoadStatus.users;
+    const key = tableDataKey("conn-1", "public", "users");
+    const status = useAppStore.getState().tableLoadStatus[key];
     if (status.state !== "error") {
       throw new Error(`expected error status, got ${status.state}`);
     }
@@ -174,7 +175,8 @@ describe("store.loadTableData", () => {
       .getState()
       .loadTableData("conn-1", "public", "users");
 
-    expect(useAppStore.getState().tableLoadStatus.users?.state).toBe("loading");
+    const key = tableDataKey("conn-1", "public", "users");
+    expect(useAppStore.getState().tableLoadStatus[key]?.state).toBe("loading");
 
     resolveInvoke?.({
       columns: [],
@@ -186,7 +188,7 @@ describe("store.loadTableData", () => {
     });
     await promise;
 
-    expect(useAppStore.getState().tableLoadStatus.users?.state).toBe("success");
+    expect(useAppStore.getState().tableLoadStatus[key]?.state).toBe("success");
   });
 });
 
@@ -404,7 +406,8 @@ describe("loadTablePreview status tracking", () => {
       void useAppStore.getState().loadTablePreview("public", "users");
     });
 
-    expect(useAppStore.getState().tableLoadStatus.users).toEqual({
+    const key = tableDataKey("conn-1", "public", "users");
+    expect(useAppStore.getState().tableLoadStatus[key]).toEqual({
       state: "loading",
     });
 
@@ -420,7 +423,7 @@ describe("loadTablePreview status tracking", () => {
       await Promise.resolve();
     });
 
-    expect(useAppStore.getState().tableLoadStatus.users.state).toBe("success");
+    expect(useAppStore.getState().tableLoadStatus[key].state).toBe("success");
   });
 
   it("captures error message on failure", async () => {
@@ -432,7 +435,8 @@ describe("loadTablePreview status tracking", () => {
       await useAppStore.getState().loadTablePreview("public", "missing");
     });
 
-    const status = useAppStore.getState().tableLoadStatus.missing;
+    const key = tableDataKey("conn-1", "public", "missing");
+    const status = useAppStore.getState().tableLoadStatus[key];
     if (status.state !== "error") {
       throw new Error(`expected error status, got ${status.state}`);
     }
@@ -867,12 +871,12 @@ describe("disconnectConnection cleanup", () => {
         },
       },
       tableEdits: {
-        users: { 0: { 1: "Ada Lovelace" } },
-        orders: { 0: { 0: "42" } },
+        [conn1DataKey]: { 0: { 1: "Ada Lovelace" } },
+        [conn2DataKey]: { 0: { 0: "42" } },
       },
       tableEditsCommitStatus: {
-        users: { state: "running" },
-        orders: { state: "running" },
+        [conn1DataKey]: { state: "running" },
+        [conn2DataKey]: { state: "running" },
       },
       queryHistory: [
         {
@@ -910,9 +914,9 @@ describe("disconnectConnection cleanup", () => {
     expect(state.queryEdits["tab-query-1"]).toBeUndefined();
     expect(state.queryPreviews["query_1.sql"]).toBeUndefined();
     expect(state.queryPreviews["query_2.sql"]).toBeDefined();
-    expect(state.tableEdits.users).toBeUndefined();
-    expect(state.tableEdits.orders).toBeDefined();
-    expect(state.tableEditsCommitStatus.users).toBeUndefined();
+    expect(state.tableEdits[conn1DataKey]).toBeUndefined();
+    expect(state.tableEdits[conn2DataKey]).toBeDefined();
+    expect(state.tableEditsCommitStatus[conn1DataKey]).toBeUndefined();
     expect(state.queryHistory).toHaveLength(1);
   });
 });
@@ -2139,7 +2143,7 @@ describe("store.commitTableEdits", () => {
     const outcome = await useAppStore.getState().commitTableEdits("users");
 
     const state = useAppStore.getState();
-    expect(state.tableEdits.users).toBeUndefined();
+    expect(state.tableEdits[dataKey]).toBeUndefined();
     expect(outcome.kind).toBe("completed");
     // Two invokes: commit + reload.
     expect(mockedInvoke).toHaveBeenCalledTimes(2);
@@ -2154,6 +2158,125 @@ describe("store.commitTableEdits", () => {
     });
   });
 
+  it("keeps Cell Edit state isolated by Table Session key", async () => {
+    seedTable();
+    const archiveDataKey = tableDataKey("conn-1", "archive", "users");
+    const archiveStructureKey = tableStructureKey("conn-1", "archive", "users");
+    const baseData = useAppStore.getState().tableData[dataKey];
+    const baseStructure = useAppStore.getState().tableStructure[structureKey];
+    if (!baseData || !baseStructure) {
+      throw new Error("seedTable did not populate table session state");
+    }
+    useAppStore.setState((state) => ({
+      tableData: {
+        ...state.tableData,
+        [archiveDataKey]: {
+          ...baseData,
+          schema: "archive",
+          rows: [["99", "archived@example.com", "Archived"]],
+          totalRows: 1,
+        },
+      },
+      tableStructure: {
+        ...state.tableStructure,
+        [archiveStructureKey]: baseStructure,
+      },
+    }));
+
+    act(() => {
+      useAppStore
+        .getState()
+        .setTableCellEdit(
+          { connectionId: "conn-1", schema: "public", table: "users" },
+          0,
+          1,
+          "ada@new.com",
+        );
+      useAppStore
+        .getState()
+        .setTableCellEdit(
+          { connectionId: "conn-1", schema: "archive", table: "users" },
+          0,
+          1,
+          "archived@new.com",
+        );
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 5 })
+      .mockResolvedValueOnce({
+        columns: ["id", "email", "name"],
+        rows: [["1", "ada@new.com", "Ada"]],
+        page: 1,
+        pageSize: 100,
+        totalRows: 1,
+        runtimeMs: 1,
+      });
+
+    const outcome = await useAppStore.getState().commitTableCellEdits({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+    });
+
+    expect(outcome.kind).toBe("completed");
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "commit_cell_edits", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        edits: [
+          {
+            rowIndex: 0,
+            identity: [{ column: "id", value: "1" }],
+            set: [{ column: "email", value: "ada@new.com" }],
+          },
+        ],
+      },
+    });
+    const state = useAppStore.getState();
+    expect(state.tableEdits[dataKey]).toBeUndefined();
+    expect(state.tableEdits[archiveDataKey]?.[0]?.[1]).toBe("archived@new.com");
+  });
+
+  it("rejects legacy table-name edits when the Table Session is ambiguous", async () => {
+    seedTable();
+    const archiveDataKey = tableDataKey("conn-1", "archive", "users");
+    const archiveStructureKey = tableStructureKey("conn-1", "archive", "users");
+    const baseData = useAppStore.getState().tableData[dataKey];
+    const baseStructure = useAppStore.getState().tableStructure[structureKey];
+    if (!baseData || !baseStructure) {
+      throw new Error("seedTable did not populate table session state");
+    }
+    useAppStore.setState((state) => ({
+      tableData: {
+        ...state.tableData,
+        [archiveDataKey]: {
+          ...baseData,
+          schema: "archive",
+        },
+      },
+      tableStructure: {
+        ...state.tableStructure,
+        [archiveStructureKey]: baseStructure,
+      },
+    }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+    const outcome = await useAppStore.getState().commitTableEdits("users");
+
+    expect(useAppStore.getState().tableEdits[dataKey]).toBeUndefined();
+    expect(useAppStore.getState().tableEdits[archiveDataKey]).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/ambiguous/i));
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toMatch(/ambiguous/i);
+    warnSpy.mockRestore();
+  });
+
   it("preserves edits and reports an error on commit failure", async () => {
     seedTable();
     act(() => {
@@ -2164,7 +2287,7 @@ describe("store.commitTableEdits", () => {
     const outcome = await useAppStore.getState().commitTableEdits("users");
 
     const state = useAppStore.getState();
-    expect(state.tableEdits.users?.[0]?.[1]).toBe("ada@new.com");
+    expect(state.tableEdits[dataKey]?.[0]?.[1]).toBe("ada@new.com");
     if (outcome.kind !== "failed") {
       throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
@@ -2232,7 +2355,7 @@ describe("store.commitTableEdits", () => {
     }
     expect(outcome.reason).toMatch(/read.?only|primary key|unique/i);
     // Edits are kept so the user can still discard explicitly.
-    expect(useAppStore.getState().tableEdits.users?.[0]?.[1]).toBe(
+    expect(useAppStore.getState().tableEdits[dataKey]?.[0]?.[1]).toBe(
       "ada@new.com",
     );
   });
@@ -2453,6 +2576,34 @@ describe("store.addTableRow", () => {
       throw new Error(`expected failed outcome, got ${outcome.kind}`);
     }
     expect(outcome.reason).toMatch(/no values|at least one/i);
+  });
+
+  it("rejects legacy table-name inserts when the Table Session is ambiguous", async () => {
+    seedTableForInsert();
+    const archiveDataKey = tableDataKey("conn-1", "archive", "users");
+    const baseData = useAppStore.getState().tableData[dataKey];
+    if (!baseData) {
+      throw new Error("seedTableForInsert did not populate table data");
+    }
+    useAppStore.setState((state) => ({
+      tableData: {
+        ...state.tableData,
+        [archiveDataKey]: {
+          ...baseData,
+          schema: "archive",
+        },
+      },
+    }));
+
+    const outcome = await useAppStore
+      .getState()
+      .addTableRow("users", [{ column: "email", value: "grace@example.com" }]);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toMatch(/ambiguous/i);
   });
 });
 
@@ -2700,6 +2851,34 @@ describe("store.deleteSelectedTableRows", () => {
     expect(outcome.reason).toContain("row not found");
     // No refresh on failure.
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects legacy table-name deletes when the Table Session is ambiguous", async () => {
+    seedTableForDelete();
+    const archiveDataKey = tableDataKey("conn-1", "archive", "users");
+    const baseData = useAppStore.getState().tableData[dataKey];
+    if (!baseData) {
+      throw new Error("seedTableForDelete did not populate table data");
+    }
+    useAppStore.setState((state) => ({
+      tableData: {
+        ...state.tableData,
+        [archiveDataKey]: {
+          ...baseData,
+          schema: "archive",
+        },
+      },
+    }));
+
+    const outcome = await useAppStore
+      .getState()
+      .deleteSelectedTableRows("users", [0]);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toMatch(/ambiguous/i);
   });
 });
 

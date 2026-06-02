@@ -303,11 +303,51 @@ describe("validateConnection", () => {
     expect(pathsOf(negative)).toContain("dbNumber");
   });
 
+  it("requires a Bastion Server when SSH tunnel is enabled on network engines", () => {
+    for (const engine of [
+      "PostgreSQL",
+      "MySQL",
+      "ClickHouse",
+      "Redis",
+    ] as const) {
+      const policy = connectionFormPolicy(engine);
+      const issues = validateConnection(
+        policy,
+        baseValues({
+          engine,
+          sshTunnelEnabled: true,
+          sshTunnelBastionServerId: "",
+          password: engine === "Redis" ? undefined : "hunter2",
+        }),
+        "new",
+      );
+      expect(pathsOf(issues)).toContain("sshTunnelBastionServerId");
+    }
+  });
+
+  it("rejects invalid local SSH tunnel ports", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    const issues = validateConnection(
+      policy,
+      baseValues({
+        sshTunnelEnabled: true,
+        sshTunnelBastionServerId: "bastion-1",
+        sshTunnelLocalPort: 0,
+      }),
+      "new",
+    );
+    expect(pathsOf(issues)).toContain("sshTunnelLocalPort");
+  });
+
   it("SQLite requires only the database file path", () => {
     const policy = connectionFormPolicy("SQLite");
     const valid = validateConnection(
       policy,
-      baseValues({ engine: "SQLite", database: "/tmp/db.sqlite" }),
+      baseValues({
+        engine: "SQLite",
+        database: "/tmp/db.sqlite",
+        sshTunnelEnabled: true,
+      }),
       "new",
     );
     expect(valid).toEqual([]);

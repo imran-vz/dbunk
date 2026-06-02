@@ -42,6 +42,16 @@ before code lands.
   with a streaming path.
 - **XML import/export** — only if XML is still in the parity scope.
 
+### SSH tunnels / bastion servers
+
+- **Deferred SSH tunnel polish** (ADR-0018) — after the first slice
+  ships persisted Bastion Servers, per-Connection SSH Tunnel routing,
+  Test Bastion, and Test Connection through the tunnel, finish
+  bastion search/filter, import-key wizard or guided key capture,
+  richer host-key reset UX, advanced SSH options (compression,
+  keepalive, jump chains, proxy commands), and broader Settings
+  polish.
+
 ### Redis Tier 2 + cross-cutting (designs/FOLLOWUPS.md)
 
 - **Cross-tab DB switching cascade** — the keyspace-browser picker

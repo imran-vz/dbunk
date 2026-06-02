@@ -6,6 +6,7 @@ mod keychain;
 mod postgres;
 mod redis;
 mod storage;
+mod tunnel;
 mod types;
 mod xlsx;
 
@@ -208,11 +209,18 @@ pub fn run() {
             commands::settings::unlock_credentials,
             commands::settings::change_credential_storage,
             commands::settings::reset_credential_storage,
+            // Bastion servers
+            commands::bastions::load_bastion_servers,
+            commands::bastions::save_bastion_server,
+            commands::bastions::delete_bastion_server,
+            commands::bastions::reset_bastion_host_key,
+            commands::bastions::test_bastion_server,
             // Connections
             commands::connections::load_connections,
             commands::connections::save_connection,
             commands::connections::delete_connection,
             commands::connections::connect_connection,
+            commands::connections::disconnect_connection,
             commands::connections::test_connection,
             commands::connections::health_check_connection,
             // Relational: schema

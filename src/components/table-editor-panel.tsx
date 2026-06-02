@@ -19,10 +19,8 @@ import { TableStatusBanners } from "@/components/table-editor/status-banners";
 import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
 import { useRowSelection } from "@/components/table-editor/use-row-selection";
-import { useTableCapabilities } from "@/components/table-editor/use-table-capabilities";
-import { useTableEditorData } from "@/components/table-editor/use-table-editor-data";
 import { useTableExportFilename } from "@/components/table-editor/use-table-export-filename";
-import { useTablePagination } from "@/components/table-editor/use-table-pagination";
+import { useTableSession } from "@/components/table-editor/use-table-session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,9 +56,11 @@ import {
   type Connection,
   type EditOutcome,
   type TablePreviewData,
+  tableDataKey,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { deriveSelectedTableSessionCapabilities } from "@/lib/table-session";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import { useContainerWidth } from "@/lib/use-resizable-width";
 
@@ -72,11 +72,19 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
   const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
 
-  const editor = useTableEditorData(tab);
-  const { ref, tableName, dataKey, data, structure, status } = editor;
-  // Sliced subscription: re-render only when *this* table's lifecycle
-  // slot changes, not when any other table's status moves.
-  const commitStatus = useAppStore((s) => s.tableEditsCommitStatus[tableName]);
+  const tableSession = useTableSession(tab);
+  const {
+    ref,
+    key: dataKey,
+    tableName,
+    data,
+    structure,
+    status,
+    commitStatus,
+    currentEdits,
+    hasEdits,
+    pagination,
+  } = tableSession;
   // Terminal outcome lives component-local. Disappears on tab unmount,
   // which is the intended trade-off (CONTEXT.md — Edit Outcome).
   const [lastOutcome, setLastOutcome] = useState<EditOutcome | null>(null);
@@ -90,18 +98,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       }),
     );
 
-  const {
-    tableEdits,
-    openQueryForTable,
-    openTableTab,
-    loadTableData,
-    refreshTableData,
-    setTableEdit,
-    discardTableEdits,
-    commitTableEdits,
-    addTableRow,
-    deleteSelectedTableRows,
-  } = useAppStore();
+  const { openQueryForTable, openTableTab } = useAppStore();
 
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -113,12 +110,14 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   } | null>(null);
   const rowDetails = useRowDetailsVisibility(bodyWidth);
 
-  // Reset the inline drill-down when the tab's table changes —
-  // otherwise a stale expansion from the previous table leaks into
-  // the new one. Also close it on ESC.
+  // Reset table-switch-scoped UI state. The panel instance is reused
+  // across tab switches (no React key), so without this the inline
+  // drill-down and terminal-outcome badge from table A would leak
+  // into table B.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tableName is the change trigger, not a value read inside
   useEffect(() => {
     setInlineDrilldown(null);
+    setLastOutcome(null);
   }, [tableName]);
 
   useEffect(() => {
@@ -133,40 +132,23 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [inlineDrilldown]);
 
-  // Reset the terminal-outcome badge on table switch — the panel instance
-  // is reused across tab switches (no React key), so without this the
-  // badge from table A could leak into table B's view.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tableName is the change trigger, not a value read inside
-  useEffect(() => {
-    setLastOutcome(null);
-  }, [tableName]);
-
-  const currentEdits = tableEdits[tableName];
-  const hasEdits = Object.keys(currentEdits ?? {}).length > 0;
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
 
   const rows = data?.rows ?? [];
   const selection = useRowSelection(rows);
-  const caps = useTableCapabilities({
-    structure,
-    commitStatus,
-    selectedCount: selection.selectedCount,
-  });
+  const caps = deriveSelectedTableSessionCapabilities(
+    tableSession.capabilities,
+    selection.selectedCount,
+  );
   const exportFilenameBase = useTableExportFilename(tab);
 
-  const pagination = useTablePagination({
-    tab,
-    data,
-    loadTableData,
-  });
-
   const onRefresh = () => {
-    if (dataKey) void refreshTableData(dataKey);
+    void tableSession.refresh();
   };
 
   const handleSubmitAddRow = async (values: InsertRowPayloadEntry[]) => {
-    const outcome = await addTableRow(tableName, values);
+    const outcome = await tableSession.addRow(values);
     setLastOutcome(outcome);
     if (outcome.kind === "completed") {
       setIsAddRowOpen(false);
@@ -180,8 +162,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   }) => {
     if (!isTauri()) {
       for (const row of payload.rows) {
-        const outcome = await addTableRow(
-          tableName,
+        const outcome = await tableSession.addRow(
           payload.columns.map((column, index) => ({
             column,
             value: row[index] ?? null,
@@ -226,7 +207,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         } in ${result.runtimeMs} ms`,
       );
       if (dataKey) {
-        await refreshTableData(dataKey);
+        await tableSession.refresh();
       }
     } catch (error) {
       const message = errorToMessage(error);
@@ -241,10 +222,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
       selection.selectedCount === 1 ? "" : "s"
     }? This cannot be undone.`;
     if (!window.confirm(message)) return;
-    const outcome = await deleteSelectedTableRows(
-      tableName,
-      selection.selectedIndices,
-    );
+    const outcome = await tableSession.deleteRows(selection.selectedIndices);
     setLastOutcome(outcome);
     if (outcome.kind === "completed") selection.clear();
   };
@@ -518,11 +496,11 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onOpenTable={openTableTab}
         onSubTabChange={setActiveSubTab}
         onCellEdit={(rowIndex, colIndex, value) =>
-          setTableEdit(tableName, rowIndex, colIndex, value)
+          tableSession.setCellEdit(rowIndex, colIndex, value)
         }
-        onDiscardEdits={() => discardTableEdits(tableName)}
+        onDiscardEdits={tableSession.discardEdits}
         onSaveEdits={async () => {
-          const outcome = await commitTableEdits(tableName);
+          const outcome = await tableSession.commitEdits();
           setLastOutcome(outcome);
         }}
         onDeleteSelected={() => {
@@ -736,8 +714,9 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
     if (tab.kind !== "table") {
       return null;
     }
+    const key = tableDataKey(tab.connectionId, tab.schema, tab.table ?? "");
     return (
-      tablePreviews[tab.table ?? ""] ?? {
+      tablePreviews[key] ?? {
         columns: ["id", "name", "status"],
         rows: [],
         rowCount: "--",

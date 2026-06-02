@@ -124,6 +124,7 @@ beforeEach(() => {
     appSettingsStatus: { state: "ready" },
     connections: [connection],
     loadAppSettings: vi.fn(async () => readySettings),
+    loadBastionServers: vi.fn(async () => undefined),
     loadConnections: vi.fn(async () => undefined),
     loadQueryHistory: vi.fn(async () => undefined),
     loadSavedQueries: vi.fn(async () => undefined),

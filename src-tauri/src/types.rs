@@ -11,6 +11,7 @@
 //! re-export in `lib.rs`.
 
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 // ---------------------------------------------------------------------------
 // Engine + persisted entities
@@ -120,6 +121,138 @@ pub(crate) struct ChangeCredentialStoragePayload {
     pub confirm: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SshTunnelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bastion_server_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_bind_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_port: Option<u16>,
+}
+
+impl SshTunnelConfig {
+    pub fn is_default(&self) -> bool {
+        !self.enabled
+            && self.bastion_server_id.is_none()
+            && self.local_bind_host.is_none()
+            && self.local_port.is_none()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum BastionAuthMethod {
+    Password,
+    PrivateKeyPath,
+    PrivateKeyContent,
+}
+
+impl BastionAuthMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Password => "password",
+            Self::PrivateKeyPath => "privateKeyPath",
+            Self::PrivateKeyContent => "privateKeyContent",
+        }
+    }
+}
+
+impl FromStr for BastionAuthMethod {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "password" => Ok(Self::Password),
+            "privateKeyPath" => Ok(Self::PrivateKeyPath),
+            "privateKeyContent" => Ok(Self::PrivateKeyContent),
+            _ => Err(format!("unknown bastion auth method '{value}'")),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", tag = "action")]
+pub(crate) enum SecretChange {
+    #[default]
+    Keep,
+    Set {
+        value: String,
+    },
+    Clear,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BastionServer {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth_method: BastionAuthMethod,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub private_key_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_key_fingerprint: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PublicBastionServer {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth_method: BastionAuthMethod,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub private_key_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_key_fingerprint: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub has_password: bool,
+    pub has_private_key_content: bool,
+    pub has_passphrase: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveBastionServerPayload {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth_method: BastionAuthMethod,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+    #[serde(default)]
+    pub password: SecretChange,
+    #[serde(default)]
+    pub private_key_content: SecretChange,
+    #[serde(default)]
+    pub passphrase: SecretChange,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BastionServerPayload {
+    pub bastion_server_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TestBastionResult {
+    pub latency_ms: u64,
+}
+
 /// `StoredConnection` is a per-engine tagged union — the backend's
 /// counterpart to the frontend's `Connection` discriminated union
 /// (see ADR-0010). Each variant carries exactly the fields its engine
@@ -168,6 +301,8 @@ pub(crate) struct PgStoredConnection {
     /// See ADR-0013. Missing or empty fields fall back to PG defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver_options: Option<PgDriverOptions>,
+    #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
+    pub ssh_tunnel: SshTunnelConfig,
 }
 
 /// Per-connection driver/session knobs persisted on the Postgres
@@ -209,6 +344,8 @@ pub(crate) struct MySqlStoredConnection {
     pub last_activity_at: Option<String>,
     #[serde(default = "default_true")]
     pub ssl: bool,
+    #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
+    pub ssh_tunnel: SshTunnelConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -255,6 +392,8 @@ pub(crate) struct ClickHouseStoredConnection {
     /// a path (e.g. `/clickhouse`). Empty = root.
     #[serde(default)]
     pub url_path: String,
+    #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
+    pub ssh_tunnel: SshTunnelConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -289,6 +428,8 @@ pub(crate) struct RedisStoredConnection {
     /// See ADR-0009.
     #[serde(default)]
     pub read_only: bool,
+    #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
+    pub ssh_tunnel: SshTunnelConfig,
 }
 
 fn default_true() -> bool {
@@ -406,6 +547,41 @@ impl StoredConnection {
             Self::SQLite(c) => c.password = password,
             Self::ClickHouse(c) => c.password = password,
             Self::Redis(c) => c.password = password,
+        }
+    }
+
+    pub fn set_network_endpoint(&mut self, host: String, port: u16) -> Result<(), String> {
+        match self {
+            Self::PostgreSQL(c) => {
+                c.host = host;
+                c.port = port;
+            }
+            Self::MySQL(c) => {
+                c.host = host;
+                c.port = port;
+            }
+            Self::ClickHouse(c) => {
+                c.host = host;
+                c.port = port;
+            }
+            Self::Redis(c) => {
+                c.host = host;
+                c.port = port;
+            }
+            Self::SQLite(_) => {
+                return Err("SQLite connections do not support SSH tunnels".to_string());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn ssh_tunnel(&self) -> Option<&SshTunnelConfig> {
+        match self {
+            Self::PostgreSQL(c) => Some(&c.ssh_tunnel),
+            Self::MySQL(c) => Some(&c.ssh_tunnel),
+            Self::SQLite(_) => None,
+            Self::ClickHouse(c) => Some(&c.ssh_tunnel),
+            Self::Redis(c) => Some(&c.ssh_tunnel),
         }
     }
 }

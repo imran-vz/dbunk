@@ -362,6 +362,10 @@ export type ConnectionFormValues = {
   dbNumber?: number;
   useTls?: boolean;
   verifyTlsCert?: boolean;
+  sshTunnelEnabled?: boolean;
+  sshTunnelBastionServerId?: string;
+  sshTunnelLocalBindHost?: string;
+  sshTunnelLocalPort?: number;
 };
 
 export type ConnectionFormIssue = {
@@ -430,6 +434,9 @@ export function validateConnection(
       break;
     }
   }
+  if (policy.kind !== "file") {
+    validateTunnelFields(value, issues);
+  }
   return issues;
 }
 
@@ -477,5 +484,29 @@ function validatePasswordRequired(
   if (mode === "edit") return;
   if (!value.password?.trim()) {
     issues.push({ path: "password", message: "Password is required" });
+  }
+}
+
+function validateTunnelFields(
+  value: ConnectionFormValues,
+  issues: ConnectionFormIssue[],
+): void {
+  if (!value.sshTunnelEnabled) {
+    return;
+  }
+  if (!value.sshTunnelBastionServerId?.trim()) {
+    issues.push({
+      path: "sshTunnelBastionServerId",
+      message: "Bastion Server is required",
+    });
+  }
+  if (
+    value.sshTunnelLocalPort !== undefined &&
+    (value.sshTunnelLocalPort < 1 || value.sshTunnelLocalPort > 65535)
+  ) {
+    issues.push({
+      path: "sshTunnelLocalPort",
+      message: "Local port must be between 1 and 65535",
+    });
   }
 }

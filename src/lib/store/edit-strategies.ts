@@ -36,9 +36,10 @@ import type {
   Connection,
   EditOutcome,
   TableDataState,
+  TableRef,
   TableStructure,
 } from "./types";
-import { tableStructureKey } from "./types";
+import { tableDataKey, tableStructureKey } from "./types";
 
 export type CellEditPayload = {
   rowIndex: number;
@@ -95,7 +96,8 @@ export const resolveEditContext = (params: {
   tableData: Record<string, TableDataState>;
   tableStructure: Record<string, TableStructure>;
   connections: Connection[];
-  tableName: string;
+  tableName?: string;
+  ref?: TableRef;
   capability: "canUpdateRows" | "canDeleteRows";
   action: "cell edits" | "row deletes";
 }): EditContextResult => {
@@ -104,11 +106,19 @@ export const resolveEditContext = (params: {
     tableStructure,
     connections,
     tableName,
+    ref,
     capability,
     action,
   } = params;
 
-  const dataEntry = findTableData(tableData, tableName);
+  const dataEntry = ((): [string, TableDataState] | null => {
+    if (ref) {
+      const key = tableDataKey(ref.connectionId, ref.schema, ref.table);
+      const data = tableData[key];
+      return data ? [key, data] : null;
+    }
+    return findTableData(tableData, tableName ?? "");
+  })();
   if (!dataEntry) {
     return {
       ok: false,

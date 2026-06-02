@@ -15,9 +15,9 @@ these terms rather than coining synonyms.
   `lastActivityAt`) plus runtime fields (`status` =
   `Connected` / `Read only` / `Disconnected`, `latency`, `lastSync`,
   optional `errorMessage`) live on every variant. Persisted in the
-  local SQLite database (`~/.config/dbunk/dbunk.sqlite`). Password
-  storage is app-wide: encrypted SQLite is recommended, OS keychain
-  is available, unencrypted SQLite is available with warning
+  local SQLite database (`~/.config/dbunk/dbunk.sqlite`). Database
+  credential storage is app-wide: encrypted SQLite is recommended, OS
+  keychain is available, unencrypted SQLite is available with warning
   (ADR-0007).
   Engine-class-specific fields live on their variants and **only
   their variants** — TypeScript narrows on `connection.engine` to
@@ -36,6 +36,16 @@ these terms rather than coining synonyms.
   (variant fields next to the `engine` tag). The Rust backend
   hydrates credentials internally before DB operations; stored
   passwords are not returned to the frontend.
+- **Bastion Server** — a reusable saved SSH endpoint used to reach
+  database endpoints that are not directly reachable from the user's
+  machine. It owns one active SSH credential, separate from any
+  database credential on a Connection.
+- **SSH Tunnel** — a Connection's routing choice to forward its
+  database traffic through a Bastion Server. It routes the Connection's
+  database endpoint rather than replacing it, and may carry
+  connection-specific forwarding options; applies to network-backed
+  Connections, while SQLite has no tunnel because it has no network
+  transport.
 - **Active Connection** — the one currently selected in the sidebar; drives
   the schema explorer (relational engines) or keyspace browser (Redis), the
   overview / server tab, and any newly opened tab.
@@ -129,6 +139,13 @@ ADR-0009 for the writes-by-default posture.
   `pubsub` (singleton subscription monitor), `server` (singleton INFO /
   health view; also the default-opened tab when a Redis connection becomes
   active). The active tab is identified by its **active tab ID**.
+- **Table Session** — the per-table client-side session for a relational
+  `table` Workspace Tab. Identified by `(connectionId, schema, table)`, not
+  by table name alone. Owns the loaded **Table Data**, loaded **Table
+  Structure**, pending **Cell Edit** buffer, write lifecycle status, and the
+  caller-facing **Edit Outcome** actions for cell-edit commit, row insert, and
+  row delete. Export, copy-table, schema-map, DDL, and maintenance workflows
+  are table-adjacent but remain outside the Table Session.
 - **Query History Entry** — a record of one executed query (sql, connection,
   status, runtime, optional error). Capped at 200 entries, persisted in
   SQLite.

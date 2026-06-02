@@ -48,6 +48,7 @@ import {
   RedisDbNumberField,
 } from "@/components/connection-form/redis-fields";
 import { SqliteFields } from "@/components/connection-form/sqlite-fields";
+import { TunnelFields } from "@/components/connection-form/tunnel-fields";
 import {
   type ConnectionFormApi,
   useConnectionForm,
@@ -202,6 +203,7 @@ function HostAuthSection({
           <RoleField form={form} />
           {isClickHouse ? <ClickHouseFields form={form} /> : null}
           {isRedis ? <RedisAdvancedFields form={form} /> : null}
+          <TunnelFields form={form} />
         </>
       ) : null}
     </>

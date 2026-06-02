@@ -101,6 +101,7 @@ export function AppShell() {
     setEditorTheme,
     toggleLeftSidebar,
     loadAppSettings,
+    loadBastionServers,
     loadConnections,
     loadQueryHistory,
     loadSavedQueries,
@@ -169,10 +170,12 @@ export function AppShell() {
       return;
     }
     void loadConnections();
+    void loadBastionServers();
     void loadQueryHistory();
     void loadSavedQueries();
   }, [
     appSettings?.credentialState,
+    loadBastionServers,
     loadConnections,
     loadQueryHistory,
     loadSavedQueries,

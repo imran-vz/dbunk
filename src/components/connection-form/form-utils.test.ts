@@ -224,6 +224,56 @@ describe("buildStoredConnectionFromForm", () => {
       role: "read/write",
     });
   });
+
+  it("projects SSH tunnel config only for network-backed engines", () => {
+    const out = buildStoredConnectionFromForm(
+      {
+        ...baseForm,
+        engine: "PostgreSQL",
+        sshTunnelEnabled: true,
+        sshTunnelBastionServerId: "bastion-1",
+        sshTunnelLocalBindHost: " 127.0.0.1 ",
+        sshTunnelLocalPort: 15432,
+      },
+      "id-tunnel",
+    );
+    expect(out).toMatchObject({
+      engine: "PostgreSQL",
+      sshTunnel: {
+        enabled: true,
+        bastionServerId: "bastion-1",
+        localBindHost: "127.0.0.1",
+        localPort: 15432,
+      },
+    });
+  });
+
+  it("omits SSH tunnel config when disabled", () => {
+    const out = buildStoredConnectionFromForm(
+      {
+        ...baseForm,
+        engine: "Redis",
+        sshTunnelEnabled: false,
+        sshTunnelBastionServerId: "bastion-1",
+      },
+      "id-no-tunnel",
+    );
+    expect(out).not.toHaveProperty("sshTunnel");
+  });
+
+  it("excludes SSH tunnel config from SQLite", () => {
+    const out = buildStoredConnectionFromForm(
+      {
+        ...baseForm,
+        engine: "SQLite",
+        database: "/tmp/local.db",
+        sshTunnelEnabled: true,
+        sshTunnelBastionServerId: "bastion-1",
+      },
+      "id-sqlite-tunnel",
+    );
+    expect(out).not.toHaveProperty("sshTunnel");
+  });
 });
 
 describe("buildConnectionFromForm", () => {
@@ -273,6 +323,36 @@ describe("defaultValuesFromConnection", () => {
       dbNumber: 2,
       useTls: true,
       verifyTlsCert: false,
+    });
+  });
+
+  it("hydrates SSH tunnel defaults from a stored network connection", () => {
+    const values = defaultValuesFromConnection({
+      id: "x",
+      name: "pg",
+      engine: "PostgreSQL",
+      host: "pg.internal",
+      database: "postgres",
+      port: 5432,
+      user: "postgres",
+      password: "should-not-appear",
+      role: "read/write",
+      ssl: true,
+      sshTunnel: {
+        enabled: true,
+        bastionServerId: "bastion-1",
+        localBindHost: "127.0.0.2",
+        localPort: 15432,
+      },
+      status: "Disconnected",
+      latency: "--",
+    });
+    expect(values.password).toBe("");
+    expect(values).toMatchObject({
+      sshTunnelEnabled: true,
+      sshTunnelBastionServerId: "bastion-1",
+      sshTunnelLocalBindHost: "127.0.0.2",
+      sshTunnelLocalPort: 15432,
     });
   });
 });

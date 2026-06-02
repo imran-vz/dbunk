@@ -101,6 +101,62 @@ export type AppSettingsStatus =
   | { state: "error"; error: string };
 
 // ---------------------------------------------------------------------------
+// Bastion servers + SSH tunnels
+// ---------------------------------------------------------------------------
+
+export type BastionAuthMethod =
+  | "password"
+  | "privateKeyPath"
+  | "privateKeyContent";
+
+export type BastionServer = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  authMethod: BastionAuthMethod;
+  privateKeyPath?: string;
+  hostKeyFingerprint?: string;
+  createdAt: string;
+  updatedAt: string;
+  hasPassword: boolean;
+  hasPrivateKeyContent: boolean;
+  hasPassphrase: boolean;
+};
+
+export type SecretChange =
+  | { action: "keep" }
+  | { action: "set"; value: string }
+  | { action: "clear" };
+
+export type SaveBastionServerInput = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  authMethod: BastionAuthMethod;
+  privateKeyPath?: string;
+  password: SecretChange;
+  privateKeyContent: SecretChange;
+  passphrase: SecretChange;
+};
+
+export type BastionStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready" }
+  | { state: "error"; error: string };
+
+export type SshTunnelConfig = {
+  enabled: boolean;
+  bastionServerId?: string;
+  localBindHost?: string;
+  localPort?: number;
+};
+
+// ---------------------------------------------------------------------------
 // Connection records
 // ---------------------------------------------------------------------------
 
@@ -152,10 +208,12 @@ export type PgStoredConnection = ConnectionCommon & {
   /** Optional driver/session knobs applied after every connect.
    *  See ADR-0013. Missing or empty fields fall back to PG defaults. */
   driverOptions?: PgDriverOptions;
+  sshTunnel?: SshTunnelConfig;
 };
 export type MySqlStoredConnection = ConnectionCommon & {
   engine: "MySQL";
   ssl: boolean;
+  sshTunnel?: SshTunnelConfig;
 };
 export type SqliteStoredConnection = ConnectionCommon & {
   engine: "SQLite";
@@ -166,6 +224,7 @@ export type ClickHouseStoredConnection = ConnectionCommon & {
   useHttps: boolean;
   /** URL path prefix for proxied deployments (e.g. `/clickhouse`). */
   urlPath: string;
+  sshTunnel?: SshTunnelConfig;
 };
 export type RedisStoredConnection = ConnectionCommon & {
   engine: "Redis";
@@ -179,6 +238,7 @@ export type RedisStoredConnection = ConnectionCommon & {
    *  every write for this connection, independent of the replica-role
    *  check. See ADR-0009. */
   readOnly: boolean;
+  sshTunnel?: SshTunnelConfig;
 };
 
 export type StoredConnection =
@@ -253,6 +313,12 @@ export type LoadingStatus = TableLoadStatus;
 // Table data + structure
 // ---------------------------------------------------------------------------
 
+export type TableRef = {
+  connectionId: string;
+  schema: string;
+  table: string;
+};
+
 export type TableDataState = {
   connectionId: string;
   schema: string;
@@ -276,6 +342,9 @@ export const tableStructureKey = (
   schema: string,
   table: string,
 ) => `${connectionId}::${schema}::${table}`;
+
+export const tableSessionKey = (ref: TableRef) =>
+  tableDataKey(ref.connectionId, ref.schema, ref.table);
 
 export type ColumnInfo = {
   name: string;
@@ -411,6 +480,27 @@ export type EditOutcome =
   | { kind: "failed"; reason: string; mutationId?: string }
   | { kind: "timeout"; remaining: string[] }
   | { kind: "noop" };
+
+export type TableSessionCapabilities = {
+  structureLoaded: boolean;
+  isReadOnly: boolean;
+  isWriting: boolean;
+  canAddRow: boolean;
+  canDeleteRows: boolean;
+  canEditCells: boolean;
+};
+
+export type TableSessionSnapshot = {
+  ref: TableRef;
+  key: string;
+  data?: TableDataState;
+  structure?: TableStructure;
+  loadStatus?: TableLoadStatus;
+  structureStatus?: TableStructureStatus;
+  writeStatus?: TableEditsCommitStatus;
+  edits: Record<number, Record<number, string>>;
+  capabilities: TableSessionCapabilities;
+};
 
 export type SchemaRelationshipsStatus =
   | { state: "idle" }
@@ -630,7 +720,12 @@ export type ActiveView = "workspace" | "settings";
  * left and so other entry points (sidebar "manage connections" cog,
  * future deep links) can open Settings on a specific tab.
  */
-export type SettingsTab = "general" | "connections" | "security" | "about";
+export type SettingsTab =
+  | "general"
+  | "connections"
+  | "bastions"
+  | "security"
+  | "about";
 
 /**
  * Sub-tab inside a relational connection's Overview surface. The
@@ -657,6 +752,7 @@ export type OverviewTabId =
 // AppStoreState — the full store shape
 // ---------------------------------------------------------------------------
 
+import type { BastionsSlice } from "./bastions";
 import type { ConnectionsSlice } from "./connections";
 import type { CredentialsSlice } from "./credentials";
 import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
@@ -676,6 +772,7 @@ import type { WorkspaceTabsSlice } from "./workspace-tabs";
  * those files) is resolved by `import type`.
  */
 export type AppStoreState = ConnectionsSlice &
+  BastionsSlice &
   CredentialsSlice &
   WorkspaceTabsSlice &
   RelationalTablesSlice &

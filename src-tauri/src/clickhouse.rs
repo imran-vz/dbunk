@@ -1040,6 +1040,7 @@ mod tests {
             last_activity_at: None,
             use_https: false,
             url_path: String::new(),
+            ssh_tunnel: crate::SshTunnelConfig::default(),
         })
     }
 

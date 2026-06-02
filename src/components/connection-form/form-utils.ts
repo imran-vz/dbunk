@@ -16,6 +16,7 @@ import type {
   PgStoredConnection,
   RedisStoredConnection,
   SqliteStoredConnection,
+  SshTunnelConfig,
   StoredConnection,
 } from "@/lib/store";
 
@@ -35,6 +36,10 @@ export const connectionSchema = z.object({
   useTls: z.boolean().optional(),
   verifyTlsCert: z.boolean().optional(),
   readOnly: z.boolean().optional(),
+  sshTunnelEnabled: z.boolean().optional(),
+  sshTunnelBastionServerId: z.string().optional(),
+  sshTunnelLocalBindHost: z.string().optional(),
+  sshTunnelLocalPort: z.number().int().optional(),
 });
 
 export type ConnectionFormData = z.infer<typeof connectionSchema>;
@@ -55,6 +60,10 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   useTls: false,
   verifyTlsCert: true,
   readOnly: false,
+  sshTunnelEnabled: false,
+  sshTunnelBastionServerId: "",
+  sshTunnelLocalBindHost: "127.0.0.1",
+  sshTunnelLocalPort: undefined,
 };
 
 type CommonShape = {
@@ -85,14 +94,26 @@ function buildPg(
   value: ConnectionFormData,
   common: CommonShape,
 ): PgStoredConnection {
-  return { ...common, engine: "PostgreSQL", ssl: value.ssl ?? true };
+  const sshTunnel = tunnelFromForm(value);
+  return {
+    ...common,
+    engine: "PostgreSQL",
+    ssl: value.ssl ?? true,
+    ...(sshTunnel ? { sshTunnel } : null),
+  };
 }
 
 function buildMySql(
   value: ConnectionFormData,
   common: CommonShape,
 ): MySqlStoredConnection {
-  return { ...common, engine: "MySQL", ssl: value.ssl ?? true };
+  const sshTunnel = tunnelFromForm(value);
+  return {
+    ...common,
+    engine: "MySQL",
+    ssl: value.ssl ?? true,
+    ...(sshTunnel ? { sshTunnel } : null),
+  };
 }
 
 function buildSqlite(common: CommonShape): SqliteStoredConnection {
@@ -103,11 +124,13 @@ function buildClickHouse(
   value: ConnectionFormData,
   common: CommonShape,
 ): ClickHouseStoredConnection {
+  const sshTunnel = tunnelFromForm(value);
   return {
     ...common,
     engine: "ClickHouse",
     useHttps: value.useHttps ?? false,
     urlPath: value.urlPath ?? "",
+    ...(sshTunnel ? { sshTunnel } : null),
   };
 }
 
@@ -115,6 +138,7 @@ function buildRedis(
   value: ConnectionFormData,
   common: CommonShape,
 ): RedisStoredConnection {
+  const sshTunnel = tunnelFromForm(value);
   return {
     ...common,
     engine: "Redis",
@@ -122,6 +146,26 @@ function buildRedis(
     useTls: value.useTls ?? false,
     verifyTlsCert: value.verifyTlsCert ?? true,
     readOnly: value.readOnly ?? false,
+    ...(sshTunnel ? { sshTunnel } : null),
+  };
+}
+
+function tunnelFromForm(
+  value: ConnectionFormData,
+): SshTunnelConfig | undefined {
+  if (!value.sshTunnelEnabled) {
+    return undefined;
+  }
+  const bastionServerId = value.sshTunnelBastionServerId?.trim();
+  return {
+    enabled: true,
+    ...(bastionServerId ? { bastionServerId } : null),
+    ...(value.sshTunnelLocalBindHost?.trim()
+      ? { localBindHost: value.sshTunnelLocalBindHost.trim() }
+      : null),
+    ...(value.sshTunnelLocalPort
+      ? { localPort: value.sshTunnelLocalPort }
+      : null),
   };
 }
 
@@ -176,11 +220,20 @@ export function defaultValuesFromConnection(
     password: "",
     role: connection.role,
   };
+  const tunnel =
+    connection.engine === "SQLite" ? undefined : connection.sshTunnel;
+  const tunnelDefaults = {
+    sshTunnelEnabled: tunnel?.enabled ?? false,
+    sshTunnelBastionServerId: tunnel?.bastionServerId ?? "",
+    sshTunnelLocalBindHost: tunnel?.localBindHost ?? "127.0.0.1",
+    sshTunnelLocalPort: tunnel?.localPort,
+  };
   switch (connection.engine) {
     case "PostgreSQL":
     case "MySQL":
       return {
         ...common,
+        ...tunnelDefaults,
         ssl: connection.ssl,
         useHttps: false,
         urlPath: "",
@@ -192,6 +245,7 @@ export function defaultValuesFromConnection(
     case "SQLite":
       return {
         ...common,
+        ...tunnelDefaults,
         ssl: true,
         useHttps: false,
         urlPath: "",
@@ -203,6 +257,7 @@ export function defaultValuesFromConnection(
     case "ClickHouse":
       return {
         ...common,
+        ...tunnelDefaults,
         ssl: true,
         useHttps: connection.useHttps,
         urlPath: connection.urlPath,
@@ -214,6 +269,7 @@ export function defaultValuesFromConnection(
     case "Redis":
       return {
         ...common,
+        ...tunnelDefaults,
         ssl: true,
         useHttps: false,
         urlPath: "",
