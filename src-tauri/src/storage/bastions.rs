@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use sqlx::{Row, SqlitePool};
 
-use crate::{BastionAuthMethod, BastionServer};
+use crate::{BastionAuthMethod, BastionServer, SshTunnelConfig};
 
 use super::{i64_to_u16, now};
 
@@ -102,16 +102,12 @@ pub async fn count_connections_referencing_bastion(
     pool: &SqlitePool,
     bastion_id: &str,
 ) -> Result<i64, String> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)
-         FROM connections
-         WHERE ssh_tunnel_enabled = 1 AND ssh_tunnel_bastion_server_id = ?",
+    Ok(i64::try_from(
+        connection_ids_referencing_bastion(pool, bastion_id)
+            .await?
+            .len(),
     )
-    .bind(bastion_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| error.to_string())?;
-    Ok(count)
+    .unwrap_or(i64::MAX))
 }
 
 pub async fn connection_ids_referencing_bastion(
@@ -119,16 +115,33 @@ pub async fn connection_ids_referencing_bastion(
     bastion_id: &str,
 ) -> Result<Vec<String>, String> {
     let rows = sqlx::query(
-        "SELECT id
+        "SELECT id, ssh_tunnel_bastion_server_id, ssh_tunnel_jump_chain
          FROM connections
-         WHERE ssh_tunnel_enabled = 1 AND ssh_tunnel_bastion_server_id = ?
-         ORDER BY id",
+         WHERE ssh_tunnel_enabled = 1",
     )
-    .bind(bastion_id)
     .fetch_all(pool)
     .await
     .map_err(|error| error.to_string())?;
-    Ok(rows.into_iter().map(|row| row.get("id")).collect())
+
+    let mut ids = Vec::new();
+    for row in rows {
+        let connection_id: String = row.get("id");
+        let final_bastion_id: Option<String> = row.get("ssh_tunnel_bastion_server_id");
+        let jump_chain_json: Option<String> = row.get("ssh_tunnel_jump_chain");
+        let jump_chain =
+            super::parse_ssh_tunnel_jump_chain(jump_chain_json.as_deref(), &connection_id)?;
+        let tunnel = SshTunnelConfig {
+            enabled: true,
+            bastion_server_id: final_bastion_id,
+            jump_chain,
+            ..SshTunnelConfig::default()
+        };
+        if tunnel.references_bastion(bastion_id) {
+            ids.push(connection_id);
+        }
+    }
+    ids.sort();
+    Ok(ids)
 }
 
 pub async fn update_bastion_host_key_fingerprint(

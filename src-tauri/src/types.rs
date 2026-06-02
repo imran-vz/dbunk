@@ -121,7 +121,7 @@ pub(crate) struct ChangeCredentialStoragePayload {
     pub confirm: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SshTunnelConfig {
     #[serde(default)]
@@ -132,6 +132,32 @@ pub(crate) struct SshTunnelConfig {
     pub local_bind_host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub compression: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_interval_seconds: Option<u32>,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub keepalive_want_reply: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jump_chain: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_command: Option<String>,
+}
+
+impl Default for SshTunnelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bastion_server_id: None,
+            local_bind_host: None,
+            local_port: None,
+            compression: false,
+            keepalive_interval_seconds: None,
+            keepalive_want_reply: true,
+            jump_chain: Vec::new(),
+            proxy_command: None,
+        }
+    }
 }
 
 impl SshTunnelConfig {
@@ -140,7 +166,78 @@ impl SshTunnelConfig {
             && self.bastion_server_id.is_none()
             && self.local_bind_host.is_none()
             && self.local_port.is_none()
+            && !self.compression
+            && self.keepalive_interval_seconds.is_none()
+            && self.keepalive_want_reply
+            && self.jump_chain.is_empty()
+            && self.proxy_command.is_none()
     }
+
+    pub fn normalized(&self) -> Self {
+        if !self.enabled {
+            return Self::default();
+        }
+        let bastion_server_id = normalize_optional_text(self.bastion_server_id.as_deref());
+        let local_bind_host = normalize_optional_text(self.local_bind_host.as_deref());
+        let proxy_command = normalize_optional_text(self.proxy_command.as_deref());
+        let jump_chain = self
+            .jump_chain
+            .iter()
+            .filter_map(|bastion_id| normalize_optional_text(Some(bastion_id)))
+            .collect::<Vec<_>>();
+
+        Self {
+            enabled: true,
+            bastion_server_id,
+            local_bind_host,
+            local_port: self.local_port,
+            compression: self.compression,
+            keepalive_interval_seconds: self.keepalive_interval_seconds,
+            keepalive_want_reply: self.keepalive_want_reply,
+            jump_chain,
+            proxy_command,
+        }
+    }
+
+    pub fn referenced_bastion_ids(&self) -> Vec<String> {
+        let normalized = self.normalized();
+        if !normalized.enabled {
+            return Vec::new();
+        }
+        let mut ids = Vec::new();
+        for bastion_id in normalized.jump_chain {
+            if !ids.iter().any(|id| id == &bastion_id) {
+                ids.push(bastion_id);
+            }
+        }
+        if let Some(bastion_id) = normalized.bastion_server_id {
+            if !ids.iter().any(|id| id == &bastion_id) {
+                ids.push(bastion_id);
+            }
+        }
+        ids
+    }
+
+    pub fn references_bastion(&self, bastion_id: &str) -> bool {
+        self.referenced_bastion_ids()
+            .iter()
+            .any(|id| id == bastion_id)
+    }
+}
+
+fn normalize_optional_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

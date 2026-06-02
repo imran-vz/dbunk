@@ -78,6 +78,7 @@ mod tests {
             bastion_server_id: Some("bastion-1".to_string()),
             local_bind_host: None,
             local_port: None,
+            ..SshTunnelConfig::default()
         }
     }
 

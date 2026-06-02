@@ -42,16 +42,6 @@ before code lands.
   with a streaming path.
 - **XML import/export** — only if XML is still in the parity scope.
 
-### SSH tunnels / bastion servers
-
-- **Deferred SSH tunnel polish** (ADR-0018) — after the first slice
-  ships persisted Bastion Servers, per-Connection SSH Tunnel routing,
-  Test Bastion, and Test Connection through the tunnel, finish
-  bastion search/filter, import-key wizard or guided key capture,
-  richer host-key reset UX, advanced SSH options (compression,
-  keepalive, jump chains, proxy commands), and broader Settings
-  polish.
-
 ### Redis Tier 2 + cross-cutting (designs/FOLLOWUPS.md)
 
 - **Cross-tab DB switching cascade** — the keyspace-browser picker
@@ -249,6 +239,12 @@ listed as pending and are now done.
   when `role === "master" && connected_slaves > 0`. Dismiss state is
   session-local (a future migration can persist
   `dismissed_replica_warning_at` on the connection record).
+- **Deferred SSH tunnel polish** — ADR-0018 follow-up items shipped:
+  Bastion Server search/filter and Settings polish, guided stored
+  private-key capture, typed host-key trust reset, and advanced
+  per-Connection SSH Tunnel options for compression, keepalive
+  interval/reply handling, Bastion Server jump chains, and proxy
+  commands.
 - **Server tab `CONFIG SET` inline editor** — `redis_set_config`
   Tauri command + per-row edit/save/cancel in `ConfigCard`. Guarded
   by `window.confirm` since `CONFIG SET` is a destructive command.

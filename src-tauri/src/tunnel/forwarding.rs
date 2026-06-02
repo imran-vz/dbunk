@@ -15,6 +15,22 @@ const CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const PUMP_IDLE_SLEEP: Duration = Duration::from_millis(5);
 const MAX_BUFFERED_BYTES: usize = 256 * 1024;
 
+pub(super) struct BridgeHandle {
+    stop: Arc<AtomicBool>,
+}
+
+impl BridgeHandle {
+    pub(super) fn shutdown(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+    }
+}
+
+impl Drop for BridgeHandle {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 pub(super) fn spawn_forward_accept_loop(
     listener: TcpListener,
     stop: Arc<AtomicBool>,
@@ -52,6 +68,43 @@ pub(super) fn spawn_forward_accept_loop(
     });
 }
 
+pub(super) fn spawn_channel_bridge(
+    session: Session,
+    remote_host: String,
+    remote_port: u16,
+) -> Result<(TcpStream, BridgeHandle), String> {
+    let (client, bridge) = connected_tcp_pair()?;
+    let local_addr = bridge.local_addr().map_err(|error| error.to_string())?;
+    let mut channel = open_direct_channel(&session, &remote_host, remote_port, local_addr)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread_stop = stop.clone();
+    thread::spawn(move || {
+        let mut bridge = bridge;
+        if let Err(error) = bridge.set_nonblocking(true) {
+            log::warn!("SSH jump bridge failed to switch to nonblocking mode: {error}");
+            return;
+        }
+        if let Err(error) = pump_nonblocking(&mut bridge, &mut channel, Some(&thread_stop)) {
+            log::warn!("SSH jump bridge closed with error: {error}");
+        }
+    });
+    Ok((client, BridgeHandle { stop }))
+}
+
+pub(super) fn connected_tcp_pair() -> Result<(TcpStream, TcpStream), String> {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|error| format!("Failed to bind local SSH bridge: {error}"))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| format!("Failed to inspect local SSH bridge: {error}"))?;
+    let client = TcpStream::connect(address)
+        .map_err(|error| format!("Failed to connect local SSH bridge: {error}"))?;
+    let (server, _) = listener
+        .accept()
+        .map_err(|error| format!("Failed to accept local SSH bridge: {error}"))?;
+    Ok((client, server))
+}
+
 fn handle_forward_stream(
     mut stream: TcpStream,
     session: Session,
@@ -63,7 +116,7 @@ fn handle_forward_stream(
         .set_nonblocking(true)
         .map_err(|error| error.to_string())?;
     let mut channel = open_direct_channel(&session, remote_host, remote_port, local_addr)?;
-    pump_nonblocking(&mut stream, &mut channel)
+    pump_nonblocking(&mut stream, &mut channel, None)
 }
 
 fn open_direct_channel(
@@ -102,7 +155,11 @@ fn ssh_would_block(error: &ssh2::Error) -> bool {
     io_error.kind() == std::io::ErrorKind::WouldBlock
 }
 
-fn pump_nonblocking(stream: &mut TcpStream, channel: &mut ssh2::Channel) -> Result<(), String> {
+fn pump_nonblocking(
+    stream: &mut TcpStream,
+    channel: &mut ssh2::Channel,
+    stop: Option<&AtomicBool>,
+) -> Result<(), String> {
     let mut to_channel = Vec::<u8>::new();
     let mut to_stream = Vec::<u8>::new();
     let mut stream_eof = false;
@@ -111,6 +168,10 @@ fn pump_nonblocking(stream: &mut TcpStream, channel: &mut ssh2::Channel) -> Resu
     let mut temp = [0_u8; 16 * 1024];
 
     loop {
+        if stop.is_some_and(|stop| stop.load(Ordering::SeqCst)) {
+            let _ = channel.close();
+            return Ok(());
+        }
         let mut progressed = false;
 
         if !stream_eof && to_channel.len() < MAX_BUFFERED_BYTES {

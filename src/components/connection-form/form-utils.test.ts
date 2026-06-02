@@ -234,6 +234,11 @@ describe("buildStoredConnectionFromForm", () => {
         sshTunnelBastionServerId: "bastion-1",
         sshTunnelLocalBindHost: " 127.0.0.1 ",
         sshTunnelLocalPort: 15432,
+        sshTunnelCompression: true,
+        sshTunnelKeepaliveIntervalSeconds: 30,
+        sshTunnelKeepaliveWantReply: false,
+        sshTunnelJumpChain: [" jump-1 ", "", "jump-2"],
+        sshTunnelProxyCommand: " ssh -W %h:%p edge ",
       },
       "id-tunnel",
     );
@@ -244,6 +249,11 @@ describe("buildStoredConnectionFromForm", () => {
         bastionServerId: "bastion-1",
         localBindHost: "127.0.0.1",
         localPort: 15432,
+        compression: true,
+        keepaliveIntervalSeconds: 30,
+        keepaliveWantReply: false,
+        jumpChain: ["jump-1", "jump-2"],
+        proxyCommand: "ssh -W %h:%p edge",
       },
     });
   });
@@ -343,6 +353,11 @@ describe("defaultValuesFromConnection", () => {
         bastionServerId: "bastion-1",
         localBindHost: "127.0.0.2",
         localPort: 15432,
+        compression: true,
+        keepaliveIntervalSeconds: 45,
+        keepaliveWantReply: false,
+        jumpChain: ["jump-1"],
+        proxyCommand: "nc %h %p",
       },
       status: "Disconnected",
       latency: "--",
@@ -353,6 +368,11 @@ describe("defaultValuesFromConnection", () => {
       sshTunnelBastionServerId: "bastion-1",
       sshTunnelLocalBindHost: "127.0.0.2",
       sshTunnelLocalPort: 15432,
+      sshTunnelCompression: true,
+      sshTunnelKeepaliveIntervalSeconds: 45,
+      sshTunnelKeepaliveWantReply: false,
+      sshTunnelJumpChain: ["jump-1"],
+      sshTunnelProxyCommand: "nc %h %p",
     });
   });
 });

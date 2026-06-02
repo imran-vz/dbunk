@@ -339,6 +339,48 @@ describe("validateConnection", () => {
     expect(pathsOf(issues)).toContain("sshTunnelLocalPort");
   });
 
+  it("rejects invalid SSH keepalive intervals", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    const issues = validateConnection(
+      policy,
+      baseValues({
+        sshTunnelEnabled: true,
+        sshTunnelBastionServerId: "bastion-1",
+        sshTunnelKeepaliveIntervalSeconds: 1,
+      }),
+      "new",
+    );
+    expect(pathsOf(issues)).toContain("sshTunnelKeepaliveIntervalSeconds");
+  });
+
+  it("rejects SSH jump chains that loop through the selected Bastion Server", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    const issues = validateConnection(
+      policy,
+      baseValues({
+        sshTunnelEnabled: true,
+        sshTunnelBastionServerId: "bastion-1",
+        sshTunnelJumpChain: ["jump-1", "bastion-1"],
+      }),
+      "new",
+    );
+    expect(pathsOf(issues)).toContain("sshTunnelJumpChain");
+  });
+
+  it("rejects duplicate SSH jump-chain Bastion Servers", () => {
+    const policy = connectionFormPolicy("PostgreSQL");
+    const issues = validateConnection(
+      policy,
+      baseValues({
+        sshTunnelEnabled: true,
+        sshTunnelBastionServerId: "bastion-1",
+        sshTunnelJumpChain: ["jump-1", " jump-1 "],
+      }),
+      "new",
+    );
+    expect(pathsOf(issues)).toContain("sshTunnelJumpChain");
+  });
+
   it("SQLite requires only the database file path", () => {
     const policy = connectionFormPolicy("SQLite");
     const valid = validateConnection(
