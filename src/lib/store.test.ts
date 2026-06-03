@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
-  tauriInvoke: vi.fn(),
+  tauriInvoke: vi.fn(() => Promise.resolve()),
   errorToMessage: (error: unknown) =>
     error instanceof Error ? error.message : String(error),
 }));
@@ -31,6 +31,7 @@ const resetStore = () => {
 beforeEach(() => {
   mockedIsTauri.mockReturnValue(true);
   mockedInvoke.mockReset();
+  mockedInvoke.mockResolvedValue(undefined);
   resetStore();
 });
 
