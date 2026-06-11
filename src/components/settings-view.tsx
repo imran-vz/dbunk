@@ -1,5 +1,6 @@
 import {
   IconAdjustments,
+  IconBox,
   IconDatabase,
   IconInfoCircle,
   IconKey,
@@ -12,6 +13,7 @@ import { useState } from "react";
 
 import { BastionServersTab } from "@/components/bastion-servers-tab";
 import { ConnectionsView } from "@/components/connections-view";
+import { ManagedServersTab } from "@/components/managed-servers-tab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CredentialStorageMode, SettingsTab } from "@/lib/store";
@@ -33,6 +35,7 @@ const TABS: Array<{
   { id: "general", label: "General", icon: IconAdjustments },
   { id: "connections", label: "Connections", icon: IconDatabase },
   { id: "bastions", label: "Bastion Servers", icon: IconServer },
+  { id: "local-databases", label: "Local Databases", icon: IconBox },
   { id: "security", label: "Security", icon: IconShieldLock },
   { id: "about", label: "About", icon: IconInfoCircle },
 ];
@@ -75,6 +78,7 @@ export function SettingsView() {
         {activeTab === "general" ? <GeneralTab /> : null}
         {activeTab === "connections" ? <ConnectionsView /> : null}
         {activeTab === "bastions" ? <BastionServersTab /> : null}
+        {activeTab === "local-databases" ? <ManagedServersTab /> : null}
         {activeTab === "security" ? <SecurityTab /> : null}
         {activeTab === "about" ? <AboutTab /> : null}
       </div>

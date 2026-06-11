@@ -36,6 +36,30 @@ these terms rather than coining synonyms.
   (variant fields next to the `engine` tag). The Rust backend
   hydrates credentials internally before DB operations; stored
   passwords are not returned to the frontend.
+- **Managed Server** — a local database server that dbunk itself
+  provisioned and whose lifecycle dbunk owns (create, start, stop,
+  destroy-with-data). Backed by a container runtime (Docker in v1),
+  with the data directory on a **named volume owned by the Managed
+  Server**, so the container and the data have independent lifetimes.
+  A separate entity from **Connection**, following the Bastion Server
+  precedent: provisioning creates one Managed Server plus one
+  Connection that points at it (the Connection wears a managed-server
+  badge in the UI). Deleting that Connection merely forgets the
+  endpoint; **Destroy** is the distinct, deliberately destructive
+  action on the Managed Server that removes both container and volume.
+- **Managed Server Status** — `Running` / `Starting` / `Stopped` /
+  `Orphaned`. Always derived live from the container runtime at
+  observation time, never trusted from the stored record (mirroring
+  Connection `status` being runtime-only). `Starting` covers dbunk's
+  auto-start-on-connect wait, surfaced to the user as a boot delay.
+  `Stopped` means the container exists but is not running, regardless
+  of who stopped it (dbunk or an external `docker stop`); it offers
+  Start. `Orphaned` means the container is gone (external removal);
+  it offers **Recreate** when the named volume survives (data intact)
+  and **Remove record** when the volume is gone too. Managed Servers
+  are never auto-started at boot (restart policy `no`) and are left
+  running when dbunk quits — container state changes only on user
+  action or connect intent.
 - **Bastion Server** — a reusable saved SSH endpoint used to reach
   database endpoints that are not directly reachable from the user's
   machine. It owns one active SSH credential, separate from any
@@ -173,6 +197,29 @@ ADR-0009 for the writes-by-default posture.
   caller-facing **Edit Outcome** actions for cell-edit commit, row insert, and
   row delete. Export, copy-table, schema-map, DDL, and maintenance workflows
   are table-adjacent but remain outside the Table Session.
+- **Table Seeding** — generating and inserting fake rows into an
+  *existing* relational table (relational class only; `not_applicable`
+  for keyvalue engines). Backend-owned: the frontend submits a **Seed
+  Spec** and the Rust side introspects the table structure, generates
+  constraint-respecting values, and inserts in batches inside one
+  transaction — all-or-nothing, so a failed seed never leaves partial
+  rows. NOT NULL, type, foreign-key (values sampled from the parent
+  table's real rows), and unique invariants are guaranteed by
+  construction; CHECK constraints and triggers are attempted, and a
+  database rejection rolls back the run and surfaces the engine's own
+  error verbatim. A foreign key whose parent table is empty fails fast
+  before generation ("seed the parent first") — seeding never cascades
+  writes to other tables. Table-adjacent like export and copy-table:
+  it lives outside the Table Session. Distinct from the lightweight
+  frontend mock-INSERT-SQL generator (`src/lib/mock-data.ts`), which
+  remains a copy-to-clipboard preview tool, not the engine.
+- **Seed Spec** — the user-authored input to one Table Seeding run:
+  row count, an optional random seed (auto-picked and displayed when
+  omitted, so every run is reproducible), and per-column settings —
+  generator choice (defaulted from column type plus name-based
+  semantic inference, e.g. `email` → emails), a NULL rate for
+  nullable columns, value ranges/lists/constants, or skip-column
+  (emit the database `DEFAULT`; automatic for identity columns).
 - **Query History Entry** — a record of one executed query (sql, connection,
   status, runtime, optional error). Capped at 200 entries, persisted in
   SQLite.

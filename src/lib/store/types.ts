@@ -149,6 +149,64 @@ export type BastionStatus =
   | { state: "ready" }
   | { state: "error"; error: string };
 
+// ---------------------------------------------------------------------------
+// Managed Servers (ADR-0019)
+// ---------------------------------------------------------------------------
+
+/** A Docker-provisioned local database dbunk owns the lifecycle of. */
+export type ManagedServer = {
+  id: string;
+  name: string;
+  engine: DatabaseEngine;
+  /** Major-version image tag, e.g. `"17"` for `postgres:17`. */
+  version: string;
+  port: number;
+  containerName: string;
+  volumeName: string;
+  database: string;
+  user: string;
+  /** The auto-created Connection pointing at this server. */
+  connectionId: string | null;
+  createdAt: string;
+};
+
+/** Status is derived live from Docker, never trusted from storage. */
+export type ManagedServerStatus = "running" | "stopped" | "orphaned";
+
+export type ManagedServerWithStatus = ManagedServer & {
+  status: ManagedServerStatus;
+  /** For `orphaned`: whether Recreate can restore data. */
+  volumeExists: boolean;
+};
+
+export type DockerStatus = {
+  available: boolean;
+  version: string | null;
+  error: string | null;
+};
+
+export type ProvisionManagedServerInput = {
+  name: string;
+  engine: "PostgreSQL" | "MySQL";
+  version: string;
+  port?: number;
+  database?: string;
+  user?: string;
+};
+
+export type ProvisionManagedServerResult = {
+  server: ManagedServer;
+  connectionId: string;
+  /** Shown once post-create for copy into the project's env. */
+  connectionString: string;
+};
+
+export type ManagedServersStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready" }
+  | { state: "error"; error: string };
+
 export type SshTunnelConfig = {
   enabled: boolean;
   bastionServerId?: string;
@@ -729,6 +787,7 @@ export type SettingsTab =
   | "general"
   | "connections"
   | "bastions"
+  | "local-databases"
   | "security"
   | "about";
 
@@ -762,6 +821,7 @@ import type { ConnectionsSlice } from "./connections";
 import type { CredentialsSlice } from "./credentials";
 import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
 import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
+import type { ManagedServersSlice } from "./managed-servers";
 import type { RelationalQueriesSlice } from "./relational-queries";
 import type { RelationalTablesSlice } from "./relational-tables";
 import type { WorkspaceTabsSlice } from "./workspace-tabs";
@@ -778,6 +838,7 @@ import type { WorkspaceTabsSlice } from "./workspace-tabs";
  */
 export type AppStoreState = ConnectionsSlice &
   BastionsSlice &
+  ManagedServersSlice &
   CredentialsSlice &
   WorkspaceTabsSlice &
   RelationalTablesSlice &

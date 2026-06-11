@@ -770,6 +770,25 @@ pub async fn fetch_schema_relationships(
     }
 }
 
+pub async fn fetch_table_schema_relationships(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+) -> Result<SchemaRelationships, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => {
+            postgres::fetch_table_schema_relationships(connection, schema, table).await
+        }
+        DatabaseEngine::ClickHouse | DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
+            Ok(SchemaRelationships {
+                tables: Vec::new(),
+                foreign_keys: Vec::new(),
+            })
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
 pub async fn fetch_database_overview_stats(
     connection: &StoredConnection,
 ) -> Result<DatabaseOverviewStats, String> {
@@ -986,6 +1005,25 @@ pub async fn insert_row(
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             Err(not_implemented_yet(&connection.engine(), "Row insert"))
+        }
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub async fn seed_table(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    row_count: u32,
+    seed: u64,
+    specs: &[crate::SeedColumnSpec],
+) -> Result<crate::SeedTableResult, String> {
+    match connection.engine() {
+        DatabaseEngine::PostgreSQL => {
+            postgres::seed_table(connection, schema, table, row_count, seed, specs).await
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
+            Err(not_implemented_yet(&connection.engine(), "Table seeding"))
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }

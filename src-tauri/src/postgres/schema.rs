@@ -17,7 +17,7 @@ use super::relationship_metadata::{
     RELATIONSHIP_TYPE_FOREIGN_KEY,
 };
 
-fn fk_action_label(code: &str) -> Option<String> {
+pub(super) fn fk_action_label(code: &str) -> Option<String> {
     match code {
         "a" => Some("NO ACTION".to_string()),
         "r" => Some("RESTRICT".to_string()),

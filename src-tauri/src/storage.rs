@@ -20,6 +20,7 @@ use crate::{
 };
 
 pub(crate) mod bastions;
+pub(crate) mod managed;
 
 const DB_FILE: &str = "dbunk.sqlite";
 
@@ -266,6 +267,30 @@ ALTER TABLE connections ADD COLUMN ssh_tunnel_keepalive_interval_seconds INTEGER
 ALTER TABLE connections ADD COLUMN ssh_tunnel_keepalive_want_reply INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE connections ADD COLUMN ssh_tunnel_jump_chain TEXT;
 ALTER TABLE connections ADD COLUMN ssh_tunnel_proxy_command TEXT;
+"#,
+    ),
+    (
+        12,
+        // ADR-0019: Managed Servers — Docker-provisioned local
+        // databases. The Connection link is one-way (managed server →
+        // connection_id); status is never stored, it is derived live
+        // from Docker.
+        r#"
+CREATE TABLE managed_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  engine TEXT NOT NULL,
+  version TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  container_name TEXT NOT NULL,
+  volume_name TEXT NOT NULL,
+  database_name TEXT NOT NULL,
+  user_name TEXT NOT NULL,
+  connection_id TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_managed_servers_name ON managed_servers(name COLLATE NOCASE);
 "#,
     ),
 ];

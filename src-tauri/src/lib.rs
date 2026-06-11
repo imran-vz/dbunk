@@ -2,9 +2,12 @@ mod clickhouse;
 mod commands;
 mod credentials;
 mod dispatch;
+mod docker;
 mod keychain;
+mod managed;
 mod postgres;
 mod redis;
+mod seed;
 mod storage;
 mod tunnel;
 mod types;
@@ -215,6 +218,14 @@ pub fn run() {
             commands::bastions::delete_bastion_server,
             commands::bastions::reset_bastion_host_key,
             commands::bastions::test_bastion_server,
+            // Managed servers
+            commands::managed::check_docker,
+            commands::managed::provision_managed_server,
+            commands::managed::list_managed_servers,
+            commands::managed::start_managed_server,
+            commands::managed::stop_managed_server,
+            commands::managed::destroy_managed_server,
+            commands::managed::recreate_managed_server,
             // Connections
             commands::connections::load_connections,
             commands::connections::save_connection,
@@ -226,6 +237,7 @@ pub fn run() {
             // Relational: schema
             commands::relational::load_schema_explorer,
             commands::relational::load_schema_relationships,
+            commands::relational::load_table_schema_relationships,
             commands::relational::load_schema_map_positions,
             commands::relational::save_schema_map_position,
             commands::relational::reset_schema_map_positions,
@@ -252,6 +264,7 @@ pub fn run() {
             commands::relational::commit_cell_edits,
             commands::relational::insert_row,
             commands::relational::import_rows,
+            commands::relational::seed_table,
             commands::relational::copy_table_rows,
             commands::relational::delete_rows,
             commands::relational::poll_mutation_status,

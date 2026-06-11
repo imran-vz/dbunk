@@ -5,6 +5,7 @@ import { createConnectionsSlice } from "./connections";
 import { createCredentialsSlice } from "./credentials";
 import { createKeyValuePubSubSlice } from "./keyvalue-pubsub";
 import { createKeyValueWorkspaceSlice } from "./keyvalue-workspace";
+import { createManagedServersSlice } from "./managed-servers";
 import { createRelationalQueriesSlice } from "./relational-queries";
 import { createRelationalTablesSlice } from "./relational-tables";
 import type { AppStoreState } from "./types";
@@ -26,10 +27,15 @@ export type {
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
   DDLOutcome,
+  DockerStatus,
   EditOutcome,
   ForeignKeyInfo,
   IndexInfo,
   LoadingStatus,
+  ManagedServer,
+  ManagedServerStatus,
+  ManagedServersStatus,
+  ManagedServerWithStatus,
   MySqlConnection,
   MySqlStoredConnection,
   OverviewTabId,
@@ -37,6 +43,8 @@ export type {
   PgExtension,
   PgSetting,
   PgStoredConnection,
+  ProvisionManagedServerInput,
+  ProvisionManagedServerResult,
   QueryHistoryEntry,
   QueryOutcome,
   QueryPreviewData,
@@ -89,6 +97,7 @@ export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
 export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createCredentialsSlice(set, get, store),
   ...createBastionsSlice(set, get, store),
+  ...createManagedServersSlice(set, get, store),
   ...createConnectionsSlice(set, get, store),
   ...createWorkspaceTabsSlice(set, get, store),
   ...createRelationalTablesSlice(set, get, store),

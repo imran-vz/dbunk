@@ -118,31 +118,11 @@ export type SchemaGraphNodeData = {
   isJunctionTable: boolean;
   /** Trigger Indicator metadata for the Table Card / Column Rows. */
   triggers: SchemaTableTrigger[];
-  /**
-   * Set by the renderer (not the builder) when the graph spans more
-   * than one distinct schema, so every node header can carry its
-   * `schema.` prefix in a multi-schema map.
-   */
-  hasMultipleSchemas: boolean;
-  /**
-   * Set by the renderer when a Focused Table or Focused Relationship
-   * Edge exists and this Table Card is not directly related to it.
-   */
-  isDimmed: boolean;
-  /**
-   * Renderer-injected explicit table-open action for the Table Card
-   * header. Opening a table is never triggered by plain single click.
-   */
-  onOpenTable?: (schema: string, table: string) => void;
 };
 
 export type SchemaGraphEdgeData = {
   /** The authoritative backend relationship metadata for this edge. */
   foreignKey: SchemaForeignKey;
-  /** Renderer-set dimming flag mirroring node dimming. */
-  isDimmed: boolean;
-  /** Renderer-set Focused Relationship Edge flag. */
-  isFocused: boolean;
 };
 
 export type SchemaGraphNode = Node<SchemaGraphNodeData>;
@@ -500,8 +480,6 @@ export const buildSchemaGraph = (
         isExternal: meta.isExternal,
         isJunctionTable: meta.isJunctionTable,
         triggers: meta.triggers,
-        hasMultipleSchemas: false,
-        isDimmed: false,
       },
     };
   });
@@ -540,7 +518,7 @@ export const buildSchemaGraph = (
     markerEnd: parentEndMarkerFor(fk, tableMeta),
     type: prefs.routing === "step" ? "step" : "default",
     style: { stroke: "var(--primary)", strokeWidth: 1.45 },
-    data: { foreignKey: fk, isDimmed: false, isFocused: false },
+    data: { foreignKey: fk },
   }));
 
   return { nodes, edges };

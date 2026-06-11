@@ -23,6 +23,7 @@ import {
   type SchemaRelationships,
   type SchemaTableNode,
   schemaRelationshipsKey,
+  tableSchemaMapScope,
 } from "@/lib/schema-graph";
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
 import {
@@ -200,6 +201,11 @@ export type RelationalTablesSlice = {
   loadSchemaRelationships: (
     connectionId: string,
     schema: string,
+  ) => Promise<void>;
+  loadTableSchemaRelationships: (
+    connectionId: string,
+    schema: string,
+    table: string,
   ) => Promise<void>;
   loadSchemaMapPositions: (
     connectionId: string,
@@ -948,6 +954,63 @@ export const createRelationalTablesSlice: StateCreator<
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load schema relationships", error);
+      set((state) => ({
+        schemaRelationshipsStatus: {
+          ...state.schemaRelationshipsStatus,
+          [key]: { state: "error", error: message },
+        },
+      }));
+    }
+  },
+
+  loadTableSchemaRelationships: async (connectionId, schema, table) => {
+    if (!connectionId) {
+      return;
+    }
+    const scope = tableSchemaMapScope(schema, table);
+    const key = schemaRelationshipsKey(connectionId, scope);
+    const current = get().schemaRelationshipsStatus[key];
+    if (current?.state === "loading") {
+      return;
+    }
+    set((state) => ({
+      schemaRelationshipsStatus: {
+        ...state.schemaRelationshipsStatus,
+        [key]: { state: "loading" },
+      },
+    }));
+    if (!isTauri()) {
+      set((state) => ({
+        schemaRelationshipsStatus: {
+          ...state.schemaRelationshipsStatus,
+          [key]: { state: "idle" },
+        },
+      }));
+      return;
+    }
+    try {
+      const result = await tauriInvoke<{
+        tables: SchemaTableNode[];
+        foreignKeys: SchemaForeignKey[];
+      }>("load_table_schema_relationships", {
+        payload: { connectionId, schema, table },
+      });
+      set((state) => ({
+        schemaRelationships: {
+          ...state.schemaRelationships,
+          [key]: {
+            tables: result.tables,
+            foreignKeys: result.foreignKeys,
+          },
+        },
+        schemaRelationshipsStatus: {
+          ...state.schemaRelationshipsStatus,
+          [key]: { state: "success" },
+        },
+      }));
+    } catch (error) {
+      const message = errorToMessage(error);
+      console.error("Failed to load table schema relationships", error);
       set((state) => ({
         schemaRelationshipsStatus: {
           ...state.schemaRelationshipsStatus,

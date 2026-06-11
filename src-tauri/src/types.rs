@@ -17,7 +17,7 @@ use std::str::FromStr;
 // Engine + persisted entities
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DatabaseEngine {
     #[serde(rename = "PostgreSQL")]
     PostgreSQL,
@@ -1038,11 +1038,150 @@ pub(crate) struct LoadTableStructurePayload {
     pub table: String,
 }
 
+// ---------------------------------------------------------------------------
+// Managed Servers (ADR-0019)
+// ---------------------------------------------------------------------------
+
+/// A local database server dbunk provisioned and owns: a Docker
+/// container plus a named data volume with independent lifetimes.
+/// Separate entity from `StoredConnection`; the link is one-way via
+/// `connection_id` (the auto-created Connection that points at it).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ManagedServer {
+    pub id: String,
+    pub name: String,
+    pub engine: DatabaseEngine,
+    /// Major-version image tag, e.g. `"17"` for `postgres:17`.
+    pub version: String,
+    pub port: u16,
+    pub container_name: String,
+    pub volume_name: String,
+    pub database: String,
+    pub user: String,
+    pub connection_id: Option<String>,
+    pub created_at: String,
+}
+
+/// `ManagedServer` plus its live status, always derived from Docker at
+/// observation time — never trusted from the stored record.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ManagedServerWithStatus {
+    #[serde(flatten)]
+    pub server: ManagedServer,
+    /// `"running"` | `"stopped"` | `"orphaned"`.
+    pub status: String,
+    /// For `orphaned`: whether the named volume survived, i.e. whether
+    /// Recreate can restore the server with its data intact.
+    pub volume_exists: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DockerStatus {
+    pub available: bool,
+    pub version: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProvisionManagedServerPayload {
+    pub name: String,
+    pub engine: DatabaseEngine,
+    pub version: String,
+    /// Omitted: dbunk scans for a free port from the engine's
+    /// non-default base (5433+/3307+).
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub database: Option<String>,
+    #[serde(default)]
+    pub user: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProvisionManagedServerResult {
+    pub server: ManagedServer,
+    pub connection_id: String,
+    /// Shown once after creation so the user can paste it into their
+    /// project's env; the password is also persisted via the
+    /// credential backend like any other connection credential.
+    pub connection_string: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ManagedServerPayload {
+    pub managed_server_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Table Seeding (ADR-0020)
+// ---------------------------------------------------------------------------
+
+/// Per-column entry of a Seed Spec. Source precedence:
+/// `skip` > `constant` > `values` > FK sampling > `generator`/auto.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SeedColumnSpec {
+    pub column: String,
+    #[serde(default)]
+    pub skip: bool,
+    #[serde(default)]
+    pub constant: Option<String>,
+    #[serde(default)]
+    pub values: Option<Vec<String>>,
+    /// Generator id override (e.g. `"email"`, `"price"`).
+    #[serde(default)]
+    pub generator: Option<String>,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    /// Probability `[0, 1]` of NULL for nullable columns.
+    #[serde(default)]
+    pub null_rate: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SeedTablePayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub table: String,
+    pub row_count: u32,
+    /// Omitted seed: backend picks one and reports it in the result so
+    /// every run is reproducible.
+    #[serde(default)]
+    pub seed: Option<u64>,
+    #[serde(default)]
+    pub columns: Vec<SeedColumnSpec>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SeedTableResult {
+    pub rows_inserted: u64,
+    pub seed_used: u64,
+    pub runtime_ms: u64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LoadSchemaRelationshipsPayload {
     pub connection_id: String,
     pub schema: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LoadTableSchemaRelationshipsPayload {
+    pub connection_id: String,
+    pub schema: String,
+    pub table: String,
 }
 
 #[derive(Debug, Deserialize)]

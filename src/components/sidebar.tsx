@@ -233,7 +233,20 @@ export function Sidebar({ className }: { className?: string }) {
     openWorkspaceTab,
     openTableTab,
     openViewTab,
+    managedServers,
   } = useAppStore();
+
+  // Connection IDs backed by a Managed Server (ADR-0019) — these rows
+  // wear a "Local" badge so dbunk-owned servers are recognizable.
+  const managedConnectionIds = useMemo(
+    () =>
+      new Set(
+        managedServers
+          .map((server) => server.connectionId)
+          .filter((id): id is string => id !== null),
+      ),
+    [managedServers],
+  );
 
   const explorerSchemas = schemaExplorer[activeConnectionId] ?? [];
   const filteredSchemas = useMemo(() => {
@@ -346,6 +359,15 @@ export function Sidebar({ className }: { className?: string }) {
                       <span className="truncate text-[0.8125rem] font-medium leading-tight text-foreground">
                         {connection.name}
                       </span>
+                      {managedConnectionIds.has(connection.id) ? (
+                        <span
+                          data-testid={`managed-badge-${connection.name}`}
+                          title="Managed by dbunk — a local Docker database. Manage it under Settings → Local Databases."
+                          className="shrink-0 rounded-sm border border-accent-green/40 bg-accent-green/10 px-1 text-[0.5625rem] font-medium uppercase tracking-wide text-accent-green"
+                        >
+                          Local
+                        </span>
+                      ) : null}
                     </span>
                     <span className="mt-0.5 block truncate text-[0.6875rem] text-text-muted">
                       {connection.engine}{" "}

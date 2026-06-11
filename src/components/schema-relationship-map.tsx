@@ -1,20 +1,12 @@
 import {
-  IconArrowUpRight,
-  IconBolt,
-  IconExternalLink,
-} from "@tabler/icons-react";
-import {
   applyNodeChanges,
   Background,
   Controls,
   type EdgeMouseHandler,
-  Handle,
   type Node,
   type NodeChange,
   type NodeMouseHandler,
-  type NodeProps,
   type OnNodeDrag,
-  Position,
   ReactFlow,
 } from "@xyflow/react";
 import {
@@ -28,12 +20,17 @@ import {
 } from "react";
 
 import { RelationshipDetailPopover } from "@/components/relationship-detail-popover";
+import { CrowsFootMarkers } from "@/components/schema-relationship-map/crows-foot-markers";
+import {
+  type SchemaMapNodeData,
+  SchemaTableNode,
+  typeGlyph,
+} from "@/components/schema-relationship-map/node";
 import { downloadDataUrl } from "@/lib/download";
 import { relationalPolicy, storageClassFor } from "@/lib/engine-policy";
 import {
   buildSchemaGraph,
   DEFAULT_SCHEMA_MAP_PREFS,
-  filterSchemaRelationshipsForTable,
   isAllSchemas,
   type SchemaForeignKey,
   type SchemaGraphEdge,
@@ -41,12 +38,12 @@ import {
   type SchemaMapPosition,
   type SchemaRelationships,
   type SchemaTableNode as SchemaTableNodeData,
-  type SchemaTableTrigger,
   schemaRelationshipsKey,
   tableSchemaMapScope,
 } from "@/lib/schema-graph";
 import { type SchemaRelationshipsStatus, useAppStore } from "@/lib/store";
-import { cn } from "@/lib/utils";
+
+export { typeGlyph };
 
 interface SchemaRelationshipMapProps {
   connectionId: string;
@@ -178,409 +175,9 @@ export async function exportSchemaMapImage(
   }
 }
 
-export const typeGlyph = (dataType: string): string => {
-  const normalized = dataType.toLowerCase();
-  if (
-    normalized.includes("int") ||
-    normalized.includes("numeric") ||
-    normalized.includes("decimal") ||
-    normalized.includes("real") ||
-    normalized.includes("double")
-  ) {
-    return "123";
-  }
-  if (normalized.includes("bool")) {
-    return "T/F";
-  }
-  if (
-    normalized.includes("date") ||
-    normalized.includes("time") ||
-    normalized.includes("timestamp")
-  ) {
-    return "time";
-  }
-  if (normalized.includes("json")) {
-    return "{}";
-  }
-  return "A-Z";
-};
-
-const triggerSummary = (triggers: SchemaTableTrigger[]): string =>
-  triggers
-    .map(
-      (trigger) =>
-        `${trigger.name}: ${trigger.timing} ${trigger.events.join(
-          " OR ",
-        )} FOR EACH ${trigger.orientation} → ${trigger.functionName}${
-          trigger.enabled ? "" : " (disabled)"
-        }`,
-    )
-    .join("\n");
-
-function SchemaTableNode({ data }: NodeProps<Node<SchemaGraphNodeData>>) {
-  const fkColumnNames = new Set(data.fkColumnNames);
-  const hiddenColumnCount =
-    data.prefs.attrMode === "none" ? data.columnCount : 0;
-  const showSchemaPrefix = data.hasMultipleSchemas || data.isExternal;
-  const columnTriggers = new Map<string, SchemaTableTrigger[]>();
-  for (const trigger of data.triggers) {
-    for (const column of trigger.columns ?? []) {
-      const existing = columnTriggers.get(column) ?? [];
-      existing.push(trigger);
-      columnTriggers.set(column, existing);
-    }
-  }
-
-  return (
-    <div
-      data-active={data.isActive ? "true" : "false"}
-      data-external={data.isExternal ? "true" : "false"}
-      data-dimmed={data.isDimmed ? "true" : "false"}
-      className={cn(
-        "group/schema-node w-[220px] overflow-hidden rounded-md border bg-card text-[0.625rem] text-card-foreground shadow-sm ring-1 ring-background/80 transition-opacity",
-        data.isActive
-          ? "border-primary shadow-primary/20"
-          : data.isExternal
-            ? "border-dashed border-warning/60 bg-card/80"
-            : "border-primary/80",
-        data.isDimmed && "opacity-30",
-      )}
-    >
-      <div
-        className={cn(
-          "flex items-center gap-1.5 border-b px-2 py-1 text-[0.68rem] font-medium",
-          data.isExternal
-            ? "border-warning/40 bg-warning/10"
-            : "border-primary/70 bg-muted/70",
-        )}
-      >
-        {data.isExternal ? (
-          <IconExternalLink
-            className="size-2.5 shrink-0 text-warning"
-            aria-hidden
-          />
-        ) : (
-          <span className="text-primary">tbl</span>
-        )}
-        <span
-          className="min-w-0 flex-1 truncate"
-          title={`${data.schema}.${data.table}`}
-        >
-          {showSchemaPrefix ? (
-            <span className="text-muted-foreground">{data.schema}.</span>
-          ) : null}
-          {data.label}
-        </span>
-        {data.isJunctionTable ? (
-          <span
-            data-testid={`junction-table-indicator-${data.tableId}`}
-            title="Junction Table Card — this table joins a many-to-many relationship"
-            className="shrink-0 rounded-sm border border-primary/40 bg-primary/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-primary"
-          >
-            M:N
-          </span>
-        ) : null}
-        {data.triggers.length > 0 ? (
-          <span
-            data-testid={`trigger-indicator-table-${data.tableId}`}
-            title={triggerSummary(data.triggers)}
-            className="flex shrink-0 items-center gap-0.5 rounded-sm border border-warning/40 bg-warning/10 px-1 py-px text-[0.5rem] text-warning"
-          >
-            <IconBolt className="size-2.5" aria-hidden />
-            {data.triggers.length}
-          </span>
-        ) : null}
-        {data.isExternal ? (
-          <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-warning">
-            external
-          </span>
-        ) : null}
-        {!data.isExternal && data.onOpenTable ? (
-          <button
-            type="button"
-            aria-label={`Open table ${data.schema}.${data.table}`}
-            title="Open table"
-            className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              data.onOpenTable?.(data.schema, data.table);
-            }}
-          >
-            <IconArrowUpRight className="size-3" aria-hidden />
-          </button>
-        ) : null}
-      </div>
-      <div className="max-h-80 overflow-auto bg-card">
-        {data.columns.length > 0 ? (
-          data.columns.map((column) => {
-            const hasHandle = fkColumnNames.has(column.name);
-            const glyph = column.isPrimaryKey
-              ? "PK"
-              : hasHandle
-                ? "FK"
-                : data.prefs.showTypes
-                  ? typeGlyph(column.dataType)
-                  : "";
-            return (
-              <div
-                key={column.name}
-                className={cn(
-                  "relative grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-1 border-b border-border/50 px-1.5 py-1 last:border-b-0",
-                  column.isPrimaryKey && "bg-primary/10",
-                )}
-              >
-                {hasHandle ? (
-                  <>
-                    <Handle
-                      id={`${data.tableId}.${column.name}.left`}
-                      type="target"
-                      position={Position.Left}
-                      className="!-left-1 !size-2 !border-primary !bg-card"
-                    />
-                    <Handle
-                      id={`${data.tableId}.${column.name}.right`}
-                      type="source"
-                      position={Position.Right}
-                      className="!-right-1 !size-2 !border-primary !bg-card"
-                    />
-                  </>
-                ) : null}
-                <span
-                  className={cn(
-                    "flex items-center gap-1 text-[0.56rem] leading-none text-primary",
-                    !glyph && "text-transparent",
-                  )}
-                >
-                  {hasHandle ? (
-                    <span className="size-1.5 rounded-full bg-primary/80" />
-                  ) : null}
-                  {glyph || "-"}
-                </span>
-                <span
-                  className={cn(
-                    "min-w-0 truncate",
-                    column.nullable && "text-muted-foreground",
-                  )}
-                >
-                  <span className="flex items-center gap-1">
-                    <span className="truncate">{column.name}</span>
-                    {columnTriggers.has(column.name) ? (
-                      <span
-                        data-testid={`trigger-indicator-column-${data.tableId}.${column.name}`}
-                        title={triggerSummary(
-                          columnTriggers.get(column.name) ?? [],
-                        )}
-                        className="shrink-0 text-warning"
-                      >
-                        <IconBolt className="size-2.5" aria-hidden />
-                      </span>
-                    ) : null}
-                  </span>
-                  {data.prefs.showComments && column.comment ? (
-                    <span
-                      className="block truncate text-[0.56rem] text-muted-foreground"
-                      title={column.comment}
-                    >
-                      {column.comment}
-                    </span>
-                  ) : null}
-                </span>
-                {data.prefs.showNulls ? (
-                  <span className="rounded-sm border border-border/70 px-1 text-[0.52rem] leading-4 text-muted-foreground">
-                    {column.nullable ? "?" : "NN"}
-                  </span>
-                ) : null}
-              </div>
-            );
-          })
-        ) : (
-          <div className="px-2 py-1.5 text-muted-foreground">
-            {data.isExternal
-              ? "External table"
-              : `${hiddenColumnCount || data.columnCount} columns`}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const nodeTypes = {
   schemaTable: SchemaTableNode,
 };
-
-function CrowsFootMarkers() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="pointer-events-none absolute size-0 overflow-hidden"
-    >
-      <defs>
-        <marker
-          id="crowsfoot-one"
-          markerHeight="16"
-          markerUnits="strokeWidth"
-          markerWidth="16"
-          orient="auto"
-          refX="8"
-          refY="8"
-          viewBox="0 0 16 16"
-        >
-          <path
-            d="M5 2.5v11M9 2.5v11"
-            fill="none"
-            stroke="var(--primary)"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </marker>
-        <marker
-          id="crowsfoot-zero-or-one"
-          markerHeight="18"
-          markerUnits="strokeWidth"
-          markerWidth="20"
-          orient="auto"
-          refX="10"
-          refY="9"
-          viewBox="0 0 20 18"
-        >
-          <circle
-            cx="6"
-            cy="9"
-            fill="var(--card)"
-            r="3.2"
-            stroke="var(--primary)"
-            strokeWidth="1.6"
-          />
-          <path
-            d="M12 3.5v11"
-            fill="none"
-            stroke="var(--primary)"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </marker>
-        <marker
-          id="crowsfoot-many"
-          markerHeight="20"
-          markerUnits="strokeWidth"
-          markerWidth="24"
-          orient="auto"
-          refX="12"
-          refY="10"
-          viewBox="0 0 24 20"
-        >
-          <circle
-            cx="6"
-            cy="10"
-            fill="var(--card)"
-            r="3"
-            stroke="var(--primary)"
-            strokeWidth="1.5"
-          />
-          <path
-            d="M12 10l8-6M12 10l8 6M12 10h8"
-            fill="none"
-            stroke="var(--primary)"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.8"
-          />
-        </marker>
-        <marker
-          id="crowsfoot-unknown"
-          markerHeight="18"
-          markerUnits="strokeWidth"
-          markerWidth="18"
-          orient="auto"
-          refX="9"
-          refY="9"
-          viewBox="0 0 18 18"
-        >
-          <rect
-            fill="var(--card)"
-            height="6.4"
-            stroke="var(--primary)"
-            strokeWidth="1.5"
-            transform="rotate(45 9 9)"
-            width="6.4"
-            x="5.8"
-            y="5.8"
-          />
-        </marker>
-        {/* Start-marker variants: a start marker with plain
-            orient="auto" renders mirrored, pointing the glyph away
-            from its Table Card. */}
-        <marker
-          id="crowsfoot-one-start"
-          markerHeight="16"
-          markerUnits="strokeWidth"
-          markerWidth="16"
-          orient="auto-start-reverse"
-          refX="8"
-          refY="8"
-          viewBox="0 0 16 16"
-        >
-          <path
-            d="M5 2.5v11M9 2.5v11"
-            fill="none"
-            stroke="var(--primary)"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </marker>
-        <marker
-          id="crowsfoot-many-start"
-          markerHeight="20"
-          markerUnits="strokeWidth"
-          markerWidth="24"
-          orient="auto-start-reverse"
-          refX="12"
-          refY="10"
-          viewBox="0 0 24 20"
-        >
-          <circle
-            cx="6"
-            cy="10"
-            fill="var(--card)"
-            r="3"
-            stroke="var(--primary)"
-            strokeWidth="1.5"
-          />
-          <path
-            d="M12 10l8-6M12 10l8 6M12 10h8"
-            fill="none"
-            stroke="var(--primary)"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.8"
-          />
-        </marker>
-        <marker
-          id="crowsfoot-unknown-start"
-          markerHeight="18"
-          markerUnits="strokeWidth"
-          markerWidth="18"
-          orient="auto-start-reverse"
-          refX="9"
-          refY="9"
-          viewBox="0 0 18 18"
-        >
-          <rect
-            fill="var(--card)"
-            height="6.4"
-            stroke="var(--primary)"
-            strokeWidth="1.5"
-            transform="rotate(45 9 9)"
-            width="6.4"
-            x="5.8"
-            y="5.8"
-          />
-        </marker>
-      </defs>
-    </svg>
-  );
-}
 
 export const SchemaRelationshipMap = forwardRef<
   SchemaRelationshipMapHandle,
@@ -593,6 +190,7 @@ export const SchemaRelationshipMap = forwardRef<
     schemaRelationships,
     schemaRelationshipsStatus,
     loadSchemaRelationships,
+    loadTableSchemaRelationships,
     focusTableInSchemaMap,
     connections,
     schemaExplorer,
@@ -613,21 +211,13 @@ export const SchemaRelationshipMap = forwardRef<
   const tableScopeSchema = tableScope?.schema;
   const tableScopeTable = tableScope?.table;
   const isTableMode = tableScopeTable != null;
-  // The Table-Level Schema Map needs every schema's payload — direct
-  // neighbors can live in other schemas (cross-schema FKs in either
-  // direction), and incoming FKs only appear in the child's schema
-  // payload. The store caches per schema, so this shares data with the
-  // global map.
   const databaseSchemas = useMemo(() => {
-    if (!isAllMode && !isTableMode) return [];
+    if (!isAllMode) return [];
     const names = new Set(
       (schemaExplorer[connectionId] ?? []).map((entry) => entry.name),
     );
-    if (tableScopeSchema) {
-      names.add(tableScopeSchema);
-    }
     return [...names].sort();
-  }, [isAllMode, isTableMode, schemaExplorer, connectionId, tableScopeSchema]);
+  }, [isAllMode, schemaExplorer, connectionId]);
 
   // Positions and prefs persist per `(connection, map scope)` — a real
   // schema name, the all-schemas sentinel, or the table-level scope.
@@ -642,47 +232,36 @@ export const SchemaRelationshipMap = forwardRef<
     schemaMapPrefs[connectionId]?.[mapScope] ?? DEFAULT_SCHEMA_MAP_PREFS;
 
   // Memoise the merged relationships + rolled-up status in "Database"
-  // and table-level modes — the merge produces a fresh object every
-  // call, and feeding that into downstream `useMemo`s without
-  // memoising here triggers an infinite render loop via the
-  // `setInteractiveNodes(styledNodes)` effect below.
+  // mode — the merge produces a fresh object every call, and feeding
+  // that into downstream `useMemo`s without memoising here triggers an
+  // infinite render loop via the `setInteractiveNodes(styledNodes)`
+  // effect below.
   const relationships = useMemo<SchemaRelationships | undefined>(() => {
-    if (!isAllMode && !isTableMode) {
+    if (isTableMode) {
+      return schemaRelationships[key];
+    }
+    if (!isAllMode) {
       return schemaRelationships[schemaRelationshipsKey(connectionId, schema)];
     }
     const entries = databaseSchemas.map(
       (name) => schemaRelationships[schemaRelationshipsKey(connectionId, name)],
     );
-    if (tableScopeSchema != null && tableScopeTable != null) {
-      // Table-Level Schema Map: render as soon as the table's own
-      // schema payload exists. Cross-schema neighbors join the map as
-      // their schemas load; one slow or failed schema must not blank
-      // the whole map.
-      const focusEntry =
-        schemaRelationships[
-          schemaRelationshipsKey(connectionId, tableScopeSchema)
-        ];
-      if (!focusEntry) return undefined;
-      return filterSchemaRelationshipsForTable(
-        mergeDefinedSchemaRelationships(entries),
-        tableScopeSchema,
-        tableScopeTable,
-      );
-    }
     return mergeSchemaRelationships(entries);
   }, [
     isAllMode,
     isTableMode,
     schemaRelationships,
+    key,
     schema,
     connectionId,
     databaseSchemas,
-    tableScopeSchema,
-    tableScopeTable,
   ]);
 
   const status = useMemo<SchemaRelationshipsStatus | undefined>(() => {
-    if (!isAllMode && !isTableMode) {
+    if (isTableMode) {
+      return schemaRelationshipsStatus[key];
+    }
+    if (!isAllMode) {
       return schemaRelationshipsStatus[
         schemaRelationshipsKey(connectionId, schema)
       ];
@@ -696,6 +275,7 @@ export const SchemaRelationshipMap = forwardRef<
     isAllMode,
     isTableMode,
     schemaRelationshipsStatus,
+    key,
     schema,
     connectionId,
     databaseSchemas,
@@ -703,22 +283,18 @@ export const SchemaRelationshipMap = forwardRef<
 
   useEffect(() => {
     if (!connectionId) return;
-    if (isAllMode || isTableMode) {
+    if (isTableMode && tableScopeSchema != null && tableScopeTable != null) {
+      void loadTableSchemaRelationships(
+        connectionId,
+        tableScopeSchema,
+        tableScopeTable,
+      );
+      void loadSchemaMapPositions(connectionId, mapScope);
+      void loadSchemaMapPrefs(connectionId, mapScope);
+      return;
+    }
+    if (isAllMode) {
       for (const name of databaseSchemas) {
-        if (isTableMode) {
-          // The table-level subtab remounts on every activation; an
-          // unguarded fan-out would re-run every schema's catalog
-          // queries per click. Loaded and in-flight schemas are
-          // skipped — the cache drops on disconnect/delete.
-          const entryKey = schemaRelationshipsKey(connectionId, name);
-          const current = useAppStore.getState();
-          if (
-            current.schemaRelationships[entryKey] ||
-            current.schemaRelationshipsStatus[entryKey]?.state === "loading"
-          ) {
-            continue;
-          }
-        }
         void loadSchemaRelationships(connectionId, name);
       }
       void loadSchemaMapPositions(connectionId, mapScope);
@@ -736,8 +312,11 @@ export const SchemaRelationshipMap = forwardRef<
     mapScope,
     isAllMode,
     isTableMode,
+    tableScopeSchema,
+    tableScopeTable,
     databaseSchemas,
     loadSchemaRelationships,
+    loadTableSchemaRelationships,
     loadSchemaMapPositions,
     loadSchemaMapPrefs,
   ]);
@@ -820,7 +399,7 @@ export const SchemaRelationshipMap = forwardRef<
     [connectionId, focusTableInSchemaMap],
   );
 
-  const styledNodes = useMemo<Node<SchemaGraphNodeData>[]>(
+  const styledNodes = useMemo<Node<SchemaMapNodeData>[]>(
     () =>
       graph.nodes.map((node) => ({
         ...node,
@@ -843,7 +422,6 @@ export const SchemaRelationshipMap = forwardRef<
         const isDimmed = emphasis ? !emphasis.edges.has(edge.id) : false;
         return {
           ...edge,
-          data: edge.data ? { ...edge.data, isDimmed, isFocused } : edge.data,
           selected: isFocused,
           style: {
             ...edge.style,
@@ -870,7 +448,7 @@ export const SchemaRelationshipMap = forwardRef<
   }, [styledNodes]);
 
   const onNodesChange = useCallback(
-    (changes: NodeChange<Node<SchemaGraphNodeData>>[]) => {
+    (changes: NodeChange<Node<SchemaMapNodeData>>[]) => {
       setInteractiveNodes((currentNodes) =>
         applyNodeChanges(changes, currentNodes),
       );
