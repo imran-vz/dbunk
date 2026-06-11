@@ -1,4 +1,5 @@
 import {
+  IconDatabasePlus,
   IconLayoutSidebarLeftCollapse,
   IconPlus,
   IconSearch,
@@ -9,7 +10,9 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
+import { useState } from "react";
 import { NewConnectionDialog } from "@/components/new-connection-dialog";
+import { NewLocalDatabaseDialog } from "@/components/new-local-database-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isMacPlatform, Kbd } from "@/components/ui/kbd";
@@ -54,6 +57,7 @@ export function AppShellHeader({
   onDoubleClick,
 }: AppShellHeaderProps) {
   const openSettings = useAppStore((state) => state.openSettings);
+  const [newLocalDatabaseOpen, setNewLocalDatabaseOpen] = useState(false);
   const toggleLabel = sidebarToggleLabel(
     isShellCompact,
     leftSidebarOverlayOpen,
@@ -138,6 +142,22 @@ export function AppShellHeader({
       />
 
       <div data-window-drag-region className="flex items-center gap-1.5">
+        <NewLocalDatabaseDialog
+          open={newLocalDatabaseOpen}
+          onOpenChange={setNewLocalDatabaseOpen}
+          trigger={
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-label="New Local Database"
+              title="Create a local Postgres or MySQL with Docker"
+            >
+              <IconDatabasePlus className="size-3.5" />
+              <span className="dbunk-optional-label">New Local DB</span>
+            </Button>
+          }
+        />
         <NewConnectionDialog
           open={newConnectionOpen}
           onOpenChange={setNewConnectionOpen}

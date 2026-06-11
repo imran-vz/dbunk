@@ -103,6 +103,7 @@ export function AppShell() {
     loadAppSettings,
     loadBastionServers,
     loadConnections,
+    loadManagedServers,
     loadQueryHistory,
     loadSavedQueries,
     runHealthChecks,
@@ -171,12 +172,14 @@ export function AppShell() {
     }
     void loadConnections();
     void loadBastionServers();
+    void loadManagedServers();
     void loadQueryHistory();
     void loadSavedQueries();
   }, [
     appSettings?.credentialState,
     loadBastionServers,
     loadConnections,
+    loadManagedServers,
     loadQueryHistory,
     loadSavedQueries,
   ]);

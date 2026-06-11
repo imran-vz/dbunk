@@ -12,14 +12,14 @@ use crate::{
     ExecuteDdlPayload, ExecuteDdlResult, ExportDdlPayload, ExportDdlResult, ImportRowsPayload,
     ImportRowsResult, InsertRowPayload, InsertRowResult, LoadDatabaseOverviewStatsPayload,
     LoadRelationStatsPayload, LoadSchemaRelationshipsPayload, LoadServerDetailsPayload,
-    LoadTableDataPayload, LoadTableStructurePayload, MutationStatus, PgAdminSnapshot,
-    PgBackendActionPayload, PgBackendActionResult, PgDumpPayload, PgDumpResult,
-    PgMaintenancePayload, PgRestorePayload, PgRestoreResult, PollMutationStatusPayload,
-    PositionRow, QueryHistoryEntry, QueryResult, RefreshMaterializedViewPayload, RelationInfo,
-    RunQueryPayload, SaveSchemaMapPositionPayload, SaveSchemaMapPrefsPayload, SavedQuery,
-    SchemaExplorer, SchemaMapPrefs, SchemaMapScopePayload, SchemaRelationships, ServerDetails,
-    TableDataResult, TableStructure, DEFAULT_TABLE_PAGE_SIZE, MAX_QUERY_HISTORY,
-    MAX_TABLE_PAGE_SIZE,
+    LoadTableDataPayload, LoadTableSchemaRelationshipsPayload, LoadTableStructurePayload,
+    MutationStatus, PgAdminSnapshot, PgBackendActionPayload, PgBackendActionResult, PgDumpPayload,
+    PgDumpResult, PgMaintenancePayload, PgRestorePayload, PgRestoreResult,
+    PollMutationStatusPayload, PositionRow, QueryHistoryEntry, QueryResult,
+    RefreshMaterializedViewPayload, RelationInfo, RunQueryPayload, SaveSchemaMapPositionPayload,
+    SaveSchemaMapPrefsPayload, SavedQuery, SchemaExplorer, SchemaMapPrefs, SchemaMapScopePayload,
+    SchemaRelationships, SeedTablePayload, SeedTableResult, ServerDetails, TableDataResult,
+    TableStructure, DEFAULT_TABLE_PAGE_SIZE, MAX_QUERY_HISTORY, MAX_TABLE_PAGE_SIZE,
 };
 
 use super::{find_connection, touch_connection_activity, with_active_connection};
@@ -52,6 +52,22 @@ pub async fn load_schema_relationships(
     } = payload;
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::fetch_schema_relationships(&connection, &schema).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn load_table_schema_relationships(
+    state: State<'_, AppState>,
+    payload: LoadTableSchemaRelationshipsPayload,
+) -> Result<SchemaRelationships, String> {
+    let LoadTableSchemaRelationshipsPayload {
+        connection_id,
+        schema,
+        table,
+    } = payload;
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::fetch_table_schema_relationships(&connection, &schema, &table).await
     })
     .await
 }
@@ -351,6 +367,33 @@ pub async fn insert_row(
     }
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::insert_row(&connection, &schema, &table, &values).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn seed_table(
+    state: State<'_, AppState>,
+    payload: SeedTablePayload,
+) -> Result<SeedTableResult, String> {
+    let SeedTablePayload {
+        connection_id,
+        schema,
+        table,
+        row_count,
+        seed,
+        columns,
+    } = payload;
+    // An omitted seed is picked here and echoed back in the result so
+    // the run stays reproducible after the fact (ADR-0020).
+    let seed = seed.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0x5eed_5eed)
+    });
+    with_active_connection(state.inner(), &connection_id, |connection| async move {
+        dispatch::seed_table(&connection, &schema, &table, row_count, seed, &columns).await
     })
     .await
 }

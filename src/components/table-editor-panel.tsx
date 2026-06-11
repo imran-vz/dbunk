@@ -15,6 +15,7 @@ import {
   TableEditorHeader,
 } from "@/components/table-editor/header";
 import { InlineDrilldown } from "@/components/table-editor/inline-drilldown";
+import { SeedTableForm } from "@/components/table-editor/seed-table-form";
 import { TableStatusBanners } from "@/components/table-editor/status-banners";
 import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
@@ -52,6 +53,7 @@ import {
 } from "@/lib/export-tasks";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
+import type { SeedColumnSpecPayload, SeedTableResult } from "@/lib/seed-form";
 import {
   type Connection,
   type EditOutcome,
@@ -103,6 +105,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isCopyOpen, setIsCopyOpen] = useState(false);
+  const [isSeedOpen, setIsSeedOpen] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
   const [inlineDrilldown, setInlineDrilldown] = useState<{
     rowIndex: number;
     target: ForeignKeyTarget;
@@ -391,6 +395,48 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     }
   };
 
+  const handleSeedTable = async (params: {
+    rowCount: number;
+    seed?: number;
+    columns: SeedColumnSpecPayload[];
+  }) => {
+    if (!isTauri()) {
+      setLastOutcome({
+        kind: "failed",
+        reason: "Table seeding requires the desktop runtime.",
+      });
+      return;
+    }
+    setIsSeeding(true);
+    try {
+      const result = await tauriInvoke<SeedTableResult>("seed_table", {
+        payload: {
+          connectionId: tab.connectionId,
+          schema: tab.schema,
+          table: tab.table ?? "",
+          rowCount: params.rowCount,
+          seed: params.seed,
+          columns: params.columns,
+        },
+      });
+      setIsSeedOpen(false);
+      setLastOutcome({
+        kind: "completed",
+        runtimeMs: result.runtimeMs,
+        rowsAffected: result.rowsInserted,
+      });
+      toast.success(
+        `Seeded ${result.rowsInserted.toLocaleString()} rows (seed ${result.seedUsed})`,
+      );
+      onRefresh();
+    } catch (error) {
+      setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
+      toast.error(`Seed failed: ${errorToMessage(error)}`);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
   const isLoading = status?.state === "loading";
   const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -428,6 +474,8 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onExportTableDdl={handleExportTableDdl}
         onOpenCopyTable={() => setIsCopyOpen(true)}
         onRunMaintenance={handleRunMaintenance}
+        showSeedAction={connection?.engine === "PostgreSQL"}
+        onOpenSeedTable={() => setIsSeedOpen(true)}
       />
 
       <TableStatusBanners
@@ -438,6 +486,15 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onRetryLoad={onRefresh}
         onDismissOutcome={() => setLastOutcome(null)}
       />
+
+      {isSeedOpen && structure ? (
+        <SeedTableForm
+          columns={structure.columns}
+          isSeeding={isSeeding}
+          onSubmit={handleSeedTable}
+          onClose={() => setIsSeedOpen(false)}
+        />
+      ) : null}
 
       {isAddRowOpen && structure ? (
         <AddRowForm

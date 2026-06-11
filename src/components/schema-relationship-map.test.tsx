@@ -20,7 +20,7 @@ vi.mock("@xyflow/react", () => {
     isActive: boolean;
     isDimmed?: boolean;
   }>;
-  type StubEdge = Edge<{ isDimmed?: boolean; isFocused?: boolean }>;
+  type StubEdge = Edge;
   type StubProps = {
     nodes: StubNode[];
     edges: StubEdge[];
@@ -130,8 +130,8 @@ vi.mock("@xyflow/react", () => {
             data-marker-start={String(edge.markerStart ?? "")}
             data-marker-end={String(edge.markerEnd ?? "")}
             data-type={edge.type ?? ""}
-            data-dimmed={edge.data?.isDimmed ? "true" : "false"}
-            data-focused={edge.data?.isFocused ? "true" : "false"}
+            data-dimmed={edge.style?.opacity === 0.15 ? "true" : "false"}
+            data-focused={edge.selected ? "true" : "false"}
             onClick={(event) =>
               onEdgeClick?.(event as unknown as React.MouseEvent, edge)
             }
@@ -159,7 +159,10 @@ import {
   SchemaRelationshipMap,
   typeGlyph,
 } from "@/components/schema-relationship-map";
-import { tableSchemaMapScope } from "@/lib/schema-graph";
+import {
+  filterSchemaRelationshipsForTable,
+  tableSchemaMapScope,
+} from "@/lib/schema-graph";
 import { useAppStore } from "@/lib/store";
 
 const initialStoreState = useAppStore.getState();
@@ -398,6 +401,15 @@ const seedRichRelationships = () => {
       },
     },
   });
+  const relationships =
+    useAppStore.getState().schemaRelationships["conn-1::public"];
+  useAppStore.setState((state) => ({
+    schemaRelationships: {
+      ...state.schemaRelationships,
+      [`conn-1::${tableSchemaMapScope("public", "orders")}`]:
+        filterSchemaRelationshipsForTable(relationships, "public", "orders"),
+    },
+  }));
 };
 
 beforeEach(() => {
@@ -1203,21 +1215,14 @@ describe("SchemaRelationshipMap in Table-Level Schema Map mode", () => {
     expect(loadPrefs).toHaveBeenCalledWith("conn-1", scope);
   });
 
-  it("skips refetching schemas that are already loaded or loading", () => {
+  it("loads table-scoped relationships through the dedicated store action", () => {
     seedRichRelationships();
-    useAppStore.setState({
-      schemaExplorer: {
-        "conn-1": [
-          { name: "public", tables: [] },
-          { name: "billing", tables: [] },
-        ],
-      },
-      schemaRelationshipsStatus: {
-        "conn-1::public": { state: "success" },
-      },
-    });
     const loadRelationships = vi.fn(async () => {});
-    useAppStore.setState({ loadSchemaRelationships: loadRelationships });
+    const loadTableRelationships = vi.fn(async () => {});
+    useAppStore.setState({
+      loadSchemaRelationships: loadRelationships,
+      loadTableSchemaRelationships: loadTableRelationships,
+    });
 
     render(
       <SchemaRelationshipMap
@@ -1228,9 +1233,13 @@ describe("SchemaRelationshipMap in Table-Level Schema Map mode", () => {
       />,
     );
 
-    // public is cached; only the missing schema is fetched.
-    expect(loadRelationships).toHaveBeenCalledTimes(1);
-    expect(loadRelationships).toHaveBeenCalledWith("conn-1", "billing");
+    expect(loadRelationships).not.toHaveBeenCalled();
+    expect(loadTableRelationships).toHaveBeenCalledTimes(1);
+    expect(loadTableRelationships).toHaveBeenCalledWith(
+      "conn-1",
+      "public",
+      "orders",
+    );
   });
 
   it("keeps same-named FK constraints from different tables as distinct Relationship Edges", () => {
@@ -1251,18 +1260,12 @@ describe("SchemaRelationshipMap in Table-Level Schema Map mode", () => {
     ];
     useAppStore.setState({
       activeConnectionId: "conn-1",
-      schemaExplorer: {
-        "conn-1": [
-          { name: "tenant_a", tables: [] },
-          { name: "tenant_b", tables: [] },
-        ],
-      },
       schemaRelationships: {
-        "conn-1::tenant_a": {
+        [`conn-1::${tableSchemaMapScope("tenant_a", "orders")}`]: {
           tables: tenantTables("tenant_a"),
           foreignKeys: [fkNamed("tenant_a", "orders")],
         },
-        "conn-1::tenant_b": {
+        [`conn-1::${tableSchemaMapScope("tenant_b", "orders")}`]: {
           tables: tenantTables("tenant_b"),
           foreignKeys: [fkNamed("tenant_b", "orders")],
         },
@@ -1285,20 +1288,14 @@ describe("SchemaRelationshipMap in Table-Level Schema Map mode", () => {
     expect(edge.getAttribute("data-target")).toBe("tenant_a.users");
   });
 
-  it("renders the partial map with a non-blocking banner when another schema fails", () => {
+  it("renders cached table-scope data with a non-blocking banner when refresh fails", () => {
     seedRichRelationships();
+    const scope = tableSchemaMapScope("public", "orders");
     useAppStore.setState({
-      schemaExplorer: {
-        "conn-1": [
-          { name: "public", tables: [] },
-          { name: "billing", tables: [] },
-        ],
-      },
       schemaRelationshipsStatus: {
-        "conn-1::public": { state: "success" },
-        "conn-1::billing": { state: "error", error: "permission denied" },
+        [`conn-1::${scope}`]: { state: "error", error: "permission denied" },
       },
-      loadSchemaRelationships: vi.fn(async () => {}),
+      loadTableSchemaRelationships: vi.fn(async () => {}),
     });
 
     render(
@@ -1310,8 +1307,8 @@ describe("SchemaRelationshipMap in Table-Level Schema Map mode", () => {
       />,
     );
 
-    // The table's own schema rendered; the failure is a banner, not a
-    // blank error screen.
+    // Cached table-scope data rendered; the refresh failure is a
+    // banner, not a blank error screen.
     expect(screen.getByTestId("schema-flow-node-public.orders")).toBeTruthy();
     expect(screen.queryByTestId("schema-flow-error")).toBeNull();
     expect(

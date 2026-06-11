@@ -45,6 +45,9 @@ interface TableEditorHeaderProps {
   onExportTableDdl: () => void;
   onOpenCopyTable: () => void;
   onRunMaintenance: (action: "vacuum" | "analyze" | "reindex") => void;
+  /** Table Seeding is engine-gated (PostgreSQL-first, ADR-0020). */
+  showSeedAction: boolean;
+  onOpenSeedTable: () => void;
 }
 
 export function TableEditorHeader({
@@ -61,6 +64,8 @@ export function TableEditorHeader({
   onExportTableDdl,
   onOpenCopyTable,
   onRunMaintenance,
+  showSeedAction,
+  onOpenSeedTable,
 }: TableEditorHeaderProps) {
   return (
     <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
@@ -114,6 +119,11 @@ export function TableEditorHeader({
               <DropdownMenuItem onClick={onOpenCopyTable}>
                 Copy to table…
               </DropdownMenuItem>
+              {showSeedAction ? (
+                <DropdownMenuItem onClick={onOpenSeedTable}>
+                  Seed table…
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onClick={() => onRunMaintenance("vacuum")}>
                 VACUUM table
               </DropdownMenuItem>

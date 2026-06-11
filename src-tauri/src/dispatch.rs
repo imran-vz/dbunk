@@ -38,8 +38,8 @@ use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, CopyTableResult,
     DatabaseOverviewStats, DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult,
     InsertRowResult, MutationStatus, PgAdminSnapshot, PgBackendActionResult, PgDumpResult,
-    PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships, ServerDetails,
-    StorageClass, StoredConnection, TableStructure,
+    PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships,
+    SeedColumnSpec, SeedTableResult, ServerDetails, StorageClass, StoredConnection, TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -105,6 +105,19 @@ pub async fn fetch_schema_relationships(
     match connection.engine().storage_class() {
         StorageClass::Relational => {
             relational::fetch_schema_relationships(connection, schema).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "Schema relationships")),
+    }
+}
+
+pub async fn fetch_table_schema_relationships(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+) -> Result<SchemaRelationships, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::fetch_table_schema_relationships(connection, schema, table).await
         }
         StorageClass::KeyValue => Err(not_applicable(connection, "Schema relationships")),
     }
@@ -269,6 +282,22 @@ pub async fn insert_row(
     match connection.engine().storage_class() {
         StorageClass::Relational => relational::insert_row(connection, schema, table, values).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "Row insert")),
+    }
+}
+
+pub async fn seed_table(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    row_count: u32,
+    seed: u64,
+    specs: &[SeedColumnSpec],
+) -> Result<SeedTableResult, String> {
+    match connection.engine().storage_class() {
+        StorageClass::Relational => {
+            relational::seed_table(connection, schema, table, row_count, seed, specs).await
+        }
+        StorageClass::KeyValue => Err(not_applicable(connection, "Table seeding")),
     }
 }
 
