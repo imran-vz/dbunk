@@ -1361,6 +1361,28 @@ pub(crate) struct SchemaTableColumn {
     pub comment: Option<String>,
 }
 
+/// Compact trigger metadata for Table Cards and Column Rows in the
+/// Schema Map. Full trigger function bodies / DDL stay out of this
+/// payload by design.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SchemaTableTrigger {
+    pub name: String,
+    pub table: String,
+    /// Columns the trigger explicitly targets (PostgreSQL
+    /// `UPDATE OF column`); empty when it fires for the whole table.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<String>,
+    /// `BEFORE` | `AFTER` | `INSTEAD OF`.
+    pub timing: String,
+    /// Any of `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`.
+    pub events: Vec<String>,
+    /// `ROW` | `STATEMENT`.
+    pub orientation: String,
+    pub enabled: bool,
+    pub function_name: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SchemaTableNode {
@@ -1368,6 +1390,13 @@ pub(crate) struct SchemaTableNode {
     pub name: String,
     pub column_count: u32,
     pub columns: Vec<SchemaTableColumn>,
+    /// Junction Table Card marker — `Some(true)` when the table is
+    /// detected as a many-to-many association. `None` on engines that
+    /// don't compute junction detection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_junction_table: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<SchemaTableTrigger>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1380,6 +1409,31 @@ pub(crate) struct SchemaForeignKey {
     pub to_schema: String,
     pub to_table: String,
     pub to_columns: Vec<String>,
+    /// `"foreign key"` for FK-backed Relationship Edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationship_type: Option<String>,
+    /// Relationship Cardinality: `one-to-one` | `one-to-many` |
+    /// `unknown`. Engines without enough metadata return `unknown` or
+    /// omit the field entirely rather than guessing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cardinality: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cardinality_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_update: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_delete: Option<String>,
+    /// `true` when any referencing (FK) column is nullable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fk_columns_nullable: Option<bool>,
+    /// `true` when the referencing columns are covered by a unique
+    /// constraint on the referencing table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fk_columns_unique: Option<bool>,
+    /// `Some(true)` when the edge participates in a detected
+    /// junction-table (many-to-many) path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_junction_participant: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]

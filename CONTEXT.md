@@ -76,6 +76,33 @@ identity; see the **Keyspace model** section below.
   sidebar. Loaded per-connection on connect.
 - **Schema Relationships** — the foreign-key graph used to render the schema
   map. Loaded lazily per-schema.
+- **Schema Map** — the visual graph of relational tables and their
+  foreign-key relationships.
+- **Table-Level Schema Map** — a Schema Map scoped to one table workspace
+  subtab, showing the current Table Card, directly referenced Table Cards,
+  directly referencing Table Cards, and the Relationship Edges connecting
+  those direct neighbors.
+- **Table Card** — one table's visual node in the Schema Map.
+- **Junction Table Card** — a Table Card identified as representing a
+  many-to-many association through its real foreign-key relationships; the
+  Schema Map still shows the real Relationship Edges rather than replacing
+  them with a synthetic direct edge.
+- **Column Row** — one column entry inside a Table Card.
+- **Trigger Indicator** — a Schema Map signal on a Table Card or Column Row
+  that database trigger metadata exists for that table or explicitly targets
+  that column.
+- **Relationship Edge** — one visual line for one foreign-key constraint
+  between Table Cards.
+- **Relationship Cardinality** — the backend-provided classification for a
+  Relationship Edge, derived from database constraints where possible and
+  accompanied by a reason when the classification needs explanation.
+- **Relationship Detail Popover** — the popup shown when a Relationship Edge
+  is selected.
+- **Focused Table** — the selected Table Card whose directly referencing and
+  directly referenced Table Cards, plus connected Relationship Edges, remain
+  emphasized while unrelated graph elements dim.
+- **Focused Relationship Edge** — the selected Relationship Edge whose two
+  endpoint Table Cards remain emphasized while unrelated graph elements dim.
 - **Table Structure** — columns, primary key, foreign keys, indexes, and
   constraints for one table. Includes a **capabilities** flag that tells the
   frontend which fields are populated for the active engine. Relational-only;

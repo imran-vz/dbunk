@@ -25,11 +25,35 @@ export const DEFAULT_SCHEMA_MAP_PREFS: SchemaMapPrefs = {
   showComments: false,
 };
 
+/**
+ * Compact Trigger Indicator metadata for Table Cards and Column Rows.
+ * Full trigger function bodies / DDL deliberately stay out of the
+ * Schema Map payload.
+ */
+export type SchemaTableTrigger = {
+  name: string;
+  table: string;
+  /** Explicitly targeted columns (`UPDATE OF column`); absent/empty
+   * when the trigger fires for the whole table. */
+  columns?: string[];
+  /** `BEFORE` | `AFTER` | `INSTEAD OF`. */
+  timing: string;
+  /** Any of `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`. */
+  events: string[];
+  /** `ROW` | `STATEMENT`. */
+  orientation: string;
+  enabled: boolean;
+  functionName: string;
+};
+
 export type SchemaTableNode = {
   schema: string;
   name: string;
   columnCount: number;
   columns?: SchemaTableColumn[];
+  /** Junction Table Card marker; absent on engines that don't detect. */
+  isJunctionTable?: boolean;
+  triggers?: SchemaTableTrigger[];
 };
 
 export type SchemaTableColumn = {
@@ -41,6 +65,15 @@ export type SchemaTableColumn = {
   comment?: string | null;
 };
 
+/**
+ * Backend-provided Relationship Cardinality. `unknown` means the
+ * engine could not classify — the UI must not re-infer.
+ */
+export type SchemaRelationshipCardinality =
+  | "one-to-one"
+  | "one-to-many"
+  | "unknown";
+
 export type SchemaForeignKey = {
   constraintName: string;
   fromSchema: string;
@@ -49,6 +82,20 @@ export type SchemaForeignKey = {
   toSchema: string;
   toTable: string;
   toColumns: string[];
+  /** `"foreign key"` for FK-backed Relationship Edges. */
+  relationshipType?: string;
+  cardinality?: SchemaRelationshipCardinality;
+  cardinalityReason?: string;
+  onUpdate?: string;
+  onDelete?: string;
+  /** True when any referencing (FK) column is nullable. */
+  fkColumnsNullable?: boolean;
+  /** True when the FK columns are covered by a unique constraint on
+   * the referencing table. */
+  fkColumnsUnique?: boolean;
+  /** True when this edge participates in a detected junction-table
+   * (many-to-many) path. */
+  isJunctionParticipant?: boolean;
 };
 
 export type SchemaRelationships = {
@@ -67,16 +114,39 @@ export type SchemaGraphNodeData = {
   prefs: SchemaMapPrefs;
   isActive: boolean;
   isExternal: boolean;
+  /** Junction Table Card marker from the backend payload. */
+  isJunctionTable: boolean;
+  /** Trigger Indicator metadata for the Table Card / Column Rows. */
+  triggers: SchemaTableTrigger[];
   /**
    * Set by the renderer (not the builder) when the graph spans more
    * than one distinct schema, so every node header can carry its
    * `schema.` prefix in a multi-schema map.
    */
   hasMultipleSchemas: boolean;
+  /**
+   * Set by the renderer when a Focused Table or Focused Relationship
+   * Edge exists and this Table Card is not directly related to it.
+   */
+  isDimmed: boolean;
+  /**
+   * Renderer-injected explicit table-open action for the Table Card
+   * header. Opening a table is never triggered by plain single click.
+   */
+  onOpenTable?: (schema: string, table: string) => void;
+};
+
+export type SchemaGraphEdgeData = {
+  /** The authoritative backend relationship metadata for this edge. */
+  foreignKey: SchemaForeignKey;
+  /** Renderer-set dimming flag mirroring node dimming. */
+  isDimmed: boolean;
+  /** Renderer-set Focused Relationship Edge flag. */
+  isFocused: boolean;
 };
 
 export type SchemaGraphNode = Node<SchemaGraphNodeData>;
-export type SchemaGraphEdge = Edge;
+export type SchemaGraphEdge = Edge<SchemaGraphEdgeData>;
 
 export type SchemaGraph = {
   nodes: SchemaGraphNode[];
@@ -97,6 +167,46 @@ export const schemaRelationshipsKey = (
   connectionId: string,
   schema: string,
 ): string => `${connectionId}::${schema}`;
+
+/**
+ * Stable persistence scope for a Table-Level Schema Map. Lives in the
+ * same `(connection, scope)` keyspace as per-schema scopes and the
+ * all-schemas sentinel; the `__dbunk:` prefix keeps it from colliding
+ * with real schema names.
+ */
+export const tableSchemaMapScope = (schema: string, table: string): string =>
+  `__dbunk:table-scope__::${schema}.${table}`;
+
+/**
+ * Scope a relationships payload down to a Table-Level Schema Map: the
+ * current Table Card, its directly referenced and directly referencing
+ * Table Cards, and only the Relationship Edges that connect the
+ * current table to those direct neighbors. Second-degree neighbors and
+ * edges between neighbors are excluded.
+ */
+export const filterSchemaRelationshipsForTable = (
+  relationships: SchemaRelationships,
+  schema: string,
+  table: string,
+): SchemaRelationships => {
+  const focusId = tableNodeId(schema, table);
+  const incidentFks = relationships.foreignKeys.filter(
+    (fk) =>
+      tableNodeId(fk.fromSchema, fk.fromTable) === focusId ||
+      tableNodeId(fk.toSchema, fk.toTable) === focusId,
+  );
+  const keptIds = new Set<string>([focusId]);
+  for (const fk of incidentFks) {
+    keptIds.add(tableNodeId(fk.fromSchema, fk.fromTable));
+    keptIds.add(tableNodeId(fk.toSchema, fk.toTable));
+  }
+  return {
+    tables: relationships.tables.filter((entry) =>
+      keptIds.has(tableNodeId(entry.schema, entry.name)),
+    ),
+    foreignKeys: incidentFks,
+  };
+};
 
 const tableNodeId = (schema: string, table: string): string =>
   `${schema}.${table}`;
@@ -182,7 +292,34 @@ const buildFkColumnMap = (
   return result;
 };
 
-const childMarkerFor = (
+/**
+ * Crow's-foot marker for the referencing/child end of the edge, driven
+ * by the backend-provided Relationship Cardinality. Edges without
+ * backend cardinality (minimal payloads, unsupported engines) render
+ * the explicit unknown marker rather than re-inferring in the UI.
+ *
+ * Start markers use dedicated `-start` defs with
+ * `orient="auto-start-reverse"` — a plain `auto` start marker is
+ * mirrored, pointing the crow's foot away from its Table Card.
+ */
+const childEndMarkerFor = (fk: SchemaForeignKey): string => {
+  switch (fk.cardinality) {
+    case "one-to-one":
+      return "url(#crowsfoot-one-start)";
+    case "one-to-many":
+      return "url(#crowsfoot-many-start)";
+    default:
+      return "url(#crowsfoot-unknown-start)";
+  }
+};
+
+/**
+ * Marker for the referenced/parent end: exactly-one when the FK
+ * columns are non-null, zero-or-one when nullable. Backend-provided FK
+ * nullability wins; column metadata is the fallback for minimal
+ * payloads so existing relationship rendering keeps working.
+ */
+const parentEndMarkerFor = (
   fk: SchemaForeignKey,
   tableMeta: Map<
     string,
@@ -191,6 +328,11 @@ const childMarkerFor = (
     }
   >,
 ): string => {
+  if (fk.fkColumnsNullable !== undefined) {
+    return fk.fkColumnsNullable
+      ? "url(#crowsfoot-zero-or-one)"
+      : "url(#crowsfoot-one)";
+  }
   const meta = tableMeta.get(tableNodeId(fk.fromSchema, fk.fromTable));
   if (!meta) {
     return "url(#crowsfoot-zero-or-one)";
@@ -269,6 +411,12 @@ export const buildSchemaGraph = (
   options?: {
     positions?: Record<string, SchemaMapPosition>;
     prefs?: Partial<SchemaMapPrefs>;
+    /**
+     * Schema-qualified active node id (`schema.table`). Takes
+     * precedence over the name-only `activeTable` match, which is
+     * ambiguous across schemas in multi-schema maps.
+     */
+    activeTableId?: string;
   },
 ): SchemaGraph => {
   const prefs = mergedPrefs(options?.prefs);
@@ -285,6 +433,8 @@ export const buildSchemaGraph = (
       columnCount: number;
       columns: SchemaTableColumn[];
       isExternal: boolean;
+      isJunctionTable: boolean;
+      triggers: SchemaTableTrigger[];
     }
   >();
 
@@ -298,6 +448,8 @@ export const buildSchemaGraph = (
         columnCount: table.columnCount,
         columns: table.columns ?? [],
         isExternal: false,
+        isJunctionTable: table.isJunctionTable ?? false,
+        triggers: table.triggers ?? [],
       });
     }
   }
@@ -312,6 +464,8 @@ export const buildSchemaGraph = (
         columnCount: 0,
         columns: [],
         isExternal: true,
+        isJunctionTable: false,
+        triggers: [],
       });
     }
   }
@@ -339,15 +493,24 @@ export const buildSchemaGraph = (
         columns: displayedColumnsFor(meta.columns, fkColumnNames, prefs),
         fkColumnNames: [...fkColumnNames],
         prefs,
-        isActive: activeTable != null && meta.name === activeTable,
+        isActive:
+          options?.activeTableId != null
+            ? id === options.activeTableId
+            : activeTable != null && meta.name === activeTable,
         isExternal: meta.isExternal,
+        isJunctionTable: meta.isJunctionTable,
+        triggers: meta.triggers,
         hasMultipleSchemas: false,
+        isDimmed: false,
       },
     };
   });
 
+  // Edge ids carry the referencing table — PostgreSQL constraint names
+  // are only unique per table, so a bare name would collide for
+  // same-named FKs on different tables.
   const edges: SchemaGraphEdge[] = foreignKeys.map((fk) => ({
-    id: `fk:${fk.constraintName}`,
+    id: `fk:${tableNodeId(fk.fromSchema, fk.fromTable)}.${fk.constraintName}`,
     source: tableNodeId(fk.fromSchema, fk.fromTable),
     target: tableNodeId(fk.toSchema, fk.toTable),
     sourceHandle:
@@ -371,10 +534,13 @@ export const buildSchemaGraph = (
       fontSize: 10,
       fontWeight: 600,
     },
-    markerStart: childMarkerFor(fk, tableMeta),
-    markerEnd: "url(#crowsfoot-many)",
+    // markerStart sits at the source (referencing/child) end of the
+    // path, markerEnd at the target (referenced/parent) end.
+    markerStart: childEndMarkerFor(fk),
+    markerEnd: parentEndMarkerFor(fk, tableMeta),
     type: prefs.routing === "step" ? "step" : "default",
     style: { stroke: "var(--primary)", strokeWidth: 1.45 },
+    data: { foreignKey: fk, isDimmed: false, isFocused: false },
   }));
 
   return { nodes, edges };

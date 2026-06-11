@@ -7,7 +7,6 @@ import {
   IconTypography,
 } from "@tabler/icons-react";
 import type * as React from "react";
-
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -17,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SchemaMapGlossaryButton } from "@/components/workspace-overview/schema-map-glossary";
 import { ALL_SCHEMAS_SENTINEL, isAllSchemas } from "@/lib/schema-graph";
 import type {
   SchemaMapAttrMode,
@@ -220,6 +220,7 @@ export function SchemaMapToolbar({
           <IconDownload className="size-3" />
           SVG
         </Button>
+        <SchemaMapGlossaryButton />
       </div>
       {exportError ? (
         <div

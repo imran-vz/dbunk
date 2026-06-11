@@ -5,6 +5,7 @@
 //! - `query` — ad-hoc query execution
 //! - `mutations` — cell edits, inserts, deletes, imports
 //! - `schema` — table structure and schema relationship introspection
+//! - `relationship_metadata` — pure cardinality/junction/trigger classification
 //! - `ddl` — DDL execution, export, pg_dump/pg_restore, materialized views
 //! - `admin` — server details, overview stats, session/lock snapshots, maintenance
 
@@ -13,6 +14,7 @@ mod ddl;
 mod mutations;
 mod pool;
 mod query;
+mod relationship_metadata;
 mod schema;
 
 use sqlx::postgres::PgRow;

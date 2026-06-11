@@ -22,6 +22,7 @@ import { IndexesSubTab } from "./indexes-sub-tab";
 import { Pagination } from "./pagination";
 import { RelationsSubTab } from "./relations-sub-tab";
 import { RowDetailsPanel } from "./row-details-panel";
+import { SchemaMapSubTab } from "./schema-map-sub-tab";
 import { SpecializedEditors } from "./specialized-editors";
 import type { TableRef } from "./table-ref";
 import type { RowDetailsVisibility } from "./use-row-details-visibility";
@@ -189,6 +190,12 @@ export function TableEditorBody({
               schema={schema}
               tableName={tableName}
               onOpenSpecialized={onSubTabChange}
+            />
+          ) : activeSubTab === "schema-map" ? (
+            <SchemaMapSubTab
+              connectionId={connectionId}
+              schema={schema}
+              tableName={tableName}
             />
           ) : (
             <RelationsSubTab
