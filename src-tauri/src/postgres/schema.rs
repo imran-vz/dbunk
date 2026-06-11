@@ -6,10 +6,16 @@ use sqlx::Row;
 
 use crate::{
     ColumnInfo, ConstraintInfo, ForeignKeyInfo, IndexInfo, SchemaForeignKey, SchemaRelationships,
-    SchemaTableColumn, SchemaTableNode, StoredConnection, StructureCapabilities, TableStructure,
+    SchemaTableColumn, SchemaTableNode, SchemaTableTrigger, StoredConnection,
+    StructureCapabilities, TableStructure,
 };
 
 use super::connect;
+use super::relationship_metadata::{
+    classify_cardinality, detect_junction_tables, fk_columns_nullable, trigger_enabled,
+    trigger_events, trigger_orientation, trigger_timing, unique_set_covers, OutgoingFk,
+    RELATIONSHIP_TYPE_FOREIGN_KEY,
+};
 
 fn fk_action_label(code: &str) -> Option<String> {
     match code {
@@ -379,20 +385,6 @@ pub async fn fetch_schema_relationships(
             });
     }
 
-    let tables: Vec<SchemaTableNode> = table_rows
-        .into_iter()
-        .map(|row| {
-            let name: String = row.try_get("name").unwrap_or_default();
-            let columns = columns_by_table.remove(&name).unwrap_or_default();
-            SchemaTableNode {
-                schema: schema.to_string(),
-                name,
-                column_count: columns.len() as u32,
-                columns,
-            }
-        })
-        .collect();
-
     let fk_rows = sqlx::query(
         r#"
         SELECT con.conname::text AS name,
@@ -400,12 +392,20 @@ pub async fn fetch_schema_relationships(
                cls.relname::text AS from_table,
                nsp_ref.nspname::text AS to_schema,
                cls_ref.relname::text AS to_table,
+               con.confupdtype::text AS on_update,
+               con.confdeltype::text AS on_delete,
                (
                    SELECT array_agg(att.attname::text ORDER BY u.ord)
                    FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
                    JOIN pg_attribute att
                      ON att.attrelid = con.conrelid AND att.attnum = u.attnum
                ) AS from_columns,
+               (
+                   SELECT array_agg(att.attnotnull ORDER BY u.ord)
+                   FROM unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = con.conrelid AND att.attnum = u.attnum
+               ) AS from_columns_not_null,
                (
                    SELECT array_agg(att.attname::text ORDER BY u.ord)
                    FROM unnest(con.confkey) WITH ORDINALITY AS u(attnum, ord)
@@ -418,8 +418,9 @@ pub async fn fetch_schema_relationships(
         JOIN pg_class cls_ref ON cls_ref.oid = con.confrelid
         JOIN pg_namespace nsp_ref ON nsp_ref.oid = cls_ref.relnamespace
         WHERE con.contype = 'f'
+          AND con.conparentid = 0
           AND nsp.nspname = $1
-        ORDER BY con.conname
+        ORDER BY cls.relname, con.conname
         "#,
     )
     .bind(schema)
@@ -427,16 +428,194 @@ pub async fn fetch_schema_relationships(
     .await
     .map_err(|error| error.to_string())?;
 
-    let foreign_keys: Vec<SchemaForeignKey> = fk_rows
+    // Unique (non-partial, non-expression) index key sets per table —
+    // the authority for Relationship Cardinality and junction
+    // detection. Partial/expression indexes don't guarantee row-level
+    // uniqueness of the column values, so they are excluded.
+    let unique_rows = sqlx::query(
+        r#"
+        SELECT cls.relname::text AS table_name,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(ix.indkey) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = ix.indrelid AND att.attnum = u.attnum
+                   WHERE u.ord <= ix.indnkeyatts
+               ) AS columns
+        FROM pg_index ix
+        JOIN pg_class cls ON cls.oid = ix.indrelid
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        WHERE nsp.nspname = $1
+          AND cls.relkind IN ('r', 'p')
+          AND ix.indisunique
+          AND ix.indisvalid
+          AND ix.indpred IS NULL
+          AND ix.indexprs IS NULL
+        ORDER BY cls.relname, ix.indexrelid
+        "#,
+    )
+    .bind(schema)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut unique_sets_by_table: HashMap<String, Vec<Vec<String>>> = HashMap::new();
+    for row in unique_rows {
+        let table_name: String = row.try_get("table_name").unwrap_or_default();
+        let columns: Vec<String> = row.try_get("columns").unwrap_or_default();
+        if !columns.is_empty() {
+            unique_sets_by_table
+                .entry(table_name)
+                .or_default()
+                .push(columns);
+        }
+    }
+
+    // Compact Trigger Indicator metadata. User triggers only —
+    // FK-enforcement triggers and the like stay hidden, as are
+    // partition-cloned copies of a partitioned parent's trigger
+    // (`tgparentid`, PostgreSQL 13+; every older release is EOL).
+    let trigger_rows = sqlx::query(
+        r#"
+        SELECT cls.relname::text AS table_name,
+               tg.tgname::text AS name,
+               tg.tgtype::int2 AS tgtype,
+               tg.tgenabled::text AS enabled_state,
+               proc.proname::text AS function_name,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(tg.tgattr) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = tg.tgrelid AND att.attnum = u.attnum
+               ) AS columns
+        FROM pg_trigger tg
+        JOIN pg_class cls ON cls.oid = tg.tgrelid
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        JOIN pg_proc proc ON proc.oid = tg.tgfoid
+        WHERE NOT tg.tgisinternal
+          AND tg.tgparentid = 0
+          AND cls.relkind IN ('r', 'p')
+          AND nsp.nspname = $1
+        ORDER BY cls.relname, tg.tgname
+        "#,
+    )
+    .bind(schema)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|error| error.to_string())?;
+
+    let mut triggers_by_table: HashMap<String, Vec<SchemaTableTrigger>> = HashMap::new();
+    for row in trigger_rows {
+        let table_name: String = row.try_get("table_name").unwrap_or_default();
+        let tgtype: i16 = row.try_get("tgtype").unwrap_or(0);
+        let enabled_state: String = row.try_get("enabled_state").unwrap_or_default();
+        triggers_by_table
+            .entry(table_name.clone())
+            .or_default()
+            .push(SchemaTableTrigger {
+                name: row.try_get("name").unwrap_or_default(),
+                table: table_name,
+                columns: row.try_get("columns").unwrap_or_default(),
+                timing: trigger_timing(tgtype).to_string(),
+                events: trigger_events(tgtype),
+                orientation: trigger_orientation(tgtype).to_string(),
+                enabled: trigger_enabled(&enabled_state),
+                function_name: row.try_get("function_name").unwrap_or_default(),
+            });
+    }
+
+    struct FkRow {
+        constraint_name: String,
+        from_schema: String,
+        from_table: String,
+        from_columns: Vec<String>,
+        from_columns_not_null: Vec<bool>,
+        to_schema: String,
+        to_table: String,
+        to_columns: Vec<String>,
+        on_update: Option<String>,
+        on_delete: Option<String>,
+    }
+
+    let raw_fks: Vec<FkRow> = fk_rows
         .into_iter()
-        .map(|row| SchemaForeignKey {
-            constraint_name: row.try_get("name").unwrap_or_default(),
-            from_schema: row.try_get("from_schema").unwrap_or_default(),
-            from_table: row.try_get("from_table").unwrap_or_default(),
-            from_columns: row.try_get("from_columns").unwrap_or_default(),
-            to_schema: row.try_get("to_schema").unwrap_or_default(),
-            to_table: row.try_get("to_table").unwrap_or_default(),
-            to_columns: row.try_get("to_columns").unwrap_or_default(),
+        .map(|row| {
+            let on_update_code: String = row.try_get("on_update").unwrap_or_default();
+            let on_delete_code: String = row.try_get("on_delete").unwrap_or_default();
+            FkRow {
+                constraint_name: row.try_get("name").unwrap_or_default(),
+                from_schema: row.try_get("from_schema").unwrap_or_default(),
+                from_table: row.try_get("from_table").unwrap_or_default(),
+                from_columns: row.try_get("from_columns").unwrap_or_default(),
+                from_columns_not_null: row.try_get("from_columns_not_null").unwrap_or_default(),
+                to_schema: row.try_get("to_schema").unwrap_or_default(),
+                to_table: row.try_get("to_table").unwrap_or_default(),
+                to_columns: row.try_get("to_columns").unwrap_or_default(),
+                on_update: fk_action_label(&on_update_code),
+                on_delete: fk_action_label(&on_delete_code),
+            }
+        })
+        .collect();
+
+    let outgoing: Vec<OutgoingFk<'_>> = raw_fks
+        .iter()
+        .map(|fk| OutgoingFk {
+            constraint: &fk.constraint_name,
+            table: &fk.from_table,
+            columns: &fk.from_columns,
+        })
+        .collect();
+    let junctions = detect_junction_tables(&outgoing, &unique_sets_by_table);
+
+    let tables: Vec<SchemaTableNode> = table_rows
+        .into_iter()
+        .map(|row| {
+            let name: String = row.try_get("name").unwrap_or_default();
+            let columns = columns_by_table.remove(&name).unwrap_or_default();
+            let triggers = triggers_by_table.remove(&name).unwrap_or_default();
+            let is_junction_table = junctions.tables.contains(&name);
+            SchemaTableNode {
+                schema: schema.to_string(),
+                name,
+                column_count: columns.len() as u32,
+                columns,
+                is_junction_table: Some(is_junction_table),
+                triggers,
+            }
+        })
+        .collect();
+
+    let foreign_keys: Vec<SchemaForeignKey> = raw_fks
+        .into_iter()
+        .map(|fk| {
+            let fk_columns_unique = unique_set_covers(
+                &fk.from_columns,
+                unique_sets_by_table
+                    .get(&fk.from_table)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+            );
+            let (cardinality, cardinality_reason) = classify_cardinality(fk_columns_unique);
+            let nullable = fk_columns_nullable(&fk.from_columns, &fk.from_columns_not_null);
+            let is_junction_participant =
+                junctions.is_participant(&fk.from_table, &fk.constraint_name);
+            SchemaForeignKey {
+                constraint_name: fk.constraint_name,
+                from_schema: fk.from_schema,
+                from_table: fk.from_table,
+                from_columns: fk.from_columns,
+                to_schema: fk.to_schema,
+                to_table: fk.to_table,
+                to_columns: fk.to_columns,
+                relationship_type: Some(RELATIONSHIP_TYPE_FOREIGN_KEY.to_string()),
+                cardinality: Some(cardinality.to_string()),
+                cardinality_reason: Some(cardinality_reason.to_string()),
+                on_update: fk.on_update,
+                on_delete: fk.on_delete,
+                fk_columns_nullable: Some(nullable),
+                fk_columns_unique: Some(fk_columns_unique),
+                is_junction_participant: Some(is_junction_participant),
+            }
         })
         .collect();
 
@@ -444,4 +623,24 @@ pub async fn fetch_schema_relationships(
         tables,
         foreign_keys,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fk_action_label;
+
+    #[test]
+    fn fk_action_label_maps_every_pg_action_code() {
+        assert_eq!(fk_action_label("a").as_deref(), Some("NO ACTION"));
+        assert_eq!(fk_action_label("r").as_deref(), Some("RESTRICT"));
+        assert_eq!(fk_action_label("c").as_deref(), Some("CASCADE"));
+        assert_eq!(fk_action_label("n").as_deref(), Some("SET NULL"));
+        assert_eq!(fk_action_label("d").as_deref(), Some("SET DEFAULT"));
+    }
+
+    #[test]
+    fn fk_action_label_omits_unknown_codes_rather_than_guessing() {
+        assert_eq!(fk_action_label(""), None);
+        assert_eq!(fk_action_label("x"), None);
+    }
 }

@@ -774,3 +774,55 @@ describe("TableEditorPanel status banners", () => {
     expect(screen.getByRole("alert").textContent).toContain("boom");
   });
 });
+
+describe("TableEditorPanel subtabs", () => {
+  const seedUsers = () =>
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id"],
+      rows: [["1"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+
+  it("offers a Schema Map subtab as a peer of the other subtabs", () => {
+    seedUsers();
+
+    render(<TableEditorPanel tab={tableTab} />);
+
+    for (const label of [
+      "Data",
+      "Schema",
+      "Indexes",
+      "Relations",
+      "Schema Map",
+      "Specialized",
+    ]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+  });
+
+  it("activates the Table-Level Schema Map while keeping Relations available", () => {
+    seedUsers();
+
+    render(<TableEditorPanel tab={tableTab} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Schema Map" }));
+
+    expect(screen.getByTestId("table-schema-map-subtab")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Schema Map" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    // The textual Relations subtab stays available as a peer.
+    const relations = screen.getByRole("button", { name: "Relations" });
+    expect(relations.getAttribute("aria-current")).toBeNull();
+    fireEvent.click(relations);
+    expect(screen.queryByTestId("table-schema-map-subtab")).toBeNull();
+  });
+});

@@ -1694,6 +1694,57 @@ describe("store.loadSchemaRelationships", () => {
     ],
   };
 
+  // The expanded payload: Relationship Cardinality, FK actions,
+  // junction markers, and Trigger Indicator metadata per Table Card.
+  const expandedRelsResult = {
+    tables: [
+      {
+        schema: "public",
+        name: "users",
+        columnCount: 4,
+        isJunctionTable: false,
+        triggers: [
+          {
+            name: "users_audit",
+            table: "users",
+            columns: ["email"],
+            timing: "BEFORE",
+            events: ["UPDATE"],
+            orientation: "ROW",
+            enabled: true,
+            functionName: "audit_users",
+          },
+        ],
+      },
+      {
+        schema: "public",
+        name: "user_groups",
+        columnCount: 2,
+        isJunctionTable: true,
+      },
+    ],
+    foreignKeys: [
+      {
+        constraintName: "user_groups_user_id_fkey",
+        fromSchema: "public",
+        fromTable: "user_groups",
+        fromColumns: ["user_id"],
+        toSchema: "public",
+        toTable: "users",
+        toColumns: ["id"],
+        relationshipType: "foreign key",
+        cardinality: "one-to-many",
+        cardinalityReason:
+          "Referencing columns are not constrained unique on the referencing table",
+        onUpdate: "NO ACTION",
+        onDelete: "CASCADE",
+        fkColumnsNullable: false,
+        fkColumnsUnique: false,
+        isJunctionParticipant: true,
+      },
+    ],
+  };
+
   it("invokes load_schema_relationships with the right payload", async () => {
     mockedInvoke.mockResolvedValueOnce(relsResult);
 
@@ -1716,6 +1767,19 @@ describe("store.loadSchemaRelationships", () => {
     const key = "conn-1::public";
     expect(state.schemaRelationships[key]).toEqual(relsResult);
     expect(state.schemaRelationshipsStatus[key]).toEqual({ state: "success" });
+  });
+
+  it("accepts the expanded relationship metadata payload", async () => {
+    mockedInvoke.mockResolvedValueOnce(expandedRelsResult);
+
+    await useAppStore.getState().loadSchemaRelationships("conn-1", "public");
+
+    const stored = useAppStore.getState().schemaRelationships["conn-1::public"];
+    expect(stored).toEqual(expandedRelsResult);
+    expect(stored?.foreignKeys[0]?.cardinality).toBe("one-to-many");
+    expect(stored?.foreignKeys[0]?.isJunctionParticipant).toBe(true);
+    expect(stored?.tables[1]?.isJunctionTable).toBe(true);
+    expect(stored?.tables[0]?.triggers?.[0]?.timing).toBe("BEFORE");
   });
 
   it("captures the error message on rejection", async () => {

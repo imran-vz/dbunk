@@ -19,6 +19,7 @@ export type SubTab =
   | "schema"
   | "indexes"
   | "relations"
+  | "schema-map"
   | "specialized";
 
 export const SUB_TABS: ReadonlyArray<{ id: SubTab; label: string }> = [
@@ -26,6 +27,7 @@ export const SUB_TABS: ReadonlyArray<{ id: SubTab; label: string }> = [
   { id: "schema", label: "Schema" },
   { id: "indexes", label: "Indexes" },
   { id: "relations", label: "Relations" },
+  { id: "schema-map", label: "Schema Map" },
   { id: "specialized", label: "Specialized" },
 ];
 

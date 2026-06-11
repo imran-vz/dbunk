@@ -1,8 +1,13 @@
-import { IconExternalLink } from "@tabler/icons-react";
+import {
+  IconArrowUpRight,
+  IconBolt,
+  IconExternalLink,
+} from "@tabler/icons-react";
 import {
   applyNodeChanges,
   Background,
   Controls,
+  type EdgeMouseHandler,
   Handle,
   type Node,
   type NodeChange,
@@ -22,18 +27,23 @@ import {
   useState,
 } from "react";
 
+import { RelationshipDetailPopover } from "@/components/relationship-detail-popover";
 import { downloadDataUrl } from "@/lib/download";
 import { relationalPolicy, storageClassFor } from "@/lib/engine-policy";
 import {
   buildSchemaGraph,
   DEFAULT_SCHEMA_MAP_PREFS,
+  filterSchemaRelationshipsForTable,
   isAllSchemas,
   type SchemaForeignKey,
+  type SchemaGraphEdge,
   type SchemaGraphNodeData,
   type SchemaMapPosition,
   type SchemaRelationships,
   type SchemaTableNode as SchemaTableNodeData,
+  type SchemaTableTrigger,
   schemaRelationshipsKey,
+  tableSchemaMapScope,
 } from "@/lib/schema-graph";
 import { type SchemaRelationshipsStatus, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -43,20 +53,40 @@ interface SchemaRelationshipMapProps {
   schema: string;
   activeTable: string | null;
   isClient?: boolean;
+  /**
+   * Table-Level Schema Map mode: scope the graph to this table's
+   * direct incoming/outgoing relationships. Positions and prefs
+   * persist under a dedicated `(connection, table scope)` key.
+   */
+  tableScope?: { schema: string; table: string };
 }
+
+/** Focused Table or Focused Relationship Edge. */
+type SchemaMapFocus =
+  | { kind: "table"; tableId: string }
+  | { kind: "edge"; edgeId: string };
 
 const EMPTY_POSITIONS: Record<string, SchemaMapPosition> = {};
 
 /**
  * Combine per-schema relationship payloads into one. Tables are
- * deduplicated by `(schema, name)`; FKs by `constraintName` so a single
- * cross-schema FK shows up exactly once.
+ * deduplicated by `(schema, name)`; FKs by their referencing table
+ * plus constraint name — PostgreSQL constraint names are only unique
+ * per table, so two tables (or two schemas) may legitimately reuse the
+ * same FK name and both edges must survive the merge.
  */
 function mergeSchemaRelationships(
   entries: ReadonlyArray<SchemaRelationships | undefined>,
 ): SchemaRelationships | undefined {
   if (entries.length === 0) return undefined;
   if (entries.some((entry) => entry === undefined)) return undefined;
+  return mergeDefinedSchemaRelationships(entries);
+}
+
+/** The merge itself, skipping undefined entries instead of bailing. */
+function mergeDefinedSchemaRelationships(
+  entries: ReadonlyArray<SchemaRelationships | undefined>,
+): SchemaRelationships {
   const tables = new Map<string, SchemaTableNodeData>();
   const foreignKeys = new Map<string, SchemaForeignKey>();
   for (const entry of entries) {
@@ -65,7 +95,10 @@ function mergeSchemaRelationships(
       tables.set(`${table.schema}.${table.name}`, table);
     }
     for (const fk of entry.foreignKeys) {
-      foreignKeys.set(fk.constraintName, fk);
+      foreignKeys.set(
+        `${fk.fromSchema}.${fk.fromTable}::${fk.constraintName}`,
+        fk,
+      );
     }
   }
   return {
@@ -172,23 +205,45 @@ export const typeGlyph = (dataType: string): string => {
   return "A-Z";
 };
 
+const triggerSummary = (triggers: SchemaTableTrigger[]): string =>
+  triggers
+    .map(
+      (trigger) =>
+        `${trigger.name}: ${trigger.timing} ${trigger.events.join(
+          " OR ",
+        )} FOR EACH ${trigger.orientation} → ${trigger.functionName}${
+          trigger.enabled ? "" : " (disabled)"
+        }`,
+    )
+    .join("\n");
+
 function SchemaTableNode({ data }: NodeProps<Node<SchemaGraphNodeData>>) {
   const fkColumnNames = new Set(data.fkColumnNames);
   const hiddenColumnCount =
     data.prefs.attrMode === "none" ? data.columnCount : 0;
   const showSchemaPrefix = data.hasMultipleSchemas || data.isExternal;
+  const columnTriggers = new Map<string, SchemaTableTrigger[]>();
+  for (const trigger of data.triggers) {
+    for (const column of trigger.columns ?? []) {
+      const existing = columnTriggers.get(column) ?? [];
+      existing.push(trigger);
+      columnTriggers.set(column, existing);
+    }
+  }
 
   return (
     <div
       data-active={data.isActive ? "true" : "false"}
       data-external={data.isExternal ? "true" : "false"}
+      data-dimmed={data.isDimmed ? "true" : "false"}
       className={cn(
-        "group/schema-node w-[220px] overflow-hidden rounded-md border bg-card text-[0.625rem] text-card-foreground shadow-sm ring-1 ring-background/80",
+        "group/schema-node w-[220px] overflow-hidden rounded-md border bg-card text-[0.625rem] text-card-foreground shadow-sm ring-1 ring-background/80 transition-opacity",
         data.isActive
           ? "border-primary shadow-primary/20"
           : data.isExternal
             ? "border-dashed border-warning/60 bg-card/80"
             : "border-primary/80",
+        data.isDimmed && "opacity-30",
       )}
     >
       <div
@@ -196,7 +251,7 @@ function SchemaTableNode({ data }: NodeProps<Node<SchemaGraphNodeData>>) {
           "flex items-center gap-1.5 border-b px-2 py-1 text-[0.68rem] font-medium",
           data.isExternal
             ? "border-warning/40 bg-warning/10"
-            : "justify-center border-primary/70 bg-muted/70 text-center",
+            : "border-primary/70 bg-muted/70",
         )}
       >
         {data.isExternal ? (
@@ -216,10 +271,43 @@ function SchemaTableNode({ data }: NodeProps<Node<SchemaGraphNodeData>>) {
           ) : null}
           {data.label}
         </span>
+        {data.isJunctionTable ? (
+          <span
+            data-testid={`junction-table-indicator-${data.tableId}`}
+            title="Junction Table Card — this table joins a many-to-many relationship"
+            className="shrink-0 rounded-sm border border-primary/40 bg-primary/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-primary"
+          >
+            M:N
+          </span>
+        ) : null}
+        {data.triggers.length > 0 ? (
+          <span
+            data-testid={`trigger-indicator-table-${data.tableId}`}
+            title={triggerSummary(data.triggers)}
+            className="flex shrink-0 items-center gap-0.5 rounded-sm border border-warning/40 bg-warning/10 px-1 py-px text-[0.5rem] text-warning"
+          >
+            <IconBolt className="size-2.5" aria-hidden />
+            {data.triggers.length}
+          </span>
+        ) : null}
         {data.isExternal ? (
           <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-warning">
             external
           </span>
+        ) : null}
+        {!data.isExternal && data.onOpenTable ? (
+          <button
+            type="button"
+            aria-label={`Open table ${data.schema}.${data.table}`}
+            title="Open table"
+            className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onOpenTable?.(data.schema, data.table);
+            }}
+          >
+            <IconArrowUpRight className="size-3" aria-hidden />
+          </button>
         ) : null}
       </div>
       <div className="max-h-80 overflow-auto bg-card">
@@ -274,7 +362,20 @@ function SchemaTableNode({ data }: NodeProps<Node<SchemaGraphNodeData>>) {
                     column.nullable && "text-muted-foreground",
                   )}
                 >
-                  <span className="truncate">{column.name}</span>
+                  <span className="flex items-center gap-1">
+                    <span className="truncate">{column.name}</span>
+                    {columnTriggers.has(column.name) ? (
+                      <span
+                        data-testid={`trigger-indicator-column-${data.tableId}.${column.name}`}
+                        title={triggerSummary(
+                          columnTriggers.get(column.name) ?? [],
+                        )}
+                        className="shrink-0 text-warning"
+                      >
+                        <IconBolt className="size-2.5" aria-hidden />
+                      </span>
+                    ) : null}
+                  </span>
                   {data.prefs.showComments && column.comment ? (
                     <span
                       className="block truncate text-[0.56rem] text-muted-foreground"
@@ -386,6 +487,96 @@ function CrowsFootMarkers() {
             strokeWidth="1.8"
           />
         </marker>
+        <marker
+          id="crowsfoot-unknown"
+          markerHeight="18"
+          markerUnits="strokeWidth"
+          markerWidth="18"
+          orient="auto"
+          refX="9"
+          refY="9"
+          viewBox="0 0 18 18"
+        >
+          <rect
+            fill="var(--card)"
+            height="6.4"
+            stroke="var(--primary)"
+            strokeWidth="1.5"
+            transform="rotate(45 9 9)"
+            width="6.4"
+            x="5.8"
+            y="5.8"
+          />
+        </marker>
+        {/* Start-marker variants: a start marker with plain
+            orient="auto" renders mirrored, pointing the glyph away
+            from its Table Card. */}
+        <marker
+          id="crowsfoot-one-start"
+          markerHeight="16"
+          markerUnits="strokeWidth"
+          markerWidth="16"
+          orient="auto-start-reverse"
+          refX="8"
+          refY="8"
+          viewBox="0 0 16 16"
+        >
+          <path
+            d="M5 2.5v11M9 2.5v11"
+            fill="none"
+            stroke="var(--primary)"
+            strokeLinecap="round"
+            strokeWidth="1.8"
+          />
+        </marker>
+        <marker
+          id="crowsfoot-many-start"
+          markerHeight="20"
+          markerUnits="strokeWidth"
+          markerWidth="24"
+          orient="auto-start-reverse"
+          refX="12"
+          refY="10"
+          viewBox="0 0 24 20"
+        >
+          <circle
+            cx="6"
+            cy="10"
+            fill="var(--card)"
+            r="3"
+            stroke="var(--primary)"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M12 10l8-6M12 10l8 6M12 10h8"
+            fill="none"
+            stroke="var(--primary)"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.8"
+          />
+        </marker>
+        <marker
+          id="crowsfoot-unknown-start"
+          markerHeight="18"
+          markerUnits="strokeWidth"
+          markerWidth="18"
+          orient="auto-start-reverse"
+          refX="9"
+          refY="9"
+          viewBox="0 0 18 18"
+        >
+          <rect
+            fill="var(--card)"
+            height="6.4"
+            stroke="var(--primary)"
+            strokeWidth="1.5"
+            transform="rotate(45 9 9)"
+            width="6.4"
+            x="5.8"
+            y="5.8"
+          />
+        </marker>
       </defs>
     </svg>
   );
@@ -395,7 +586,7 @@ export const SchemaRelationshipMap = forwardRef<
   SchemaRelationshipMapHandle,
   SchemaRelationshipMapProps
 >(function SchemaRelationshipMap(
-  { connectionId, schema, activeTable, isClient = true },
+  { connectionId, schema, activeTable, isClient = true, tableScope },
   ref,
 ) {
   const {
@@ -416,39 +607,86 @@ export const SchemaRelationshipMap = forwardRef<
   )?.engine;
 
   const isAllMode = isAllSchemas(schema);
-  const databaseSchemas = useMemo(
-    () =>
-      isAllMode
-        ? [
-            ...new Set(
-              (schemaExplorer[connectionId] ?? []).map((entry) => entry.name),
-            ),
-          ].sort()
-        : [],
-    [isAllMode, schemaExplorer, connectionId],
-  );
+  // Depend on the scope's primitives, not the `tableScope` object —
+  // callers typically pass a fresh object literal per render, and an
+  // identity-sensitive effect would refetch in a loop.
+  const tableScopeSchema = tableScope?.schema;
+  const tableScopeTable = tableScope?.table;
+  const isTableMode = tableScopeTable != null;
+  // The Table-Level Schema Map needs every schema's payload — direct
+  // neighbors can live in other schemas (cross-schema FKs in either
+  // direction), and incoming FKs only appear in the child's schema
+  // payload. The store caches per schema, so this shares data with the
+  // global map.
+  const databaseSchemas = useMemo(() => {
+    if (!isAllMode && !isTableMode) return [];
+    const names = new Set(
+      (schemaExplorer[connectionId] ?? []).map((entry) => entry.name),
+    );
+    if (tableScopeSchema) {
+      names.add(tableScopeSchema);
+    }
+    return [...names].sort();
+  }, [isAllMode, isTableMode, schemaExplorer, connectionId, tableScopeSchema]);
 
-  const key = schemaRelationshipsKey(connectionId, schema);
+  // Positions and prefs persist per `(connection, map scope)` — a real
+  // schema name, the all-schemas sentinel, or the table-level scope.
+  const mapScope =
+    tableScopeSchema != null && tableScopeTable != null
+      ? tableSchemaMapScope(tableScopeSchema, tableScopeTable)
+      : schema;
+  const key = schemaRelationshipsKey(connectionId, mapScope);
   const positions =
-    schemaMapPositions[connectionId]?.[schema] ?? EMPTY_POSITIONS;
+    schemaMapPositions[connectionId]?.[mapScope] ?? EMPTY_POSITIONS;
   const prefs =
-    schemaMapPrefs[connectionId]?.[schema] ?? DEFAULT_SCHEMA_MAP_PREFS;
+    schemaMapPrefs[connectionId]?.[mapScope] ?? DEFAULT_SCHEMA_MAP_PREFS;
 
   // Memoise the merged relationships + rolled-up status in "Database"
-  // mode — the merge produces a fresh object every call, and feeding
-  // that into downstream `useMemo`s without memoising here triggers an
-  // infinite render loop via the `setInteractiveNodes(styledNodes)`
-  // effect below.
+  // and table-level modes — the merge produces a fresh object every
+  // call, and feeding that into downstream `useMemo`s without
+  // memoising here triggers an infinite render loop via the
+  // `setInteractiveNodes(styledNodes)` effect below.
   const relationships = useMemo<SchemaRelationships | undefined>(() => {
-    if (!isAllMode) return schemaRelationships[key];
+    if (!isAllMode && !isTableMode) {
+      return schemaRelationships[schemaRelationshipsKey(connectionId, schema)];
+    }
     const entries = databaseSchemas.map(
       (name) => schemaRelationships[schemaRelationshipsKey(connectionId, name)],
     );
+    if (tableScopeSchema != null && tableScopeTable != null) {
+      // Table-Level Schema Map: render as soon as the table's own
+      // schema payload exists. Cross-schema neighbors join the map as
+      // their schemas load; one slow or failed schema must not blank
+      // the whole map.
+      const focusEntry =
+        schemaRelationships[
+          schemaRelationshipsKey(connectionId, tableScopeSchema)
+        ];
+      if (!focusEntry) return undefined;
+      return filterSchemaRelationshipsForTable(
+        mergeDefinedSchemaRelationships(entries),
+        tableScopeSchema,
+        tableScopeTable,
+      );
+    }
     return mergeSchemaRelationships(entries);
-  }, [isAllMode, schemaRelationships, key, connectionId, databaseSchemas]);
+  }, [
+    isAllMode,
+    isTableMode,
+    schemaRelationships,
+    schema,
+    connectionId,
+    databaseSchemas,
+    tableScopeSchema,
+    tableScopeTable,
+  ]);
 
   const status = useMemo<SchemaRelationshipsStatus | undefined>(() => {
-    if (!isAllMode) return schemaRelationshipsStatus[key];
+    if (!isAllMode && !isTableMode) {
+      return schemaRelationshipsStatus[
+        schemaRelationshipsKey(connectionId, schema)
+      ];
+    }
     const statuses = databaseSchemas.map(
       (name) =>
         schemaRelationshipsStatus[schemaRelationshipsKey(connectionId, name)],
@@ -456,36 +694,61 @@ export const SchemaRelationshipMap = forwardRef<
     return aggregateStatus(statuses);
   }, [
     isAllMode,
+    isTableMode,
     schemaRelationshipsStatus,
-    key,
+    schema,
     connectionId,
     databaseSchemas,
   ]);
 
   useEffect(() => {
     if (!connectionId) return;
-    if (isAllMode) {
+    if (isAllMode || isTableMode) {
       for (const name of databaseSchemas) {
+        if (isTableMode) {
+          // The table-level subtab remounts on every activation; an
+          // unguarded fan-out would re-run every schema's catalog
+          // queries per click. Loaded and in-flight schemas are
+          // skipped — the cache drops on disconnect/delete.
+          const entryKey = schemaRelationshipsKey(connectionId, name);
+          const current = useAppStore.getState();
+          if (
+            current.schemaRelationships[entryKey] ||
+            current.schemaRelationshipsStatus[entryKey]?.state === "loading"
+          ) {
+            continue;
+          }
+        }
         void loadSchemaRelationships(connectionId, name);
       }
-      void loadSchemaMapPositions(connectionId, schema);
-      void loadSchemaMapPrefs(connectionId, schema);
+      void loadSchemaMapPositions(connectionId, mapScope);
+      void loadSchemaMapPrefs(connectionId, mapScope);
       return;
     }
     if (schema) {
       void loadSchemaRelationships(connectionId, schema);
-      void loadSchemaMapPositions(connectionId, schema);
-      void loadSchemaMapPrefs(connectionId, schema);
+      void loadSchemaMapPositions(connectionId, mapScope);
+      void loadSchemaMapPrefs(connectionId, mapScope);
     }
   }, [
     connectionId,
     schema,
+    mapScope,
     isAllMode,
+    isTableMode,
     databaseSchemas,
     loadSchemaRelationships,
     loadSchemaMapPositions,
     loadSchemaMapPrefs,
   ]);
+
+  // Focused Table / Focused Relationship Edge. Cleared when the map
+  // identity changes or the empty canvas is clicked.
+  const [focus, setFocus] = useState<SchemaMapFocus | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies(key): focus must reset exactly when the map identity (connection + scope) changes
+  useEffect(() => {
+    setFocus(null);
+  }, [key]);
 
   const graph = useMemo(() => {
     if (!relationships) {
@@ -495,33 +758,111 @@ export const SchemaRelationshipMap = forwardRef<
       relationships.tables,
       relationships.foreignKeys,
       activeTable,
-      { positions, prefs },
+      {
+        positions,
+        prefs,
+        // Table mode highlights exactly the scoped table — name-only
+        // matching would also flag same-named tables in other schemas.
+        activeTableId:
+          tableScopeSchema != null && tableScopeTable != null
+            ? `${tableScopeSchema}.${tableScopeTable}`
+            : undefined,
+      },
     );
-  }, [relationships, activeTable, positions, prefs]);
+  }, [
+    relationships,
+    activeTable,
+    positions,
+    prefs,
+    tableScopeSchema,
+    tableScopeTable,
+  ]);
 
   const hasMultipleSchemas = useMemo(
     () => new Set(graph.nodes.map((node) => node.data.schema)).size > 1,
     [graph.nodes],
   );
 
-  const nodesWithSchemaContext = useMemo<Node<SchemaGraphNodeData>[]>(
-    () =>
-      graph.nodes.map((node) => ({
-        ...node,
-        data: { ...node.data, hasMultipleSchemas },
-      })),
-    [graph.nodes, hasMultipleSchemas],
+  // Directly related graph elements for the current focus. `null`
+  // means no focus — nothing dims. A focused element that no longer
+  // exists after a graph reload also means no dimming, never an
+  // all-dimmed map.
+  const emphasis = useMemo(() => {
+    if (!focus) return null;
+    const tables = new Set<string>();
+    const edges = new Set<string>();
+    if (focus.kind === "table") {
+      if (!graph.nodes.some((node) => node.id === focus.tableId)) {
+        return null;
+      }
+      tables.add(focus.tableId);
+      for (const edge of graph.edges) {
+        if (edge.source === focus.tableId || edge.target === focus.tableId) {
+          edges.add(edge.id);
+          tables.add(edge.source);
+          tables.add(edge.target);
+        }
+      }
+      return { tables, edges };
+    }
+    const focusedEdge = graph.edges.find((edge) => edge.id === focus.edgeId);
+    if (!focusedEdge) return null;
+    edges.add(focusedEdge.id);
+    tables.add(focusedEdge.source);
+    tables.add(focusedEdge.target);
+    return { tables, edges };
+  }, [focus, graph.nodes, graph.edges]);
+
+  const handleOpenTable = useCallback(
+    (tableSchema: string, table: string) => {
+      focusTableInSchemaMap(connectionId, tableSchema, table);
+    },
+    [connectionId, focusTableInSchemaMap],
   );
 
   const styledNodes = useMemo<Node<SchemaGraphNodeData>[]>(
     () =>
-      nodesWithSchemaContext.map((node) => ({
+      graph.nodes.map((node) => ({
         ...node,
         type: "schemaTable",
         style: { width: 220 },
+        data: {
+          ...node.data,
+          hasMultipleSchemas,
+          isDimmed: emphasis ? !emphasis.tables.has(node.id) : false,
+          onOpenTable: handleOpenTable,
+        },
       })),
-    [nodesWithSchemaContext],
+    [graph.nodes, hasMultipleSchemas, emphasis, handleOpenTable],
   );
+
+  const styledEdges = useMemo<SchemaGraphEdge[]>(
+    () =>
+      graph.edges.map((edge) => {
+        const isFocused = focus?.kind === "edge" && focus.edgeId === edge.id;
+        const isDimmed = emphasis ? !emphasis.edges.has(edge.id) : false;
+        return {
+          ...edge,
+          data: edge.data ? { ...edge.data, isDimmed, isFocused } : edge.data,
+          selected: isFocused,
+          style: {
+            ...edge.style,
+            strokeWidth: isFocused ? 2.4 : 1.45,
+            opacity: isDimmed ? 0.15 : 1,
+          },
+          labelStyle: {
+            ...edge.labelStyle,
+            opacity: isDimmed ? 0.15 : 1,
+          },
+          labelBgStyle: {
+            ...edge.labelBgStyle,
+            fillOpacity: isDimmed ? 0.15 : 0.96,
+          },
+        };
+      }),
+    [graph.edges, focus, emphasis],
+  );
+
   const [interactiveNodes, setInteractiveNodes] = useState(styledNodes);
 
   useEffect(() => {
@@ -537,29 +878,54 @@ export const SchemaRelationshipMap = forwardRef<
     [],
   );
 
-  const onNodeClick: NodeMouseHandler = (_event, node) => {
-    const data = (node as Node<SchemaGraphNodeData>).data;
-    if (!data) {
-      return;
-    }
-    focusTableInSchemaMap(connectionId, data.schema, data.table);
-  };
+  // Single click only focuses the Table Card; opening a table is the
+  // explicit header action or a double-click.
+  const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
+    setFocus({ kind: "table", tableId: node.id });
+  }, []);
+
+  const onNodeDoubleClick: NodeMouseHandler = useCallback(
+    (_event, node) => {
+      const data = (node as Node<SchemaGraphNodeData>).data;
+      if (!data) {
+        return;
+      }
+      focusTableInSchemaMap(connectionId, data.schema, data.table);
+    },
+    [connectionId, focusTableInSchemaMap],
+  );
+
+  const onEdgeClick: EdgeMouseHandler<SchemaGraphEdge> = useCallback(
+    (_event, edge) => {
+      setFocus({ kind: "edge", edgeId: edge.id });
+    },
+    [],
+  );
+
+  const onPaneClick = useCallback(() => {
+    setFocus(null);
+  }, []);
 
   const onNodeDragStop: OnNodeDrag = useCallback(
     (_event, node) => {
-      if (!connectionId || !schema) {
+      if (!connectionId || !mapScope) {
         return;
       }
       void saveSchemaMapPosition(
         connectionId,
-        schema,
+        mapScope,
         node.id,
         node.position.x,
         node.position.y,
       );
     },
-    [connectionId, schema, saveSchemaMapPosition],
+    [connectionId, mapScope, saveSchemaMapPosition],
   );
+
+  const focusedForeignKey: SchemaForeignKey | undefined =
+    focus?.kind === "edge"
+      ? graph.edges.find((edge) => edge.id === focus.edgeId)?.data?.foreignKey
+      : undefined;
 
   const hasNodes = graph.nodes.length > 0;
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -603,7 +969,10 @@ export const SchemaRelationshipMap = forwardRef<
     };
   }, [isClient, hasNodes]);
 
-  if (errorMessage) {
+  // A load error only replaces the map when there is nothing to draw.
+  // With renderable (partial or cached) data, the map stays up and the
+  // failure surfaces as a non-blocking banner instead.
+  if (errorMessage && !hasNodes) {
     return (
       <div
         data-testid="schema-flow-error"
@@ -628,6 +997,21 @@ export const SchemaRelationshipMap = forwardRef<
 
   return (
     <div ref={flowContainerRef} className="relative h-full w-full">
+      {focusedForeignKey ? (
+        <RelationshipDetailPopover
+          foreignKey={focusedForeignKey}
+          onClose={() => setFocus(null)}
+        />
+      ) : null}
+      {errorMessage && hasNodes ? (
+        <div
+          data-testid="schema-flow-partial-error"
+          role="alert"
+          className="absolute bottom-2 left-2 right-2 z-10 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[0.65rem] text-destructive shadow-sm"
+        >
+          Some relationships failed to load: {errorMessage}
+        </div>
+      ) : null}
       {noFkBanner ? (
         <div
           data-testid="schema-flow-clickhouse-banner"
@@ -649,7 +1033,7 @@ export const SchemaRelationshipMap = forwardRef<
         <ReactFlow
           key={`${key}:${flowSizeKey}`}
           nodes={interactiveNodes}
-          edges={graph.edges}
+          edges={styledEdges}
           nodeTypes={nodeTypes}
           fitView
           defaultEdgeOptions={{
@@ -659,6 +1043,9 @@ export const SchemaRelationshipMap = forwardRef<
           nodesConnectable={false}
           onNodesChange={onNodesChange}
           onNodeClick={onNodeClick}
+          onNodeDoubleClick={onNodeDoubleClick}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
           proOptions={{ hideAttribution: true }}
         >

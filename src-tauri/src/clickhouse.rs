@@ -592,6 +592,11 @@ pub async fn fetch_schema_relationships(
                 name,
                 column_count: columns.len() as u32,
                 columns,
+                // No FKs in ClickHouse, so junction detection and
+                // relationship metadata never apply — omit rather than
+                // guess.
+                is_junction_table: None,
+                triggers: Vec::new(),
             }
         })
         .collect();
