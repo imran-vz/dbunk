@@ -10,12 +10,13 @@
 //! contract guarantees Redis never reaches here; this is an explicit
 //! invariant assertion, not a fallback.
 
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Once;
 use std::time::Instant;
 
 use sqlx::any::{AnyConnectOptions, AnyRow};
-use sqlx::{Any, AnyConnection, Column, Connection, Row};
+use sqlx::{Any, AnyConnection, Column, Connection, Executor, Row};
 
 use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
@@ -179,7 +180,12 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
             let sslmode = if c.ssl { "prefer" } else { "disable" };
             Ok(format!(
                 "postgres://{}:{}@{}:{}/{}?sslmode={}",
-                c.user, c.password, c.host, port, c.database, sslmode
+                percent_encode_url_component(&c.user),
+                percent_encode_url_component(&c.password),
+                c.host,
+                port,
+                percent_encode_url_component(&c.database),
+                sslmode
             ))
         }
         StoredConnection::MySQL(c) => {
@@ -194,7 +200,12 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
             let ssl_mode = if c.ssl { "preferred" } else { "disabled" };
             Ok(format!(
                 "mysql://{}:{}@{}:{}/{}?ssl-mode={}",
-                c.user, c.password, c.host, port, c.database, ssl_mode
+                percent_encode_url_component(&c.user),
+                percent_encode_url_component(&c.password),
+                c.host,
+                port,
+                percent_encode_url_component(&c.database),
+                ssl_mode
             ))
         }
         StoredConnection::SQLite(c) => sqlite_dsn(&c.database),
@@ -203,6 +214,99 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
             unreachable!("BUG: relational dispatch reached for Redis — router contract violated")
         }
     }
+}
+
+fn percent_encode_url_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(HEX[(byte >> 4) as usize] as char);
+                encoded.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+    encoded
+}
+
+fn stable_order_columns(structure: &TableStructure) -> Vec<String> {
+    if let Some(primary_key) = &structure.primary_key {
+        if !primary_key.is_empty() {
+            return primary_key.clone();
+        }
+    }
+
+    let non_nullable_columns = structure
+        .columns
+        .iter()
+        .filter(|column| !column.nullable)
+        .map(|column| column.name.as_str())
+        .collect::<HashSet<_>>();
+
+    let mut candidates = structure
+        .indexes
+        .iter()
+        .filter(|index| {
+            index.is_unique
+                && !index.is_primary
+                && !index.columns.is_empty()
+                && index
+                    .columns
+                    .iter()
+                    .all(|column| non_nullable_columns.contains(column.as_str()))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left.columns
+            .len()
+            .cmp(&right.columns.len())
+            .then_with(|| left.name.cmp(&right.name))
+    });
+
+    candidates
+        .first()
+        .map(|index| index.columns.clone())
+        .unwrap_or_default()
+}
+
+fn quote_order_column(engine: &DatabaseEngine, column: &str) -> String {
+    match engine {
+        DatabaseEngine::PostgreSQL | DatabaseEngine::SQLite => crate::quote_double(column),
+        DatabaseEngine::MySQL | DatabaseEngine::ClickHouse => crate::quote_backtick(column),
+        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
+    }
+}
+
+pub(crate) fn build_paged_select_query(
+    engine: &DatabaseEngine,
+    select_columns: &str,
+    qualified: &str,
+    page_size: u32,
+    offset: u64,
+    structure: Option<&TableStructure>,
+) -> String {
+    let order_clause = structure
+        .map(stable_order_columns)
+        .filter(|columns| !columns.is_empty())
+        .map(|columns| {
+            let order_columns = columns
+                .iter()
+                .map(|column| quote_order_column(engine, column))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(" ORDER BY {order_columns}")
+        })
+        .unwrap_or_default();
+
+    format!(
+        "SELECT {select_columns} FROM {qualified}{order_clause} LIMIT {page_size} OFFSET {offset}"
+    )
 }
 
 fn value_to_string(row: &AnyRow, index: usize) -> String {
@@ -342,15 +446,22 @@ async fn run_sqlx_any(connection: &StoredConnection, query: &str) -> Result<Quer
             .fetch_all(&mut conn)
             .await
             .map_err(|error| error.to_string())?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
-                    .iter()
-                    .map(|column| column.name().to_string())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let columns = if let Some(row) = rows.first() {
+            row.columns()
+                .iter()
+                .map(|column| column.name().to_string())
+                .collect::<Vec<_>>()
+        } else {
+            let describe = (&mut conn)
+                .describe(query)
+                .await
+                .map_err(|error| error.to_string())?;
+            describe
+                .columns()
+                .iter()
+                .map(|column| column.name().to_string())
+                .collect::<Vec<_>>()
+        };
         let values = rows.iter().map(row_to_strings).collect::<Vec<_>>();
         let runtime_ms = start.elapsed().as_millis() as u64;
         Ok(QueryResult {
@@ -1089,6 +1200,9 @@ pub async fn copy_table_rows(
         crate::qualified_table_name(&source.engine(), source_schema, source_table);
     let destination_structure =
         fetch_table_structure(destination, destination_schema, destination_table).await?;
+    let source_structure = fetch_table_structure(source, source_schema, source_table)
+        .await
+        .ok();
     let columns = destination_structure
         .columns
         .iter()
@@ -1107,9 +1221,13 @@ pub async fn copy_table_rows(
     let mut offset = 0_u64;
     let mut rows_copied = 0_u64;
     loop {
-        let sql = format!(
-            "SELECT {} FROM {} LIMIT {} OFFSET {}",
-            select_columns, source_qualified, page_size, offset
+        let sql = build_paged_select_query(
+            &source.engine(),
+            &select_columns,
+            &source_qualified,
+            page_size,
+            offset,
+            source_structure.as_ref(),
         );
         let result = run_query(source, &sql).await?;
         if result.rows.is_empty() {
@@ -1193,8 +1311,217 @@ mod tests {
     use super::*;
     use std::io;
 
+    fn sqlite_memory_connection() -> StoredConnection {
+        StoredConnection::SQLite(crate::SqliteStoredConnection {
+            id: "sqlite".to_string(),
+            name: "SQLite".to_string(),
+            database: ":memory:".to_string(),
+            host: String::new(),
+            port: 0,
+            user: String::new(),
+            password: String::new(),
+            role: "admin".to_string(),
+            last_activity_at: None,
+        })
+    }
+
+    fn postgres_connection(user: &str, password: &str, database: &str) -> StoredConnection {
+        StoredConnection::PostgreSQL(crate::PgStoredConnection {
+            id: "pg".to_string(),
+            name: "Postgres".to_string(),
+            database: database.to_string(),
+            host: "db.example".to_string(),
+            port: 0,
+            user: user.to_string(),
+            password: password.to_string(),
+            role: "admin".to_string(),
+            last_activity_at: None,
+            ssl: false,
+            driver_options: None,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
+        })
+    }
+
+    fn mysql_connection(user: &str, password: &str, database: &str) -> StoredConnection {
+        StoredConnection::MySQL(crate::MySqlStoredConnection {
+            id: "mysql".to_string(),
+            name: "MySQL".to_string(),
+            database: database.to_string(),
+            host: "db.example".to_string(),
+            port: 0,
+            user: user.to_string(),
+            password: password.to_string(),
+            role: "admin".to_string(),
+            last_activity_at: None,
+            ssl: true,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
+        })
+    }
+
+    fn column(name: &str, nullable: bool) -> ColumnInfo {
+        ColumnInfo {
+            name: name.to_string(),
+            data_type: "text".to_string(),
+            nullable,
+            default_value: None,
+            is_primary_key: false,
+            ordinal_position: 1,
+            derivation_kind: None,
+        }
+    }
+
+    fn unique_index(name: &str, columns: Vec<&str>) -> crate::IndexInfo {
+        crate::IndexInfo {
+            name: name.to_string(),
+            columns: columns.into_iter().map(str::to_string).collect(),
+            is_unique: true,
+            is_primary: false,
+            method: None,
+        }
+    }
+
+    fn structure(
+        columns: Vec<ColumnInfo>,
+        primary_key: Option<Vec<&str>>,
+        indexes: Vec<crate::IndexInfo>,
+    ) -> TableStructure {
+        TableStructure {
+            columns,
+            primary_key: primary_key
+                .map(|columns| columns.into_iter().map(str::to_string).collect()),
+            foreign_keys: Vec::new(),
+            indexes,
+            constraints: Vec::new(),
+            capabilities: StructureCapabilities {
+                columns: true,
+                primary_key: true,
+                foreign_keys: true,
+                indexes: true,
+                constraints: true,
+                can_insert_rows: true,
+                can_update_rows: true,
+                can_delete_rows: true,
+                can_alter_schema: true,
+                uniqueness_guarantee: "exact".to_string(),
+            },
+            table_engine: None,
+            partition_by: None,
+            sample_by: None,
+        }
+    }
+
     fn io_error(kind: io::ErrorKind, msg: &str) -> sqlx::Error {
         sqlx::Error::Io(io::Error::new(kind, msg))
+    }
+
+    #[tokio::test]
+    async fn sqlx_any_zero_row_query_preserves_column_names() {
+        let result = run_sqlx_any(
+            &sqlite_memory_connection(),
+            "SELECT 1 AS id, 'Ada' AS name WHERE 0",
+        )
+        .await
+        .expect("query should succeed");
+
+        assert_eq!(result.columns, vec!["id".to_string(), "name".to_string()]);
+        assert!(result.rows.is_empty());
+        assert_eq!(result.row_count, 0);
+    }
+
+    #[test]
+    fn postgres_dsn_percent_encodes_url_components() {
+        let dsn = sqlx_dsn(&postgres_connection("user@name", "p:a/s%", "app/db"))
+            .expect("dsn should build");
+
+        assert_eq!(
+            dsn,
+            "postgres://user%40name:p%3Aa%2Fs%25@db.example:5432/app%2Fdb?sslmode=disable"
+        );
+    }
+
+    #[test]
+    fn mysql_dsn_percent_encodes_url_components() {
+        let dsn =
+            sqlx_dsn(&mysql_connection("user@name", "p:a/s%", "app/db")).expect("dsn should build");
+
+        assert_eq!(
+            dsn,
+            "mysql://user%40name:p%3Aa%2Fs%25@db.example:3306/app%2Fdb?ssl-mode=preferred"
+        );
+    }
+
+    #[test]
+    fn paged_select_orders_by_primary_key() {
+        let structure = structure(
+            vec![column("tenant_id", false), column("user_id", false)],
+            Some(vec!["tenant_id", "user_id"]),
+            Vec::new(),
+        );
+
+        let query = build_paged_select_query(
+            &DatabaseEngine::PostgreSQL,
+            "*",
+            "\"public\".\"users\"",
+            50,
+            100,
+            Some(&structure),
+        );
+
+        assert_eq!(
+            query,
+            "SELECT * FROM \"public\".\"users\" ORDER BY \"tenant_id\", \"user_id\" LIMIT 50 OFFSET 100"
+        );
+    }
+
+    #[test]
+    fn paged_select_uses_smallest_non_nullable_unique_index() {
+        let structure = structure(
+            vec![
+                column("id", true),
+                column("email", false),
+                column("tenant_id", false),
+                column("slug", false),
+            ],
+            None,
+            vec![
+                unique_index("uniq_tenant_slug", vec!["tenant_id", "slug"]),
+                unique_index("uniq_email", vec!["email"]),
+            ],
+        );
+
+        let query = build_paged_select_query(
+            &DatabaseEngine::MySQL,
+            "*",
+            "`accounts`",
+            25,
+            0,
+            Some(&structure),
+        );
+
+        assert_eq!(
+            query,
+            "SELECT * FROM `accounts` ORDER BY `email` LIMIT 25 OFFSET 0"
+        );
+    }
+
+    #[test]
+    fn paged_select_skips_nullable_unique_index() {
+        let structure = structure(
+            vec![column("email", true)],
+            None,
+            vec![unique_index("uniq_email", vec!["email"])],
+        );
+
+        let query = build_paged_select_query(
+            &DatabaseEngine::PostgreSQL,
+            "*",
+            "\"users\"",
+            25,
+            0,
+            Some(&structure),
+        );
+
+        assert_eq!(query, "SELECT * FROM \"users\" LIMIT 25 OFFSET 0");
     }
 
     #[test]

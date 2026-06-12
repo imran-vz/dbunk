@@ -172,10 +172,16 @@ pub async fn load_table_data(
 
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         let qualified = qualified_table_name(&connection.engine(), &schema, &table);
-
-        let select_query = format!(
-            "SELECT * FROM {} LIMIT {} OFFSET {}",
-            qualified, page_size, offset
+        let structure = dispatch::fetch_table_structure(&connection, &schema, &table)
+            .await
+            .ok();
+        let select_query = dispatch::build_paged_select_query(
+            &connection.engine(),
+            "*",
+            &qualified,
+            page_size,
+            offset,
+            structure.as_ref(),
         );
 
         let select_result = dispatch::run_query(&connection, &select_query).await?;

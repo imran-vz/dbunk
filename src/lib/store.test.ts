@@ -660,6 +660,42 @@ describe("connectConnection error feedback", () => {
     expect(connection?.errorMessage).toBeUndefined();
   });
 
+  it("keeps the connection connected when schema explorer loading fails", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+        },
+      ],
+    });
+
+    mockedInvoke
+      .mockResolvedValueOnce({ latencyMs: 10 })
+      .mockRejectedValueOnce(new Error("permission denied"));
+
+    await act(async () => {
+      await useAppStore.getState().connectConnection("conn-1");
+    });
+
+    const connection = useAppStore
+      .getState()
+      .connections.find((c) => c.id === "conn-1");
+    expect(connection?.status).toBe("Connected");
+    expect(connection?.errorMessage).toBeUndefined();
+    expect(useAppStore.getState().schemaExplorer["conn-1"]).toBeUndefined();
+  });
+
   it("falls back to placeholder latency when reconnect omits latency", async () => {
     useAppStore.setState({
       connections: [

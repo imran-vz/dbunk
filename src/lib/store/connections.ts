@@ -437,12 +437,17 @@ export const createConnectionsSlice: StateCreator<
       const target = get().connections.find((c) => c.id === connectionId);
       const isRelational =
         target && storageClassFor(target.engine) === "relational";
-      const schema = isRelational
-        ? await tauriInvoke<import("./types").SchemaExplorer[]>(
+      let schema: import("./types").SchemaExplorer[] | undefined;
+      if (isRelational) {
+        try {
+          schema = await tauriInvoke<import("./types").SchemaExplorer[]>(
             "load_schema_explorer",
             { payload: { connectionId } },
-          )
-        : undefined;
+          );
+        } catch (schemaError) {
+          console.error("Failed to load schema explorer", schemaError);
+        }
+      }
       set((state) => ({
         connections: applyConnectionUpdate(state.connections, connectionId, {
           status: "Connected",
