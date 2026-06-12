@@ -32,7 +32,9 @@ pub(crate) mod relational;
 // Re-export the helpers the engine modules (postgres, clickhouse) and
 // the Tauri command layer (lib.rs) reach for via `crate::dispatch::*`.
 // They live inside `relational` because they're sqlx/SQL-shaped helpers.
-pub(crate) use relational::{ensure_sqlx_drivers, friendly_sqlx_error, should_fetch_rows};
+pub(crate) use relational::{
+    build_paged_select_query, ensure_sqlx_drivers, friendly_sqlx_error, should_fetch_rows,
+};
 
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, CopyTableResult,

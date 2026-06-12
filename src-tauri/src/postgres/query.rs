@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use sqlx::{Column, Row};
+use sqlx::{Column, Executor, Row};
 
 use crate::{dispatch::should_fetch_rows, QueryResult, StoredConnection};
 
@@ -22,15 +22,22 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
             .fetch_all(&mut *conn)
             .await
             .map_err(|error| error.to_string())?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
-                    .iter()
-                    .map(|column| column.name().to_string())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let columns = if let Some(row) = rows.first() {
+            row.columns()
+                .iter()
+                .map(|column| column.name().to_string())
+                .collect::<Vec<_>>()
+        } else {
+            let describe = (&mut *conn)
+                .describe(query)
+                .await
+                .map_err(|error| error.to_string())?;
+            describe
+                .columns()
+                .iter()
+                .map(|column| column.name().to_string())
+                .collect::<Vec<_>>()
+        };
         let values = rows.iter().map(row_to_strings).collect::<Vec<_>>();
         let runtime_ms = start.elapsed().as_millis() as u64;
         Ok(QueryResult {
