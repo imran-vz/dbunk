@@ -6,7 +6,7 @@ import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
 } from "@/components/schema-relationship-map";
-import { StatusBar } from "@/components/status-bar";
+import { StatusBar, type StatusBarItem } from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
 import { TableEditorBody } from "@/components/table-editor/body";
 import { DataImportWizard } from "@/components/table-editor/data-import-wizard";
@@ -68,10 +68,22 @@ import { useContainerWidth } from "@/lib/use-resizable-width";
 
 interface TableEditorPanelProps {
   tab: WorkspaceTab;
+  variant?: "default" | "workbench";
+  activeSubTab?: SubTab;
+  onSubTabChange?: (next: SubTab) => void;
+  onStatusItemsChange?: (items: StatusBarItem[]) => void;
 }
 
-export function TableEditorPanel({ tab }: TableEditorPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>("data");
+export function TableEditorPanel({
+  tab,
+  variant = "default",
+  activeSubTab: controlledSubTab,
+  onSubTabChange,
+  onStatusItemsChange,
+}: TableEditorPanelProps) {
+  const [internalSubTab, setInternalSubTab] = useState<SubTab>("data");
+  const activeSubTab = controlledSubTab ?? internalSubTab;
+  const setActiveSubTab = onSubTabChange ?? setInternalSubTab;
   const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const tableSession = useTableSession(tab);
@@ -451,6 +463,12 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
     activeConnection: connection,
   });
 
+  useEffect(() => {
+    onStatusItemsChange?.(statusItems);
+  }, [onStatusItemsChange, statusItems]);
+
+  const isWorkbench = variant === "workbench";
+
   return (
     <div className="flex h-full flex-col bg-surface-app">
       {isLoading ? (
@@ -476,6 +494,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         onRunMaintenance={handleRunMaintenance}
         showSeedAction={connection?.engine === "PostgreSQL"}
         onOpenSeedTable={() => setIsSeedOpen(true)}
+        variant={isWorkbench ? "workbench" : "default"}
       />
 
       <TableStatusBanners
@@ -601,7 +620,7 @@ export function TableEditorPanel({ tab }: TableEditorPanelProps) {
         hasSavedExportTask={savedExportTask !== null}
       />
 
-      <StatusBar items={statusItems} />
+      {!isWorkbench ? <StatusBar items={statusItems} /> : null}
     </div>
   );
 }

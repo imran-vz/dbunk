@@ -114,7 +114,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                   key={entry.id}
                   type="button"
                   onClick={() => reopenHistoryEntry(entry)}
-                  className="flex w-full min-w-0 flex-col gap-1 rounded-md border border-border-subtle bg-surface-panel-elevated px-2.5 py-2 text-left transition-colors hover:border-accent-green/40 hover:bg-surface-row-hover"
+                  className="flex w-full min-w-0 flex-col gap-1 rounded-md border border-border-subtle bg-surface-panel-elevated px-2.5 py-2 text-left transition-colors hover:border-accent/40 hover:bg-surface-row-hover"
                   data-testid="query-history-entry"
                 >
                   <div className="flex w-full min-w-0 items-center gap-2">
@@ -122,7 +122,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                       {truncateSql(entry.sql, 48)}
                     </span>
                     {isCurrent ? (
-                      <IconCircleFilled className="size-2 shrink-0 text-accent-green" />
+                      <IconCircleFilled className="size-2 shrink-0 text-accent" />
                     ) : null}
                     <span className="sr-only">
                       {entry.status === "success" ? "OK" : "Error"}
@@ -167,7 +167,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
         </CardHeader>
         <CardContent className="flex flex-col gap-1.5 text-xs">
           {isCreatingNew ? (
-            <div className="flex flex-col gap-1.5 rounded-md border border-accent-green/30 bg-surface-panel-elevated p-2">
+            <div className="flex flex-col gap-1.5 rounded-md border border-accent/30 bg-surface-panel-elevated p-2">
               <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
                 Save current query
               </div>
@@ -221,7 +221,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
           {sortedSaved.map((saved) => (
             <div
               key={saved.id}
-              className="group flex items-start gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated p-2 transition-colors hover:border-accent-green/40"
+              className="group flex items-start gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated p-2 transition-colors hover:border-accent/40"
             >
               <button
                 type="button"

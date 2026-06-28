@@ -259,7 +259,7 @@ function BitmapGrid({
             className={cn(
               "aspect-square w-full rounded-[2px] text-center leading-none hover:ring-1 hover:ring-foreground/40",
               bit === 1
-                ? "bg-accent-green/80 text-surface-window"
+                ? "bg-accent/80 text-surface-window"
                 : "bg-surface-panel-elevated text-text-muted",
               pending === idx && "opacity-60",
             )}

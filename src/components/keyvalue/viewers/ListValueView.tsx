@@ -257,9 +257,9 @@ export function ListValueView({
                   <tr
                     // biome-ignore lint/suspicious/noArrayIndexKey: append-order identity
                     key={`append-${index}`}
-                    className="bg-accent-green/5"
+                    className="bg-accent/5"
                   >
-                    <td className="px-3 py-1 text-[0.65rem] text-accent-green">
+                    <td className="px-3 py-1 text-[0.65rem] text-accent">
                       new
                     </td>
                     <td className="break-all px-3 py-1">

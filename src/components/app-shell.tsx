@@ -14,6 +14,12 @@ import {
 import { SettingsView } from "@/components/settings-view";
 import { Sidebar } from "@/components/sidebar";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
+import { KeyValueWorkbench } from "@/components/workbench/keyvalue-workbench";
+import { RelationalWorkbench } from "@/components/workbench/relational-workbench";
+import {
+  isKeyValueConnection,
+  usesWorkbenchShell,
+} from "@/components/workbench/workbench-policy";
 import { WorkspaceView } from "@/components/workspace-view";
 import { useAppStore } from "@/lib/store";
 import { applyTheme, subscribeSystem } from "@/lib/theme";
@@ -95,6 +101,8 @@ export function AppShell() {
 
   const {
     activeView,
+    activeConnectionId,
+    connections,
     appSettings,
     appSettingsStatus,
     isLeftSidebarOpen,
@@ -116,6 +124,11 @@ export function AppShell() {
     shellBodyWidth > 0 && shellBodyWidth < GLOBAL_SIDEBAR_COMPACT_BELOW;
   const density =
     shellBodyWidth > 0 && shellBodyWidth < 900 ? "compact" : "cozy";
+
+  const activeConnection = connections.find(
+    (connection) => connection.id === activeConnectionId,
+  );
+  const usesWorkbench = usesWorkbenchShell(appSettings?.credentialState);
 
   const handleLeftSidebarToggle = () => {
     if (isShellCompact) {
@@ -254,51 +267,74 @@ export function AppShell() {
         windowViewportZoom ? "top-0 left-0" : "inset-0",
       )}
     >
-      <AppShellHeader
-        isWindowFullscreen={isWindowFullscreen}
-        isShellCompact={isShellCompact}
-        leftSidebarOverlayOpen={leftSidebarOverlayOpen}
-        isLeftSidebarOpen={isLeftSidebarOpen}
-        newConnectionOpen={newConnectionOpen}
-        setNewConnectionOpen={setNewConnectionOpen}
-        onLeftSidebarToggle={handleLeftSidebarToggle}
-        onCreateNewQueryTab={createNewQueryTab}
-        onPointerDown={onTopBarPointerDown}
-        onDoubleClick={onTopBarDoubleClick}
-      />
+      {!usesWorkbench ? (
+        <AppShellHeader
+          isWindowFullscreen={isWindowFullscreen}
+          isShellCompact={isShellCompact}
+          leftSidebarOverlayOpen={leftSidebarOverlayOpen}
+          isLeftSidebarOpen={isLeftSidebarOpen}
+          newConnectionOpen={newConnectionOpen}
+          setNewConnectionOpen={setNewConnectionOpen}
+          onLeftSidebarToggle={handleLeftSidebarToggle}
+          onCreateNewQueryTab={createNewQueryTab}
+          onPointerDown={onTopBarPointerDown}
+          onDoubleClick={onTopBarDoubleClick}
+        />
+      ) : null}
 
       <div
         ref={shellBodyRef}
         className="relative flex min-h-0 flex-1 overflow-hidden"
       >
-        <ResponsiveEdgePanel
-          side="left"
-          storageKey="dbunk.sidebar.global"
-          title="Sidebar"
-          width={globalSidebarWidth}
-          containerWidth={shellBodyWidth}
-          compactBelow={GLOBAL_SIDEBAR_COMPACT_BELOW}
-          protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-          wideVisible={isLeftSidebarOpen}
-          open={leftSidebarOverlayOpen}
-          onOpenChange={setLeftSidebarOverlayOpen}
-          resizer={{
-            onResize: setGlobalSidebarWidth,
-            min: GLOBAL_SIDEBAR_MIN_WIDTH,
-            max: GLOBAL_SIDEBAR_MAX_WIDTH,
-            ariaLabel: "Resize connections and tables sidebar",
-          }}
-          className="bg-surface-sidebar"
-        >
-          <Sidebar className="border-r-0" />
-        </ResponsiveEdgePanel>
-        <div className="flex min-w-0 flex-1 flex-col bg-surface-app">
-          {activeView === "workspace" ? (
-            <WorkspaceView isClient={isClient} />
+        {usesWorkbench ? (
+          activeView === "settings" ||
+          !isKeyValueConnection(activeConnection) ? (
+            <RelationalWorkbench
+              isClient={isClient}
+              isWindowFullscreen={isWindowFullscreen}
+              onPointerDown={onTopBarPointerDown}
+              onDoubleClick={onTopBarDoubleClick}
+              settingsView={activeView === "settings" ? <SettingsView /> : null}
+            />
           ) : (
-            <SettingsView />
-          )}
-        </div>
+            <KeyValueWorkbench
+              isWindowFullscreen={isWindowFullscreen}
+              onPointerDown={onTopBarPointerDown}
+              onDoubleClick={onTopBarDoubleClick}
+            />
+          )
+        ) : (
+          <>
+            <ResponsiveEdgePanel
+              side="left"
+              storageKey="dbunk.sidebar.global"
+              title="Sidebar"
+              width={globalSidebarWidth}
+              containerWidth={shellBodyWidth}
+              compactBelow={GLOBAL_SIDEBAR_COMPACT_BELOW}
+              protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+              wideVisible={isLeftSidebarOpen}
+              open={leftSidebarOverlayOpen}
+              onOpenChange={setLeftSidebarOverlayOpen}
+              resizer={{
+                onResize: setGlobalSidebarWidth,
+                min: GLOBAL_SIDEBAR_MIN_WIDTH,
+                max: GLOBAL_SIDEBAR_MAX_WIDTH,
+                ariaLabel: "Resize connections and tables sidebar",
+              }}
+              className="bg-surface-sidebar"
+            >
+              <Sidebar className="border-r-0" />
+            </ResponsiveEdgePanel>
+            <div className="flex min-w-0 flex-1 flex-col bg-surface-app">
+              {activeView === "workspace" ? (
+                <WorkspaceView isClient={isClient} />
+              ) : (
+                <SettingsView />
+              )}
+            </div>
+          </>
+        )}
       </div>
       <CommandPalette />
     </div>

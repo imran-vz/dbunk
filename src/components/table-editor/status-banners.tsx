@@ -152,7 +152,7 @@ interface BannerProps {
 const TONE_CLASS: Record<BannerTone, string> = {
   danger: "border-danger/40 bg-danger/10 text-danger",
   warning: "border-warning/40 bg-warning/10 text-warning",
-  success: "border-accent-green/40 bg-accent-green/10 text-accent-green-hover",
+  success: "border-accent/40 bg-accent/10 text-accent-hover",
 };
 
 function Banner({

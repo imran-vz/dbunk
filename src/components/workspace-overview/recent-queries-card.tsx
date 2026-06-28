@@ -66,7 +66,7 @@ function QueryRow({ query }: { query: QueryHistoryEntry }) {
         className={cn(
           "flex size-7 shrink-0 items-center justify-center rounded-md",
           query.status === "success"
-            ? "bg-accent-green/10 text-accent-green-hover"
+            ? "bg-accent/10 text-accent-hover"
             : "bg-danger/10 text-danger",
         )}
       >
@@ -85,7 +85,7 @@ function QueryRow({ query }: { query: QueryHistoryEntry }) {
           </span>
         </div>
       </div>
-      <span className="shrink-0 rounded-full bg-accent-green/10 px-2 py-0.5 text-[0.625rem] font-medium tabular-nums text-accent-green-hover">
+      <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[0.625rem] font-medium tabular-nums text-accent-hover">
         {query.runtimeMs} ms
       </span>
     </div>

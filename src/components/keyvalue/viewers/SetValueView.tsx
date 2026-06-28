@@ -220,9 +220,9 @@ export function SetValueView({
             ? pendingAdds.map((value) => (
                 <li
                   key={`add::${value}`}
-                  className="flex items-center justify-between gap-2 bg-accent-green/5 px-3 py-1"
+                  className="flex items-center justify-between gap-2 bg-accent/5 px-3 py-1"
                 >
-                  <span className="break-all text-accent-green">+ {value}</span>
+                  <span className="break-all text-accent">+ {value}</span>
                   <button
                     type="button"
                     onClick={() =>

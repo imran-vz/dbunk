@@ -141,7 +141,7 @@ export function SchemaMapToolbar({
               className={cn(
                 "px-2 text-[0.6875rem] font-medium transition-colors",
                 prefs.attrMode === option.id
-                  ? "bg-accent-green/15 text-accent-green-hover"
+                  ? "bg-accent/15 text-accent-hover"
                   : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
               )}
             >
@@ -180,7 +180,7 @@ export function SchemaMapToolbar({
               className={cn(
                 "inline-flex items-center gap-1 px-2 text-[0.6875rem] font-medium transition-colors",
                 prefs.routing === routing
-                  ? "bg-accent-green/15 text-accent-green-hover"
+                  ? "bg-accent/15 text-accent-hover"
                   : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
               )}
             >
@@ -253,7 +253,7 @@ function ToggleChip({
       className={cn(
         "inline-flex h-6 items-center gap-1 rounded-sm border px-2 text-[0.6875rem] font-medium transition-colors",
         active
-          ? "border-accent-green/40 bg-accent-green/10 text-accent-green-hover"
+          ? "border-accent/40 bg-accent/10 text-accent-hover"
           : "border-border-subtle bg-surface-panel text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
       )}
     >

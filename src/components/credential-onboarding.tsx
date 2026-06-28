@@ -88,7 +88,7 @@ export function CredentialOnboarding() {
       <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="flex flex-col justify-between rounded-lg border border-border-subtle bg-surface-window p-6">
           <div>
-            <div className="flex size-10 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
+            <div className="flex size-10 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent">
               <IconLock className="size-5" />
             </div>
             <h1 className="mt-5 text-2xl font-semibold tracking-tight">
@@ -126,7 +126,7 @@ export function CredentialOnboarding() {
                   className={cn(
                     "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors",
                     selected
-                      ? "border-accent-green/50 bg-accent-green/10"
+                      ? "border-accent/50 bg-accent/10"
                       : "border-border-subtle bg-surface-panel hover:border-border-strong",
                   )}
                 >
@@ -137,7 +137,7 @@ export function CredentialOnboarding() {
                     <span className="flex items-center gap-2 text-sm font-semibold">
                       {item.title}
                       {item.recommended ? (
-                        <span className="rounded-md bg-accent-green/15 px-1.5 py-0.5 text-[0.625rem] text-accent-green">
+                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[0.625rem] text-accent">
                           Recommended
                         </span>
                       ) : null}
@@ -227,7 +227,7 @@ export function CredentialUnlock() {
   return (
     <div className="flex h-full w-full items-center justify-center bg-surface-app p-6 text-foreground">
       <div className="w-full max-w-md rounded-lg border border-border-subtle bg-surface-window p-6">
-        <div className="flex size-10 items-center justify-center rounded-md border border-accent-green/30 bg-accent-green/10 text-accent-green">
+        <div className="flex size-10 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent">
           <IconShieldLock className="size-5" />
         </div>
         <h1 className="mt-5 text-xl font-semibold">Unlock credentials</h1>

@@ -54,6 +54,7 @@ interface QueryResultsViewProps {
   isRunning: boolean;
   errorMessage: string | null;
   onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
+  hideTabs?: boolean;
 }
 
 const TABS: ReadonlyArray<{ id: ResultsView; label: string }> = [
@@ -71,49 +72,57 @@ export function QueryResultsView({
   isRunning,
   errorMessage,
   onCellEdit,
+  hideTabs = false,
 }: QueryResultsViewProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface-app">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface-window px-3">
-        <div className="flex items-end gap-1">
-          {TABS.map(({ id, label }) => {
-            const isActive = view === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-label={`Show ${label} view`}
-                onClick={() => onViewChange(id)}
-                aria-current={isActive ? "page" : undefined}
-                className={cn(
-                  "relative h-7 px-2 text-xs font-medium transition-colors",
-                  isActive
-                    ? "text-foreground"
-                    : "text-text-muted hover:text-foreground",
-                )}
-              >
-                {label}
-                {isActive ? (
-                  <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent-green" />
-                ) : null}
-              </button>
-            );
-          })}
+      {!hideTabs ? (
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface-window px-3">
+          <div className="flex items-end gap-1">
+            {TABS.map(({ id, label }) => {
+              const isActive = view === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-label={`Show ${label} view`}
+                  onClick={() => onViewChange(id)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "relative h-7 px-2 text-xs font-medium transition-colors",
+                    isActive
+                      ? "text-foreground"
+                      : "text-text-muted hover:text-foreground",
+                  )}
+                >
+                  {label}
+                  {isActive ? (
+                    <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 text-[0.625rem] text-text-muted">
+            <span className="dbunk-optional-label">
+              Returned {preview?.rowCount ?? 0} rows in{" "}
+              {preview?.runtime ?? "—"}
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Download results"
+            >
+              <IconDownload className="size-3.5" />
+            </Button>
+            <Button size="icon-sm" variant="ghost" aria-label="Copy results">
+              <IconCopy className="size-3.5" />
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-[0.625rem] text-text-muted">
-          <span className="dbunk-optional-label">
-            Returned {preview?.rowCount ?? 0} rows in {preview?.runtime ?? "—"}
-          </span>
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          <Button size="icon-sm" variant="ghost" aria-label="Download results">
-            <IconDownload className="size-3.5" />
-          </Button>
-          <Button size="icon-sm" variant="ghost" aria-label="Copy results">
-            <IconCopy className="size-3.5" />
-          </Button>
-        </div>
-      </div>
+      ) : null}
 
       {errorMessage ? (
         <div
@@ -206,7 +215,7 @@ function ExplainEmptyState() {
   return (
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-md rounded-lg border border-dashed border-border-subtle bg-surface-panel/40 p-6 text-center">
-        <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-accent-green/10 text-accent-green">
+        <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-accent/10 text-accent">
           <IconRoute className="size-5" />
         </div>
         <div className="text-sm font-semibold text-foreground">

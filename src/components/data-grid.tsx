@@ -140,7 +140,7 @@ function buildMetaRows(meta: ColumnHeaderMeta): MetaRow[] {
     rows.push({
       key: "unique",
       Icon: IconStar,
-      iconClass: "text-accent-green",
+      iconClass: "text-accent",
       label: "Unique index",
     });
   } else if (meta.isIndexed) {
@@ -205,7 +205,7 @@ function ColumnHeaderLabel({
       ) : null}
       {meta.isUnique ? (
         <IconStar
-          className="size-3 shrink-0 text-accent-green"
+          className="size-3 shrink-0 text-accent"
           aria-label="unique index"
         />
       ) : meta.isIndexed ? (

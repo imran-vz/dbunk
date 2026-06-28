@@ -83,23 +83,6 @@ export function WorkspaceView({ isClient }: WorkspaceViewProps) {
     [activeTabId, workspaceTabs],
   );
 
-  // Storage-class fork (ADR-0008): keyvalue engines (Redis) render
-  // their own workspace shell with sidebar + key/cli/pubsub/server
-  // tab kinds. Forking here — above the relational tab-kind dispatch
-  // — keeps `TableEditorPanel` / `QueryEditorPanel` from ever seeing
-  // a Redis connection or a non-relational tab kind.
-  if (
-    activeConnection &&
-    storageClassFor(activeConnection.engine) === "keyvalue" &&
-    activeConnection.engine === "Redis"
-  ) {
-    // Engine-tag narrow alongside the storage-class check so TypeScript
-    // can hand `KeyValueWorkspace` a `RedisConnection`. Today Redis is
-    // the only keyvalue engine; the additional discriminator-check
-    // disappears the moment another keyvalue engine joins the union.
-    return <KeyValueWorkspace activeConnection={activeConnection} />;
-  }
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <WorkspaceTabs />

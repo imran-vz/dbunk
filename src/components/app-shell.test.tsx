@@ -53,6 +53,25 @@ vi.mock("@/components/sidebar", () => ({
   Sidebar: () => <aside data-testid="sidebar" />,
 }));
 
+vi.mock("@/components/workbench/relational-workbench", () => ({
+  RelationalWorkbench: () => <div data-testid="relational-workbench" />,
+}));
+
+vi.mock("@/components/workbench/keyvalue-workbench", () => ({
+  KeyValueWorkbench: () => <div data-testid="keyvalue-workbench" />,
+}));
+
+vi.mock("@/components/workbench/workbench-policy", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/components/workbench/workbench-policy")
+    >();
+  return {
+    ...actual,
+    usesWorkbenchShell: vi.fn(() => false),
+  };
+});
+
 vi.mock("@/components/connections-view", () => ({
   ConnectionsView: () => <div data-testid="connections-view" />,
 }));
@@ -71,6 +90,7 @@ vi.mock("@/components/new-connection-dialog", () => ({
 }));
 
 import { AppShell } from "@/components/app-shell";
+import { usesWorkbenchShell } from "@/components/workbench/workbench-policy";
 import { type Connection, useAppStore } from "@/lib/store";
 import {
   tauriPrepareWindowZoomTransition,
@@ -79,25 +99,36 @@ import {
 } from "@/lib/tauri";
 
 const initialStoreState = useAppStore.getState();
+const mockedUsesWorkbenchShell = vi.mocked(usesWorkbenchShell);
+const mockedStartDragging = vi.mocked(tauriStartDragging);
 const mockedPrepareWindowZoomTransition = vi.mocked(
   tauriPrepareWindowZoomTransition,
 );
-const mockedStartDragging = vi.mocked(tauriStartDragging);
 const mockedToggleWindowZoom = vi.mocked(tauriToggleWindowZoom);
 
 const connection: Connection = {
   id: "conn-1",
-  name: "Local Postgres",
-  database: "postgres",
+  name: "Local MySQL",
+  database: "reports",
   status: "Connected",
-  engine: "PostgreSQL",
+  engine: "MySQL",
   host: "localhost",
-  port: 5432,
-  user: "postgres",
+  port: 3306,
+  user: "root",
   password: "",
   role: "",
   latency: "12 ms",
   ssl: true,
+};
+
+const postgresConnection: Connection = {
+  ...connection,
+  id: "conn-pg",
+  name: "Local Postgres",
+  database: "postgres",
+  engine: "PostgreSQL",
+  port: 5432,
+  user: "postgres",
 };
 
 const readySettings = {
@@ -139,6 +170,7 @@ beforeEach(() => {
   tauriMocks.tauriOnWindowFullscreenChange.mockClear();
   tauriMocks.unlistenFullscreen.mockClear();
   tauriMocks.state.fullscreenHandler = undefined;
+  mockedUsesWorkbenchShell.mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -354,5 +386,50 @@ describe("AppShell title bar dragging", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("renders RelationalWorkbench for relational connections", () => {
+    mockedUsesWorkbenchShell.mockReturnValue(true);
+    useAppStore.setState({
+      activeConnectionId: postgresConnection.id,
+      connections: [postgresConnection],
+    });
+
+    render(<AppShell />);
+
+    expect(screen.getByTestId("relational-workbench")).toBeTruthy();
+    expect(screen.queryByTestId("app-top-bar")).toBeNull();
+  });
+
+  it("renders KeyValueWorkbench for Redis connections", () => {
+    mockedUsesWorkbenchShell.mockReturnValue(true);
+    const redisConnection: Connection = {
+      id: "conn-redis",
+      name: "Local Redis",
+      database: "",
+      status: "Connected",
+      engine: "Redis",
+      host: "localhost",
+      port: 6379,
+      user: "",
+      password: "",
+      role: "",
+      latency: "3 ms",
+      dbNumber: 0,
+      useTls: false,
+      verifyTlsCert: true,
+      readOnly: false,
+    };
+
+    useAppStore.setState({
+      activeConnectionId: redisConnection.id,
+      connections: [redisConnection],
+      activeView: "workspace",
+    });
+
+    render(<AppShell />);
+
+    expect(screen.getByTestId("keyvalue-workbench")).toBeTruthy();
+    expect(screen.queryByTestId("relational-workbench")).toBeNull();
   });
 });

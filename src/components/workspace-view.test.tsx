@@ -24,16 +24,26 @@ const initialStoreState = useAppStore.getState();
 const connectedConnection: Connection = {
   id: "conn-1",
   name: "Cocoa Comaa",
-  database: "postgres",
+  database: "reports",
   status: "Connected",
-  engine: "PostgreSQL",
+  engine: "MySQL",
   host: "localhost",
-  port: 5432,
-  user: "postgres",
+  port: 3306,
+  user: "root",
   password: "",
   role: "",
   latency: "12 ms",
   ssl: true,
+};
+
+const postgresConnection: Connection = {
+  ...connectedConnection,
+  id: "conn-pg",
+  name: "Postgres Dev",
+  database: "postgres",
+  engine: "PostgreSQL",
+  port: 5432,
+  user: "postgres",
 };
 
 beforeEach(() => {
@@ -98,11 +108,8 @@ describe("WorkspaceView database overview", () => {
     expect(screen.getAllByText("Database").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Engine").length).toBeGreaterThan(0);
 
-    // Database Stats card with rendered totals. The default fixture is
-    // PostgreSQL, so the row-count label shows the (≈) suffix to flag
-    // that pg_class.reltuples is an estimate.
+    // Database Stats card with rendered totals.
     expect(screen.getByText("Database Stats")).toBeTruthy();
-    expect(screen.getByText("Rows (≈)")).toBeTruthy();
     expect(screen.getByText("Indexes")).toBeTruthy();
 
     // Recent Queries + Favorite Tables sections + health banner
@@ -230,19 +237,19 @@ describe("WorkspaceView overview sub-tabs", () => {
 
   it("Schemas sub-tab map action switches to the Schema Map sub-tab", () => {
     useAppStore.setState({
-      activeConnectionId: "conn-1",
+      activeConnectionId: "conn-pg",
       activeTabId: "",
-      connections: [connectedConnection],
+      connections: [postgresConnection],
       workspaceTabs: [],
-      connectionOverviewTab: { "conn-1": "schemas" },
+      connectionOverviewTab: { "conn-pg": "schemas" },
       schemaExplorer: {
-        "conn-1": [
+        "conn-pg": [
           { name: "public", tables: ["users"], views: [] },
           { name: "audit", tables: ["events"], views: [] },
         ],
       },
       relationStats: {
-        "conn-1": [
+        "conn-pg": [
           {
             schema: "audit",
             name: "events",
@@ -252,17 +259,17 @@ describe("WorkspaceView overview sub-tabs", () => {
           },
         ],
       },
-      relationStatsStatus: { "conn-1": { state: "success" } },
+      relationStatsStatus: { "conn-pg": { state: "success" } },
     });
 
     render(<WorkspaceView isClient={false} />);
 
     fireEvent.click(screen.getByLabelText("View audit schema map"));
 
-    expect(useAppStore.getState().connectionOverviewTab["conn-1"]).toBe(
+    expect(useAppStore.getState().connectionOverviewTab["conn-pg"]).toBe(
       "schema-map",
     );
-    expect(useAppStore.getState().connectionSchemaMapSchema["conn-1"]).toBe(
+    expect(useAppStore.getState().connectionSchemaMapSchema["conn-pg"]).toBe(
       "audit",
     );
   });

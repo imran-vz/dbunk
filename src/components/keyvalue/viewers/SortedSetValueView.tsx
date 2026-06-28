@@ -303,12 +303,12 @@ export function SortedSetValueView({
                   <tr
                     // biome-ignore lint/suspicious/noArrayIndexKey: order is the identity
                     key={`add-${index}`}
-                    className="bg-accent-green/5"
+                    className="bg-accent/5"
                   >
-                    <td className="px-3 py-1 text-right text-accent-green">
+                    <td className="px-3 py-1 text-right text-accent">
                       {upsert.score}
                     </td>
-                    <td className="break-all px-3 py-1 text-accent-green">
+                    <td className="break-all px-3 py-1 text-accent">
                       + {upsert.member}
                     </td>
                     <td className="px-3 py-1 text-right">

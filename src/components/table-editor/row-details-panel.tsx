@@ -109,7 +109,7 @@ export function RowDetailsPanel({
 
 function MultiSelectMessage() {
   return (
-    <div className="rounded-md border border-accent-green/20 bg-accent-green/10 p-3 text-text-muted">
+    <div className="rounded-md border border-accent/20 bg-accent/10 p-3 text-text-muted">
       <div className="font-semibold text-foreground">
         Multiple rows selected
       </div>

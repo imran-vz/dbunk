@@ -36,7 +36,7 @@ export function FormFooter({
   return (
     <div className="flex flex-col gap-2 border-t border-border-subtle bg-surface-window p-4">
       {testStatus.state === "success" ? (
-        <div className="rounded-md border border-accent-green/30 bg-accent-green/10 px-3 py-2 text-[0.6875rem] text-accent-green-hover">
+        <div className="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-[0.6875rem] text-accent-hover">
           Connected in {testStatus.latencyMs} ms.
         </div>
       ) : null}
@@ -102,7 +102,7 @@ function CredentialHint({
 }) {
   return (
     <div className="flex items-center gap-1.5 text-[0.6875rem] text-text-muted">
-      <IconShieldLock className="size-3 text-accent-green" />
+      <IconShieldLock className="size-3 text-accent" />
       {credentialHintText(credentialMode)}
     </div>
   );

@@ -115,7 +115,7 @@ export function WorkspaceTabs() {
   return (
     <div
       data-slot="workspace-tabs"
-      className="flex h-9 items-end border-b border-white/8 bg-[#0a0f14] px-3"
+      className="flex h-9 items-end border-b border-border-subtle bg-surface-app px-3"
     >
       <div className="relative min-w-0 flex-1">
         <div
@@ -134,8 +134,8 @@ export function WorkspaceTabs() {
                 className={cn(
                   "group flex h-8 min-w-36 items-center gap-1.5 border border-b-0 px-2 text-[0.6875rem] transition",
                   isActive
-                    ? "rounded-t-md border-white/12 bg-white/7.5 text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-white/[0.035] hover:text-foreground",
+                    ? "rounded-t-md border-border-subtle bg-surface-panel text-foreground"
+                    : "border-transparent text-text-muted hover:bg-surface-panel/50 hover:text-foreground",
                 )}
               >
                 <Button
@@ -147,14 +147,14 @@ export function WorkspaceTabs() {
                   <TabIcon
                     className={cn(
                       "size-3.5",
-                      isActive ? "text-primary" : "text-muted-foreground",
+                      isActive ? "text-accent" : "text-text-muted",
                     )}
                   />
                   <span className="truncate font-medium">{tab.label}</span>
                   {tab.isDirty ? (
                     <span
                       data-testid={`workspace-tab-dirty-${tab.id}`}
-                      className="size-1.5 shrink-0 rounded-full bg-primary"
+                      className="size-1.5 shrink-0 rounded-full bg-accent"
                     />
                   ) : null}
                 </Button>
@@ -175,14 +175,14 @@ export function WorkspaceTabs() {
           <div
             aria-hidden="true"
             data-testid="workspace-tabs-more-start"
-            className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-[linear-gradient(90deg,#0a0f14_35%,rgba(10,15,20,0))] after:absolute after:top-1 after:left-0 after:h-[calc(100%-0.5rem)] after:w-px after:bg-primary/60 after:shadow-[0_0_12px_rgba(155,230,74,0.42)]"
+            className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-linear-to-r from-surface-app to-transparent after:absolute after:top-1 after:left-0 after:h-[calc(100%-0.5rem)] after:w-px after:bg-accent/60"
           />
         ) : null}
         {scrollHints.end ? (
           <div
             aria-hidden="true"
             data-testid="workspace-tabs-more-end"
-            className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-[linear-gradient(90deg,rgba(10,15,20,0),#0a0f14_68%)] after:absolute after:top-1 after:right-0 after:h-[calc(100%-0.5rem)] after:w-px after:bg-primary/70 after:shadow-[0_0_14px_rgba(155,230,74,0.48)]"
+            className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-linear-to-l from-surface-app to-transparent after:absolute after:top-1 after:right-0 after:h-[calc(100%-0.5rem)] after:w-px after:bg-accent/70"
           />
         ) : null}
       </div>

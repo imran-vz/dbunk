@@ -332,7 +332,7 @@ export function Sidebar({ className }: { className?: string }) {
                     className={cn(
                       "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors",
                       isActive
-                        ? "bg-accent-green/10 text-foreground before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-accent-green"
+                        ? "bg-accent/10 text-foreground before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-accent"
                         : "hover:bg-surface-panel",
                     )}
                   />
@@ -348,7 +348,7 @@ export function Sidebar({ className }: { className?: string }) {
                     className={cn(
                       "flex size-7 shrink-0 items-center justify-center rounded-md border",
                       isActive
-                        ? "border-accent-green/40 bg-accent-green/15 text-accent-green"
+                        ? "border-accent/40 bg-accent/15 text-accent"
                         : "border-border-subtle bg-surface-panel text-text-muted",
                     )}
                   >
@@ -363,7 +363,7 @@ export function Sidebar({ className }: { className?: string }) {
                         <span
                           data-testid={`managed-badge-${connection.name}`}
                           title="Managed by dbunk — a local Docker database. Manage it under Settings → Local Databases."
-                          className="shrink-0 rounded-sm border border-accent-green/40 bg-accent-green/10 px-1 text-[0.5625rem] font-medium uppercase tracking-wide text-accent-green"
+                          className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 text-[0.5625rem] font-medium uppercase tracking-wide text-accent"
                         >
                           Local
                         </span>

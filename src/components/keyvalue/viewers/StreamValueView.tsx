@@ -289,7 +289,7 @@ export function StreamValueView({
         </table>
       </div>
       {editing ? (
-        <div className="flex flex-col gap-2 rounded-md border border-accent-green/30 bg-accent-green/5 p-2 text-[0.65rem]">
+        <div className="flex flex-col gap-2 rounded-md border border-accent/30 bg-accent/5 p-2 text-[0.65rem]">
           <div className="font-semibold text-foreground">Append entries</div>
           {pendingAppends.map((entry, index) => (
             <div
