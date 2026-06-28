@@ -6,10 +6,10 @@ file (persistent sidebar + stacked tab rows). Color/typography tokens live in
 [`../src/styles.css`](../src/styles.css); this doc maps the shell to those
 tokens so it can be reproduced without hardcoding hex values.
 
-A live, clickable reference implementation is at the `/mock` route
-(`../src/components/mock/designs/workbench-rail.tsx`). The mock is throwaway and
-hardcodes colors for exploration; **production must use the CSS-variable tokens
-described in §4**, not the mock's literals.
+Production implementation lives in
+[`../src/components/workbench/`](../src/components/workbench/) (see
+`relational-workbench.tsx`, `workbench-shell.tsx`, and related components).
+Use the CSS-variable tokens described in §4, not hardcoded color literals.
 
 > **Primary accent: amber `#f5a623`.** dbunk's brand/primary accent is amber.
 > The previous lime-green accent is retired. All "active / primary / selected /
