@@ -72,9 +72,9 @@ Drawn fresh to match DESIGN.md aesthetics rather than the `.export-light` palett
   --text-disabled:          #9aa3ad;
 
   /* Accent — darker green for contrast on light surfaces */
-  --accent-green:           #3b9740;
-  --accent-green-hover:     #2f7d32;
-  --accent-green-subdued:   #e6f4d8;
+  --accent:           #3b9740;
+  --accent-hover:     #2f7d32;
+  --accent-subdued:   #e6f4d8;
 
   --semantic-success:       #3b9740;
   --semantic-warning:       #c97a17;
@@ -88,27 +88,27 @@ Drawn fresh to match DESIGN.md aesthetics rather than the `.export-light` palett
   --card-foreground:        var(--text-primary);
   --popover:                var(--surface-panel-elevated);
   --popover-foreground:     var(--text-primary);
-  --primary:                var(--accent-green);
+  --primary:                var(--accent);
   --primary-foreground:     #ffffff;
   --secondary:              var(--surface-panel-elevated);
   --secondary-foreground:   var(--text-primary);
   --muted:                  var(--surface-panel-elevated);
   --muted-foreground:       var(--text-muted);
-  --accent:                 var(--accent-green);
+  --accent:                 var(--accent);
   --accent-foreground:      #ffffff;
   --destructive:            var(--semantic-danger);
   --border:                 var(--border-subtle);
   --input:                  var(--border-subtle);
-  --ring:                   var(--accent-green);
+  --ring:                   var(--accent);
 
   --sidebar:                var(--surface-sidebar);
   --sidebar-foreground:     var(--text-primary);
-  --sidebar-primary:        var(--accent-green);
+  --sidebar-primary:        var(--accent);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent:         var(--accent-green);
+  --sidebar-accent:         var(--accent);
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border:         var(--border-subtle);
-  --sidebar-ring:           var(--accent-green);
+  --sidebar-ring:           var(--accent);
 
   color-scheme: light;
 }
