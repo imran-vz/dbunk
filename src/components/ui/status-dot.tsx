@@ -39,7 +39,7 @@ const toneLabel: Record<StatusTone, string> = {
 };
 
 const toneText: Record<StatusTone, string> = {
-  healthy: "text-accent-green-hover",
+  healthy: "text-accent-hover",
   warning: "text-warning",
   danger: "text-danger",
   info: "text-info",
@@ -47,7 +47,7 @@ const toneText: Record<StatusTone, string> = {
 };
 
 const toneBg: Record<StatusTone, string> = {
-  healthy: "bg-accent-green-subdued/70",
+  healthy: "bg-accent-subdued/70",
   warning: "bg-warning/15",
   danger: "bg-danger/15",
   info: "bg-info/15",
