@@ -114,7 +114,7 @@ export function ResizerHandle({
       onPointerCancel={stop}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group/resizer relative z-10 shrink-0 touch-none select-none bg-border-subtle transition-colors hover:bg-accent-green/60 focus-visible:bg-accent-green/60 focus-visible:outline-none active:bg-accent-green",
+        "group/resizer relative z-10 shrink-0 touch-none select-none bg-border-subtle transition-colors hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none active:bg-accent",
         isVertical ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
         className,
       )}
