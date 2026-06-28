@@ -389,7 +389,7 @@ function ConfigCard({
                           onClick={() => {
                             void saveEdit();
                           }}
-                          className="text-accent-green hover:underline disabled:opacity-50"
+                          className="text-accent hover:underline disabled:opacity-50"
                         >
                           save
                         </button>

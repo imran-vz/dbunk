@@ -169,7 +169,7 @@ export function ConnectionsView() {
                 <button
                   type="button"
                   onClick={() => setShowPanel(true)}
-                  className="flex items-center gap-3 rounded-lg border border-dashed border-border-strong bg-surface-panel/40 px-4 py-3 text-xs text-text-muted transition-colors hover:border-accent-green/50 hover:bg-surface-panel hover:text-foreground"
+                  className="flex items-center gap-3 rounded-lg border border-dashed border-border-strong bg-surface-panel/40 px-4 py-3 text-xs text-text-muted transition-colors hover:border-accent/50 hover:bg-surface-panel hover:text-foreground"
                 >
                   <span className="flex size-8 items-center justify-center rounded-md border border-border-subtle bg-surface-panel">
                     <IconPlus className="size-3.5" />
@@ -202,7 +202,7 @@ export function ConnectionsView() {
                 <button
                   type="button"
                   onClick={() => setShowPanel(true)}
-                  className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface-panel/40 text-xs text-text-muted transition-colors hover:border-accent-green/50 hover:bg-surface-panel hover:text-foreground"
+                  className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface-panel/40 text-xs text-text-muted transition-colors hover:border-accent/50 hover:bg-surface-panel hover:text-foreground"
                 >
                   <span className="flex size-9 items-center justify-center rounded-md border border-border-subtle bg-surface-panel">
                     <IconPlus className="size-4" />
@@ -299,7 +299,7 @@ function ConnectionCard({
       className={cn(
         "group flex min-h-32 flex-col gap-3 rounded-lg border bg-surface-panel p-4 transition-colors",
         isActive
-          ? "border-accent-green/40 bg-accent-green/5"
+          ? "border-accent/40 bg-accent/5"
           : "border-border-subtle hover:border-border-strong",
       )}
     >
@@ -313,7 +313,7 @@ function ConnectionCard({
             className={cn(
               "flex size-9 shrink-0 items-center justify-center rounded-md",
               isActive
-                ? "bg-accent-green/15 text-accent-green"
+                ? "bg-accent/15 text-accent"
                 : "bg-surface-panel-elevated text-text-secondary",
             )}
           >
@@ -387,7 +387,7 @@ function ConnectionListRow({
       className={cn(
         "group flex flex-col gap-1.5 rounded-lg border bg-surface-panel px-3 py-2.5 transition-colors",
         isActive
-          ? "border-accent-green/40 bg-accent-green/5"
+          ? "border-accent/40 bg-accent/5"
           : "border-border-subtle hover:border-border-strong",
       )}
     >
@@ -401,7 +401,7 @@ function ConnectionListRow({
             className={cn(
               "flex size-7 shrink-0 items-center justify-center rounded-md",
               isActive
-                ? "bg-accent-green/15 text-accent-green"
+                ? "bg-accent/15 text-accent"
                 : "bg-surface-panel-elevated text-text-secondary",
             )}
           >

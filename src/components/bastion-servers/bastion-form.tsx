@@ -249,7 +249,7 @@ function GuidedKeyCapture({
         className={cn(
           "rounded-md border px-3 py-2 text-[0.6875rem]",
           analysis.tone === "ready" &&
-            "border-accent-green/30 bg-accent-green/10 text-accent-green",
+            "border-accent/30 bg-accent/10 text-accent",
           analysis.tone === "warning" &&
             "border-warning/30 bg-warning/10 text-warning",
           analysis.tone === "neutral" &&

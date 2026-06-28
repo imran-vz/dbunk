@@ -64,7 +64,7 @@ export function SettingsView() {
               className={cn(
                 "flex h-8 items-center gap-2 rounded-md px-2 text-xs text-text-secondary transition-colors",
                 isActive
-                  ? "bg-accent-green/10 text-foreground"
+                  ? "bg-accent/10 text-foreground"
                   : "hover:bg-surface-panel hover:text-foreground",
               )}
             >
@@ -182,7 +182,7 @@ function GeneralTab() {
                     className={cn(
                       "flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors",
                       active
-                        ? "border-accent-green/50 bg-accent-green/10"
+                        ? "border-accent/50 bg-accent/10"
                         : "border-border-subtle bg-surface-panel hover:border-border-strong",
                       modeLocked && !active ? "opacity-50" : "",
                     )}
@@ -220,7 +220,7 @@ function GeneralTab() {
                     className={cn(
                       "flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors",
                       active
-                        ? "border-accent-green/50 bg-accent-green/10"
+                        ? "border-accent/50 bg-accent/10"
                         : "border-border-subtle bg-surface-panel hover:border-border-strong",
                     )}
                   >
@@ -332,7 +332,7 @@ function SecurityTab() {
               className={cn(
                 "rounded-md px-2 py-1 text-[0.6875rem]",
                 settings?.credentialState === "ready"
-                  ? "bg-accent-green/10 text-accent-green"
+                  ? "bg-accent/10 text-accent"
                   : "bg-warning/10 text-warning",
               )}
             >
@@ -352,7 +352,7 @@ function SecurityTab() {
                   className={cn(
                     "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors",
                     active
-                      ? "border-accent-green/50 bg-accent-green/10"
+                      ? "border-accent/50 bg-accent/10"
                       : "border-border-subtle bg-surface-panel hover:border-border-strong",
                   )}
                 >

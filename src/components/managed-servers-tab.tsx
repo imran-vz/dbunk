@@ -70,7 +70,7 @@ export function ManagedServersTab() {
 }
 
 const STATUS_TONE: Record<string, string> = {
-  running: "text-accent-green",
+  running: "text-accent",
   stopped: "text-text-muted",
   orphaned: "text-destructive",
 };

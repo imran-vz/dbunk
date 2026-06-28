@@ -168,7 +168,7 @@ function ErrorDataGrid({
             <button
               type="button"
               onClick={reset}
-              className="rounded-sm border border-accent-green/40 bg-accent-green/10 px-2 py-1 text-[0.6875rem] font-medium text-accent-green transition-colors hover:bg-accent-green/20 hover:text-accent-green-hover"
+              className="rounded-sm border border-accent/40 bg-accent/10 px-2 py-1 text-[0.6875rem] font-medium text-accent transition-colors hover:bg-accent/20 hover:text-accent-hover"
             >
               retry
             </button>

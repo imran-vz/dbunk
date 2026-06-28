@@ -179,7 +179,7 @@ function CompareKeysButton({ connectionId }: { connectionId: string }) {
           <div
             className={cn(
               "text-[0.65rem] font-semibold",
-              equal ? "text-accent-green" : "text-warning",
+              equal ? "text-accent" : "text-warning",
             )}
           >
             {equal ? "Values are identical." : "Values differ."}
@@ -749,7 +749,7 @@ export function KeyspaceBrowser({
           className={cn(
             "flex h-8 cursor-pointer items-center gap-1 rounded border border-border-subtle px-2 text-[0.6rem]",
             liveUpdates
-              ? "border-accent-green/60 bg-accent-green/10 text-accent-green"
+              ? "border-accent/60 bg-accent/10 text-accent"
               : "text-text-muted",
           )}
           title="Subscribe to keyspace notifications and refresh the SCAN on each key event. Requires `CONFIG SET notify-keyspace-events KEA` on the server."

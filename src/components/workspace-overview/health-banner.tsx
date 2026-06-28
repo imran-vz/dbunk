@@ -29,16 +29,16 @@ function HealthyBanner({
   lastChecked: string;
 }) {
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent-green/25 bg-accent-green-subdued/40 px-4 py-3">
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/25 bg-accent-subdued/40 px-4 py-3">
       <div className="flex items-center gap-3">
-        <span className="flex size-9 items-center justify-center rounded-md bg-accent-green/15 text-accent-green">
+        <span className="flex size-9 items-center justify-center rounded-md bg-accent/15 text-accent">
           <IconActivityHeartbeat className="size-5" />
         </span>
         <div>
-          <div className="text-sm font-medium text-accent-green-hover">
+          <div className="text-sm font-medium text-accent-hover">
             Your connection is healthy
           </div>
-          <div className="text-xs text-accent-green-hover/70">
+          <div className="text-xs text-accent-hover/70">
             {latency
               ? `Round-trip ${latency}. Last checked ${lastChecked}.`
               : `Last checked ${lastChecked}.`}

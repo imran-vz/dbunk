@@ -37,6 +37,7 @@ interface QueryEditorToolbarProps {
   onExplain: () => void;
   onFormat: () => void;
   onInsertSnippet: (sql: string) => void;
+  hideConnectionSwitcher?: boolean;
 }
 
 export function QueryEditorToolbar({
@@ -55,6 +56,7 @@ export function QueryEditorToolbar({
   onExplain,
   onFormat,
   onInsertSnippet,
+  hideConnectionSwitcher = false,
 }: QueryEditorToolbarProps) {
   const relationalConnections = connections.filter(
     (connection) => storageClassFor(connection.engine) === "relational",
@@ -66,46 +68,48 @@ export function QueryEditorToolbar({
   return (
     <div className="flex min-h-10 shrink-0 items-center justify-between gap-2 overflow-x-auto border-b border-border-subtle bg-surface-window px-3 py-1.5">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-sm border border-accent-green/30 bg-accent-green/10 text-accent-green">
+        <span className="flex size-7 items-center justify-center rounded-sm border border-accent/30 bg-accent/10 text-accent">
           <IconTerminal2 className="size-3.5" />
         </span>
         <h1 className="truncate text-xs font-semibold tracking-tight text-foreground">
           Query Editor
         </h1>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Connection selector"
-            className="ml-1 inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
-          >
-            <span className="size-1.5 rounded-full bg-accent-green" />
-            <span className="truncate">{dbSelectorLabel}</span>
-            <IconChevronDown className="size-3 text-text-muted" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {relationalConnections.length === 0 ? (
-              <div className="px-2 py-1.5 text-[0.6875rem] text-text-muted">
-                No relational connections available.
-              </div>
-            ) : null}
-            {relationalConnections.map((connection) => {
-              const isCurrent = connection.id === currentConnectionId;
-              return (
-                <DropdownMenuItem
-                  key={connection.id}
-                  disabled={isRunning || isCurrent}
-                  onClick={() => onRetargetConnection(connection.id)}
-                >
-                  {isCurrent ? (
-                    <IconCheck className="size-3 text-accent-green" />
-                  ) : (
-                    <span className="size-3" />
-                  )}
-                  {connection.name} · {connection.engine}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {!hideConnectionSwitcher ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Connection selector"
+              className="ml-1 inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
+            >
+              <span className="size-1.5 rounded-full bg-accent" />
+              <span className="truncate">{dbSelectorLabel}</span>
+              <IconChevronDown className="size-3 text-text-muted" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {relationalConnections.length === 0 ? (
+                <div className="px-2 py-1.5 text-[0.6875rem] text-text-muted">
+                  No relational connections available.
+                </div>
+              ) : null}
+              {relationalConnections.map((connection) => {
+                const isCurrent = connection.id === currentConnectionId;
+                return (
+                  <DropdownMenuItem
+                    key={connection.id}
+                    disabled={isRunning || isCurrent}
+                    onClick={() => onRetargetConnection(connection.id)}
+                  >
+                    {isCurrent ? (
+                      <IconCheck className="size-3 text-accent" />
+                    ) : (
+                      <span className="size-3" />
+                    )}
+                    {connection.name} · {connection.engine}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </div>
       <div className="flex items-center gap-1.5">
         {hasEdits ? (
@@ -194,7 +198,7 @@ export function QueryEditorToolbar({
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Run options"
-              className="inline-flex h-6 items-center justify-center rounded-r-sm border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground hover:bg-accent-green-hover disabled:opacity-50"
+              className="inline-flex h-6 items-center justify-center rounded-r-sm border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground hover:bg-accent-hover disabled:opacity-50"
               disabled={isRunning}
             >
               <IconChevronDown className="size-3.5" />

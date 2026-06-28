@@ -20,9 +20,10 @@ import {
   useQuerySidebarVisibility,
 } from "@/components/query-editor/use-query-sidebar-visibility";
 import { QuerySidebar } from "@/components/query-sidebar";
-import { StatusBar } from "@/components/status-bar";
+import { StatusBar, type StatusBarItem } from "@/components/status-bar";
 import { ResizerHandle } from "@/components/ui/resizer-handle";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
+import { WorkbenchDock } from "@/components/workbench/dock";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import { formatSql } from "@/lib/sql-format";
@@ -40,10 +41,24 @@ import {
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
   isClient: boolean;
+  variant?: "default" | "workbench";
+  resultsView?: ResultsView;
+  onResultsViewChange?: (view: ResultsView) => void;
+  onStatusItemsChange?: (items: StatusBarItem[]) => void;
 }
 
-export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
-  const [resultsView, setResultsView] = useState<ResultsView>("results");
+export function QueryEditorPanel({
+  tab,
+  isClient,
+  variant = "default",
+  resultsView: controlledResultsView,
+  onResultsViewChange,
+  onStatusItemsChange,
+}: QueryEditorPanelProps) {
+  const [internalResultsView, setInternalResultsView] =
+    useState<ResultsView>("results");
+  const resultsView = controlledResultsView ?? internalResultsView;
+  const setResultsView = onResultsViewChange ?? setInternalResultsView;
   const [bindValues, setBindValues] = useState<Record<string, string>>({});
   const [explainPlan, setExplainPlan] = useState<ExplainPlanData | null>(null);
   const activeTabIdRef = useRef(tab.id);
@@ -133,7 +148,7 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
       }
       setResultsView("results");
     },
-    [setOutcome],
+    [setOutcome, setResultsView],
   );
 
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
@@ -291,6 +306,129 @@ export function QueryEditorPanel({ tab, isClient }: QueryEditorPanelProps) {
     errorMessage,
     activeConnection,
   });
+
+  useEffect(() => {
+    onStatusItemsChange?.(statusItems);
+  }, [onStatusItemsChange, statusItems]);
+
+  const isWorkbench = variant === "workbench";
+  const runCurrentHandler =
+    bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent;
+
+  const resultsPane = (
+    <QueryResultsView
+      view={resultsView}
+      onViewChange={setResultsView}
+      preview={activeQueryPreview}
+      explainPlan={explainPlan}
+      currentEdits={currentEdits}
+      exportFilenameBase={exportFilenameBase}
+      isRunning={isRunning}
+      errorMessage={errorMessage}
+      hideTabs={isWorkbench}
+      onCellEdit={(rowIndex, colIndex, value) =>
+        setQueryEdit(tab.id, rowIndex, colIndex, value)
+      }
+    />
+  );
+
+  if (isWorkbench) {
+    return (
+      <div
+        ref={containerRef}
+        data-workspace-density={workspaceDensity}
+        className="relative flex h-full min-h-0 flex-col bg-surface-app"
+      >
+        <QueryEditorToolbar
+          dbSelectorLabel={dbSelectorLabel}
+          connections={connections}
+          currentConnectionId={tab.connectionId}
+          onRetargetConnection={handleRetargetConnection}
+          hasEdits={hasEdits}
+          onDiscardEdits={() => discardQueryEdits(tab.id)}
+          isRunning={isRunning}
+          isSidebarOpen={sidebar.isOpen}
+          onToggleSidebar={sidebar.onToggle}
+          onRunCurrent={runCurrentHandler}
+          onRunSelection={editor.handleRunSelection}
+          onRunAll={editor.handleRunAll}
+          onExplain={handleExplain}
+          onFormat={handleFormat}
+          onInsertSnippet={(sql) =>
+            updateQuery(
+              tab.id,
+              [tab.query ?? "", sql].filter(Boolean).join("\n\n"),
+            )
+          }
+          hideConnectionSwitcher
+        />
+        {bindNames.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs">
+            <span className="text-text-muted">Bind variables</span>
+            {bindNames.map((name) => (
+              <label key={name} className="flex items-center gap-1">
+                <span className="font-mono text-text-muted">:{name}</span>
+                <input
+                  value={bindValues[name] ?? ""}
+                  onChange={(event) =>
+                    setBindValues((current) => ({
+                      ...current,
+                      [name]: event.target.value,
+                    }))
+                  }
+                  className="h-7 w-28 rounded-sm border border-border-subtle bg-surface-input px-2 font-mono text-xs"
+                />
+              </label>
+            ))}
+          </div>
+        ) : null}
+        <div className="relative min-h-0 flex-1 bg-surface-app">
+          {isClient ? (
+            <MonacoEditor
+              height="100%"
+              language="sql"
+              theme={editorTheme}
+              value={tab.query ?? ""}
+              options={editorOptions}
+              onChange={(value) => updateQuery(tab.id, value ?? "")}
+              onMount={editor.onMount}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-text-muted">
+              Loading editor…
+            </div>
+          )}
+        </div>
+        <WorkbenchDock
+          storageKey={`query-${tab.id}`}
+          consoleLabel={tab.label}
+          onRun={runCurrentHandler}
+          runDisabled={isRunning}
+          consoleContent={
+            <pre className="px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground">
+              {tab.query ?? ""}
+            </pre>
+          }
+          outputContent={resultsPane}
+        />
+        <ResponsiveEdgePanel
+          side="right"
+          storageKey="dbunk.sidebar.query"
+          title="Query"
+          width={QUERY_SIDEBAR_WIDTH}
+          containerWidth={containerWidth}
+          compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
+          protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+          wideVisible={sidebar.wideVisible}
+          open={sidebar.overlayOpen}
+          onOpenChange={sidebar.setOverlayOpen}
+          contentClassName="overflow-auto p-4"
+        >
+          <QuerySidebar tab={tab} />
+        </ResponsiveEdgePanel>
+      </div>
+    );
+  }
 
   return (
     <div

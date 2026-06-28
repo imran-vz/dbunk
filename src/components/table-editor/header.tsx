@@ -48,6 +48,8 @@ interface TableEditorHeaderProps {
   /** Table Seeding is engine-gated (PostgreSQL-first, ADR-0020). */
   showSeedAction: boolean;
   onOpenSeedTable: () => void;
+  /** Workbench layout: meta strip only — sub-tabs live in the object tab row. */
+  variant?: "default" | "workbench";
 }
 
 export function TableEditorHeader({
@@ -66,12 +68,81 @@ export function TableEditorHeader({
   onRunMaintenance,
   showSeedAction,
   onOpenSeedTable,
+  variant = "default",
 }: TableEditorHeaderProps) {
+  const actions = (
+    <div className="ml-auto flex items-center gap-1.5">
+      {showRowDetailsToggle ? (
+        <Button
+          size="sm"
+          variant={rowDetailsVisible ? "secondary" : "outline"}
+          aria-pressed={rowDetailsVisible}
+          aria-label={
+            rowDetailsVisible ? "Hide row details" : "Show row details"
+          }
+          title={rowDetailsVisible ? "Hide row details" : "Show row details"}
+          onClick={onToggleRowDetails}
+        >
+          <IconLayoutSidebarRight className="size-3.5" />
+          <span className="dbunk-optional-label">Details</span>
+        </Button>
+      ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Table actions"
+          title="Table actions"
+          className={cn(
+            "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
+          )}
+        >
+          <IconDotsVertical className="size-3.5 text-text-muted" />
+          <span className="dbunk-optional-label">Table actions</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={onOpenSql}>Open in SQL</DropdownMenuItem>
+          <DropdownMenuItem onClick={onExportTableDdl}>
+            Export table DDL
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onOpenCopyTable}>
+            Copy to table…
+          </DropdownMenuItem>
+          {showSeedAction ? (
+            <DropdownMenuItem onClick={onOpenSeedTable}>
+              Seed table…
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem onClick={() => onRunMaintenance("vacuum")}>
+            VACUUM table
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onRunMaintenance("analyze")}>
+            ANALYZE table
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onRunMaintenance("reindex")}>
+            REINDEX table
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onRefresh}>Refresh data</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+
+  if (variant === "workbench") {
+    return (
+      <div className="flex shrink-0 items-center gap-3 border-b border-border-subtle px-3 py-1.5 text-[11px] text-text-muted">
+        <span className="font-medium text-foreground">
+          {schemaBadge}.{title}
+        </span>
+        <span>{rowCountLabel}</span>
+        {actions}
+      </div>
+    );
+  }
+
   return (
     <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-sm border border-accent-green/30 bg-accent-green/10 text-accent-green">
+          <div className="flex size-7 items-center justify-center rounded-sm border border-accent/30 bg-accent/10 text-accent">
             <IconTable className="size-3.5" />
           </div>
           <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
@@ -80,65 +151,7 @@ export function TableEditorHeader({
           <Badge variant="outline">{rowCountLabel}</Badge>
           <Badge variant="outline">{schemaBadge}</Badge>
         </div>
-        <div className="flex items-center gap-1.5">
-          {showRowDetailsToggle ? (
-            <Button
-              size="sm"
-              variant={rowDetailsVisible ? "secondary" : "outline"}
-              aria-pressed={rowDetailsVisible}
-              aria-label={
-                rowDetailsVisible ? "Hide row details" : "Show row details"
-              }
-              title={
-                rowDetailsVisible ? "Hide row details" : "Show row details"
-              }
-              onClick={onToggleRowDetails}
-            >
-              <IconLayoutSidebarRight className="size-3.5" />
-              <span className="dbunk-optional-label">Details</span>
-            </Button>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label="Table actions"
-              title="Table actions"
-              className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
-              )}
-            >
-              <IconDotsVertical className="size-3.5 text-text-muted" />
-              <span className="dbunk-optional-label">Table actions</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={onOpenSql}>
-                Open in SQL
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onExportTableDdl}>
-                Export table DDL
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onOpenCopyTable}>
-                Copy to table…
-              </DropdownMenuItem>
-              {showSeedAction ? (
-                <DropdownMenuItem onClick={onOpenSeedTable}>
-                  Seed table…
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onClick={() => onRunMaintenance("vacuum")}>
-                VACUUM table
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onRunMaintenance("analyze")}>
-                ANALYZE table
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onRunMaintenance("reindex")}>
-                REINDEX table
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onRefresh}>
-                Refresh data
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {actions}
       </div>
       <div className="mt-1.5 flex items-end gap-1">
         {SUB_TABS.map(({ id, label }) => {
@@ -158,7 +171,7 @@ export function TableEditorHeader({
             >
               {label}
               {isActive ? (
-                <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent-green" />
+                <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent" />
               ) : null}
             </button>
           );

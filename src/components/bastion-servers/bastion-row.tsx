@@ -46,7 +46,7 @@ export function BastionRow({
     <div
       className={cn(
         "grid gap-3 px-4 py-3 transition-colors",
-        active ? "bg-accent-green/10" : "hover:bg-surface-panel",
+        active ? "bg-accent/10" : "hover:bg-surface-panel",
       )}
     >
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
@@ -76,7 +76,7 @@ export function BastionRow({
             Host key: {bastion.hostKeyFingerprint ?? "not trusted yet"}
           </div>
           {latestTest?.state === "success" ? (
-            <div className="mt-1 text-[0.6875rem] text-accent-green">
+            <div className="mt-1 text-[0.6875rem] text-accent">
               SSH reachable in {latestTest.latencyMs}ms
             </div>
           ) : null}

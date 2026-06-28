@@ -37,7 +37,7 @@ export function OverviewHeader({
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {name}
           </h1>
-          <span className="flex items-center gap-1.5 text-xs font-medium text-accent-green-hover">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-accent-hover">
             <StatusDot tone="healthy" className="size-2" />
             Connected
           </span>
@@ -57,7 +57,7 @@ export function OverviewHeader({
                 className={cn(
                   "rounded-md px-2.5 py-1 transition-colors",
                   isActive
-                    ? "bg-accent-green/10 text-accent-green-hover"
+                    ? "bg-accent/10 text-accent-hover"
                     : "text-text-muted hover:bg-surface-panel hover:text-foreground",
                 )}
               >

@@ -144,7 +144,7 @@ function SplitBar({
         style={{ width: `${planFrac * 100}%` }}
       />
       <div
-        className="h-full bg-accent-green"
+        className="h-full bg-accent"
         style={{ width: `${execFrac * 100}%` }}
       />
     </div>
@@ -270,7 +270,7 @@ function ExplainRow({
       className={cn(
         "grid grid-cols-[1fr_120px_110px_60px] items-center gap-2 px-3 py-1.5 text-xs transition-colors",
         selected
-          ? "bg-accent-green/10"
+          ? "bg-accent/10"
           : "hover:bg-surface-row-hover/60 cursor-pointer",
       )}
       role="treeitem"
@@ -322,7 +322,7 @@ function ExplainRow({
           </span>
         ) : null}
         {selected ? (
-          <IconTarget className="ml-1.5 size-3 shrink-0 text-accent-green" />
+          <IconTarget className="ml-1.5 size-3 shrink-0 text-accent" />
         ) : null}
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
           {node.node.buffers.slice(0, 2).map((buffer) => (
@@ -538,8 +538,8 @@ function EstimateBlock({ estimate }: { estimate: EstimateAccuracy }) {
         <div className="text-[0.625rem] uppercase tracking-wide text-text-muted">
           Estimate
         </div>
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-accent-green">
-          <span className="inline-block size-1.5 rounded-full bg-accent-green" />
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-accent">
+          <span className="inline-block size-1.5 rounded-full bg-accent" />
           <span>Within {formatRatio(estimate.ratio)} of actual</span>
         </div>
       </div>
@@ -570,8 +570,8 @@ function heatColor(selfPct: number | null): string {
   if (selfPct == null) return "bg-text-muted/40";
   if (selfPct >= 0.5) return "bg-danger";
   if (selfPct >= 0.25) return "bg-warning";
-  if (selfPct >= 0.05) return "bg-accent-green";
-  return "bg-accent-green/70";
+  if (selfPct >= 0.05) return "bg-accent";
+  return "bg-accent/70";
 }
 
 function formatCostRange(

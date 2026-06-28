@@ -873,7 +873,7 @@ function CheckGrid<T extends string>({
           className={cn(
             "h-7 rounded-sm border px-2 text-left text-xs transition-colors",
             selected.has(value)
-              ? "border-accent-green/50 bg-accent-green/10 text-accent-green"
+              ? "border-accent/50 bg-accent/10 text-accent"
               : "border-border-subtle bg-surface-panel text-text-secondary hover:text-foreground",
           )}
         >
@@ -910,7 +910,7 @@ function ColumnChecklist({
             className={cn(
               "flex min-w-0 items-center justify-between gap-2 rounded-sm border px-2 py-1 text-left text-xs transition-colors",
               selected.has(column.name)
-                ? "border-accent-green/50 bg-accent-green/10 text-accent-green"
+                ? "border-accent/50 bg-accent/10 text-accent"
                 : "border-border-subtle bg-surface-window text-text-secondary hover:text-foreground",
             )}
           >
@@ -947,7 +947,7 @@ function JsonNode({ value, depth }: { value: unknown; depth: number }) {
         <span className="text-text-muted">Array[{value.length}]</span>
         {value.map((item, index) => (
           <div key={`${depth}-${JSON.stringify(item)}`} className="mt-1">
-            <span className="text-accent-green">{index}: </span>
+            <span className="text-accent">{index}: </span>
             <JsonNode value={item} depth={depth + 1} />
           </div>
         ))}
@@ -959,7 +959,7 @@ function JsonNode({ value, depth }: { value: unknown; depth: number }) {
       <div style={{ paddingLeft: depth * 12 }}>
         {Object.entries(value).map(([key, child]) => (
           <div key={key} className="mt-1">
-            <span className="text-accent-green">{key}: </span>
+            <span className="text-accent">{key}: </span>
             <JsonNode value={child} depth={depth + 1} />
           </div>
         ))}
@@ -998,18 +998,18 @@ function GeometryPreview({ geometry }: { geometry: GeometryParseResult }) {
             cx={geometry.points[0]?.x ?? 160}
             cy={geometry.points[0]?.y ?? 90}
             r="5"
-            className="fill-accent-green"
+            className="fill-accent"
           />
         ) : geometry.kind === "POLYGON" ? (
           <polygon
             points={geometry.points.map(({ x, y }) => `${x},${y}`).join(" ")}
-            className="fill-accent-green/20 stroke-accent-green"
+            className="fill-accent/20 stroke-accent"
             strokeWidth="2"
           />
         ) : (
           <polyline
             points={geometry.points.map(({ x, y }) => `${x},${y}`).join(" ")}
-            className="fill-none stroke-accent-green"
+            className="fill-none stroke-accent"
             strokeWidth="2"
           />
         )}

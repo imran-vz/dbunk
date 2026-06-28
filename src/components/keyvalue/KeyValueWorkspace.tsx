@@ -37,12 +37,19 @@ type Section = "keys" | "cli" | "server" | "pubsub";
 
 interface KeyValueWorkspaceProps {
   activeConnection: RedisConnection;
+  variant?: "default" | "workbench";
+  activeSection?: Section;
 }
 
 export function KeyValueWorkspace({
   activeConnection,
+  variant = "default",
+  activeSection: controlledSection,
 }: KeyValueWorkspaceProps) {
-  const [activeSection, setActiveSection] = useState<Section>("keys");
+  const [internalSection, setInternalSection] = useState<Section>("keys");
+  const activeSection = controlledSection ?? internalSection;
+  const setActiveSection = controlledSection ? () => {} : setInternalSection;
+  const isWorkbench = variant === "workbench";
   const [selectedKey, setSelectedKey] = useState<{
     name: string;
     type: string;
@@ -98,72 +105,101 @@ export function KeyValueWorkspace({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Top command bar */}
-      <div className="flex items-center gap-3 border-b border-border-subtle bg-surface-window px-4 py-2">
-        <div className="flex items-center gap-2">
-          <IconDatabase className="size-4 text-accent-green" />
-          <span className="text-sm font-medium text-foreground">
-            {activeConnection.name}
-          </span>
-          <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
-            {activeConnection.host}:{activeConnection.port}/db
-            {activeConnection.dbNumber}
-          </span>
-          {capabilities?.role && (
+      {!isWorkbench ? (
+        <div className="flex items-center gap-3 border-b border-border-subtle bg-surface-window px-4 py-2">
+          <div className="flex items-center gap-2">
+            <IconDatabase className="size-4 text-accent" />
+            <span className="text-sm font-medium text-foreground">
+              {activeConnection.name}
+            </span>
             <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
-              {capabilities.role}
+              {activeConnection.host}:{activeConnection.port}/db
+              {activeConnection.dbNumber}
             </span>
-          )}
-        </div>
+            {capabilities?.role && (
+              <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+                {capabilities.role}
+              </span>
+            )}
+          </div>
 
-        {/* Section switcher */}
-        <div className="flex items-center gap-1 rounded-lg border border-border-subtle bg-surface-panel px-1 py-0.5">
-          {(
-            [
-              { id: "keys", icon: IconKey, label: "Keys" },
-              { id: "cli", icon: IconTerminal2, label: "CLI" },
-              { id: "pubsub", icon: IconBroadcast, label: "Pub/Sub" },
-              { id: "server", icon: IconServer, label: "Server" },
-            ] as const
-          ).map((section) => (
+          <div className="flex items-center gap-1 rounded-lg border border-border-subtle bg-surface-panel px-1 py-0.5">
+            {(
+              [
+                { id: "keys", icon: IconKey, label: "Keys" },
+                { id: "cli", icon: IconTerminal2, label: "CLI" },
+                { id: "pubsub", icon: IconBroadcast, label: "Pub/Sub" },
+                { id: "server", icon: IconServer, label: "Server" },
+              ] as const
+            ).map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setActiveSection(section.id)}
+                className={`flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  activeSection === section.id
+                    ? "bg-accent/15 text-accent"
+                    : "text-text-muted hover:text-foreground"
+                }`}
+              >
+                <section.icon className="size-3" />
+                {section.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="ml-auto flex items-center gap-3">
+            {capabilities?.dbSize != null && (
+              <span className="text-[0.65rem] text-text-muted">
+                {capabilities.dbSize.toLocaleString()} keys
+              </span>
+            )}
+            {capabilities?.serverVersion && (
+              <span className="text-[0.65rem] text-text-muted">
+                v{capabilities.serverVersion}
+              </span>
+            )}
             <button
-              key={section.id}
               type="button"
-              onClick={() => setActiveSection(section.id)}
-              className={`flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                activeSection === section.id
-                  ? "bg-accent-green/15 text-accent-green"
-                  : "text-text-muted hover:text-foreground"
-              }`}
+              onClick={() => setNewKeyOpen(true)}
+              className="flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-xs text-text-muted transition-colors hover:border-accent hover:text-accent"
             >
-              <section.icon className="size-3" />
-              {section.label}
+              <IconPlus className="size-3" />
+              New Key
             </button>
-          ))}
+          </div>
         </div>
-
-        {/* Right side: stats + new key */}
-        <div className="ml-auto flex items-center gap-3">
-          {capabilities?.dbSize != null && (
-            <span className="text-[0.65rem] text-text-muted">
-              {capabilities.dbSize.toLocaleString()} keys
-            </span>
-          )}
-          {capabilities?.serverVersion && (
-            <span className="text-[0.65rem] text-text-muted">
-              v{capabilities.serverVersion}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => setNewKeyOpen(true)}
-            className="flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-xs text-text-muted transition-colors hover:border-accent-green hover:text-accent-green"
-          >
-            <IconPlus className="size-3" />
-            New Key
-          </button>
+      ) : (
+        <div className="flex items-center gap-3 border-b border-border-subtle bg-surface-window px-4 py-2">
+          <div className="ml-auto flex items-center gap-3">
+            {capabilities?.dbSize != null && (
+              <span className="text-[0.65rem] text-text-muted">
+                {capabilities.dbSize.toLocaleString()} keys
+              </span>
+            )}
+            {capabilities?.serverVersion && (
+              <span className="text-[0.65rem] text-text-muted">
+                v{capabilities.serverVersion}
+              </span>
+            )}
+            {capabilities?.role && (
+              <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+                {capabilities.role}
+              </span>
+            )}
+            {activeSection === "keys" ? (
+              <button
+                type="button"
+                onClick={() => setNewKeyOpen(true)}
+                className="flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-xs text-text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                <IconPlus className="size-3" />
+                New Key
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main content */}
       <div className="flex min-h-0 flex-1">

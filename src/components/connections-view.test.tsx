@@ -281,7 +281,7 @@ describe("ConnectionCard isActive styling and onSelect", () => {
     });
 
     const { container } = render(<ConnectionsView />);
-    const card = container.querySelector(".border-accent-green\\/40");
+    const card = container.querySelector(".border-accent\\/40");
     expect(card).not.toBeNull();
   });
 
@@ -296,7 +296,7 @@ describe("ConnectionCard isActive styling and onSelect", () => {
 
     const { container } = render(<ConnectionsView />);
     // The first card should not have the active border.
-    const activeCards = container.querySelectorAll(".border-accent-green\\/40");
+    const activeCards = container.querySelectorAll(".border-accent\\/40");
     // Only one card (conn-2) should have it.
     expect(activeCards.length).toBe(1);
   });

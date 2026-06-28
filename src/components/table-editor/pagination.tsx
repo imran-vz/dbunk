@@ -84,7 +84,7 @@ export function Pagination({
               className={cn(
                 "h-6 min-w-6 rounded-sm px-1.5 text-xs tabular-nums transition-colors",
                 entry === page
-                  ? "bg-accent-green/15 text-accent-green-hover"
+                  ? "bg-accent/15 text-accent-hover"
                   : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
               )}
             >

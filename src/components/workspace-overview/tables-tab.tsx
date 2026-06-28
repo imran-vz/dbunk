@@ -218,7 +218,7 @@ export function TablesTab({
             <button
               type="button"
               onClick={onClearSchemaFilter}
-              className="flex items-center gap-1 rounded-md border border-accent-green/40 bg-accent-green/10 px-2.5 py-1 text-[0.6875rem] font-medium text-accent-green-hover transition-colors hover:bg-accent-green/15"
+              className="flex items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-[0.6875rem] font-medium text-accent-hover transition-colors hover:bg-accent/15"
             >
               Schema: {schemaFilter}
               <IconX className="size-3" />
@@ -382,7 +382,7 @@ function KindBadge({ kind }: { kind: string }) {
     <span
       className={cn(
         "rounded-full px-2 py-0.5 text-[0.625rem] font-medium",
-        label === "table" && "bg-accent-green/10 text-accent-green-hover",
+        label === "table" && "bg-accent/10 text-accent-hover",
         label === "view" && "bg-accent-blue/10 text-accent-blue-hover",
         label === "matview" && "bg-warning/10 text-warning",
       )}

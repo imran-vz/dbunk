@@ -140,7 +140,7 @@ function SettingsCard({ settings, loading }: SettingsCardProps) {
             className={cn(
               "rounded-md border px-2.5 py-1 text-[0.6875rem] font-medium transition-colors",
               onlyOverridden
-                ? "border-accent-green/40 bg-accent-green/10 text-accent-green-hover"
+                ? "border-accent/40 bg-accent/10 text-accent-hover"
                 : "border-border-subtle text-text-muted hover:bg-surface-panel hover:text-foreground",
             )}
           >
