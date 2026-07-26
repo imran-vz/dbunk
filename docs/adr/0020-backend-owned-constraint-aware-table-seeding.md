@@ -12,6 +12,15 @@ Generation is deterministic under a seed: an omitted seed is auto-picked and dis
 
 The existing frontend generator (`src/lib/mock-data.ts`, used by the compare tab for copyable mock INSERT SQL) stays as a preview/clipboard tool and is not the seeding engine.
 
+## Per-engine notes
+
+All four relational engines seed. Everything about *what* to generate is shared and pure (`src-tauri/src/seed.rs`); each engine module owns only its sampling SQL and its INSERT shape. Each engine's own type vocabulary is folded into one canonical set before classification (`Nullable(String)` → `text`, `int(11) unsigned` → `integer`, `tinyint(1)` → `boolean`), and `enum` / `set` columns seed from their declared members rather than a generator.
+
+- **PostgreSQL, MySQL, SQLite** — one transaction per run, as above.
+- **ClickHouse** — has no transactions, so "never partially apply" is met by sending the whole run as a single INSERT, which ClickHouse writes as one atomic block. That bounds a run to well under `max_insert_block_size`; runs above the cap are refused with an explanation rather than silently split into separately-committed parts. ClickHouse also has no foreign keys and no unique constraints, so its sorting key is deliberately *not* treated as unique, and `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns are never named in the INSERT.
+
+MySQL and SQLite grew catalog introspection (columns, primary key, foreign keys, indexes) for this — seeding cannot guarantee NOT NULL / FK / unique without it. A run refuses to start if that introspection is unavailable, rather than generating rows the table will reject.
+
 ## Considered Options
 
 - **Extend the frontend `mock-data.ts` path**: rejected — it cannot sample parent-table rows or existing unique values without round-tripping data through the UI, and pushing 100k-row INSERT strings through the query path is unpredictable under load.

@@ -21,6 +21,24 @@ services:
       timeout: 3s
       retries: 20
 
+  mysql:
+    image: mysql:8.4
+    profiles: ["mysql"]
+    environment:
+      MYSQL_DATABASE: dbunk_demo
+      MYSQL_USER: dbunk
+      MYSQL_PASSWORD: dbunk
+      MYSQL_ROOT_PASSWORD: dbunk
+    ports:
+      - "13306:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u dbunk -pdbunk"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   clickhouse:
     image: clickhouse/clickhouse-server:25.8
     profiles: ["clickhouse"]
