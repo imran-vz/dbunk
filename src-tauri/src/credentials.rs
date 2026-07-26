@@ -681,11 +681,11 @@ fn decrypt_bytes(key: &[u8; 32], nonce: &str, ciphertext: &str) -> Result<Vec<u8
 #[cfg(test)]
 mod tests {
     //! Backend tests run against a tempdir SQLite pool. Keychain
-    //! integration is deliberately skipped — it hits the OS and
-    //! flakes in sandboxed CI. The trait-shape orchestration (cross-
-    //! backend cleanup, mode-switch credential survival) is covered
-    //! via the two SQLite-backed variants, which exercises the same
-    //! enum dispatch + topology helper.
+    //! integration uses keyring's in-memory mock so cross-backend
+    //! cleanup remains covered without requiring an OS secret-service
+    //! daemon in sandboxed CI. Mode-switch credential survival is
+    //! covered via the two SQLite-backed variants, which exercises
+    //! the same enum dispatch + topology helper.
     //!
     //! Tests are `#[serial]` because they share the process-global
     //! `SESSION_KEY` and `PASSWORD_CACHE`. Without serialization a
@@ -697,6 +697,11 @@ mod tests {
     use tempfile::TempDir;
 
     async fn fixture() -> (TempDir, SqlitePool) {
+        static MOCK_KEYRING: std::sync::Once = std::sync::Once::new();
+        MOCK_KEYRING.call_once(|| {
+            keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+        });
+
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = Paths::from_dir(dir.path().to_path_buf());
         let pool = open_pool(&paths).await.expect("open_pool");
