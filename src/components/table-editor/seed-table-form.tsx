@@ -24,6 +24,7 @@ import type { ColumnInfo } from "@/lib/store";
 interface SeedTableFormProps {
   columns: ColumnInfo[];
   isSeeding: boolean;
+  progress?: { rowsCompleted: number; totalRows: number };
   onSubmit: (params: {
     rowCount: number;
     seed?: number;
@@ -42,6 +43,7 @@ const MODE_VALUES = "values";
 export function SeedTableForm({
   columns,
   isSeeding,
+  progress,
   onSubmit,
   onClose,
 }: SeedTableFormProps) {
@@ -124,6 +126,35 @@ export function SeedTableForm({
         ))}
       </div>
       <div className="flex items-center justify-end gap-2">
+        {isSeeding && progress ? (
+          <div className="mr-auto flex min-w-40 flex-col gap-1">
+            <div className="flex justify-between text-[0.625rem] text-text-muted">
+              <span>Seeding in one transaction</span>
+              <span>
+                {progress.rowsCompleted.toLocaleString()} /{" "}
+                {progress.totalRows.toLocaleString()}
+              </span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label="Table seeding progress"
+              aria-valuemin={0}
+              aria-valuemax={progress.totalRows}
+              aria-valuenow={progress.rowsCompleted}
+              className="h-1 overflow-hidden rounded-full bg-surface-panel-elevated"
+            >
+              <div
+                className="h-full bg-accent transition-[width]"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    (progress.rowsCompleted / progress.totalRows) * 100,
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
         <Button
           size="sm"
           data-testid="seed-submit"
@@ -133,7 +164,11 @@ export function SeedTableForm({
           }}
         >
           {isSeeding
-            ? "Seeding…"
+            ? progress
+              ? `Seeding ${Math.round(
+                  (progress.rowsCompleted / progress.totalRows) * 100,
+                )}%`
+              : "Seeding…"
             : `Seed ${rowCountValid ? rowCount.toLocaleString() : ""} rows`}
         </Button>
       </div>

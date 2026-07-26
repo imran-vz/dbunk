@@ -41,10 +41,11 @@ export const createManagedServersSlice: StateCreator<
     if (!isTauri()) return "Managed servers require the desktop runtime.";
     try {
       await tauriInvoke(command, { payload: { managedServerId } });
-      await get().loadManagedServers();
       return null;
     } catch (error) {
       return errorToMessage(error);
+    } finally {
+      await get().loadManagedServers();
     }
   };
 
@@ -98,7 +99,14 @@ export const createManagedServersSlice: StateCreator<
       }
     },
 
-    startManagedServer: (id) => lifecycle("start_managed_server", id),
+    startManagedServer: (id) => {
+      set((state) => ({
+        managedServers: state.managedServers.map((server) =>
+          server.id === id ? { ...server, status: "starting" } : server,
+        ),
+      }));
+      return lifecycle("start_managed_server", id);
+    },
     stopManagedServer: (id) => lifecycle("stop_managed_server", id),
     destroyManagedServer: (id) => lifecycle("destroy_managed_server", id),
     recreateManagedServer: (id) => lifecycle("recreate_managed_server", id),

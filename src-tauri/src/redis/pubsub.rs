@@ -215,7 +215,7 @@ pub fn drain(payload: &DrainPayload) -> DrainResult {
                     count: *v,
                 })
                 .collect();
-            channels.sort_by(|a, b| b.count.cmp(&a.count));
+            channels.sort_by_key(|channel| std::cmp::Reverse(channel.count));
             let dropped = session.dropped;
             session.dropped = 0;
             return DrainResult {
@@ -331,7 +331,7 @@ pub async fn discover_channels(
             }
         })
         .collect();
-    result.sort_by(|a, b| b.subscribers.cmp(&a.subscribers));
+    result.sort_by_key(|channel| std::cmp::Reverse(channel.subscribers));
     Ok(DiscoverChannelsResult { channels: result })
 }
 

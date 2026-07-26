@@ -425,6 +425,18 @@ export const createConnectionsSlice: StateCreator<
       }));
       return;
     }
+    const managedServer = get().managedServers.find(
+      (server) => server.connectionId === connectionId,
+    );
+    if (managedServer?.status === "stopped") {
+      set((state) => ({
+        managedServers: state.managedServers.map((server) =>
+          server.id === managedServer.id
+            ? { ...server, status: "starting" }
+            : server,
+        ),
+      }));
+    }
     try {
       const result = await tauriInvoke<ConnectResult>("connect_connection", {
         payload: { connectionId },
@@ -485,6 +497,10 @@ export const createConnectionsSlice: StateCreator<
           errorMessage: message,
         }),
       }));
+    } finally {
+      if (managedServer) {
+        await get().loadManagedServers();
+      }
     }
   },
 

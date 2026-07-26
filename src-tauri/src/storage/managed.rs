@@ -52,6 +52,20 @@ pub async fn read_managed_server_by_id(
     row.map(row_to_managed).transpose()
 }
 
+pub async fn read_managed_server_by_connection_id(
+    pool: &SqlitePool,
+    connection_id: &str,
+) -> Result<Option<ManagedServer>, String> {
+    let row = sqlx::query(&format!(
+        "SELECT {SELECT_COLUMNS} FROM managed_servers WHERE connection_id = ?"
+    ))
+    .bind(connection_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    row.map(row_to_managed).transpose()
+}
+
 pub async fn upsert_managed_server(
     pool: &SqlitePool,
     server: &ManagedServer,

@@ -238,12 +238,15 @@ export function Sidebar({ className }: { className?: string }) {
 
   // Connection IDs backed by a Managed Server (ADR-0019) — these rows
   // wear a "Local" badge so dbunk-owned servers are recognizable.
-  const managedConnectionIds = useMemo(
+  const managedServersByConnectionId = useMemo(
     () =>
-      new Set(
+      new Map(
         managedServers
-          .map((server) => server.connectionId)
-          .filter((id): id is string => id !== null),
+          .filter(
+            (server): server is typeof server & { connectionId: string } =>
+              server.connectionId !== null,
+          )
+          .map((server) => [server.connectionId, server]),
       ),
     [managedServers],
   );
@@ -324,6 +327,7 @@ export function Sidebar({ className }: { className?: string }) {
           const isActive = connection.id === activeConnectionId;
           const tone = connectionStatusTone(connection.status);
           const isDisconnected = connection.status === "Disconnected";
+          const managedServer = managedServersByConnectionId.get(connection.id);
           return (
             <ContextMenu key={connection.id}>
               <ContextMenuTrigger
@@ -359,13 +363,15 @@ export function Sidebar({ className }: { className?: string }) {
                       <span className="truncate text-[0.8125rem] font-medium leading-tight text-foreground">
                         {connection.name}
                       </span>
-                      {managedConnectionIds.has(connection.id) ? (
+                      {managedServer ? (
                         <span
                           data-testid={`managed-badge-${connection.name}`}
                           title="Managed by dbunk — a local Docker database. Manage it under Settings → Local Databases."
                           className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 text-[0.5625rem] font-medium uppercase tracking-wide text-accent"
                         >
-                          Local
+                          {managedServer.status === "starting"
+                            ? "Starting"
+                            : "Local"}
                         </span>
                       ) : null}
                     </span>

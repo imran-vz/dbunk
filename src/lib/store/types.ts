@@ -171,7 +171,11 @@ export type ManagedServer = {
 };
 
 /** Status is derived live from Docker, never trusted from storage. */
-export type ManagedServerStatus = "running" | "stopped" | "orphaned";
+export type ManagedServerStatus =
+  | "running"
+  | "starting"
+  | "stopped"
+  | "orphaned";
 
 export type ManagedServerWithStatus = ManagedServer & {
   status: ManagedServerStatus;
