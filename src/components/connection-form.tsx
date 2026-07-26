@@ -40,6 +40,7 @@ import {
   RoleField,
   UserField,
 } from "@/components/connection-form/common-fields";
+import { DriverOptionsFields } from "@/components/connection-form/driver-options-fields";
 import { FormFooter } from "@/components/connection-form/form-footer";
 import { MySqlFields } from "@/components/connection-form/mysql-fields";
 import { PgFields } from "@/components/connection-form/pg-fields";
@@ -181,6 +182,8 @@ function HostAuthSection({
   const isClickHouse = engineKind === "clickhouse-http";
   const showSslToggle =
     policy.kind === "host-auth" ? policy.showSslToggle : false;
+  const showDriverOptions =
+    policy.kind === "host-auth" ? policy.showDriverOptions : false;
   const sslEngine = form.state.values.engine;
 
   return (
@@ -203,6 +206,7 @@ function HostAuthSection({
           <RoleField form={form} />
           {isClickHouse ? <ClickHouseFields form={form} /> : null}
           {isRedis ? <RedisAdvancedFields form={form} /> : null}
+          {showDriverOptions ? <DriverOptionsFields form={form} /> : null}
           <TunnelFields form={form} />
         </>
       ) : null}

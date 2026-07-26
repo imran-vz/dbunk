@@ -64,6 +64,19 @@ these terms rather than coining synonyms.
   database endpoints that are not directly reachable from the user's
   machine. It owns one active SSH credential, separate from any
   database credential on a Connection.
+- **Driver Options** — per-Connection driver/session knobs the
+  backend replays on every connect, distinct from the credentials
+  that identify the endpoint. PostgreSQL-only today (ADR-0013);
+  persisted as one JSON blob on the Connection record so a new knob
+  is a struct field rather than a schema migration. Covers
+  `statementTimeoutMs`, `idleInTransactionTimeoutMs`,
+  `connectTimeoutMs`, `defaultSearchPath`, `defaultRole`, plus a
+  reserved `keepaliveSeconds` with no runtime yet. Every field is
+  optional and absent means "use the server default" — the whole blob
+  is omitted rather than stored as all-empty. Note that **Driver
+  Options** `defaultRole` is a Postgres `SET ROLE` target and is a
+  separate concept from the Connection's `role`, which is dbunk's own
+  read/write access level.
 - **SSH Tunnel** — a Connection's routing choice to forward its
   database traffic through a Bastion Server. It routes the Connection's
   database endpoint rather than replacing it, and may carry

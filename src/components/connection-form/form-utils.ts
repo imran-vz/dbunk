@@ -13,6 +13,7 @@ import type {
   ClickHouseStoredConnection,
   Connection,
   MySqlStoredConnection,
+  PgDriverOptions,
   PgStoredConnection,
   RedisStoredConnection,
   SqliteStoredConnection,
@@ -45,6 +46,17 @@ export const connectionSchema = z.object({
   sshTunnelKeepaliveWantReply: z.boolean().optional(),
   sshTunnelJumpChain: z.array(z.string()).optional(),
   sshTunnelProxyCommand: z.string().optional(),
+  statementTimeoutMs: z.number().int().optional(),
+  idleInTransactionTimeoutMs: z.number().int().optional(),
+  connectTimeoutMs: z.number().int().optional(),
+  // Carried in form state but deliberately not rendered — sqlx 0.8
+  // exposes no socket-keepalive setter, so there is no control for a
+  // knob nothing applies (ADR-0013 §Decision). Keeping it in the
+  // schema is what makes an existing value survive a round-trip
+  // instead of being wiped on save.
+  keepaliveSeconds: z.number().int().optional(),
+  defaultSearchPath: z.string().optional(),
+  defaultRole: z.string().optional(),
 });
 
 export type ConnectionFormData = z.infer<typeof connectionSchema>;
@@ -74,6 +86,12 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   sshTunnelKeepaliveWantReply: true,
   sshTunnelJumpChain: [],
   sshTunnelProxyCommand: "",
+  statementTimeoutMs: undefined,
+  idleInTransactionTimeoutMs: undefined,
+  connectTimeoutMs: undefined,
+  keepaliveSeconds: undefined,
+  defaultSearchPath: "",
+  defaultRole: "",
 };
 
 type CommonShape = {
@@ -105,12 +123,62 @@ function buildPg(
   common: CommonShape,
 ): PgStoredConnection {
   const sshTunnel = tunnelFromForm(value);
+  const driverOptions = driverOptionsFromForm(value);
   return {
     ...common,
     engine: "PostgreSQL",
     ssl: value.ssl ?? true,
+    ...(driverOptions ? { driverOptions } : null),
     ...(sshTunnel ? { sshTunnel } : null),
   };
+}
+
+/**
+ * Split the comma-separated search-path text into the schema list the
+ * backend stores. Blank entries are dropped rather than rejected —
+ * `validateConnection` already surfaces them as a form issue, and this
+ * builder must stay total for the values it does receive.
+ */
+export function parseSearchPath(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+/** Inverse of `parseSearchPath`, for hydrating the text input. */
+export function formatSearchPath(path: string[] | undefined): string {
+  return (path ?? []).join(", ");
+}
+
+/**
+ * Project the ADR-0013 knobs out of form state. Returns `undefined`
+ * when every knob is empty so the connection record stays free of an
+ * all-`undefined` blob — `driver_options` then persists as SQL NULL
+ * and the backend skips the post-connect `SET` round-trip entirely.
+ */
+export function driverOptionsFromForm(
+  value: ConnectionFormData,
+): PgDriverOptions | undefined {
+  const searchPath = parseSearchPath(value.defaultSearchPath);
+  const defaultRole = value.defaultRole?.trim();
+  const options: PgDriverOptions = {
+    ...(value.statementTimeoutMs !== undefined
+      ? { statementTimeoutMs: value.statementTimeoutMs }
+      : null),
+    ...(value.idleInTransactionTimeoutMs !== undefined
+      ? { idleInTransactionTimeoutMs: value.idleInTransactionTimeoutMs }
+      : null),
+    ...(value.connectTimeoutMs !== undefined
+      ? { connectTimeoutMs: value.connectTimeoutMs }
+      : null),
+    ...(value.keepaliveSeconds !== undefined
+      ? { keepaliveSeconds: value.keepaliveSeconds }
+      : null),
+    ...(searchPath.length > 0 ? { defaultSearchPath: searchPath } : null),
+    ...(defaultRole ? { defaultRole } : null),
+  };
+  return Object.keys(options).length > 0 ? options : undefined;
 }
 
 function buildMySql(
@@ -256,12 +324,16 @@ export function defaultValuesFromConnection(
     sshTunnelJumpChain: tunnel?.jumpChain ?? [],
     sshTunnelProxyCommand: tunnel?.proxyCommand ?? "",
   };
+  // Only PG carries driver options (ADR-0013); every other variant
+  // hydrates the neutral blank so the shared form state stays total.
+  const driverDefaults = driverDefaultsFromConnection(connection);
   switch (connection.engine) {
     case "PostgreSQL":
     case "MySQL":
       return {
         ...common,
         ...tunnelDefaults,
+        ...driverDefaults,
         ssl: connection.ssl,
         useHttps: false,
         urlPath: "",
@@ -274,6 +346,7 @@ export function defaultValuesFromConnection(
       return {
         ...common,
         ...tunnelDefaults,
+        ...driverDefaults,
         ssl: true,
         useHttps: false,
         urlPath: "",
@@ -286,6 +359,7 @@ export function defaultValuesFromConnection(
       return {
         ...common,
         ...tunnelDefaults,
+        ...driverDefaults,
         ssl: true,
         useHttps: connection.useHttps,
         urlPath: connection.urlPath,
@@ -298,6 +372,7 @@ export function defaultValuesFromConnection(
       return {
         ...common,
         ...tunnelDefaults,
+        ...driverDefaults,
         ssl: true,
         useHttps: false,
         urlPath: "",
@@ -307,6 +382,31 @@ export function defaultValuesFromConnection(
         readOnly: connection.readOnly,
       };
   }
+}
+
+type DriverFormDefaults = Pick<
+  ConnectionFormData,
+  | "statementTimeoutMs"
+  | "idleInTransactionTimeoutMs"
+  | "connectTimeoutMs"
+  | "keepaliveSeconds"
+  | "defaultSearchPath"
+  | "defaultRole"
+>;
+
+function driverDefaultsFromConnection(
+  connection: Connection,
+): DriverFormDefaults {
+  const options =
+    connection.engine === "PostgreSQL" ? connection.driverOptions : undefined;
+  return {
+    statementTimeoutMs: options?.statementTimeoutMs,
+    idleInTransactionTimeoutMs: options?.idleInTransactionTimeoutMs,
+    connectTimeoutMs: options?.connectTimeoutMs,
+    keepaliveSeconds: options?.keepaliveSeconds,
+    defaultSearchPath: formatSearchPath(options?.defaultSearchPath),
+    defaultRole: options?.defaultRole ?? "",
+  };
 }
 
 export const FIELD_ERROR = (

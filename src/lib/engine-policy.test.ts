@@ -147,6 +147,16 @@ describe("enginePolicy", () => {
     expect(my.showSslToggle).toBe(true);
   });
 
+  it("surfaces driver options on PG only, not on the shared host-auth kind", () => {
+    const pg = enginePolicy("PostgreSQL").connectionForm;
+    const my = enginePolicy("MySQL").connectionForm;
+    if (pg.kind !== "host-auth" || my.kind !== "host-auth") {
+      throw new Error("expected host-auth kind for PG/MySQL");
+    }
+    expect(pg.showDriverOptions).toBe(true);
+    expect(my.showDriverOptions).toBe(false);
+  });
+
   it("knows the canonical default port per engine form-shape", () => {
     const pg = enginePolicy("PostgreSQL").connectionForm;
     const my = enginePolicy("MySQL").connectionForm;
@@ -399,5 +409,116 @@ describe("validateConnection", () => {
       "new",
     );
     expect(pathsOf(invalid)).toContain("database");
+  });
+});
+
+describe("validateConnection — driver options (ADR-0013)", () => {
+  const pg = connectionFormPolicy("PostgreSQL");
+
+  it("accepts an entirely blank driver-options block", () => {
+    expect(validateConnection(pg, baseValues(), "new")).toEqual([]);
+  });
+
+  it("accepts 0 for the session timeouts — PG reads it as no limit", () => {
+    const issues = validateConnection(
+      pg,
+      baseValues({ statementTimeoutMs: 0, idleInTransactionTimeoutMs: 0 }),
+      "new",
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects negative and non-integer session timeouts", () => {
+    expect(
+      pathsOf(
+        validateConnection(pg, baseValues({ statementTimeoutMs: -1 }), "new"),
+      ),
+    ).toContain("statementTimeoutMs");
+    expect(
+      pathsOf(
+        validateConnection(
+          pg,
+          baseValues({ idleInTransactionTimeoutMs: 1.5 }),
+          "new",
+        ),
+      ),
+    ).toContain("idleInTransactionTimeoutMs");
+  });
+
+  it("rejects a session timeout above the 24h unit-mixup guard", () => {
+    expect(
+      pathsOf(
+        validateConnection(
+          pg,
+          baseValues({ statementTimeoutMs: 86_400_001 }),
+          "new",
+        ),
+      ),
+    ).toContain("statementTimeoutMs");
+  });
+
+  it("rejects a zero connect timeout — unlike the session timeouts", () => {
+    // 0 means "no limit" to PG's SET grammar, but a 0 ms deadline on
+    // the handshake wrapper would fail every connect instantly.
+    expect(
+      pathsOf(
+        validateConnection(pg, baseValues({ connectTimeoutMs: 0 }), "new"),
+      ),
+    ).toContain("connectTimeoutMs");
+    expect(
+      validateConnection(pg, baseValues({ connectTimeoutMs: 1 }), "new"),
+    ).toEqual([]);
+    expect(
+      pathsOf(
+        validateConnection(
+          pg,
+          baseValues({ connectTimeoutMs: 600_001 }),
+          "new",
+        ),
+      ),
+    ).toContain("connectTimeoutMs");
+  });
+
+  it("accepts a comma-separated search path and trims around entries", () => {
+    expect(
+      validateConnection(
+        pg,
+        baseValues({ defaultSearchPath: " app , public " }),
+        "new",
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects empty search-path entries and embedded double quotes", () => {
+    expect(
+      pathsOf(
+        validateConnection(
+          pg,
+          baseValues({ defaultSearchPath: "app,,public" }),
+          "new",
+        ),
+      ),
+    ).toContain("defaultSearchPath");
+    expect(
+      pathsOf(
+        validateConnection(
+          pg,
+          baseValues({ defaultSearchPath: 'app"; DROP' }),
+          "new",
+        ),
+      ),
+    ).toContain("defaultSearchPath");
+  });
+
+  it("ignores driver options on engines whose policy doesn't show them", () => {
+    // MySQL shares the host-auth kind but carries no driver_options
+    // field — a stale value in shared form state must not block save.
+    const my = connectionFormPolicy("MySQL");
+    const issues = validateConnection(
+      my,
+      baseValues({ engine: "MySQL", port: 3306, statementTimeoutMs: -99 }),
+      "new",
+    );
+    expect(pathsOf(issues)).not.toContain("statementTimeoutMs");
   });
 });

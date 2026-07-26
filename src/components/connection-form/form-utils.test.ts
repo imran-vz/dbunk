@@ -5,8 +5,11 @@ import {
   buildStoredConnectionFromForm,
   type ConnectionFormData,
   defaultValuesFromConnection,
+  driverOptionsFromForm,
   EMPTY_NEW_DEFAULTS,
   FIELD_ERROR,
+  formatSearchPath,
+  parseSearchPath,
 } from "./form-utils";
 
 const baseForm: ConnectionFormData = {
@@ -374,6 +377,130 @@ describe("defaultValuesFromConnection", () => {
       sshTunnelJumpChain: ["jump-1"],
       sshTunnelProxyCommand: "nc %h %p",
     });
+  });
+});
+
+describe("driver options (ADR-0013)", () => {
+  it("splits and rejoins a search path around whitespace", () => {
+    expect(parseSearchPath(" app , public ")).toEqual(["app", "public"]);
+    expect(parseSearchPath("")).toEqual([]);
+    expect(parseSearchPath(undefined)).toEqual([]);
+    // Blank entries are a validation issue, not a builder crash.
+    expect(parseSearchPath("app,,public")).toEqual(["app", "public"]);
+    expect(formatSearchPath(["app", "public"])).toBe("app, public");
+    expect(formatSearchPath(undefined)).toBe("");
+  });
+
+  it("returns undefined when no knob is set, so the blob stays NULL", () => {
+    expect(driverOptionsFromForm(baseForm)).toBeUndefined();
+    expect(
+      driverOptionsFromForm({
+        ...baseForm,
+        defaultSearchPath: "   ",
+        defaultRole: "  ",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("emits only the knobs the user actually set", () => {
+    expect(
+      driverOptionsFromForm({ ...baseForm, statementTimeoutMs: 30_000 }),
+    ).toEqual({ statementTimeoutMs: 30_000 });
+  });
+
+  it("keeps 0 as a set value rather than treating it as empty", () => {
+    // PG reads `SET statement_timeout = 0` as "no limit" — dropping it
+    // would silently fall back to the server default instead.
+    expect(
+      driverOptionsFromForm({ ...baseForm, statementTimeoutMs: 0 }),
+    ).toEqual({ statementTimeoutMs: 0 });
+  });
+
+  it("attaches driverOptions to the PG variant only", () => {
+    const withKnobs: ConnectionFormData = {
+      ...baseForm,
+      statementTimeoutMs: 30_000,
+      defaultSearchPath: "app, public",
+      defaultRole: "analyst",
+    };
+    const pg = buildStoredConnectionFromForm(
+      { ...withKnobs, engine: "PostgreSQL" },
+      "id-pg",
+    );
+    expect(pg).toMatchObject({
+      engine: "PostgreSQL",
+      driverOptions: {
+        statementTimeoutMs: 30_000,
+        defaultSearchPath: ["app", "public"],
+        defaultRole: "analyst",
+      },
+    });
+    const my = buildStoredConnectionFromForm(
+      { ...withKnobs, engine: "MySQL" },
+      "id-my",
+    );
+    expect(my).not.toHaveProperty("driverOptions");
+  });
+
+  it("omits driverOptions entirely when every knob is blank", () => {
+    const pg = buildStoredConnectionFromForm(
+      { ...baseForm, engine: "PostgreSQL" },
+      "id-pg",
+    );
+    expect(pg).not.toHaveProperty("driverOptions");
+  });
+
+  it("round-trips a stored blob through hydrate → build unchanged", () => {
+    // The regression this guards: before the form carried these
+    // fields, `use-connection-form` needed a post-hoc merge or an edit
+    // save would wipe the whole blob.
+    const driverOptions = {
+      statementTimeoutMs: 30_000,
+      idleInTransactionTimeoutMs: 60_000,
+      connectTimeoutMs: 5_000,
+      keepaliveSeconds: 30,
+      defaultSearchPath: ["app", "public"],
+      defaultRole: "analyst",
+    };
+    const values = defaultValuesFromConnection({
+      id: "pg-1",
+      name: "pg",
+      engine: "PostgreSQL",
+      host: "pg.internal",
+      database: "postgres",
+      port: 5432,
+      user: "postgres",
+      password: "",
+      role: "read/write",
+      ssl: true,
+      driverOptions,
+      status: "Disconnected",
+      latency: "--",
+    });
+    expect(values.defaultSearchPath).toBe("app, public");
+    expect(values.keepaliveSeconds).toBe(30);
+    const rebuilt = buildStoredConnectionFromForm(values, "pg-1");
+    expect(rebuilt).toMatchObject({ driverOptions });
+  });
+
+  it("hydrates blank driver fields for a connection without a blob", () => {
+    const values = defaultValuesFromConnection({
+      id: "pg-2",
+      name: "pg",
+      engine: "PostgreSQL",
+      host: "pg.internal",
+      database: "postgres",
+      port: 5432,
+      user: "postgres",
+      password: "",
+      role: "read/write",
+      ssl: true,
+      status: "Disconnected",
+      latency: "--",
+    });
+    expect(values.statementTimeoutMs).toBeUndefined();
+    expect(values.defaultSearchPath).toBe("");
+    expect(values.defaultRole).toBe("");
   });
 });
 
