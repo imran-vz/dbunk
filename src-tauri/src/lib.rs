@@ -27,7 +27,9 @@ pub(crate) const MAX_QUERY_HISTORY: usize = storage::QUERY_HISTORY_CAP as usize;
 pub(crate) const DEFAULT_TABLE_PAGE_SIZE: u32 = 100;
 pub(crate) const MAX_TABLE_PAGE_SIZE: u32 = 1000;
 // Keep in sync with `app.windows[0].trafficLightPosition` in tauri.conf.json.
+#[cfg(target_os = "macos")]
 const MACOS_TRAFFIC_LIGHT_X: f64 = 18.0;
+#[cfg(target_os = "macos")]
 const MACOS_TRAFFIC_LIGHT_Y: f64 = 26.0;
 
 pub(crate) struct AppState {
