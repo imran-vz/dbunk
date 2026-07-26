@@ -11,10 +11,9 @@ use std::time::Instant;
 use sqlx::Acquire;
 
 use crate::seed::{
-    classify_column, generate_rows_from, insert_columns, max_char_length, parse_generator_id,
-    spec_for, ColumnPlan, ColumnSource, GenKind, SeedPlan, SeedRng, DEFAULT_NULL_RATE,
+    analyze_plan, finalize_plan, generate_rows_from, insert_columns, SeedDialect, SeedRng,
 };
-use crate::{quote_double, ColumnInfo, SeedColumnSpec, SeedTableResult, StoredConnection};
+use crate::{quote_double, SeedColumnSpec, SeedTableResult, StoredConnection};
 
 use super::{connect, row_to_strings};
 
@@ -44,158 +43,29 @@ where
     let structure = super::fetch_table_structure(connection, schema, table).await?;
     let start = Instant::now();
 
-    // Columns guaranteed unique by a single-column unique index or PK;
-    // for composite uniques, mixing the sequence into the first member
-    // is enough to make the tuple unique.
-    let mut unique_columns: Vec<String> = Vec::new();
-    for index in &structure.indexes {
-        if index.is_unique {
-            if let Some(first) = index.columns.first() {
-                unique_columns.push(first.clone());
-            }
-        }
-    }
-    if let Some(pk) = &structure.primary_key {
-        if let Some(first) = pk.first() {
-            unique_columns.push(first.clone());
-        }
-    }
+    let draft = analyze_plan(SeedDialect::Postgres, &structure, specs)?;
 
-    // FK membership: column name -> (fk index, member position).
-    let mut fk_membership: Vec<(String, usize, usize)> = Vec::new();
-    for (fk_index, fk) in structure.foreign_keys.iter().enumerate() {
-        for (member, column) in fk.columns.iter().enumerate() {
-            fk_membership.push((column.clone(), fk_index, member));
-        }
-    }
-
-    let mut plan_columns: Vec<ColumnPlan> = Vec::new();
-    // Lazily sampled per FK that is actually used; index-aligned with
-    // `structure.foreign_keys`, compacted into the plan afterwards.
+    // Only the foreign keys the plan actually draws from get sampled.
     let mut fk_pools: Vec<Option<Vec<Vec<String>>>> = vec![None; structure.foreign_keys.len()];
-
-    for column in &structure.columns {
-        let spec = spec_for(specs, &column.name);
-        let null_rate = effective_null_rate(column, spec);
-
-        if spec.map(|s| s.skip).unwrap_or(false) {
-            plan_columns.push(plain(&column.name, ColumnSource::Skip, 0.0));
-            continue;
-        }
-        if let Some(constant) = spec.and_then(|s| s.constant.clone()) {
-            plan_columns.push(plain(
-                &column.name,
-                ColumnSource::Constant(Some(constant)),
-                null_rate,
-            ));
-            continue;
-        }
-        if let Some(values) = spec.and_then(|s| s.values.clone()) {
-            if values.is_empty() {
-                return Err(format!(
-                    "column \"{}\" has an empty value list",
-                    column.name
-                ));
-            }
-            plan_columns.push(plain(
-                &column.name,
-                ColumnSource::ValueList(values),
-                null_rate,
-            ));
-            continue;
-        }
-
-        if let Some((_, fk_index, member)) = fk_membership
-            .iter()
-            .find(|(name, _, _)| name == &column.name)
-        {
-            if null_rate >= 1.0 {
-                plan_columns.push(plain(&column.name, ColumnSource::Constant(None), 0.0));
-                continue;
-            }
-            if fk_pools[*fk_index].is_none() {
-                let fk = &structure.foreign_keys[*fk_index];
-                let pool = sample_fk_pool(connection, fk).await?;
-                if pool.is_empty() {
-                    return Err(format!(
-                        "column \"{}\" references \"{}\".\"{}\", which is empty — seed \"{}\" first",
-                        column.name, fk.referenced_schema, fk.referenced_table, fk.referenced_table
-                    ));
-                }
-                fk_pools[*fk_index] = Some(pool);
-            }
-            plan_columns.push(plain(
-                &column.name,
-                ColumnSource::FkPool {
-                    pool: *fk_index,
-                    member: *member,
-                },
-                null_rate,
-            ));
-            continue;
-        }
-
-        // Identity / serial / defaulted-PK columns fall back to the
-        // database DEFAULT, mirroring the frontend mock generator.
-        let has_serial_default = column
-            .default_value
-            .as_deref()
-            .map(|d| d.starts_with("nextval("))
-            .unwrap_or(false);
-        if has_serial_default || (column.is_primary_key && column.default_value.is_some()) {
-            plan_columns.push(plain(&column.name, ColumnSource::Skip, 0.0));
-            continue;
-        }
-
-        let kind = match spec.and_then(|s| s.generator.as_deref()) {
-            Some(id) => parse_generator_id(id)?,
-            None => match classify_column(&column.name, &column.data_type) {
-                Some(kind) => kind,
-                None if column.nullable => {
-                    plan_columns.push(plain(&column.name, ColumnSource::Constant(None), 0.0));
-                    continue;
-                }
-                None => {
-                    return Err(format!(
-                        "no generator for column \"{}\" of type {} — set a constant or value list",
-                        column.name, column.data_type
-                    ));
-                }
-            },
-        };
-
-        let unique = unique_columns.contains(&column.name);
-        let unique_base = if unique && is_integer_kind(kind) {
-            fetch_integer_max(connection, schema, table, &column.name).await?
-        } else {
-            0
-        };
-
-        plan_columns.push(ColumnPlan {
-            name: column.name.clone(),
-            source: ColumnSource::Generated {
-                kind,
-                unique,
-                unique_base,
-                min: spec.and_then(|s| s.min),
-                max: spec.and_then(|s| s.max),
-                max_len: max_char_length(&column.data_type),
-            },
-            // Unique columns skip NULL injection: a guaranteed-unique
-            // column that suddenly yields NULLs is surprising even
-            // where the index would allow it.
-            null_rate: if unique { 0.0 } else { null_rate },
-        });
+    for fk_index in &draft.needed_pools {
+        fk_pools[*fk_index] =
+            Some(sample_fk_pool(connection, &structure.foreign_keys[*fk_index]).await?);
+    }
+    let mut maxes: Vec<(String, i64)> = Vec::with_capacity(draft.needed_maxes.len());
+    for column in &draft.needed_maxes {
+        maxes.push((
+            column.clone(),
+            fetch_integer_max(connection, schema, table, column).await?,
+        ));
     }
 
-    let plan = SeedPlan {
-        columns: plan_columns,
-        fk_pools: fk_pools
-            .into_iter()
-            .map(|pool| pool.unwrap_or_default())
-            .collect(),
-        now_epoch_secs: chrono::Utc::now().timestamp(),
-    };
+    let plan = finalize_plan(
+        &structure,
+        draft,
+        fk_pools,
+        &maxes,
+        chrono::Utc::now().timestamp(),
+    )?;
 
     let columns = insert_columns(&plan);
     if columns.is_empty() {
@@ -292,27 +162,6 @@ fn build_cast_bulk_insert(
         ),
         params,
     )
-}
-
-fn plain(name: &str, source: ColumnSource, null_rate: f64) -> ColumnPlan {
-    ColumnPlan {
-        name: name.to_string(),
-        source,
-        null_rate,
-    }
-}
-
-fn effective_null_rate(column: &ColumnInfo, spec: Option<&SeedColumnSpec>) -> f64 {
-    if !column.nullable {
-        return 0.0;
-    }
-    spec.and_then(|s| s.null_rate)
-        .unwrap_or(DEFAULT_NULL_RATE)
-        .clamp(0.0, 1.0)
-}
-
-fn is_integer_kind(kind: GenKind) -> bool {
-    matches!(kind, GenKind::SmallInt | GenKind::Integer | GenKind::BigInt)
 }
 
 /// Sample up to [`FK_POOL_LIMIT`] distinct parent tuples for one FK.

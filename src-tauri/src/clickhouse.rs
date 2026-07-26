@@ -665,6 +665,114 @@ pub async fn insert_row(
 }
 
 // ---------------------------------------------------------------------------
+// Table Seeding (ADR-0020)
+// ---------------------------------------------------------------------------
+
+/// ClickHouse writes one INSERT as a single atomic block, so the whole
+/// run goes out as one statement — that is how the "never partially
+/// apply" invariant is met on an engine with no transactions. Blocks
+/// larger than the server's `max_insert_block_size` (1,048,576 rows by
+/// default) get split into separate parts, which would break that, so
+/// the run is capped well below it.
+const CH_MAX_SEED_ROWS: u32 = 100_000;
+
+pub async fn seed_table<F>(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    row_count: u32,
+    seed: u64,
+    specs: &[crate::SeedColumnSpec],
+    report_progress: F,
+) -> Result<crate::SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
+    use crate::seed::{
+        analyze_plan, finalize_plan, generate_rows_from, insert_columns, SeedDialect, SeedRng,
+    };
+
+    if row_count == 0 {
+        return Err("row count must be at least 1".to_string());
+    }
+    if row_count > CH_MAX_SEED_ROWS {
+        return Err(format!(
+            "ClickHouse seeding is capped at {CH_MAX_SEED_ROWS} rows per run — \
+             it has no transactions, so a larger run could not be rolled back \
+             as a unit. Run it several times instead."
+        ));
+    }
+
+    let structure = fetch_table_structure(connection, schema, table).await?;
+    if !structure.capabilities.can_insert_rows {
+        return Err(format!(
+            "table `{schema}`.`{table}` uses the {} engine, which does not accept inserts",
+            structure.table_engine.as_deref().unwrap_or("unknown")
+        ));
+    }
+    let start = Instant::now();
+
+    let draft = analyze_plan(SeedDialect::ClickHouse, &structure, specs)?;
+    // ClickHouse has no foreign keys, so no parent pool can ever be
+    // needed; unique integer sequences have nothing to sample either.
+    let plan = finalize_plan(
+        &structure,
+        draft,
+        Vec::new(),
+        &[],
+        chrono::Utc::now().timestamp(),
+    )?;
+
+    let columns = insert_columns(&plan);
+    if columns.is_empty() {
+        return Err("nothing to seed: every column is skipped".to_string());
+    }
+
+    let mut rng = SeedRng::new(seed);
+    let rows = generate_rows_from(&plan, 0, row_count, &mut rng);
+    let sql = build_bulk_insert(schema, table, &columns, &rows);
+    let result = run_query(connection, &sql).await?;
+    report_progress(u64::from(row_count));
+
+    Ok(crate::SeedTableResult {
+        rows_inserted: u64::from(row_count),
+        seed_used: seed,
+        // `run_query` measures the HTTP round trip; the caller wants the
+        // whole run, generation included.
+        runtime_ms: start.elapsed().as_millis().max(result.runtime_ms as u128) as u64,
+    })
+}
+
+/// `INSERT INTO db.table (cols) VALUES (…), (…), …` with every value
+/// rendered as a literal — ClickHouse's HTTP interface has no bind
+/// parameters for multi-row inserts.
+fn build_bulk_insert(
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+) -> String {
+    let qualified = format!("{}.{}", quote_backtick(schema), quote_backtick(table));
+    let column_list = columns
+        .iter()
+        .map(|column| quote_backtick(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let values = rows
+        .iter()
+        .map(|row| {
+            let literals = (0..columns.len())
+                .map(|index| ch_literal(row.get(index).and_then(|value| value.as_deref())))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({literals})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("INSERT INTO {qualified} ({column_list}) VALUES {values}")
+}
+
+// ---------------------------------------------------------------------------
 // Mutations (asynchronous — ALTER … UPDATE/DELETE)
 // ---------------------------------------------------------------------------
 
@@ -1315,5 +1423,157 @@ mod tests {
     fn split_statements_returns_empty_for_blank_input() {
         assert!(split_statements("").is_empty());
         assert!(split_statements(";; ;").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+
+    fn columns() -> Vec<String> {
+        vec!["id".to_string(), "label".to_string()]
+    }
+
+    #[test]
+    fn bulk_insert_emits_one_statement_with_every_row_as_literals() {
+        let sql = build_bulk_insert(
+            "demo",
+            "events",
+            &columns(),
+            &[
+                vec![Some("1".to_string()), Some("a".to_string())],
+                vec![Some("2".to_string()), None],
+            ],
+        );
+        assert_eq!(
+            sql,
+            "INSERT INTO `demo`.`events` (`id`, `label`) VALUES ('1', 'a'), ('2', NULL)"
+        );
+    }
+
+    #[test]
+    fn bulk_insert_escapes_quotes_in_generated_values() {
+        let sql = build_bulk_insert(
+            "demo",
+            "events",
+            &["label".to_string()],
+            &[vec![Some("it's".to_string())]],
+        );
+        assert_eq!(
+            sql,
+            "INSERT INTO `demo`.`events` (`label`) VALUES ('it''s')"
+        );
+    }
+
+    #[test]
+    fn bulk_insert_pads_short_rows_with_null() {
+        let sql = build_bulk_insert("demo", "events", &columns(), &[vec![Some("1".to_string())]]);
+        assert_eq!(
+            sql,
+            "INSERT INTO `demo`.`events` (`id`, `label`) VALUES ('1', NULL)"
+        );
+    }
+
+    #[tokio::test]
+    async fn seeding_more_rows_than_one_block_is_refused() {
+        let error = seed_table(
+            &ch_test_connection(),
+            "dbunk_demo",
+            "anything",
+            CH_MAX_SEED_ROWS + 1,
+            1,
+            &[],
+            |_| {},
+        )
+        .await
+        .expect_err("over-cap run must be refused");
+        assert!(error.contains("capped"), "unexpected: {error}");
+    }
+
+    fn ch_test_connection() -> StoredConnection {
+        StoredConnection::ClickHouse(ClickHouseStoredConnection {
+            id: "seed-ch-test".into(),
+            name: "seed ch test".into(),
+            database: "dbunk_demo".into(),
+            host: "localhost".into(),
+            port: 18123,
+            user: "dbunk".into(),
+            password: "dbunk".into(),
+            role: "read/write".into(),
+            last_activity_at: None,
+            use_https: false,
+            url_path: String::new(),
+            ssh_tunnel: crate::SshTunnelConfig::default(),
+        })
+    }
+
+    /// End-to-end against the compose ClickHouse
+    /// (`infrastructure/test-db`, `make clickhouse`). Ignored by
+    /// default: `cargo test --manifest-path src-tauri/Cargo.toml
+    /// ch_seed_live -- --ignored`
+    #[tokio::test]
+    #[ignore = "requires the infrastructure/test-db clickhouse container"]
+    async fn ch_seed_live_end_to_end() {
+        let connection = ch_test_connection();
+        run_query(&connection, "DROP TABLE IF EXISTS dbunk_demo.seed_events")
+            .await
+            .expect("drop");
+        run_query(
+            &connection,
+            "CREATE TABLE dbunk_demo.seed_events (
+               user_id UInt32,
+               email String,
+               score UInt8,
+               tier LowCardinality(String),
+               is_active Bool,
+               tags Array(String),
+               source String DEFAULT 'web',
+               occurred_at DateTime,
+               day Date MATERIALIZED toDate(occurred_at)
+             ) ENGINE = MergeTree ORDER BY (user_id, occurred_at)",
+        )
+        .await
+        .expect("create");
+
+        let result = seed_table(
+            &connection,
+            "dbunk_demo",
+            "seed_events",
+            5_000,
+            42,
+            &[],
+            |_| {},
+        )
+        .await
+        .expect("seed events");
+        assert_eq!(result.rows_inserted, 5_000);
+        assert_eq!(result.seed_used, 42);
+
+        let count = run_query(&connection, "SELECT count() FROM dbunk_demo.seed_events")
+            .await
+            .expect("count");
+        assert_eq!(count.rows[0][0], "5000");
+
+        // UInt8 stayed in range, Bool got digits, the MATERIALIZED
+        // column was computed by the server, and DEFAULT was applied.
+        let checks = run_query(
+            &connection,
+            "SELECT max(score), min(day) = toDate(min(occurred_at)), \
+                    countIf(source != 'web'), countIf(length(tags) != 0) \
+             FROM dbunk_demo.seed_events",
+        )
+        .await
+        .expect("checks");
+        assert!(
+            checks.rows[0][0].parse::<u32>().expect("max score") <= 255,
+            "score overflowed UInt8"
+        );
+        assert_eq!(checks.rows[0][1], "1", "MATERIALIZED day was not derived");
+        assert_eq!(checks.rows[0][2], "0", "DEFAULT source was overwritten");
+        assert_eq!(checks.rows[0][3], "0", "arrays should seed empty");
+
+        run_query(&connection, "DROP TABLE dbunk_demo.seed_events")
+            .await
+            .expect("cleanup");
     }
 }

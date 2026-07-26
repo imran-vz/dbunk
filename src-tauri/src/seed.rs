@@ -6,7 +6,7 @@
 //! call [`generate_rows`] to materialise row batches as the same
 //! `Vec<Option<String>>` shape the bulk-insert builders consume.
 
-use crate::SeedColumnSpec;
+use crate::{ColumnInfo, SeedColumnSpec, TableStructure};
 
 // ---------------------------------------------------------------------------
 // Deterministic RNG — splitmix64
@@ -56,9 +56,24 @@ impl SeedRng {
 /// What kind of value to fabricate for one column. Derived from the
 /// column's data type plus name-based semantic inference, or forced by
 /// the Seed Spec's per-column generator override.
+/// Which SQL dialect the generated values will be inserted into.
+///
+/// Generation stays deterministic across dialects — the RNG draws are
+/// identical — but a few kinds have no portable text form (PG writes
+/// `true`, MySQL wants `1`; PG arrays are `{}`, ClickHouse arrays are
+/// `[]`). The dialect only decides how a drawn value is *rendered*.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SeedDialect {
+    Postgres,
+    MySql,
+    Sqlite,
+    ClickHouse,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GenKind {
     Boolean,
+    TinyInt,
     SmallInt,
     Integer,
     BigInt,
@@ -167,6 +182,7 @@ const COMPANY_SUFFIXES: &[&str] = &["Labs", "Co", "Systems", "Works", "Group", "
 pub(crate) fn parse_generator_id(id: &str) -> Result<GenKind, String> {
     Ok(match id {
         "boolean" => GenKind::Boolean,
+        "tinyInt" => GenKind::TinyInt,
         "smallInt" => GenKind::SmallInt,
         "integer" => GenKind::Integer,
         "bigInt" => GenKind::BigInt,
@@ -193,6 +209,180 @@ pub(crate) fn parse_generator_id(id: &str) -> Result<GenKind, String> {
         "company" => GenKind::Company,
         other => return Err(format!("unknown generator id: {other}")),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Data-type normalisation
+// ---------------------------------------------------------------------------
+
+/// Fold an engine's own type spelling into the PostgreSQL-flavoured
+/// vocabulary [`classify_column`] and [`max_char_length`] understand.
+///
+/// Every engine reports its own names for the same handful of shapes
+/// (`String` / `longtext` / `TEXT`, `UInt32` / `int unsigned` /
+/// `INTEGER`). Normalising once here keeps the classifier a single
+/// table instead of one per engine, and keeps parameterised types
+/// (`FixedString(16)` → `varchar(16)`) carrying their length bound
+/// through to truncation.
+pub(crate) fn normalize_data_type(dialect: SeedDialect, raw: &str) -> String {
+    match dialect {
+        SeedDialect::Postgres => raw.trim().to_ascii_lowercase(),
+        SeedDialect::MySql => normalize_mysql_type(raw),
+        SeedDialect::Sqlite => normalize_sqlite_type(raw),
+        SeedDialect::ClickHouse => normalize_clickhouse_type(raw),
+    }
+}
+
+/// Split `base(args)` into its base name and argument text.
+fn split_parameterized(value: &str) -> (&str, Option<&str>) {
+    match (value.find('('), value.ends_with(')')) {
+        (Some(open), true) => (&value[..open], Some(&value[open + 1..value.len() - 1])),
+        _ => (value, None),
+    }
+}
+
+fn normalize_mysql_type(raw: &str) -> String {
+    let lowered = raw.trim().to_ascii_lowercase();
+    // `int(11) unsigned zerofill` — the modifiers carry no information
+    // the generator can use, and they break exact-match classification.
+    let cleaned = lowered.replace(" zerofill", "").replace(" unsigned", "");
+    let cleaned = cleaned.trim();
+    let (base, args) = split_parameterized(cleaned);
+
+    // `enum('a','b')` / `set('a','b')` stay verbatim — the plan builder
+    // turns their members into a value list.
+    if base == "enum" || base == "set" {
+        return cleaned.to_string();
+    }
+    match base {
+        // MySQL has no boolean: `tinyint(1)` is the canonical stand-in,
+        // wider tinyints are genuine small integers.
+        "tinyint" if args == Some("1") => "boolean".to_string(),
+        "bit" if args == Some("1") || args.is_none() => "boolean".to_string(),
+        "bool" | "boolean" => "boolean".to_string(),
+        "tinyint" => "tinyint".to_string(),
+        "smallint" => "smallint".to_string(),
+        "mediumint" | "int" | "integer" => "integer".to_string(),
+        "bigint" => "bigint".to_string(),
+        "tinytext" | "mediumtext" | "longtext" | "text" => "text".to_string(),
+        "tinyblob" | "mediumblob" | "longblob" | "blob" | "binary" | "varbinary" => {
+            "blob".to_string()
+        }
+        _ => cleaned.to_string(),
+    }
+}
+
+fn normalize_sqlite_type(raw: &str) -> String {
+    let lowered = raw.trim().to_ascii_lowercase();
+    // A column can be declared with no type at all; SQLite gives it
+    // BLOB affinity, but text is the friendlier thing to fabricate.
+    if lowered.is_empty() {
+        return "text".to_string();
+    }
+    let (base, _) = split_parameterized(&lowered);
+    // SQLite type names are free-form and matched by affinity rules, so
+    // classify by the same substring tests the engine itself uses —
+    // but only for names the shared classifier wouldn't already know.
+    if base.contains("int") {
+        return match base {
+            "tinyint" => "tinyint".to_string(),
+            "smallint" | "int2" => "smallint".to_string(),
+            "bigint" | "int8" | "unsigned big int" => "bigint".to_string(),
+            _ => "integer".to_string(),
+        };
+    }
+    if base.contains("clob") {
+        return "text".to_string();
+    }
+    lowered
+}
+
+fn normalize_clickhouse_type(raw: &str) -> String {
+    let mut inner = raw.trim();
+    // `LowCardinality(Nullable(String))` — peel the wrappers off until
+    // the concrete type is exposed.
+    loop {
+        let lowered = inner.to_ascii_lowercase();
+        let stripped = ["nullable(", "lowcardinality("]
+            .iter()
+            .find(|wrapper| lowered.starts_with(*wrapper) && inner.ends_with(')'))
+            .map(|wrapper| inner[wrapper.len()..inner.len() - 1].trim());
+        match stripped {
+            Some(next) => inner = next,
+            None => break,
+        }
+    }
+
+    let lowered = inner.to_ascii_lowercase();
+    let (base, args) = split_parameterized(&lowered);
+    if base == "enum8" || base == "enum16" {
+        // `Enum8('a' = 1, 'b' = 2)` — keep only the member literals so
+        // the shared enum parser sees the same shape MySQL emits.
+        return format!("enum({})", args.unwrap_or_default());
+    }
+    match base {
+        "string" => "text".to_string(),
+        "fixedstring" => match args {
+            Some(length) => format!("varchar({length})"),
+            None => "text".to_string(),
+        },
+        "bool" => "boolean".to_string(),
+        "int8" | "uint8" => "tinyint".to_string(),
+        "int16" | "uint16" => "smallint".to_string(),
+        "int32" | "uint32" => "integer".to_string(),
+        "int64" | "uint64" | "int128" | "uint128" | "int256" | "uint256" => "bigint".to_string(),
+        "float32" => "real".to_string(),
+        "float64" => "double precision".to_string(),
+        "decimal" | "decimal32" | "decimal64" | "decimal128" | "decimal256" => {
+            "decimal".to_string()
+        }
+        "date" | "date32" => "date".to_string(),
+        "datetime" | "datetime64" => "timestamp".to_string(),
+        "uuid" => "uuid".to_string(),
+        "ipv4" | "ipv6" => "inet".to_string(),
+        "array" => "array".to_string(),
+        "json" | "object" => "json".to_string(),
+        _ => lowered,
+    }
+}
+
+/// Members of an `enum(...)` / `set(...)` type, unquoted. Returns
+/// `None` for every other type.
+pub(crate) fn enum_members(data_type: &str) -> Option<Vec<String>> {
+    let (base, args) = split_parameterized(data_type.trim());
+    if !matches!(base.to_ascii_lowercase().as_str(), "enum" | "set") {
+        return None;
+    }
+    let args = args?;
+
+    let mut members = Vec::new();
+    let mut current = String::new();
+    let mut chars = args.chars().peekable();
+    let mut in_literal = false;
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if in_literal => {
+                // `''` inside a literal is an escaped quote, not the end.
+                if chars.peek() == Some(&'\'') {
+                    chars.next();
+                    current.push('\'');
+                } else {
+                    in_literal = false;
+                    members.push(std::mem::take(&mut current));
+                }
+            }
+            '\'' => in_literal = true,
+            // Everything outside a literal (commas, `= 1` ordinals) is
+            // separator noise.
+            _ if in_literal => current.push(ch),
+            _ => {}
+        }
+    }
+    if members.is_empty() {
+        None
+    } else {
+        Some(members)
+    }
 }
 
 fn is_textual(data_type: &str) -> bool {
@@ -286,6 +476,7 @@ pub(crate) fn classify_column(name: &str, data_type: &str) -> Option<GenKind> {
     }
     Some(match t.as_str() {
         "boolean" | "bool" => GenKind::Boolean,
+        "tinyint" => GenKind::TinyInt,
         "smallint" | "int2" => GenKind::SmallInt,
         "integer" | "int" | "int4" | "mediumint" => GenKind::Integer,
         "bigint" | "int8" => GenKind::BigInt,
@@ -373,6 +564,7 @@ pub(crate) struct ColumnPlan {
 
 pub(crate) const DEFAULT_NULL_RATE: f64 = 0.1;
 
+#[derive(Debug)]
 pub(crate) struct SeedPlan {
     pub columns: Vec<ColumnPlan>,
     /// FK sample pools: `pools[p]` is a list of parent rows, each a
@@ -381,6 +573,8 @@ pub(crate) struct SeedPlan {
     /// Reference epoch (seconds) for date/timestamp generation, fixed
     /// once per run so generation stays deterministic within the run.
     pub now_epoch_secs: i64,
+    /// Target dialect — decides value *rendering* only.
+    pub dialect: SeedDialect,
 }
 
 /// Find the per-column spec entry, if the Seed Spec has one.
@@ -389,6 +583,321 @@ pub(crate) fn spec_for<'a>(
     column: &str,
 ) -> Option<&'a SeedColumnSpec> {
     specs.iter().find(|s| s.column == column)
+}
+
+// ---------------------------------------------------------------------------
+// Plan building — engine-agnostic
+// ---------------------------------------------------------------------------
+
+/// A plan that still needs two database reads before it can generate:
+/// the foreign-key parent pools and the current MAX of unique integer
+/// columns. Splitting the build in two keeps every decision about
+/// *what* to generate pure and testable, leaving engine modules with
+/// only the sampling SQL — which is all that actually differs between
+/// PostgreSQL, MySQL, SQLite and ClickHouse.
+pub(crate) struct PlanDraft {
+    columns: Vec<ColumnPlan>,
+    dialect: SeedDialect,
+    /// Indexes into `structure.foreign_keys` that need a sampled pool.
+    /// Only FKs actually referenced by a generated column appear here.
+    pub needed_pools: Vec<usize>,
+    /// Columns needing a `MAX(col)` probe so unique integer sequences
+    /// start above the rows already in the table.
+    pub needed_maxes: Vec<String>,
+}
+
+/// Decide every column's value source from the table's structure plus
+/// the Seed Spec. Pure: no database access, no clock.
+pub(crate) fn analyze_plan(
+    dialect: SeedDialect,
+    structure: &TableStructure,
+    specs: &[SeedColumnSpec],
+) -> Result<PlanDraft, String> {
+    // Columns guaranteed unique by a single-column unique index or PK;
+    // for composite uniques, mixing the sequence into the first member
+    // is enough to make the tuple unique.
+    let mut unique_columns: Vec<String> = Vec::new();
+    for index in &structure.indexes {
+        if index.is_unique {
+            if let Some(first) = index.columns.first() {
+                unique_columns.push(first.clone());
+            }
+        }
+    }
+    if let Some(primary_key) = &structure.primary_key {
+        if let Some(first) = primary_key.first() {
+            unique_columns.push(first.clone());
+        }
+    }
+    // ClickHouse's "primary key" is a sorting key, not a uniqueness
+    // constraint, and its skip indices are never unique — treating
+    // either as unique would fabricate needless sequences.
+    if dialect == SeedDialect::ClickHouse {
+        unique_columns.clear();
+    }
+
+    // FK membership: column name -> (fk index, member position).
+    let mut fk_membership: Vec<(String, usize, usize)> = Vec::new();
+    for (fk_index, fk) in structure.foreign_keys.iter().enumerate() {
+        for (member, column) in fk.columns.iter().enumerate() {
+            fk_membership.push((column.clone(), fk_index, member));
+        }
+    }
+
+    let mut draft = PlanDraft {
+        columns: Vec::with_capacity(structure.columns.len()),
+        dialect,
+        needed_pools: Vec::new(),
+        needed_maxes: Vec::new(),
+    };
+
+    for column in &structure.columns {
+        let spec = spec_for(specs, &column.name);
+        let null_rate = effective_null_rate(column, spec);
+        let data_type = normalize_data_type(dialect, &column.data_type);
+
+        if spec.map(|s| s.skip).unwrap_or(false) {
+            draft
+                .columns
+                .push(plain(&column.name, ColumnSource::Skip, 0.0));
+            continue;
+        }
+        if let Some(constant) = spec.and_then(|s| s.constant.clone()) {
+            draft.columns.push(plain(
+                &column.name,
+                ColumnSource::Constant(Some(constant)),
+                null_rate,
+            ));
+            continue;
+        }
+        if let Some(values) = spec.and_then(|s| s.values.clone()) {
+            if values.is_empty() {
+                return Err(format!(
+                    "column \"{}\" has an empty value list",
+                    column.name
+                ));
+            }
+            draft.columns.push(plain(
+                &column.name,
+                ColumnSource::ValueList(values),
+                null_rate,
+            ));
+            continue;
+        }
+
+        if let Some((_, fk_index, member)) = fk_membership
+            .iter()
+            .find(|(name, _, _)| name == &column.name)
+        {
+            // An always-NULL FK column needs no parent at all, so don't
+            // make an empty parent table fail the run.
+            if null_rate >= 1.0 {
+                draft
+                    .columns
+                    .push(plain(&column.name, ColumnSource::Constant(None), 0.0));
+                continue;
+            }
+            if !draft.needed_pools.contains(fk_index) {
+                draft.needed_pools.push(*fk_index);
+            }
+            draft.columns.push(plain(
+                &column.name,
+                ColumnSource::FkPool {
+                    pool: *fk_index,
+                    member: *member,
+                },
+                null_rate,
+            ));
+            continue;
+        }
+
+        // Identity / serial / auto-increment / derived columns fall back
+        // to whatever the database itself puts there.
+        if is_database_supplied(dialect, column, structure, &data_type) {
+            draft
+                .columns
+                .push(plain(&column.name, ColumnSource::Skip, 0.0));
+            continue;
+        }
+
+        // An enum column's own definition is the best value list there
+        // is — no generator can beat the declared members.
+        if spec.and_then(|s| s.generator.as_deref()).is_none() {
+            if let Some(members) = enum_members(&data_type) {
+                draft.columns.push(plain(
+                    &column.name,
+                    ColumnSource::ValueList(members),
+                    null_rate,
+                ));
+                continue;
+            }
+        }
+
+        let kind = match spec.and_then(|s| s.generator.as_deref()) {
+            Some(id) => parse_generator_id(id)?,
+            None => match classify_column(&column.name, &data_type) {
+                Some(kind) => kind,
+                None if column.nullable => {
+                    draft
+                        .columns
+                        .push(plain(&column.name, ColumnSource::Constant(None), 0.0));
+                    continue;
+                }
+                None => {
+                    return Err(format!(
+                        "no generator for column \"{}\" of type {} — set a constant or value list",
+                        column.name, column.data_type
+                    ));
+                }
+            },
+        };
+
+        let unique = unique_columns.contains(&column.name);
+        if unique && is_integer_kind(kind) {
+            draft.needed_maxes.push(column.name.clone());
+        }
+
+        draft.columns.push(ColumnPlan {
+            name: column.name.clone(),
+            source: ColumnSource::Generated {
+                kind,
+                unique,
+                // Filled in by `finalize_plan` from the MAX probe.
+                unique_base: 0,
+                min: spec.and_then(|s| s.min),
+                max: spec.and_then(|s| s.max),
+                max_len: max_char_length(&data_type),
+            },
+            // Unique columns skip NULL injection: a guaranteed-unique
+            // column that suddenly yields NULLs is surprising even
+            // where the index would allow it.
+            null_rate: if unique { 0.0 } else { null_rate },
+        });
+    }
+
+    Ok(draft)
+}
+
+/// Fold the sampled parent pools and integer maxima into a runnable
+/// plan. `pools` is index-aligned with `structure.foreign_keys`; every
+/// index in [`PlanDraft::needed_pools`] must carry a non-empty sample.
+pub(crate) fn finalize_plan(
+    structure: &TableStructure,
+    draft: PlanDraft,
+    pools: Vec<Option<Vec<Vec<String>>>>,
+    maxes: &[(String, i64)],
+    now_epoch_secs: i64,
+) -> Result<SeedPlan, String> {
+    for fk_index in &draft.needed_pools {
+        let sampled = pools.get(*fk_index).and_then(|pool| pool.as_ref());
+        if sampled.map(|rows| rows.is_empty()).unwrap_or(true) {
+            let fk = structure
+                .foreign_keys
+                .get(*fk_index)
+                .ok_or_else(|| "internal error: foreign key index out of range".to_string())?;
+            let column = fk.columns.first().cloned().unwrap_or_default();
+            let parent = if fk.referenced_schema.is_empty() {
+                fk.referenced_table.clone()
+            } else {
+                format!("\"{}\".\"{}\"", fk.referenced_schema, fk.referenced_table)
+            };
+            return Err(format!(
+                "column \"{}\" references {}, which is empty — seed \"{}\" first",
+                column, parent, fk.referenced_table
+            ));
+        }
+    }
+
+    let mut columns = draft.columns;
+    for column in &mut columns {
+        if let ColumnSource::Generated {
+            unique,
+            unique_base,
+            ..
+        } = &mut column.source
+        {
+            if *unique {
+                *unique_base = maxes
+                    .iter()
+                    .find(|(name, _)| name == &column.name)
+                    .map(|(_, value)| *value)
+                    .unwrap_or(0);
+            }
+        }
+    }
+
+    Ok(SeedPlan {
+        columns,
+        fk_pools: pools
+            .into_iter()
+            .map(|pool| pool.unwrap_or_default())
+            .collect(),
+        now_epoch_secs,
+        dialect: draft.dialect,
+    })
+}
+
+fn plain(name: &str, source: ColumnSource, null_rate: f64) -> ColumnPlan {
+    ColumnPlan {
+        name: name.to_string(),
+        source,
+        null_rate,
+    }
+}
+
+fn effective_null_rate(column: &ColumnInfo, spec: Option<&SeedColumnSpec>) -> f64 {
+    if !column.nullable {
+        return 0.0;
+    }
+    spec.and_then(|s| s.null_rate)
+        .unwrap_or(DEFAULT_NULL_RATE)
+        .clamp(0.0, 1.0)
+}
+
+pub(crate) fn is_integer_kind(kind: GenKind) -> bool {
+    matches!(
+        kind,
+        GenKind::TinyInt | GenKind::SmallInt | GenKind::Integer | GenKind::BigInt
+    )
+}
+
+/// Does the database fill this column in on its own when the INSERT
+/// omits it? Each engine spells "identity" differently, and getting it
+/// wrong either fights a sequence or leaves a NOT NULL column empty.
+fn is_database_supplied(
+    dialect: SeedDialect,
+    column: &ColumnInfo,
+    structure: &TableStructure,
+    data_type: &str,
+) -> bool {
+    // MATERIALIZED / ALIAS / EPHEMERAL columns (ClickHouse) are derived
+    // — naming one in an INSERT is an error, not just redundant.
+    if column.derivation_kind.is_some() {
+        return true;
+    }
+    let default = column.default_value.as_deref().unwrap_or("").trim();
+    let has_default = !default.is_empty();
+    // A defaulted primary key is an identity column in every dialect.
+    if column.is_primary_key && has_default {
+        return true;
+    }
+    match dialect {
+        SeedDialect::Postgres => default.starts_with("nextval("),
+        SeedDialect::MySql => default.to_ascii_lowercase().contains("auto_increment"),
+        // `INTEGER PRIMARY KEY` is an alias for the rowid, which SQLite
+        // assigns itself — but only when it's the whole key.
+        SeedDialect::Sqlite => {
+            column.is_primary_key
+                && data_type == "integer"
+                && structure
+                    .primary_key
+                    .as_ref()
+                    .map(|key| key.len() == 1)
+                    .unwrap_or(false)
+        }
+        // ClickHouse fills any DEFAULT expression; there is no identity.
+        SeedDialect::ClickHouse => has_default,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +1007,7 @@ fn generate_cell(
                 *min,
                 *max,
                 plan.now_epoch_secs,
+                plan.dialect,
             );
             Some(match max_len {
                 Some(limit) => truncate_chars(&value, *limit),
@@ -532,6 +1042,7 @@ fn generate_value(
     min: Option<f64>,
     max: Option<f64>,
     now_epoch_secs: i64,
+    dialect: SeedDialect,
 ) -> String {
     let sequence = row_index as i64 + 1;
     let int_in = |rng: &mut SeedRng, lo: i64, hi: i64| {
@@ -540,7 +1051,27 @@ fn generate_value(
         rng.range_i64(lo, hi)
     };
     match kind {
-        GenKind::Boolean => rng.next_u64().is_multiple_of(2).to_string(),
+        GenKind::Boolean => {
+            let value = rng.next_u64().is_multiple_of(2);
+            match dialect {
+                // Only PostgreSQL accepts the literal words; MySQL's
+                // tinyint(1), SQLite's dynamic typing and ClickHouse's
+                // UInt8 all want the digit.
+                SeedDialect::Postgres => value.to_string(),
+                SeedDialect::MySql | SeedDialect::Sqlite | SeedDialect::ClickHouse => {
+                    u8::from(value).to_string()
+                }
+            }
+        }
+        GenKind::TinyInt => {
+            if unique {
+                (unique_base + sequence).to_string()
+            } else {
+                // Narrow on purpose: the smallest integer any engine
+                // calls "tiny" holds -128..127.
+                int_in(rng, 0, 100).to_string()
+            }
+        }
         GenKind::SmallInt => {
             if unique {
                 (unique_base + sequence).to_string()
@@ -617,7 +1148,16 @@ fn generate_value(
             format!("{{\"tag\": \"{word}\", \"score\": {score}}}")
         }
         GenKind::Bytea => {
-            format!("\\x{:016x}", rng.next_u64())
+            let bytes = rng.next_u64();
+            match dialect {
+                // PG's bytea input format; everywhere else the column
+                // takes raw bytes, so plain hex characters are the
+                // portable payload.
+                SeedDialect::Postgres => format!("\\x{bytes:016x}"),
+                SeedDialect::MySql | SeedDialect::Sqlite | SeedDialect::ClickHouse => {
+                    format!("{bytes:016x}")
+                }
+            }
         }
         GenKind::Inet => {
             format!(
@@ -630,7 +1170,10 @@ fn generate_value(
         GenKind::Interval => {
             format!("{} days", rng.range_i64(1, 90))
         }
-        GenKind::EmptyArray => "{}".to_string(),
+        GenKind::EmptyArray => match dialect {
+            SeedDialect::ClickHouse => "[]".to_string(),
+            SeedDialect::Postgres | SeedDialect::MySql | SeedDialect::Sqlite => "{}".to_string(),
+        },
         GenKind::Word => {
             let word = rng.pick(WORDS);
             if unique {
@@ -766,6 +1309,7 @@ mod tests {
             columns,
             fk_pools: Vec::new(),
             now_epoch_secs: 1_750_000_000,
+            dialect: SeedDialect::Postgres,
         }
     }
 
@@ -900,6 +1444,7 @@ mod tests {
                 vec!["3".to_string(), "z".to_string()],
             ]],
             now_epoch_secs: 1_750_000_000,
+            dialect: SeedDialect::Postgres,
         };
         let rows = generate_rows(&plan, 200, &mut SeedRng::new(11));
         for row in &rows {
@@ -967,6 +1512,362 @@ mod tests {
         let rows = generate_rows(&plan, 20, &mut SeedRng::new(5));
         for row in &rows {
             assert!(row[0].as_ref().unwrap().chars().count() <= 12);
+        }
+    }
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+    use crate::{ForeignKeyInfo, IndexInfo, StructureCapabilities};
+
+    fn column(name: &str, data_type: &str) -> ColumnInfo {
+        ColumnInfo {
+            name: name.to_string(),
+            data_type: data_type.to_string(),
+            nullable: false,
+            default_value: None,
+            is_primary_key: false,
+            ordinal_position: 1,
+            derivation_kind: None,
+        }
+    }
+
+    fn structure(columns: Vec<ColumnInfo>) -> TableStructure {
+        TableStructure {
+            columns,
+            primary_key: None,
+            foreign_keys: Vec::new(),
+            indexes: Vec::new(),
+            constraints: Vec::new(),
+            capabilities: StructureCapabilities {
+                columns: true,
+                primary_key: true,
+                foreign_keys: true,
+                indexes: true,
+                constraints: true,
+                can_insert_rows: true,
+                can_update_rows: true,
+                can_delete_rows: true,
+                can_alter_schema: true,
+                uniqueness_guarantee: "exact".to_string(),
+            },
+            table_engine: None,
+            partition_by: None,
+            sample_by: None,
+        }
+    }
+
+    fn source_of<'a>(draft: &'a PlanDraft, name: &str) -> &'a ColumnSource {
+        &draft
+            .columns
+            .iter()
+            .find(|column| column.name == name)
+            .expect("column in plan")
+            .source
+    }
+
+    fn run(dialect: SeedDialect, structure: &TableStructure) -> PlanDraft {
+        analyze_plan(dialect, structure, &[]).expect("plan")
+    }
+
+    // -- type normalisation ------------------------------------------------
+
+    #[test]
+    fn mysql_types_drop_modifiers_and_fold_synonyms() {
+        let cases = [
+            ("int(11) unsigned", "integer"),
+            ("BIGINT(20) UNSIGNED ZEROFILL", "bigint"),
+            ("tinyint(1)", "boolean"),
+            ("tinyint(4)", "tinyint"),
+            ("longtext", "text"),
+            ("mediumblob", "blob"),
+            ("varchar(120)", "varchar(120)"),
+            ("decimal(10,2)", "decimal(10,2)"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(
+                normalize_data_type(SeedDialect::MySql, raw),
+                expected,
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn clickhouse_types_unwrap_nullable_and_lowcardinality() {
+        let cases = [
+            ("LowCardinality(Nullable(String))", "text"),
+            ("Nullable(UInt8)", "tinyint"),
+            ("UInt32", "integer"),
+            ("Int64", "bigint"),
+            ("Float64", "double precision"),
+            ("FixedString(16)", "varchar(16)"),
+            ("DateTime64(3)", "timestamp"),
+            ("Date32", "date"),
+            ("Array(String)", "array"),
+            ("IPv4", "inet"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(
+                normalize_data_type(SeedDialect::ClickHouse, raw),
+                expected,
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn sqlite_untyped_column_falls_back_to_text() {
+        assert_eq!(normalize_data_type(SeedDialect::Sqlite, ""), "text");
+        assert_eq!(
+            normalize_data_type(SeedDialect::Sqlite, "UNSIGNED BIG INT"),
+            "bigint"
+        );
+        assert_eq!(
+            normalize_data_type(SeedDialect::Sqlite, "VARCHAR(40)"),
+            "varchar(40)"
+        );
+    }
+
+    #[test]
+    fn enum_members_parse_from_both_engine_spellings() {
+        assert_eq!(
+            enum_members("enum('small','large')"),
+            Some(vec!["small".to_string(), "large".to_string()])
+        );
+        assert_eq!(
+            enum_members(&normalize_data_type(
+                SeedDialect::ClickHouse,
+                "Enum8('a' = 1, 'b' = 2)"
+            )),
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
+        assert_eq!(
+            enum_members("enum('it''s')"),
+            Some(vec!["it's".to_string()])
+        );
+        assert_eq!(enum_members("varchar(20)"), None);
+    }
+
+    // -- database-supplied columns ----------------------------------------
+
+    #[test]
+    fn mysql_auto_increment_column_is_skipped() {
+        let mut id = column("id", "int");
+        id.is_primary_key = true;
+        id.default_value = Some("AUTO_INCREMENT".to_string());
+        let mut table = structure(vec![id, column("name", "varchar(30)")]);
+        table.primary_key = Some(vec!["id".to_string()]);
+
+        let draft = run(SeedDialect::MySql, &table);
+        assert!(matches!(source_of(&draft, "id"), ColumnSource::Skip));
+        assert!(matches!(
+            source_of(&draft, "name"),
+            ColumnSource::Generated { .. }
+        ));
+    }
+
+    #[test]
+    fn sqlite_integer_rowid_key_is_skipped_but_composite_key_is_not() {
+        let mut id = column("id", "INTEGER");
+        id.is_primary_key = true;
+        let mut table = structure(vec![id]);
+        table.primary_key = Some(vec!["id".to_string()]);
+        let draft = run(SeedDialect::Sqlite, &table);
+        assert!(matches!(source_of(&draft, "id"), ColumnSource::Skip));
+
+        // Two-column keys are not rowid aliases — SQLite assigns nothing.
+        let mut left = column("left_id", "INTEGER");
+        left.is_primary_key = true;
+        let mut right = column("right_id", "INTEGER");
+        right.is_primary_key = true;
+        let mut composite = structure(vec![left, right]);
+        composite.primary_key = Some(vec!["left_id".to_string(), "right_id".to_string()]);
+        let draft = run(SeedDialect::Sqlite, &composite);
+        assert!(matches!(
+            source_of(&draft, "left_id"),
+            ColumnSource::Generated { .. }
+        ));
+    }
+
+    #[test]
+    fn clickhouse_derived_columns_are_never_inserted() {
+        let mut materialized = column("day", "Date");
+        materialized.derivation_kind = Some("MATERIALIZED".to_string());
+        materialized.default_value = Some("MATERIALIZED toDate(ts)".to_string());
+        let mut defaulted = column("source", "String");
+        defaulted.default_value = Some("DEFAULT 'web'".to_string());
+        let table = structure(vec![
+            column("ts", "DateTime"),
+            materialized,
+            defaulted,
+            column("label", "LowCardinality(String)"),
+        ]);
+
+        let draft = run(SeedDialect::ClickHouse, &table);
+        assert!(matches!(source_of(&draft, "day"), ColumnSource::Skip));
+        assert!(matches!(source_of(&draft, "source"), ColumnSource::Skip));
+        assert!(matches!(
+            source_of(&draft, "label"),
+            ColumnSource::Generated { .. }
+        ));
+    }
+
+    #[test]
+    fn clickhouse_sorting_key_is_not_treated_as_unique() {
+        let mut sorted = column("user_id", "UInt32");
+        sorted.is_primary_key = true;
+        let mut table = structure(vec![sorted]);
+        table.primary_key = Some(vec!["user_id".to_string()]);
+
+        let draft = run(SeedDialect::ClickHouse, &table);
+        assert!(draft.needed_maxes.is_empty());
+        assert!(matches!(
+            source_of(&draft, "user_id"),
+            ColumnSource::Generated { unique: false, .. }
+        ));
+    }
+
+    // -- enums, FKs, unique sampling ---------------------------------------
+
+    #[test]
+    fn enum_columns_become_a_value_list_of_their_declared_members() {
+        let table = structure(vec![column("size", "enum('small','large')")]);
+        let draft = run(SeedDialect::MySql, &table);
+        match source_of(&draft, "size") {
+            ColumnSource::ValueList(values) => {
+                assert_eq!(values, &vec!["small".to_string(), "large".to_string()]);
+            }
+            other => panic!("expected a value list, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn only_referenced_foreign_keys_need_a_parent_pool() {
+        let mut table = structure(vec![column("customer_id", "int"), column("note", "text")]);
+        table.foreign_keys = vec![
+            ForeignKeyInfo {
+                name: "fk_customer".to_string(),
+                columns: vec!["customer_id".to_string()],
+                referenced_schema: "shop".to_string(),
+                referenced_table: "customers".to_string(),
+                referenced_columns: vec!["id".to_string()],
+                on_update: None,
+                on_delete: None,
+            },
+            // Declared on a column this table doesn't generate.
+            ForeignKeyInfo {
+                name: "fk_unused".to_string(),
+                columns: vec!["absent".to_string()],
+                referenced_schema: "shop".to_string(),
+                referenced_table: "regions".to_string(),
+                referenced_columns: vec!["id".to_string()],
+                on_update: None,
+                on_delete: None,
+            },
+        ];
+
+        let draft = run(SeedDialect::MySql, &table);
+        assert_eq!(draft.needed_pools, vec![0]);
+    }
+
+    #[test]
+    fn an_empty_parent_table_fails_before_any_write() {
+        let mut table = structure(vec![column("customer_id", "int")]);
+        table.foreign_keys = vec![ForeignKeyInfo {
+            name: "fk_customer".to_string(),
+            columns: vec!["customer_id".to_string()],
+            referenced_schema: String::new(),
+            referenced_table: "customers".to_string(),
+            referenced_columns: vec!["id".to_string()],
+            on_update: None,
+            on_delete: None,
+        }];
+
+        let draft = run(SeedDialect::Sqlite, &table);
+        let error = finalize_plan(&table, draft, vec![Some(Vec::new())], &[], 0)
+            .expect_err("empty parent must fail");
+        assert!(error.contains("customers"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn unique_integer_columns_request_a_max_probe_and_start_above_it() {
+        let mut table = structure(vec![column("code", "int")]);
+        table.indexes = vec![IndexInfo {
+            name: "uq_code".to_string(),
+            columns: vec!["code".to_string()],
+            is_unique: true,
+            is_primary: false,
+            method: None,
+        }];
+
+        let draft = run(SeedDialect::MySql, &table);
+        assert_eq!(draft.needed_maxes, vec!["code".to_string()]);
+
+        let plan = finalize_plan(&table, draft, Vec::new(), &[("code".to_string(), 500)], 0)
+            .expect("plan");
+        let rows = generate_rows(&plan, 3, &mut SeedRng::new(1));
+        let values: Vec<i64> = rows
+            .iter()
+            .map(|row| row[0].as_ref().unwrap().parse().unwrap())
+            .collect();
+        assert_eq!(values, vec![501, 502, 503]);
+    }
+
+    // -- dialect-specific rendering ---------------------------------------
+
+    #[test]
+    fn booleans_render_as_digits_outside_postgres() {
+        for (dialect, expected) in [
+            (SeedDialect::Postgres, ["true", "false"]),
+            (SeedDialect::MySql, ["1", "0"]),
+            (SeedDialect::Sqlite, ["1", "0"]),
+            (SeedDialect::ClickHouse, ["1", "0"]),
+        ] {
+            let table = structure(vec![column("flag", "boolean")]);
+            let draft = analyze_plan(dialect, &table, &[]).expect("plan");
+            let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+            let rows = generate_rows(&plan, 40, &mut SeedRng::new(7));
+            for row in &rows {
+                let value = row[0].as_ref().unwrap();
+                assert!(
+                    expected.contains(&value.as_str()),
+                    "{dialect:?} produced {value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn clickhouse_arrays_render_with_bracket_syntax() {
+        let table = structure(vec![column("tags", "Array(String)")]);
+        let draft = run(SeedDialect::ClickHouse, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        let rows = generate_rows(&plan, 2, &mut SeedRng::new(1));
+        assert_eq!(rows[0][0].as_deref(), Some("[]"));
+    }
+
+    #[test]
+    fn fixed_string_length_is_carried_through_to_truncation() {
+        let table = structure(vec![column("blurb", "FixedString(8)")]);
+        let draft = run(SeedDialect::ClickHouse, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        let rows = generate_rows(&plan, 20, &mut SeedRng::new(5));
+        for row in &rows {
+            assert!(row[0].as_ref().unwrap().chars().count() <= 8);
+        }
+    }
+
+    #[test]
+    fn tiny_integers_stay_inside_a_single_byte() {
+        let table = structure(vec![column("score", "UInt8")]);
+        let draft = run(SeedDialect::ClickHouse, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        let rows = generate_rows(&plan, 200, &mut SeedRng::new(9));
+        for row in &rows {
+            let value: i64 = row[0].as_ref().unwrap().parse().unwrap();
+            assert!((0..=127).contains(&value), "out of tinyint range: {value}");
         }
     }
 }
