@@ -22,7 +22,7 @@ What already works:
 | Schema relationship map (auto-layout, table nodes, FK edges) | ✅ Phase 2 | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
 | Data export — CSV, JSON, SQL, HTML, Markdown, TXT, XLSX | ✅ | `src/lib/export.ts`, `src/components/data-grid.tsx` (whole-table + selection, gzip, encoding picker, NULL token, saved tasks) |
 | Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ✅ Phase 1 | `src/components/workspace-overview/{tables,schemas,query-history,details,settings}-tab.tsx` |
-| Connection-level settings page | 🟡 | Sidebar gear-icon view + driver-options scaffold (ADR-0013); SSH tunnel and connect-timeout / keepalive still pending — see § 1 below |
+| Connection-level settings page | 🟡 | Sidebar gear-icon view + driver options end-to-end (ADR-0013); TCP keepalive still pending — see § 1 below |
 
 ---
 
@@ -35,7 +35,7 @@ Grouped by area. ❌ = absent, 🟡 = partial, ✅ = parity.
 - ✅ "Schemas" tab — per-schema table/view/matview counts + size (PG-only)
 - ✅ "Query History" tab — current-connection-scoped view with search + status filters; cap raised to 2000 entries
 - ✅ "Details" tab — server version, encoding, locale, timezone, `pg_settings` catalogue with modified-only filter, installed extensions (PG-only)
-- 🟡 "Settings" tab — read-only mirror of existing connection fields + Edit dialog launcher. Driver-options scaffold landed (ADR-0013): `PgDriverOptions` struct on the connection record + SET-statement plumbing for `statement_timeout`, `idle_in_transaction_session_timeout`, `search_path`, `ROLE`. Form expander, SSH tunnel, TCP-level connect timeout / keepalive remain pending follow-ups.
+- 🟡 "Settings" tab — read-only mirror of the connection's configured fields (including the driver knobs) + Edit dialog launcher. Driver options are complete end-to-end (ADR-0013): `PgDriverOptions` on the connection record, the Advanced-expander form in `<ConnectionForm>`, SET-statement plumbing for `statement_timeout`, `idle_in_transaction_session_timeout`, `search_path`, `ROLE`, and a bounded initial handshake for `connect_timeout_ms`. SSH tunnel shipped separately (ADR-0018). TCP keepalive is the one remaining knob — stored and round-tripped, but sqlx 0.8 exposes no socket setter, so it has no control.
 
 ### 2. Schema relationship map
 - ✅ Cardinality notation (Crow's Foot)

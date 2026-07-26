@@ -65,6 +65,15 @@ export type ConnectionFormPolicy =
       defaultPort: number;
       /** Whether to render the SSL toggle (PG/MySQL only). */
       showSslToggle: boolean;
+      /**
+       * Whether the Advanced section renders the driver/session knobs
+       * (statement timeout, search_path, default role — ADR-0013).
+       * PG-only: the backend applies them through PG's `SET` grammar
+       * and only `PgStoredConnection` carries the blob. MySQL shares
+       * this form `kind` but not the field, so it reads `false` until
+       * it gets its own ADR.
+       */
+      showDriverOptions: boolean;
     }
   | {
       kind: "clickhouse-http";
@@ -204,6 +213,7 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
       kind: "host-auth",
       defaultPort: 5432,
       showSslToggle: true,
+      showDriverOptions: true,
     },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
   },
@@ -219,6 +229,7 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
       kind: "host-auth",
       defaultPort: 3306,
       showSslToggle: true,
+      showDriverOptions: false,
     },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
   },
@@ -371,7 +382,27 @@ export type ConnectionFormValues = {
   sshTunnelKeepaliveWantReply?: boolean;
   sshTunnelJumpChain?: string[];
   sshTunnelProxyCommand?: string;
+  // Driver/session knobs (ADR-0013). Only the `host-auth` policy with
+  // `showDriverOptions` renders these; every other kind ignores them.
+  // `defaultSearchPath` is the raw comma-separated text the user types
+  // — `parseSearchPath` in `form-utils` splits it into the schema list
+  // the backend stores.
+  statementTimeoutMs?: number;
+  idleInTransactionTimeoutMs?: number;
+  connectTimeoutMs?: number;
+  keepaliveSeconds?: number;
+  defaultSearchPath?: string;
+  defaultRole?: string;
 };
+
+/**
+ * Upper bound for the millisecond timeout knobs — 24h. Anything above
+ * this is more likely a unit mix-up (seconds typed as ms) than intent.
+ */
+const MAX_TIMEOUT_MS = 86_400_000;
+
+/** Upper bound for connect timeout — 10 minutes. */
+const MAX_CONNECT_TIMEOUT_MS = 600_000;
 
 export type ConnectionFormIssue = {
   path: keyof ConnectionFormValues;
@@ -415,6 +446,9 @@ export function validateConnection(
       validateDatabaseRequired(value, issues);
       validateUserRequired(value, issues);
       validatePasswordRequired(value, mode, issues);
+      if (policy.showDriverOptions) {
+        validateDriverOptions(value, issues);
+      }
       break;
     }
     case "clickhouse-http": {
@@ -489,6 +523,91 @@ function validatePasswordRequired(
   if (mode === "edit") return;
   if (!value.password?.trim()) {
     issues.push({ path: "password", message: "Password is required" });
+  }
+}
+
+/**
+ * Validate the ADR-0013 driver knobs. Every field is optional — a
+ * blank input means "use the server default" and produces no issue.
+ * The bounds exist to catch unit mix-ups (a user typing `30` meaning
+ * seconds into a millisecond field is legal; typing `30000000` into
+ * `connectTimeoutMs` almost certainly is not).
+ */
+function validateDriverOptions(
+  value: ConnectionFormValues,
+  issues: ConnectionFormIssue[],
+): void {
+  // PG reads 0 as "no limit" for both session timeouts, so 0 is a
+  // meaningful value here rather than an empty one.
+  validateMsRange(
+    value.statementTimeoutMs,
+    "statementTimeoutMs",
+    "Statement timeout",
+    MAX_TIMEOUT_MS,
+    issues,
+  );
+  validateMsRange(
+    value.idleInTransactionTimeoutMs,
+    "idleInTransactionTimeoutMs",
+    "Idle-in-transaction timeout",
+    MAX_TIMEOUT_MS,
+    issues,
+  );
+  if (value.connectTimeoutMs !== undefined) {
+    if (
+      !Number.isInteger(value.connectTimeoutMs) ||
+      value.connectTimeoutMs < 1 ||
+      value.connectTimeoutMs > MAX_CONNECT_TIMEOUT_MS
+    ) {
+      issues.push({
+        path: "connectTimeoutMs",
+        message: `Connect timeout must be between 1 and ${MAX_CONNECT_TIMEOUT_MS} ms`,
+      });
+    }
+  }
+  validateSearchPath(value.defaultSearchPath, issues);
+}
+
+function validateMsRange(
+  raw: number | undefined,
+  path: keyof ConnectionFormValues,
+  label: string,
+  max: number,
+  issues: ConnectionFormIssue[],
+): void {
+  if (raw === undefined) return;
+  if (!Number.isInteger(raw) || raw < 0 || raw > max) {
+    issues.push({
+      path,
+      message: `${label} must be between 0 and ${max} ms`,
+    });
+  }
+}
+
+/**
+ * The search path is typed as free text and split on commas. The
+ * backend double-quotes each entry before it reaches `SET search_path`
+ * (`quote_double` in `postgres/pool.rs`), so injection isn't the
+ * concern — a stray `"` inside an entry is, because it would land in
+ * a quoted identifier the user didn't mean to write.
+ */
+function validateSearchPath(
+  raw: string | undefined,
+  issues: ConnectionFormIssue[],
+): void {
+  if (raw === undefined || !raw.trim()) return;
+  const entries = raw.split(",").map((entry) => entry.trim());
+  if (entries.some((entry) => !entry)) {
+    issues.push({
+      path: "defaultSearchPath",
+      message: "Search path entries cannot be empty",
+    });
+  }
+  if (entries.some((entry) => entry.includes('"'))) {
+    issues.push({
+      path: "defaultSearchPath",
+      message: 'Search path entries cannot contain a double quote (")',
+    });
   }
 }
 

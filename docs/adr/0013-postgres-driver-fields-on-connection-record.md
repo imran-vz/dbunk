@@ -1,6 +1,6 @@
 # ADR-0013 — Driver-level fields on the Postgres connection record
 
-**Status**: Proposed (2026-05-14)
+**Status**: Accepted (2026-05-14) — Phase 2 landed 2026-07-27
 
 ## Context
 
@@ -42,11 +42,18 @@ pub struct PgDriverOptions {
 The connection-pool builder (`postgres::connect`) reads these and:
 
 - Calls `SET statement_timeout`, `SET idle_in_transaction_session_timeout`, `SET search_path`, `SET ROLE` after every successful handshake (shipped).
-- Reserves `keepalive_seconds` and `connect_timeout_ms` on the struct
-  but does not yet apply them — sqlx 0.8's `PgConnectOptions` doesn't
-  expose direct setters for either. A follow-up wraps `connect_with`
-  in `tokio::time::timeout` for the latter and threads keepalives via
-  the socket layer for the former.
+- Bounds the initial handshake with `connect_timeout_ms` by wrapping
+  `connect_with` in `tokio::time::timeout` (shipped, Phase 2). It is
+  deliberately *not* mapped onto sqlx's `acquire_timeout`: that clock
+  also covers waiting for a free slot on a saturated pool, so a short
+  connect deadline would start failing healthy queries. The cost of
+  the narrower mapping is that connections the pool opens later, on an
+  endpoint already proven reachable, are unbounded.
+- Reserves `keepalive_seconds` on the struct but does not apply it —
+  sqlx 0.8's `PgConnectOptions` exposes no socket keepalive setter. It
+  round-trips through the form so a save can't wipe it, but ships **no
+  control**: a knob that silently does nothing is worse than an absent
+  one.
 - Routes through the SSH tunnel when configured (see §SSH below).
 
 **SSH tunnel is its own follow-up ADR.** It introduces a credential
@@ -60,18 +67,35 @@ unreachable until that follow-up lands.
 that holds the serialized blob. Existing rows backfill to `NULL` →
 treated as `PgDriverOptions::default()`. No data rewrite needed.
 
-**Form**: extends `ConnectionFormPolicy::host-auth` with an "Advanced"
+**Form**: extends `ConnectionFormPolicy::host-auth` with an
+`showDriverOptions` flag, read inside the existing "Advanced Options"
 expander. The form continues to read the policy union (ADR-0012); no
-new `selectedEngine ===` checks.
+new `selectedEngine ===` checks. PG sets it `true`, MySQL `false` —
+they share the form `kind` but only PG carries the field.
+
+`default_search_path` is typed as free comma-separated text and split
+by `parseSearchPath`; the backend already double-quotes each entry, so
+validation only rejects blank entries and embedded `"`.
 
 ## Consequences
 
 - One Phase 1 commit covers struct + migration + plumbing into
   `connect()`. The form expander is a Phase 2 commit. Per-field UI
   polish (e.g., `search_path` token picker) lives in follow-ups.
-- Settings tab becomes editable: drop the "read-only mirror" comment
-  in `settings-tab.tsx`, render the advanced fields, route saves
-  through `updateConnection`.
+- Settings tab renders the configured knobs alongside the other
+  connection fields, and the "Phase 1 introduces no new fields"
+  comment is gone. **Deviation from the original decision**: it stays
+  a read-only mirror rather than becoming a second inline editor.
+  `<ConnectionForm>` is the single construction site for the
+  `StoredConnection` wire shape (ADR-0012) and the tab's Edit button
+  already routes saves through it into `updateConnection` — a parallel
+  editor would duplicate the builder the union depends on. The knobs
+  block is omitted entirely when nothing is set, so the grid doesn't
+  grow five permanent dashes for every Postgres connection.
+- Because the form now carries every knob in its own state, the
+  post-hoc `driverOptions` merge in `use-connection-form.ts` is gone;
+  the blob survives an edit save because the form round-trips it, not
+  because a special case re-attaches it.
 - `connectionFormPolicy` types grow optional driver-options keys; the
   ClickHouse / SQLite / Redis variants ignore them. MySQL gets its
   own ADR if/when it adopts the same shape.
@@ -100,5 +124,10 @@ new `selectedEngine ===` checks.
   optional field to one variant.
 - ADR-0012 — unified `ConnectionForm` + policy union. This ADR
   extends the `host-auth` policy with optional driver fields.
-- `PENDING_TASKS.md §Connection Settings tab` — the tracked debt
-  this resolves.
+- ADR-0018 — first-class Bastion Servers and SSH tunnels. The
+  follow-up this ADR reserved the `ssh_tunnel` slot for; it landed as
+  its own field on the connection record rather than inside
+  `driver_options`.
+- `ROADMAP.md §1 "Settings" tab` — the tracked debt this resolves.
+  (The `PENDING_TASKS.md` referenced above no longer exists; its
+  contents folded into ROADMAP.)
