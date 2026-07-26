@@ -48,6 +48,7 @@ export const SEED_GENERATOR_OPTIONS: ReadonlyArray<{
   { id: "word", label: "Word" },
   { id: "sentence", label: "Sentence" },
   { id: "boolean", label: "Boolean" },
+  { id: "tinyInt", label: "Tiny integer" },
   { id: "smallInt", label: "Small integer" },
   { id: "integer", label: "Integer" },
   { id: "bigInt", label: "Big integer" },

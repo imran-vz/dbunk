@@ -18,6 +18,7 @@ use std::time::Instant;
 use sqlx::any::{AnyConnectOptions, AnyRow};
 use sqlx::{Any, AnyConnection, Column, Connection, Executor, Row};
 
+use super::{introspect, seed};
 use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
     CommitCellEditsResult, ConnectResult, CopyTableResult, DatabaseEngine, DatabaseOverviewStats,
@@ -391,7 +392,7 @@ fn value_to_string(row: &AnyRow, index: usize) -> String {
     "NULL".to_string()
 }
 
-fn row_to_strings(row: &AnyRow) -> Vec<String> {
+pub(super) fn row_to_strings(row: &AnyRow) -> Vec<String> {
     row.columns()
         .iter()
         .enumerate()
@@ -426,6 +427,18 @@ async fn fetch_column(
         .filter_map(|row| row.into_iter().next())
         .filter(|value| value != "NULL")
         .collect())
+}
+
+/// Open one sqlx-Any connection, mapping connect failures to the
+/// actionable message shape. The shared entry point for every
+/// MySQL / SQLite code path in this module and its siblings.
+pub(super) async fn sqlx_connect(connection: &StoredConnection) -> Result<AnyConnection, String> {
+    ensure_sqlx_drivers();
+    let dsn = sqlx_dsn(connection)?;
+    let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
+    AnyConnection::connect_with(&options)
+        .await
+        .map_err(|error| friendly_sqlx_error(error, connection.host(), connection.port()))
 }
 
 /// Run a query through sqlx-Any. The shared path for engines we don't
@@ -841,18 +854,24 @@ pub async fn fetch_table_structure(
             clickhouse::fetch_table_structure(connection, schema, table).await
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            // Columns-only probe with all `capabilities.*` falsy — the UI
-            // hides the disabled sections accordingly. Native engine
-            // modules will replace this when MySQL / SQLite catch up.
-            fetch_table_structure_columns_only(connection, schema, table)
-                .await
-                .map_err(|error| {
-                    format!(
-                        "Structure inspection is not yet supported for {}: {}",
-                        engine_name(&connection.engine()),
-                        error
-                    )
-                })
+            // Catalog introspection (columns, PK, FKs, indexes) — needed
+            // by constraint-aware Table Seeding. Row-mutation
+            // capabilities stay off; see `introspect::assemble`. Falls
+            // back to the columns-only probe when the catalog is
+            // unreadable (restricted grants, an unusual server build)
+            // so the grid still renders.
+            match introspect::fetch_table_structure(connection, schema, table).await {
+                Ok(structure) => Ok(structure),
+                Err(catalog_error) => fetch_table_structure_columns_only(connection, schema, table)
+                    .await
+                    .map_err(|_| {
+                        format!(
+                            "Structure inspection failed for {}: {}",
+                            engine_name(&connection.engine()),
+                            catalog_error
+                        )
+                    }),
+            }
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
@@ -1146,8 +1165,29 @@ where
             )
             .await
         }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
-            Err(not_implemented_yet(&connection.engine(), "Table seeding"))
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
+            seed::seed_table(
+                connection,
+                schema,
+                table,
+                row_count,
+                seed,
+                specs,
+                report_progress,
+            )
+            .await
+        }
+        DatabaseEngine::ClickHouse => {
+            clickhouse::seed_table(
+                connection,
+                schema,
+                table,
+                row_count,
+                seed,
+                specs,
+                report_progress,
+            )
+            .await
         }
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
