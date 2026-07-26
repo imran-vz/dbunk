@@ -26,8 +26,10 @@
 //! relational submodule (asserting Redis never reaches there) are
 //! invariant assertions, not wildcards.
 
+pub(crate) mod introspect;
 pub(crate) mod keyvalue;
 pub(crate) mod relational;
+pub(crate) mod seed;
 
 // Re-export the helpers the engine modules (postgres, clickhouse) and
 // the Tauri command layer (lib.rs) reach for via `crate::dispatch::*`.

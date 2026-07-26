@@ -71,6 +71,18 @@ import { deriveSelectedTableSessionCapabilities } from "@/lib/table-session";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import { useContainerWidth } from "@/lib/use-resizable-width";
 
+/**
+ * Engines with a backend `seed_table` implementation (ADR-0020). Redis
+ * is absent because Table Seeding has no meaning for a keyvalue store,
+ * not because it hasn't caught up.
+ */
+const SEEDABLE_ENGINES = new Set([
+  "PostgreSQL",
+  "MySQL",
+  "SQLite",
+  "ClickHouse",
+]);
+
 interface TableEditorPanelProps {
   tab: WorkspaceTab;
   variant?: "default" | "workbench";
@@ -518,7 +530,7 @@ export function TableEditorPanel({
         onExportTableDdl={handleExportTableDdl}
         onOpenCopyTable={() => setIsCopyOpen(true)}
         onRunMaintenance={handleRunMaintenance}
-        showSeedAction={connection?.engine === "PostgreSQL"}
+        showSeedAction={SEEDABLE_ENGINES.has(connection?.engine ?? "")}
         onOpenSeedTable={() => setIsSeedOpen(true)}
         variant={isWorkbench ? "workbench" : "default"}
       />
