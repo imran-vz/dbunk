@@ -287,17 +287,30 @@ pub async fn insert_row(
     }
 }
 
-pub async fn seed_table(
+pub async fn seed_table<F>(
     connection: &StoredConnection,
     schema: &str,
     table: &str,
     row_count: u32,
     seed: u64,
     specs: &[SeedColumnSpec],
-) -> Result<SeedTableResult, String> {
+    report_progress: F,
+) -> Result<SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
     match connection.engine().storage_class() {
         StorageClass::Relational => {
-            relational::seed_table(connection, schema, table, row_count, seed, specs).await
+            relational::seed_table(
+                connection,
+                schema,
+                table,
+                row_count,
+                seed,
+                specs,
+                report_progress,
+            )
+            .await
         }
         StorageClass::KeyValue => Err(not_applicable(connection, "Table seeding")),
     }

@@ -406,13 +406,27 @@ pub(crate) fn insert_columns(plan: &SeedPlan) -> Vec<String> {
 
 /// Generate `row_count` rows for the plan. Output rows align with
 /// [`insert_columns`].
+#[cfg(test)]
 pub(crate) fn generate_rows(
     plan: &SeedPlan,
     row_count: u32,
     rng: &mut SeedRng,
 ) -> Vec<Vec<Option<String>>> {
+    generate_rows_from(plan, 0, row_count, rng)
+}
+
+/// Generate one bounded chunk while preserving the absolute row index
+/// used by unique generators. Reusing the same RNG across consecutive
+/// calls produces the same values as one `generate_rows` call.
+pub(crate) fn generate_rows_from(
+    plan: &SeedPlan,
+    start_row: u32,
+    row_count: u32,
+    rng: &mut SeedRng,
+) -> Vec<Vec<Option<String>>> {
     let mut rows = Vec::with_capacity(row_count as usize);
-    for row_index in 0..row_count {
+    for row_offset in 0..row_count {
+        let row_index = start_row + row_offset;
         // One pool row per FK per generated row keeps composite FK
         // members consistent with each other.
         let pool_picks: Vec<usize> = plan
@@ -783,6 +797,21 @@ mod tests {
         assert_eq!(a, b);
         let c = generate_rows(&plan, 50, &mut SeedRng::new(43));
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn chunked_generation_matches_one_shot_generation() {
+        let plan = plan_with(vec![
+            generated("name", GenKind::FullName),
+            generated("email", GenKind::Email),
+            generated("sequence", GenKind::Integer),
+        ]);
+        let expected = generate_rows(&plan, 53, &mut SeedRng::new(42));
+        let mut rng = SeedRng::new(42);
+        let mut chunked = generate_rows_from(&plan, 0, 20, &mut rng);
+        chunked.extend(generate_rows_from(&plan, 20, 20, &mut rng));
+        chunked.extend(generate_rows_from(&plan, 40, 13, &mut rng));
+        assert_eq!(expected, chunked);
     }
 
     #[test]

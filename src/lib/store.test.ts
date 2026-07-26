@@ -11,6 +11,7 @@ vi.mock("@/lib/tauri", () => ({
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import {
   type Connection,
+  type ManagedServerWithStatus,
   type QueryOutcome,
   tableDataKey,
   tableStructureKey,
@@ -587,6 +588,63 @@ describe("store.loadTableStructure", () => {
 });
 
 describe("connectConnection error feedback", () => {
+  it("shows a stopped managed server as starting until cold connect completes", async () => {
+    const managedServer: ManagedServerWithStatus = {
+      id: "server-1",
+      name: "Local",
+      engine: "PostgreSQL",
+      version: "17",
+      port: 5433,
+      containerName: "dbunk-local",
+      volumeName: "dbunk-local-data",
+      database: "postgres",
+      user: "postgres",
+      connectionId: "conn-1",
+      createdAt: "2026-07-27T00:00:00Z",
+      status: "stopped",
+      volumeExists: true,
+    };
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5433,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: false,
+        },
+      ],
+      managedServers: [managedServer],
+    });
+
+    let resolveConnect: ((value: unknown) => void) | undefined;
+    mockedInvoke
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveConnect = resolve;
+          }),
+      )
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...managedServer, status: "running" }]);
+
+    const connect = useAppStore.getState().connectConnection("conn-1");
+    expect(useAppStore.getState().managedServers[0]?.status).toBe("starting");
+
+    resolveConnect?.({ latencyMs: 12 });
+    await connect;
+
+    expect(useAppStore.getState().managedServers[0]?.status).toBe("running");
+    expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
+  });
+
   it("sets errorMessage on the connection when connect fails", async () => {
     useAppStore.setState({
       connections: [

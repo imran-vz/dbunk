@@ -11,8 +11,8 @@ use std::time::Instant;
 use sqlx::Acquire;
 
 use crate::seed::{
-    classify_column, generate_rows, insert_columns, max_char_length, parse_generator_id, spec_for,
-    ColumnPlan, ColumnSource, GenKind, SeedPlan, SeedRng, DEFAULT_NULL_RATE,
+    classify_column, generate_rows_from, insert_columns, max_char_length, parse_generator_id,
+    spec_for, ColumnPlan, ColumnSource, GenKind, SeedPlan, SeedRng, DEFAULT_NULL_RATE,
 };
 use crate::{quote_double, ColumnInfo, SeedColumnSpec, SeedTableResult, StoredConnection};
 
@@ -25,14 +25,18 @@ const MAX_PARAMS_PER_STATEMENT: usize = 60_000;
 /// How many distinct parent rows to sample per foreign key.
 const FK_POOL_LIMIT: usize = 1_000;
 
-pub async fn seed_table(
+pub async fn seed_table<F>(
     connection: &StoredConnection,
     schema: &str,
     table: &str,
     row_count: u32,
     seed: u64,
     specs: &[SeedColumnSpec],
-) -> Result<SeedTableResult, String> {
+    report_progress: F,
+) -> Result<SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
     if row_count == 0 {
         return Err("row count must be at least 1".to_string());
     }
@@ -212,14 +216,16 @@ pub async fn seed_table(
         })
         .collect();
     let mut rng = SeedRng::new(seed);
-    let rows = generate_rows(&plan, row_count, &mut rng);
 
     let chunk_size = (MAX_PARAMS_PER_STATEMENT / columns.len()).clamp(1, 500);
     let mut conn = connect(connection).await?;
     let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
     let mut rows_inserted: u64 = 0;
-    for chunk in rows.chunks(chunk_size) {
-        let (sql, params) = build_cast_bulk_insert(schema, table, &columns, &column_types, chunk);
+    let mut rows_generated: u32 = 0;
+    while rows_generated < row_count {
+        let batch_size = (row_count - rows_generated).min(chunk_size as u32);
+        let rows = generate_rows_from(&plan, rows_generated, batch_size, &mut rng);
+        let (sql, params) = build_cast_bulk_insert(schema, table, &columns, &column_types, &rows);
         let mut query = sqlx::query(&sql);
         for param in &params {
             query = query.bind(param.as_deref());
@@ -229,6 +235,8 @@ pub async fn seed_table(
             .await
             .map_err(|error| error.to_string())?
             .rows_affected();
+        rows_generated += batch_size;
+        report_progress(u64::from(rows_generated));
     }
     tx.commit().await.map_err(|error| error.to_string())?;
 
@@ -429,7 +437,7 @@ mod live_tests {
         .await;
 
         // Child first must fail fast: parent is empty.
-        let err = seed_table(&connection, "seed_live", "orders", 10, 42, &[])
+        let err = seed_table(&connection, "seed_live", "orders", 10, 42, &[], |_| {})
             .await
             .expect_err("empty parent must fail fast");
         assert!(err.contains("customers"), "unexpected error: {err}");
@@ -440,7 +448,7 @@ mod live_tests {
         );
 
         // Parent seeds: unique emails, serial PK skipped, NULLs in city.
-        let result = seed_table(&connection, "seed_live", "customers", 200, 42, &[])
+        let result = seed_table(&connection, "seed_live", "customers", 200, 42, &[], |_| {})
             .await
             .expect("seed customers");
         assert_eq!(result.rows_inserted, 200);
@@ -448,7 +456,7 @@ mod live_tests {
         assert_eq!(count(&connection, "customers").await, 200);
 
         // Child now seeds, FK values sampled from real parent rows.
-        let result = seed_table(&connection, "seed_live", "orders", 500, 7, &[])
+        let result = seed_table(&connection, "seed_live", "orders", 500, 7, &[], |_| {})
             .await
             .expect("seed orders");
         assert_eq!(result.rows_inserted, 500);
@@ -466,7 +474,7 @@ mod live_tests {
         // Same seed on a fresh table yields identical data (determinism
         // across the full SQL round trip).
         exec(&connection, "TRUNCATE seed_live.customers CASCADE").await;
-        seed_table(&connection, "seed_live", "customers", 50, 99, &[])
+        seed_table(&connection, "seed_live", "customers", 50, 99, &[], |_| {})
             .await
             .expect("seed run 1");
         let emails_a: Vec<String> =
@@ -475,7 +483,7 @@ mod live_tests {
                 .await
                 .expect("emails");
         exec(&connection, "TRUNCATE seed_live.customers CASCADE").await;
-        seed_table(&connection, "seed_live", "customers", 50, 99, &[])
+        seed_table(&connection, "seed_live", "customers", 50, 99, &[], |_| {})
             .await
             .expect("seed run 2");
         let emails_b: Vec<String> =
@@ -509,7 +517,7 @@ mod live_tests {
                 null_rate: Some(0.0),
             },
         ];
-        seed_table(&connection, "seed_live", "customers", 40, 1, &specs)
+        seed_table(&connection, "seed_live", "customers", 40, 1, &specs, |_| {})
             .await
             .expect("seed with specs");
         let off_spec: i64 = sqlx::query_scalar(

@@ -1,6 +1,7 @@
 //! Relational-engine commands: queries, table data, DDL, schema
 //! introspection, mutations, history, and saved queries.
 
+use tauri::Emitter;
 use tauri::State;
 
 use crate::dispatch;
@@ -379,10 +380,12 @@ pub async fn insert_row(
 
 #[tauri::command]
 pub async fn seed_table(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     payload: SeedTablePayload,
 ) -> Result<SeedTableResult, String> {
     let SeedTablePayload {
+        operation_id,
         connection_id,
         schema,
         table,
@@ -398,8 +401,29 @@ pub async fn seed_table(
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0x5eed_5eed)
     });
+    let total_rows = u64::from(row_count);
     with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::seed_table(&connection, &schema, &table, row_count, seed, &columns).await
+        dispatch::seed_table(
+            &connection,
+            &schema,
+            &table,
+            row_count,
+            seed,
+            &columns,
+            move |rows_completed| {
+                if let Err(error) = app.emit(
+                    "seed-table-progress",
+                    crate::SeedTableProgress {
+                        operation_id: operation_id.clone(),
+                        rows_completed,
+                        total_rows,
+                    },
+                ) {
+                    log::warn!("seed progress emit failed: {error}");
+                }
+            },
+        )
+        .await
     })
     .await
 }

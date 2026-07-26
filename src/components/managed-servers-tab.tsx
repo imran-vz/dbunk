@@ -24,6 +24,15 @@ export function ManagedServersTab() {
     }
   }, [loadManagedServers, status.state]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (useAppStore.getState().managedServersStatus.state !== "loading") {
+        void loadManagedServers();
+      }
+    }, 5_000);
+    return () => window.clearInterval(interval);
+  }, [loadManagedServers]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
       <div className="flex items-center justify-between">
@@ -71,6 +80,7 @@ export function ManagedServersTab() {
 
 const STATUS_TONE: Record<string, string> = {
   running: "text-accent",
+  starting: "text-warning",
   stopped: "text-text-muted",
   orphaned: "text-destructive",
 };

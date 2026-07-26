@@ -10,6 +10,12 @@ export interface SeedTableResult {
   runtimeMs: number;
 }
 
+export interface SeedTableProgress {
+  operationId: string;
+  rowsCompleted: number;
+  totalRows: number;
+}
+
 /** One per-column entry of the `seed_table` payload. */
 export interface SeedColumnSpecPayload {
   column: string;

@@ -245,6 +245,39 @@ fn connection_string(server: &ManagedServer, password: &str) -> String {
     )
 }
 
+async fn clean_up_failed_provision(
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    credentials_before: &std::collections::HashMap<String, String>,
+    server: &ManagedServer,
+    connection_id: &str,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    if let Err(error) = credentials::write_all(pool, mode, credentials_before).await {
+        errors.push(format!("credential rollback failed: {error}"));
+    }
+    if let Err(error) = storage::delete_connection(pool, connection_id).await {
+        errors.push(format!("connection cleanup failed: {error}"));
+    }
+    if let Err(error) = storage::managed::delete_managed_server(pool, &server.id).await {
+        errors.push(format!("managed-server cleanup failed: {error}"));
+    }
+    if docker::container_state(&server.container_name)
+        .await
+        .is_some()
+    {
+        if let Err(error) = docker::remove_container(&server.container_name).await {
+            errors.push(format!("container cleanup failed: {error}"));
+        }
+    }
+    if docker::volume_exists(&server.volume_name).await {
+        if let Err(error) = docker::remove_volume(&server.volume_name).await {
+            errors.push(format!("volume cleanup failed: {error}"));
+        }
+    }
+    errors
+}
+
 pub async fn provision(
     pool: &SqlitePool,
     mode: CredentialStorageMode,
@@ -270,6 +303,10 @@ pub async fn provision(
             docker_status.error.unwrap_or_default()
         ));
     }
+    // Capture the credential backend before creating external resources.
+    // A partial credential write can otherwise evade delete-by-ID when
+    // the in-process credential cache was not updated.
+    let credentials_before = credentials::read_all(pool, mode).await?;
 
     let id = uuid::Uuid::new_v4().to_string();
     let short_id = &id[..8];
@@ -344,11 +381,28 @@ pub async fn provision(
     let connection_id = uuid::Uuid::new_v4().to_string();
     let mut server = server;
     server.connection_id = Some(connection_id.clone());
-    storage::managed::upsert_managed_server(pool, &server).await?;
 
-    let connection = build_connection(&server, &connection_id, &password)?;
-    storage::upsert_connection(pool, &connection).await?;
-    credentials::upsert(pool, mode, &connection).await?;
+    let persist_result = async {
+        storage::managed::upsert_managed_server(pool, &server).await?;
+        let connection = build_connection(&server, &connection_id, &password)?;
+        storage::upsert_connection(pool, &connection).await?;
+        credentials::upsert(pool, mode, &connection).await
+    }
+    .await;
+    if let Err(error) = persist_result {
+        let cleanup_errors =
+            clean_up_failed_provision(pool, mode, &credentials_before, &server, &connection_id)
+                .await;
+        if cleanup_errors.is_empty() {
+            return Err(format!(
+                "failed to save the managed server; provisioning was rolled back: {error}"
+            ));
+        }
+        return Err(format!(
+            "failed to save the managed server: {error}; rollback was incomplete: {}",
+            cleanup_errors.join("; ")
+        ));
+    }
 
     let connection_string = connection_string(&server, &password);
     Ok(ProvisionManagedServerResult {
@@ -386,9 +440,33 @@ async fn require_server(pool: &SqlitePool, id: &str) -> Result<ManagedServer, St
         .ok_or_else(|| format!("Managed server '{id}' not found"))
 }
 
-pub async fn start(pool: &SqlitePool, id: &str) -> Result<(), String> {
+async fn start_and_wait(
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    server: &ManagedServer,
+) -> Result<(), String> {
+    let connection_id = server
+        .connection_id
+        .as_deref()
+        .ok_or_else(|| "managed server has no linked connection".to_string())?;
+    let mut connection = storage::read_connection_by_id(pool, connection_id)
+        .await?
+        .ok_or_else(|| "the linked connection was deleted".to_string())?;
+    credentials::hydrate(pool, mode, &mut connection).await?;
+    docker::start_container(&server.container_name).await?;
+    wait_until_ready(
+        server.engine,
+        server.port,
+        &server.database,
+        &server.user,
+        connection.password(),
+    )
+    .await
+}
+
+pub async fn start(pool: &SqlitePool, mode: CredentialStorageMode, id: &str) -> Result<(), String> {
     let server = require_server(pool, id).await?;
-    docker::start_container(&server.container_name).await
+    start_and_wait(pool, mode, &server).await
 }
 
 pub async fn stop(pool: &SqlitePool, id: &str) -> Result<(), String> {
@@ -469,6 +547,34 @@ pub async fn recreate(
     .await
 }
 
+/// Start a stopped Managed Server before its linked Connection is used.
+///
+/// Returns `true` when a start was required so callers can distinguish
+/// a cold boot from an already-running server. Missing containers remain
+/// an explicit Orphaned error; connect intent never recreates resources.
+pub async fn ensure_running_for_connection(
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    connection: &StoredConnection,
+) -> Result<bool, String> {
+    let Some(server) =
+        storage::managed::read_managed_server_by_connection_id(pool, connection.id()).await?
+    else {
+        return Ok(false);
+    };
+    match docker::container_state(&server.container_name).await {
+        Some(state) if state == "running" => Ok(false),
+        Some(_) => {
+            start_and_wait(pool, mode, &server).await?;
+            Ok(true)
+        }
+        None => Err(format!(
+            "Managed server '{}' is orphaned; recreate it under Settings → Local Databases",
+            server.name
+        )),
+    }
+}
+
 #[cfg(test)]
 mod live_tests {
     //! End-to-end provisioning against the real Docker daemon.
@@ -535,7 +641,7 @@ mod live_tests {
             "stopped"
         );
 
-        start(&pool, &server_id).await.expect("start");
+        start(&pool, mode, &server_id).await.expect("start");
         assert_eq!(
             status_of(list(&pool).await.expect("list")).status,
             "running"

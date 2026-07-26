@@ -1149,6 +1149,7 @@ pub(crate) struct SeedColumnSpec {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SeedTablePayload {
+    pub operation_id: String,
     pub connection_id: String,
     pub schema: String,
     pub table: String,
@@ -1159,6 +1160,14 @@ pub(crate) struct SeedTablePayload {
     pub seed: Option<u64>,
     #[serde(default)]
     pub columns: Vec<SeedColumnSpec>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SeedTableProgress {
+    pub operation_id: String,
+    pub rows_completed: u64,
+    pub total_rows: u64,
 }
 
 #[derive(Debug, Serialize)]

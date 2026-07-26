@@ -1121,17 +1121,30 @@ pub async fn insert_row(
     }
 }
 
-pub async fn seed_table(
+pub async fn seed_table<F>(
     connection: &StoredConnection,
     schema: &str,
     table: &str,
     row_count: u32,
     seed: u64,
     specs: &[crate::SeedColumnSpec],
-) -> Result<crate::SeedTableResult, String> {
+    report_progress: F,
+) -> Result<crate::SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
     match connection.engine() {
         DatabaseEngine::PostgreSQL => {
-            postgres::seed_table(connection, schema, table, row_count, seed, specs).await
+            postgres::seed_table(
+                connection,
+                schema,
+                table,
+                row_count,
+                seed,
+                specs,
+                report_progress,
+            )
+            .await
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
             Err(not_implemented_yet(&connection.engine(), "Table seeding"))

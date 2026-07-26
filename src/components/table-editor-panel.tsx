@@ -1,4 +1,5 @@
 import { IconCopy, IconMaximize, IconX } from "@tabler/icons-react";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ForeignKeyTarget } from "@/components/data-grid";
@@ -53,7 +54,11 @@ import {
 } from "@/lib/export-tasks";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
-import type { SeedColumnSpecPayload, SeedTableResult } from "@/lib/seed-form";
+import type {
+  SeedColumnSpecPayload,
+  SeedTableProgress,
+  SeedTableResult,
+} from "@/lib/seed-form";
 import {
   type Connection,
   type EditOutcome,
@@ -119,6 +124,9 @@ export function TableEditorPanel({
   const [isCopyOpen, setIsCopyOpen] = useState(false);
   const [isSeedOpen, setIsSeedOpen] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [seedProgress, setSeedProgress] = useState<
+    { rowsCompleted: number; totalRows: number } | undefined
+  >();
   const [inlineDrilldown, setInlineDrilldown] = useState<{
     rowIndex: number;
     target: ForeignKeyTarget;
@@ -420,9 +428,25 @@ export function TableEditorPanel({
       return;
     }
     setIsSeeding(true);
+    setSeedProgress({ rowsCompleted: 0, totalRows: params.rowCount });
+    const operationId =
+      globalThis.crypto?.randomUUID?.() ??
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let unlisten: (() => void) | undefined;
     try {
+      unlisten = await listen<SeedTableProgress>(
+        "seed-table-progress",
+        (event) => {
+          if (event.payload.operationId !== operationId) return;
+          setSeedProgress({
+            rowsCompleted: event.payload.rowsCompleted,
+            totalRows: event.payload.totalRows,
+          });
+        },
+      ).catch(() => undefined);
       const result = await tauriInvoke<SeedTableResult>("seed_table", {
         payload: {
+          operationId,
           connectionId: tab.connectionId,
           schema: tab.schema,
           table: tab.table ?? "",
@@ -445,7 +469,9 @@ export function TableEditorPanel({
       setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
       toast.error(`Seed failed: ${errorToMessage(error)}`);
     } finally {
+      unlisten?.();
       setIsSeeding(false);
+      setSeedProgress(undefined);
     }
   };
 
@@ -510,6 +536,7 @@ export function TableEditorPanel({
         <SeedTableForm
           columns={structure.columns}
           isSeeding={isSeeding}
+          progress={seedProgress}
           onSubmit={handleSeedTable}
           onClose={() => setIsSeedOpen(false)}
         />

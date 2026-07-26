@@ -38,7 +38,9 @@ pub async fn start_managed_server(
     state: State<'_, AppState>,
     payload: ManagedServerPayload,
 ) -> Result<(), String> {
-    managed::start(&state.inner().pool, &payload.managed_server_id).await
+    let state = state.inner();
+    let mode = current_credential_mode(state).await?;
+    managed::start(&state.pool, mode, &payload.managed_server_id).await
 }
 
 #[tauri::command]

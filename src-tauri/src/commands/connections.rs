@@ -3,6 +3,7 @@
 use tauri::State;
 
 use crate::dispatch;
+use crate::managed;
 use crate::postgres;
 use crate::redis;
 use crate::storage;
@@ -80,11 +81,12 @@ pub async fn connect_connection(
     state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<ConnectResult, String> {
-    with_active_connection(
-        state.inner(),
-        &payload.connection_id,
-        |connection| async move { dispatch::ping_connection(&connection).await },
-    )
+    let state = state.inner();
+    let mode = current_credential_mode(state).await?;
+    with_active_connection(state, &payload.connection_id, |connection| async move {
+        managed::ensure_running_for_connection(&state.pool, mode, &connection).await?;
+        dispatch::ping_connection(&connection).await
+    })
     .await
 }
 
