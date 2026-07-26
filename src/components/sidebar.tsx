@@ -27,7 +27,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/components/ui/status-dot";
-import { type Connection, type SchemaExplorer, useAppStore } from "@/lib/store";
+import {
+  type Connection,
+  type ManagedServerStatus,
+  type ManagedServerWithStatus,
+  type SchemaExplorer,
+  useAppStore,
+} from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
@@ -212,6 +218,49 @@ function tableObjectQueries(schema: string, table: string) {
   ];
 }
 
+/**
+ * Managed Server Status as it reads on the connection row itself
+ * (ADR-0019). A stopped or orphaned server is the reason a connect
+ * attempt is about to fail, so it earns a warning tone here rather than
+ * only in Settings → Local Databases.
+ */
+const MANAGED_BADGE: Record<
+  ManagedServerStatus,
+  { label: string; className: string }
+> = {
+  running: {
+    label: "Local",
+    className: "border-accent/40 bg-accent/10 text-accent",
+  },
+  starting: {
+    label: "Starting",
+    className: "border-accent/40 bg-accent/10 text-accent",
+  },
+  stopped: {
+    label: "Stopped",
+    className: "border-warning/40 bg-warning/10 text-warning",
+  },
+  orphaned: {
+    label: "Orphaned",
+    className: "border-destructive/40 bg-destructive/10 text-destructive",
+  },
+};
+
+function managedBadgeTitle(server: ManagedServerWithStatus): string {
+  const base =
+    "Managed by dbunk — a local Docker database. Manage it under Settings → Local Databases.";
+  switch (server.status) {
+    case "stopped":
+      return `This local database is stopped. Connecting starts it again. ${base}`;
+    case "orphaned":
+      return server.volumeExists
+        ? `The container is gone but its data volume survives — recreate it from Settings → Local Databases. ${base}`
+        : `The container and its data volume are both gone. ${base}`;
+    default:
+      return base;
+  }
+}
+
 export function Sidebar({ className }: { className?: string }) {
   const [editingConnection, setEditingConnection] = useState<Connection | null>(
     null,
@@ -366,12 +415,13 @@ export function Sidebar({ className }: { className?: string }) {
                       {managedServer ? (
                         <span
                           data-testid={`managed-badge-${connection.name}`}
-                          title="Managed by dbunk — a local Docker database. Manage it under Settings → Local Databases."
-                          className="shrink-0 rounded-sm border border-accent/40 bg-accent/10 px-1 text-[0.5625rem] font-medium uppercase tracking-wide text-accent"
+                          title={managedBadgeTitle(managedServer)}
+                          className={cn(
+                            "shrink-0 rounded-sm border px-1 text-[0.5625rem] font-medium uppercase tracking-wide",
+                            MANAGED_BADGE[managedServer.status].className,
+                          )}
                         >
-                          {managedServer.status === "starting"
-                            ? "Starting"
-                            : "Local"}
+                          {MANAGED_BADGE[managedServer.status].label}
                         </span>
                       ) : null}
                     </span>
