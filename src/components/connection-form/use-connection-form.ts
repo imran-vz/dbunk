@@ -74,17 +74,6 @@ export function useConnectionForm({
           errorMessage: connection.errorMessage,
           lastActivityAt: connection.lastActivityAt,
         });
-        // Preserve PG `driverOptions` round-trip — the form
-        // expander (ADR-0013) hasn't landed yet, so the form
-        // schema doesn't carry the field. Without this merge the
-        // existing knobs would silently wipe on every save.
-        if (
-          updated.engine === "PostgreSQL" &&
-          connection.engine === "PostgreSQL" &&
-          connection.driverOptions
-        ) {
-          updated.driverOptions = connection.driverOptions;
-        }
         await updateConnection(updated);
       } else {
         const created = buildConnectionFromForm(value, crypto.randomUUID(), {
@@ -178,6 +167,12 @@ function resetEngineSpecificDefaults(
   form: ConnectionForm,
   engine: DatabaseEngine,
 ): void {
+  // Driver options are PG-only (ADR-0013). Switching away clears them
+  // so knobs typed against Postgres don't linger invisibly in form
+  // state and reappear if the user switches back mid-edit.
+  if (engine !== "PostgreSQL") {
+    resetDriverOptions(form);
+  }
   switch (engine) {
     case "PostgreSQL":
     case "MySQL":
@@ -197,6 +192,15 @@ function resetEngineSpecificDefaults(
       form.setFieldValue("verifyTlsCert", true);
       return;
   }
+}
+
+function resetDriverOptions(form: ConnectionForm): void {
+  form.setFieldValue("statementTimeoutMs", undefined);
+  form.setFieldValue("idleInTransactionTimeoutMs", undefined);
+  form.setFieldValue("connectTimeoutMs", undefined);
+  form.setFieldValue("keepaliveSeconds", undefined);
+  form.setFieldValue("defaultSearchPath", "");
+  form.setFieldValue("defaultRole", "");
 }
 
 export type ConnectionFormApi = ConnectionForm;

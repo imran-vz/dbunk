@@ -73,10 +73,14 @@ async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
     // Slow path: build a new pool.
     let options = build_connect_options(pg);
     let driver_options = pg.driver_options.clone();
+    let connect_timeout = driver_options
+        .as_ref()
+        .and_then(|opts| opts.connect_timeout_ms)
+        .map(|ms| std::time::Duration::from_millis(u64::from(ms)));
     let host_for_err = pg.host.clone();
     let port = if pg.port == 0 { 5432 } else { pg.port };
 
-    let pool = PgPoolOptions::new()
+    let build = PgPoolOptions::new()
         .max_connections(MAX_POOL_SIZE)
         .idle_timeout(IDLE_TIMEOUT)
         .after_connect(move |conn, _meta| {
@@ -90,9 +94,31 @@ async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
                 Ok(())
             })
         })
-        .connect_with(options)
-        .await
-        .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))?;
+        .connect_with(options);
+
+    // ADR-0013 `connect_timeout_ms`. `PgConnectOptions` has no connect
+    // deadline of its own, so the bound is a wrapper around the initial
+    // handshake — which is the hang users actually hit (an unreachable
+    // host otherwise waits on the OS TCP timeout, minutes on some
+    // platforms). Deliberately *not* mapped to sqlx's `acquire_timeout`:
+    // that also covers waiting for a free slot on a saturated pool, so a
+    // short connect deadline would start failing healthy queries.
+    let pool = match connect_timeout {
+        Some(limit) => tokio::time::timeout(limit, build)
+            .await
+            .map_err(|_| {
+                format!(
+                    "Connection to {host_for_err}:{port} timed out after {} ms. \
+                     Raise the connect timeout in the connection's advanced options, \
+                     or check that the host is reachable.",
+                    limit.as_millis()
+                )
+            })?
+            .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))?,
+        None => build
+            .await
+            .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_err, port))?,
+    };
 
     // Store in cache. If another task raced us, prefer its pool and
     // close ours so we don't leak connections.

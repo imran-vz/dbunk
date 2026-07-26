@@ -17,16 +17,22 @@ import {
 } from "@/components/ui/card";
 import { base64ToBytes, fileToBase64 } from "@/lib/backup";
 import { downloadBlob, downloadFile } from "@/lib/download";
-import type { Connection } from "@/lib/store";
+import type { Connection, PgDriverOptions } from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import { KeyValue } from "./key-value";
 
 /**
- * Settings sub-tab — read-only mirror of the connection's existing
- * fields plus an Edit button that opens the existing connection
- * dialog. Phase 1 intentionally does not introduce new fields (SSH
- * tunnel, keepalive, statement timeout, etc.) — see PHASES.md.
+ * Settings sub-tab — read-only mirror of the connection's configured
+ * fields plus an Edit button that opens the connection dialog.
+ *
+ * Editing deliberately stays in that one dialog rather than becoming a
+ * second inline editor here: `<ConnectionForm>` is the single
+ * construction site for the `StoredConnection` wire shape (ADR-0012),
+ * and it already routes saves through `updateConnection`. The mirror's
+ * job is to show what's set — including the ADR-0013 driver knobs,
+ * which live behind the dialog's Advanced expander and would otherwise
+ * be invisible from the workspace.
  */
 export function SettingsTab({ connection }: { connection: Connection }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -298,5 +304,38 @@ function buildSettingsRows(connection: Connection): Array<[string, ReactNode]> {
   // SQLite has no TLS / network-config fields beyond the common block.
   // Redis takes the keyvalue workspace branch and never reaches here.
 
+  if (connection.engine === "PostgreSQL") {
+    rows.push(...driverOptionRows(connection.driverOptions));
+  }
+
   return rows;
+}
+
+/**
+ * ADR-0013 knobs. The whole block is omitted when nothing is
+ * configured — which is the common case — rather than adding five
+ * permanent dashes to every Postgres connection's grid. Once any knob
+ * is set the block renders in full, so an unset neighbour reads as
+ * "server default" instead of vanishing.
+ */
+function driverOptionRows(
+  options: PgDriverOptions | undefined,
+): Array<[string, ReactNode]> {
+  if (!options || Object.keys(options).length === 0) {
+    return [];
+  }
+  return [
+    ["Statement timeout", millis(options.statementTimeoutMs)],
+    ["Idle in transaction", millis(options.idleInTransactionTimeoutMs)],
+    ["Connect timeout", millis(options.connectTimeoutMs)],
+    ["Search path", options.defaultSearchPath?.join(", ") || placeholderValue],
+    ["Default role", options.defaultRole || placeholderValue],
+  ];
+}
+
+function millis(value: number | undefined): ReactNode {
+  if (value === undefined) return placeholderValue;
+  // PG reads 0 as "no limit" for the session timeouts; spelling that
+  // out beats rendering a bare "0 ms" the user has to look up.
+  return value === 0 ? "No limit" : `${value} ms`;
 }
