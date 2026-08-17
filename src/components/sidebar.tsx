@@ -9,6 +9,7 @@ import {
   IconTable,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+
 import { connectionStatusTone } from "@/components/connection-status";
 import { DeleteConnectionDialog } from "@/components/delete-connection-dialog";
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";

@@ -39,7 +39,7 @@ export function useRedisFetch<T>({
 }: UseRedisFetchOptions<T>): void {
   const requestSeq = useRef(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cacheKey is the change trigger; callbacks are caller-controlled
+  /* oxlint-disable react-hooks/exhaustive-deps -- cacheKey is the change trigger; callbacks are caller-controlled */
   useEffect(() => {
     let cancelled = false;
     const seq = ++requestSeq.current;
@@ -60,4 +60,5 @@ export function useRedisFetch<T>({
       cancelled = true;
     };
   }, [cacheKey]);
+  /* oxlint-enable react-hooks/exhaustive-deps */
 }

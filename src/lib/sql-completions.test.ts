@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { getSqlCompletions } from "@/lib/sql-completions";
 import { tableStructureKey } from "@/lib/store";
 

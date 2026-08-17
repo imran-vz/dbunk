@@ -147,7 +147,7 @@ const HEADER_TS = `// Destructive-command list — generated from
 // the same source.
 `;
 
-// Match biome's array formatting: single-element arrays render on one
+// Match Oxfmt's array formatting: single-element arrays render on one
 // line, multi-element arrays render one-per-line with a trailing
 // comma.
 function tsArray(items) {

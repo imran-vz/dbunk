@@ -2,6 +2,7 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import { useMemo } from "react";
+
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -68,13 +69,13 @@ const fieldVariants = cva(
   },
 );
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- library component accepts generic div props */
 function Field({
   className,
   orientation = "vertical",
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: for library code
     <div
       role="group"
       data-slot="field"
@@ -84,6 +85,7 @@ function Field({
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -204,7 +206,7 @@ function FieldError({
       <ul className="ml-4 flex list-disc flex-col gap-1">
         {uniqueErrors.map(
           (error, index) =>
-            // biome-ignore lint/suspicious/noArrayIndexKey: errors will not have reliable IDs
+            // oxlint-disable-next-line react/no-array-index-key -- errors do not have reliable IDs
             error?.message && <li key={index}>{error.message}</li>,
         )}
       </ul>

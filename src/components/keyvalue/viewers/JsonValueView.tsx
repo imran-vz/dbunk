@@ -34,7 +34,6 @@ export function JsonValueView({ connectionId, keyName }: JsonValueViewProps) {
   const [saving, setSaving] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is the explicit refetch trigger after Save / Delete
   useEffect(() => {
     let cancelled = false;
     setLoading(true);

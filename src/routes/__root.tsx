@@ -38,7 +38,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <script
           id="dbunk-theme-boot"
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: pre-paint theme script with a build-time-constant body — must execute before React hydrates to avoid a flash of the wrong theme.
+          // oxlint-disable-next-line react/no-danger -- pre-paint theme script with a build-time-constant body; must execute before React hydrates to avoid a flash of the wrong theme.
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
         <HeadContent />

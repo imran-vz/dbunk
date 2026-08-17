@@ -2,6 +2,7 @@ import { IconCopy, IconMaximize, IconX } from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+
 import type { ForeignKeyTarget } from "@/components/data-grid";
 import {
   SchemaRelationshipMap,
@@ -150,7 +151,6 @@ export function TableEditorPanel({
   // across tab switches (no React key), so without this the inline
   // drill-down and terminal-outcome badge from table A would leak
   // into table B.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tableName is the change trigger, not a value read inside
   useEffect(() => {
     setInlineDrilldown(null);
     setLastOutcome(null);
