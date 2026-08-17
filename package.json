@@ -35,9 +35,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "tauri": "tauri",
-    "format": "biome format",
-    "lint": "biome check && oxlint .",
-    "fix": "biome check --write",
+    "format": "oxfmt --check \"**/*.{json,js,jsx,ts,tsx,mjs,mts}\"",
+    "lint": "oxlint .",
+    "fix": "oxfmt \"**/*.{json,js,jsx,ts,tsx,mjs,mts}\" && oxlint . --fix",
     "typecheck": "tsc --noEmit",
     "check:slice-isolation": "! grep -rE 'from \"\\./(connections|workspace-tabs|credentials|relational-tables|relational-queries|keyvalue-workspace|keyvalue-pubsub)\"' src/lib/store/connections.ts src/lib/store/workspace-tabs.ts src/lib/store/credentials.ts src/lib/store/relational-tables.ts src/lib/store/relational-queries.ts src/lib/store/keyvalue-workspace.ts src/lib/store/keyvalue-pubsub.ts",
     "generate:redis-commands": "node scripts/generate-redis-commands.mjs",
@@ -81,7 +81,6 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.2.4",
     "@oxlint/plugins": "1.78.0",
     "@tanstack/devtools-vite": "^0.3.12",
     "@tauri-apps/cli": "^2.11.1",
@@ -93,6 +92,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "jsdom": "^27.4.0",
+    "oxfmt": "0.63.0",
     "oxlint": "1.78.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.3",
