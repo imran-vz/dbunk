@@ -324,7 +324,6 @@ export const SchemaRelationshipMap = forwardRef<
   // Focused Table / Focused Relationship Edge. Cleared when the map
   // identity changes or the empty canvas is clicked.
   const [focus, setFocus] = useState<SchemaMapFocus | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies(key): focus must reset exactly when the map identity (connection + scope) changes
   useEffect(() => {
     setFocus(null);
   }, [key]);

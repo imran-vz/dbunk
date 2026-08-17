@@ -140,65 +140,55 @@ const tableCompletionsForSchema = (
   schema: SchemaExplorer,
   options: { qualified: boolean; sortPrefix: string },
 ): SqlCompletion[] => [
-  ...schema.tables.map(
-    (table): SqlCompletion => ({
-      label: options.qualified ? `${schema.name}.${table}` : table,
-      insertText: options.qualified
-        ? `${quoteIdentifier(schema.name)}.${quoteIdentifier(table)}`
-        : quoteIdentifier(table),
-      kind: "table",
-      detail: `Table in ${schema.name}`,
-      sortText: `${options.sortPrefix}${table}`,
-    }),
-  ),
-  ...(schema.views ?? []).map(
-    (view): SqlCompletion => ({
-      label: options.qualified ? `${schema.name}.${view}` : view,
-      insertText: options.qualified
-        ? `${quoteIdentifier(schema.name)}.${quoteIdentifier(view)}`
-        : quoteIdentifier(view),
-      kind: "view",
-      detail: `View in ${schema.name}`,
-      sortText: `${options.sortPrefix}${view}`,
-    }),
-  ),
+  ...schema.tables.map((table): SqlCompletion => ({
+    label: options.qualified ? `${schema.name}.${table}` : table,
+    insertText: options.qualified
+      ? `${quoteIdentifier(schema.name)}.${quoteIdentifier(table)}`
+      : quoteIdentifier(table),
+    kind: "table",
+    detail: `Table in ${schema.name}`,
+    sortText: `${options.sortPrefix}${table}`,
+  })),
+  ...(schema.views ?? []).map((view): SqlCompletion => ({
+    label: options.qualified ? `${schema.name}.${view}` : view,
+    insertText: options.qualified
+      ? `${quoteIdentifier(schema.name)}.${quoteIdentifier(view)}`
+      : quoteIdentifier(view),
+    kind: "view",
+    detail: `View in ${schema.name}`,
+    sortText: `${options.sortPrefix}${view}`,
+  })),
 ];
 
 const schemaCompletions = (schemas: SchemaExplorer[]): SqlCompletion[] =>
-  schemas.map(
-    (schema): SqlCompletion => ({
-      label: schema.name,
-      insertText: quoteIdentifier(schema.name),
-      kind: "schema",
-      detail: "Schema",
-      sortText: `1${schema.name}`,
-    }),
-  );
+  schemas.map((schema): SqlCompletion => ({
+    label: schema.name,
+    insertText: quoteIdentifier(schema.name),
+    kind: "schema",
+    detail: "Schema",
+    sortText: `1${schema.name}`,
+  }));
 
 const keywordCompletions = (): SqlCompletion[] =>
-  SQL_KEYWORDS.map(
-    (keyword): SqlCompletion => ({
-      label: keyword,
-      insertText: keyword,
-      kind: "keyword",
-      detail: "SQL keyword",
-      sortText: `9${keyword}`,
-    }),
-  );
+  SQL_KEYWORDS.map((keyword): SqlCompletion => ({
+    label: keyword,
+    insertText: keyword,
+    kind: "keyword",
+    detail: "SQL keyword",
+    sortText: `9${keyword}`,
+  }));
 
 const columnCompletions = (
   structure: TableStructure,
   table: SqlTableReference,
 ): SqlCompletion[] =>
-  structure.columns.map(
-    (column): SqlCompletion => ({
-      label: column.name,
-      insertText: quoteIdentifier(column.name),
-      kind: "column",
-      detail: `${column.dataType}${column.isPrimaryKey ? " primary key" : ""} in ${table.schema}.${table.table}`,
-      sortText: `0${String(column.ordinalPosition).padStart(4, "0")}${column.name}`,
-    }),
-  );
+  structure.columns.map((column): SqlCompletion => ({
+    label: column.name,
+    insertText: quoteIdentifier(column.name),
+    kind: "column",
+    detail: `${column.dataType}${column.isPrimaryKey ? " primary key" : ""} in ${table.schema}.${table.table}`,
+    sortText: `0${String(column.ordinalPosition).padStart(4, "0")}${column.name}`,
+  }));
 
 const uniqueByLabel = (items: SqlCompletion[]): SqlCompletion[] => {
   const seen = new Set<string>();

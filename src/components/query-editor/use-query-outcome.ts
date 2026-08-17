@@ -12,7 +12,7 @@ export interface QueryOutcomeState {
 // across tabs (no React key), so without this an error banner from
 // tab A could leak into tab B's view. Using the tracked-prev-prop
 // pattern (React docs: "Resetting all state when a prop changes")
-// rather than a useEffect so biome's exhaustive-deps rule stays
+// rather than a useEffect so Oxlint's exhaustive-deps rule stays
 // happy with the trigger-only dependency.
 export function useQueryOutcome(tabId: string): QueryOutcomeState {
   const [trackedTabId, setTrackedTabId] = useState(tabId);

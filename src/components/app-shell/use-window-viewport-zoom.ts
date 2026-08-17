@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
+
 import type { WindowViewportZoomTransition } from "@/lib/tauri";
 
 export const WINDOW_VIEWPORT_ZOOM_MS = 280;

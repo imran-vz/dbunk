@@ -9,6 +9,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useState } from "react";
+
 import { needsMacTitlebarGutter } from "@/components/app-shell/macos-titlebar";
 import { connectionStatusTone } from "@/components/connection-status";
 import { NewConnectionDialog } from "@/components/new-connection-dialog";

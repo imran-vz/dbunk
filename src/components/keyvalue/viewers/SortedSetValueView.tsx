@@ -301,7 +301,7 @@ export function SortedSetValueView({
             {editing
               ? pendingAdds.map((upsert, index) => (
                   <tr
-                    // biome-ignore lint/suspicious/noArrayIndexKey: order is the identity
+                    // oxlint-disable-next-line react/no-array-index-key -- order is the identity
                     key={`add-${index}`}
                     className="bg-accent/5"
                   >

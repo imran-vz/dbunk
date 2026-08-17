@@ -1,13 +1,14 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- library component accepts generic div props */
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: for library components
     <div
       data-slot="input-group"
       role="group"
@@ -19,6 +20,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
     />
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 
 const inputGroupAddonVariants = cva(
   "text-muted-foreground **:data-[slot=kbd]:bg-muted-foreground/10 h-auto gap-1 py-2 text-xs/relaxed font-medium group-data-[disabled=true]/input-group:opacity-50 **:data-[slot=kbd]:rounded-[calc(var(--radius-sm)-2px)] **:data-[slot=kbd]:px-1 **:data-[slot=kbd]:text-[0.625rem] [&>svg:not([class*='size-'])]:size-3.5 flex cursor-text items-center justify-center select-none",
@@ -41,14 +43,13 @@ const inputGroupAddonVariants = cva(
   },
 );
 
+/* oxlint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/prefer-tag-over-role -- library component delegates keyboard behavior to its controls */
 function InputGroupAddon({
   className,
   align = "inline-start",
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: for library code
-    // biome-ignore lint/a11y/useSemanticElements: for library code
     <div
       role="group"
       data-slot="input-group-addon"
@@ -64,6 +65,7 @@ function InputGroupAddon({
     />
   );
 }
+/* oxlint-enable jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/prefer-tag-over-role */
 
 const inputGroupButtonVariants = cva(
   "gap-2 rounded-md text-xs/relaxed shadow-none flex items-center",

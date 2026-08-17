@@ -516,7 +516,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
               value={confirmText}
               onChange={(event) => setConfirmText(event.target.value)}
               className="flex-1 rounded border border-border-subtle bg-surface-panel px-2 py-1 font-mono text-xs"
-              // biome-ignore lint/a11y/noAutofocus: typed-confirm modal expects focus
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- typed-confirm modal expects focus
               autoFocus
             />
             <Button

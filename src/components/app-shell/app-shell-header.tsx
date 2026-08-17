@@ -11,6 +11,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useState } from "react";
+
 import { NewConnectionDialog } from "@/components/new-connection-dialog";
 import { NewLocalDatabaseDialog } from "@/components/new-local-database-dialog";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { isMacPlatform, Kbd } from "@/components/ui/kbd";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+
 import logo from "../../assets/logo.png";
 
 function sidebarToggleLabel(

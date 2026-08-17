@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   tauriOnWindowFullscreenChange,
   tauriPrepareWindowZoomTransition,
@@ -13,6 +14,7 @@ import {
   tauriStartDragging,
   tauriToggleWindowZoom,
 } from "@/lib/tauri";
+
 import {
   useWindowViewportZoom,
   type WindowViewportZoomState,

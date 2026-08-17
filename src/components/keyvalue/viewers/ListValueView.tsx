@@ -50,7 +50,6 @@ export function ListValueView({
   const start = page * pageSize;
   const stop = start + pageSize - 1;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is the explicit refetch trigger after Save
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -255,7 +254,7 @@ export function ListValueView({
             {editing
               ? pendingAppends.map((value, index) => (
                   <tr
-                    // biome-ignore lint/suspicious/noArrayIndexKey: append-order identity
+                    // oxlint-disable-next-line react/no-array-index-key -- append-order identity
                     key={`append-${index}`}
                     className="bg-accent/5"
                   >

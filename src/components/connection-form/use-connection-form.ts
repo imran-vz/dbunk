@@ -103,7 +103,7 @@ export function useConnectionForm({
   });
 
   // Edit mode hydrates a different connection if the prop changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: form ref is stable
+  /* oxlint-disable react-hooks/exhaustive-deps -- form ref is stable */
   useEffect(() => {
     if (formMode === "edit" && connection) {
       const next = defaultValuesFromConnection(connection);
@@ -111,6 +111,7 @@ export function useConnectionForm({
       setSelectedEngine(next.engine);
     }
   }, [connection, formMode]);
+  /* oxlint-enable react-hooks/exhaustive-deps */
 
   const handleEngineChange = (engine: DatabaseEngine) => {
     if (formMode === "edit") return; // picker is disabled in edit mode

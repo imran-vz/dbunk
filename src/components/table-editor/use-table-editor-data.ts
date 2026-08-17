@@ -34,12 +34,13 @@ export function useTableEditorData(tab: WorkspaceTab): TableEditorData {
   // re-fire the effect on identity change of the ref object.
   const refKey = ref ? `${ref.connectionId}::${ref.schema}::${ref.table}` : "";
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refKey captures every primitive ref field
+  /* oxlint-disable react-hooks/exhaustive-deps -- refKey captures every primitive ref field */
   useEffect(() => {
     if (!ref) return;
     void loadTableData(ref.connectionId, ref.schema, ref.table);
     void loadTableStructure(ref.connectionId, ref.schema, ref.table);
   }, [refKey, loadTableData, loadTableStructure]);
+  /* oxlint-enable react-hooks/exhaustive-deps */
 
   const tableName = ref?.table ?? "";
   const dataKey = ref

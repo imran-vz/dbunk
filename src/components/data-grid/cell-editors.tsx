@@ -189,7 +189,7 @@ function ArrayCellEditor({
       ) : (
         <ul className="flex flex-col gap-1.5">
           {items.map((item, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: order is the identity
+            // oxlint-disable-next-line react/no-array-index-key -- order is the identity
             <li key={index} className="flex items-center gap-1.5">
               <span className="w-6 text-right font-mono text-[0.6875rem] text-text-muted">
                 {index}
