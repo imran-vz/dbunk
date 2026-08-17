@@ -6,8 +6,8 @@ import {
 } from "@/components/app-shell/activity-rail";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { StatusBarItem } from "@/components/status-bar";
-import type { SubTab } from "@/components/table-editor/header";
 import { TableEditorPanel } from "@/components/table-editor-panel";
+import type { SubTab } from "@/components/table-editor/header";
 import { ResizerHandle } from "@/components/ui/resizer-handle";
 import { DatabaseNavigator } from "@/components/workbench/database-navigator";
 import {

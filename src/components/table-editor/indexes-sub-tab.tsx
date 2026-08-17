@@ -4,6 +4,7 @@ import { IndexesSection } from "@/components/table-structure/read-only-sections"
 import { UnsupportedNotice } from "@/components/table-structure/shared";
 import { useStructure } from "@/components/table-structure/use-structure";
 import { Button } from "@/components/ui/button";
+
 import type { SubTab } from "./header";
 
 interface IndexesSubTabProps {

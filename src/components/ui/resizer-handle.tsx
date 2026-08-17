@@ -41,6 +41,7 @@ interface ResizerHandleProps {
   ariaLabel?: string;
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- interactive split-pane separator; hr cannot carry handlers */
 export function ResizerHandle({
   width,
   onResize,
@@ -99,7 +100,6 @@ export function ResizerHandle({
   };
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: interactive split-pane separator — <hr> can't carry handlers
     <div
       role="separator"
       tabIndex={0}
@@ -132,3 +132,4 @@ export function ResizerHandle({
     </div>
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */

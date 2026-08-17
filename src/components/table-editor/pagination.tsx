@@ -92,7 +92,7 @@ export function Pagination({
             </button>
           ) : (
             <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: ellipsis position is stable
+              // oxlint-disable-next-line react/no-array-index-key -- ellipsis position is stable
               key={`${entry}-${idx}`}
               className="px-1 text-text-muted"
             >

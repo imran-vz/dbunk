@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+
 import { AppShellHeader } from "@/components/app-shell/app-shell-header";
 import { useTauriWindowControls } from "@/components/app-shell/use-tauri-window-controls";
 import { windowViewportZoomStyle } from "@/components/app-shell/use-window-viewport-zoom";

@@ -38,7 +38,7 @@ export function StringValueView({
   const [reloadTick, setReloadTick] = useState(0);
   const [bitmapMode, setBitmapMode] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is intentional
+  /* oxlint-disable react-hooks/exhaustive-deps -- reloadTick is intentional */
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -62,6 +62,7 @@ export function StringValueView({
       cancelled = true;
     };
   }, [connectionId, keyName, maxBytes, reloadTick]);
+  /* oxlint-enable react-hooks/exhaustive-deps */
 
   if (loading && !data) {
     return <p className="p-4 text-xs text-text-muted">Loading value…</p>;
@@ -249,7 +250,7 @@ function BitmapGrid({
         {visibleBits.map((bit, idx) => (
           <button
             type="button"
-            // biome-ignore lint/suspicious/noArrayIndexKey: bit position IS the identity
+            // oxlint-disable-next-line react/no-array-index-key -- bit position is the identity
             key={idx}
             title={`bit ${idx} = ${bit} (click to toggle)`}
             disabled={pending !== null}

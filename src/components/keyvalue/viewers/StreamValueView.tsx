@@ -81,7 +81,6 @@ export function StreamValueView({
     cacheKey: `${connectionId}|${keyName}|${reverse}|${reloadTick}`,
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is the explicit refetch trigger after Save
   useEffect(() => {
     if (!showGroups) return;
     let cancelled = false;
@@ -293,7 +292,7 @@ export function StreamValueView({
           <div className="font-semibold text-foreground">Append entries</div>
           {pendingAppends.map((entry, index) => (
             <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: order is the identity
+              // oxlint-disable-next-line react/no-array-index-key -- order is the identity
               key={`pending-${index}`}
               className="rounded border border-border-subtle bg-surface-panel-elevated p-1.5"
             >
@@ -303,7 +302,7 @@ export function StreamValueView({
                   {entry.id || "(auto)"}
                 </span>
                 {entry.fields.map(([k, v], i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: order is the identity
+                  // oxlint-disable-next-line react/no-array-index-key -- order is the identity
                   <span key={i} className="font-mono">
                     <span className="text-text-muted">{k}</span>=
                     <span>{v}</span>
@@ -410,7 +409,7 @@ function DraftEditor({
       </div>
       <div className="mt-1.5 flex flex-col gap-1">
         {draft.fields.map(([key, value], index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: field-row identity is index
+          // oxlint-disable-next-line react/no-array-index-key -- field-row identity is index
           <div key={`field-${index}`} className="flex items-center gap-1.5">
             <Input
               value={key}

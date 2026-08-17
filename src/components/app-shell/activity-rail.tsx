@@ -9,6 +9,7 @@ import {
   IconTable,
   IconTerminal2,
 } from "@tabler/icons-react";
+
 import {
   MACOS_TRAFFIC_LIGHT_GUTTER_PX,
   needsMacTitlebarGutter,

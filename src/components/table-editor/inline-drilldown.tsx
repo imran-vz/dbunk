@@ -145,7 +145,7 @@ function DrilldownRows({
           <tbody className="divide-y divide-border-subtle">
             {rows.map((row, rowIdx) => (
               <tr
-                // biome-ignore lint/suspicious/noArrayIndexKey: positional row, no stable id
+                // oxlint-disable-next-line react/no-array-index-key -- positional row, no stable id
                 key={`row-${rowIdx}`}
                 className="hover:bg-surface-row-hover"
               >

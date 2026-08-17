@@ -150,7 +150,7 @@ function useFetched<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `fetcher` is recreated on every render; cacheKey is the real input
+  /* oxlint-disable react-hooks/exhaustive-deps -- `fetcher` is recreated every render; cacheKey is the real input */
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -170,6 +170,7 @@ function useFetched<T>(
       cancelled = true;
     };
   }, [cacheKey]);
+  /* oxlint-enable react-hooks/exhaustive-deps */
   return { data, error, loading };
 }
 

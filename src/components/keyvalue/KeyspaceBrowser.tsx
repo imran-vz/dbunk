@@ -30,9 +30,9 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
 import {
   type BulkDeleteByPatternResult,
   type BulkExpireByPatternResult,
@@ -590,7 +590,6 @@ export function KeyspaceBrowser({
   // tick fires. `activeDb` doesn't change `runScan`'s identity (it's
   // read off the scan session, not the closure) and `liveTick` is a
   // ref-like counter — both are listed explicitly so the SCAN re-runs.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeDb + liveTick intentionally trigger re-scan
   useEffect(() => {
     setKeys([]);
     setCursor(null);

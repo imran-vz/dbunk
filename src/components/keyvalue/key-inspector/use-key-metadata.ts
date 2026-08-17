@@ -21,7 +21,6 @@ export function useKeyMetadata(
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshTick is an intentional re-trigger
   useEffect(() => {
     let cancelled = false;
     setError(null);
