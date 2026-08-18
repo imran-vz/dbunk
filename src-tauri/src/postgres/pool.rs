@@ -10,7 +10,7 @@ use sqlx::{
     Postgres,
 };
 
-use crate::{quote_double, StoredConnection};
+use crate::StoredConnection;
 
 /// Per-connection pool cache. Keyed by `connection_id`. Each pool allows
 /// up to 5 concurrent connections (enough for health checks, schema loads,
@@ -162,34 +162,8 @@ async fn apply_driver_options_raw(
     conn: &mut PgConnection,
     options: &crate::types::PgDriverOptions,
 ) -> Result<(), sqlx::Error> {
-    if let Some(ms) = options.statement_timeout_ms {
-        sqlx::query(&format!("SET statement_timeout = {ms}"))
-            .execute(&mut *conn)
-            .await?;
-    }
-    if let Some(ms) = options.idle_in_transaction_timeout_ms {
-        sqlx::query(&format!("SET idle_in_transaction_session_timeout = {ms}"))
-            .execute(&mut *conn)
-            .await?;
-    }
-    if let Some(path) = options
-        .default_search_path
-        .as_ref()
-        .filter(|items| !items.is_empty())
-    {
-        let joined = path
-            .iter()
-            .map(|name| quote_double(name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        sqlx::query(&format!("SET search_path TO {joined}"))
-            .execute(&mut *conn)
-            .await?;
-    }
-    if let Some(role) = options.default_role.as_ref().filter(|s| !s.is_empty()) {
-        sqlx::query(&format!("SET ROLE {}", quote_double(role)))
-            .execute(&mut *conn)
-            .await?;
+    for statement in super::options::driver_option_sql(options) {
+        sqlx::query(&statement).execute(&mut *conn).await?;
     }
     Ok(())
 }

@@ -8,6 +8,7 @@ and reseeds from its own fixture files on container creation.
 
 ```sh
 pnpm run db:postgres
+pnpm run db:postgres-tls
 pnpm run db:clickhouse
 pnpm run db:redis
 pnpm run db:all
@@ -17,6 +18,7 @@ Or run from the infrastructure folder:
 
 ```sh
 make -C infrastructure/test-db postgres
+make -C infrastructure/test-db postgres-tls
 make -C infrastructure/test-db clickhouse
 make -C infrastructure/test-db redis
 make -C infrastructure/test-db postgres-redis
@@ -41,6 +43,7 @@ docker compose -f infrastructure/test-db/compose.yml --profile postgres --profil
 | Engine | Host | Port | Database | User | Password |
 | --- | --- | ---: | --- | --- | --- |
 | PostgreSQL | `localhost` | `15432` | `dbunk_demo` | `dbunk` | `dbunk` |
+| PostgreSQL TLS | `localhost` | `15433` | `dbunk_demo` | `dbunk` | `dbunk` |
 | ClickHouse HTTP | `localhost` | `18123` | `dbunk_demo` | `dbunk` | `dbunk` |
 | ClickHouse native | `localhost` | `19000` | `dbunk_demo` | `dbunk` | `dbunk` |
 | Redis | `localhost` | `16379` | `0`, `1`, `2` | | |
