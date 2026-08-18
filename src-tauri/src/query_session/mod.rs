@@ -793,6 +793,19 @@ async fn run_execution(
         postgres::ExecutionTotals::default(),
         Some(QuerySessionError::ConnectionLost),
     ));
+    if execution_lost_connection(error.as_ref()) {
+        let _ = send(
+            &session,
+            None,
+            false,
+            QueryEvent::SessionLost {
+                reason: "connectionLost".into(),
+            },
+        )
+        .await;
+        manager.remove_and_close(&session.id, false).await;
+        return;
+    }
     let omitted_rows = totals.omitted_rows;
     let omitted_result_sets = totals.omitted_result_sets;
     let omitted_metadata_bytes = totals.omitted_metadata_bytes;
@@ -828,6 +841,10 @@ async fn run_execution(
     {
         manager.remove_and_close(&session.id, false).await;
     }
+}
+
+fn execution_lost_connection(error: Option<&QuerySessionError>) -> bool {
+    matches!(error, Some(QuerySessionError::ConnectionLost))
 }
 
 async fn wait_for_row_credit(session: &Session) {
@@ -1094,5 +1111,16 @@ mod tests {
             Err(QuerySessionError::SessionLimitReached { limit })
                 if limit == "activeConnections"
         ));
+    }
+
+    #[test]
+    fn connection_loss_retires_the_session() {
+        assert!(execution_lost_connection(Some(
+            &QuerySessionError::ConnectionLost
+        )));
+        assert!(!execution_lost_connection(Some(
+            &QuerySessionError::TransactionStateUnknown { can_recheck: true }
+        )));
+        assert!(!execution_lost_connection(None));
     }
 }
