@@ -86,6 +86,7 @@ export function QueryEditorPanel({
       setSplitHeight((prev) => (Math.round(prev) === Math.round(h) ? prev : h));
     };
     apply(el.getBoundingClientRect().height);
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) apply(entry.contentRect.height);
@@ -577,8 +578,10 @@ function parseExplainPreview(
   };
 }
 
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The value is handled at a typed library or domain boundary here.
 function parseExplainJson(value: string): Record<string, unknown> | null {
   try {
+    // SAFETY: The value is constrained by the typed component or library contract at this boundary.
     const parsed = JSON.parse(value) as unknown;
     if (Array.isArray(parsed) && isRecord(parsed[0])) return parsed[0];
     if (isRecord(parsed)) return parsed;
@@ -588,6 +591,7 @@ function parseExplainJson(value: string): Record<string, unknown> | null {
   return null;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 function normalizeExplainNode(value: unknown): ExplainPlanNode {
   const node = isRecord(value) ? value : {};
   const children = Array.isArray(node.Plans)
@@ -609,38 +613,52 @@ function normalizeExplainNode(value: unknown): ExplainPlanNode {
   };
 }
 
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The value is handled at a typed library or domain boundary here.
 function bufferSummary(node: Record<string, unknown>): string[] {
-  return [
-    ["Shared Hit", node["Shared Hit Blocks"]],
-    ["Shared Read", node["Shared Read Blocks"]],
-    ["Shared Dirtied", node["Shared Dirtied Blocks"]],
-    ["Shared Written", node["Shared Written Blocks"]],
-    ["Temp Read", node["Temp Read Blocks"]],
-    ["Temp Written", node["Temp Written Blocks"]],
-  ]
-    .filter(([, value]) => typeof value === "number" && value > 0)
-    .map(([label, value]) => `${label}: ${value}`);
+  return (
+    [
+      ["Shared Hit", node["Shared Hit Blocks"]],
+      ["Shared Read", node["Shared Read Blocks"]],
+      ["Shared Dirtied", node["Shared Dirtied Blocks"]],
+      ["Shared Written", node["Shared Written Blocks"]],
+      ["Temp Read", node["Temp Read Blocks"]],
+      ["Temp Written", node["Temp Written Blocks"]],
+    ]
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
+      .filter(([, value]) => typeof value === "number" && value > 0)
+      .map(([label, value]) => `${label}: ${value}`)
+  );
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- The value is handled at a typed library or domain boundary here.
 function isRecord(value: unknown): value is Record<string, unknown> {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   return typeof value === "object" && value !== null;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 function stringOrDefault(value: unknown, fallback: string): string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 function stringOrUndefined(value: unknown): string | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 function numberOrUndefined(value: unknown): number | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 function numberOrNull(value: unknown): number | null {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 

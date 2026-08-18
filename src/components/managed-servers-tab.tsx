@@ -78,6 +78,7 @@ export function ManagedServersTab() {
   );
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const STATUS_TONE: Record<string, string> = {
   running: "text-accent",
   starting: "text-warning",

@@ -237,6 +237,7 @@ function parseOptionalNumber(value: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/* oxlint-disable react/no-array-index-key -- Duplicate and empty draft hops are distinguished by their ordered position. */
 export function JumpChainField({
   bastions,
   finalBastionId,
@@ -288,6 +289,7 @@ export function JumpChainField({
       ) : (
         <div className="grid gap-2">
           {chain.map((bastionId, index) => (
+            // oxlint-disable-next-line react/no-array-index-key -- Duplicate and empty draft hops are distinguished by their ordered position.
             <div
               key={`${index}-${bastionId || "empty"}`}
               className="grid gap-2 sm:grid-cols-[1.5rem_1fr_auto]"
@@ -330,6 +332,7 @@ export function JumpChainField({
   );
 }
 
+/* oxlint-enable react/no-array-index-key */
 function jumpOptions(
   bastions: BastionServer[],
   finalBastionId: string,

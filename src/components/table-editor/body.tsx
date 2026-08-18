@@ -116,7 +116,7 @@ export function TableEditorBody({
   onRunSavedExportTask,
   hasSavedExportTask,
 }: TableEditorBodyProps) {
-  const columns = data?.columns ?? [];
+  const columns = useMemo(() => data?.columns ?? [], [data?.columns]);
   const rows = data?.rows ?? [];
   const columnTypes = columns.map(
     (name) => structure?.columns.find((c) => c.name === name)?.dataType,

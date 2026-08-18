@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- Persisted Zustand state is an external boundary migrated and validated in this module. */
 /**
  * Relational Queries slice — owns Query History, Saved Queries, and
  * the per-tab query editor / run state.
@@ -362,7 +363,7 @@ export const createRelationalQueriesSlice: StateCreator<
           .filter((tab) => tab.kind === "query")
           .map((tab) => tab.label),
       );
-      const filterByTab = <T>(bag: Record<string, T>): Record<string, T> => {
+      const filterByTab = <T>(bag: Record<string, T>) => {
         const next: Record<string, T> = {};
         for (const [key, value] of Object.entries(bag)) {
           if (!tabIdSet.has(key)) {
@@ -371,9 +372,7 @@ export const createRelationalQueriesSlice: StateCreator<
         }
         return next;
       };
-      const filterByQueryLabel = <T>(
-        bag: Record<string, T>,
-      ): Record<string, T> => {
+      const filterByQueryLabel = <T>(bag: Record<string, T>) => {
         const next: Record<string, T> = {};
         for (const [key, value] of Object.entries(bag)) {
           if (!queryLabelSet.has(key)) {

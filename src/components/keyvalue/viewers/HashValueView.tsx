@@ -214,7 +214,11 @@ export function HashValueView({
             <tr>
               <th className="px-3 py-1.5 text-left">Field</th>
               <th className="px-3 py-1.5 text-left">Value</th>
-              {editing ? <th className="w-16 px-3 py-1.5"></th> : null}
+              {editing ? (
+                <th className="w-16 px-3 py-1.5">
+                  <span className="sr-only">Actions</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
@@ -268,6 +272,7 @@ export function HashValueView({
               <tr>
                 <td className="px-3 py-1">
                   <input
+                    aria-label="New hash field"
                     value={newField}
                     onChange={(event) => setNewField(event.target.value)}
                     placeholder="new field…"
@@ -276,6 +281,7 @@ export function HashValueView({
                 </td>
                 <td className="px-3 py-1">
                   <input
+                    aria-label="New hash value"
                     value={newValue}
                     onChange={(event) => setNewValue(event.target.value)}
                     placeholder="value"

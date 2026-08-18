@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- Rejected promises are an untyped JavaScript boundary normalized by errorToReason. */
 /**
  * Pending Mutation lifecycle.
  *

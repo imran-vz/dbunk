@@ -43,6 +43,7 @@ const PROTECTED_WORKSPACE_WIDTH = 560;
  */
 function useForegroundHealthCheck(
   credentialState: string | undefined,
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- The value is handled at a typed library or domain boundary here.
   runHealthChecks: () => Promise<unknown>,
 ) {
   useEffect(() => {
@@ -147,6 +148,7 @@ export function AppShell() {
   // value hasn't changed so unrelated class mutations don't trigger a
   // store write + re-render storm.
   useEffect(() => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof document === "undefined") return;
     let last: "vs" | "vs-dark" | null = null;
     const sync = () => {

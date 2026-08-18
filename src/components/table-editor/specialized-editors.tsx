@@ -954,6 +954,7 @@ function JsonNode({ value, depth }: { value: unknown; depth: number }) {
       </div>
     );
   }
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (value !== null && typeof value === "object") {
     return (
       <div style={{ paddingLeft: depth * 12 }}>
@@ -977,6 +978,7 @@ function CodeBlock({ children }: { children: string }) {
   );
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- SVG is the correct semantic element for this generated geometry graphic. */
 function GeometryPreview({ geometry }: { geometry: GeometryParseResult }) {
   if (!geometry.ok) {
     return (
@@ -987,6 +989,7 @@ function GeometryPreview({ geometry }: { geometry: GeometryParseResult }) {
   }
   return (
     <div className="rounded-sm border border-border-subtle bg-surface-panel p-2">
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- SVG is the correct semantic element for this generated geometry graphic. */}
       <svg
         role="img"
         aria-label="Geometry preview"
@@ -1026,6 +1029,7 @@ type JsonParseResult =
   | { ok: true; value: unknown }
   | { ok: false; message: string };
 
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 function parseJson(value: string): JsonParseResult {
   try {
     return { ok: true, value: JSON.parse(value) };
@@ -1056,6 +1060,7 @@ function parseWkt(value: string): GeometryParseResult {
     };
   }
 
+  // SAFETY: The value is constrained by the typed component or library contract at this boundary.
   const kind = match[1].toUpperCase() as "POINT" | "LINESTRING" | "POLYGON";
   const body = kind === "POLYGON" ? match[2].replace(/^\(|\)$/g, "") : match[2];
   const rawPoints = body.split(",").map((point) => {

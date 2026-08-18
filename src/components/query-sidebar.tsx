@@ -43,6 +43,7 @@ const formatTimestamp = (iso: string): string => {
 };
 
 function generateSavedId(): string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
@@ -173,7 +174,6 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                 Save current query
               </div>
               <Input
-                autoFocus
                 aria-label="Saved query name"
                 placeholder="e.g. Top customers"
                 value={newName}

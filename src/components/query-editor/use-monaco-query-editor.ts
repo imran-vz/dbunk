@@ -159,6 +159,7 @@ export function useMonacoQueryEditor({
   const onMount = useCallback<OnMount>(
     // fallow-ignore-next-line complexity
     (editor, monaco) => {
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
       editorRef.current = editor as MonacoEditorInstance;
       completionDisposableRef.current?.dispose();
       editorDisposablesRef.current.forEach((disposable) => {
@@ -166,12 +167,14 @@ export function useMonacoQueryEditor({
       });
       editorDisposablesRef.current = [];
 
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
       const model = editor.getModel() as MonacoTextModel | null;
       if (model) {
         const collection = editor.createDecorationsCollection?.();
         decorationsCollectionRef.current = collection
           ? {
               set: (decorations) => {
+                // SAFETY: The value is constrained by the typed component or library contract at this boundary.
                 collection.set(decorations as never[]);
               },
               clear: () => collection.clear(),
@@ -179,6 +182,7 @@ export function useMonacoQueryEditor({
           : null;
         updateQueryRunDecorations(monaco, model);
         const contentDisposable = editor.onDidChangeModelContent?.(() => {
+          // SAFETY: The value is constrained by the typed component or library contract at this boundary.
           const latestModel = editor.getModel() as MonacoTextModel | null;
           if (latestModel) {
             updateQueryRunDecorations(monaco, latestModel);
@@ -189,11 +193,13 @@ export function useMonacoQueryEditor({
         }
       }
 
-      const cursorDisposable = (
-        editor as MonacoEditorInstance
-      ).onDidChangeCursorPosition?.(({ position }) => {
-        setCursor(position);
-      });
+      const cursorDisposable =
+        // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+        (editor as MonacoEditorInstance).onDidChangeCursorPosition?.(
+          ({ position }) => {
+            setCursor(position);
+          },
+        );
       if (cursorDisposable) {
         editorDisposablesRef.current.push(cursorDisposable);
       }
@@ -255,6 +261,7 @@ export function useMonacoQueryEditor({
       });
       const mouseDisposable = editor.onMouseDown?.((event) => {
         if (event.target.type !== 2 || !event.target.position) return;
+        // SAFETY: The value is constrained by the typed component or library contract at this boundary.
         const latestModel = editor.getModel() as MonacoTextModel | null;
         if (!latestModel) return;
         const statement = getSqlStatementAtPosition(

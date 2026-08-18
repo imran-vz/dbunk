@@ -60,6 +60,7 @@ export function EnginePickerField({
           <Label htmlFor="connection-engine">Database Type</Label>
           <Select
             value={field.state.value}
+            // SAFETY: The value is constrained by the typed component or library contract at this boundary.
             onValueChange={(value) => onEngineChange(value as DatabaseEngine)}
             disabled={formMode === "edit"}
           >

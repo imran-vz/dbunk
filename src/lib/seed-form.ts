@@ -90,7 +90,7 @@ export function initialSeedColumnState(): SeedColumnFormState {
   };
 }
 
-export function initialSeedFormState(columns: ColumnInfo[]): SeedFormState {
+export function initialSeedFormState(columns: ColumnInfo[]) {
   const state: SeedFormState = {};
   for (const column of columns) {
     state[column.name] = initialSeedColumnState();
