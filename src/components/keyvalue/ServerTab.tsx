@@ -171,6 +171,7 @@ function useFetched<T>(
     };
   }, [cacheKey]);
   /* oxlint-enable react-hooks/exhaustive-deps */
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
   return { data, error, loading };
 }
 

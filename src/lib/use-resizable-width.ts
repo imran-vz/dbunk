@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- Browser and ResizeObserver globals are optional runtime capabilities in this shared hook. */
 /**
  * Shared state hook for resizable side panels. Persists width and the
  * collapsed flag in `localStorage` under `storageKey` so a user's layout

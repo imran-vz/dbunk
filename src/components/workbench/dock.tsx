@@ -64,10 +64,12 @@ export function WorkbenchDock({
 }: WorkbenchDockProps) {
   const storageId = `${DOCK_STORAGE_PREFIX}${storageKey}`;
   const [dockOpen, setDockOpen] = useState(() => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(`${storageId}.open`) !== "false";
   });
   const [dockTab, setDockTab] = useState<DockTabId>(() => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof window === "undefined") return "console";
     const saved = window.localStorage.getItem(`${storageId}.tab`);
     return saved === "output" ? "output" : "console";

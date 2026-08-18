@@ -17,6 +17,7 @@ interface PubsubMessageLogProps {
   activePatterns: string[];
 }
 
+/* oxlint-disable react/no-array-index-key -- Duplicate Pub/Sub deliveries can share every payload field, so receipt order completes their identity. */
 export function PubsubMessageLog({
   messages,
   activePatterns,
@@ -32,6 +33,7 @@ export function PubsubMessageLog({
   return (
     <ul className="space-y-0.5">
       {messages.slice(-DISPLAY_TAIL).map((msg, idx) => (
+        // oxlint-disable-next-line react/no-array-index-key -- Duplicate Pub/Sub deliveries can share every payload field, so receipt order completes their identity.
         <li
           key={`${msg.receivedAtMs}-${msg.channel}-${idx}`}
           className="border-b border-border-subtle py-1"
@@ -46,3 +48,4 @@ export function PubsubMessageLog({
     </ul>
   );
 }
+/* oxlint-enable react/no-array-index-key */

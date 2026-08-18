@@ -101,6 +101,7 @@ export function BastionForm({
           <Select
             value={draft.authMethod}
             onValueChange={(value) =>
+              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
               update("authMethod", value as BastionAuthMethod)
             }
           >

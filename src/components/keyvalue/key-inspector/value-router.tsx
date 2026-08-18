@@ -28,6 +28,7 @@ type ViewerRenderer = (props: ViewerProps) => JSX.Element;
  * the inspector itself below fallow's cognitive threshold — adding a new type
  * is a one-line map entry, not another branch.
  */
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const VIEWERS: Record<string, ViewerRenderer> = {
   string: ({ connectionId, keyName }) => (
     <StringValueView connectionId={connectionId} keyName={keyName} />

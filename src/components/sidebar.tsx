@@ -228,6 +228,7 @@ function tableObjectQueries(schema: string, table: string) {
 const MANAGED_BADGE: Record<
   ManagedServerStatus,
   { label: string; className: string }
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 > = {
   running: {
     label: "Local",
@@ -301,7 +302,10 @@ export function Sidebar({ className }: { className?: string }) {
     [managedServers],
   );
 
-  const explorerSchemas = schemaExplorer[activeConnectionId] ?? [];
+  const explorerSchemas = useMemo(
+    () => schemaExplorer[activeConnectionId] ?? [],
+    [activeConnectionId, schemaExplorer],
+  );
   const filteredSchemas = useMemo(() => {
     const needle = tableFilter.trim().toLowerCase();
     if (!needle) return explorerSchemas;

@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-chained-type-assertions anti-slop/require-safety-comment-for-type-assertion -- Test fixtures use controlled mocks and assertions to exercise otherwise inaccessible boundaries. */
 // @vitest-environment jsdom
 import { useForm } from "@tanstack/react-form";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

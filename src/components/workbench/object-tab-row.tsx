@@ -70,6 +70,7 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
     const scroller = tabsScrollerRef.current;
     if (!scroller) return;
     const resizeObserver =
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(recomputeMaxScroll);

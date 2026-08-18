@@ -124,6 +124,7 @@ function ExplainSummary({
   );
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The styled bar is a graphical summary, not an image resource. */
 function SplitBar({
   planFrac,
   execFrac,
@@ -132,9 +133,10 @@ function SplitBar({
   execFrac: number;
 }) {
   return (
+    /* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- This styled bar is a graphical summary, not an image resource. */
     <div
-      className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-surface-panel"
       role="img"
+      className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-surface-panel"
       aria-label={`Planning ${(planFrac * 100).toFixed(0)}%, execution ${(
         execFrac * 100
       ).toFixed(0)}%`}
@@ -151,6 +153,7 @@ function SplitBar({
   );
 }
 
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 function InsightChip({
   insight,
   onClick,
@@ -236,6 +239,7 @@ function ExplainWaterfall({
   );
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The styled bar is a graphical summary, not an image resource. */
 function ExplainRow({
   node,
   maxSelfMs,
@@ -337,9 +341,10 @@ function ExplainRow({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- This styled bar is a graphical summary, not an image resource. */}
         <div
-          className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-surface-panel"
           role="img"
+          className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-surface-panel"
           aria-label={`self time ${formatMs(node.selfMs)}`}
         >
           <div
@@ -371,6 +376,7 @@ function ExplainRow({
   );
 }
 
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 function TreeConnectors({
   lineage,
   depth,

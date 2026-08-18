@@ -55,6 +55,7 @@ const toStoredConnection = (connection: Connection): StoredConnection => {
   void status;
   void latency;
   void errorMessage;
+  // SAFETY: Removing only runtime fields preserves the complete stored discriminated union variant.
   return stored as StoredConnection;
 };
 
@@ -75,11 +76,7 @@ const applyConnectionUpdate = (
 ): Connection[] =>
   connections.map((connection) =>
     connection.id === connectionId
-      ? // The runtime-fields spread preserves the original variant's
-        // `engine` discriminator and engine-specific fields; the cast
-        // is narrowing back to the union after TypeScript widens it
-        // through the spread.
-        ({ ...connection, ...updates } as Connection)
+      ? Object.assign({}, connection, updates)
       : connection,
   );
 

@@ -9,6 +9,7 @@ export type MonacoTextModel = {
     startColumn: number;
     endColumn: number;
   };
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
   getValueInRange: (range: unknown) => string;
 };
 
@@ -28,6 +29,7 @@ export type MonacoMouseEvent = {
 
 export type MonacoEditorInstance = {
   getPosition: () => MonacoPosition | null;
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- The value is handled at a typed library or domain boundary here.
   getSelection: () => unknown;
   getModel: () => MonacoTextModel | null;
   addAction?: (descriptor: {

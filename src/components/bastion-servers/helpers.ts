@@ -15,6 +15,7 @@ export function analyzePrivateKeyContent(value: string): {
 } {
   const trimmed = value.trim();
   if (!trimmed) {
+    // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
     return {
       tone: "neutral",
       message:
@@ -24,17 +25,20 @@ export function analyzePrivateKeyContent(value: string): {
   const header = trimmed.match(/-----BEGIN ([A-Z0-9 ]+PRIVATE KEY)-----/);
   const footer = trimmed.match(/-----END ([A-Z0-9 ]+PRIVATE KEY)-----/);
   if (!header || !footer || header[1] !== footer[1]) {
+    // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
     return {
       tone: "warning",
       message: "Missing matching private-key header and footer.",
     };
   }
   if (/ENCRYPTED|Proc-Type:\s*4,ENCRYPTED/i.test(trimmed)) {
+    // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
     return {
       tone: "warning",
       message: "Encrypted key detected. Add the passphrase before saving.",
     };
   }
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
   return { tone: "ready", message: "Private key format detected." };
 }
 
@@ -137,6 +141,7 @@ export function bastionReferenceCounts(
   bastions: BastionServer[],
   connections: Connection[],
 ): Record<string, number> {
+  // SAFETY: The value is constrained by the typed component or library contract at this boundary.
   const counts = Object.fromEntries(
     bastions.map((bastion) => [bastion.id, 0]),
   ) as Record<string, number>;

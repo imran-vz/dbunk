@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- Browser globals are optional because these helpers also run during SSR and tests. */
 /**
  * Trigger a browser download for the given content. Works in both the Tauri
  * webview and a plain browser; we deliberately avoid the Tauri dialog plugin

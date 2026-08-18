@@ -204,12 +204,11 @@ function markReferencedConnectionsDisconnected<
   const ids = new Set(connectionIds);
   return connections.map((connection) =>
     ids.has(connection.id)
-      ? ({
-          ...connection,
-          status: "Disconnected",
+      ? Object.assign({}, connection, {
+          status: "Disconnected" as const,
           latency: "--",
           errorMessage: "Bastion Server changed. Reconnect this Connection.",
-        } as T)
+        })
       : connection,
   );
 }

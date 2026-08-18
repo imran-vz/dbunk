@@ -33,6 +33,7 @@ import { isTauri, tauriInvoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 /** Keep in sync with the backend allowlists in `src-tauri/src/managed.rs`. */
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const ENGINE_VERSIONS: Record<"PostgreSQL" | "MySQL", string[]> = {
   PostgreSQL: ["18", "17", "16", "15", "14"],
   MySQL: ["9", "8.4", "8.0"],

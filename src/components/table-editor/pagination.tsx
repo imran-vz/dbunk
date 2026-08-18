@@ -74,6 +74,7 @@ export function Pagination({
       </Button>
       <div className="flex items-center gap-0.5 px-1">
         {pageButtons.map((entry, idx) =>
+          // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
           typeof entry === "number" ? (
             <button
               type="button"

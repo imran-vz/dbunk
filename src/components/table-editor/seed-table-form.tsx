@@ -40,6 +40,7 @@ const MODE_AUTO = "auto";
 const MODE_CONSTANT = "constant";
 const MODE_VALUES = "values";
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The styled meter exposes progress semantics without native progress rendering. */
 export function SeedTableForm({
   columns,
   isSeeding,
@@ -135,6 +136,7 @@ export function SeedTableForm({
                 {progress.totalRows.toLocaleString()}
               </span>
             </div>
+            {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- The styled meter reports transactional row progress but intentionally has no native progress rendering. */}
             <div
               role="progressbar"
               aria-label="Table seeding progress"
@@ -182,6 +184,7 @@ interface SeedColumnFieldProps {
   onPatch: (patch: Partial<SeedColumnFormState>) => void;
 }
 
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 function SeedColumnField({ column, field, onPatch }: SeedColumnFieldProps) {
   const sourceValue =
     field.mode === "auto" && field.generator !== ""
@@ -194,6 +197,7 @@ function SeedColumnField({ column, field, onPatch }: SeedColumnFieldProps) {
       onPatch({ mode: "auto", generator: value.slice(4) });
     } else {
       onPatch({
+        // SAFETY: The value is constrained by the typed component or library contract at this boundary.
         mode: value as SeedColumnFormState["mode"],
         generator: "",
       });

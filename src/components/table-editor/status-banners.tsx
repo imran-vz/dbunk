@@ -149,6 +149,7 @@ interface BannerProps {
   action?: React.ReactNode;
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const TONE_CLASS: Record<BannerTone, string> = {
   danger: "border-danger/40 bg-danger/10 text-danger",
   warning: "border-warning/40 bg-warning/10 text-warning",

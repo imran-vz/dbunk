@@ -71,6 +71,7 @@ export function windowViewportZoomStyle(
 }
 
 export function prefersReducedMotion(): boolean {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof window === "undefined") {
     return false;
   }

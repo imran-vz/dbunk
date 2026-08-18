@@ -106,10 +106,7 @@ export function generatePostgresDdl(
  * Relaxing nullability (set_nullable=true), adding columns, renaming, and
  * default-value changes are non-destructive.
  */
-export function classifyDestructive(changes: ColumnChangeKind[]): {
-  destructive: ColumnChangeKind[];
-  nonDestructive: ColumnChangeKind[];
-} {
+export function classifyDestructive(changes: ColumnChangeKind[]) {
   const destructive: ColumnChangeKind[] = [];
   const nonDestructive: ColumnChangeKind[] = [];
   for (const change of changes) {

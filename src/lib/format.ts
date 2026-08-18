@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- Latency is display-boundary input and this helper validates it before formatting. */
 /**
  * Pure display-formatting helpers. App-wide, no domain coupling.
  *

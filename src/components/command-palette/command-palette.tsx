@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 const MAX_TABLES = 300;
 const MAX_SAVED_QUERIES = 100;
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- This custom modal overlay relies on application-managed open and backdrop behavior. */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -103,6 +104,7 @@ export function CommandPalette() {
   if (!open) return null;
 
   return (
+    /* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/prefer-tag-over-role -- This custom modal overlay closes only when its backdrop receives the pointer event. */
     <div
       role="dialog"
       aria-label="Command palette"
@@ -241,6 +243,7 @@ export function CommandPalette() {
   );
 }
 
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 function PaletteItem({
   icon,
   label,

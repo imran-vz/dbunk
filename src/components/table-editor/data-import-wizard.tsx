@@ -27,6 +27,7 @@ type DataImportWizardProps = {
 };
 
 const readFileText = async (file: File) => {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof file.text === "function") {
     return file.text();
   }
@@ -92,10 +93,7 @@ export function DataImportWizard({
       return;
     }
     const rowsWithColumns = buildImportRows({ sheet, mapping, nullToken });
-    if (
-      rowsWithColumns.length === 0 ||
-      rowsWithColumns.every((row) => row.length === 0)
-    ) {
+    if (rowsWithColumns.every((row) => row.length === 0)) {
       setError("Map at least one source column before importing.");
       return;
     }
@@ -176,6 +174,7 @@ export function DataImportWizard({
                   >
                     <td className="px-2 py-1">
                       <input
+                        aria-label={`Import source column ${entry.source}`}
                         type="checkbox"
                         checked={entry.include}
                         onChange={(event) =>

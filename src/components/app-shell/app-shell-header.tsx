@@ -67,6 +67,7 @@ export function AppShellHeader({
   );
   return (
     <header
+      tabIndex={0}
       data-slot="top-bar"
       data-testid="app-top-bar"
       data-window-fullscreen={isWindowFullscreen}

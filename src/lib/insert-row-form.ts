@@ -47,9 +47,7 @@ export function initialFieldState(
   return { mode: "value", value: "" };
 }
 
-export function initialFormState(
-  columns: InsertRowColumn[],
-): InsertRowFormState {
+export function initialFormState(columns: InsertRowColumn[]) {
   const state: InsertRowFormState = {};
   for (const column of columns) {
     state[column.name] = initialFieldState(column);

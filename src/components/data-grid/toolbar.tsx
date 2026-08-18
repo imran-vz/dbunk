@@ -293,6 +293,7 @@ export function DataGridToolbar({
                     .getAllColumns()
                     .filter(
                       (column) =>
+                        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
                         typeof column.accessorFn !== "undefined" &&
                         column.getCanHide() &&
                         column.id
@@ -463,6 +464,7 @@ export function DataGridToolbar({
                   <Select
                     value={exportFormat}
                     onValueChange={(value) =>
+                      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
                       setExportFormat((value as ExportFormat) ?? "csv")
                     }
                   >

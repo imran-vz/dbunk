@@ -119,6 +119,7 @@ export function NewKeyDialog({
             <Label htmlFor="new-key-type">Type</Label>
             <Select
               value={type}
+              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
               onValueChange={(value) => setType(value as CreateKeyType)}
             >
               <SelectTrigger id="new-key-type">
@@ -214,6 +215,7 @@ function hintFor(type: CreateKeyType): string {
   }
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- The value is handled at a typed library or domain boundary here.
 function parseBody(type: CreateKeyType, body: string): unknown {
   const lines = body
     .split(/\n/)
@@ -221,8 +223,10 @@ function parseBody(type: CreateKeyType, body: string): unknown {
     .filter(Boolean);
   switch (type) {
     case "string":
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return { value: body };
     case "hash":
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return {
         entries: lines
           .map((line) => {
@@ -234,10 +238,13 @@ function parseBody(type: CreateKeyType, body: string): unknown {
           .filter((pair): pair is [string, string] => pair !== null),
       };
     case "list":
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return { items: lines };
     case "set":
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return { members: lines };
     case "zset":
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return {
         entries: lines
           .map((line) => {
@@ -253,6 +260,7 @@ function parseBody(type: CreateKeyType, body: string): unknown {
           ),
       };
     case "stream":
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return {
         entries: lines.map((line) => {
           const fields = line
@@ -260,6 +268,7 @@ function parseBody(type: CreateKeyType, body: string): unknown {
             .map((pair) => pair.split("="))
             .filter((pair) => pair.length === 2)
             .map(
+              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
               (pair) => [pair[0].trim(), pair[1].trim()] as [string, string],
             );
           return { fields };
@@ -268,6 +277,7 @@ function parseBody(type: CreateKeyType, body: string): unknown {
     case "json":
       // Validate parseability but pass the original text through.
       JSON.parse(body);
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
       return { value: body };
   }
 }

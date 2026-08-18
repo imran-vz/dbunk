@@ -244,7 +244,11 @@ export function SortedSetValueView({
             <tr>
               <th className="w-32 px-3 py-1.5 text-right">Score</th>
               <th className="px-3 py-1.5 text-left">Member</th>
-              {editing ? <th className="w-16 px-3 py-1.5"></th> : null}
+              {editing ? (
+                <th className="w-16 px-3 py-1.5">
+                  <span className="sr-only">Actions</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">

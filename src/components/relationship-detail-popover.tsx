@@ -27,14 +27,16 @@ function DetailRow({ label, value }: { label: string; value: string }) {
  * Focused Relationship Edge. Deliberately excludes trigger metadata:
  * Trigger Indicators live on Table Cards and Column Rows.
  */
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- This anchored nonmodal popover does not use native dialog lifecycle behavior. */
 export function RelationshipDetailPopover({
   foreignKey,
   onClose,
 }: RelationshipDetailPopoverProps) {
   return (
+    /* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- This is a nonmodal anchored popover, so native dialog lifecycle semantics do not apply. */
     <div
-      data-testid="relationship-detail-popover"
       role="dialog"
+      data-testid="relationship-detail-popover"
       aria-label={`Relationship details for ${foreignKey.constraintName}`}
       className="absolute right-2 top-2 z-20 w-72 rounded-md border border-border bg-card p-0 text-[0.65rem] text-card-foreground shadow-lg"
     >
@@ -102,3 +104,4 @@ export function RelationshipDetailPopover({
     </div>
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */

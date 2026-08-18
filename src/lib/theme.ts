@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/require-safety-comment-for-type-assertion -- Theme persistence and optional browser APIs are external boundaries validated here before use. */
 /**
  * Theme mode — `"system"` follows the OS via `prefers-color-scheme`,
  * `"light"` / `"dark"` are explicit overrides. See
