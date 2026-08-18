@@ -6,6 +6,7 @@ mod docker;
 mod keychain;
 mod managed;
 mod postgres;
+mod query_session;
 mod redis;
 mod seed;
 mod storage;
@@ -35,6 +36,7 @@ const MACOS_TRAFFIC_LIGHT_Y: f64 = 26.0;
 pub(crate) struct AppState {
     pool: SqlitePool,
     paths: Paths,
+    query_sessions: query_session::QuerySessionManager,
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +182,7 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .targets(targets)
         .level(log::LevelFilter::Warn)
         .level_for("dbunk_lib", crate_level)
+        .level_for("tokio_postgres", log::LevelFilter::Warn)
         .build()
 }
 
@@ -190,7 +193,7 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dispatch::ensure_sqlx_drivers();
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -201,8 +204,32 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(storage::open_pool(&paths))
                 .map_err(|error| format!("Failed to open local database: {error}"))?;
             log::info!("SQLite pool ready, migrations applied");
-            app.manage(AppState { pool, paths });
+            let query_sessions = query_session::QuerySessionManager::new(pool.clone());
+            query_sessions.start_monitor();
+            app.manage(AppState {
+                pool,
+                paths,
+                query_sessions,
+            });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            let manager = window.state::<AppState>().query_sessions.clone();
+            let label = window.label().to_string();
+            match event {
+                tauri::WindowEvent::Focused(focused) => {
+                    let focused = *focused;
+                    tauri::async_runtime::spawn(async move {
+                        manager.set_focused(&label, focused).await;
+                    });
+                }
+                tauri::WindowEvent::Destroyed => {
+                    tauri::async_runtime::spawn(async move {
+                        manager.close_window(&label).await;
+                    });
+                }
+                _ => {}
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Window chrome
@@ -254,6 +281,18 @@ pub fn run() {
             commands::relational::terminate_pg_backend,
             // Relational: queries + data
             commands::relational::run_query,
+            commands::query_session::register_query_session_owner,
+            commands::query_session::open_query_session,
+            commands::query_session::execute_query_session,
+            commands::query_session::ack_query_session_events,
+            commands::query_session::heartbeat_query_sessions,
+            commands::query_session::cancel_query_execution,
+            commands::query_session::refresh_query_transaction_state,
+            commands::query_session::set_query_transaction_mode,
+            commands::query_session::set_query_transaction_isolation,
+            commands::query_session::commit_query_transaction,
+            commands::query_session::rollback_query_transaction,
+            commands::query_session::close_query_session,
             commands::relational::load_table_data,
             commands::relational::load_table_structure,
             commands::relational::execute_ddl,
@@ -339,6 +378,27 @@ pub fn run() {
             xlsx::parse_xlsx,
             xlsx::export_xlsx,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    let exiting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    app.run(move |handle, event| {
+        if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+            if code == Some(tauri::RESTART_EXIT_CODE) {
+                return;
+            }
+            if !exiting.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                api.prevent_exit();
+                let handle = handle.clone();
+                let manager = handle.state::<AppState>().query_sessions.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(3),
+                        manager.close_all(),
+                    )
+                    .await;
+                    handle.exit(code.unwrap_or(0));
+                });
+            }
+        }
+    });
 }

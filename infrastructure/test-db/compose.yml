@@ -21,6 +21,27 @@ services:
       timeout: 3s
       retries: 20
 
+  postgres-tls:
+    build:
+      context: ./postgres-tls
+    profiles: ["postgres-tls"]
+    environment:
+      POSTGRES_DB: dbunk_demo
+      POSTGRES_USER: dbunk
+      POSTGRES_PASSWORD: dbunk
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=en-US"
+    ports:
+      - "15433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbunk -d dbunk_demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   mysql:
     image: mysql:8.4
     profiles: ["mysql"]
