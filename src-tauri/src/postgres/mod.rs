@@ -10,8 +10,10 @@
 //! - `admin` — server details, overview stats, session/lock snapshots, maintenance
 
 mod admin;
+pub(crate) mod connect_spec;
 mod ddl;
 mod mutations;
+pub(crate) mod options;
 mod pool;
 mod query;
 mod relationship_metadata;

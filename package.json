@@ -29,6 +29,7 @@
     "db:clickhouse": "infrastructure/test-db/bin/test-db.sh clickhouse",
     "db:down": "infrastructure/test-db/bin/test-db.sh down",
     "db:postgres": "infrastructure/test-db/bin/test-db.sh postgres",
+    "db:postgres-tls": "infrastructure/test-db/bin/test-db.sh postgres-tls",
     "db:postgres-redis": "infrastructure/test-db/bin/test-db.sh postgres-redis",
     "db:redis": "infrastructure/test-db/bin/test-db.sh redis",
     "build:vite": "vite build",

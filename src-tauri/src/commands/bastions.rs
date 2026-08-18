@@ -34,46 +34,55 @@ pub async fn save_bastion_server(
     let mode = current_credential_mode(state).await?;
     validate_bastion_payload(&payload)?;
 
-    let existing = storage::bastions::read_bastion_server_by_id(&state.pool, &payload.id).await?;
-    let current_secrets = credentials::read_all(&state.pool, mode).await?;
-    let secret_patch = secret_patch_from_payload(&payload);
-    let next_secrets = credentials::apply_bastion_secret_patch(current_secrets, &secret_patch);
-    validate_required_secret(&next_secrets, &payload)?;
-    let now = storage::now();
-    let bastion = BastionServer {
-        id: payload.id.clone(),
-        name: payload.name.trim().to_string(),
-        host: payload.host.trim().to_string(),
-        port: payload.port,
-        user: payload.user.trim().to_string(),
-        auth_method: payload.auth_method,
-        private_key_path: payload
-            .private_key_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string),
-        host_key_fingerprint: existing
-            .as_ref()
-            .and_then(|server| server.host_key_fingerprint.clone()),
-        created_at: existing
-            .as_ref()
-            .map(|server| server.created_at.clone())
-            .unwrap_or_else(|| now.clone()),
-        updated_at: now,
-    };
+    let connection_ids = begin_referenced_connection_teardown(state, &payload.id).await?;
+    let save_result = async {
+        let existing =
+            storage::bastions::read_bastion_server_by_id(&state.pool, &payload.id).await?;
+        let current_secrets = credentials::read_all(&state.pool, mode).await?;
+        let secret_patch = secret_patch_from_payload(&payload);
+        let next_secrets = credentials::apply_bastion_secret_patch(current_secrets, &secret_patch);
+        validate_required_secret(&next_secrets, &payload)?;
+        let now = storage::now();
+        let bastion = BastionServer {
+            id: payload.id.clone(),
+            name: payload.name.trim().to_string(),
+            host: payload.host.trim().to_string(),
+            port: payload.port,
+            user: payload.user.trim().to_string(),
+            auth_method: payload.auth_method,
+            private_key_path: payload
+                .private_key_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            host_key_fingerprint: existing
+                .as_ref()
+                .and_then(|server| server.host_key_fingerprint.clone()),
+            created_at: existing
+                .as_ref()
+                .map(|server| server.created_at.clone())
+                .unwrap_or_else(|| now.clone()),
+            updated_at: now,
+        };
 
-    storage::bastions::upsert_bastion_server(&state.pool, &bastion).await?;
-    if let Err(error) = credentials::write_all(&state.pool, mode, &next_secrets).await {
-        let rollback = rollback_bastion_metadata(&state.pool, existing.as_ref(), &payload.id).await;
-        if let Err(rollback_error) = rollback {
-            return Err(format!(
-                "Failed to save Bastion secrets: {error}; metadata rollback failed: {rollback_error}"
-            ));
+        storage::bastions::upsert_bastion_server(&state.pool, &bastion).await?;
+        if let Err(error) = credentials::write_all(&state.pool, mode, &next_secrets).await {
+            let rollback =
+                rollback_bastion_metadata(&state.pool, existing.as_ref(), &payload.id).await;
+            if let Err(rollback_error) = rollback {
+                return Err(format!(
+                    "Failed to save Bastion secrets: {error}; metadata rollback failed: {rollback_error}"
+                ));
+            }
+            return Err(format!("Failed to save Bastion secrets: {error}"));
         }
-        return Err(format!("Failed to save Bastion secrets: {error}"));
+        Ok(())
     }
-    invalidate_referenced_connections(state, &payload.id).await?;
+    .await;
+    invalidate_referenced_connection_caches(&payload.id, &connection_ids);
+    end_connection_teardown(state, &connection_ids).await;
+    save_result?;
     public_bastion_servers(state, mode).await
 }
 
@@ -112,13 +121,17 @@ pub async fn reset_bastion_host_key(
 ) -> Result<Vec<PublicBastionServer>, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    storage::bastions::update_bastion_host_key_fingerprint(
+    let connection_ids =
+        begin_referenced_connection_teardown(state, &payload.bastion_server_id).await?;
+    let reset_result = storage::bastions::update_bastion_host_key_fingerprint(
         &state.pool,
         &payload.bastion_server_id,
         None,
     )
-    .await?;
-    invalidate_referenced_connections(state, &payload.bastion_server_id).await?;
+    .await;
+    invalidate_referenced_connection_caches(&payload.bastion_server_id, &connection_ids);
+    end_connection_teardown(state, &connection_ids).await;
+    reset_result?;
     public_bastion_servers(state, mode).await
 }
 
@@ -259,17 +272,35 @@ async fn rollback_bastion_metadata(
     }
 }
 
-async fn invalidate_referenced_connections(
+async fn begin_referenced_connection_teardown(
     state: &AppState,
     bastion_id: &str,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     let connection_ids =
         storage::bastions::connection_ids_referencing_bastion(&state.pool, bastion_id).await?;
+    for connection_id in &connection_ids {
+        state
+            .query_sessions
+            .begin_connection_teardown(connection_id)
+            .await;
+    }
+    Ok(connection_ids)
+}
+
+fn invalidate_referenced_connection_caches(bastion_id: &str, connection_ids: &[String]) {
     tunnel::drop_bastion(bastion_id);
     for connection_id in connection_ids {
-        postgres::drop_pool(&connection_id);
-        redis::connection::drop_cached(&connection_id);
-        tunnel::drop_connection(&connection_id);
+        postgres::drop_pool(connection_id);
+        redis::connection::drop_cached(connection_id);
+        tunnel::drop_connection(connection_id);
     }
-    Ok(())
+}
+
+async fn end_connection_teardown(state: &AppState, connection_ids: &[String]) {
+    for connection_id in connection_ids {
+        state
+            .query_sessions
+            .end_connection_teardown(connection_id)
+            .await;
+    }
 }
