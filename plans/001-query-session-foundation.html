@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 001 | PostgreSQL Query Session Backend</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #000;
+        --fg: #fff;
+        --muted: #a3a3a3;
+        --line: #292929;
+        --strong-line: #525252;
+        --cyan: #67e8f9;
+        --green: #86efac;
+        --amber: #fcd34d;
+        --red: #fca5a5;
+        --blue: #93c5fd;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", monospace;
+        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--bg);
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-width: 280px;
+        overflow-x: hidden;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 4px;
+      }
+
+      .shell {
+        width: min(1480px, 100%);
+        margin: 0 auto;
+        padding: 28px clamp(16px, 3vw, 48px) 72px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--strong-line);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 980px;
+        margin-bottom: 12px;
+        font-size: clamp(2rem, 5vw, 4.8rem);
+        line-height: 0.98;
+        letter-spacing: -0.055em;
+      }
+
+      h2 {
+        margin-bottom: 18px;
+        font-size: clamp(1.25rem, 2vw, 1.8rem);
+        line-height: 1.1;
+        letter-spacing: -0.025em;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 0.82rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .lede {
+        max-width: 820px;
+        margin-bottom: 0;
+        color: #d4d4d4;
+        font-size: clamp(1rem, 1.6vw, 1.2rem);
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 5px 16px;
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        white-space: nowrap;
+      }
+
+      .meta dt {
+        color: var(--muted);
+      }
+
+      .meta dd {
+        margin: 0;
+        text-align: right;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        gap: 18px;
+        overflow-x: auto;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        background: rgba(0, 0, 0, 0.96);
+        scrollbar-width: thin;
+      }
+
+      nav a {
+        flex: 0 0 auto;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        text-decoration: none;
+      }
+
+      nav a:hover,
+      nav a:focus-visible {
+        color: var(--fg);
+      }
+
+      section {
+        scroll-margin-top: 64px;
+        padding: 42px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+        gap: clamp(28px, 5vw, 72px);
+      }
+
+      .problem-grid,
+      .risk-grid,
+      .gate-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-top: 1px solid var(--strong-line);
+        border-left: 1px solid var(--line);
+      }
+
+      .problem-grid > div,
+      .risk-grid > div,
+      .gate-grid > div {
+        min-width: 0;
+        padding: 18px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .number {
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 1.8rem;
+        line-height: 1;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .architecture {
+        display: grid;
+        grid-template-columns: minmax(150px, 0.8fr) 32px minmax(220px, 1.2fr) 32px minmax(220px, 1.2fr);
+        align-items: stretch;
+        border-top: 1px solid var(--strong-line);
+        border-bottom: 1px solid var(--strong-line);
+      }
+
+      .arch-node {
+        min-width: 0;
+        padding: 22px 16px;
+      }
+
+      .arch-node + .arch-node {
+        border-left: 1px solid var(--line);
+      }
+
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: var(--cyan);
+        font-size: 1.4rem;
+      }
+
+      .arch-list,
+      .compact-list,
+      .scope-list {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      li + li {
+        margin-top: 6px;
+      }
+
+      code,
+      .code {
+        font-family: var(--mono);
+      }
+
+      code {
+        color: var(--blue);
+        overflow-wrap: anywhere;
+      }
+
+      .event-flow {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(108px, 1fr));
+        overflow-x: auto;
+        border-top: 1px solid var(--strong-line);
+        border-bottom: 1px solid var(--strong-line);
+      }
+
+      .event {
+        position: relative;
+        min-height: 130px;
+        padding: 18px 14px;
+        border-right: 1px solid var(--line);
+      }
+
+      .event:last-child {
+        border-right: 0;
+      }
+
+      .event strong {
+        display: block;
+        margin-bottom: 8px;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+      }
+
+      .event small {
+        color: var(--muted);
+      }
+
+      .event.ack {
+        box-shadow: inset 0 -3px 0 var(--cyan);
+      }
+
+      .limits {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 28px;
+        border-top: 1px solid var(--strong-line);
+        border-left: 1px solid var(--line);
+      }
+
+      .limit {
+        padding: 16px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .limit b {
+        display: block;
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 1.15rem;
+      }
+
+      .state-map {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-top: 1px solid var(--strong-line);
+        border-left: 1px solid var(--line);
+      }
+
+      .state {
+        min-height: 142px;
+        padding: 18px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .state .label {
+        display: inline-block;
+        margin-bottom: 12px;
+        color: var(--green);
+        font-family: var(--mono);
+        font-weight: 700;
+      }
+
+      .state.failed .label,
+      .risk-high {
+        color: var(--red);
+      }
+
+      .state.unknown .label,
+      .risk-med {
+        color: var(--amber);
+      }
+
+      .transition-notes {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0 32px;
+        margin-top: 22px;
+      }
+
+      .phase-list {
+        counter-reset: phase;
+        border-top: 1px solid var(--strong-line);
+      }
+
+      details {
+        border-bottom: 1px solid var(--line);
+      }
+
+      summary {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: baseline;
+        padding: 15px 0;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary::before {
+        counter-increment: phase;
+        content: counter(phase, decimal-leading-zero);
+        color: var(--cyan);
+        font-family: var(--mono);
+      }
+
+      summary::after {
+        content: "+";
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+
+      details[open] summary::after {
+        content: "−";
+      }
+
+      .phase-body {
+        max-width: 1000px;
+        padding: 0 0 18px 62px;
+        color: #d4d4d4;
+      }
+
+      .scope {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        border-top: 1px solid var(--strong-line);
+      }
+
+      .scope > div {
+        min-width: 0;
+        padding: 20px 24px 20px 0;
+      }
+
+      .scope > div + div {
+        padding-right: 0;
+        padding-left: 24px;
+        border-left: 1px solid var(--line);
+      }
+
+      .risk-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .risk-tag {
+        display: block;
+        margin-bottom: 8px;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+
+      .gate-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .gate-grid code {
+        display: block;
+        color: var(--fg);
+        font-size: 0.74rem;
+      }
+
+      .stop {
+        border-left: 3px solid var(--red);
+        padding-left: 20px;
+      }
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        padding-top: 26px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+      }
+
+      @media (max-width: 980px) {
+        header,
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .meta {
+          width: max-content;
+        }
+
+        .architecture {
+          grid-template-columns: 1fr;
+        }
+
+        .architecture .arrow {
+          min-height: 38px;
+          transform: rotate(90deg);
+        }
+
+        .arch-node + .arch-node {
+          border-top: 1px solid var(--line);
+          border-left: 0;
+        }
+
+        .problem-grid,
+        .limits,
+        .gate-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        .shell {
+          padding-inline: 14px;
+        }
+
+        header {
+          padding-top: 8px;
+        }
+
+        h1 {
+          font-size: clamp(2.3rem, 14vw, 3.4rem);
+        }
+
+        section {
+          padding: 32px 0;
+        }
+
+        .problem-grid,
+        .risk-grid,
+        .gate-grid,
+        .limits,
+        .state-map,
+        .transition-notes,
+        .scope {
+          grid-template-columns: 1fr;
+        }
+
+        .scope > div,
+        .scope > div + div {
+          padding: 18px 0;
+          border-left: 0;
+        }
+
+        .scope > div + div {
+          border-top: 1px solid var(--line);
+        }
+
+        summary {
+          grid-template-columns: 36px minmax(0, 1fr) auto;
+          gap: 8px;
+        }
+
+        .phase-body {
+          padding-left: 44px;
+        }
+
+        footer {
+          flex-direction: column;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      @media print {
+        nav {
+          position: static;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>PostgreSQL Query Session Backend</h1>
+          <p class="lede">
+            Land the driver, actor, observer, and lifecycle contract dark. Plan
+            002 owns editor activation and retained-result UX.
+          </p>
+        </div>
+        <dl class="meta" aria-label="Plan metadata">
+          <dt>Plan</dt><dd>001</dd>
+          <dt>Priority</dt><dd>P0</dd>
+          <dt>Effort</dt><dd>L</dd>
+          <dt>Risk</dt><dd>HIGH</dd>
+          <dt>Commit</dt><dd>24432fb</dd>
+          <dt>Date</dt><dd>2026-08-18</dd>
+        </dl>
+      </header>
+
+      <nav aria-label="Plan sections">
+        <a href="#case">Case</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#flow">Dataflow</a>
+        <a href="#transactions">Transactions</a>
+        <a href="#phases">Phases</a>
+        <a href="#scope">Scope</a>
+        <a href="#risks">Risks</a>
+        <a href="#gates">Done gates</a>
+      </nav>
+
+      <section id="case">
+        <div class="split">
+          <div>
+            <h2>The missing parity foundation</h2>
+            <p>
+              The editor currently checks out a pooled SQLx connection per run,
+              calls <code>fetch_all</code>, and returns one result. Session-local
+              state disappears and large output is fully materialized.
+            </p>
+          </div>
+          <p class="muted">
+            Preserve SQLx for table, schema, admin, and legacy engine paths.
+            Add a dedicated PostgreSQL transport without activating the editor.
+          </p>
+        </div>
+        <div class="problem-grid" aria-label="Current gaps">
+          <div><span class="number">01</span><h3>No session</h3><p>Temp state, role, and transaction context cannot persist per tab.</p></div>
+          <div><span class="number">02</span><h3>Unbounded fetch</h3><p>One <code>fetch_all</code> call materializes the entire result before UI delivery.</p></div>
+          <div><span class="number">03</span><h3>One result</h3><p>Scripts, notices, command counts, partial output, and cancellation are flattened away.</p></div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <h2>Architecture boundary</h2>
+        <div class="architecture" aria-label="Query session architecture flow">
+          <div class="arch-node">
+            <h3>Plan 002 consumer</h3>
+            <ul class="arch-list">
+              <li>Frontend activation remains dark</li>
+              <li>Consumes the typed IPC contract later</li>
+              <li>Owns result LRU and 128 MiB budget</li>
+              <li>Preserves the legacy engine seam</li>
+            </ul>
+          </div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="arch-node">
+            <h3>Tauri QuerySessionManager</h3>
+            <ul class="arch-list">
+              <li>Opaque session + execution UUIDs</li>
+              <li>One actor per open Query Tab</li>
+              <li>7 sessions + 1 observer per Connection</li>
+              <li>24 sessions across at most 8 Connections</li>
+              <li>Generation-fenced lifecycle cleanup</li>
+              <li>Focus-aware owner and ACK deadlines</li>
+            </ul>
+          </div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="arch-node">
+            <h3>Dedicated PostgreSQL driver</h3>
+            <ul class="arch-list">
+              <li><code>simple_query_raw</code> result framing</li>
+              <li><code>poll_message</code> notices</li>
+              <li>Protocol <code>CancelToken</code></li>
+              <li>Shared resolved connect specification</li>
+              <li>Dedicated batched transaction observer</li>
+            </ul>
+          </div>
+        </div>
+        <p class="muted" style="margin-top: 18px">
+          No shared engine trait yet. The five-slot SQLx pool remains available
+          to table, schema, admin, and legacy work.
+        </p>
+      </section>
+
+      <section id="flow">
+        <h2>Ordered execution and backpressure</h2>
+        <div class="event-flow" aria-label="Execution event sequence">
+          <div class="event"><strong>channel</strong><small>Create the typed per-session IPC Channel before open.</small></div>
+          <div class="event"><strong>open</strong><small>Fence generation, hydrate credentials, resolve tunnel, connect lazily.</small></div>
+          <div class="event"><strong>started</strong><small>Bind execution id and transaction snapshot.</small></div>
+          <div class="event"><strong>set-start</strong><small>Column metadata arrives even with zero rows.</small></div>
+          <div class="event ack"><strong>row-batch</strong><small>200 rows or 256 KiB target. Four-batch/4-MiB credit.</small></div>
+          <div class="event"><strong>cumulative ACK</strong><small>Release every reduced batch through one sequence.</small></div>
+          <div class="event"><strong>set-done</strong><small>Returned, omitted, affected, runtime, truncation.</small></div>
+          <div class="event ack"><strong>terminal</strong><small>Completed, cancelled, failed, or lost exactly once.</small></div>
+          <div class="event"><strong>terminal ACK</strong><small>Confirm backend settlement, then resolve the run promise.</small></div>
+        </div>
+        <div class="limits" aria-label="Safety limits">
+          <div class="limit"><b>10,000</b>rows retained per result set</div>
+          <div class="limit"><b>50,000</b>rows retained per execution</div>
+          <div class="limit"><b>32 MiB</b>retained result bytes per execution</div>
+          <div class="limit"><b>4</b>unacknowledged batches per session</div>
+          <div class="limit"><b>120 s focused</b>ACK or owner stall deadline</div>
+          <div class="limit"><b>1 MiB</b>retained bytes per cell</div>
+          <div class="limit"><b>2 MiB</b>hard serialized row ceiling</div>
+          <div class="limit"><b>4 MiB</b>hard serialized batch ceiling</div>
+          <div class="limit"><b>64</b>retained result sets</div>
+          <div class="limit"><b>1 MiB</b>notice + metadata bytes per execution</div>
+          <div class="limit"><b>3 s</b>graceful rollback and close</div>
+        </div>
+        <p class="muted" style="margin-top: 18px">
+          Overflow is drained without row-body emission, then reported as
+          typed omitted counts. Unfocused windows pause destructive liveness
+          deadlines. These bounds cover retained data and IPC. One complete
+          PostgreSQL DataRow is decoded before application truncation, so peak
+          transient memory is explicitly not claimed as byte-bounded.
+        </p>
+      </section>
+
+      <section id="transactions">
+        <h2>Transaction truth is a state machine</h2>
+        <div class="state-map" aria-label="Transaction states">
+          <div class="state">
+            <span class="label">idle</span>
+            <p>Autocommit ready, or manual mode waiting to issue lazy BEGIN.</p>
+          </div>
+          <div class="state">
+            <span class="label">active</span>
+            <p>A transaction is open. Commit and Rollback are available regardless of mode intent.</p>
+          </div>
+          <div class="state failed">
+            <span class="label">failed</span>
+            <p>The authoritative probe reports an aborted transaction. Rollback is required.</p>
+          </div>
+          <div class="state unknown">
+            <span class="label">unknown</span>
+            <p>Probe failed, state is disabled, or identity is lost. Recheck, Rollback, and Close remain.</p>
+          </div>
+        </div>
+        <div class="transition-notes">
+          <ul class="compact-list">
+            <li>Manual mode begins lazily before the next execution.</li>
+            <li>Isolation selects the next manual transaction and is disabled in autocommit.</li>
+            <li>Manual to autocommit requires explicit Commit or Rollback.</li>
+          </ul>
+          <ul class="compact-list">
+            <li>Raw transaction SQL is reconciled through PID + backend-start identity.</li>
+            <li>The post-execution probe is authoritative; mode rules are defaults only.</li>
+            <li>One dedicated observer per Connection batches PID + backend-start probes.</li>
+            <li>Active, failed, or unknown tab close asks before rollback and close.</li>
+            <li>Socket close is the final rollback guarantee.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="phases">
+        <h2>Execution phases</h2>
+        <div class="phase-list">
+          <details open>
+            <summary><strong>Decide and prove the driver seam</strong><span class="muted">ADR + live spike</span></summary>
+            <div class="phase-body">Document that neither public driver exposes ReadyForQuery state. Prove the shared resolved connection spec against plaintext and isolated self-signed TLS fixtures, server-refusal fallback, full-handshake timeout, log filtering, notices, result boundaries, and cancellation.</div>
+          </details>
+          <details>
+            <summary><strong>Build observer + bounded actor</strong><span class="muted">Rust protocol</span></summary>
+            <div class="phase-body">Keep probes off the five-slot SQLx pool, coalesce concurrent status checks, add four-batch cumulative credit, typed omissions, focus-aware owner liveness, overflow draining, and exact terminal settlement.</div>
+          </details>
+          <details>
+            <summary><strong>Make teardown authoritative</strong><span class="muted">Failure ordering</span></summary>
+            <div class="phase-body">Generation-fence new opens, then close sessions and observer before Connection, bastion, managed-server, destructive credential reset, tunnel, window, and app-exit invalidation. Storage-mode migration preserves sessions.</div>
+          </details>
+          <details>
+            <summary><strong>Characterize failures</strong><span class="muted">Live + macOS</span></summary>
+            <div class="phase-body">Exercise 100k rows, a 16 MiB cell, observer contention, cumulative credit, cancellation, raw transactions, low connection limits, teardown edges, and five-minute minimize/occlusion safety.</div>
+          </details>
+          <details>
+            <summary><strong>Handoff to Plan 002</strong><span class="muted">Separate drift window</span></summary>
+            <div class="phase-body">Record the completion SHA. Plan 002 then creates three local static mocks, waits for selection, builds the reducer and result LRU, and activates PostgreSQL.</div>
+          </details>
+          <details>
+            <summary><strong>Keep activation dark</strong><span class="muted">Rollback seam</span></summary>
+            <div class="phase-body">Register backend commands, but do not edit TypeScript or route editor execution to them in this plan.</div>
+          </details>
+        </div>
+      </section>
+
+      <section id="scope">
+        <h2>Scope boundary</h2>
+        <div class="scope">
+          <div>
+            <h3>In</h3>
+            <ul class="scope-list">
+              <li>PostgreSQL Query Tab sessions</li>
+              <li>Dedicated tokio-postgres transport</li>
+              <li>Typed backend Channel contract and cumulative credit</li>
+              <li>Dedicated batched transaction observer</li>
+              <li>Focus-aware renderer ownership</li>
+              <li>Backend transaction commands and Recheck</li>
+              <li>Connection, window, tunnel, managed-server, credential-reset, and exit cleanup</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Out</h3>
+            <ul class="scope-list">
+              <li>MySQL, SQLite, ClickHouse session adapters</li>
+              <li>React, Zustand, query controls, or editor activation</li>
+              <li>Global retained-result LRU, owned by Plan 002</li>
+              <li>Table/schema/admin migration away from SQLx</li>
+              <li>Fetch-more portals or disk spooling</li>
+              <li>Session persistence across restart</li>
+              <li>New TLS trust settings</li>
+              <li>Removing <code>run_query</code></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="risks">
+        <h2>Risks and hard stops</h2>
+        <div class="risk-grid">
+          <div><span class="risk-tag risk-high">STOP</span><h3>Behavior parity</h3><p>Stop if the shared connect spec cannot preserve resolved routing, permissive TLS Prefer server-refusal fallback, the full handshake deadline, and every currently effective driver option.</p></div>
+          <div><span class="risk-tag risk-high">STOP</span><h3>TLS evidence</h3><p>Require both plaintext server-refusal fallback and a successful encrypted connection to the isolated self-signed fixture.</p></div>
+          <div><span class="risk-tag risk-high">STOP</span><h3>Delivery contract</h3><p>Stop if a typed Channel cannot pair ordered batches and execution terminals with exact acknowledgements.</p></div>
+          <div><span class="risk-tag risk-high">STOP</span><h3>Transaction truth</h3><p>Stop if the dedicated observer cannot reconcile idle, active, and aborted state without acquiring the five-slot SQLx pool.</p></div>
+          <div><span class="risk-tag risk-high">STOP</span><h3>Large value</h3><p>Stop if the 16 MiB single-cell characterization crashes, hangs, or loses the session. Never claim a transient frame byte bound.</p></div>
+          <div><span class="risk-tag risk-med">REVIEW</span><h3>Cancellation race</h3><p>A cancel request is not proof of cancellation. The terminal server response decides the outcome.</p></div>
+          <div><span class="risk-tag risk-high">STOP</span><h3>Background safety</h3><p>A minimized or occluded macOS window must not roll back because its JavaScript timers were throttled.</p></div>
+          <div><span class="risk-tag risk-med">REVIEW</span><h3>Observer cost</h3><p>Measure the extra roundtrip and coalescing behavior. Do not trade transaction truth for an unverified latency shortcut.</p></div>
+          <div><span class="risk-tag risk-med">REVIEW</span><h3>Dark handoff</h3><p>Plan 001 records a completion SHA. Plan 002 owns all frontend changes and activation.</p></div>
+        </div>
+      </section>
+
+      <section id="gates">
+        <h2>Done gates</h2>
+        <div class="gate-grid" aria-label="Verification commands">
+          <div><h3>Architecture</h3><code>ADR-0021</code><code>CONTEXT.md</code></div>
+          <div><h3>Lifecycle</h3><code>owner replacement</code><code>focus + destroy</code></div>
+          <div><h3>Rust</h3><code>just fmt</code><code>just lint</code><code>just test</code></div>
+          <div><h3>Live + diff</h3><code>pnpm db:postgres</code><code>pnpm db:postgres-tls</code><code>query_session_live</code><code>git diff --check</code></div>
+        </div>
+        <div class="stop" style="margin-top: 28px">
+          <h3>Release assertion</h3>
+          <p style="margin-bottom: 0">
+            Plan 001 is done when the dark backend proves session reuse,
+            cumulative credit, cancellation, dedicated observer truth,
+            focus-safe liveness, lifecycle fencing, TLS parity, and omission
+            telemetry. Editor activation waits for Plan 002.
+          </p>
+        </div>
+      </section>
+
+      <footer>
+        <span>Plan 001 · dark backend foundation</span>
+        <span>Source: plans/001-query-session-foundation.md</span>
+      </footer>
+    </main>
+  </body>
+</html>
