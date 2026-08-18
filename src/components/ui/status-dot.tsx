@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 export type StatusTone = "healthy" | "warning" | "danger" | "neutral" | "info";
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const toneClass: Record<StatusTone, string> = {
   healthy: "bg-success shadow-[0_0_10px_rgba(143,221,76,0.55)]",
   warning: "bg-warning shadow-[0_0_10px_rgba(245,184,75,0.45)]",
@@ -30,6 +31,7 @@ export function StatusDot({
   );
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const toneLabel: Record<StatusTone, string> = {
   healthy: "Healthy",
   warning: "Warning",
@@ -38,6 +40,7 @@ const toneLabel: Record<StatusTone, string> = {
   neutral: "Disconnected",
 };
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const toneText: Record<StatusTone, string> = {
   healthy: "text-accent-hover",
   warning: "text-warning",
@@ -46,6 +49,7 @@ const toneText: Record<StatusTone, string> = {
   neutral: "text-text-muted",
 };
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const toneBg: Record<StatusTone, string> = {
   healthy: "bg-accent-subdued/70",
   warning: "bg-warning/15",

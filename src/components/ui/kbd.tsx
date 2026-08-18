@@ -19,10 +19,12 @@ import { cn } from "@/lib/utils";
  * enough to recompute on every call.
  */
 export function isMacPlatform(): boolean {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof navigator === "undefined") return false;
   return /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const MAC_TOKENS: Record<string, string> = {
   mod: "⌘",
   shift: "⇧",
@@ -36,6 +38,7 @@ const MAC_TOKENS: Record<string, string> = {
   arrowright: "→",
 };
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const WIN_TOKENS: Record<string, string> = {
   mod: "Ctrl",
   shift: "Shift",
@@ -62,6 +65,7 @@ interface KbdProps {
   className?: string;
 }
 
+/* oxlint-disable react/no-array-index-key -- Repeated shortcut tokens are distinguished by their fixed sequence position. */
 export function Kbd({ keys, className }: KbdProps) {
   const isMac = isMacPlatform();
   return (
@@ -74,6 +78,7 @@ export function Kbd({ keys, className }: KbdProps) {
       {keys.map((token, index) => {
         const rendered = renderToken(token, isMac);
         return (
+          // oxlint-disable-next-line react/no-array-index-key -- Repeated shortcut tokens are distinguished by their fixed sequence position.
           <span
             key={`${rendered}-${index}-${token}`}
             className="inline-flex items-center"
@@ -88,3 +93,4 @@ export function Kbd({ keys, className }: KbdProps) {
     </span>
   );
 }
+/* oxlint-enable react/no-array-index-key */

@@ -200,7 +200,7 @@ const RELATIONAL_STRUCTURE_DEFAULTS: StructureLabels = {
   noIndexes: "No indexes defined.",
 };
 
-const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
+const POLICIES = {
   PostgreSQL: {
     engine: "PostgreSQL",
     storageClass: "relational",
@@ -282,7 +282,7 @@ const POLICIES: Record<DatabaseEngine, EnginePolicy> = {
       maxDbNumber: 15,
     },
   },
-};
+} satisfies Record<DatabaseEngine, EnginePolicy>;
 
 /**
  * Look up the UI policy for a given engine. Returns the policy

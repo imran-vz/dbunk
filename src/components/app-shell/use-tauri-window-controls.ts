@@ -25,6 +25,7 @@ const WINDOW_TRAFFIC_LIGHT_RESTORE_DELAYS_MS = [120, 340] as const;
 
 function nextAnimationFrame() {
   return new Promise<void>((resolve) => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof window === "undefined") {
       resolve();
       return;

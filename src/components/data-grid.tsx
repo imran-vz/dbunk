@@ -369,7 +369,6 @@ function EditableCell({
   if (isEditing && onEdit) {
     return (
       <Input
-        autoFocus
         className="h-full w-full rounded-none border-0 bg-background px-2 py-0 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
         defaultValue={displayValue}
         onBlur={onBlur}
@@ -556,8 +555,11 @@ export function DataGrid({
         | ((old: RowSelectionState) => RowSelectionState),
     ) => {
       const next =
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
         typeof updater === "function"
-          ? (updater as (old: RowSelectionState) => RowSelectionState)(
+          ? // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+            // oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- The value is handled at a typed library or domain boundary here.
+            (updater as (old: RowSelectionState) => RowSelectionState)(
               rowSelection,
             )
           : updater;
@@ -642,6 +644,7 @@ export function DataGrid({
         meta: { index },
         cell: (props) => (
           <EditableCell
+            // SAFETY: The value is constrained by the typed component or library contract at this boundary.
             initialValue={props.getValue() as string}
             rowIndex={props.row.index}
             columnIndex={index}

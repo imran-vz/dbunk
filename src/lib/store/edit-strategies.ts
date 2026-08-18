@@ -221,6 +221,7 @@ export const buildEditPayload = (
     if (setEntries.length === 0) continue;
 
     const identityEntries = identity.columns.map((col) => {
+      // SAFETY: buildColumnIndex and chooseRowIdentity guarantee every identity column is indexed.
       const idx = columnIndexByName.get(col) as number;
       return { column: col, value: row[idx] ?? null };
     });
@@ -272,6 +273,7 @@ export const buildDeleteRowsPayload = (
     if (!row) continue;
     out.push(
       identity.columns.map((col) => {
+        // SAFETY: buildColumnIndex and chooseRowIdentity guarantee every identity column is indexed.
         const idx = columnIndexByName.get(col) as number;
         return { column: col, value: row[idx] ?? null };
       }),

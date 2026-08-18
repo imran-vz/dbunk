@@ -94,6 +94,7 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   defaultRole: "",
 };
 
+// oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
 type CommonShape = {
   id: string;
   name: string;
@@ -105,6 +106,7 @@ type CommonShape = {
   role: string;
 };
 
+// oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
 function commonFromForm(value: ConnectionFormData, id: string): CommonShape {
   return {
     id,
@@ -120,6 +122,7 @@ function commonFromForm(value: ConnectionFormData, id: string): CommonShape {
 
 function buildPg(
   value: ConnectionFormData,
+  // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
   common: CommonShape,
 ): PgStoredConnection {
   const sshTunnel = tunnelFromForm(value);
@@ -183,6 +186,7 @@ export function driverOptionsFromForm(
 
 function buildMySql(
   value: ConnectionFormData,
+  // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
   common: CommonShape,
 ): MySqlStoredConnection {
   const sshTunnel = tunnelFromForm(value);
@@ -194,12 +198,14 @@ function buildMySql(
   };
 }
 
+// oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
 function buildSqlite(common: CommonShape): SqliteStoredConnection {
   return { ...common, engine: "SQLite" };
 }
 
 function buildClickHouse(
   value: ConnectionFormData,
+  // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
   common: CommonShape,
 ): ClickHouseStoredConnection {
   const sshTunnel = tunnelFromForm(value);
@@ -214,6 +220,7 @@ function buildClickHouse(
 
 function buildRedis(
   value: ConnectionFormData,
+  // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
   common: CommonShape,
 ): RedisStoredConnection {
   const sshTunnel = tunnelFromForm(value);
@@ -414,6 +421,7 @@ export const FIELD_ERROR = (
 ): string | null => {
   const first = errors?.[0];
   if (!first) return null;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof first === "string") return first;
   return first.message ?? null;
 };

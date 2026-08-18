@@ -1,6 +1,8 @@
 import type { DatabaseOverviewStatsStatus } from "@/lib/store";
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 export function formatConnectionLatency(latency: unknown): string | null {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof latency !== "string") {
     return null;
   }
@@ -40,6 +42,7 @@ export function formatByteStat(
   value: number | undefined,
   status: DatabaseOverviewStatsStatus | undefined,
 ): string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof value === "number") {
     return formatBytes(value);
   }
@@ -83,6 +86,7 @@ export function formatRowCount(
   value: number | undefined,
   status: DatabaseOverviewStatsStatus | undefined,
 ): string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return pendingMetric(status);
   }

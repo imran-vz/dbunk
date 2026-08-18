@@ -51,6 +51,7 @@ type HistoryEntry =
   | { kind: "rejected"; reason: string }
   | { kind: "needs-confirmation"; command: string; severity: "hard" | "soft" };
 
+/* oxlint-disable react/no-array-index-key -- CLI scrollback is an append-only positional transcript whose entries have no server IDs. */
 export function CliTab({ connectionId, tabId }: CliTabProps) {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -335,6 +336,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
           </p>
         ) : null}
         {history.map((entry, index) => (
+          // oxlint-disable-next-line react/no-array-index-key -- CLI history is an append-only positional transcript and entries have no server IDs.
           <div
             key={`${index}-${entry.kind}`}
             className={cn(
@@ -551,6 +553,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
   );
 }
 
+/* oxlint-enable react/no-array-index-key */
 function RenderValue({
   value,
   runtimeMs,
@@ -566,6 +569,7 @@ function RenderValue({
   );
 }
 
+/* oxlint-disable react/no-array-index-key -- Redis arrays have positional identity and provide no item IDs. */
 function renderBody(value: SerializedValue): React.ReactNode {
   switch (value.kind) {
     case "nil":
@@ -594,6 +598,7 @@ function renderBody(value: SerializedValue): React.ReactNode {
       return (
         <ol className="ml-3 list-decimal text-text-muted">
           {value.value.map((item, idx) => (
+            // oxlint-disable-next-line react/no-array-index-key -- Redis array items have positional identity and no stable IDs.
             <li key={`${idx}-${formatValueOneLine(item)}`}>
               {renderBody(item)}
             </li>
@@ -612,6 +617,7 @@ function renderBody(value: SerializedValue): React.ReactNode {
  * Returns `null` when the tokens aren't a `KEYS` command we can
  * rewrite (no pattern given, etc.).
  */
+/* oxlint-enable react/no-array-index-key */
 function scanReplacementFor(tokens: string[]): string[] | null {
   if (tokens.length < 2) return null;
   if (tokens[0].toUpperCase() !== "KEYS") return null;

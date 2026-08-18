@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-chained-type-assertions anti-slop/no-module-mocking anti-slop/no-unknown-parameters anti-slop/require-safety-comment-for-type-assertion -- Test fixtures use controlled mocks and assertions to exercise otherwise inaccessible boundaries. */
 // @vitest-environment jsdom
 import {
   act,

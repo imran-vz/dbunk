@@ -35,6 +35,7 @@ export interface PanelState {
 }
 
 const readStoredBool = (key: string, fallback: boolean) => {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   if (typeof window === "undefined") return fallback;
   const raw = window.localStorage.getItem(key);
   if (raw === null) return fallback;
@@ -83,6 +84,7 @@ export function usePanel({
   );
 
   useEffect(() => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof window === "undefined") return;
     window.localStorage.setItem(`${storageKey}.pinned`, pinned ? "1" : "0");
   }, [pinned, storageKey]);

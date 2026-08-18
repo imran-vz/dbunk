@@ -53,6 +53,7 @@ export function PanelAside({
   children,
 }: PanelAsideProps) {
   return (
+    /* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Pointer exit controls the transient aside; the panel itself is not an interactive control. */
     <aside
       id={panelId}
       ref={panelRef}

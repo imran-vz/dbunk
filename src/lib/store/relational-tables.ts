@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- Persisted table state and database cell values are external boundaries validated here. */
 /**
  * Relational Tables slice — owns every relational-class state map
  * keyed by `${connectionId}::${schema}::${table}` (or by connectionId
@@ -285,7 +286,7 @@ export type RelationalTablesSlice = {
 const dropMatching = <T>(
   bag: Record<string, T>,
   matcher: (key: string) => boolean,
-): Record<string, T> => {
+) => {
   const next: Record<string, T> = {};
   for (const [key, value] of Object.entries(bag)) {
     if (!matcher(key)) {
@@ -300,10 +301,10 @@ const withNestedValue = <T>(
   connectionId: string,
   schema: string,
   value: T,
-): Record<string, Record<string, T>> => ({
+) => ({
   ...bag,
   [connectionId]: {
-    ...(bag[connectionId] ?? {}),
+    ...bag[connectionId],
     [schema]: value,
   },
 });
@@ -1098,7 +1099,7 @@ export const createRelationalTablesSlice: StateCreator<
         connectionId,
         schema,
         {
-          ...(state.schemaMapPositions[connectionId]?.[schema] ?? {}),
+          ...state.schemaMapPositions[connectionId]?.[schema],
           [tableId]: { x, y },
         },
       ),

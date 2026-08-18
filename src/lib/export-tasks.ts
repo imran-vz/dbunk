@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- Export task errors cross the untyped promise-rejection boundary and are normalized here. */
 import type {
   ExportCompression,
   ExportEncoding,

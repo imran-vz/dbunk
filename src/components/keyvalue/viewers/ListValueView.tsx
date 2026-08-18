@@ -201,7 +201,11 @@ export function ListValueView({
             <tr>
               <th className="px-3 py-1.5 text-left w-16">Index</th>
               <th className="px-3 py-1.5 text-left">Value</th>
-              {editing ? <th className="w-16 px-3 py-1.5"></th> : null}
+              {editing ? (
+                <th className="w-16 px-3 py-1.5">
+                  <span className="sr-only">Actions</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
@@ -263,6 +267,7 @@ export function ListValueView({
                     </td>
                     <td className="break-all px-3 py-1">
                       <input
+                        aria-label="Appended list value"
                         value={value}
                         onChange={(event) =>
                           setPendingAppends((prev) => {
@@ -297,6 +302,7 @@ export function ListValueView({
                 </td>
                 <td className="px-3 py-1">
                   <input
+                    aria-label="New list value"
                     value={newAppend}
                     onChange={(event) => setNewAppend(event.target.value)}
                     placeholder="new value (RPUSH)"

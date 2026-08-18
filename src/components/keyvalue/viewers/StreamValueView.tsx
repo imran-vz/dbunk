@@ -234,7 +234,11 @@ export function StreamValueView({
             <tr>
               <th className="px-3 py-1.5 text-left">ID</th>
               <th className="px-3 py-1.5 text-left">Fields</th>
-              {editing ? <th className="w-16 px-3 py-1.5"></th> : null}
+              {editing ? (
+                <th className="w-16 px-3 py-1.5">
+                  <span className="sr-only">Actions</span>
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
@@ -586,7 +590,9 @@ function ConsumerGroupsPanel({
                 <th className="px-2 py-1 text-right">Consumers</th>
                 <th className="px-2 py-1 text-right">Pending</th>
                 <th className="px-2 py-1 text-left">Last delivered</th>
-                <th className="w-16 px-2 py-1"></th>
+                <th className="w-16 px-2 py-1">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">

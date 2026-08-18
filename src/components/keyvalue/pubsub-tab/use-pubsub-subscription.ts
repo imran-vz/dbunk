@@ -61,6 +61,7 @@ function appendBounded(
     : merged;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }

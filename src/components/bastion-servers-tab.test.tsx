@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking anti-slop/no-unknown-parameters -- Test fixtures use controlled mocks and assertions to exercise otherwise inaccessible boundaries. */
 // @vitest-environment jsdom
 import {
   act,

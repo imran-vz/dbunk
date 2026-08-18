@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- Export values are database payloads whose runtime representation must be inspected for serialization. */
 /**
  * Pure helpers that turn a column/row table into CSV or JSON text.
  *

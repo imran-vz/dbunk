@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unknown-parameters -- Logging intentionally accepts arbitrary diagnostic context at the application boundary and serializes it defensively. */
 /**
  * Frontend logging that routes through `tauri-plugin-log`, so JS-side
  * info/warn/error calls land in the same file target as Rust-side

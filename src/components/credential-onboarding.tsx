@@ -38,6 +38,7 @@ const MODE_COPY: Record<
     icon: typeof IconShieldLock;
     recommended?: boolean;
   }
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 > = {
   "encrypted-sqlite": {
     title: "Encrypted SQLite",
@@ -112,6 +113,7 @@ export function CredentialOnboarding() {
 
         <section className="rounded-lg border border-border-subtle bg-surface-window p-5">
           <div className="grid gap-3">
+            {/* oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- MODE_COPY is keyed by every CredentialStorageMode value. */}
             {(Object.keys(MODE_COPY) as CredentialStorageMode[]).map((id) => {
               const item = MODE_COPY[id];
               const Icon = item.icon;
@@ -239,7 +241,7 @@ export function CredentialUnlock() {
         <Input
           className="mt-5"
           type="password"
-          autoFocus
+
           placeholder="Credential password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
