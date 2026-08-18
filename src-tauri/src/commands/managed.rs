@@ -48,7 +48,16 @@ pub async fn stop_managed_server(
     state: State<'_, AppState>,
     payload: ManagedServerPayload,
 ) -> Result<(), String> {
-    managed::stop(&state.inner().pool, &payload.managed_server_id).await
+    let state = state.inner();
+    let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
+    if let Some(id) = &connection_id {
+        state.query_sessions.begin_connection_teardown(id).await;
+    }
+    let result = managed::stop(&state.pool, &payload.managed_server_id).await;
+    if let Some(id) = &connection_id {
+        state.query_sessions.end_connection_teardown(id).await;
+    }
+    result
 }
 
 #[tauri::command]
@@ -56,7 +65,16 @@ pub async fn destroy_managed_server(
     state: State<'_, AppState>,
     payload: ManagedServerPayload,
 ) -> Result<(), String> {
-    managed::destroy(&state.inner().pool, &payload.managed_server_id).await
+    let state = state.inner();
+    let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
+    if let Some(id) = &connection_id {
+        state.query_sessions.begin_connection_teardown(id).await;
+    }
+    let result = managed::destroy(&state.pool, &payload.managed_server_id).await;
+    if let Some(id) = &connection_id {
+        state.query_sessions.end_connection_teardown(id).await;
+    }
+    result
 }
 
 #[tauri::command]
@@ -66,5 +84,21 @@ pub async fn recreate_managed_server(
 ) -> Result<(), String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    managed::recreate(&state.pool, mode, &payload.managed_server_id).await
+    let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
+    if let Some(id) = &connection_id {
+        state.query_sessions.begin_connection_teardown(id).await;
+    }
+    let result = managed::recreate(&state.pool, mode, &payload.managed_server_id).await;
+    if let Some(id) = &connection_id {
+        state.query_sessions.end_connection_teardown(id).await;
+    }
+    result
+}
+
+async fn managed_connection_id(state: &AppState, id: &str) -> Result<Option<String>, String> {
+    Ok(
+        crate::storage::managed::read_managed_server_by_id(&state.pool, id)
+            .await?
+            .and_then(|server| server.connection_id),
+    )
 }

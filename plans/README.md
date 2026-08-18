@@ -13,7 +13,7 @@ and update its status here when work finishes.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
-| [001](./001-query-session-foundation.md) | PostgreSQL Query Session backend foundation | P0 | L | None | TODO |
+| [001](./001-query-session-foundation.md) | PostgreSQL Query Session backend foundation | P0 | L | None | READY FOR REVIEW |
 | [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration | P0 | L | 001 | TODO |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,

@@ -435,3 +435,15 @@ Captures are never auto-pruned; users manage them manually.
   they can stay off the prompt-prone keychain hot path.
 - **App Shell** — the React root component (`src/components/app-shell.tsx`).
   Owns the top bar, sidebar, and the foreground health-check loop.
+- **Query Session** — a PostgreSQL-only, tab-scoped backend actor owning one
+  dedicated protocol connection. It is separate from the SQLx pool and legacy
+  `run_query`, and is fenced by renderer owner, window, and connection generation.
+- **Query Execution** — one simple-query request in a Query Session. It can
+  produce multiple Result Sets and notices, and settles after its terminal
+  event is acknowledged through the bounded credit protocol.
+- **Result Set** — an ordered PostgreSQL protocol result boundary, including
+  zero-row column metadata. Retained data is bounded independently from a
+  DataRow transiently decoded by the driver.
+- **Query Outcome** — terminal status, omission totals, typed truncation
+  reasons, structured database error, and observer-derived transaction state.
+  Transaction truth is never inferred from SQL text.

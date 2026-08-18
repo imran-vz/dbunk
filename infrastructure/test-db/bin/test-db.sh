@@ -7,6 +7,9 @@ case "${1:-}" in
   postgres)
     exec make postgres
     ;;
+  postgres-tls)
+    exec make postgres-tls
+    ;;
   clickhouse)
     exec make clickhouse
     ;;
@@ -34,6 +37,7 @@ Usage: infrastructure/test-db/bin/test-db.sh <command>
 
 Commands:
   postgres        Start only PostgreSQL
+  postgres-tls    Start only TLS PostgreSQL
   clickhouse      Start only ClickHouse
   redis           Start only Redis
   postgres-redis  Start PostgreSQL and Redis together
