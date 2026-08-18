@@ -172,6 +172,7 @@ export function SchemaMapToolbar({
           aria-label="Routing"
           className="m-0 inline-flex h-6 overflow-hidden rounded-sm border border-border-subtle bg-surface-panel p-0"
         >
+          {/* oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- This literal tuple is the complete SchemaMapRouting domain. */}
           {(["bezier", "step"] as SchemaMapRouting[]).map((routing) => (
             <button
               key={routing}

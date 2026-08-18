@@ -142,7 +142,7 @@ export function useStructure({
 
   const snapshot = snapshotFromStructure(structure);
   const editable = snapshot.capabilities.canAlterSchema;
-  const pending = pendingChanges ?? [];
+  const pending = useMemo(() => pendingChanges ?? [], [pendingChanges]);
   const policy = relationalPolicy(engine ?? "PostgreSQL");
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -156,7 +156,7 @@ export function useStructure({
         pending.map((entry) => entry.change),
         snapshot.columns,
       ),
-    [engine, schema, tableName, pending, snapshot.columns],
+    [engine, schema, tableName, snapshot.columns, pending],
   );
 
   const commit = async () => {

@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- Persisted tab data is an external boundary and is validated during hydration. */
 /**
  * Workspace Tabs slice — owns the Workspace Tab list, active tab ID,
  * active view, and the workspace UI flags (sidebar open/closed,

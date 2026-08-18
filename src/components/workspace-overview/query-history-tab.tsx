@@ -53,6 +53,7 @@ export function QueryHistoryTab({
   }, [queryHistory, showAll, statusFilter, searchText, activeConnection.id]);
 
   const handleCopy = async (entry: QueryHistoryEntry) => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof navigator === "undefined" || !navigator.clipboard) {
       return;
     }

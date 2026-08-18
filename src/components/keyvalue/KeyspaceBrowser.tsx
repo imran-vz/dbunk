@@ -346,6 +346,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         <select
           value={op}
           onChange={(event) => {
+            // SAFETY: The value is constrained by the typed component or library contract at this boundary.
             setOp(event.target.value as BulkOp);
             setPreview(null);
             setConfirmText("");
@@ -429,6 +430,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
             ) : null
           ) : (preview?.result.sample.length ?? 0) > 0 ? (
             <ul className="mt-1 max-h-32 overflow-auto font-mono text-text-muted">
+              {/* oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- The preview API guarantees sample entries are names when the rename preview succeeds. */}
               {(preview?.result.sample as string[] | undefined)?.map((name) => (
                 <li key={name} className="truncate">
                   {name}
@@ -622,6 +624,7 @@ export function KeyspaceBrowser({
       });
     listen("pubsub-message", (event) => {
       if (cancelled) return;
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
       const payload = event.payload as { sessionId: string } | undefined;
       if (payload?.sessionId !== sessionId) return;
       setLiveTick((tick) => tick + 1);

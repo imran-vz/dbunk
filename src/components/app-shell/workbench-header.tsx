@@ -24,6 +24,7 @@ interface WorkbenchHeaderProps {
   onDoubleClick: (event: ReactMouseEvent<HTMLElement>) => void;
 }
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- The connection picker requires button and double-click behavior unavailable from a native select. */
 export function WorkbenchHeader({
   activeConnection,
   isWindowFullscreen,
@@ -45,6 +46,7 @@ export function WorkbenchHeader({
 
   return (
     <header
+      tabIndex={0}
       data-slot="top-bar"
       data-testid="workbench-header"
       data-window-fullscreen={isWindowFullscreen}
@@ -83,6 +85,7 @@ export function WorkbenchHeader({
               className="fixed inset-0 z-40"
               onClick={() => setMenuOpen(false)}
             />
+            {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- The popup uses application-managed selection and button interactions rather than native select behavior. */}
             <div
               role="listbox"
               aria-label="Connections"
@@ -93,10 +96,11 @@ export function WorkbenchHeader({
                   const isActive = connection.id === activeConnection?.id;
                   const tone = connectionStatusTone(connection.status);
                   return (
+                    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- A button preserves the menu's pointer and double-click behavior while exposing option semantics.
                     <button
+                      role="option"
                       key={connection.id}
                       type="button"
-                      role="option"
                       aria-selected={isActive}
                       onClick={() => {
                         setActiveConnectionId(connection.id);
@@ -181,3 +185,4 @@ export function WorkbenchHeader({
     </header>
   );
 }
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */

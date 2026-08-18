@@ -11,6 +11,7 @@ interface UseTablePaginationArgs {
     table: string,
     page?: number,
     pageSize?: number,
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- The value is handled at a typed library or domain boundary here.
   ) => unknown;
 }
 

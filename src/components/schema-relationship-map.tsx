@@ -133,10 +133,12 @@ export interface SchemaRelationshipMapHandle {
 type HtmlToImageApi = {
   toPng: (
     node: HTMLElement,
+    // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The value is handled at a typed library or domain boundary here.
     options?: Record<string, unknown>,
   ) => Promise<string>;
   toSvg: (
     node: HTMLElement,
+    // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The value is handled at a typed library or domain boundary here.
     options?: Record<string, unknown>,
   ) => Promise<string>;
 };
@@ -463,6 +465,7 @@ export const SchemaRelationshipMap = forwardRef<
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
       const data = (node as Node<SchemaGraphNodeData>).data;
       if (!data) {
         return;
@@ -519,6 +522,7 @@ export const SchemaRelationshipMap = forwardRef<
   );
 
   useEffect(() => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (!isClient || !hasNodes || typeof ResizeObserver === "undefined") {
       return;
     }

@@ -338,7 +338,7 @@ const dagreLayout = (
   >,
   foreignKeys: SchemaForeignKey[],
   prefs: SchemaMapPrefs,
-): Record<string, SchemaMapPosition> => {
+) => {
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
   graph.setGraph({

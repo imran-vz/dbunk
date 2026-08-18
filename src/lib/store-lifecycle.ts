@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- Store lifecycle callbacks are discovered from Zustand's runtime store shape and checked before invocation. */
 /**
  * Shared helpers for the store's lifecycle-status slots — the
  * per-key `Record<string, { state: "running" | "queued" }>` maps

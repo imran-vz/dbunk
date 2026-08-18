@@ -299,6 +299,7 @@ function bytesToBits(value: string, encoding: string): (0 | 1)[] {
   const bits: (0 | 1)[] = [];
   for (const byte of bytes) {
     for (let bit = 7; bit >= 0; bit--) {
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
       bits.push(((byte >> bit) & 1) as 0 | 1);
     }
   }

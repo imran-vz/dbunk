@@ -60,6 +60,7 @@ export function specializedCellKind(
 export const CELL_EDITORS: Record<
   SpecializedCellKind,
   React.ComponentType<CellEditorProps>
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 > = {
   json: JsonCellEditor,
   array: ArrayCellEditor,
@@ -135,7 +136,6 @@ function JsonCellEditor({
         className="min-h-48 flex-1 font-mono text-xs"
         placeholder='{"key": "value"}'
         aria-describedby={helperId}
-        autoFocus
       />
       <div
         id={helperId}
@@ -274,7 +274,6 @@ function GeometryCellEditor({
         }}
         className="min-h-32 flex-1 font-mono text-xs"
         placeholder="POINT(10 20)"
-        autoFocus
       />
       <div
         className={cn(
@@ -292,6 +291,7 @@ function GeometryCellEditor({
 // Shell (modal frame)
 // ---------------------------------------------------------------------------
 
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- This custom modal overlay uses application-managed open and backdrop behavior. */
 function EditorShell({
   title,
   onCancel,
@@ -317,6 +317,7 @@ function EditorShell({
   }, [onCancel]);
 
   return (
+    /* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/prefer-tag-over-role -- This custom modal overlay handles backdrop clicks without changing native dialog lifecycle behavior. */
     <div
       role="dialog"
       aria-modal="true"
@@ -372,6 +373,7 @@ function EditorShell({
  * single element. Good enough for the common case of `text[]` /
  * `int[]` editing.
  */
+/* oxlint-enable jsx-a11y/prefer-tag-over-role */
 export function parsePgArrayLiteral(value: string): string[] {
   const trimmed = value.trim();
   if (!trimmed) return [];

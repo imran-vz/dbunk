@@ -4,10 +4,7 @@
  * `createIdentQuoter(quoteChar)` and import `formatDefault` directly.
  */
 
-export function createIdentQuoter(quote: string): {
-  quoteIdent: (identifier: string) => string;
-  qualifiedTable: (schema: string, table: string) => string;
-} {
+export function createIdentQuoter(quote: string) {
   const escaped = quote + quote;
   const quoteIdent = (identifier: string): string =>
     `${quote}${identifier.replaceAll(quote, escaped)}${quote}`;
