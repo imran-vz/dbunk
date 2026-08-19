@@ -247,6 +247,7 @@ const runBrowse = async (
     }
     return;
   }
+  if (current.inflightRequestId !== pendingId) return;
   if (result.kind === "cancelled") {
     patchBrowse(set, tabId, {
       loadStatus: { state: "idle" },
