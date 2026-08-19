@@ -96,6 +96,7 @@ pub(crate) async fn load_descriptor(
             JOIN unnest(ix.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
             JOIN pg_attribute a ON a.attrelid = ix.indrelid AND a.attnum = u.attnum
             WHERE n.nspname = $1 AND t.relname = $2 AND ix.indisprimary
+              AND u.ord <= ix.indnkeyatts
             ORDER BY u.ord
             "#,
             &[&schema, &table],
@@ -120,7 +121,9 @@ pub(crate) async fn load_descriptor(
             JOIN pg_attribute a ON a.attrelid = ix.indrelid AND a.attnum = u.attnum
             WHERE n.nspname = $1 AND t.relname = $2
               AND ix.indisvalid AND ix.indisunique AND NOT ix.indisprimary
+              AND ix.indisimmediate
               AND ix.indpred IS NULL AND ix.indexprs IS NULL
+              AND u.ord <= ix.indnkeyatts
             GROUP BY i.relname
             "#,
             &[&schema, &table],
@@ -339,6 +342,7 @@ fn decode_browse_rows(
 ) -> Result<ExecutedBrowse, TableBrowseError> {
     let extra = rows.len() as u32 > built.page_size;
     let take = built.page_size as usize;
+    let fetched = rows.len();
     let mut decoded = Vec::new();
     let mut identities = Vec::new();
     let mut omitted_rows = 0_u64;
@@ -354,7 +358,7 @@ fn decode_browse_rows(
             .map(|json| json.len())
             .unwrap_or(usize::MAX);
         if retained_bytes.saturating_add(bytes) > MAX_RESPONSE_BYTES {
-            omitted_rows += (take.saturating_sub(index)) as u64;
+            omitted_rows += fetched.saturating_sub(index) as u64;
             has_more = true;
             break;
         }
