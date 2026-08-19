@@ -12,6 +12,7 @@ pub(crate) mod managed;
 pub(crate) mod query_session;
 pub(crate) mod relational;
 pub(crate) mod settings;
+pub(crate) mod table_browse;
 
 use crate::credentials;
 use crate::storage;

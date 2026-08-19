@@ -52,10 +52,12 @@ pub async fn stop_managed_server(
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
     if let Some(id) = &connection_id {
         state.query_sessions.begin_connection_teardown(id).await;
+        state.table_browse.begin_connection_teardown(id).await;
     }
     let result = managed::stop(&state.pool, &payload.managed_server_id).await;
     if let Some(id) = &connection_id {
         state.query_sessions.end_connection_teardown(id).await;
+        state.table_browse.end_connection_teardown(id).await;
     }
     result
 }
@@ -69,10 +71,12 @@ pub async fn destroy_managed_server(
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
     if let Some(id) = &connection_id {
         state.query_sessions.begin_connection_teardown(id).await;
+        state.table_browse.begin_connection_teardown(id).await;
     }
     let result = managed::destroy(&state.pool, &payload.managed_server_id).await;
     if let Some(id) = &connection_id {
         state.query_sessions.end_connection_teardown(id).await;
+        state.table_browse.end_connection_teardown(id).await;
     }
     result
 }
@@ -87,10 +91,12 @@ pub async fn recreate_managed_server(
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
     if let Some(id) = &connection_id {
         state.query_sessions.begin_connection_teardown(id).await;
+        state.table_browse.begin_connection_teardown(id).await;
     }
     let result = managed::recreate(&state.pool, mode, &payload.managed_server_id).await;
     if let Some(id) = &connection_id {
         state.query_sessions.end_connection_teardown(id).await;
+        state.table_browse.end_connection_teardown(id).await;
     }
     result
 }

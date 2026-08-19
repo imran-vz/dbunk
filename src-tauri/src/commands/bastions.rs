@@ -283,6 +283,10 @@ async fn begin_referenced_connection_teardown(
             .query_sessions
             .begin_connection_teardown(connection_id)
             .await;
+        state
+            .table_browse
+            .begin_connection_teardown(connection_id)
+            .await;
     }
     Ok(connection_ids)
 }
@@ -300,6 +304,10 @@ async fn end_connection_teardown(state: &AppState, connection_ids: &[String]) {
     for connection_id in connection_ids {
         state
             .query_sessions
+            .end_connection_teardown(connection_id)
+            .await;
+        state
+            .table_browse
             .end_connection_teardown(connection_id)
             .await;
     }
