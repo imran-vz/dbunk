@@ -400,7 +400,8 @@ export type QueryNotice = { severity: string; message: string };
 export type QueryResultSet = {
   index: number;
   columns: Array<string | null>;
-  rows: Array<Array<string | null>>;
+  /** Row batches as received. Flatten at render — never copy prior rows on append. */
+  rowChunks: Array<Array<Array<string | null>>>;
   rowCount: number;
   partial: boolean;
   completed: boolean;
@@ -409,7 +410,6 @@ export type QueryExecutionTombstone = {
   status: QueryExecutionStatus;
   resultCount: number;
   rowCount: number;
-  affectedCount: number;
   noticeCount: number;
   omittedCount: number;
   runtimeMs: number;
@@ -439,13 +439,11 @@ export type QuerySessionState = {
   tabId: string;
   connectionId: string;
   generation: number;
-  nextSequence: number;
   transaction: QueryTransactionSnapshot;
   execution: QueryExecution | null;
   lastViewedAt: number;
   budgetOwners: Array<{ tabId: string; label: string; retainedBytes: number }>;
   state: "opening" | "open" | "lost" | "closed";
-  error: QuerySessionError | null;
 };
 
 /**
@@ -462,7 +460,12 @@ export type QueryOutcome =
       kind: "completed";
       runtimeMs: number;
       rowCount: number;
-      preview: QueryPreviewData;
+      /**
+       * Legacy `run_query` path stores rows here (and in `queryPreviews`).
+       * Persistent session completions leave this null — the Results tab
+       * reads `querySessions[tabId].execution` as the single retained copy.
+       */
+      preview: QueryPreviewData | null;
     }
   | { kind: "failed"; reason: string }
   | { kind: "cancelled" }

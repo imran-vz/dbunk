@@ -82,8 +82,9 @@ const applyConnectionUpdate = (
 
 /**
  * The single frontend owner for connection teardown ordering. Session bindings
- * are closed before the backend connection, while local workspace state is
- * removed only after the backend operation succeeds.
+ * are closed before the backend connection. Local workspace state is dropped
+ * after the backend call; disconnect still finishes that cleanup when the
+ * backend fails so the user can always force-disconnect.
  */
 const teardownConnectionWorkspace = async (
   state: AppStoreState,
@@ -521,17 +522,16 @@ export const createConnectionsSlice: StateCreator<
 
     const teardownBackend = isTauri()
       ? async () => {
-          await tauriInvoke("disconnect_connection", {
-            payload: { connectionId },
-          });
+          try {
+            await tauriInvoke("disconnect_connection", {
+              payload: { connectionId },
+            });
+          } catch (error) {
+            console.error("Failed to disconnect backend connection", error);
+          }
         }
       : undefined;
-    try {
-      await teardownConnectionWorkspace(state, connectionId, teardownBackend);
-    } catch (error) {
-      console.error("Failed to disconnect backend connection", error);
-      return;
-    }
+    await teardownConnectionWorkspace(state, connectionId, teardownBackend);
 
     set((state) => {
       const { [connectionId]: _droppedTab, ...remainingTabs } =

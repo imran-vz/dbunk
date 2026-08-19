@@ -12,6 +12,10 @@
 import type { StateCreator } from "zustand";
 
 import { querySessionChannelsAvailable } from "@/lib/query-session-channel";
+import {
+  formatQuerySessionError,
+  isQuerySessionError,
+} from "@/lib/query-session-error";
 import { pickSqlToRun } from "@/lib/sql";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
@@ -73,6 +77,7 @@ export type RelationalQueriesSlice = {
     tabId: string,
     options?: { overrideSql?: string },
   ) => Promise<QueryOutcome>;
+  markQueryCancelling: (tabId: string) => void;
   loadQueryHistory: () => Promise<void>;
   loadSavedQueries: () => Promise<void>;
   saveSavedQuery: (
@@ -216,12 +221,40 @@ export const createRelationalQueriesSlice: StateCreator<
           });
           return { kind: "cancelled" };
         }
-        result = persistent;
-      } else {
-        result = await tauriInvoke<RunQueryResult>("run_query", {
-          payload: { connectionId: tab.connectionId, query },
+        const entry = buildEntry({
+          status: "success",
+          runtimeMs: persistent.runtimeMs,
+          rowCount: persistent.rowCount,
         });
+        set((s) => {
+          const { [tabId]: _status, ...restStatus } = s.queryStatus;
+          const { [tabId]: _stalePreview, ...restPreviews } = s.queryPreviews;
+          return {
+            queryPreviews: restPreviews,
+            queryStatus: restStatus,
+            queryHistory: [entry, ...s.queryHistory].slice(
+              0,
+              QUERY_HISTORY_CAP,
+            ),
+            workspaceTabs: s.workspaceTabs.map((item) =>
+              item.id === tabId
+                ? { ...item, lastRun: "Just now", isDirty: false }
+                : item,
+            ),
+          };
+        });
+        get().applyConnectionActivity(tab.connectionId);
+        await persistEntry(entry);
+        return {
+          kind: "completed",
+          runtimeMs: persistent.runtimeMs,
+          rowCount: persistent.rowCount,
+          preview: null,
+        };
       }
+      result = await tauriInvoke<RunQueryResult>("run_query", {
+        payload: { connectionId: tab.connectionId, query },
+      });
       const entry = buildEntry({
         status: "success",
         runtimeMs: result.runtimeMs,
@@ -262,8 +295,10 @@ export const createRelationalQueriesSlice: StateCreator<
         preview,
       };
     } catch (error) {
-      const message = errorToMessage(error);
-      console.error("Query failed", {
+      const message = isQuerySessionError(error)
+        ? formatQuerySessionError(error)
+        : errorToMessage(error);
+      console.error("Query failed", error, {
         kind:
           error && typeof error === "object" && "kind" in error
             ? error.kind
@@ -294,6 +329,11 @@ export const createRelationalQueriesSlice: StateCreator<
       return { kind: "failed", reason: message };
     }
   },
+
+  markQueryCancelling: (tabId) =>
+    set((state) => ({
+      queryStatus: { ...state.queryStatus, [tabId]: { state: "cancelling" } },
+    })),
 
   loadQueryHistory: async () => {
     if (!isTauri()) {
