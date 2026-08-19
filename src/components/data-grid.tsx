@@ -647,18 +647,20 @@ export function DataGrid({
       cols.push({
         accessorFn: (row) => row[index],
         id: colName,
-        header: () => (
-          <button
-            type="button"
-            className="flex h-full w-full items-center px-2 text-left"
-            onClick={(event) => {
-              if (!serverBrowse) return;
-              serverBrowse.onHeaderSort(colName, event.shiftKey);
-            }}
-          >
+        header: () =>
+          serverBrowse ? (
+            <button
+              type="button"
+              className="flex h-full w-full items-center px-2 text-left"
+              onClick={(event) => {
+                serverBrowse.onHeaderSort(colName, event.shiftKey);
+              }}
+            >
+              <ColumnHeaderLabel name={colName} meta={meta} />
+            </button>
+          ) : (
             <ColumnHeaderLabel name={colName} meta={meta} />
-          </button>
-        ),
+          ),
         meta: { index },
         cell: (props) => (
           <EditableCell
