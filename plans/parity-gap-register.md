@@ -73,43 +73,41 @@ implementation's blast radius, not the severity of the missing capability.
 
 ### PAR-001: Query sessions, execution, results, and transactions
 
-**Current state:** Partial.
+**Current state:** Partial. The persistent PostgreSQL query-session foundation
+is complete; narrower execution follow-ons remain.
+
+**Progress (2026-08-19):** Plans 001 and 002 are DONE through commit `26268ca`.
+PostgreSQL query tabs now own dedicated backend sessions with bounded streamed
+results, cancellation, multiple result sets, notices, explicit transaction
+state and controls, retained-result budgeting, and lifecycle fencing. This
+satisfies the dependency needed to begin `PAR-002` without claiming the
+remaining items below are complete.
 
 **Evidence:**
 
-- `src-tauri/src/postgres/query.rs:16-61` checks out a pooled connection,
-  executes with `fetch_all`, and returns one `QueryResult`.
-- `src/lib/store/relational-queries.ts:150-273` models one request and one
-  completed result rather than a durable query session.
-- `src/components/query-editor/results-view.tsx:16-63` exposes only Results and
-  Explain views.
-- `src/components/query-editor/status-items.ts:20-38` has no transaction or
-  server-session state.
-- `src/components/query-editor/toolbar.tsx:127-216` disables execution while a
-  query is running and exposes no active cancellation or transaction controls.
+- `src-tauri/src/query_session/mod.rs` owns persistent actors, admission,
+  execution, acknowledgement credit, cancellation, transaction actions, and
+  deterministic teardown.
+- `src-tauri/src/query_session/observer.rs` derives transaction state without
+  consuming the SQLx metadata/mutation pool.
+- `src/lib/store/query-sessions.ts` owns the tab-keyed frontend lifecycle and
+  typed transaction commands.
+- `src/lib/query-session-budget.ts` enforces the retained-result budget and
+  preserves compact execution summaries when payloads are released.
+- `src/components/query-editor/results-view.tsx` and
+  `transaction-controls.tsx` expose multiple results, output/notices,
+  cancellation outcomes, and manual transaction recovery.
 
-**Missing pieces:**
+**Remaining pieces:**
 
-- Stable PostgreSQL session ownership per query tab.
-- Bounded initial fetch and incremental result batches.
-- Backpressure between Rust, Tauri IPC, state, and the rendered grid.
-- Query cancellation with explicit terminal states.
-- Configurable statement timeout and maximum-row policy per execution.
-- Multiple statements and multiple result sets with ordered metadata.
-- Batch policies: stop, continue, or prompt after a statement error.
-- Server notices, warnings, command tags, affected-row counts, and timings.
-- Partial-result and mid-stream failure representation.
+- Configurable maximum-row policy per execution, separate from hard retained
+  result limits.
+- Script policies to stop, continue, or prompt after a statement error.
+- Command tags. The current public driver exposes affected-row counts but not
+  tags.
 - Driver-bound parameters. Current bind-variable support is literal SQL
   substitution.
-- Autocommit and manual transaction modes.
-- Commit, rollback, savepoint, and isolation-level controls.
-- Visible transaction state, including aborted transactions.
-- Deterministic cleanup on tab close, disconnect, reconnect, window shutdown,
-  and frontend crash.
-- Recovery semantics that never imply a server transaction survived when its
-  connection did not.
-- Characterization and integration tests for lifecycle, cancellation,
-  backpressure, cleanup, reconnect, and transaction transitions.
+- Savepoint controls.
 
 **Target outcome:** A query tab owns a typed session descriptor and, while
 connected, a backend session handle. Executions have IDs and explicit state;
@@ -118,10 +116,11 @@ transaction state is server-derived and visible. PostgreSQL is implemented
 first behind contracts that do not force other engines to pretend they support
 identical semantics.
 
-**Implementation split:** Plan 001 lands the driver, actor, observer, IPC
-contract, and lifecycle fencing as a dark backend. Plan 002 owns the local UI
-mock checkpoint, typed frontend reducer, retained-result LRU release, controls,
-and activation. `PAR-001` is complete only when both plans are DONE.
+**Implementation split:** Plan 001 landed the driver, actor, observer, IPC
+contract, and lifecycle fencing as a dark backend. Plan 002 added the selected
+UI, typed frontend reducer, retained-result LRU release, controls, and
+activation. Both plans are DONE; the remaining items above are follow-on work
+and do not block the selected `PAR-002` plan.
 
 **Dependency:** None. This unblocks `PAR-002`, `PAR-003`, `PAR-004`, and
 `PAR-005`.
@@ -129,6 +128,25 @@ and activation. `PAR-001` is complete only when both plans are DONE.
 ### PAR-002: Server-backed table browsing
 
 **Current state:** Partial.
+
+**Selection (2026-08-19):** Next P0 planning target. It is unblocked by the
+completed query-session foundation, has direct correctness and performance
+impact on daily table browsing, and unlocks the identity/query metadata needed
+by `PAR-003`.
+
+**Planning (2026-08-19):** Authored as Plans 003 and 004 at commit `26268ca`.
+Plan 003 is a dark PostgreSQL-only backend: a parameterized browse contract
+(typed filters, raw WHERE mode behind a read-only browse connection,
+multi-column sort, keyset pagination with a labeled offset fallback,
+estimated/deferred counts, protocol cancellation with per-tab supersession,
+backend-authoritative row identity including `ctid` virtual identity, query
+inspection, and SQLite-backed grid preferences). Plan 004 activates it in
+PostgreSQL table tabs with per-tab state, wires the dead sort/page-size/
+expand-grid controls, and adds filter/sort history and presets. Additional
+implementation split rationale: browsing cannot reuse the query-session actor
+for execution because its simple-query protocol carries no bind parameters;
+it reuses the connect-spec, TLS, cancel-token, and teardown-fencing
+infrastructure instead.
 
 **Evidence:**
 
@@ -645,8 +663,9 @@ Parity work should reuse rather than replace these credible foundations:
 
 ## Recommended planning sequence
 
-1. `PAR-001`: query session and controlled execution foundation.
-2. `PAR-002`: server-backed grid operations.
+1. `PAR-001`: query-session foundation delivered by Plans 001 and 002;
+   remaining execution follow-ons stay tracked above.
+2. **Selected next:** `PAR-002`, server-backed grid operations.
 3. `PAR-003`: editable query results and generated DML review.
 4. `PAR-004`: backend-enforced production safety.
 5. `PAR-005`: durable workspace restoration and global navigation.
