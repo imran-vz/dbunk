@@ -528,13 +528,15 @@ async fn next_job(executor: &Executor) -> Option<Job> {
 }
 
 async fn execute_job(executor: &Arc<Executor>, job: Job) {
-    let run = run_kind(executor, &job);
-    tokio::pin!(run);
-    let result = loop {
-        tokio::select! {
-            result = &mut run => break result,
-            _ = executor.notify.notified() => {
-                drain_pending_cancel(executor).await;
+    let result = {
+        let run = run_kind(executor, &job);
+        tokio::pin!(run);
+        loop {
+            tokio::select! {
+                result = &mut run => break result,
+                _ = executor.notify.notified() => {
+                    drain_pending_cancel(executor).await;
+                }
             }
         }
     };
