@@ -22,6 +22,15 @@ vi.mock("@/lib/query-session-channel", () => ({
   setQuerySessionTransactionMode: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock("@/lib/table-browse-client", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/table-browse-client")>();
+  return {
+    ...actual,
+    closeTableBrowseForTab: vi.fn(() => Promise.resolve()),
+  };
+});
+
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import { querySessionChannelsAvailable } from "@/lib/query-session-channel";
 import {
@@ -32,11 +41,14 @@ import {
   tableStructureKey,
   useAppStore,
 } from "@/lib/store";
+import { defaultTableGridPrefs } from "@/lib/table-browse";
+import { closeTableBrowseForTab } from "@/lib/table-browse-client";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
 const mockedIsTauri = vi.mocked(isTauri);
 const mockedChannelsAvailable = vi.mocked(querySessionChannelsAvailable);
+const mockedCloseTableBrowseForTab = vi.mocked(closeTableBrowseForTab);
 
 const initialStoreState = useAppStore.getState();
 
@@ -50,6 +62,8 @@ beforeEach(() => {
   mockedChannelsAvailable.mockReturnValue(false);
   mockedInvoke.mockReset();
   mockedInvoke.mockResolvedValue(undefined);
+  mockedCloseTableBrowseForTab.mockReset();
+  mockedCloseTableBrowseForTab.mockResolvedValue(undefined);
   resetStore();
 });
 
@@ -3581,5 +3595,71 @@ describe("connectionOverviewTab", () => {
     expect(useAppStore.getState().connectionSchemaMapSchema).toEqual({
       "conn-2": "audit",
     });
+  });
+});
+
+describe("closeTab table browse cleanup", () => {
+  it("awaits closeTableBrowseForTab before dropping the tab", async () => {
+    let resolveClose: (() => void) | undefined;
+    mockedCloseTableBrowseForTab.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveClose = resolve;
+        }),
+    );
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "tab-1",
+          kind: "table",
+          label: "users",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+        },
+      ],
+      activeTabId: "tab-1",
+      tableBrowses: {
+        "tab-1": {
+          tabId: "tab-1",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          generation: 1,
+          typedFilters: [],
+          rawFilterText: "",
+          filterMode: "typed",
+          sort: [],
+          pageSize: 100,
+          page: 1,
+          cursorStack: [],
+          inflightRequestId: null,
+          appliedRequestId: null,
+          result: null,
+          loadStatus: { state: "idle" },
+          countStatus: { state: "idle" },
+          exactCount: null,
+          prefsLoaded: true,
+          prefs: defaultTableGridPrefs(),
+        },
+      },
+    });
+
+    const closePromise = useAppStore.getState().closeTab("tab-1");
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (mockedCloseTableBrowseForTab.mock.calls.length > 0) break;
+      await Promise.resolve();
+    }
+    expect(mockedCloseTableBrowseForTab).toHaveBeenCalledWith(
+      "conn-1",
+      "tab-1",
+    );
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+
+    resolveClose?.();
+    await closePromise;
+
+    expect(useAppStore.getState().workspaceTabs).toEqual([]);
+    expect(useAppStore.getState().tableBrowses["tab-1"]).toBeUndefined();
   });
 });
