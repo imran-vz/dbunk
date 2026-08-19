@@ -64,6 +64,7 @@ struct ExecutorInner {
     last_used: Instant,
     closed: bool,
     busy: bool,
+    pending_cancel: Option<(tokio_postgres::CancelToken, bool)>,
 }
 
 struct Executor {
@@ -156,36 +157,11 @@ impl TableBrowseManager {
                 cancel_requested: false,
             };
         };
-        let (job, connection) = {
+        let cancel_requested = {
             let mut inner = executor.inner.lock().await;
-            let Some(tab) = inner.tabs.get_mut(tab_id) else {
-                return CancelTableBrowseResult {
-                    cancel_requested: false,
-                };
-            };
-            let mut cancel_requested = false;
-            if let Some(job) = tab.queued.take() {
-                let _ = job.reply.send(Err(TableBrowseError::Cancelled));
-                cancel_requested = true;
-            }
-            if tab.in_flight_request_id.is_some() {
-                tab.interrupt = Interrupt::Cancel;
-                cancel_requested = true;
-            }
-            (
-                cancel_requested,
-                inner
-                    .connection
-                    .as_ref()
-                    .map(|connection| (connection.inner.cancel.clone(), connection.tls)),
-            )
+            apply_tab_cancel(&mut inner, tab_id)
         };
-        let mut cancel_requested = job;
-        if let Some((token, tls)) = connection {
-            if crate::query_session::postgres::cancel(token, tls).await {
-                cancel_requested = true;
-            }
-        }
+        executor.notify.notify_one();
         CancelTableBrowseResult { cancel_requested }
     }
 
@@ -221,8 +197,6 @@ impl TableBrowseManager {
     pub(crate) async fn close_all(&self) {
         let executors = {
             let mut state = self.inner.lock().await;
-            let ids = state.executors.keys().cloned().collect::<Vec<_>>();
-            state.closing.extend(ids);
             state
                 .executors
                 .drain()
@@ -250,12 +224,13 @@ impl TableBrowseManager {
     ) -> Result<JobResult, TableBrowseError> {
         let executor = self.executor_for(spec, &connection_id).await?;
         let (tx, mut rx) = oneshot::channel();
-        let cancel = {
+        let tab_id_key = tab_id.clone();
+        {
             let mut inner = executor.inner.lock().await;
             if inner.closed {
                 return Err(TableBrowseError::ConnectionClosing);
             }
-            enqueue_job(
+            let _ = enqueue_job(
                 &mut inner,
                 Job {
                     tab_id,
@@ -264,12 +239,7 @@ impl TableBrowseManager {
                     kind,
                     reply: tx,
                 },
-            )
-        };
-        if let Some((token, tls)) = cancel {
-            tokio::spawn(async move {
-                let _ = crate::query_session::postgres::cancel(token, tls).await;
-            });
+            );
         }
         executor.notify.notify_one();
         tokio::select! {
@@ -277,7 +247,7 @@ impl TableBrowseManager {
             _ = tokio::time::sleep(QUEUE_WAIT) => {
                 let timed_out = {
                     let mut inner = executor.inner.lock().await;
-                    take_queued(&mut inner, request_id)
+                    take_queued(&mut inner, &tab_id_key, request_id)
                 };
                 if let Some(job) = timed_out {
                     let _ = job.reply.send(Err(TableBrowseError::Timeout {
@@ -379,39 +349,84 @@ fn check_admission(state: &ManagerState) -> Result<(), TableBrowseError> {
 }
 
 fn enqueue_job(inner: &mut ExecutorInner, job: Job) -> Option<(tokio_postgres::CancelToken, bool)> {
-    let tab = inner.tabs.entry(job.tab_id.clone()).or_default();
-    if job.request_id < tab.latest_request_id {
-        let _ = job.reply.send(Err(TableBrowseError::Superseded));
-        return None;
-    }
-    tab.latest_request_id = job.request_id;
-    if let Some(queued) = tab.queued.take() {
-        let _ = queued.reply.send(Err(TableBrowseError::Superseded));
-    }
-    let cancel = if tab.in_flight_request_id.is_some() {
-        tab.interrupt = Interrupt::Supersede;
-        inner
-            .connection
-            .as_ref()
-            .map(|connection| (connection.inner.cancel.clone(), connection.tls))
+    let in_flight = {
+        let tab = inner.tabs.entry(job.tab_id.clone()).or_default();
+        if job.request_id < tab.latest_request_id {
+            let _ = job.reply.send(Err(TableBrowseError::Superseded));
+            return None;
+        }
+        tab.latest_request_id = job.request_id;
+        if let Some(queued) = tab.queued.take() {
+            let _ = queued.reply.send(Err(TableBrowseError::Superseded));
+        }
+        let in_flight = tab.in_flight_request_id.is_some();
+        if in_flight {
+            tab.interrupt = Interrupt::Supersede;
+        }
+        tab.queued = Some(job);
+        in_flight
+    };
+    if in_flight {
+        queue_protocol_cancel(inner);
+        inner.pending_cancel.clone()
     } else {
         None
-    };
-    tab.queued = Some(job);
-    cancel
+    }
 }
 
-fn take_queued(inner: &mut ExecutorInner, request_id: u64) -> Option<Job> {
-    for tab in inner.tabs.values_mut() {
-        if tab
-            .queued
-            .as_ref()
-            .is_some_and(|job| job.request_id == request_id)
-        {
-            return tab.queued.take();
+fn apply_tab_cancel(inner: &mut ExecutorInner, tab_id: &str) -> bool {
+    let (cancel_requested, in_flight) = {
+        let Some(tab) = inner.tabs.get_mut(tab_id) else {
+            return false;
+        };
+        let mut cancel_requested = false;
+        if let Some(job) = tab.queued.take() {
+            let _ = job.reply.send(Err(TableBrowseError::Cancelled));
+            cancel_requested = true;
         }
+        let in_flight = tab.in_flight_request_id.is_some();
+        if in_flight {
+            tab.interrupt = Interrupt::Cancel;
+            cancel_requested = true;
+        }
+        (cancel_requested, in_flight)
+    };
+    if in_flight {
+        queue_protocol_cancel(inner);
     }
-    None
+    cancel_requested
+}
+
+fn queue_protocol_cancel(inner: &mut ExecutorInner) {
+    if inner.pending_cancel.is_some() {
+        return;
+    }
+    if let Some(connection) = inner.connection.as_ref() {
+        inner.pending_cancel = Some((connection.inner.cancel.clone(), connection.tls));
+    }
+}
+
+fn take_queued(inner: &mut ExecutorInner, tab_id: &str, request_id: u64) -> Option<Job> {
+    let tab = inner.tabs.get_mut(tab_id)?;
+    if tab
+        .queued
+        .as_ref()
+        .is_some_and(|job| job.request_id == request_id)
+    {
+        tab.queued.take()
+    } else {
+        None
+    }
+}
+
+async fn drain_pending_cancel(executor: &Executor) {
+    let pending = {
+        let mut inner = executor.inner.lock().await;
+        inner.pending_cancel.take()
+    };
+    if let Some((token, tls)) = pending {
+        let _ = crate::query_session::postgres::cancel(token, tls).await;
+    }
 }
 
 async fn spawn_executor(
@@ -427,6 +442,7 @@ async fn spawn_executor(
             last_used: Instant::now(),
             closed: false,
             busy: false,
+            pending_cancel: None,
         }),
         notify: Notify::new(),
     });
@@ -452,23 +468,32 @@ async fn run_executor(executor: Arc<Executor>) {
 }
 
 async fn next_job(executor: &Executor) -> Option<Job> {
+    drain_pending_cancel(executor).await;
     let mut inner = executor.inner.lock().await;
     if inner.closed {
         return None;
     }
-    let mut expired = Vec::new();
-    let mut ready = None;
-    for tab in inner.tabs.values_mut() {
-        if let Some(job) = tab.queued.as_ref() {
-            if job.enqueued_at.elapsed() >= QUEUE_WAIT {
-                expired.push(tab.queued.take().expect("queued"));
-                continue;
-            }
-            if ready.is_none() {
-                ready = tab.queued.take();
-            }
+    let mut expired_ids = Vec::new();
+    let mut ready_id: Option<String> = None;
+    let mut ready_at: Option<Instant> = None;
+    for (tab_id, tab) in &inner.tabs {
+        let Some(job) = tab.queued.as_ref() else {
+            continue;
+        };
+        if job.enqueued_at.elapsed() >= QUEUE_WAIT {
+            expired_ids.push(tab_id.clone());
+            continue;
+        }
+        if ready_at.is_none_or(|at| job.enqueued_at < at) {
+            ready_at = Some(job.enqueued_at);
+            ready_id = Some(tab_id.clone());
         }
     }
+    let expired = expired_ids
+        .into_iter()
+        .filter_map(|id| inner.tabs.get_mut(&id)?.queued.take())
+        .collect::<Vec<_>>();
+    let ready = ready_id.and_then(|id| inner.tabs.get_mut(&id)?.queued.take());
     drop(inner);
     for job in expired {
         let _ = job.reply.send(Err(TableBrowseError::Timeout {
@@ -476,25 +501,43 @@ async fn next_job(executor: &Executor) -> Option<Job> {
         }));
     }
     let job = ready?;
+    let mut missing_tab = false;
+    let mut superseded = false;
     {
         let mut inner = executor.inner.lock().await;
-        if let Some(tab) = inner.tabs.get_mut(&job.tab_id) {
-            if job.request_id != tab.latest_request_id {
-                drop(inner);
-                let _ = job.reply.send(Err(TableBrowseError::Superseded));
-                return None;
+        match inner.tabs.get_mut(&job.tab_id) {
+            None => missing_tab = true,
+            Some(tab) if job.request_id != tab.latest_request_id => superseded = true,
+            Some(tab) => {
+                tab.in_flight_request_id = Some(job.request_id);
+                tab.interrupt = Interrupt::None;
+                inner.busy = true;
+                inner.last_used = Instant::now();
             }
-            tab.in_flight_request_id = Some(job.request_id);
-            tab.interrupt = Interrupt::None;
-            inner.busy = true;
-            inner.last_used = Instant::now();
         }
+    }
+    if missing_tab {
+        let _ = job.reply.send(Err(TableBrowseError::Cancelled));
+        return None;
+    }
+    if superseded {
+        let _ = job.reply.send(Err(TableBrowseError::Superseded));
+        return None;
     }
     Some(job)
 }
 
 async fn execute_job(executor: &Arc<Executor>, job: Job) {
-    let result = run_kind(executor, &job).await;
+    let run = run_kind(executor, &job);
+    tokio::pin!(run);
+    let result = loop {
+        tokio::select! {
+            result = &mut run => break result,
+            _ = executor.notify.notified() => {
+                drain_pending_cancel(executor).await;
+            }
+        }
+    };
     let result = rewrite_interrupt(executor, &job, result).await;
     let _ = job.reply.send(result);
     let mut inner = executor.inner.lock().await;
@@ -507,6 +550,7 @@ async fn execute_job(executor: &Arc<Executor>, job: Job) {
     inner.busy = false;
     inner.last_used = Instant::now();
     drop(inner);
+    drain_pending_cancel(executor).await;
     executor.notify.notify_one();
 }
 
@@ -753,6 +797,7 @@ async fn close_executor(executor: &Executor, fence: bool) {
             .connection
             .as_ref()
             .map(|connection| (connection.inner.cancel.clone(), connection.tls));
+        inner.pending_cancel = None;
         inner.connection = None;
         inner.cache.clear();
         (queued, cancel)
@@ -796,7 +841,16 @@ mod tests {
             last_used: Instant::now(),
             closed: false,
             busy: false,
+            pending_cancel: None,
         }
+    }
+
+    fn dummy_executor() -> Arc<Executor> {
+        Arc::new(Executor {
+            spec: dummy_spec("c"),
+            inner: Mutex::new(inner()),
+            notify: Notify::new(),
+        })
     }
 
     fn job(
@@ -876,9 +930,76 @@ mod tests {
             },
         );
         let (next, _rx) = job("tab", 2);
-        enqueue_job(&mut inner, next);
+        let cancel = enqueue_job(&mut inner, next);
         assert_eq!(inner.tabs["tab"].interrupt, Interrupt::Supersede);
         assert_eq!(inner.tabs["tab"].in_flight_request_id, Some(1));
+        assert_eq!(
+            inner.tabs["tab"].queued.as_ref().map(|job| job.request_id),
+            Some(2)
+        );
+        assert!(cancel.is_none());
+        assert!(inner.pending_cancel.is_none());
+    }
+
+    #[tokio::test]
+    async fn queue_wait_timeout_lookup_is_tab_scoped() {
+        let mut inner = inner();
+        let (job_a, _rx_a) = job("tab-a", 1);
+        let (job_b, _rx_b) = job("tab-b", 1);
+        enqueue_job(&mut inner, job_a);
+        enqueue_job(&mut inner, job_b);
+        let taken = take_queued(&mut inner, "tab-a", 1).expect("tab a");
+        assert_eq!(taken.tab_id, "tab-a");
+        assert_eq!(taken.request_id, 1);
+        assert!(inner.tabs["tab-a"].queued.is_none());
+        assert_eq!(
+            inner.tabs["tab-b"]
+                .queued
+                .as_ref()
+                .map(|job| job.request_id),
+            Some(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_tab_without_in_flight_does_not_queue_protocol_cancel() {
+        let mut inner = inner();
+        inner.tabs.insert(
+            "other".into(),
+            TabSlot {
+                latest_request_id: 1,
+                queued: None,
+                in_flight_request_id: Some(1),
+                interrupt: Interrupt::None,
+            },
+        );
+        let (queued, rx) = job("tab", 1);
+        enqueue_job(&mut inner, queued);
+        let requested = apply_tab_cancel(&mut inner, "tab");
+        assert!(requested);
+        assert!(inner.pending_cancel.is_none());
+        assert!(inner.tabs["tab"].queued.is_none());
+        assert_eq!(inner.tabs["other"].interrupt, Interrupt::None);
+        assert_eq!(inner.tabs["other"].in_flight_request_id, Some(1));
+        assert!(matches!(rx.await, Ok(Err(TableBrowseError::Cancelled))));
+
+        let idle = apply_tab_cancel(&mut inner, "idle");
+        assert!(!idle);
+        assert!(inner.pending_cancel.is_none());
+    }
+
+    #[tokio::test]
+    async fn close_all_does_not_leave_connection_ids_in_closing() {
+        let manager = TableBrowseManager::new();
+        {
+            let mut state = manager.inner.lock().await;
+            state.executors.insert("c1".into(), dummy_executor());
+            state.executors.insert("c2".into(), dummy_executor());
+        }
+        manager.close_all().await;
+        let state = manager.inner.lock().await;
+        assert!(state.executors.is_empty());
+        assert!(state.closing.is_empty());
     }
 
     #[tokio::test]
