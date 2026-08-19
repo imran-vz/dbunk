@@ -256,6 +256,35 @@ async fn table_browse_live_keyset_offset_counts_and_structure() {
     let expr = manager.browse(spec.clone(), expr).await.expect("expr");
     assert_eq!(expr.identity.kind, BrowseIdentityKind::Virtual);
 
+    let mut parts = browse_payload("browse-pages", "browse_fixture", "keyless_parts");
+    parts.tab_id = "parts".into();
+    parts.page_size = 5;
+    parts.page_request = BrowsePageRequest::Keyset { cursor: None };
+    let parts_page = manager
+        .browse(spec.clone(), parts.clone())
+        .await
+        .expect("parts");
+    assert_eq!(parts_page.identity.kind, BrowseIdentityKind::Virtual);
+    assert_eq!(parts_page.identity.columns, ["tableoid", "ctid"]);
+    let part_ids = parts_page.row_identity.clone().unwrap_or_default();
+    let unique_part_ids = part_ids
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(unique_part_ids.len(), part_ids.len());
+    if parts_page.page_info.mode == BrowsePageMode::Keyset {
+        parts.request_id = 2;
+        parts.page_request = BrowsePageRequest::Keyset {
+            cursor: parts_page.page_info.next_cursor.clone(),
+        };
+        let next = manager
+            .browse(spec.clone(), parts)
+            .await
+            .expect("parts next");
+        let next_ids = next.row_identity.clone().unwrap_or_default();
+        assert!(part_ids.iter().all(|id| !next_ids.contains(id)));
+    }
+
     let admin = session_postgres::connect(&spec).await.expect("admin");
     let schema = format!("browse_live_{}", uuid::Uuid::new_v4().simple());
     admin
@@ -391,8 +420,44 @@ async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
         .await
         .ok();
 
-    sleepy.request_id = 11;
+    let pid = {
+        let executor = manager
+            .inner
+            .lock()
+            .await
+            .executors
+            .get("browse-cancel")
+            .cloned()
+            .expect("executor");
+        let inner = executor.inner.lock().await;
+        inner.connection.as_ref().expect("socket").inner.pid
+    };
+    let _ = admin
+        .client
+        .execute("SELECT pg_terminate_backend($1)", &[&pid])
+        .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    sleepy.request_id = 12;
+    sleepy.tab_id = "reconnect".into();
+    sleepy.filters.clear();
+    let recovered = match manager.browse(spec.clone(), sleepy.clone()).await {
+        Ok(result) => result,
+        Err(TableBrowseError::ConnectionLost) => {
+            sleepy.request_id = 13;
+            manager
+                .browse(spec.clone(), sleepy.clone())
+                .await
+                .expect("reconnect")
+        }
+        Err(error) => panic!("unexpected {error:?}"),
+    };
+    assert!(!recovered.rows.is_empty());
+
+    sleepy.request_id = 14;
     sleepy.tab_id = "teardown".into();
+    sleepy.filters = vec![BrowseFilter::RawSql {
+        text: "(SELECT pg_sleep(20))::text IS NULL".into(),
+    }];
     let inflight = {
         let manager = manager.clone();
         let spec = spec.clone();

@@ -150,8 +150,9 @@ identity; see the **Keyspace model** section below.
   tables render **read-only**). Table Browse is backend-authoritative:
   primary key, else the smallest qualifying unique index (valid,
   immediate, non-partial, non-expression, all-non-nullable; ties by
-  index name), else a `ctid` virtual identity on PostgreSQL 14+ heap
-  tables, else `none`. `stable_order_columns` / `pickRowIdentity` are
+  index name), else a virtual identity (`ctid` on ordinary heaps,
+  `(tableoid, ctid)` on partitioned tables), else `none`.
+  `stable_order_columns` / `pickRowIdentity` are
   unchanged for non-browse engines and the dark-period live path.
 
 ## Keyspace model (keyvalue class only)
@@ -220,7 +221,8 @@ ADR-0009 for the writes-by-default posture.
   filters, and sorts a relation on a dedicated read-only tokio-postgres
   socket. Filters bind every value as `($N::text)::<cast_type>` using
   `format_type`; keyset paging covers identity order (including `ctid` on
-  PostgreSQL 14+) and everything else falls back to labeled offset.
+  ordinary heaps and `(tableoid, ctid)` on partitioned tables, PostgreSQL
+  14+) and everything else falls back to labeled offset.
   Estimated counts use `reltuples` or `EXPLAIN`; exact `COUNT(*)` is a
   separate command. It is separate from the SQLx pool and from the live
   `load_table_data` path, which remains canonical for every engine until
