@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 
 import type {
   QueryDatabaseError,
+  QueryExecutionTerminalStatus,
   QuerySessionError,
   QueryTransactionSnapshot,
 } from "@/lib/store/types";
@@ -29,7 +30,7 @@ export type QuerySessionEvent =
   | { kind: "notice"; severity: string; message: string }
   | {
       kind: "executionCompleted";
-      status: string;
+      status: QueryExecutionTerminalStatus;
       transaction: QueryTransactionSnapshot;
       omittedRows: number;
       omittedResultSets: number;
@@ -244,20 +245,55 @@ export async function executeQuerySession(
   return settled;
 }
 
-export const querySessionIdForTab = (tabId: string) =>
+const querySessionIdForTab = (tabId: string) =>
   bindings.get(tabId)?.sessionId ?? null;
-export const invokeQuerySession = <T>(
-  tabId: string,
-  command: string,
-  payload: Record<string, string | number | boolean | null> = {},
-) => {
+
+const sessionIdForTab = (tabId: string): string => {
   const sessionId = querySessionIdForTab(tabId);
-  if (!sessionId)
-    return Promise.reject({
-      kind: "sessionNotFound",
-    } satisfies QuerySessionError);
-  return tauriInvoke<T>(command, { payload: { sessionId, ...payload } });
+  if (!sessionId) throw { kind: "sessionNotFound" } satisfies QuerySessionError;
+  return sessionId;
 };
+
+export async function cancelQueryExecution(
+  tabId: string,
+  executionId: string,
+): Promise<void> {
+  await tauriInvoke("cancel_query_execution", {
+    payload: { sessionId: sessionIdForTab(tabId), executionId },
+  });
+}
+
+export const setQuerySessionTransactionMode = (
+  tabId: string,
+  mode: QueryTransactionSnapshot["mode"],
+) =>
+  tauriInvoke<QueryTransactionSnapshot>("set_query_transaction_mode", {
+    payload: { sessionId: sessionIdForTab(tabId), mode },
+  });
+
+export const setQuerySessionTransactionIsolation = (
+  tabId: string,
+  manualIsolation: QueryTransactionSnapshot["manualIsolation"],
+) =>
+  tauriInvoke<QueryTransactionSnapshot>("set_query_transaction_isolation", {
+    payload: { sessionId: sessionIdForTab(tabId), manualIsolation },
+  });
+
+export const commitQueryTransaction = (tabId: string) =>
+  tauriInvoke<QueryTransactionSnapshot>("commit_query_transaction", {
+    payload: { sessionId: sessionIdForTab(tabId) },
+  });
+
+export const rollbackQueryTransaction = (tabId: string) =>
+  tauriInvoke<QueryTransactionSnapshot>("rollback_query_transaction", {
+    payload: { sessionId: sessionIdForTab(tabId) },
+  });
+
+export const refreshQueryTransaction = (tabId: string) =>
+  tauriInvoke<QueryTransactionSnapshot>("refresh_query_transaction_state", {
+    payload: { sessionId: sessionIdForTab(tabId) },
+  });
+
 export async function closeQuerySessionForTab(tabId: string) {
   const binding = bindings.get(tabId);
   if (!binding) return;
