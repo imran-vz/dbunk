@@ -194,3 +194,32 @@ SELECT
   max(occurred_at) AS last_seen_at
 FROM analytics.events
 GROUP BY account_id, event_name;
+
+CREATE SCHEMA browse_fixture;
+
+CREATE TABLE browse_fixture.keyless_dupes (
+  label text NOT NULL,
+  amount integer NOT NULL
+);
+INSERT INTO browse_fixture.keyless_dupes (label, amount)
+SELECT 'dup-' || (g % 10), g % 5
+FROM generate_series(1, 40) AS g;
+
+CREATE TABLE browse_fixture.expr_unique (
+  id integer,
+  email text
+);
+CREATE UNIQUE INDEX expr_unique_lower_email
+  ON browse_fixture.expr_unique (lower(email));
+INSERT INTO browse_fixture.expr_unique (id, email) VALUES
+  (1, 'Ada@example.com'),
+  (1, 'ada@other.example'),
+  (NULL, 'nobody@example.com');
+
+CREATE TABLE browse_fixture.large_rows (
+  id bigint PRIMARY KEY,
+  payload text NOT NULL
+);
+INSERT INTO browse_fixture.large_rows (id, payload)
+SELECT g, 'row-' || g
+FROM generate_series(1, 100000) AS g;

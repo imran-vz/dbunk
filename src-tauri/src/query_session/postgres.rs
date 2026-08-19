@@ -486,7 +486,7 @@ fn bound_metadata(columns: &mut [Option<String>], result: &mut ExecutionTotals) 
         }
     }
 }
-fn truncate_utf8(value: &str, max: usize, reasons: &mut Vec<String>) -> String {
+pub(crate) fn truncate_utf8(value: &str, max: usize, reasons: &mut Vec<String>) -> String {
     if value.len() <= max {
         return value.to_string();
     }
@@ -497,7 +497,7 @@ fn truncate_utf8(value: &str, max: usize, reasons: &mut Vec<String>) -> String {
     reasons.push("cellBytes".into());
     value[..end].to_string()
 }
-fn shrink_row(values: &mut [Option<String>], reasons: &mut Vec<String>) {
+pub(crate) fn shrink_row(values: &mut [Option<String>], reasons: &mut Vec<String>) {
     while serde_json::to_vec(values)
         .map(|json| json.len())
         .unwrap_or(usize::MAX)

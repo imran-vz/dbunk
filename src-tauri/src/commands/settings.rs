@@ -133,6 +133,7 @@ pub async fn reset_credential_storage(
     state: State<'_, AppState>,
 ) -> Result<AppSettingsSnapshot, String> {
     state.inner().query_sessions.close_all().await;
+    state.inner().table_browse.close_all().await;
     credentials::reset(&state.inner().pool).await?;
     load_app_settings(state).await
 }
