@@ -17,7 +17,7 @@ relevant entity (e.g. a new Pub/Sub Session action goes in
 | `credentials.ts`        | App Settings, Credential Storage Mode lifecycle                                  | shared     |
 | `relational-tables.ts`  | Schema Explorer, Table Structure, Cell Edits, DDL, Database Overview, Table Data | relational |
 | `relational-queries.ts` | Query History, Saved Queries, query editor + run state                           | relational |
-| `query-sessions.ts`     | Persistent PostgreSQL session lifecycle, streamed results, transactions          | relational |
+| `query-sessions.ts`     | Persistent PostgreSQL session lifecycle, streamed results, transactions (`applyQueryTransactionCommand`) | relational |
 | `keyvalue-workspace.ts` | (placeholder) Keyspace Browser + Key Inspector client cache                      | keyvalue   |
 | `keyvalue-pubsub.ts`    | (placeholder) Pub/Sub Session client metadata                                    | keyvalue   |
 

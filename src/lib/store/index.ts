@@ -93,6 +93,7 @@ export type {
   WorkspaceTab,
 } from "./types";
 export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
+export type { QueryTransactionCommand } from "./query-sessions";
 
 /**
  * The workspace Zustand store — composed of domain-concept slices

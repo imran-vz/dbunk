@@ -115,15 +115,6 @@ export const createWorkspaceTabsSlice: StateCreator<
   setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
 
   closeTab: async (tabId) => {
-    const session = get().querySessions[tabId];
-    if (
-      session &&
-      session.transaction.status !== "idle" &&
-      !window.confirm(
-        "Close this query session? Its active or unresolved transaction will be rolled back.",
-      )
-    )
-      return;
     await get().closeQuerySessionForTab(tabId);
     set((state) => {
       const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
