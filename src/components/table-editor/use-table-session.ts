@@ -392,10 +392,14 @@ export function useTableSession(tab: WorkspaceTab) {
     },
     setCellEdit: withRef(setTableCellEdit),
     discardEdits: withRef(discardTableCellEdits),
-    commitEdits: withOutcomeRef(commitTableCellEdits),
+    commitEdits: withOutcomeRef((tableRef) =>
+      commitTableCellEdits(tableRef, tab.id),
+    ),
     addRow: withOutcomeRef((tableRef, values: InsertRowPayloadEntry[]) =>
       insertTableRow(tableRef, values),
     ),
-    deleteRows: withOutcomeRef(deleteTableRows),
+    deleteRows: withOutcomeRef((tableRef, indices: number[]) =>
+      deleteTableRows(tableRef, indices, tab.id),
+    ),
   };
 }

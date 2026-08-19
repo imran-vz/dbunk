@@ -929,6 +929,30 @@ describe("TableEditorPanel server browse", () => {
     ).toBeTruthy();
   });
 
+  it("prompts before refresh discards pending edits", () => {
+    seedBrowse();
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByText("Discard pending edits?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText("Discard pending edits?")).toBeNull();
+    expect(
+      useAppStore.getState().tableEdits[
+        tableDataKey("conn-1", "public", "users")
+      ],
+    ).toBeTruthy();
+  });
+
+  it("offers Cancel while an exact count is loading", () => {
+    seedBrowse({ countStatus: { state: "loading" } });
+    render(<TableEditorPanel tab={tableTab} />);
+    expect(screen.getByRole("button", { name: "Counting…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
   it("shows honest read-only copy for virtual browse identity", () => {
     seedBrowse({
       result: {

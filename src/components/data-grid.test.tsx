@@ -291,6 +291,7 @@ describe("DataGrid server browse mode", () => {
     browse.onApplyTypedFilter.mockClear();
     browse.onPageSizeChange.mockClear();
     browse.onHeaderSort.mockClear();
+    browse.onCancel.mockClear();
   });
 
   it("wires page size options and expand controls", () => {
@@ -361,5 +362,34 @@ describe("DataGrid server browse mode", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toMatch(/syntax error at or near "SELEC"/);
     expect(alert.textContent).toMatch(/position 14/);
+  });
+
+  it("sorts from column headers in browse mode", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={browse}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "id" }));
+    expect(browse.onHeaderSort).toHaveBeenCalledWith("id", false);
+  });
+
+  it("does not make column headers sort buttons without serverBrowse", () => {
+    render(<DataGrid data={sampleRows} columns={sampleColumns} />);
+    expect(screen.queryByRole("button", { name: "id" })).toBeNull();
+  });
+
+  it("exposes Cancel browse while a browse load is in flight", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={{ ...browse, loadStatus: { state: "loading" } }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel browse" }));
+    expect(browse.onCancel).toHaveBeenCalledTimes(1);
   });
 });
