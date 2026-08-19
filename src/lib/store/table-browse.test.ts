@@ -32,7 +32,12 @@ vi.mock("@/lib/query-session-channel", () => ({
   setQuerySessionTransactionMode: vi.fn(() => Promise.resolve()),
 }));
 
-import { useAppStore } from "@/lib/store";
+import {
+  type Connection,
+  type TableStructure,
+  tableStructureKey,
+  useAppStore,
+} from "@/lib/store";
 import type {
   BrowseFilter,
   BrowseSortKey,
@@ -41,14 +46,17 @@ import type {
 import {
   browseTable,
   closeTableBrowseForTab,
+  countTableBrowseRows,
   loadTableGridPrefs,
   saveTableGridPrefs,
   type TableBrowseClientResult,
 } from "@/lib/table-browse-client";
-import { isTauri } from "@/lib/tauri";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedIsTauri = vi.mocked(isTauri);
+const mockedInvoke = vi.mocked(tauriInvoke);
 const mockedBrowseTable = vi.mocked(browseTable);
+const mockedCountTableBrowseRows = vi.mocked(countTableBrowseRows);
 const mockedCloseTableBrowseForTab = vi.mocked(closeTableBrowseForTab);
 const mockedLoadTableGridPrefs = vi.mocked(loadTableGridPrefs);
 const mockedSaveTableGridPrefs = vi.mocked(saveTableGridPrefs);
@@ -125,8 +133,11 @@ const idSort = (
 
 beforeEach(() => {
   mockedIsTauri.mockReturnValue(true);
+  mockedInvoke.mockReset();
+  mockedInvoke.mockResolvedValue(undefined);
   mockedBrowseTable.mockReset();
   mockedBrowseTable.mockResolvedValue(okResult());
+  mockedCountTableBrowseRows.mockReset();
   mockedCloseTableBrowseForTab.mockReset();
   mockedCloseTableBrowseForTab.mockResolvedValue(undefined);
   mockedLoadTableGridPrefs.mockReset();
@@ -172,18 +183,19 @@ describe("table browse newest-request-wins", () => {
 });
 
 describe("table browse superseded results", () => {
-  it("stays loading when the first request is superseded", async () => {
+  it("sets loadStatus idle when the first request is superseded", async () => {
     mockedBrowseTable.mockResolvedValueOnce({ kind: "superseded" });
 
     await useAppStore
       .getState()
       .openTableBrowse("tab-1", "conn-1", "public", "users");
 
-    expect(tabState()?.loadStatus).toEqual({ state: "loading" });
+    expect(tabState()?.loadStatus).toEqual({ state: "idle" });
     expect(tabState()?.result).toBeNull();
+    expect(tabState()?.inflightRequestId).toBeNull();
   });
 
-  it("keeps previous rows and does not record an error when a later request is superseded", async () => {
+  it("restores loadStatus success and keeps previous rows when a later request is superseded", async () => {
     await useAppStore
       .getState()
       .openTableBrowse("tab-1", "conn-1", "public", "users");
@@ -192,8 +204,20 @@ describe("table browse superseded results", () => {
     mockedBrowseTable.mockResolvedValueOnce({ kind: "superseded" });
     await useAppStore.getState().refreshTableBrowse("tab-1");
 
-    expect(tabState()?.loadStatus.state).not.toBe("error");
+    expect(tabState()?.loadStatus).toEqual({ state: "success" });
     expect(tabState()?.result?.rows).toEqual([["1"]]);
+    expect(tabState()?.inflightRequestId).toBeNull();
+  });
+
+  it("sets countStatus idle when a count request is superseded", async () => {
+    await useAppStore
+      .getState()
+      .openTableBrowse("tab-1", "conn-1", "public", "users");
+    mockedCountTableBrowseRows.mockResolvedValueOnce({ kind: "superseded" });
+
+    await useAppStore.getState().countTableBrowseRows("tab-1");
+
+    expect(tabState()?.countStatus).toEqual({ state: "idle" });
   });
 });
 
@@ -391,6 +415,30 @@ describe("table browse prefs and history", () => {
     );
   });
 
+  it("persists page size after a successful page-size browse", async () => {
+    vi.useFakeTimers();
+    await useAppStore
+      .getState()
+      .openTableBrowse("tab-1", "conn-1", "public", "users");
+    expect(mockedSaveTableGridPrefs).not.toHaveBeenCalled();
+
+    await useAppStore.getState().setTableBrowsePageSize("tab-1", 25);
+    expect(tabState()?.pageSize).toBe(25);
+    expect(tabState()?.prefs.pageSize).toBe(25);
+    expect(mockedSaveTableGridPrefs).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(399);
+    expect(mockedSaveTableGridPrefs).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockedSaveTableGridPrefs).toHaveBeenCalledTimes(1);
+    expect(mockedSaveTableGridPrefs).toHaveBeenCalledWith(
+      "conn-1",
+      "public",
+      "users",
+      expect.objectContaining({ pageSize: 25 }),
+    );
+  });
+
   it("caps filter history at 20 after 21 filter applies", async () => {
     await useAppStore
       .getState()
@@ -520,5 +568,126 @@ describe("table browse filter mode and clear", () => {
     });
     expect(tabState()?.typedFilters).toEqual([]);
     expect(tabState()?.rawFilterText).toBe("");
+  });
+});
+
+describe("table browse edit identity", () => {
+  const pgConnection: Connection = {
+    id: "conn-1",
+    name: "Local",
+    database: "dbunk",
+    status: "Connected",
+    engine: "PostgreSQL",
+    host: "localhost",
+    port: 5432,
+    user: "postgres",
+    password: "",
+    role: "admin",
+    latency: "10 ms",
+    ssl: true,
+  };
+
+  const usersStructure: TableStructure = {
+    columns: [
+      {
+        name: "id",
+        dataType: "integer",
+        nullable: false,
+        defaultValue: null,
+        isPrimaryKey: true,
+        ordinalPosition: 1,
+      },
+      {
+        name: "name",
+        dataType: "text",
+        nullable: false,
+        defaultValue: null,
+        isPrimaryKey: false,
+        ordinalPosition: 2,
+      },
+    ],
+    primaryKey: ["id"],
+    foreignKeys: [],
+    indexes: [],
+    constraints: [],
+    capabilities: {
+      columns: true,
+      primaryKey: true,
+      foreignKeys: true,
+      indexes: true,
+      constraints: true,
+      canInsertRows: true,
+      canUpdateRows: true,
+      canDeleteRows: true,
+      canAlterSchema: true,
+      uniquenessGuarantee: "exact",
+    },
+  };
+
+  const nameColumns = [
+    { name: "id", castType: "integer", nullable: false },
+    { name: "name", castType: "text", nullable: false },
+  ];
+
+  it("commits cell edits using tab B rows when two browse tabs share a table", async () => {
+    mockedBrowseTable
+      .mockResolvedValueOnce(
+        okResult({ columns: nameColumns, rows: [["1", "from-a"]] }),
+      )
+      .mockResolvedValueOnce(
+        okResult({ columns: nameColumns, rows: [["99", "from-b"]] }),
+      );
+
+    useAppStore.setState({
+      connections: [pgConnection],
+      tableStructure: {
+        [tableStructureKey("conn-1", "public", "users")]: usersStructure,
+      },
+    });
+
+    await useAppStore
+      .getState()
+      .openTableBrowse("tab-a", "conn-1", "public", "users");
+    await useAppStore
+      .getState()
+      .openTableBrowse("tab-b", "conn-1", "public", "users");
+
+    expect(tabState("tab-a")?.result?.rows).toEqual([["1", "from-a"]]);
+    expect(tabState("tab-b")?.result?.rows).toEqual([["99", "from-b"]]);
+
+    useAppStore
+      .getState()
+      .setTableCellEdit(
+        { connectionId: "conn-1", schema: "public", table: "users" },
+        0,
+        1,
+        "edited",
+      );
+
+    mockedInvoke.mockResolvedValueOnce({ rowsAffected: 1, runtimeMs: 5 });
+    mockedBrowseTable.mockResolvedValue(okResult({ columns: nameColumns }));
+
+    const outcome = await useAppStore
+      .getState()
+      .commitTableCellEdits(
+        { connectionId: "conn-1", schema: "public", table: "users" },
+        "tab-b",
+      );
+
+    expect(outcome.kind).toBe("completed");
+    expect(mockedInvoke).toHaveBeenCalledWith("commit_cell_edits", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        edits: [
+          {
+            rowIndex: 0,
+            identity: [{ column: "id", value: "99" }],
+            set: [{ column: "name", value: "edited" }],
+          },
+        ],
+      },
+    });
   });
 });
