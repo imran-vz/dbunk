@@ -27,6 +27,7 @@ import {
   tableSchemaMapScope,
 } from "@/lib/schema-graph";
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
+import { browseCellsToGrid } from "@/lib/table-browse";
 import {
   buildTableSessionSnapshot,
   resolveTableRefByName,
@@ -37,6 +38,7 @@ import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import {
   buildDeleteRowsPayload,
   buildEditPayload,
+  type EditDataSource,
   pollMutationsToCompletion,
   resolveEditContext,
   resolveStructureCommitContext,
@@ -88,6 +90,51 @@ type CommitCellEditsResult = {
   database?: string;
   table?: string;
   mutationIds?: string[];
+};
+
+const refreshAfterWrite = async (
+  get: () => AppStoreState,
+  ref: TableRef,
+  dataKey: string,
+) => {
+  const hasBrowse = Object.values(get().tableBrowses).some(
+    (item) =>
+      item.connectionId === ref.connectionId &&
+      item.schema === ref.schema &&
+      item.table === ref.table,
+  );
+  if (hasBrowse) {
+    await get().refreshTableBrowsesForRelation(
+      ref.connectionId,
+      ref.schema,
+      ref.table,
+    );
+    return;
+  }
+  await get().refreshTableData(dataKey);
+};
+
+const browseDataSourceFor = (
+  state: AppStoreState,
+  ref: TableRef,
+): EditDataSource | undefined => {
+  const tab = Object.values(state.tableBrowses).find(
+    (item) =>
+      item.connectionId === ref.connectionId &&
+      item.schema === ref.schema &&
+      item.table === ref.table &&
+      item.result !== null,
+  );
+  if (!tab?.result) return undefined;
+  return {
+    connectionId: ref.connectionId,
+    schema: ref.schema,
+    table: ref.table,
+    columns: tab.result.columns.map((column) => column.name),
+    rows: browseCellsToGrid(tab.result.rows),
+    identityKind: tab.result.identity.kind,
+    identityColumns: tab.result.identity.columns,
+  };
 };
 
 type PositionRow = {
@@ -466,6 +513,7 @@ export const createRelationalTablesSlice: StateCreator<
       tableStructure: state.tableStructure,
       connections: state.connections,
       ref,
+      dataSource: browseDataSourceFor(state, ref),
       capability: "canUpdateRows",
       action: "cell edits",
     });
@@ -541,7 +589,7 @@ export const createRelationalTablesSlice: StateCreator<
         const editOutcome = await pollMutationsToCompletion(pendingMutations);
         clearLifecycle();
         if (editOutcome.kind === "completed") {
-          await get().refreshTableData(ctx.dataKey);
+          await refreshAfterWrite(get, ref, ctx.dataKey);
         }
         return editOutcome;
       }
@@ -551,7 +599,7 @@ export const createRelationalTablesSlice: StateCreator<
         const { [key]: _status, ...restStatus } = s.tableEditsCommitStatus;
         return { tableEdits: restEdits, tableEditsCommitStatus: restStatus };
       });
-      await get().refreshTableData(ctx.dataKey);
+      await refreshAfterWrite(get, ref, ctx.dataKey);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -588,8 +636,17 @@ export const createRelationalTablesSlice: StateCreator<
 
     const state = get();
     const key = tableSessionKey(ref);
-    const data = state.tableData[key];
-    if (!data) {
+    const data = state.tableData[key] ?? {
+      connectionId: ref.connectionId,
+      schema: ref.schema,
+      table: ref.table,
+      columns: [],
+      rows: [],
+      page: 1,
+      pageSize: 0,
+      runtimeMs: 0,
+    };
+    if (!state.tableData[key] && !browseDataSourceFor(state, ref)) {
       return {
         kind: "failed",
         reason: "Table data is not loaded; cannot insert a row.",
@@ -641,7 +698,7 @@ export const createRelationalTablesSlice: StateCreator<
         },
       });
       clearLifecycle();
-      await get().refreshTableData(key);
+      await refreshAfterWrite(get, ref, key);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -681,6 +738,7 @@ export const createRelationalTablesSlice: StateCreator<
       tableStructure: state.tableStructure,
       connections: state.connections,
       ref,
+      dataSource: browseDataSourceFor(state, ref),
       capability: "canDeleteRows",
       action: "row deletes",
     });
@@ -745,12 +803,12 @@ export const createRelationalTablesSlice: StateCreator<
         const editOutcome = await pollMutationsToCompletion(pendingMutations);
         clearLifecycle();
         if (editOutcome.kind === "completed") {
-          await get().refreshTableData(ctx.dataKey);
+          await refreshAfterWrite(get, ref, ctx.dataKey);
         }
         return editOutcome;
       }
       clearLifecycle();
-      await get().refreshTableData(ctx.dataKey);
+      await refreshAfterWrite(get, ref, ctx.dataKey);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -1532,6 +1590,9 @@ export const createRelationalTablesSlice: StateCreator<
       if (get().tableData[dataKey]) {
         refreshes.push(get().refreshTableData(dataKey));
       }
+      refreshes.push(
+        get().refreshTableBrowsesForRelation(connectionId, schema, table),
+      );
       await Promise.all(refreshes);
       return { kind: "completed", runtimeMs: result.runtimeMs };
     } catch (error) {

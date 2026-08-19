@@ -15,6 +15,8 @@
 
 import type { StateCreator } from "zustand";
 
+import { supportsServerTableBrowse } from "@/lib/table-browse";
+
 import type {
   ActiveView,
   AppStoreState,
@@ -116,6 +118,7 @@ export const createWorkspaceTabsSlice: StateCreator<
 
   closeTab: async (tabId) => {
     await get().closeQuerySessionForTab(tabId);
+    await get().closeTableBrowseForTab(tabId);
     set((state) => {
       const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
       if (index === -1) {
@@ -164,7 +167,19 @@ export const createWorkspaceTabsSlice: StateCreator<
       table: tableName,
     });
     if (connectionId) {
-      void get().loadTableData(connectionId, schemaName, tableName);
+      const engine = get().connections.find(
+        (connection) => connection.id === connectionId,
+      )?.engine;
+      if (engine && supportsServerTableBrowse(engine)) {
+        void get().openTableBrowse(
+          get().activeTabId,
+          connectionId,
+          schemaName,
+          tableName,
+        );
+      } else {
+        void get().loadTableData(connectionId, schemaName, tableName);
+      }
     }
   },
 

@@ -12,6 +12,7 @@ import type { EditOutcome, TableEditsCommitStatus } from "@/lib/store";
 interface TableStatusBannersProps {
   errorMessage: string | null;
   showReadOnlyBanner: boolean;
+  readOnlyCopy?: string;
   commitStatus: TableEditsCommitStatus | undefined;
   lastOutcome: EditOutcome | null;
   onRetryLoad: () => void;
@@ -21,6 +22,7 @@ interface TableStatusBannersProps {
 export function TableStatusBanners({
   errorMessage,
   showReadOnlyBanner,
+  readOnlyCopy,
   commitStatus,
   lastOutcome,
   onRetryLoad,
@@ -52,8 +54,8 @@ export function TableStatusBanners({
           icon={<IconLock className="size-4" />}
           message={
             <>
-              This table has no primary key or non-null unique index — it is
-              read-only. Add a unique constraint to enable editing.
+              {readOnlyCopy ??
+                "This table has no primary key or non-null unique index — it is read-only. Add a unique constraint to enable editing."}
             </>
           }
         />

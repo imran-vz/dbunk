@@ -92,6 +92,7 @@ const teardownConnectionWorkspace = async (
   teardownBackend?: () => Promise<void>,
 ) => {
   await state.closeQuerySessionsForConnection(connectionId);
+  await state.closeTableBrowsesForConnection(connectionId);
   await teardownBackend?.();
   state.dropOpenQueryStateForConnection(connectionId);
   state.dropRelationalCachesForConnection(connectionId);

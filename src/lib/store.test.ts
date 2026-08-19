@@ -289,6 +289,63 @@ describe("store.openTableTab", () => {
     expect(calls).toContain("load_table_data");
     expect(calls).not.toContain("run_query");
   });
+
+  it("opens PostgreSQL table tabs through browse_table_data", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "12 ms",
+          ssl: true,
+        },
+      ],
+      activeConnectionId: "conn-1",
+    });
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "load_table_grid_prefs") return Promise.resolve(null);
+      if (command === "browse_table_data") {
+        return Promise.resolve({
+          requestId: 1,
+          columns: [{ name: "id", castType: "integer", nullable: false }],
+          rows: [["1"]],
+          identity: { kind: "primaryKey", columns: ["id"] },
+          rowIdentity: [["1"]],
+          pageInfo: {
+            mode: "keyset",
+            page: 1,
+            hasMore: false,
+            nextCursor: null,
+          },
+          count: { kind: "estimated", value: 1 },
+          inspection: { sql: "SELECT 1", params: [] },
+          omittedRows: 0,
+          truncatedCells: 0,
+          runtimeMs: 1,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    useAppStore.getState().openTableTab("public", "users");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await Promise.resolve();
+    }
+
+    const calls = mockedInvoke.mock.calls.map((call) => call[0]);
+    expect(calls).toContain("browse_table_data");
+    expect(calls).not.toContain("load_table_data");
+    expect(calls).not.toContain("run_query");
+  });
 });
 
 describe("runQuery status tracking", () => {

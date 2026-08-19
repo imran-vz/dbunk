@@ -29,6 +29,7 @@ import {
 } from "@/components/table-editor-panel";
 import {
   type Connection,
+  type TableBrowseTabState,
   type TableDataState,
   type TableLoadStatus,
   type TableStructure,
@@ -37,6 +38,7 @@ import {
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { defaultTableGridPrefs } from "@/lib/table-browse";
 import { tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
@@ -825,5 +827,137 @@ describe("TableEditorPanel subtabs", () => {
     expect(relations.getAttribute("aria-current")).toBeNull();
     fireEvent.click(relations);
     expect(screen.queryByTestId("table-schema-map-subtab")).toBeNull();
+  });
+});
+
+describe("TableEditorPanel server browse", () => {
+  const seedBrowse = (overrides: Partial<TableBrowseTabState> = {}) => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    seedStructure(editableStructure);
+    useAppStore.setState({
+      tableBrowses: {
+        "tab-1": {
+          tabId: "tab-1",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          generation: 1,
+          typedFilters: [],
+          rawFilterText: "",
+          filterMode: "typed",
+          sort: [],
+          pageSize: 100,
+          page: 1,
+          cursorStack: [],
+          inflightRequestId: null,
+          appliedRequestId: 1,
+          result: {
+            requestId: 1,
+            columns: [
+              { name: "id", castType: "integer", nullable: false },
+              { name: "email", castType: "text", nullable: false },
+            ],
+            rows: [["1", "ada@example.com"]],
+            identity: { kind: "primaryKey", columns: ["id"] },
+            rowIdentity: [["1"]],
+            pageInfo: {
+              mode: "keyset",
+              page: 1,
+              hasMore: false,
+              nextCursor: null,
+            },
+            count: { kind: "estimated", value: 128 },
+            inspection: {
+              sql: "SELECT id, email FROM public.users",
+              params: [],
+            },
+            omittedRows: 0,
+            truncatedCells: 0,
+            runtimeMs: 5,
+          },
+          loadStatus: { state: "success" },
+          countStatus: { state: "idle" },
+          exactCount: null,
+          prefsLoaded: true,
+          prefs: defaultTableGridPrefs(),
+          ...overrides,
+        },
+      },
+    });
+  };
+
+  it("labels estimated counts and offers Count rows", () => {
+    seedBrowse();
+    render(<TableEditorPanel tab={tableTab} />);
+    expect(screen.getByText("~128 rows (estimated)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Count rows" })).toBeTruthy();
+  });
+
+  it("expands the grid and restores it with Escape", () => {
+    seedBrowse();
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand grid" }));
+    expect(screen.queryByRole("button", { name: "Data" })).toBeNull();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Data" })).toBeTruthy();
+  });
+
+  it("prompts before a filter change discards pending edits", () => {
+    seedBrowse();
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Filter operator" }));
+    fireEvent.click(screen.getByRole("option", { name: "is null" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByText("Discard pending edits?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText("Discard pending edits?")).toBeNull();
+    expect(
+      useAppStore.getState().tableEdits[
+        tableDataKey("conn-1", "public", "users")
+      ],
+    ).toBeTruthy();
+  });
+
+  it("shows honest read-only copy for virtual browse identity", () => {
+    seedBrowse({
+      result: {
+        requestId: 1,
+        columns: [{ name: "note", castType: "text", nullable: true }],
+        rows: [["heap"]],
+        identity: { kind: "virtual", columns: ["ctid"] },
+        rowIdentity: [["(0,1)"]],
+        pageInfo: {
+          mode: "keyset",
+          page: 1,
+          hasMore: false,
+          nextCursor: null,
+        },
+        count: { kind: "unknown", value: null },
+        inspection: { sql: "SELECT note FROM public.users", params: [] },
+        omittedRows: 0,
+        truncatedCells: 0,
+        runtimeMs: 3,
+      },
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    expect(
+      screen.getByText(
+        "This table is paged with a virtual identity and is read-only.",
+      ),
+    ).toBeTruthy();
   });
 });

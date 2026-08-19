@@ -43,7 +43,16 @@ import {
   type ExportTable,
   prepareExportBlob,
 } from "@/lib/export";
+import { TABLE_BROWSE_PAGE_SIZES } from "@/lib/table-browse";
 import { cn } from "@/lib/utils";
+
+import {
+  BrowseFilterBar,
+  BrowseInspectionPanel,
+  BrowseLiveRegion,
+  BrowseSortEditor,
+} from "./browse-controls";
+import type { ServerBrowseGridModel } from "./browse-model";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +92,9 @@ export interface DataGridToolbarProps {
   onApplyFilter: (filter: AppliedFilter) => void;
   onRemoveFilter: (column: string) => void;
   onClearFilters: () => void;
+  serverBrowse?: ServerBrowseGridModel;
+  onExpandGrid?: () => void;
+  expanded?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,8 +145,13 @@ export function DataGridToolbar({
   onApplyFilter,
   onRemoveFilter,
   onClearFilters,
+  serverBrowse,
+  onExpandGrid,
+  expanded,
 }: DataGridToolbarProps) {
   const [showFilters, setShowFilters] = useState(false);
+  const [showSort, setShowSort] = useState(false);
+  const [showInspection, setShowInspection] = useState(false);
   const [columnSearch, setColumnSearch] = useState("");
   const [draftColumn, setDraftColumn] = useState<string>(columnNames[0] ?? "");
   const [draftOperator, setDraftOperator] = useState("equals");
@@ -244,6 +261,7 @@ export function DataGridToolbar({
             className="gap-1.5 border-border-subtle bg-surface-panel"
             aria-label="Sort"
             title="Sort"
+            onClick={() => setShowSort((open) => !open)}
           >
             <IconArrowsSort className="size-3.5" />
             <span className="dbunk-optional-label">Sort</span>
@@ -345,7 +363,7 @@ export function DataGridToolbar({
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuGroup>
                 <div className="px-2 py-1.5 text-xs font-semibold">
-                  Current result rows
+                  {serverBrowse ? "Current page" : "Current result rows"}
                 </div>
                 {(
                   [
@@ -494,6 +512,19 @@ export function DataGridToolbar({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {serverBrowse ? (
+            <Button
+              variant={showInspection ? "secondary" : "outline"}
+              size="sm"
+              className="gap-1.5 border-border-subtle bg-surface-panel"
+              aria-label="Inspect query"
+              title="Inspect query"
+              onClick={() => setShowInspection((open) => !open)}
+            >
+              SQL
+            </Button>
+          ) : null}
+
           {toolbarLeading ? (
             <>
               <div className="mx-0.5 h-5 w-px bg-border-subtle" />
@@ -503,30 +534,66 @@ export function DataGridToolbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <Select defaultValue={String(table.getState().pagination.pageSize)}>
-            <SelectTrigger className="h-6 w-24 border-border-subtle bg-surface-panel text-xs">
+          <Select
+            value={String(
+              serverBrowse?.pageSize ?? table.getState().pagination.pageSize,
+            )}
+            onValueChange={(value) => {
+              const next = Number.parseInt(value ?? "", 10);
+              if (!Number.isFinite(next)) return;
+              if (serverBrowse) {
+                serverBrowse.onPageSizeChange(next);
+                return;
+              }
+              table.setPageSize(next);
+            }}
+          >
+            <SelectTrigger
+              className="h-6 w-24 border-border-subtle bg-surface-panel text-xs"
+              aria-label="Page size"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[10, 25, 50, 100].map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size} rows
-                </SelectItem>
-              ))}
+              {(serverBrowse ? TABLE_BROWSE_PAGE_SIZES : [10, 25, 50, 100]).map(
+                (size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size} rows
+                  </SelectItem>
+                ),
+              )}
             </SelectContent>
           </Select>
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Expand grid"
+            aria-label={expanded ? "Restore grid" : "Expand grid"}
             className="rounded-sm border border-border-subtle bg-surface-panel"
+            onClick={onExpandGrid}
+            disabled={!onExpandGrid}
           >
             <IconArrowsMaximize className="size-3.5" />
           </Button>
         </div>
       </div>
 
-      {showFilters && (
+      {serverBrowse ? <BrowseLiveRegion browse={serverBrowse} /> : null}
+
+      {showFilters && serverBrowse ? (
+        <BrowseFilterBar columnNames={columnNames} browse={serverBrowse} />
+      ) : null}
+
+      {showSort && serverBrowse ? (
+        <BrowseSortEditor columnNames={columnNames} browse={serverBrowse} />
+      ) : null}
+
+      {showInspection && serverBrowse ? (
+        <div className="border-b border-border-subtle bg-surface-window px-3 py-2">
+          <BrowseInspectionPanel browse={serverBrowse} />
+        </div>
+      ) : null}
+
+      {showFilters && !serverBrowse && (
         <div className="flex min-h-10 flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface-window px-3 py-1.5">
           <Button
             variant="ghost"

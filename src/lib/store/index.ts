@@ -9,6 +9,7 @@ import { createManagedServersSlice } from "./managed-servers";
 import { createQuerySessionsSlice } from "./query-sessions";
 import { createRelationalQueriesSlice } from "./relational-queries";
 import { createRelationalTablesSlice } from "./relational-tables";
+import { createTableBrowseSlice } from "./table-browse";
 import type { AppStoreState } from "./types";
 import { createWorkspaceTabsSlice } from "./workspace-tabs";
 
@@ -87,6 +88,8 @@ export type {
   TableLoadStatus,
   TablePreviewData,
   TableRef,
+  TableBrowseLoadStatus,
+  TableBrowseTabState,
   TableSessionSnapshot,
   TableStructure,
   TableStructureStatus,
@@ -114,6 +117,7 @@ export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createWorkspaceTabsSlice(set, get, store),
   ...createRelationalTablesSlice(set, get, store),
   ...createQuerySessionsSlice(set, get, store),
+  ...createTableBrowseSlice(set, get, store),
   ...createRelationalQueriesSlice(set, get, store),
   ...createKeyValueWorkspaceSlice(set, get, store),
   ...createKeyValuePubSubSlice(set, get, store),
