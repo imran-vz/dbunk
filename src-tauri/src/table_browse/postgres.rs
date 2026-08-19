@@ -121,7 +121,7 @@ pub(crate) async fn load_descriptor(
             JOIN pg_attribute a ON a.attrelid = ix.indrelid AND a.attnum = u.attnum
             WHERE n.nspname = $1 AND t.relname = $2
               AND ix.indisvalid AND ix.indisunique AND NOT ix.indisprimary
-              AND ix.indisimmediate
+              AND ix.indimmediate
               AND ix.indpred IS NULL AND ix.indexprs IS NULL
               AND u.ord <= ix.indnkeyatts
             GROUP BY i.relname
