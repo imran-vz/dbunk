@@ -183,11 +183,24 @@ function buildMetaRows(meta: ColumnHeaderMeta): MetaRow[] {
 function ColumnHeaderLabel({
   name,
   meta,
+  onSortClick,
 }: {
   name: string;
   meta: ColumnHeaderMeta | undefined;
+  onSortClick?: (event: React.MouseEvent<HTMLElement>) => void;
 }) {
-  if (!meta) return <span>{name}</span>;
+  if (!meta) {
+    if (!onSortClick) return <span>{name}</span>;
+    return (
+      <button
+        type="button"
+        className="flex h-full w-full items-center px-2 text-left"
+        onClick={onSortClick}
+      >
+        {name}
+      </button>
+    );
+  }
   const rows = buildMetaRows(meta);
 
   const headerIcons = (
@@ -246,7 +259,14 @@ function ColumnHeaderLabel({
           <button
             type="button"
             {...props}
-            className="cursor-help bg-transparent p-0 text-left outline-none"
+            className={cn(
+              "bg-transparent p-0 text-left outline-none",
+              onSortClick ? "h-full w-full cursor-pointer px-2" : "cursor-help",
+            )}
+            onClick={(event) => {
+              props.onClick?.(event);
+              onSortClick?.(event);
+            }}
           >
             {trigger}
           </button>
@@ -647,20 +667,19 @@ export function DataGrid({
       cols.push({
         accessorFn: (row) => row[index],
         id: colName,
-        header: () =>
-          serverBrowse ? (
-            <button
-              type="button"
-              className="flex h-full w-full items-center px-2 text-left"
-              onClick={(event) => {
-                serverBrowse.onHeaderSort(colName, event.shiftKey);
-              }}
-            >
-              <ColumnHeaderLabel name={colName} meta={meta} />
-            </button>
-          ) : (
-            <ColumnHeaderLabel name={colName} meta={meta} />
-          ),
+        header: () => (
+          <ColumnHeaderLabel
+            name={colName}
+            meta={meta}
+            onSortClick={
+              serverBrowse
+                ? (event) => {
+                    serverBrowse.onHeaderSort(colName, event.shiftKey);
+                  }
+                : undefined
+            }
+          />
+        ),
         meta: { index },
         cell: (props) => (
           <EditableCell
