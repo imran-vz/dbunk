@@ -7,6 +7,7 @@ import {
   DataGrid,
   type ForeignKeyTarget,
 } from "@/components/data-grid";
+import type { ServerBrowseGridModel } from "@/components/data-grid/browse-model";
 import { TableStructureView } from "@/components/table-structure-view";
 import { Button } from "@/components/ui/button";
 import type {
@@ -78,6 +79,9 @@ interface TableEditorBodyProps {
   }) => void;
   onRunSavedExportTask?: () => Promise<void>;
   hasSavedExportTask?: boolean;
+  serverBrowse?: ServerBrowseGridModel;
+  onExpandGrid?: () => void;
+  expanded?: boolean;
 }
 
 export function TableEditorBody({
@@ -115,6 +119,9 @@ export function TableEditorBody({
   onSaveExportTask,
   onRunSavedExportTask,
   hasSavedExportTask,
+  serverBrowse,
+  onExpandGrid,
+  expanded,
 }: TableEditorBodyProps) {
   const columns = useMemo(() => data?.columns ?? [], [data?.columns]);
   const rows = data?.rows ?? [];
@@ -160,6 +167,9 @@ export function TableEditorBody({
               onSaveExportTask={onSaveExportTask}
               onRunSavedExportTask={onRunSavedExportTask}
               hasSavedExportTask={hasSavedExportTask}
+              serverBrowse={serverBrowse}
+              onExpandGrid={onExpandGrid}
+              expanded={expanded}
               toolbarLeading={
                 <DataToolbar
                   canAddRow={caps.canAddRow}
@@ -208,7 +218,7 @@ export function TableEditorBody({
           )}
         </div>
 
-        {activeSubTab === "data" ? (
+        {activeSubTab === "data" && !expanded ? (
           <RowDetailsPanel
             columns={columns}
             selectedRow={selection.selectedRow}
@@ -225,16 +235,23 @@ export function TableEditorBody({
         ) : null}
       </div>
 
-      {showFooter ? (
+      {showFooter && !expanded ? (
         <div
           data-testid="table-pagination"
           className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
         >
-          <span className="tabular-nums">
-            Showing {pagination.startRow.toLocaleString()} to{" "}
-            {pagination.endRow.toLocaleString()} of{" "}
-            {(pagination.totalRows ?? rows.length).toLocaleString()} rows
-          </span>
+          <span className="tabular-nums">{pagination.countLabel}</span>
+          {pagination.onCountRows ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[0.6875rem]"
+              onClick={pagination.onCountRows}
+              disabled={pagination.counting || isLoading}
+            >
+              {pagination.counting ? "Counting…" : "Count rows"}
+            </Button>
+          ) : null}
           <Pagination
             page={pagination.page}
             totalPages={pagination.totalPages}
@@ -245,6 +262,8 @@ export function TableEditorBody({
             onNext={pagination.onNextPage}
             onLast={pagination.onLastPage}
             onJump={pagination.goToPage}
+            canJump={pagination.canJump}
+            countApproximate={pagination.countApproximate}
           />
           <span className="tabular-nums">{pagination.pageSize} rows</span>
         </div>

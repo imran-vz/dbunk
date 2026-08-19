@@ -478,3 +478,47 @@ describe("table browse invalidCursor recovery", () => {
     expect(tabState()?.result?.rows).toEqual([["recovered"]]);
   });
 });
+
+describe("table browse filter mode and clear", () => {
+  it("does not reset the current page when only the filter mode changes", async () => {
+    await useAppStore
+      .getState()
+      .openTableBrowse("tab-1", "conn-1", "public", "users");
+    mockedBrowseTable.mockResolvedValueOnce(
+      okResult({
+        pageInfo: {
+          mode: "offset",
+          page: 2,
+          hasMore: true,
+          nextCursor: null,
+        },
+      }),
+    );
+    await useAppStore.getState().goToTableBrowsePage("tab-1", 2);
+    expect(tabState()?.page).toBe(2);
+
+    await useAppStore.getState().setTableBrowseFilterMode("tab-1", "raw");
+    expect(tabState()?.page).toBe(2);
+    expect(tabState()?.filterMode).toBe("raw");
+  });
+
+  it("clears typed and raw filters in a single browse request", async () => {
+    await useAppStore
+      .getState()
+      .openTableBrowse("tab-1", "conn-1", "public", "users");
+    await useAppStore
+      .getState()
+      .setTableBrowseFilters("tab-1", [eqFilter("1")]);
+    await useAppStore.getState().setTableBrowseRawFilter("tab-1", "id > 0");
+    mockedBrowseTable.mockClear();
+
+    await useAppStore.getState().clearTableBrowseFilters("tab-1");
+
+    expect(mockedBrowseTable).toHaveBeenCalledTimes(1);
+    expect(mockedBrowseTable.mock.calls[0]?.[0]).toMatchObject({
+      filters: [],
+    });
+    expect(tabState()?.typedFilters).toEqual([]);
+    expect(tabState()?.rawFilterText).toBe("");
+  });
+});

@@ -19,6 +19,8 @@ interface PaginationProps {
   onNext: () => void;
   onLast: () => void;
   onJump: (page: number) => void;
+  canJump?: boolean;
+  countApproximate?: boolean;
 }
 
 export function Pagination({
@@ -31,9 +33,11 @@ export function Pagination({
   onNext,
   onLast,
   onJump,
+  canJump = true,
+  countApproximate = false,
 }: PaginationProps) {
   const pageButtons = useMemo(() => {
-    if (!totalPages) return [page];
+    if (!canJump || !totalPages) return [page];
     const pages: Array<number | "ellipsis-left" | "ellipsis-right"> = [];
     const window = 1;
     pages.push(1);
@@ -48,7 +52,7 @@ export function Pagination({
     if (page + window < totalPages - 1) pages.push("ellipsis-right");
     if (totalPages > 1) pages.push(totalPages);
     return pages;
-  }, [page, totalPages]);
+  }, [canJump, page, totalPages]);
 
   return (
     <div className="flex items-center gap-1">
@@ -117,11 +121,16 @@ export function Pagination({
         size="icon-sm"
         aria-label="Last page"
         onClick={onLast}
-        disabled={isLastPage || isLoading || totalPages === undefined}
+        disabled={
+          isLastPage || isLoading || !canJump || totalPages === undefined
+        }
         className="size-6"
       >
         <IconChevronsRight className="size-3.5" />
       </Button>
+      {countApproximate ? (
+        <span className="pl-1 text-[10px] text-text-muted">approx</span>
+      ) : null}
     </div>
   );
 }

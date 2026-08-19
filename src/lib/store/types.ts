@@ -19,6 +19,16 @@ import type {
   SchemaMapRouting,
   SchemaRelationships,
 } from "@/lib/schema-graph";
+import type {
+  BrowseCursor,
+  BrowseExactCountResult,
+  BrowseFilter,
+  BrowseSortKey,
+  BrowseTableResult,
+  TableBrowseError,
+  TableBrowseFilterMode,
+  TableGridPrefs,
+} from "@/lib/table-browse";
 import type { ThemeMode, ThemePreset } from "@/lib/theme";
 
 // ---------------------------------------------------------------------------
@@ -477,6 +487,35 @@ export type TableLoadStatus =
   | { state: "success" }
   | { state: "error"; error: string };
 
+export type TableBrowseLoadStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; error: TableBrowseError };
+
+export type TableBrowseTabState = {
+  tabId: string;
+  connectionId: string;
+  schema: string;
+  table: string;
+  generation: number;
+  typedFilters: BrowseFilter[];
+  rawFilterText: string;
+  filterMode: TableBrowseFilterMode;
+  sort: BrowseSortKey[];
+  pageSize: number;
+  page: number;
+  cursorStack: Array<BrowseCursor | null>;
+  inflightRequestId: number | null;
+  appliedRequestId: number | null;
+  result: BrowseTableResult | null;
+  loadStatus: TableBrowseLoadStatus;
+  countStatus: TableBrowseLoadStatus;
+  exactCount: BrowseExactCountResult | null;
+  prefsLoaded: boolean;
+  prefs: TableGridPrefs;
+};
+
 export type LoadingStatus = TableLoadStatus;
 
 // ---------------------------------------------------------------------------
@@ -932,6 +971,7 @@ import type { ManagedServersSlice } from "./managed-servers";
 import type { QuerySessionsSlice } from "./query-sessions";
 import type { RelationalQueriesSlice } from "./relational-queries";
 import type { RelationalTablesSlice } from "./relational-tables";
+import type { TableBrowseSlice } from "./table-browse";
 import type { WorkspaceTabsSlice } from "./workspace-tabs";
 
 /**
@@ -951,6 +991,7 @@ export type AppStoreState = ConnectionsSlice &
   WorkspaceTabsSlice &
   RelationalTablesSlice &
   QuerySessionsSlice &
+  TableBrowseSlice &
   RelationalQueriesSlice &
   KeyValueWorkspaceSlice &
   KeyValuePubSubSlice;

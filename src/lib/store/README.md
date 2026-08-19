@@ -18,6 +18,7 @@ relevant entity (e.g. a new Pub/Sub Session action goes in
 | `relational-tables.ts`  | Schema Explorer, Table Structure, Cell Edits, DDL, Database Overview, Table Data | relational |
 | `relational-queries.ts` | Query History, Saved Queries, query editor + run state                           | relational |
 | `query-sessions.ts`     | Persistent PostgreSQL session lifecycle, streamed results, transactions (`applyQueryTransactionCommand`) | relational |
+| `table-browse.ts`       | PostgreSQL Table Browse grid state keyed by Workspace Tab id                             | relational |
 | `keyvalue-workspace.ts` | (placeholder) Keyspace Browser + Key Inspector client cache                      | keyvalue   |
 | `keyvalue-pubsub.ts`    | (placeholder) Pub/Sub Session client metadata                                    | keyvalue   |
 
@@ -65,6 +66,7 @@ Each downstream slice exposes a named cleanup method:
 | ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `workspace-tabs.ts`     | `closeTabsForConnection(id)`                                         | Drops every Workspace Tab pointing at that connection.                                                       |
 | `query-sessions.ts`     | `closeQuerySessionForTab(id)`, `closeQuerySessionsForConnection(id)` | Closes persistent PostgreSQL editor sessions before tab, connection, or credential teardown.                 |
+| `table-browse.ts`       | `closeTableBrowseForTab(id)`, `closeTableBrowsesForConnection(id)`   | Closes PostgreSQL Table Browse executors before tab, connection, or credential teardown.                     |
 | `relational-tables.ts`  | `dropRelationalCachesForConnection(id)`                              | Drops every per-connection cache entry (schema explorer, table structure, table data, overview stats, etc.). |
 | `relational-queries.ts` | `dropOpenQueryStateForConnection(id)`                                | Drops open-tab query status, edits, and previews without removing query history.                             |
 | `relational-queries.ts` | `dropQueryStateForConnection(id)`                                    | Drops query history rows pinned to the connection plus query status/edits for its open tabs.                 |

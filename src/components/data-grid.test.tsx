@@ -245,3 +245,124 @@ describe("DataGrid cell display", () => {
     expect(input.value).toBe(longValue);
   });
 });
+
+describe("DataGrid server browse mode", () => {
+  const browse = {
+    typedFilters: [],
+    rawFilterText: "",
+    filterMode: "typed" as const,
+    sort: [],
+    pageSize: 100,
+    loadStatus: { state: "success" as const },
+    error: null,
+    inspection: {
+      sql: "SELECT 1",
+      params: [{ kind: "text" as const, value: "ada" }],
+    },
+    omittedRows: 1,
+    truncatedCells: 2,
+    count: { kind: "estimated" as const, value: 50 },
+    exactCount: null,
+    countStatus: { state: "idle" as const },
+    pageInfo: {
+      mode: "keyset" as const,
+      page: null,
+      hasMore: true,
+      nextCursor: { values: ["1"] },
+    },
+    history: [],
+    presets: [],
+    onApplyTypedFilter: vi.fn(),
+    onRemoveTypedFilter: vi.fn(),
+    onClearTypedFilters: vi.fn(),
+    onRawFilterApply: vi.fn(),
+    onFilterModeChange: vi.fn(),
+    onSortChange: vi.fn(),
+    onPageSizeChange: vi.fn(),
+    onHeaderSort: vi.fn(),
+    onCountRows: vi.fn(),
+    onCancel: vi.fn(),
+    onApplyPreset: vi.fn(),
+    onSavePreset: vi.fn(),
+    onApplyHistory: vi.fn(),
+  };
+
+  beforeEach(() => {
+    browse.onApplyTypedFilter.mockClear();
+    browse.onPageSizeChange.mockClear();
+    browse.onHeaderSort.mockClear();
+  });
+
+  it("wires page size and expand controls", () => {
+    const onExpandGrid = vi.fn();
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={browse}
+        onExpandGrid={onExpandGrid}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Expand grid" }));
+    expect(onExpandGrid).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("combobox", { name: "Page size" }));
+    fireEvent.click(screen.getByRole("option", { name: "250 rows" }));
+    expect(browse.onPageSizeChange).toHaveBeenCalledWith(250);
+  });
+
+  it("shows inspection SQL, parameters, and truncation notice", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={browse}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inspect query" }));
+    expect(screen.getByText("SELECT 1")).toBeTruthy();
+    expect(screen.getByText(/\$1 ada/)).toBeTruthy();
+    expect(screen.getByText(/Partial result/)).toBeTruthy();
+  });
+
+  it("enables null operators without a value", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={browse}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Filter operator" }));
+    fireEvent.click(screen.getByRole("option", { name: "is null" }));
+    expect(screen.queryByPlaceholderText("value")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(browse.onApplyTypedFilter).toHaveBeenCalledWith({
+      kind: "isNull",
+      column: "id",
+    });
+  });
+
+  it("shows typed database errors with position", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={{
+          ...browse,
+          error: {
+            kind: "database",
+            code: "42601",
+            message: 'syntax error at or near "SELEC"',
+            severity: "ERROR",
+            position: 14,
+          },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toMatch(/syntax error at or near "SELEC"/);
+    expect(alert.textContent).toMatch(/position 14/);
+  });
+});

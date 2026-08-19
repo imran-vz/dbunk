@@ -21,6 +21,7 @@ import {
 } from "@tanstack/react-table";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { ServerBrowseGridModel } from "@/components/data-grid/browse-model";
 import {
   CELL_EDITORS,
   specializedCellKind,
@@ -508,6 +509,9 @@ export interface DataGridProps {
     rowIndex: number;
     content: React.ReactNode;
   } | null;
+  serverBrowse?: ServerBrowseGridModel;
+  onExpandGrid?: () => void;
+  expanded?: boolean;
 }
 
 export function DataGrid({
@@ -535,6 +539,9 @@ export function DataGrid({
   onSaveExportTask,
   onRunSavedExportTask,
   hasSavedExportTask,
+  serverBrowse,
+  onExpandGrid,
+  expanded,
 }: DataGridProps) {
   // When the grid is read-only we do not propagate the editor wiring to
   // cells. This both prevents `onEdit` from being called and makes the
@@ -640,7 +647,18 @@ export function DataGrid({
       cols.push({
         accessorFn: (row) => row[index],
         id: colName,
-        header: () => <ColumnHeaderLabel name={colName} meta={meta} />,
+        header: () => (
+          <button
+            type="button"
+            className="flex h-full w-full items-center px-2 text-left"
+            onClick={(event) => {
+              if (!serverBrowse) return;
+              serverBrowse.onHeaderSort(colName, event.shiftKey);
+            }}
+          >
+            <ColumnHeaderLabel name={colName} meta={meta} />
+          </button>
+        ),
         meta: { index },
         cell: (props) => (
           <EditableCell
@@ -667,18 +685,19 @@ export function DataGrid({
     edits,
     effectiveOnEdit,
     onFollowForeignKey,
+    serverBrowse,
   ]);
 
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
+    getFilteredRowModel: serverBrowse ? undefined : getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    getPaginationRowModel: getPaginationRowModel(),
+    getPaginationRowModel: serverBrowse ? undefined : getPaginationRowModel(),
     state: {
-      columnFilters,
+      columnFilters: serverBrowse ? [] : columnFilters,
       columnVisibility,
       rowSelection,
     },
@@ -687,6 +706,8 @@ export function DataGrid({
         pageSize: 50,
       },
     },
+    manualFiltering: Boolean(serverBrowse),
+    manualPagination: Boolean(serverBrowse),
   });
 
   const hasSelection = Object.keys(rowSelection).length > 0;
@@ -720,6 +741,7 @@ export function DataGrid({
     <div
       data-slot="data-grid"
       className={cn("flex h-full flex-col bg-surface-app", className)}
+      aria-busy={serverBrowse?.loadStatus.state === "loading"}
     >
       <DataGridToolbar
         table={table}
@@ -742,6 +764,9 @@ export function DataGrid({
         onApplyFilter={onApplyFilter}
         onRemoveFilter={onRemoveFilter}
         onClearFilters={onClearFilters}
+        serverBrowse={serverBrowse}
+        onExpandGrid={onExpandGrid}
+        expanded={expanded}
       />
 
       <div
@@ -751,7 +776,10 @@ export function DataGrid({
         {table.getRowModel().rows?.length ? (
           <table
             data-slot="data-grid-table"
-            className="min-w-full border-separate border-spacing-0 text-left text-xs font-mono"
+            className={cn(
+              "min-w-full border-separate border-spacing-0 text-left text-xs font-mono",
+              serverBrowse?.loadStatus.state === "loading" && "opacity-60",
+            )}
           >
             <thead className="sticky top-0 z-20">
               {table.getHeaderGroups().map((headerGroup) => (

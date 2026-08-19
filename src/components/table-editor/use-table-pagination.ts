@@ -25,6 +25,11 @@ export interface TablePagination {
   rowCount: number;
   startRow: number;
   endRow: number;
+  countLabel: string;
+  canJump: boolean;
+  countApproximate: boolean;
+  counting: boolean;
+  onCountRows?: () => void;
   goToPage: (next: number) => void;
   onPrevPage: () => void;
   onNextPage: () => void;
@@ -81,6 +86,13 @@ export function useTablePagination({
     rowCount,
     startRow,
     endRow,
+    countLabel:
+      totalRows === undefined
+        ? `${rowCount.toLocaleString()} rows`
+        : `${totalRows.toLocaleString()} rows`,
+    canJump: totalPages !== undefined,
+    countApproximate: false,
+    counting: false,
     goToPage,
     onPrevPage: () => goToPage(page - 1),
     onNextPage: () => goToPage(page + 1),
