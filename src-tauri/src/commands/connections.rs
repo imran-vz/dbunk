@@ -4,13 +4,12 @@ use tauri::State;
 
 use crate::dispatch;
 use crate::managed;
-use crate::postgres;
-use crate::redis;
+use crate::socket_lifecycle;
 use crate::storage;
 use crate::tunnel;
 use crate::{
-    AppState, ConnectResult, ConnectionPayload, DatabaseEngine, HealthCheckResult,
-    StoredConnection, TestConnectionPayload,
+    AppState, ConnectResult, ConnectionPayload, HealthCheckResult, StoredConnection,
+    TestConnectionPayload,
 };
 
 use super::{current_credential_mode, find_connection, public_connections, with_active_connection};
@@ -28,35 +27,15 @@ pub async fn save_connection(
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
     tunnel::validate_connection_tunnel(&connection)?;
-    state
-        .query_sessions
-        .begin_connection_teardown(connection.id())
-        .await;
-    state
-        .table_browse
-        .begin_connection_teardown(connection.id())
-        .await;
-    let save_result = async {
+    let engine = connection.engine();
+    let connection_id = connection.id().to_string();
+    let save_result = socket_lifecycle::with_connection_fence(state, &connection_id, async {
         storage::upsert_connection(&state.pool, &connection).await?;
-        crate::credentials::upsert(&state.pool, mode, &connection).await
-    }
+        crate::credentials::upsert(&state.pool, mode, &connection).await?;
+        socket_lifecycle::invalidate_connection_caches(&connection_id, Some(engine));
+        Ok::<_, String>(())
+    })
     .await;
-    // Invalidate while admission is still fenced so a new session cannot pick
-    // up a stale pool, tunnel, or credential snapshot between save and reset.
-    tunnel::drop_connection(connection.id());
-    match connection.engine() {
-        DatabaseEngine::PostgreSQL => postgres::drop_pool(connection.id()),
-        DatabaseEngine::Redis => redis::connection::drop_cached(connection.id()),
-        _ => {}
-    }
-    state
-        .query_sessions
-        .end_connection_teardown(connection.id())
-        .await;
-    state
-        .table_browse
-        .end_connection_teardown(connection.id())
-        .await;
     save_result?;
     public_connections(state).await
 }
@@ -68,41 +47,22 @@ pub async fn delete_connection(
 ) -> Result<Vec<StoredConnection>, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    state
-        .query_sessions
-        .begin_connection_teardown(&payload.connection_id)
-        .await;
-    state
-        .table_browse
-        .begin_connection_teardown(&payload.connection_id)
-        .await;
-    let delete_result = async {
-        if !storage::delete_connection(&state.pool, &payload.connection_id).await? {
-            return Err(format!("Connection '{}' not found", payload.connection_id));
-        }
-        if let Err(error) =
-            crate::credentials::delete(&state.pool, mode, &payload.connection_id).await
-        {
-            log::warn!(
-                "Failed to delete credential for {}: {error}",
-                payload.connection_id
-            );
-        }
-        Ok(())
-    }
-    .await;
-    // Drop every route regardless of the storage outcome. A failed write may
-    // have made partial progress, and the fence must cover cache invalidation.
-    postgres::drop_pool(&payload.connection_id);
-    redis::connection::drop_cached(&payload.connection_id);
-    tunnel::drop_connection(&payload.connection_id);
-    state
-        .query_sessions
-        .end_connection_teardown(&payload.connection_id)
-        .await;
-    state
-        .table_browse
-        .end_connection_teardown(&payload.connection_id)
+    let delete_result =
+        socket_lifecycle::with_connection_fence(state, &payload.connection_id, async {
+            if !storage::delete_connection(&state.pool, &payload.connection_id).await? {
+                return Err(format!("Connection '{}' not found", payload.connection_id));
+            }
+            if let Err(error) =
+                crate::credentials::delete(&state.pool, mode, &payload.connection_id).await
+            {
+                log::warn!(
+                    "Failed to delete credential for {}: {error}",
+                    payload.connection_id
+                );
+            }
+            socket_lifecycle::invalidate_connection_caches(&payload.connection_id, None);
+            Ok(())
+        })
         .await;
     delete_result?;
     public_connections(state).await
@@ -113,29 +73,10 @@ pub async fn disconnect_connection(
     state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<(), String> {
-    state
-        .inner()
-        .query_sessions
-        .begin_connection_teardown(&payload.connection_id)
-        .await;
-    state
-        .inner()
-        .table_browse
-        .begin_connection_teardown(&payload.connection_id)
-        .await;
-    postgres::drop_pool(&payload.connection_id);
-    redis::connection::drop_cached(&payload.connection_id);
-    tunnel::drop_connection(&payload.connection_id);
-    state
-        .inner()
-        .query_sessions
-        .end_connection_teardown(&payload.connection_id)
-        .await;
-    state
-        .inner()
-        .table_browse
-        .end_connection_teardown(&payload.connection_id)
-        .await;
+    socket_lifecycle::with_connection_fence(state.inner(), &payload.connection_id, async {
+        socket_lifecycle::invalidate_connection_caches(&payload.connection_id, None);
+    })
+    .await;
     Ok(())
 }
 

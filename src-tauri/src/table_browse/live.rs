@@ -45,29 +45,25 @@ async fn table_browse_live_typed_filters_casts_and_identity() {
     let manager = TableBrowseManager::new();
     let mut payload = browse_payload("browse-typed", "crm", "accounts");
     payload.filters = vec![
-        BrowseFilter::Column {
+        BrowseFilter::Comparison {
             column: "tier".into(),
-            operator: BrowseFilterOperator::Eq,
-            value: Some("enterprise".into()),
-            values: None,
+            operator: ComparisonOperator::Eq,
+            value: "enterprise".into(),
         },
-        BrowseFilter::Column {
+        BrowseFilter::Comparison {
             column: "credit_limit".into(),
-            operator: BrowseFilterOperator::Gte,
-            value: Some("1".into()),
-            values: None,
+            operator: ComparisonOperator::Gte,
+            value: "1".into(),
         },
-        BrowseFilter::Column {
+        BrowseFilter::TextMatch {
             column: "name".into(),
-            operator: BrowseFilterOperator::Contains,
-            value: Some("Acme".into()),
-            values: None,
+            operator: TextMatchOperator::Contains,
+            value: "Acme".into(),
         },
-        BrowseFilter::Column {
+        BrowseFilter::TextMatch {
             column: "tags".into(),
-            operator: BrowseFilterOperator::Contains,
-            value: Some("priority".into()),
-            values: None,
+            operator: TextMatchOperator::Contains,
+            value: "priority".into(),
         },
     ];
     let result = manager.browse(spec.clone(), payload).await.expect("browse");
@@ -83,17 +79,14 @@ async fn table_browse_live_typed_filters_casts_and_identity() {
     contacts.tab_id = "contacts".into();
     contacts.request_id = 2;
     contacts.filters = vec![
-        BrowseFilter::Column {
+        BrowseFilter::Comparison {
             column: "is_primary".into(),
-            operator: BrowseFilterOperator::Eq,
-            value: Some("true".into()),
-            values: None,
+            operator: ComparisonOperator::Eq,
+            value: "true".into(),
         },
-        BrowseFilter::Column {
+        BrowseFilter::InList {
             column: "id".into(),
-            operator: BrowseFilterOperator::InList,
-            value: None,
-            values: Some(vec!["101".into(), "201".into(), "301".into()]),
+            values: vec!["101".into(), "201".into(), "301".into()],
         },
     ];
     let contacts = manager.browse(spec, contacts).await.expect("contacts");
@@ -106,11 +99,10 @@ async fn table_browse_live_ilike_escape_and_raw_sql_boundaries() {
     let spec = live_spec(15432, true, "browse-raw");
     let manager = TableBrowseManager::new();
     let mut payload = browse_payload("browse-raw", "crm", "accounts");
-    payload.filters = vec![BrowseFilter::Column {
+    payload.filters = vec![BrowseFilter::TextMatch {
         column: "name".into(),
-        operator: BrowseFilterOperator::Contains,
-        value: Some(r"Acme%".into()),
-        values: None,
+        operator: TextMatchOperator::Contains,
+        value: r"Acme%".into(),
     }];
     let escaped = manager
         .browse(spec.clone(), payload.clone())
@@ -414,6 +406,31 @@ async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
     wide.request_id = 10;
     let truncated = manager.browse(spec.clone(), wide).await.expect("trunc");
     assert!(truncated.truncated_cells >= 1);
+
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE TABLE {schema}.wide_pk (id text PRIMARY KEY, body text); INSERT INTO {schema}.wide_pk VALUES (repeat('k', 1500000), 'row');"
+        ))
+        .await
+        .expect("wide pk");
+    let mut wide_pk = browse_payload("browse-cancel", &schema, "wide_pk");
+    wide_pk.tab_id = "wide-pk".into();
+    wide_pk.request_id = 11;
+    let truncated_pk = manager
+        .browse(spec.clone(), wide_pk)
+        .await
+        .expect("wide pk browse");
+    assert!(truncated_pk.truncated_cells >= 1);
+    let identity = truncated_pk.row_identity.expect("pk identity");
+    assert_eq!(
+        identity[0][0].len(),
+        crate::postgres::row_budget::MAX_CELL_BYTES
+    );
+    assert_eq!(
+        identity[0][0].len(),
+        truncated_pk.rows[0][0].as_ref().expect("pk cell").len()
+    );
     admin
         .client
         .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
@@ -429,8 +446,21 @@ async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
             .get("browse-cancel")
             .cloned()
             .expect("executor");
-        let inner = executor.inner.lock().await;
-        inner.connection.as_ref().expect("socket").inner.pid
+        let client = executor
+            .inner
+            .lock()
+            .await
+            .connection
+            .as_ref()
+            .expect("socket")
+            .inner
+            .client
+            .clone();
+        client
+            .query_one("SELECT pg_backend_pid()", &[])
+            .await
+            .expect("pid")
+            .get::<_, i32>(0)
     };
     let _ = admin
         .client

@@ -11,10 +11,11 @@ activates this contract in the grid.
 
 The query-session actor cannot carry bind parameters because it executes
 through the simple query protocol. Table Browse therefore does not reuse that
-actor for execution. It reuses the same `ResolvedPostgresConnectSpec`, TLS
-connector, ordered driver-option SQL, and `CancelToken` machinery, then runs
-statements through the extended query protocol so every user value is a `$N`
-text parameter.
+actor for execution. Both features sit on a shared dedicated tokio-postgres
+socket (`postgres::dedicated`) with cancellation and row-budget helpers.
+Query Session adds a notice queue and backend identity; Table Browse sets
+`default_transaction_read_only = on` and runs the extended query protocol
+so every user value is a `$N` text parameter.
 
 The browse socket additionally runs `SET default_transaction_read_only = on`.
 That is a robustness boundary against raw-filter side effects, not a security
@@ -58,9 +59,23 @@ updated or vacuumed; they are browse continuity, not a mutation key.
 Requests are keyed by `(connectionId, tabId, requestId)`. A newer
 `requestId` for the same tab supersedes the older one: a queued request is
 dropped, an in-flight request is protocol-cancelled, and the superseded
-command resolves `superseded`. `cancel_table_browse` cancels the current
-request without replacing it. One browse socket per Connection serializes
-tabs; queue wait is bounded at 10 seconds.
+command resolves `superseded`. Interrupt state is finalized under the same
+lock that clears `in_flight_request_id`; a recorded interrupt unconditionally
+determines the terminal result, including when the driver returned a
+non-`57014` error. `cancel_table_browse` cancels the current request without
+replacing it. One browse socket per Connection serializes tabs; queue wait is
+bounded at 10 seconds.
+
+The 32 MiB retained-response budget includes `rowIdentity`. Identity values
+are cell-capped at 1 MiB (UTF-8-safe) before they are retained, including
+wide text/bytea primary keys.
+
+Admission is at most one browse socket per Connection and eight across the
+app, accounted separately from the query-session budget. An idle executor
+closes after 300 seconds. Connection, bastion, managed-server, and credential
+reset teardown go through one lifecycle coordinator that fences both Query
+Session and Table Browse, closes them concurrently, invalidates caches, and
+releases the fence. Storage-mode migration does not close executors.
 
 Identity for browse mode is backend-authoritative: primary key, else the
 smallest qualifying unique index (valid, immediate, non-partial,
@@ -69,11 +84,9 @@ identity (`ctid` or `(tableoid, ctid)`), else `none`. This supersedes the
 drifting pair `stable_order_columns` and `pickRowIdentity` for browse mode
 only. Neither legacy implementation changes in this decision.
 
-Admission is at most one browse socket per Connection and eight across the
-app, accounted separately from the query-session budget. An idle executor
-closes after 300 seconds. Teardown fencing matches query sessions: close the
-executor before the Connection, bastion, managed server, or credentials
-disappear. Storage-mode migration does not close executors.
+Typed filters are tagged predicates with required fields (`comparison`,
+`textMatch`, `isNull`, `isNotNull`, `inList`, `rawSql`). Inspection params
+are a typed union (`text` / `textArray`), not stringified arrays.
 
 Commands reject through a typed `TableBrowseError` union. SQL, filter text,
 row values, parameter values, and structured database error detail are never

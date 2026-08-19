@@ -5,8 +5,7 @@ use std::collections::HashMap;
 use tauri::State;
 
 use crate::credentials;
-use crate::postgres;
-use crate::redis;
+use crate::socket_lifecycle;
 use crate::storage;
 use crate::tunnel;
 use crate::{
@@ -34,8 +33,9 @@ pub async fn save_bastion_server(
     let mode = current_credential_mode(state).await?;
     validate_bastion_payload(&payload)?;
 
-    let connection_ids = begin_referenced_connection_teardown(state, &payload.id).await?;
-    let save_result = async {
+    let connection_ids =
+        storage::bastions::connection_ids_referencing_bastion(&state.pool, &payload.id).await?;
+    let save_result = socket_lifecycle::with_connection_ids_fence(state, &connection_ids, async {
         let existing =
             storage::bastions::read_bastion_server_by_id(&state.pool, &payload.id).await?;
         let current_secrets = credentials::read_all(&state.pool, mode).await?;
@@ -77,11 +77,10 @@ pub async fn save_bastion_server(
             }
             return Err(format!("Failed to save Bastion secrets: {error}"));
         }
+        socket_lifecycle::invalidate_bastion_caches(&payload.id, &connection_ids);
         Ok(())
-    }
+    })
     .await;
-    invalidate_referenced_connection_caches(&payload.id, &connection_ids);
-    end_connection_teardown(state, &connection_ids).await;
     save_result?;
     public_bastion_servers(state, mode).await
 }
@@ -121,16 +120,22 @@ pub async fn reset_bastion_host_key(
 ) -> Result<Vec<PublicBastionServer>, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    let connection_ids =
-        begin_referenced_connection_teardown(state, &payload.bastion_server_id).await?;
-    let reset_result = storage::bastions::update_bastion_host_key_fingerprint(
+    let connection_ids = storage::bastions::connection_ids_referencing_bastion(
         &state.pool,
         &payload.bastion_server_id,
-        None,
     )
+    .await?;
+    let reset_result = socket_lifecycle::with_connection_ids_fence(state, &connection_ids, async {
+        let result = storage::bastions::update_bastion_host_key_fingerprint(
+            &state.pool,
+            &payload.bastion_server_id,
+            None,
+        )
+        .await;
+        socket_lifecycle::invalidate_bastion_caches(&payload.bastion_server_id, &connection_ids);
+        result
+    })
     .await;
-    invalidate_referenced_connection_caches(&payload.bastion_server_id, &connection_ids);
-    end_connection_teardown(state, &connection_ids).await;
     reset_result?;
     public_bastion_servers(state, mode).await
 }
@@ -269,46 +274,5 @@ async fn rollback_bastion_metadata(
         storage::bastions::delete_bastion_server(pool, bastion_id)
             .await
             .map(|_| ())
-    }
-}
-
-async fn begin_referenced_connection_teardown(
-    state: &AppState,
-    bastion_id: &str,
-) -> Result<Vec<String>, String> {
-    let connection_ids =
-        storage::bastions::connection_ids_referencing_bastion(&state.pool, bastion_id).await?;
-    for connection_id in &connection_ids {
-        state
-            .query_sessions
-            .begin_connection_teardown(connection_id)
-            .await;
-        state
-            .table_browse
-            .begin_connection_teardown(connection_id)
-            .await;
-    }
-    Ok(connection_ids)
-}
-
-fn invalidate_referenced_connection_caches(bastion_id: &str, connection_ids: &[String]) {
-    tunnel::drop_bastion(bastion_id);
-    for connection_id in connection_ids {
-        postgres::drop_pool(connection_id);
-        redis::connection::drop_cached(connection_id);
-        tunnel::drop_connection(connection_id);
-    }
-}
-
-async fn end_connection_teardown(state: &AppState, connection_ids: &[String]) {
-    for connection_id in connection_ids {
-        state
-            .query_sessions
-            .end_connection_teardown(connection_id)
-            .await;
-        state
-            .table_browse
-            .end_connection_teardown(connection_id)
-            .await;
     }
 }

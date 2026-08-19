@@ -12,11 +12,13 @@
 mod admin;
 pub(crate) mod connect_spec;
 mod ddl;
+pub(crate) mod dedicated;
 mod mutations;
 pub(crate) mod options;
 mod pool;
 mod query;
 mod relationship_metadata;
+pub(crate) mod row_budget;
 mod schema;
 mod seed;
 mod table_relationships;
