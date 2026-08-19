@@ -1,3 +1,4 @@
+use futures_util::StreamExt;
 use tokio_postgres::error::ErrorPosition;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, Row};
@@ -177,8 +178,12 @@ pub(crate) async fn execute_browse(
     client: &Client,
     built: &BuiltBrowseQuery,
 ) -> Result<ExecutedBrowse, TableBrowseError> {
-    let rows = query_rows(client, &built.sql, &built.params).await?;
-    decode_browse_rows(rows, built)
+    let refs = param_refs(&built.params);
+    let stream = client
+        .query_raw(&built.sql, refs)
+        .await
+        .map_err(database_error)?;
+    decode_browse_stream(stream, built).await
 }
 
 pub(crate) async fn execute_count(
@@ -270,6 +275,10 @@ pub(crate) fn is_query_canceled(error: &TableBrowseError) -> bool {
     error.sqlstate() == Some("57014")
 }
 
+pub(crate) fn is_dead_socket(error: &TableBrowseError) -> bool {
+    matches!(error, TableBrowseError::ConnectionLost)
+}
+
 pub(crate) fn database_error(error: tokio_postgres::Error) -> TableBrowseError {
     if let Some(db) = error.as_db_error() {
         TableBrowseError::Database {
@@ -336,21 +345,22 @@ fn param_refs(params: &[BoundParam]) -> Vec<&(dyn ToSql + Sync)> {
         .collect()
 }
 
-fn decode_browse_rows(
-    rows: Vec<Row>,
+async fn decode_browse_stream(
+    stream: tokio_postgres::RowStream,
     built: &BuiltBrowseQuery,
 ) -> Result<ExecutedBrowse, TableBrowseError> {
-    let extra = rows.len() as u32 > built.page_size;
+    let mut stream = std::pin::pin!(stream);
     let take = built.page_size as usize;
-    let fetched = rows.len();
     let mut decoded = Vec::new();
     let mut identities = Vec::new();
     let mut omitted_rows = 0_u64;
     let mut truncated_cells = 0_u64;
     let mut retained_bytes = 0_usize;
-    let mut has_more = extra;
-    for (index, row) in rows.into_iter().enumerate() {
-        if index >= take {
+    let mut has_more = false;
+    while let Some(row) = stream.next().await {
+        let row = row.map_err(database_error)?;
+        if decoded.len() >= take {
+            has_more = true;
             break;
         }
         let (cells, identity) = decode_row(&row, built, &mut truncated_cells);
@@ -358,7 +368,7 @@ fn decode_browse_rows(
             .map(|json| json.len())
             .unwrap_or(usize::MAX);
         if retained_bytes.saturating_add(bytes) > MAX_RESPONSE_BYTES {
-            omitted_rows += omitted_page_rows(take, fetched, index);
+            omitted_rows += 1;
             has_more = true;
             break;
         }
@@ -387,7 +397,11 @@ fn decode_row(
         .map(|index| cell_text(row, index))
         .collect::<Vec<_>>();
     let identity = if built.projects_ctid {
-        Some(vec![cell_text(row, visible).unwrap_or_default()])
+        Some(
+            (0..built.identity.columns.len())
+                .map(|offset| cell_text(row, visible + offset).unwrap_or_default())
+                .collect(),
+        )
     } else if built.identity.exists() {
         Some(
             built
@@ -433,10 +447,6 @@ fn cell_text(row: &Row, index: usize) -> Option<String> {
                 .flatten()
                 .map(str::to_string)
         })
-}
-
-fn omitted_page_rows(take: usize, fetched: usize, index: usize) -> u64 {
-    take.min(fetched).saturating_sub(index) as u64
 }
 
 fn parse_count_cell(row: &Row) -> Result<u64, TableBrowseError> {
@@ -494,13 +504,13 @@ mod tests {
             severity: Some("ERROR".into()),
             position: None,
         }));
-    }
-
-    #[test]
-    fn omitted_page_rows_excludes_has_more_probe() {
-        assert_eq!(omitted_page_rows(100, 101, 50), 50);
-        assert_eq!(omitted_page_rows(100, 80, 50), 30);
-        assert_eq!(omitted_page_rows(100, 101, 0), 100);
-        assert_eq!(omitted_page_rows(100, 101, 100), 0);
+        assert!(is_dead_socket(&TableBrowseError::ConnectionLost));
+        assert!(!is_dead_socket(&TableBrowseError::Cancelled));
+        assert!(!is_dead_socket(&TableBrowseError::Database {
+            code: Some("57014".into()),
+            message: "canceling statement due to user request".into(),
+            severity: Some("ERROR".into()),
+            position: None,
+        }));
     }
 }

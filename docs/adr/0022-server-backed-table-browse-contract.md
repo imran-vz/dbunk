@@ -45,12 +45,15 @@ report the top plan's `Plan Rows`. Exact counts are a separate, user-initiated
 `count_table_browse_rows` command using the same generated WHERE, supersedable
 and cancelable like any browse request.
 
-Keyless heap tables (`relkind` `r` or `p`) receive a `ctid` virtual identity
-so paging is total and rows remain addressable. `tid` gained full btree
-comparison operators in PostgreSQL 14; older servers fall back to offset
-paging for keyless tables. Foreign tables and other non-heap relations keep
-identity `none`. `ctid` is stable only between fetches while rows are not
-updated or vacuumed; it is browse continuity, not a mutation key.
+Keyless ordinary heaps (`relkind` `r`) receive a `ctid` virtual identity
+so paging is total and rows remain addressable. Keyless partitioned tables
+(`relkind` `p`) use `(tableoid, ctid)` because `ctid` is unique only within
+a child partition; a `ctid`-only keyset can skip rows when equal CTIDs
+cross a page boundary. `tid` gained full btree comparison operators in
+PostgreSQL 14; older servers fall back to offset paging for keyless tables.
+Foreign tables and other non-heap relations keep identity `none`. These
+virtual identities are stable only between fetches while rows are not
+updated or vacuumed; they are browse continuity, not a mutation key.
 
 Requests are keyed by `(connectionId, tabId, requestId)`. A newer
 `requestId` for the same tab supersedes the older one: a queued request is
@@ -61,10 +64,10 @@ tabs; queue wait is bounded at 10 seconds.
 
 Identity for browse mode is backend-authoritative: primary key, else the
 smallest qualifying unique index (valid, immediate, non-partial,
-non-expression, all-non-nullable; ties by index name), else `ctid` virtual
-identity, else `none`. This supersedes the drifting pair `stable_order_columns`
-and `pickRowIdentity` for browse mode only. Neither legacy implementation
-changes in this decision.
+non-expression, all-non-nullable; ties by index name), else a virtual
+identity (`ctid` or `(tableoid, ctid)`), else `none`. This supersedes the
+drifting pair `stable_order_columns` and `pickRowIdentity` for browse mode
+only. Neither legacy implementation changes in this decision.
 
 Admission is at most one browse socket per Connection and eight across the
 app, accounted separately from the query-session budget. An idle executor
