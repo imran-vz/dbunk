@@ -90,15 +90,19 @@ impl RelationDescriptor {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BoundParam {
-    Text(Option<String>),
+    Text(String),
     TextArray(Vec<String>),
 }
 
 impl BoundParam {
-    pub(crate) fn inspection_value(&self) -> Option<String> {
+    pub(crate) fn inspection(&self) -> InspectionParam {
         match self {
-            Self::Text(value) => value.clone(),
-            Self::TextArray(values) => Some(serde_json::to_string(values).unwrap_or_default()),
+            Self::Text(value) => InspectionParam::Text {
+                value: value.clone(),
+            },
+            Self::TextArray(values) => InspectionParam::TextArray {
+                values: values.clone(),
+            },
         }
     }
 }
@@ -122,11 +126,7 @@ impl BuiltBrowseQuery {
     pub(crate) fn inspection(&self) -> BrowseInspection {
         BrowseInspection {
             sql: self.sql.clone(),
-            params: self
-                .params
-                .iter()
-                .map(BoundParam::inspection_value)
-                .collect(),
+            params: self.params.iter().map(BoundParam::inspection).collect(),
         }
     }
 
@@ -289,90 +289,89 @@ fn render_filter(
             }
             Ok(Some(format!("({text})")))
         }
-        BrowseFilter::Column {
+        BrowseFilter::IsNull { column } => {
+            require_column(descriptor, column)?;
+            Ok(Some(format!("{} IS NULL", quote_double(column))))
+        }
+        BrowseFilter::IsNotNull { column } => {
+            require_column(descriptor, column)?;
+            Ok(Some(format!("{} IS NOT NULL", quote_double(column))))
+        }
+        BrowseFilter::InList { column, values } => {
+            let relation_column = require_column(descriptor, column)?;
+            if values.is_empty() {
+                return Err(TableBrowseError::InvalidFilter {
+                    reason: "emptyInList".into(),
+                });
+            }
+            params.push(BoundParam::TextArray(values.clone()));
+            Ok(Some(format!(
+                "{} = ANY((${}::text[])::{}[])",
+                quote_double(column),
+                params.len(),
+                relation_column.cast_type
+            )))
+        }
+        BrowseFilter::Comparison {
             column,
             operator,
             value,
-            values,
         } => {
-            let relation_column =
-                descriptor
-                    .column(column)
-                    .ok_or_else(|| TableBrowseError::UnknownColumn {
-                        column: column.clone(),
-                    })?;
-            let quoted = quote_double(column);
-            let sql = match operator {
-                BrowseFilterOperator::IsNull => format!("{quoted} IS NULL"),
-                BrowseFilterOperator::IsNotNull => format!("{quoted} IS NOT NULL"),
-                BrowseFilterOperator::InList => {
-                    let entries =
-                        values
-                            .as_ref()
-                            .ok_or_else(|| TableBrowseError::InvalidFilter {
-                                reason: "emptyInList".into(),
-                            })?;
-                    if entries.is_empty() {
-                        return Err(TableBrowseError::InvalidFilter {
-                            reason: "emptyInList".into(),
-                        });
-                    }
-                    params.push(BoundParam::TextArray(entries.clone()));
-                    format!(
-                        "{quoted} = ANY((${}::text[])::{}[])",
-                        params.len(),
-                        relation_column.cast_type
-                    )
-                }
-                BrowseFilterOperator::Contains
-                | BrowseFilterOperator::NotContains
-                | BrowseFilterOperator::StartsWith
-                | BrowseFilterOperator::EndsWith => {
-                    let raw = required_value(value)?;
-                    let escaped = escape_like(&raw);
-                    let pattern = match operator {
-                        BrowseFilterOperator::Contains | BrowseFilterOperator::NotContains => {
-                            format!("%{escaped}%")
-                        }
-                        BrowseFilterOperator::StartsWith => format!("{escaped}%"),
-                        BrowseFilterOperator::EndsWith => format!("%{escaped}"),
-                        _ => unreachable!(),
-                    };
-                    params.push(BoundParam::Text(Some(pattern)));
-                    let op = if matches!(operator, BrowseFilterOperator::NotContains) {
-                        "NOT ILIKE"
-                    } else {
-                        "ILIKE"
-                    };
-                    format!("{quoted}::text {op} ${} ESCAPE '\\'", params.len())
-                }
-                BrowseFilterOperator::Eq
-                | BrowseFilterOperator::Neq
-                | BrowseFilterOperator::Lt
-                | BrowseFilterOperator::Lte
-                | BrowseFilterOperator::Gt
-                | BrowseFilterOperator::Gte => {
-                    let raw = required_value(value)?;
-                    params.push(BoundParam::Text(Some(raw)));
-                    let op = match operator {
-                        BrowseFilterOperator::Eq => "=",
-                        BrowseFilterOperator::Neq => "<>",
-                        BrowseFilterOperator::Lt => "<",
-                        BrowseFilterOperator::Lte => "<=",
-                        BrowseFilterOperator::Gt => ">",
-                        BrowseFilterOperator::Gte => ">=",
-                        _ => unreachable!(),
-                    };
-                    format!(
-                        "{quoted} {op} (${}::text)::{}",
-                        params.len(),
-                        relation_column.cast_type
-                    )
-                }
+            let relation_column = require_column(descriptor, column)?;
+            params.push(BoundParam::Text(value.clone()));
+            let op = match operator {
+                ComparisonOperator::Eq => "=",
+                ComparisonOperator::Neq => "<>",
+                ComparisonOperator::Lt => "<",
+                ComparisonOperator::Lte => "<=",
+                ComparisonOperator::Gt => ">",
+                ComparisonOperator::Gte => ">=",
             };
-            Ok(Some(sql))
+            Ok(Some(format!(
+                "{} {op} (${}::text)::{}",
+                quote_double(column),
+                params.len(),
+                relation_column.cast_type
+            )))
+        }
+        BrowseFilter::TextMatch {
+            column,
+            operator,
+            value,
+        } => {
+            require_column(descriptor, column)?;
+            let escaped = escape_like(value);
+            let pattern = match operator {
+                TextMatchOperator::Contains | TextMatchOperator::NotContains => {
+                    format!("%{escaped}%")
+                }
+                TextMatchOperator::StartsWith => format!("{escaped}%"),
+                TextMatchOperator::EndsWith => format!("%{escaped}"),
+            };
+            params.push(BoundParam::Text(pattern));
+            let op = if matches!(operator, TextMatchOperator::NotContains) {
+                "NOT ILIKE"
+            } else {
+                "ILIKE"
+            };
+            Ok(Some(format!(
+                "{}::text {op} ${} ESCAPE '\\'",
+                quote_double(column),
+                params.len()
+            )))
         }
     }
+}
+
+fn require_column<'a>(
+    descriptor: &'a RelationDescriptor,
+    column: &str,
+) -> Result<&'a RelationColumn, TableBrowseError> {
+    descriptor
+        .column(column)
+        .ok_or_else(|| TableBrowseError::UnknownColumn {
+            column: column.to_string(),
+        })
 }
 
 fn render_keyset(
@@ -392,7 +391,7 @@ fn render_keyset(
                     .map(|column| column.cast_type.clone())
             })
             .ok_or(TableBrowseError::InvalidCursor)?;
-        params.push(BoundParam::Text(Some(value.clone())));
+        params.push(BoundParam::Text(value.clone()));
         left.push(quote_double(column_name));
         right.push(format!("(${}::text)::{cast_type}", params.len()));
     }
@@ -460,12 +459,6 @@ fn virtual_column_cast(column: &str) -> Option<&'static str> {
         TABLEOID_COLUMN => Some(TABLEOID_CAST_TYPE),
         _ => None,
     }
-}
-
-fn required_value(value: &Option<String>) -> Result<String, TableBrowseError> {
-    value.clone().ok_or(TableBrowseError::InvalidFilter {
-        reason: "missingValue".into(),
-    })
 }
 
 pub(crate) fn escape_like(value: &str) -> String {
@@ -562,19 +555,18 @@ mod tests {
     #[test]
     fn every_comparison_operator_renders_text_cast() {
         for (operator, op) in [
-            (BrowseFilterOperator::Eq, "="),
-            (BrowseFilterOperator::Neq, "<>"),
-            (BrowseFilterOperator::Lt, "<"),
-            (BrowseFilterOperator::Lte, "<="),
-            (BrowseFilterOperator::Gt, ">"),
-            (BrowseFilterOperator::Gte, ">="),
+            (ComparisonOperator::Eq, "="),
+            (ComparisonOperator::Neq, "<>"),
+            (ComparisonOperator::Lt, "<"),
+            (ComparisonOperator::Lte, "<="),
+            (ComparisonOperator::Gt, ">"),
+            (ComparisonOperator::Gte, ">="),
         ] {
             let query = built(&users(), |payload| {
-                payload.filters = vec![BrowseFilter::Column {
+                payload.filters = vec![BrowseFilter::Comparison {
                     column: "id".into(),
                     operator,
-                    value: Some("7".into()),
-                    values: None,
+                    value: "7".into(),
                 }];
             });
             assert!(
@@ -584,7 +576,7 @@ mod tests {
                 "{}",
                 query.sql
             );
-            assert_eq!(query.params, vec![BoundParam::Text(Some("7".into()))]);
+            assert_eq!(query.params, vec![BoundParam::Text("7".into())]);
         }
     }
 
@@ -592,29 +584,25 @@ mod tests {
     fn ilike_operators_escape_metacharacters() {
         let query = built(&users(), |payload| {
             payload.filters = vec![
-                BrowseFilter::Column {
+                BrowseFilter::TextMatch {
                     column: "name".into(),
-                    operator: BrowseFilterOperator::Contains,
-                    value: Some(r"a%_b\c".into()),
-                    values: None,
+                    operator: TextMatchOperator::Contains,
+                    value: r"a%_b\c".into(),
                 },
-                BrowseFilter::Column {
+                BrowseFilter::TextMatch {
                     column: "name".into(),
-                    operator: BrowseFilterOperator::NotContains,
-                    value: Some("x".into()),
-                    values: None,
+                    operator: TextMatchOperator::NotContains,
+                    value: "x".into(),
                 },
-                BrowseFilter::Column {
+                BrowseFilter::TextMatch {
                     column: "email".into(),
-                    operator: BrowseFilterOperator::StartsWith,
-                    value: Some("Ada".into()),
-                    values: None,
+                    operator: TextMatchOperator::StartsWith,
+                    value: "Ada".into(),
                 },
-                BrowseFilter::Column {
+                BrowseFilter::TextMatch {
                     column: "email".into(),
-                    operator: BrowseFilterOperator::EndsWith,
-                    value: Some("io".into()),
-                    values: None,
+                    operator: TextMatchOperator::EndsWith,
+                    value: "io".into(),
                 },
             ];
         });
@@ -627,10 +615,10 @@ mod tests {
         assert_eq!(
             query.params,
             vec![
-                BoundParam::Text(Some(r"%a\%\_b\\c%".into())),
-                BoundParam::Text(Some("%x%".into())),
-                BoundParam::Text(Some("Ada%".into())),
-                BoundParam::Text(Some("%io".into())),
+                BoundParam::Text(r"%a\%\_b\\c%".into()),
+                BoundParam::Text("%x%".into()),
+                BoundParam::Text("Ada%".into()),
+                BoundParam::Text("%io".into()),
             ]
         );
     }
@@ -639,23 +627,15 @@ mod tests {
     fn in_list_and_null_operators() {
         let query = built(&users(), |payload| {
             payload.filters = vec![
-                BrowseFilter::Column {
+                BrowseFilter::InList {
                     column: "id".into(),
-                    operator: BrowseFilterOperator::InList,
-                    value: None,
-                    values: Some(vec!["1".into(), "2".into()]),
+                    values: vec!["1".into(), "2".into()],
                 },
-                BrowseFilter::Column {
+                BrowseFilter::IsNull {
                     column: "name".into(),
-                    operator: BrowseFilterOperator::IsNull,
-                    value: None,
-                    values: None,
                 },
-                BrowseFilter::Column {
+                BrowseFilter::IsNotNull {
                     column: "email".into(),
-                    operator: BrowseFilterOperator::IsNotNull,
-                    value: None,
-                    values: None,
                 },
             ];
         });
@@ -672,11 +652,10 @@ mod tests {
     fn raw_and_typed_filters_and_combine() {
         let query = built(&users(), |payload| {
             payload.filters = vec![
-                BrowseFilter::Column {
+                BrowseFilter::Comparison {
                     column: "id".into(),
-                    operator: BrowseFilterOperator::Gt,
-                    value: Some("1".into()),
-                    values: None,
+                    operator: ComparisonOperator::Gt,
+                    value: "1".into(),
                 },
                 BrowseFilter::RawSql {
                     text: "name ILIKE '%a%'".into(),
@@ -811,11 +790,10 @@ mod tests {
         assert!(matches!(
             build_browse_query(&users(), &{
                 let mut payload = payload();
-                payload.filters = vec![BrowseFilter::Column {
+                payload.filters = vec![BrowseFilter::Comparison {
                     column: "nope".into(),
-                    operator: BrowseFilterOperator::Eq,
-                    value: Some("1".into()),
-                    values: None,
+                    operator: ComparisonOperator::Eq,
+                    value: "1".into(),
                 }];
                 payload
             }),
@@ -824,28 +802,13 @@ mod tests {
         assert!(matches!(
             build_browse_query(&users(), &{
                 let mut payload = payload();
-                payload.filters = vec![BrowseFilter::Column {
+                payload.filters = vec![BrowseFilter::InList {
                     column: "id".into(),
-                    operator: BrowseFilterOperator::InList,
-                    value: None,
-                    values: Some(Vec::new()),
+                    values: Vec::new(),
                 }];
                 payload
             }),
             Err(TableBrowseError::InvalidFilter { reason }) if reason == "emptyInList"
-        ));
-        assert!(matches!(
-            build_browse_query(&users(), &{
-                let mut payload = payload();
-                payload.filters = vec![BrowseFilter::Column {
-                    column: "id".into(),
-                    operator: BrowseFilterOperator::Eq,
-                    value: None,
-                    values: None,
-                }];
-                payload
-            }),
-            Err(TableBrowseError::InvalidFilter { reason }) if reason == "missingValue"
         ));
         assert!(matches!(
             build_browse_query(&users(), &{
@@ -886,23 +849,19 @@ mod tests {
         const SENTINEL: &str = "SENTINEL_DROP_TABLE_USERS";
         let query = built(&users(), |payload| {
             payload.filters = vec![
-                BrowseFilter::Column {
+                BrowseFilter::Comparison {
                     column: "name".into(),
-                    operator: BrowseFilterOperator::Eq,
-                    value: Some(SENTINEL.into()),
-                    values: None,
+                    operator: ComparisonOperator::Eq,
+                    value: SENTINEL.into(),
                 },
-                BrowseFilter::Column {
+                BrowseFilter::TextMatch {
                     column: "email".into(),
-                    operator: BrowseFilterOperator::Contains,
-                    value: Some(SENTINEL.into()),
-                    values: None,
+                    operator: TextMatchOperator::Contains,
+                    value: SENTINEL.into(),
                 },
-                BrowseFilter::Column {
+                BrowseFilter::InList {
                     column: "id".into(),
-                    operator: BrowseFilterOperator::InList,
-                    value: None,
-                    values: Some(vec![SENTINEL.into()]),
+                    values: vec![SENTINEL.into()],
                 },
             ];
         });
@@ -911,10 +870,10 @@ mod tests {
             "value leaked into SQL: {}",
             query.sql
         );
-        assert!(query.params.iter().any(|param| param
-            .inspection_value()
-            .unwrap_or_default()
-            .contains(SENTINEL)));
+        assert!(query.params.iter().any(|param| match param {
+            BoundParam::Text(value) => value.contains(SENTINEL),
+            BoundParam::TextArray(values) => values.iter().any(|value| value.contains(SENTINEL)),
+        }));
     }
 
     #[test]
@@ -960,11 +919,10 @@ mod tests {
     #[test]
     fn count_and_explain_sql_reuse_where_without_limit() {
         let query = built(&users(), |payload| {
-            payload.filters = vec![BrowseFilter::Column {
+            payload.filters = vec![BrowseFilter::Comparison {
                 column: "id".into(),
-                operator: BrowseFilterOperator::Eq,
-                value: Some("1".into()),
-                values: None,
+                operator: ComparisonOperator::Eq,
+                value: "1".into(),
             }];
         });
         assert_eq!(

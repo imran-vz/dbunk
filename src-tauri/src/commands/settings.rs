@@ -132,8 +132,9 @@ pub async fn change_credential_storage(
 pub async fn reset_credential_storage(
     state: State<'_, AppState>,
 ) -> Result<AppSettingsSnapshot, String> {
-    state.inner().query_sessions.close_all().await;
-    state.inner().table_browse.close_all().await;
-    credentials::reset(&state.inner().pool).await?;
+    crate::socket_lifecycle::with_global_fence(state.inner(), async {
+        credentials::reset(&state.inner().pool).await
+    })
+    .await?;
     load_app_settings(state).await
 }

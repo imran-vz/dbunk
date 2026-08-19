@@ -4,6 +4,7 @@
 
 use tauri::State;
 
+use crate::socket_lifecycle;
 use crate::{
     docker, managed, AppState, DockerStatus, ManagedServerPayload, ManagedServerWithStatus,
     ProvisionManagedServerPayload, ProvisionManagedServerResult,
@@ -50,16 +51,10 @@ pub async fn stop_managed_server(
 ) -> Result<(), String> {
     let state = state.inner();
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
-    if let Some(id) = &connection_id {
-        state.query_sessions.begin_connection_teardown(id).await;
-        state.table_browse.begin_connection_teardown(id).await;
-    }
-    let result = managed::stop(&state.pool, &payload.managed_server_id).await;
-    if let Some(id) = &connection_id {
-        state.query_sessions.end_connection_teardown(id).await;
-        state.table_browse.end_connection_teardown(id).await;
-    }
-    result
+    fenced_managed(state, connection_id, async {
+        managed::stop(&state.pool, &payload.managed_server_id).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -69,16 +64,10 @@ pub async fn destroy_managed_server(
 ) -> Result<(), String> {
     let state = state.inner();
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
-    if let Some(id) = &connection_id {
-        state.query_sessions.begin_connection_teardown(id).await;
-        state.table_browse.begin_connection_teardown(id).await;
-    }
-    let result = managed::destroy(&state.pool, &payload.managed_server_id).await;
-    if let Some(id) = &connection_id {
-        state.query_sessions.end_connection_teardown(id).await;
-        state.table_browse.end_connection_teardown(id).await;
-    }
-    result
+    fenced_managed(state, connection_id, async {
+        managed::destroy(&state.pool, &payload.managed_server_id).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -89,16 +78,21 @@ pub async fn recreate_managed_server(
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
-    if let Some(id) = &connection_id {
-        state.query_sessions.begin_connection_teardown(id).await;
-        state.table_browse.begin_connection_teardown(id).await;
+    fenced_managed(state, connection_id, async {
+        managed::recreate(&state.pool, mode, &payload.managed_server_id).await
+    })
+    .await
+}
+
+async fn fenced_managed<T>(
+    state: &AppState,
+    connection_id: Option<String>,
+    work: impl std::future::Future<Output = T>,
+) -> T {
+    match connection_id {
+        Some(id) => socket_lifecycle::with_connection_fence(state, &id, work).await,
+        None => work.await,
     }
-    let result = managed::recreate(&state.pool, mode, &payload.managed_server_id).await;
-    if let Some(id) = &connection_id {
-        state.query_sessions.end_connection_teardown(id).await;
-        state.table_browse.end_connection_teardown(id).await;
-    }
-    result
 }
 
 async fn managed_connection_id(state: &AppState, id: &str) -> Result<Option<String>, String> {
