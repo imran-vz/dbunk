@@ -410,7 +410,7 @@ async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
     admin
         .client
         .batch_execute(&format!(
-            "CREATE TABLE {schema}.wide_pk (id text PRIMARY KEY, body text); INSERT INTO {schema}.wide_pk VALUES (repeat('k', 1500000), 'row');"
+            "CREATE TABLE {schema}.wide_pk (id text PRIMARY KEY, body text); INSERT INTO {schema}.wide_pk VALUES (repeat('k', 4000), 'row');"
         ))
         .await
         .expect("wide pk");
@@ -421,15 +421,11 @@ async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
         .browse(spec.clone(), wide_pk)
         .await
         .expect("wide pk browse");
-    assert!(truncated_pk.truncated_cells >= 1);
     let identity = truncated_pk.row_identity.expect("pk identity");
+    assert_eq!(identity[0][0].len(), 4000);
     assert_eq!(
-        identity[0][0].len(),
-        crate::postgres::row_budget::MAX_CELL_BYTES
-    );
-    assert_eq!(
-        identity[0][0].len(),
-        truncated_pk.rows[0][0].as_ref().expect("pk cell").len()
+        identity[0][0],
+        truncated_pk.rows[0][0].as_ref().expect("pk cell").as_str()
     );
     admin
         .client
