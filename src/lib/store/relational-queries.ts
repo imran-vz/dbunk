@@ -93,12 +93,11 @@ export type RelationalQueriesSlice = {
   dropOpenQueryStateForConnection: (connectionId: string) => void;
 
   /**
-   * Tab-scoped cleanup — drops queryStatus, queryEdits, and (when the
-   * tab's query-label is provided) the queryPreviews entry that backs
-   * the results grid. Used by `retargetQueryTab` so results pinned to
-   * the old connection don't leak into the retargeted view.
+   * Tab-scoped cleanup — drops the tab's queryStatus, queryEdits, and
+   * queryPreviews entries. Used by `retargetQueryTab` so results pinned
+   * to the old connection don't leak into the retargeted view.
    */
-  dropQueryStateForTab: (tabId: string, queryLabel?: string) => void;
+  dropQueryStateForTab: (tabId: string) => void;
 
   /**
    * Cascade cleanup — drops query-history rows for that connection
