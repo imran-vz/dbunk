@@ -41,6 +41,7 @@ class ResizeObserverMock implements ResizeObserver {
 vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 
 import { WorkspaceTabs } from "@/components/workspace-tabs";
+import { CLOSE_QUERY_SESSION_CONFIRM_MESSAGE } from "@/lib/query-session-close";
 import { useAppStore, type WorkspaceTab } from "@/lib/store";
 
 const initialStoreState = useAppStore.getState();
@@ -227,5 +228,56 @@ describe("WorkspaceTabs overflow affordance", () => {
     for (const tab of cleanTabs) {
       expect(screen.queryByTestId(`workspace-tab-dirty-${tab.id}`)).toBeNull();
     }
+  });
+});
+
+describe("WorkspaceTabs close confirmation", () => {
+  it("asks before closing a tab with a non-idle session transaction", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    useAppStore.setState({
+      activeTabId: overflowingTabs[0].id,
+      workspaceTabs: overflowingTabs.slice(0, 1),
+      querySessions: {
+        [overflowingTabs[0].id]: {
+          id: "session-1",
+          tabId: overflowingTabs[0].id,
+          connectionId: "conn-1",
+          generation: 1,
+          transaction: {
+            mode: "manual",
+            status: "active",
+            manualIsolation: "readCommitted",
+          },
+          execution: null,
+          lastViewedAt: 1,
+          budgetOwners: [],
+          state: "open",
+        },
+      },
+    });
+
+    render(<WorkspaceTabs />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Close ${overflowingTabs[0].label}`,
+      }),
+    );
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      CLOSE_QUERY_SESSION_CONFIRM_MESSAGE,
+    );
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Close ${overflowingTabs[0].label}`,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useAppStore.getState().workspaceTabs).toEqual([]);
+    confirmSpy.mockRestore();
   });
 });
