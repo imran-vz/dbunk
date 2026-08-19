@@ -10,18 +10,27 @@ vi.mock("@/lib/tauri", () => ({
 }));
 
 vi.mock("@/lib/query-session-channel", () => ({
+  cancelQueryExecution: vi.fn(() => Promise.resolve()),
   closeQuerySessionForTab: vi.fn(() => Promise.resolve()),
+  commitQueryTransaction: vi.fn(() => Promise.resolve()),
   executeQuerySession: vi.fn(() => Promise.resolve()),
-  invokeQuerySession: vi.fn(() => Promise.resolve()),
   openQuerySession: vi.fn(() => Promise.resolve()),
   querySessionChannelsAvailable: vi.fn(() => false),
+  refreshQueryTransaction: vi.fn(() => Promise.resolve()),
+  rollbackQueryTransaction: vi.fn(() => Promise.resolve()),
+  setQuerySessionTransactionIsolation: vi.fn(() => Promise.resolve()),
+  setQuerySessionTransactionMode: vi.fn(() => Promise.resolve()),
 }));
 
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import {
+  commitQueryTransaction,
   executeQuerySession,
   openQuerySession,
   querySessionChannelsAvailable,
+  refreshQueryTransaction,
+  rollbackQueryTransaction,
+  setQuerySessionTransactionMode,
 } from "@/lib/query-session-channel";
 import {
   type Connection,
@@ -38,6 +47,12 @@ const mockedIsTauri = vi.mocked(isTauri);
 const mockedChannelsAvailable = vi.mocked(querySessionChannelsAvailable);
 const mockedOpenQuerySession = vi.mocked(openQuerySession);
 const mockedExecuteQuerySession = vi.mocked(executeQuerySession);
+const mockedCommitQueryTransaction = vi.mocked(commitQueryTransaction);
+const mockedRefreshQueryTransaction = vi.mocked(refreshQueryTransaction);
+const mockedRollbackQueryTransaction = vi.mocked(rollbackQueryTransaction);
+const mockedSetQuerySessionTransactionMode = vi.mocked(
+  setQuerySessionTransactionMode,
+);
 
 const initialStoreState = useAppStore.getState();
 
@@ -869,6 +884,59 @@ describe("disconnectConnection cleanup", () => {
     ssl: true,
   });
 
+  it("keeps tab cleanup independent from query-session teardown", () => {
+    const closeSessions = vi.fn(() => Promise.resolve());
+    useAppStore.setState({
+      closeQuerySessionsForConnection: closeSessions,
+      workspaceTabs: [
+        {
+          id: "tab-1",
+          kind: "query",
+          label: "query_1.sql",
+          connectionId: "conn-1",
+          schema: "public",
+          query: "select 1",
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+
+    useAppStore.getState().closeTabsForConnection("conn-1");
+
+    expect(closeSessions).not.toHaveBeenCalled();
+    expect(useAppStore.getState().workspaceTabs).toEqual([]);
+  });
+
+  it("closes a connection's query sessions exactly once", async () => {
+    const closeSessions = vi.fn(() => Promise.resolve());
+    useAppStore.setState({
+      closeQuerySessionsForConnection: closeSessions,
+      connections: [connectedPostgres("conn-1", "Primary")],
+    });
+
+    await useAppStore.getState().disconnectConnection("conn-1");
+
+    expect(closeSessions).toHaveBeenCalledOnce();
+    expect(closeSessions).toHaveBeenCalledWith("conn-1");
+  });
+
+  it("closes query sessions once before deleting a connection", async () => {
+    const closeSessions = vi.fn(() => Promise.resolve());
+    mockedInvoke.mockResolvedValueOnce([]);
+    useAppStore.setState({
+      closeQuerySessionsForConnection: closeSessions,
+      connections: [connectedPostgres("conn-1", "Primary")],
+    });
+
+    await useAppStore.getState().deleteConnection("conn-1");
+
+    expect(closeSessions).toHaveBeenCalledOnce();
+    expect(closeSessions).toHaveBeenCalledWith("conn-1");
+    expect(mockedInvoke).toHaveBeenCalledWith("delete_connection", {
+      payload: { connectionId: "conn-1" },
+    });
+  });
+
   it("disconnects the connection, closes its workspace tabs, and drops ephemeral workspace state", async () => {
     const conn1 = connectedPostgres("conn-1", "Primary");
     const conn2 = connectedPostgres("conn-2", "Reporting");
@@ -1031,6 +1099,51 @@ describe("disconnectConnection cleanup", () => {
     expect(state.tableEdits[conn2DataKey]).toBeDefined();
     expect(state.tableEditsCommitStatus[conn1DataKey]).toBeUndefined();
     expect(state.queryHistory).toHaveLength(1);
+  });
+});
+
+describe("typed query-session commands", () => {
+  const session = {
+    id: "session-1",
+    tabId: "tab-1",
+    connectionId: "conn-1",
+    generation: 1,
+    nextSequence: 1,
+    transaction: {
+      mode: "autocommit" as const,
+      status: "idle" as const,
+      manualIsolation: "readCommitted" as const,
+    },
+    execution: null,
+    lastViewedAt: 1,
+    budgetOwners: [],
+    state: "open" as const,
+    error: null,
+  };
+
+  it("dispatches mode and transaction actions through explicit operations", async () => {
+    const manual = { ...session.transaction, mode: "manual" as const };
+    mockedSetQuerySessionTransactionMode.mockResolvedValueOnce(manual);
+    mockedCommitQueryTransaction.mockResolvedValueOnce(manual);
+    mockedRollbackQueryTransaction.mockResolvedValueOnce(manual);
+    mockedRefreshQueryTransaction.mockResolvedValueOnce(manual);
+    useAppStore.setState({ querySessions: { "tab-1": session } });
+
+    await useAppStore.getState().setQueryTransactionMode("tab-1", "manual");
+    await useAppStore.getState().queryTransactionAction("tab-1", "commit");
+    await useAppStore.getState().queryTransactionAction("tab-1", "rollback");
+    await useAppStore.getState().queryTransactionAction("tab-1", "refresh");
+
+    expect(mockedSetQuerySessionTransactionMode).toHaveBeenCalledWith(
+      "tab-1",
+      "manual",
+    );
+    expect(mockedCommitQueryTransaction).toHaveBeenCalledWith("tab-1");
+    expect(mockedRollbackQueryTransaction).toHaveBeenCalledWith("tab-1");
+    expect(mockedRefreshQueryTransaction).toHaveBeenCalledWith("tab-1");
+    expect(useAppStore.getState().querySessions["tab-1"]?.transaction).toEqual(
+      manual,
+    );
   });
 });
 

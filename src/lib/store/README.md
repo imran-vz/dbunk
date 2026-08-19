@@ -1,8 +1,8 @@
 # Workspace Store — Slice Architecture
 
-The Zustand store at `src/lib/store/` is composed of seven
-domain-concept slices behind a single `useAppStore` hook. This
-document is the contract every slice file commits to.
+The Zustand store at `src/lib/store/` is composed of domain-concept slices
+behind a single `useAppStore` hook. This document is the contract every slice
+file commits to.
 
 If you're adding a new action: pick the slice that owns the
 relevant entity (e.g. a new Pub/Sub Session action goes in
@@ -17,6 +17,7 @@ relevant entity (e.g. a new Pub/Sub Session action goes in
 | `credentials.ts`        | App Settings, Credential Storage Mode lifecycle                                  | shared     |
 | `relational-tables.ts`  | Schema Explorer, Table Structure, Cell Edits, DDL, Database Overview, Table Data | relational |
 | `relational-queries.ts` | Query History, Saved Queries, query editor + run state                           | relational |
+| `query-sessions.ts`     | Persistent PostgreSQL session lifecycle, streamed results, transactions          | relational |
 | `keyvalue-workspace.ts` | (placeholder) Keyspace Browser + Key Inspector client cache                      | keyvalue   |
 | `keyvalue-pubsub.ts`    | (placeholder) Pub/Sub Session client metadata                                    | keyvalue   |
 
@@ -44,12 +45,9 @@ export const useAppStore = create<AppStoreState>()((set, get, store) => ({
 }));
 ```
 
-`AppStoreState` (in `store/types.ts`) is the full canonical store
-shape — every slice's `set` and `get` are typed against it. This is
-deliberately a single explicit `interface AppStoreState { … }`
-rather than the slice intersection: it documents the entire surface
-in one place and lets every slice reach across via `get()` without
-narrowing ceremony.
+`AppStoreState` (in `store/types.ts`) is the full canonical store shape. Its
+explicit slice intersection documents the entire surface and lets every slice
+reach across via `get()` without narrowing ceremony.
 
 ## Cross-slice access — the entity-owner pattern
 
@@ -66,19 +64,18 @@ Each downstream slice exposes a named cleanup method:
 | Slice                   | Cleanup method                                                       | What it does                                                                                                 |
 | ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `workspace-tabs.ts`     | `closeTabsForConnection(id)`                                         | Drops every Workspace Tab pointing at that connection.                                                       |
-| `relational-queries.ts` | `closeQuerySessionForTab(id)`, `closeQuerySessionsForConnection(id)` | Closes persistent PostgreSQL editor sessions before tab, connection, or credential teardown.                 |
+| `query-sessions.ts`     | `closeQuerySessionForTab(id)`, `closeQuerySessionsForConnection(id)` | Closes persistent PostgreSQL editor sessions before tab, connection, or credential teardown.                 |
 | `relational-tables.ts`  | `dropRelationalCachesForConnection(id)`                              | Drops every per-connection cache entry (schema explorer, table structure, table data, overview stats, etc.). |
 | `relational-queries.ts` | `dropOpenQueryStateForConnection(id)`                                | Drops open-tab query status, edits, and previews without removing query history.                             |
 | `relational-queries.ts` | `dropQueryStateForConnection(id)`                                    | Drops query history rows pinned to the connection plus query status/edits for its open tabs.                 |
 | `keyvalue-workspace.ts` | `closeKeyTabsForConnection(id)`                                      | No-op today; reserved for future per-key cache.                                                              |
 | `keyvalue-pubsub.ts`    | `closePubSubSessionsForConnection(id)`                               | No-op today; reserved for future pub/sub auto-reconnect state.                                               |
 
-`deleteConnection` invokes the full cascade — see the `cascade()`
-closure in `connections.ts` that calls `dropOpenQueryStateForConnection`,
-`dropRelationalCachesForConnection`, `closeKeyTabsForConnection`,
-`closePubSubSessionsForConnection`, and `closeTabsForConnection` in
-sequence before the connection record itself is dropped. Disconnect
-takes the same shape so orphan tabs / caches don't survive either path.
+`deleteConnection` and `disconnectConnection` both use the canonical
+`teardownConnectionWorkspace` coordinator in `connections.ts`. It closes query
+sessions once, performs the backend teardown, and only then drops slice-owned
+caches and tabs. `closeTabsForConnection` owns tabs only; it does not trigger
+sibling cleanup itself.
 
 Naming convention for cleanup methods: **`<verb><Noun>ForConnection(id)`**.
 Examples: `closeTabsForConnection`, `dropRelationalCachesForConnection`.

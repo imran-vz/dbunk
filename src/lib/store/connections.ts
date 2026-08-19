@@ -80,6 +80,25 @@ const applyConnectionUpdate = (
       : connection,
   );
 
+/**
+ * The single frontend owner for connection teardown ordering. Session bindings
+ * are closed before the backend connection, while local workspace state is
+ * removed only after the backend operation succeeds.
+ */
+const teardownConnectionWorkspace = async (
+  state: AppStoreState,
+  connectionId: string,
+  teardownBackend?: () => Promise<void>,
+) => {
+  await state.closeQuerySessionsForConnection(connectionId);
+  await teardownBackend?.();
+  state.dropOpenQueryStateForConnection(connectionId);
+  state.dropRelationalCachesForConnection(connectionId);
+  state.closeKeyTabsForConnection(connectionId);
+  state.closePubSubSessionsForConnection(connectionId);
+  state.closeTabsForConnection(connectionId);
+};
+
 export type ConnectionsSlice = {
   connections: Connection[];
   activeConnectionId: string;
@@ -253,20 +272,6 @@ export const createConnectionsSlice: StateCreator<
   },
 
   deleteConnection: async (connectionId) => {
-    // Mirror the disconnect cascade so deleting a connection also
-    // closes its open workspace/key/pubsub tabs and drops cached
-    // query state. Without this, deleted connections leave orphan
-    // tabs that point at a connectionId that no longer exists.
-    const cascade = async () => {
-      const state = get();
-      await state.closeQuerySessionsForConnection(connectionId);
-      state.dropOpenQueryStateForConnection(connectionId);
-      state.dropRelationalCachesForConnection(connectionId);
-      state.closeKeyTabsForConnection(connectionId);
-      state.closePubSubSessionsForConnection(connectionId);
-      await state.closeTabsForConnection(connectionId);
-    };
-
     const finalize = (connections: ReturnType<typeof get>["connections"]) => {
       set((state) => {
         const newActiveId =
@@ -288,21 +293,21 @@ export const createConnectionsSlice: StateCreator<
       });
     };
 
-    if (!isTauri()) {
-      await cascade();
-      finalize(get().connections.filter((c) => c.id !== connectionId));
-      return;
-    }
     try {
-      await get().closeQuerySessionsForConnection(connectionId);
-      const stored = await tauriInvoke<StoredConnection[]>(
-        "delete_connection",
-        {
-          payload: { connectionId },
-        },
+      let connections = get().connections.filter(
+        (connection) => connection.id !== connectionId,
       );
-      await cascade();
-      finalize(stored.map(hydrateConnection));
+      const teardownBackend = isTauri()
+        ? async () => {
+            const stored = await tauriInvoke<StoredConnection[]>(
+              "delete_connection",
+              { payload: { connectionId } },
+            );
+            connections = stored.map(hydrateConnection);
+          }
+        : undefined;
+      await teardownConnectionWorkspace(get(), connectionId, teardownBackend);
+      finalize(connections);
     } catch (error) {
       console.error("Failed to delete connection", error);
     }
@@ -514,22 +519,19 @@ export const createConnectionsSlice: StateCreator<
       return;
     }
 
-    await state.closeQuerySessionsForConnection(connectionId);
-    if (isTauri()) {
-      try {
-        await tauriInvoke("disconnect_connection", {
-          payload: { connectionId },
-        });
-      } catch (error) {
-        console.error("Failed to disconnect backend connection", error);
-        return;
-      }
+    const teardownBackend = isTauri()
+      ? async () => {
+          await tauriInvoke("disconnect_connection", {
+            payload: { connectionId },
+          });
+        }
+      : undefined;
+    try {
+      await teardownConnectionWorkspace(state, connectionId, teardownBackend);
+    } catch (error) {
+      console.error("Failed to disconnect backend connection", error);
+      return;
     }
-    state.dropOpenQueryStateForConnection(connectionId);
-    state.dropRelationalCachesForConnection(connectionId);
-    state.closeKeyTabsForConnection(connectionId);
-    state.closePubSubSessionsForConnection(connectionId);
-    await state.closeTabsForConnection(connectionId);
 
     set((state) => {
       const { [connectionId]: _droppedTab, ...remainingTabs } =

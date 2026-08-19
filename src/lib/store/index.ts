@@ -6,6 +6,7 @@ import { createCredentialsSlice } from "./credentials";
 import { createKeyValuePubSubSlice } from "./keyvalue-pubsub";
 import { createKeyValueWorkspaceSlice } from "./keyvalue-workspace";
 import { createManagedServersSlice } from "./managed-servers";
+import { createQuerySessionsSlice } from "./query-sessions";
 import { createRelationalQueriesSlice } from "./relational-queries";
 import { createRelationalTablesSlice } from "./relational-tables";
 import type { AppStoreState } from "./types";
@@ -47,6 +48,8 @@ export type {
   ProvisionManagedServerResult,
   QueryHistoryEntry,
   QueryExecution,
+  QueryExecutionStatus,
+  QueryExecutionTerminalStatus,
   QueryResultSet,
   QuerySessionError,
   QuerySessionState,
@@ -92,8 +95,8 @@ export type {
 export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
 
 /**
- * The workspace Zustand store — composed of seven domain-concept
- * slices (see `./README.md`). The slice files own their state and
+ * The workspace Zustand store — composed of domain-concept slices
+ * (see `./README.md`). The slice files own their state and
  * actions; this file is the wiring plus the public hook export.
  *
  * Each slice is typed against `AppStoreState` so cross-slice
@@ -109,6 +112,7 @@ export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createConnectionsSlice(set, get, store),
   ...createWorkspaceTabsSlice(set, get, store),
   ...createRelationalTablesSlice(set, get, store),
+  ...createQuerySessionsSlice(set, get, store),
   ...createRelationalQueriesSlice(set, get, store),
   ...createKeyValueWorkspaceSlice(set, get, store),
   ...createKeyValuePubSubSlice(set, get, store),
