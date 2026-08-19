@@ -349,6 +349,17 @@ export type Connection =
  */
 export type QueryStatus = { state: "running" | "cancelling" };
 
+export type QueryExecutionStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "lost";
+export type QueryExecutionTerminalStatus = Exclude<
+  QueryExecutionStatus,
+  "running" | "lost"
+>;
+
 export type QueryTransactionMode = "autocommit" | "manual";
 export type QueryTransactionStatus = "idle" | "active" | "failed" | "unknown";
 export type QueryTransactionIsolation =
@@ -395,7 +406,7 @@ export type QueryResultSet = {
   completed: boolean;
 };
 export type QueryExecutionTombstone = {
-  status: string;
+  status: QueryExecutionStatus;
   resultCount: number;
   rowCount: number;
   affectedCount: number;
@@ -408,7 +419,7 @@ export type QueryExecutionTombstone = {
 };
 export type QueryExecution = {
   id: string;
-  status: "running" | "completed" | "failed" | "cancelled" | "lost";
+  status: QueryExecutionStatus;
   startedAt: string;
   completedAt: string | null;
   runtimeMs: number;
@@ -915,6 +926,7 @@ import type { CredentialsSlice } from "./credentials";
 import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
 import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
 import type { ManagedServersSlice } from "./managed-servers";
+import type { QuerySessionsSlice } from "./query-sessions";
 import type { RelationalQueriesSlice } from "./relational-queries";
 import type { RelationalTablesSlice } from "./relational-tables";
 import type { WorkspaceTabsSlice } from "./workspace-tabs";
@@ -935,6 +947,7 @@ export type AppStoreState = ConnectionsSlice &
   CredentialsSlice &
   WorkspaceTabsSlice &
   RelationalTablesSlice &
+  QuerySessionsSlice &
   RelationalQueriesSlice &
   KeyValueWorkspaceSlice &
   KeyValuePubSubSlice;
