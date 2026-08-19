@@ -358,7 +358,7 @@ fn decode_browse_rows(
             .map(|json| json.len())
             .unwrap_or(usize::MAX);
         if retained_bytes.saturating_add(bytes) > MAX_RESPONSE_BYTES {
-            omitted_rows += fetched.saturating_sub(index) as u64;
+            omitted_rows += omitted_page_rows(take, fetched, index);
             has_more = true;
             break;
         }
@@ -435,6 +435,10 @@ fn cell_text(row: &Row, index: usize) -> Option<String> {
         })
 }
 
+fn omitted_page_rows(take: usize, fetched: usize, index: usize) -> u64 {
+    take.min(fetched).saturating_sub(index) as u64
+}
+
 fn parse_count_cell(row: &Row) -> Result<u64, TableBrowseError> {
     if let Ok(value) = row.try_get::<_, i64>(0) {
         return Ok(value.max(0) as u64);
@@ -490,5 +494,13 @@ mod tests {
             severity: Some("ERROR".into()),
             position: None,
         }));
+    }
+
+    #[test]
+    fn omitted_page_rows_excludes_has_more_probe() {
+        assert_eq!(omitted_page_rows(100, 101, 50), 50);
+        assert_eq!(omitted_page_rows(100, 80, 50), 30);
+        assert_eq!(omitted_page_rows(100, 101, 0), 100);
+        assert_eq!(omitted_page_rows(100, 101, 100), 0);
     }
 }
