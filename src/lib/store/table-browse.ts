@@ -270,26 +270,24 @@ const runBrowse = async (
     return;
   }
   clearEditsForTab(get, current);
-  const prefs = {
-    ...current.prefs,
-    pageSize: current.pageSize,
-    ...(options.recordHistory
-      ? {
-          filterHistory: pushHistory(
-            current.prefs.filterHistory,
-            historySnapshot(current),
-          ),
-          sortHistory: pushHistory(
-            current.prefs.sortHistory,
-            historySnapshot(current),
-          ),
-          sort: current.sort,
-          typedFilters: current.typedFilters,
-          rawFilterText: current.rawFilterText,
-          filterMode: current.filterMode,
-        }
-      : {}),
-  };
+  const prefs = options.recordHistory
+    ? {
+        ...current.prefs,
+        filterHistory: pushHistory(
+          current.prefs.filterHistory,
+          historySnapshot(current),
+        ),
+        sortHistory: pushHistory(
+          current.prefs.sortHistory,
+          historySnapshot(current),
+        ),
+        pageSize: current.pageSize,
+        sort: current.sort,
+        typedFilters: current.typedFilters,
+        rawFilterText: current.rawFilterText,
+        filterMode: current.filterMode,
+      }
+    : { ...current.prefs, pageSize: current.pageSize };
   patchBrowse(set, tabId, {
     result: result.value,
     appliedRequestId: result.value.requestId,
