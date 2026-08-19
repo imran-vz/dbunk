@@ -52,7 +52,7 @@ export type WorkspaceTabsSlice = {
   toggleLeftSidebar: () => void;
   setEditorTheme: (theme: string) => void;
   setSelectedRowIndex: (index: number) => void;
-  closeTab: (tabId: string) => void;
+  closeTab: (tabId: string) => Promise<void>;
   openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
   openTableTab: (schemaName: string, tableName: string) => void;
   openViewTab: (schemaName: string, viewName: string) => void;
@@ -66,7 +66,7 @@ export type WorkspaceTabsSlice = {
    * `connectionId` matches. Called by `Connections.deleteConnection`
    * (see the cascade in `connections.ts`).
    */
-  closeTabsForConnection: (connectionId: string) => void;
+  closeTabsForConnection: (connectionId: string) => Promise<void>;
 
   /**
    * Retarget a query tab to a different connection. Resets the tab's
@@ -76,7 +76,7 @@ export type WorkspaceTabsSlice = {
    * references that don't exist on the new connection are the user's
    * problem to resolve.
    */
-  retargetQueryTab: (tabId: string, newConnectionId: string) => void;
+  retargetQueryTab: (tabId: string, newConnectionId: string) => Promise<void>;
 };
 
 export const createWorkspaceTabsSlice: StateCreator<
@@ -100,7 +100,10 @@ export const createWorkspaceTabsSlice: StateCreator<
       activeView: "settings",
       settingsTab: tab ?? state.settingsTab,
     })),
-  setActiveTabId: (id) => set({ activeTabId: id, activeView: "workspace" }),
+  setActiveTabId: (id) => {
+    get().markQuerySessionViewed(id);
+    set({ activeTabId: id, activeView: "workspace" });
+  },
   setWorkspaceTabs: (tabs) =>
     set((state) => ({
       workspaceTabs:
@@ -111,7 +114,17 @@ export const createWorkspaceTabsSlice: StateCreator<
   setEditorTheme: (theme) => set({ editorTheme: theme }),
   setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
 
-  closeTab: (tabId) =>
+  closeTab: async (tabId) => {
+    const session = get().querySessions[tabId];
+    if (
+      session &&
+      session.transaction.status !== "idle" &&
+      !window.confirm(
+        "Close this query session? Its active or unresolved transaction will be rolled back.",
+      )
+    )
+      return;
+    await get().closeQuerySessionForTab(tabId);
     set((state) => {
       const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
       if (index === -1) {
@@ -124,7 +137,8 @@ export const createWorkspaceTabsSlice: StateCreator<
         nextActiveTabId = nextTab?.id ?? "";
       }
       return { workspaceTabs: nextTabs, activeTabId: nextActiveTabId };
-    }),
+    });
+  },
 
   openWorkspaceTab: (tab) => {
     const state = get();
@@ -250,7 +264,8 @@ export const createWorkspaceTabsSlice: StateCreator<
     }));
   },
 
-  closeTabsForConnection: (connectionId) =>
+  closeTabsForConnection: async (connectionId) => {
+    await get().closeQuerySessionsForConnection(connectionId);
     set((state) => {
       const nextTabs = state.workspaceTabs.filter(
         (tab) => tab.connectionId !== connectionId,
@@ -269,14 +284,16 @@ export const createWorkspaceTabsSlice: StateCreator<
             ? nextActiveTab.connectionId
             : state.activeConnectionId,
       };
-    }),
+    });
+  },
 
-  retargetQueryTab: (tabId, newConnectionId) => {
+  retargetQueryTab: async (tabId, newConnectionId) => {
     const state = get();
     const tab = state.workspaceTabs.find((item) => item.id === tabId);
     if (!tab || tab.kind !== "query") return;
     if (tab.connectionId === newConnectionId) return;
-    get().dropQueryStateForTab(tab.id, tab.label);
+    await get().closeQuerySessionForTab(tab.id);
+    get().dropQueryStateForTab(tab.id);
     set((s) => ({
       activeConnectionId: newConnectionId,
       workspaceTabs: s.workspaceTabs.map((item) =>

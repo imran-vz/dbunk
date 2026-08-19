@@ -9,7 +9,20 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
+vi.mock("@/lib/query-session-channel", () => ({
+  closeQuerySessionForTab: vi.fn(() => Promise.resolve()),
+  executeQuerySession: vi.fn(() => Promise.resolve()),
+  invokeQuerySession: vi.fn(() => Promise.resolve()),
+  openQuerySession: vi.fn(() => Promise.resolve()),
+  querySessionChannelsAvailable: vi.fn(() => false),
+}));
+
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
+import {
+  executeQuerySession,
+  openQuerySession,
+  querySessionChannelsAvailable,
+} from "@/lib/query-session-channel";
 import {
   type Connection,
   type ManagedServerWithStatus,
@@ -22,6 +35,9 @@ import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
 const mockedIsTauri = vi.mocked(isTauri);
+const mockedChannelsAvailable = vi.mocked(querySessionChannelsAvailable);
+const mockedOpenQuerySession = vi.mocked(openQuerySession);
+const mockedExecuteQuerySession = vi.mocked(executeQuerySession);
 
 const initialStoreState = useAppStore.getState();
 
@@ -32,6 +48,7 @@ const resetStore = () => {
 
 beforeEach(() => {
   mockedIsTauri.mockReturnValue(true);
+  mockedChannelsAvailable.mockReturnValue(false);
   mockedInvoke.mockReset();
   mockedInvoke.mockResolvedValue(undefined);
   resetStore();
@@ -852,7 +869,7 @@ describe("disconnectConnection cleanup", () => {
     ssl: true,
   });
 
-  it("disconnects the connection, closes its workspace tabs, and drops ephemeral workspace state", () => {
+  it("disconnects the connection, closes its workspace tabs, and drops ephemeral workspace state", async () => {
     const conn1 = connectedPostgres("conn-1", "Primary");
     const conn2 = connectedPostgres("conn-2", "Reporting");
     const conn1DataKey = tableDataKey("conn-1", "public", "users");
@@ -951,14 +968,14 @@ describe("disconnectConnection cleanup", () => {
         "tab-query-2": { 0: { 0: "select 2" } },
       },
       queryPreviews: {
-        "query_1.sql": {
+        "tab-query-1": {
           columns: ["id"],
           rows: [["1"]],
           runtime: "4 ms",
           rowCount: "1",
           cache: "Cold",
         },
-        "query_2.sql": {
+        "tab-query-2": {
           columns: ["id"],
           rows: [["42"]],
           runtime: "6 ms",
@@ -990,7 +1007,7 @@ describe("disconnectConnection cleanup", () => {
       ],
     });
 
-    useAppStore.getState().disconnectConnection("conn-1");
+    await useAppStore.getState().disconnectConnection("conn-1");
 
     const state = useAppStore.getState();
     const disconnected = state.connections.find((c) => c.id === "conn-1");
@@ -1008,8 +1025,8 @@ describe("disconnectConnection cleanup", () => {
     expect(state.queryStatus["tab-query-1"]).toBeUndefined();
     expect(state.queryStatus["tab-query-2"]).toEqual({ state: "running" });
     expect(state.queryEdits["tab-query-1"]).toBeUndefined();
-    expect(state.queryPreviews["query_1.sql"]).toBeUndefined();
-    expect(state.queryPreviews["query_2.sql"]).toBeDefined();
+    expect(state.queryPreviews["tab-query-1"]).toBeUndefined();
+    expect(state.queryPreviews["tab-query-2"]).toBeDefined();
     expect(state.tableEdits[conn1DataKey]).toBeUndefined();
     expect(state.tableEdits[conn2DataKey]).toBeDefined();
     expect(state.tableEditsCommitStatus[conn1DataKey]).toBeUndefined();
@@ -1224,7 +1241,7 @@ describe("runQuery overrideSql", () => {
     expect(useAppStore.getState().queryHistory[0]?.sql).toBe("SELECT 1");
   });
 
-  it("stores result in queryPreviews keyed by tab.label", async () => {
+  it("stores result in queryPreviews keyed by tab ID", async () => {
     useAppStore.setState({
       workspaceTabs: [
         {
@@ -1248,7 +1265,7 @@ describe("runQuery overrideSql", () => {
       .getState()
       .runQuery("tab-42", { overrideSql: "SELECT 1" });
 
-    const preview = useAppStore.getState().queryPreviews["query_42.sql"];
+    const preview = useAppStore.getState().queryPreviews["tab-42"];
     expect(preview).toEqual({
       columns: ["id", "name"],
       rows: [["1", "Ada"]],
@@ -1283,6 +1300,110 @@ describe("runQuery overrideSql", () => {
 
     await useAppStore.getState().runQuery(tabId, { overrideSql: "  " });
 
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("persistent query session outcomes", () => {
+  const transaction = {
+    mode: "autocommit" as const,
+    status: "idle" as const,
+    manualIsolation: "readCommitted" as const,
+  };
+
+  it("does not record a cancelled execution as success", async () => {
+    const tabId = seedQueryTab();
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+        },
+      ],
+      queryPreviews: {
+        [tabId]: {
+          columns: ["previous"],
+          rows: [["result"]],
+          runtime: "1 ms",
+          rowCount: "1",
+          cache: "Cold",
+        },
+      },
+    });
+    mockedChannelsAvailable.mockReturnValue(true);
+    let handler: Parameters<typeof openQuerySession>[0]["handler"] | undefined;
+    mockedOpenQuerySession.mockImplementationOnce(async (input) => {
+      handler = input.handler;
+      return transaction;
+    });
+    mockedExecuteQuerySession.mockImplementationOnce(async (_tabId, id) => {
+      const send = handler;
+      if (!send) throw new Error("session handler was not registered");
+      send({
+        sessionId: "session-1",
+        tabId,
+        connectionId: "conn-1",
+        generation: 1,
+        sequence: 1,
+        executionId: id,
+        requiresAck: false,
+        event: { kind: "executionStarted" },
+      });
+      send({
+        sessionId: "session-1",
+        tabId,
+        connectionId: "conn-1",
+        generation: 1,
+        sequence: 2,
+        executionId: id,
+        requiresAck: true,
+        event: {
+          kind: "executionCompleted",
+          status: "cancelled",
+          transaction,
+          omittedRows: 0,
+          omittedResultSets: 0,
+          omittedNotices: 0,
+          omittedMetadataBytes: 0,
+          truncationReasons: [],
+          error: null,
+        },
+      });
+    });
+
+    const outcome = await useAppStore.getState().runQuery(tabId);
+
+    expect(outcome).toEqual({ kind: "cancelled" });
+    expect(useAppStore.getState().queryHistory).toEqual([]);
+    expect(useAppStore.getState().queryPreviews[tabId]?.columns).toEqual([
+      "previous",
+    ]);
+    expect(useAppStore.getState().queryStatus[tabId]).toBeUndefined();
+    expect(
+      useAppStore.getState().workspaceTabs.find((tab) => tab.id === tabId)
+        ?.lastRun,
+    ).toBeUndefined();
+  });
+
+  it("does not start another run while cancellation is pending", async () => {
+    const tabId = seedQueryTab();
+    useAppStore.setState({
+      queryStatus: { [tabId]: { state: "cancelling" } },
+    });
+
+    await expect(useAppStore.getState().runQuery(tabId)).resolves.toEqual({
+      kind: "noop",
+    });
     expect(mockedInvoke).not.toHaveBeenCalled();
   });
 });
@@ -3339,7 +3460,7 @@ describe("store.loadServerDetails", () => {
 });
 
 describe("disconnectConnection drops relationStats caches", () => {
-  it("drops relationStats and relationStatsStatus for the disconnected connection", () => {
+  it("drops relationStats and relationStatsStatus for the disconnected connection", async () => {
     useAppStore.setState({
       connections: [
         {
@@ -3373,7 +3494,7 @@ describe("disconnectConnection drops relationStats caches", () => {
       },
     });
 
-    useAppStore.getState().disconnectConnection("conn-1");
+    await useAppStore.getState().disconnectConnection("conn-1");
 
     expect(useAppStore.getState().relationStats["conn-1"]).toBeUndefined();
     expect(
@@ -3423,7 +3544,7 @@ describe("connectionOverviewTab", () => {
     });
   });
 
-  it("disconnectConnection drops the connection's sub-tab entry", () => {
+  it("disconnectConnection drops the connection's sub-tab entry", async () => {
     useAppStore.setState({
       connections: [connectedPostgres("conn-1"), connectedPostgres("conn-2")],
       connectionOverviewTab: {
@@ -3451,7 +3572,7 @@ describe("connectionOverviewTab", () => {
       },
     });
 
-    useAppStore.getState().disconnectConnection("conn-1");
+    await useAppStore.getState().disconnectConnection("conn-1");
 
     expect(useAppStore.getState().connectionOverviewTab).toEqual({
       "conn-2": "details",

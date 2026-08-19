@@ -5,6 +5,7 @@ import {
   type WorkbenchRailId,
 } from "@/components/app-shell/activity-rail";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
+import type { ResultsView } from "@/components/query-editor/results-view";
 import type { StatusBarItem } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import type { SubTab } from "@/components/table-editor/header";
@@ -61,7 +62,7 @@ export function RelationalWorkbench({
     Record<string, TableSection>
   >({});
   const [querySections, setQuerySections] = useState<
-    Record<string, "results" | "explain">
+    Record<string, ResultsView>
   >({});
   const [statusItems, setStatusItems] = useState<StatusBarItem[]>([]);
 
@@ -160,7 +161,7 @@ export function RelationalWorkbench({
     : "results";
 
   const setQuerySection = useCallback(
-    (next: "results" | "explain") => {
+    (next: ResultsView) => {
       if (!activeTab) return;
       setQuerySections((current) => ({ ...current, [activeTab.id]: next }));
     },
