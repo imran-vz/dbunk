@@ -538,6 +538,7 @@ async fn execute_job(executor: &Arc<Executor>, job: Job) {
         }
     };
     let result = rewrite_interrupt(executor, &job, result).await;
+    forget_socket_if_dead(executor, &result).await;
     let _ = job.reply.send(result);
     let mut inner = executor.inner.lock().await;
     if let Some(tab) = inner.tabs.get_mut(&job.tab_id) {
@@ -551,6 +552,12 @@ async fn execute_job(executor: &Arc<Executor>, job: Job) {
     drop(inner);
     drain_pending_cancel(executor).await;
     executor.notify.notify_one();
+}
+
+async fn forget_socket_if_dead(executor: &Executor, result: &Result<JobResult, TableBrowseError>) {
+    if matches!(result, Err(error) if postgres::is_dead_socket(error)) {
+        executor.inner.lock().await.connection = None;
+    }
 }
 
 async fn rewrite_interrupt(
@@ -593,8 +600,14 @@ async fn run_kind(executor: &Executor, job: &Job) -> Result<JobResult, TableBrow
 }
 
 async fn ensure_connection(executor: &Executor) -> Result<(), TableBrowseError> {
-    if executor.inner.lock().await.connection.is_some() {
-        return Ok(());
+    {
+        let mut inner = executor.inner.lock().await;
+        if let Some(connection) = inner.connection.as_ref() {
+            if !connection.inner.client.is_closed() {
+                return Ok(());
+            }
+        }
+        inner.connection = None;
     }
     let connection = postgres::connect(&executor.spec).await?;
     let mut inner = executor.inner.lock().await;
@@ -874,6 +887,15 @@ mod tests {
             },
             rx,
         )
+    }
+
+    #[tokio::test]
+    async fn connection_lost_clears_cached_socket_slot() {
+        let executor = dummy_executor();
+        forget_socket_if_dead(&executor, &Err(TableBrowseError::ConnectionLost)).await;
+        assert!(executor.inner.lock().await.connection.is_none());
+        forget_socket_if_dead(&executor, &Err(TableBrowseError::Cancelled)).await;
+        assert!(executor.inner.lock().await.connection.is_none());
     }
 
     #[test]
