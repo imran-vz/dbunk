@@ -232,13 +232,13 @@ ADR-0009 for the writes-by-default posture.
   u64 per tab. A newer request for the same tab supersedes the older one
   (queued requests drop, in-flight requests are protocol-cancelled). Queue
   wait on the single per-Connection socket is bounded at 10 seconds.
-- **Browse Filter** — a typed column operator (`eq`, `neq`, `lt`, `lte`,
-  `gt`, `gte`, `contains`, `notContains`, `startsWith`, `endsWith`,
-  `isNull`, `isNotNull`, `inList`) or a raw SQL WHERE fragment. Typed
-  filters AND-combine; a raw fragment is wrapped as `(<fragment>)` and
-  AND-combined with any typed filters. Raw mode runs with the Connection's
-  privileges inside the read-only browse transaction; cancellation is the
-  recourse for an expensive fragment.
+- **Browse Filter** — a tagged predicate: `comparison` (eq/neq/lt/lte/gt/gte +
+  value), `textMatch` (contains/notContains/startsWith/endsWith + value),
+  `isNull` / `isNotNull`, `inList` (required non-empty values), or a raw SQL
+  WHERE fragment. Typed filters AND-combine; a raw fragment is wrapped as
+  `(<fragment>)` and AND-combined with any typed filters. Raw mode runs with
+  the Connection's privileges inside the read-only browse transaction;
+  cancellation is the recourse for an expensive fragment.
 - **Grid Preferences** — a versioned JSON document of per-table browse UI
   state (page size, sort, typed filters, raw filter text, filter/sort
   history capped at 20 entries, named presets, optional column widths).

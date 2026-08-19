@@ -9,6 +9,7 @@ mod postgres;
 mod query_session;
 mod redis;
 mod seed;
+mod socket_lifecycle;
 mod storage;
 mod table_browse;
 mod tunnel;

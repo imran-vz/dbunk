@@ -262,11 +262,11 @@ inspection fields.
 
 17. Cells decode to `Option<String>` — true NULLs, not the `"NULL"` sentinel.
     Per-cell retained bytes cap at 1 MiB with UTF-8-safe truncation, per-row
-    at 2 MiB, per-response at 32 MiB. When the response cap is hit, remaining
-    fetched rows are dropped, `hasMore` is forced true, and typed truncation
-    counters report omitted rows and truncated cells. Reuse the
-    `query_session/postgres.rs` truncation helpers rather than duplicating
-    them; extract them if visibility requires.
+    at 2 MiB, per-response at 32 MiB including `rowIdentity`. When the
+    response cap is hit, remaining fetched rows are dropped, `hasMore` is
+    forced true, and typed truncation counters report omitted rows and
+    truncated cells. Shared truncation helpers live in
+    `postgres/row_budget.rs`.
 18. The response carries `identity { kind, columns }` and, when identity
     exists, `rowIdentity: Vec<Vec<String>>` aligned with `rows`, extracted
     from projected columns or from a `ctid::text` column the builder appends
@@ -294,8 +294,10 @@ Commands:
 | `save_table_grid_prefs` | `connectionId`, `schema`, `table`, `prefs` | `()` |
 
 `BrowseTableDataPayload`: `connectionId`, `tabId`, `requestId`, `schema`,
-`table`, `filters: BrowseFilter[]` (tagged `column { column, operator,
-value?, values? }` or `rawSql { text }`), `sort: BrowseSortKey[]`,
+`table`, `filters: BrowseFilter[]` (tagged `comparison { column, operator,
+value }`, `textMatch { column, operator, value }`, `isNull` / `isNotNull
+{ column }`, `inList { column, values }` (non-empty), or `rawSql { text }`),
+`sort: BrowseSortKey[]`,
 `pageRequest` (tagged `offset { page }` or `keyset { cursor }`), `pageSize`,
 `countPolicy`, `refreshStructure`.
 
@@ -303,7 +305,8 @@ value?, values? }` or `rawSql { text }`), `sort: BrowseSortKey[]`,
 `rows: (string | null)[][]`, `identity { kind: "primaryKey" | "uniqueIndex" |
 "virtual" | "none", columns }`, `rowIdentity`, `pageInfo { mode, page,
 hasMore, nextCursor }`, `count { kind: "exact" | "estimated" | "unknown",
-value }`, `inspection { sql, params }`, truncation counters, `runtimeMs`.
+value }`, `inspection { sql, params }` where params are tagged `text` /
+`textArray`, truncation counters, `runtimeMs`.
 
 `TableBrowseError` tagged union: `unsupportedEngine`, `unknownColumn`,
 `invalidFilter` with reason, `invalidSort`, `invalidCursor`, `superseded`,

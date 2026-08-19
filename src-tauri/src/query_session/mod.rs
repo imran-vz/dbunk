@@ -54,6 +54,7 @@ struct ManagerState {
     closing: HashSet<String>,
     opening: HashMap<String, String>,
     observer_opening: HashMap<String, watch::Sender<bool>>,
+    global_closing: bool,
 }
 #[derive(Clone)]
 pub(crate) struct QuerySessionManager {
@@ -181,7 +182,7 @@ impl QuerySessionManager {
                 release_opening_locked(&mut state, &payload.session_id);
                 return Err(QuerySessionError::OwnerMismatch);
             }
-            if state.closing.contains(&payload.connection_id) {
+            if state.global_closing || state.closing.contains(&payload.connection_id) {
                 release_opening_locked(&mut state, &payload.session_id);
                 return Err(QuerySessionError::ConnectionClosing);
             }
@@ -290,7 +291,7 @@ impl QuerySessionManager {
         if state.owners.get(window) != Some(&payload.owner_id) {
             return Err(QuerySessionError::OwnerMismatch);
         }
-        if state.closing.contains(&payload.connection_id) {
+        if state.global_closing || state.closing.contains(&payload.connection_id) {
             return Err(QuerySessionError::ConnectionClosing);
         }
         if state.sessions.contains_key(&payload.session_id)
@@ -589,6 +590,13 @@ impl QuerySessionManager {
     }
     pub(crate) async fn close_all(&self) {
         self.close_matching(|_| true).await;
+    }
+    pub(crate) async fn begin_global_teardown(&self) {
+        self.inner.lock().await.global_closing = true;
+        self.close_all().await;
+    }
+    pub(crate) async fn end_global_teardown(&self) {
+        self.inner.lock().await.global_closing = false;
     }
     async fn close_matching(&self, predicate: impl Fn(&Session) -> bool) {
         let sessions = {

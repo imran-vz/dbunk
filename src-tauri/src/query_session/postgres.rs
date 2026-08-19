@@ -1,182 +1,85 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
-use futures_util::{future::poll_fn, StreamExt};
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
+use futures_util::StreamExt;
 use tokio::sync::{mpsc, Mutex};
-use tokio_postgres::{config::SslMode, AsyncMessage, Client, NoTls, SimpleQueryMessage};
-use tokio_postgres_rustls::MakeRustlsConnect;
+use tokio_postgres::{Client, SimpleQueryMessage};
 
 use super::protocol::{QueryDatabaseError, QuerySessionError};
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
-use crate::postgres::options::driver_option_sql;
+use crate::postgres::dedicated::{self, DedicatedConnection, DedicatedError, NoticeSink};
 
-#[derive(Debug)]
-pub(crate) struct Notice {
-    pub severity: String,
-    pub message: String,
-}
+pub(crate) use crate::postgres::dedicated::Notice;
+pub(crate) use crate::postgres::row_budget::{shrink_row, truncate_utf8};
+
 pub(crate) struct SessionConnection {
-    pub client: Arc<Client>,
-    pub cancel: tokio_postgres::CancelToken,
+    inner: DedicatedConnection,
     pub pid: i32,
     pub backend_start: String,
     pub notices: Arc<Mutex<mpsc::Receiver<Notice>>>,
     dropped_notices: Arc<AtomicU32>,
-    _driver: tokio::task::JoinHandle<()>,
+}
+
+impl std::ops::Deref for SessionConnection {
+    type Target = DedicatedConnection;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 pub(crate) async fn connect(
     spec: &ResolvedPostgresConnectSpec,
 ) -> Result<SessionConnection, QuerySessionError> {
-    let mut config = spec.tokio_config();
-    config.ssl_mode(if spec.tls_prefer {
-        SslMode::Prefer
-    } else {
-        SslMode::Disable
-    });
     let (notice_tx, notice_rx) = mpsc::channel(500);
     let dropped_notices = Arc::new(AtomicU32::new(0));
-    let (client, driver) = if spec.tls_prefer {
-        let tls = MakeRustlsConnect::new(permissive_tls_config());
-        let connect = config.connect(tls);
-        let (client, mut connection) = with_deadline(spec, connect).await?;
-        let dropped = dropped_notices.clone();
-        let driver = tokio::spawn(async move {
-            while let Some(Ok(message)) = poll_fn(|cx| connection.poll_message(cx)).await {
-                if let AsyncMessage::Notice(notice) = message {
-                    if notice_tx
-                        .try_send(Notice {
-                            severity: notice.severity().to_string(),
-                            message: notice.message().to_string(),
-                        })
-                        .is_err()
-                    {
-                        dropped.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-        });
-        (client, driver)
-    } else {
-        let connect = config.connect(NoTls);
-        let (client, mut connection) = with_deadline(spec, connect).await?;
-        let dropped = dropped_notices.clone();
-        let driver = tokio::spawn(async move {
-            while let Some(Ok(message)) = poll_fn(|cx| connection.poll_message(cx)).await {
-                if let AsyncMessage::Notice(notice) = message {
-                    if notice_tx
-                        .try_send(Notice {
-                            severity: notice.severity().to_string(),
-                            message: notice.message().to_string(),
-                        })
-                        .is_err()
-                    {
-                        dropped.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-        });
-        (client, driver)
-    };
-    for statement in driver_option_sql(&spec.driver_options) {
-        client
-            .batch_execute(&statement)
-            .await
-            .map_err(database_error)?;
-    }
-    let identity = client.query_one("SELECT pg_backend_pid(), backend_start::text FROM pg_stat_activity WHERE pid = pg_backend_pid()", &[]).await.map_err(database_error)?;
-    let cancel = client.cancel_token();
+    let inner = dedicated::connect(
+        spec,
+        NoticeSink::Bounded {
+            tx: notice_tx,
+            dropped: dropped_notices.clone(),
+        },
+    )
+    .await
+    .map_err(map_dedicated)?;
+    let identity = inner
+        .client
+        .query_one(
+            "SELECT pg_backend_pid(), backend_start::text FROM pg_stat_activity WHERE pid = pg_backend_pid()",
+            &[],
+        )
+        .await
+        .map_err(|error| map_dedicated(dedicated::database_error(error)))?;
     Ok(SessionConnection {
-        client: Arc::new(client),
-        cancel,
+        inner,
         pid: identity.get(0),
         backend_start: identity.get(1),
         notices: Arc::new(Mutex::new(notice_rx)),
         dropped_notices,
-        _driver: driver,
     })
+}
+
+fn map_dedicated(error: DedicatedError) -> QuerySessionError {
+    match error {
+        DedicatedError::ConnectionLost => QuerySessionError::ConnectionLost,
+        DedicatedError::Timeout { operation } => QuerySessionError::Timeout { operation },
+        DedicatedError::Database {
+            code,
+            message,
+            severity,
+            position,
+        } => QuerySessionError::Database {
+            code,
+            message,
+            severity,
+            position,
+        },
+    }
 }
 
 impl SessionConnection {
     pub(crate) fn take_dropped_notices(&self) -> u32 {
         self.dropped_notices.swap(0, Ordering::Relaxed)
     }
-}
-
-async fn with_deadline<T, E>(
-    spec: &ResolvedPostgresConnectSpec,
-    future: impl std::future::Future<Output = Result<T, E>>,
-) -> Result<T, QuerySessionError> {
-    match spec.connect_timeout {
-        Some(limit) => tokio::time::timeout(limit, future)
-            .await
-            .map_err(|_| QuerySessionError::Timeout {
-                operation: "connect".into(),
-            })?
-            .map_err(|_| QuerySessionError::ConnectionLost),
-        None => future.await.map_err(|_| QuerySessionError::ConnectionLost),
-    }
-}
-
-#[derive(Debug)]
-struct AcceptAllVerifier;
-impl ServerCertVerifier for AcceptAllVerifier {
-    fn verify_server_cert(
-        &self,
-        _: &CertificateDer<'_>,
-        _: &[CertificateDer<'_>],
-        _: &ServerName<'_>,
-        _: &[u8],
-        _: UnixTime,
-    ) -> Result<ServerCertVerified, RustlsError> {
-        Ok(ServerCertVerified::assertion())
-    }
-    fn verify_tls12_signature(
-        &self,
-        _: &[u8],
-        _: &CertificateDer<'_>,
-        _: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, RustlsError> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-    fn verify_tls13_signature(
-        &self,
-        _: &[u8],
-        _: &CertificateDer<'_>,
-        _: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, RustlsError> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::ED25519,
-        ]
-    }
-}
-fn permissive_tls_config() -> rustls::ClientConfig {
-    let mut config = rustls::ClientConfig::builder_with_provider(
-        rustls::crypto::ring::default_provider().into(),
-    )
-    .with_safe_default_protocol_versions()
-    .expect("ring protocol versions")
-    .with_root_certificates(rustls::RootCertStore::empty())
-    .with_no_client_auth();
-    config
-        .dangerous()
-        .set_certificate_verifier(Arc::new(AcceptAllVerifier));
-    config
 }
 
 #[derive(Debug, Default)]
@@ -486,65 +389,12 @@ fn bound_metadata(columns: &mut [Option<String>], result: &mut ExecutionTotals) 
         }
     }
 }
-pub(crate) fn truncate_utf8(value: &str, max: usize, reasons: &mut Vec<String>) -> String {
-    if value.len() <= max {
-        return value.to_string();
-    }
-    let mut end = max;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    reasons.push("cellBytes".into());
-    value[..end].to_string()
-}
-pub(crate) fn shrink_row(values: &mut [Option<String>], reasons: &mut Vec<String>) {
-    while serde_json::to_vec(values)
-        .map(|json| json.len())
-        .unwrap_or(usize::MAX)
-        > 2 * 1024 * 1024
-    {
-        let Some(value) = values
-            .iter_mut()
-            .rev()
-            .find_map(Option::as_mut)
-            .filter(|value| !value.is_empty())
-        else {
-            break;
-        };
-        let mut end = value.len() / 2;
-        while !value.is_char_boundary(end) {
-            end -= 1;
-        }
-        value.truncate(end);
-        reasons.push("rowBytes".into());
-    }
-}
 
 pub(crate) async fn cancel(cancel: tokio_postgres::CancelToken, tls: bool) -> bool {
-    let future = async move {
-        if tls {
-            cancel
-                .cancel_query(MakeRustlsConnect::new(permissive_tls_config()))
-                .await
-        } else {
-            cancel.cancel_query(NoTls).await
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(2), future)
-        .await
-        .is_ok_and(|result| result.is_ok())
+    crate::postgres::dedicated::cancel(cancel, tls).await
 }
 pub(crate) fn database_error(error: tokio_postgres::Error) -> QuerySessionError {
-    if let Some(db) = error.as_db_error() {
-        QuerySessionError::Database {
-            code: Some(db.code().code().into()),
-            message: db.message().into(),
-            severity: Some(db.severity().into()),
-            position: None,
-        }
-    } else {
-        QuerySessionError::ConnectionLost
-    }
+    map_dedicated(dedicated::database_error(error))
 }
 pub(crate) fn display_error(error: &QuerySessionError) -> Option<QueryDatabaseError> {
     match error {
@@ -567,6 +417,7 @@ pub(crate) fn display_error(error: &QuerySessionError) -> Option<QueryDatabaseEr
 mod tests {
     use super::*;
     use crate::PgDriverOptions;
+    use std::time::Duration;
     #[test]
     fn utf8_truncation_stays_on_boundary() {
         let mut reasons = Vec::new();
