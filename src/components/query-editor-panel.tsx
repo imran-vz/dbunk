@@ -25,6 +25,7 @@ import { ResizerHandle } from "@/components/ui/resizer-handle";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkbenchDock } from "@/components/workbench/dock";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
+import { flattenResultSetRows } from "@/lib/query-session-budget";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import { formatSql } from "@/lib/sql-format";
 import {
@@ -120,10 +121,6 @@ export function QueryEditorPanel({
     updateQuery,
     runQuery,
     cancelQuery,
-    setQueryTransactionMode,
-    setQueryTransactionIsolation,
-    queryTransactionAction,
-    closeQuerySessionForTab: closeSession,
     loadTableStructure,
     setQueryEdit,
     discardQueryEdits,
@@ -137,15 +134,6 @@ export function QueryEditorPanel({
   const isRunning = status?.state === "running";
   const isBusy = isRunning || isCancelling;
   const session = querySessions[tab.id];
-  const closeUnknownSession = useCallback(() => {
-    if (
-      window.confirm(
-        "Close this query session? Its active or unresolved transaction will be rolled back.",
-      )
-    ) {
-      void closeSession(tab.id);
-    }
-  }, [closeSession, tab.id]);
   // Terminal outcome lives component-local. We store the full
   // QueryOutcome (not just the failure message) for shape parity
   // with sibling panels. See CONTEXT.md — Query Outcome.
@@ -161,7 +149,12 @@ export function QueryEditorPanel({
       if (isExplainStatement(sql)) {
         setResultsView("explain");
         if (outcome.kind === "completed") {
-          setExplainPlan(parseExplainPreview(outcome.preview, outcome));
+          setExplainPlan(
+            parseExplainPreview(
+              explainPreviewForOutcome(outcome, tab.id),
+              outcome,
+            ),
+          );
         } else if (outcome.kind === "failed") {
           setExplainPlan(null);
         }
@@ -169,7 +162,7 @@ export function QueryEditorPanel({
       }
       setResultsView("results");
     },
-    [setOutcome, setResultsView],
+    [setOutcome, setResultsView, tab.id],
   );
 
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
@@ -288,7 +281,9 @@ export function QueryEditorPanel({
     if (requestedTabId !== activeTabIdRef.current) return;
     if (outcome.kind !== "noop") setOutcome(outcome);
     if (outcome.kind === "completed") {
-      setExplainPlan(parseExplainPreview(outcome.preview, outcome));
+      setExplainPlan(
+        parseExplainPreview(explainPreviewForOutcome(outcome, tab.id), outcome),
+      );
     }
   };
 
@@ -365,6 +360,7 @@ export function QueryEditorPanel({
         className="relative flex h-full min-h-0 flex-col bg-surface-app"
       >
         <QueryEditorToolbar
+          tabId={tab.id}
           dbSelectorLabel={dbSelectorLabel}
           connections={connections}
           currentConnectionId={tab.connectionId}
@@ -373,18 +369,7 @@ export function QueryEditorPanel({
           onDiscardEdits={() => discardQueryEdits(tab.id)}
           isRunning={isBusy}
           isCancelling={isCancelling}
-          transaction={session?.transaction}
           onStop={() => void cancelQuery(tab.id)}
-          onTransactionModeChange={(mode) =>
-            void setQueryTransactionMode(tab.id, mode)
-          }
-          onTransactionIsolationChange={(isolation) =>
-            void setQueryTransactionIsolation(tab.id, isolation)
-          }
-          onTransactionAction={(action) =>
-            void queryTransactionAction(tab.id, action)
-          }
-          onCloseSession={closeUnknownSession}
           isSidebarOpen={sidebar.isOpen}
           onToggleSidebar={sidebar.onToggle}
           onRunCurrent={runCurrentHandler}
@@ -476,6 +461,7 @@ export function QueryEditorPanel({
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <QueryEditorToolbar
+          tabId={tab.id}
           dbSelectorLabel={dbSelectorLabel}
           connections={connections}
           currentConnectionId={tab.connectionId}
@@ -484,18 +470,7 @@ export function QueryEditorPanel({
           onDiscardEdits={() => discardQueryEdits(tab.id)}
           isRunning={isBusy}
           isCancelling={isCancelling}
-          transaction={session?.transaction}
           onStop={() => void cancelQuery(tab.id)}
-          onTransactionModeChange={(mode) =>
-            void setQueryTransactionMode(tab.id, mode)
-          }
-          onTransactionIsolationChange={(isolation) =>
-            void setQueryTransactionIsolation(tab.id, isolation)
-          }
-          onTransactionAction={(action) =>
-            void queryTransactionAction(tab.id, action)
-          }
-          onCloseSession={closeUnknownSession}
           isSidebarOpen={sidebar.isOpen}
           onToggleSidebar={sidebar.onToggle}
           onRunCurrent={
@@ -570,6 +545,7 @@ export function QueryEditorPanel({
             view={resultsView}
             onViewChange={setResultsView}
             preview={activeQueryPreview}
+            session={session}
             explainPlan={explainPlan}
             currentEdits={currentEdits}
             exportFilenameBase={exportFilenameBase}
@@ -578,6 +554,8 @@ export function QueryEditorPanel({
             onCellEdit={(rowIndex, colIndex, value) =>
               setQueryEdit(tab.id, rowIndex, colIndex, value)
             }
+            onSwitchBudgetOwner={setActiveTabId}
+            onReleaseBudgetOwner={releaseQueryResults}
           />
         </div>
 
@@ -604,6 +582,36 @@ export function QueryEditorPanel({
 
 function isExplainStatement(sql: string): boolean {
   return /^\s*explain\b/i.test(sql);
+}
+
+function explainPreviewForOutcome(
+  outcome: Extract<QueryOutcome, { kind: "completed" }>,
+  tabId: string,
+): QueryPreviewData {
+  const execution = useAppStore.getState().querySessions[tabId]?.execution;
+  if (execution && !execution.tombstone) {
+    const first = execution.resultSets.find(
+      (result) => result.columns.length > 0,
+    );
+    return {
+      columns: (first?.columns ?? []).map((column) => column ?? ""),
+      rows: flattenResultSetRows(first).map((row) =>
+        row.map((cell) => cell ?? ""),
+      ),
+      runtime: `${execution.runtimeMs} ms`,
+      rowCount: String(first?.rowCount ?? 0),
+      cache: "Cold",
+    };
+  }
+  return (
+    outcome.preview ?? {
+      columns: [],
+      rows: [],
+      runtime: `${outcome.runtimeMs} ms`,
+      rowCount: String(outcome.rowCount),
+      cache: "Cold",
+    }
+  );
 }
 
 function parseExplainPreview(
