@@ -240,17 +240,34 @@ export function TableEditorBody({
           data-testid="table-pagination"
           className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
         >
-          <span className="tabular-nums">{pagination.countLabel}</span>
-          {pagination.onCountRows ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[0.6875rem]"
-              onClick={pagination.onCountRows}
-              disabled={pagination.counting || isLoading}
-            >
-              {pagination.counting ? "Counting…" : "Count rows"}
-            </Button>
+          <span className="tabular-nums">
+            {serverBrowse
+              ? pagination.countLabel
+              : `Showing ${pagination.startRow.toLocaleString()} to ${pagination.endRow.toLocaleString()} of ${(pagination.totalRows ?? rows.length).toLocaleString()} rows`}
+          </span>
+          {serverBrowse && pagination.onCountRows ? (
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[0.6875rem]"
+                onClick={pagination.onCountRows}
+                disabled={pagination.counting || isLoading}
+              >
+                {pagination.counting ? "Counting…" : "Count rows"}
+              </Button>
+              {pagination.counting ||
+              serverBrowse.countStatus.state === "loading" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[0.6875rem]"
+                  onClick={serverBrowse.onCancel}
+                >
+                  Cancel
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           <Pagination
             page={pagination.page}

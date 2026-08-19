@@ -348,6 +348,20 @@ export function DataGridToolbar({
             <span className="dbunk-optional-label">Refresh</span>
           </Button>
 
+          {serverBrowse?.loadStatus.state === "loading" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-border-subtle bg-surface-panel"
+              onClick={serverBrowse.onCancel}
+              aria-label="Cancel browse"
+              title="Cancel browse"
+            >
+              <IconX className="size-3.5" />
+              <span className="dbunk-optional-label">Cancel</span>
+            </Button>
+          ) : null}
+
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Export"
@@ -534,36 +548,46 @@ export function DataGridToolbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <Select
-            value={String(
-              serverBrowse?.pageSize ?? table.getState().pagination.pageSize,
-            )}
-            onValueChange={(value) => {
-              const next = Number.parseInt(value ?? "", 10);
-              if (!Number.isFinite(next)) return;
-              if (serverBrowse) {
+          {serverBrowse ? (
+            <Select
+              value={String(serverBrowse.pageSize)}
+              onValueChange={(value) => {
+                const next = Number.parseInt(value ?? "", 10);
+                if (!Number.isFinite(next)) return;
                 serverBrowse.onPageSizeChange(next);
-                return;
-              }
-              table.setPageSize(next);
-            }}
-          >
-            <SelectTrigger
-              className="h-6 w-24 border-border-subtle bg-surface-panel text-xs"
-              aria-label="Page size"
+              }}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(serverBrowse ? TABLE_BROWSE_PAGE_SIZES : [10, 25, 50, 100]).map(
-                (size) => (
+              <SelectTrigger
+                className="h-6 w-24 border-border-subtle bg-surface-panel text-xs"
+                aria-label="Page size"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TABLE_BROWSE_PAGE_SIZES.map((size) => (
                   <SelectItem key={size} value={String(size)}>
                     {size} rows
                   </SelectItem>
-                ),
-              )}
-            </SelectContent>
-          </Select>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Select defaultValue={String(table.getState().pagination.pageSize)}>
+              <SelectTrigger
+                className="h-6 w-24 border-border-subtle bg-surface-panel text-xs"
+                aria-label="Page size"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 25, 50, 100].map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size} rows
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             variant="ghost"
             size="icon"

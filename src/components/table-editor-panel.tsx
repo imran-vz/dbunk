@@ -201,19 +201,27 @@ export function TableEditorPanel({
 
   const rows = data?.rows ?? [];
   const selection = useRowSelection(rows);
+  const isBrowseMode = Boolean(serverBrowse);
   useEffect(() => {
+    if (!isBrowseMode) return;
     selection.clear();
     setInlineDrilldown(null);
-    // Rows were replaced by a new browse page or legacy reload.
+    // Rows were replaced by a new browse page.
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- selection.clear is stable enough; we only want row-identity changes.
-  }, [data?.runtimeMs, data?.page, data?.pageSize, data?.rows.length]);
+  }, [
+    isBrowseMode,
+    data?.runtimeMs,
+    data?.page,
+    data?.pageSize,
+    data?.rows.length,
+  ]);
   const caps = deriveSelectedTableSessionCapabilities(
     tableSession.capabilities,
     selection.selectedCount,
   );
   const exportFilenameBase = useTableExportFilename(tab);
 
-  const onRefresh = () => {
+  const refreshTable = () => {
     void tableSession.refresh();
   };
 
@@ -510,7 +518,7 @@ export function TableEditorPanel({
       toast.success(
         `Seeded ${result.rowsInserted.toLocaleString()} rows (seed ${result.seedUsed})`,
       );
-      onRefresh();
+      refreshTable();
     } catch (error) {
       setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
       toast.error(`Seed failed: ${errorToMessage(error)}`);
@@ -528,6 +536,8 @@ export function TableEditorPanel({
     }
     action();
   };
+
+  const onRefresh = () => confirmIfEdits(refreshTable);
 
   const guardedBrowse = serverBrowse
     ? {
@@ -554,14 +564,17 @@ export function TableEditorPanel({
       }
     : undefined;
 
-  const guardedPagination = {
-    ...pagination,
-    goToPage: (next: number) => confirmIfEdits(() => pagination.goToPage(next)),
-    onPrevPage: () => confirmIfEdits(() => pagination.onPrevPage()),
-    onNextPage: () => confirmIfEdits(() => pagination.onNextPage()),
-    onFirstPage: () => confirmIfEdits(() => pagination.onFirstPage()),
-    onLastPage: () => confirmIfEdits(() => pagination.onLastPage()),
-  };
+  const guardedPagination = serverBrowse
+    ? {
+        ...pagination,
+        goToPage: (next: number) =>
+          confirmIfEdits(() => pagination.goToPage(next)),
+        onPrevPage: () => confirmIfEdits(() => pagination.onPrevPage()),
+        onNextPage: () => confirmIfEdits(() => pagination.onNextPage()),
+        onFirstPage: () => confirmIfEdits(() => pagination.onFirstPage()),
+        onLastPage: () => confirmIfEdits(() => pagination.onLastPage()),
+      }
+    : pagination;
 
   const isLoading = status?.state === "loading";
   const isSaving = commitStatus?.state === "running";
