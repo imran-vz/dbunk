@@ -66,7 +66,7 @@ export type WorkspaceTabsSlice = {
    * `connectionId` matches. Called by `Connections.deleteConnection`
    * (see the cascade in `connections.ts`).
    */
-  closeTabsForConnection: (connectionId: string) => Promise<void>;
+  closeTabsForConnection: (connectionId: string) => void;
 
   /**
    * Retarget a query tab to a different connection. Resets the tab's
@@ -264,8 +264,7 @@ export const createWorkspaceTabsSlice: StateCreator<
     }));
   },
 
-  closeTabsForConnection: async (connectionId) => {
-    await get().closeQuerySessionsForConnection(connectionId);
+  closeTabsForConnection: (connectionId) => {
     set((state) => {
       const nextTabs = state.workspaceTabs.filter(
         (tab) => tab.connectionId !== connectionId,
