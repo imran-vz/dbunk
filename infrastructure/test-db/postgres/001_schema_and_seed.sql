@@ -216,6 +216,18 @@ INSERT INTO browse_fixture.expr_unique (id, email) VALUES
   (1, 'ada@other.example'),
   (NULL, 'nobody@example.com');
 
+CREATE TABLE browse_fixture.keyless_parts (
+  label text NOT NULL,
+  amount integer NOT NULL
+) PARTITION BY LIST (label);
+CREATE TABLE browse_fixture.keyless_parts_a
+  PARTITION OF browse_fixture.keyless_parts FOR VALUES IN ('a');
+CREATE TABLE browse_fixture.keyless_parts_b
+  PARTITION OF browse_fixture.keyless_parts FOR VALUES IN ('b');
+INSERT INTO browse_fixture.keyless_parts (label, amount)
+SELECT CASE WHEN g % 2 = 0 THEN 'a' ELSE 'b' END, g
+FROM generate_series(1, 20) AS g;
+
 CREATE TABLE browse_fixture.large_rows (
   id bigint PRIMARY KEY,
   payload text NOT NULL

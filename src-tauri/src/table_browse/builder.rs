@@ -5,6 +5,8 @@ use super::protocol::*;
 
 pub(crate) const CTID_COLUMN: &str = "ctid";
 pub(crate) const CTID_CAST_TYPE: &str = "tid";
+pub(crate) const TABLEOID_COLUMN: &str = "tableoid";
+pub(crate) const TABLEOID_CAST_TYPE: &str = "oid";
 pub(crate) const CTID_KEYSET_VERSION: i32 = 140000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +58,13 @@ impl RelationDescriptor {
                 columns: index.columns.clone(),
             };
         }
-        if matches!(self.relkind, 'r' | 'p') {
+        if self.relkind == 'p' {
+            return BrowseIdentity {
+                kind: BrowseIdentityKind::Virtual,
+                columns: vec![TABLEOID_COLUMN.to_string(), CTID_COLUMN.to_string()],
+            };
+        }
+        if self.relkind == 'r' {
             return BrowseIdentity {
                 kind: BrowseIdentityKind::Virtual,
                 columns: vec![CTID_COLUMN.to_string()],
@@ -180,7 +188,8 @@ pub(crate) fn build_browse_query(
         }
     }
 
-    let order_sql = render_order(descriptor, payload, &identity)?;
+    let qualified = qualified_relation(&descriptor.schema, &descriptor.table);
+    let order_sql = render_order(descriptor, payload, &identity, &qualified)?;
     let mut select_list = descriptor
         .columns
         .iter()
@@ -188,10 +197,11 @@ pub(crate) fn build_browse_query(
         .collect::<Vec<_>>();
     let projects_ctid = identity.kind == BrowseIdentityKind::Virtual;
     if projects_ctid {
-        select_list.push(format!("{}::text", quote_double(CTID_COLUMN)));
+        for column in &identity.columns {
+            select_list.push(format!("{}::text", quote_double(column)));
+        }
     }
 
-    let qualified = qualified_relation(&descriptor.schema, &descriptor.table);
     let mut sql = format!("SELECT {} FROM {}", select_list.join(", "), qualified);
     if !predicates.is_empty() {
         sql.push_str(" WHERE ");
@@ -374,15 +384,14 @@ fn render_keyset(
     let mut left = Vec::new();
     let mut right = Vec::new();
     for (column_name, value) in identity.columns.iter().zip(cursor.values.iter()) {
-        let cast_type = if column_name == CTID_COLUMN {
-            CTID_CAST_TYPE.to_string()
-        } else {
-            descriptor
-                .column(column_name)
-                .ok_or(TableBrowseError::InvalidCursor)?
-                .cast_type
-                .clone()
-        };
+        let cast_type = virtual_column_cast(column_name)
+            .map(str::to_string)
+            .or_else(|| {
+                descriptor
+                    .column(column_name)
+                    .map(|column| column.cast_type.clone())
+            })
+            .ok_or(TableBrowseError::InvalidCursor)?;
         params.push(BoundParam::Text(Some(value.clone())));
         left.push(quote_double(column_name));
         right.push(format!("(${}::text)::{cast_type}", params.len()));
@@ -394,6 +403,7 @@ fn render_order(
     descriptor: &RelationDescriptor,
     payload: &BrowseTableDataPayload,
     identity: &BrowseIdentity,
+    qualified: &str,
 ) -> Result<String, TableBrowseError> {
     let mut terms = Vec::new();
     let mut seen = Vec::new();
@@ -403,13 +413,19 @@ fn render_order(
             .ok_or_else(|| TableBrowseError::InvalidSort {
                 column: key.column.clone(),
             })?;
-        terms.push(render_sort_term(&key.column, key.direction, key.nulls));
+        terms.push(render_sort_term(
+            qualified,
+            &key.column,
+            key.direction,
+            key.nulls,
+        ));
         seen.push(key.column.as_str());
     }
     if identity.exists() {
         for column in &identity.columns {
             if !seen.iter().any(|existing| existing == column) {
                 terms.push(render_sort_term(
+                    qualified,
                     column,
                     BrowseSortDirection::Asc,
                     BrowseNulls::Default,
@@ -420,7 +436,12 @@ fn render_order(
     Ok(terms.join(", "))
 }
 
-fn render_sort_term(column: &str, direction: BrowseSortDirection, nulls: BrowseNulls) -> String {
+fn render_sort_term(
+    qualified: &str,
+    column: &str,
+    direction: BrowseSortDirection,
+    nulls: BrowseNulls,
+) -> String {
     let direction = match direction {
         BrowseSortDirection::Asc => "ASC",
         BrowseSortDirection::Desc => "DESC",
@@ -430,7 +451,15 @@ fn render_sort_term(column: &str, direction: BrowseSortDirection, nulls: BrowseN
         BrowseNulls::First => " NULLS FIRST".to_string(),
         BrowseNulls::Last => " NULLS LAST".to_string(),
     };
-    format!("{} {direction}{nulls}", quote_double(column))
+    format!("{}.{} {direction}{nulls}", qualified, quote_double(column))
+}
+
+fn virtual_column_cast(column: &str) -> Option<&'static str> {
+    match column {
+        CTID_COLUMN => Some(CTID_CAST_TYPE),
+        TABLEOID_COLUMN => Some(TABLEOID_CAST_TYPE),
+        _ => None,
+    }
 }
 
 fn required_value(value: &Option<String>) -> Result<String, TableBrowseError> {
@@ -671,7 +700,7 @@ mod tests {
         });
         assert!(query
             .sql
-            .contains(r#"ORDER BY "name" DESC NULLS LAST, "id" ASC, "email" ASC"#));
+            .contains(r#"ORDER BY "public"."users"."name" DESC NULLS LAST, "public"."users"."id" ASC, "public"."users"."email" ASC"#));
         assert_eq!(query.page_mode, BrowsePageMode::Offset);
     }
 
@@ -711,6 +740,32 @@ mod tests {
         assert!(ctid.sql.contains(r#""ctid"::text"#));
         assert!(ctid.sql.contains(r#"("ctid") > (($1::text)::tid)"#));
         assert_eq!(ctid.identity.kind, BrowseIdentityKind::Virtual);
+        assert_eq!(ctid.identity.columns, ["ctid"]);
+    }
+
+    #[test]
+    fn partitioned_virtual_identity_uses_tableoid_and_ctid() {
+        let mut partitioned = keyless();
+        partitioned.relkind = 'p';
+        partitioned.table = "parts".into();
+        assert_eq!(partitioned.identity().columns, ["tableoid", "ctid"]);
+        let query = built(&partitioned, |payload| {
+            payload.table = "parts".into();
+            payload.page_request = BrowsePageRequest::Keyset {
+                cursor: Some(BrowseCursor {
+                    values: vec!["12345".into(), "(0,1)".into()],
+                }),
+            };
+        });
+        assert!(query.projects_ctid);
+        assert!(query.sql.contains(r#""tableoid"::text"#));
+        assert!(query.sql.contains(r#""ctid"::text"#));
+        assert!(query
+            .sql
+            .contains(r#"("tableoid", "ctid") > (($1::text)::oid, ($2::text)::tid)"#));
+        assert!(query
+            .sql
+            .contains(r#"ORDER BY "public"."parts"."tableoid" ASC, "public"."parts"."ctid" ASC"#));
     }
 
     #[test]
@@ -732,7 +787,9 @@ mod tests {
             payload.page_request = BrowsePageRequest::Keyset { cursor: None };
         });
         assert_eq!(query.page_mode, BrowsePageMode::Offset);
-        assert!(query.sql.contains(r#"ORDER BY "ctid" ASC"#));
+        assert!(query
+            .sql
+            .contains(r#"ORDER BY "public"."users"."ctid" ASC"#));
     }
 
     #[test]
