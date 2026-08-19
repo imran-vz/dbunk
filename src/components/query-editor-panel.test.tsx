@@ -414,7 +414,6 @@ describe("QueryEditorPanel feedback", () => {
           tabId: queryTab.id,
           connectionId: queryTab.connectionId,
           generation: 1,
-          nextSequence: 1,
           transaction: {
             mode: "manual",
             status: "unknown",
@@ -424,7 +423,6 @@ describe("QueryEditorPanel feedback", () => {
           lastViewedAt: Date.now(),
           budgetOwners: [],
           state: "open",
-          error: null,
         },
       },
     });
