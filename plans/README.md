@@ -15,8 +15,8 @@ and update its status here when work finishes.
 | ------------------------------------------------ | ------------------------------------------- | -------: | -----: | ---------- | ---------------------------------------------- |
 | [001](./001-query-session-foundation.md)         | PostgreSQL Query Session backend foundation |       P0 |      L | None       | DONE: 657553d                                  |
 | [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration |       P0 |      L | 001        | DONE: 26268ca (selected mock: B)               |
-| [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | READY FOR REVIEW                               |
-| [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | TODO                                           |
+| [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | DONE: 202f756                                  |
+| [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | IN PROGRESS: through Step 5                    |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -29,13 +29,13 @@ useful without authorizing commits implicitly.
 ## Current selection
 
 - **Completed:** Plans 001 and 002 delivered the PostgreSQL query-session
-  foundation of `PAR-001` through commit `26268ca`.
-- **Selected next:** `PAR-002`, server-backed table browsing, now authored as
-  Plans 003 and 004 (planned at commit `26268ca`, 2026-08-19). Plan 003 lands
-  the dark typed browse backend; Plan 004 activates it in PostgreSQL table
-  tabs. It is the next unblocked P0 gap in dependency order, moves
-  filter/sort/pagination work to the full relation, and supplies the identity
-  and query metadata required by `PAR-003`.
+  foundation of `PAR-001` through commit `26268ca`. Plan 003 landed the
+  PostgreSQL Table Browse backend at `202f756`.
+- **Selected next:** `PAR-002` frontend activation, Plan 004 (planned at
+  commit `26268ca`, 2026-08-19). Selected mock: **B**. Plan 004 wires
+  PostgreSQL table tabs onto the typed browse contract.
+- **Selected mock (004):** B — stacked command bar, inspection popover,
+  keyset next as the primary pager.
 - **Planning boundary:** PostgreSQL first, with typed server-side filters and
   sorting, bounded pagination/count behavior, cancellation, stale-response
   rejection, query inspection, and durable grid preferences. Query-result
