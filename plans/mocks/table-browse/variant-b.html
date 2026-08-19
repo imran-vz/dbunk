@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Table Browse · Variant B</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --line: #262626;
+        --muted: #999;
+        --blue: #78a9ff;
+        --red: #ff7070;
+        --amber: #eab95a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+        color: #fff;
+        font:
+          13px/1.45 Inter,
+          system-ui,
+          sans-serif;
+      }
+      button,
+      select,
+      input,
+      textarea {
+        font: inherit;
+        color: #fff;
+        background: #080808;
+        border: 1px solid #333;
+        border-radius: 3px;
+        padding: 6px 9px;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 1px;
+      }
+      textarea {
+        width: 100%;
+        resize: none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      .cap {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .shell {
+        height: 100%;
+        display: grid;
+        grid-template-columns: 52px minmax(0, 1fr);
+        grid-template-rows: 38px minmax(0, 1fr);
+      }
+      .shell.expanded {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 28px minmax(0, 1fr);
+      }
+      .shell.expanded .rail,
+      .shell.expanded .head,
+      .shell.expanded .session,
+      .shell.expanded .extras,
+      .shell.expanded .foot {
+        display: none;
+      }
+      .rail {
+        grid-row: 1 / 3;
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px 0;
+        gap: 10px;
+      }
+      .rail b {
+        font-size: 16px;
+      }
+      .rail button {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+      }
+      .head {
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .head span {
+        color: var(--muted);
+      }
+      .grow {
+        flex: 1;
+      }
+      .main {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto auto;
+      }
+      .shell.expanded .main {
+        grid-template-rows: minmax(0, 1fr);
+      }
+      .session {
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+      }
+      .row {
+        display: flex;
+        align-items: flex-start;
+        gap: 7px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .row:last-child {
+        border-bottom: 0;
+      }
+      .k {
+        color: var(--muted);
+        min-width: 64px;
+        padding-top: 6px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--line);
+        background: #080808;
+        border-radius: 3px;
+        padding: 3px 7px;
+        min-height: 28px;
+      }
+      .chip .op {
+        color: var(--blue);
+      }
+      .chip.null .op {
+        color: var(--amber);
+      }
+      .chip .val,
+      .tag {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .chip .pos {
+        color: var(--muted);
+      }
+      .chip button {
+        padding: 1px 5px;
+      }
+      .inlist {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .inlist input {
+        padding: 2px 6px;
+        width: 88px;
+      }
+      .tag {
+        border: 1px solid #333;
+        border-radius: 3px;
+        padding: 1px 6px;
+        background: #0c0c0c;
+      }
+      .inspect-wrap {
+        position: relative;
+      }
+      .popover {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        width: min(440px, calc(100vw - 76px));
+        background: #050505;
+        border: 1px solid #333;
+        z-index: 30;
+        display: grid;
+        grid-template-rows: auto minmax(0, 180px) auto;
+      }
+      .popover header {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .sql {
+        margin: 0;
+        overflow: auto;
+        padding: 10px 12px;
+        background: #040404;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.55 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      .kw {
+        color: #d39cff;
+      }
+      .str {
+        color: #b6dc73;
+      }
+      .params {
+        border-top: 1px solid var(--line);
+        padding: 8px 10px;
+        display: grid;
+        gap: 6px;
+      }
+      .params ol {
+        margin: 0;
+        padding-left: 22px;
+      }
+      .notice {
+        border-left: 2px solid var(--amber);
+        background: #0c0902;
+        padding: 6px 8px;
+        color: var(--amber);
+      }
+      .errbox {
+        border: 1px solid #4a2020;
+        background: #120808;
+        color: var(--red);
+        padding: 6px 8px;
+        flex: 1;
+        min-width: 180px;
+      }
+      .errbox code {
+        color: #fff;
+      }
+      .sorted {
+        display: grid;
+        gap: 6px;
+        flex: 1;
+        min-width: 220px;
+      }
+      .srow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .work {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr);
+        position: relative;
+      }
+      .tablewrap {
+        min-height: 0;
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 6px 8px;
+        text-align: left;
+        white-space: nowrap;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-family: Inter, system-ui, sans-serif;
+        position: sticky;
+        top: 0;
+        background: #000;
+      }
+      .pos {
+        color: var(--muted);
+      }
+      .null {
+        color: var(--muted);
+        font-style: italic;
+      }
+      tbody.stale {
+        opacity: 0.38;
+      }
+      .live {
+        position: absolute;
+        left: 12px;
+        top: 8px;
+        background: #080808;
+        border: 1px solid #333;
+        padding: 4px 8px;
+        color: var(--blue);
+      }
+      .foot {
+        border-top: 1px solid var(--line);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+      }
+      .next {
+        background: #fff;
+        color: #000;
+        font-weight: 700;
+        border-color: #fff;
+      }
+      .counts span {
+        color: var(--muted);
+      }
+      .counts strong {
+        color: #fff;
+      }
+      .offset {
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .extras {
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .panel {
+        min-width: 0;
+        padding: 8px 12px;
+        border-right: 1px solid var(--line);
+        display: grid;
+        gap: 6px;
+        align-content: start;
+      }
+      .panel:last-child {
+        border-right: 0;
+      }
+      .mini {
+        border: 1px solid var(--line);
+        background: #040404;
+      }
+      .mini .top {
+        display: flex;
+        gap: 8px;
+        padding: 4px 8px;
+        color: var(--muted);
+      }
+      .mini th,
+      .mini td {
+        padding: 3px 6px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .expand-bar {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .shell.expanded .expand-bar {
+        display: flex;
+      }
+      @media (max-width: 700px) {
+        .shell {
+          grid-template-columns: 1fr;
+          grid-template-rows: 38px minmax(0, 1fr);
+        }
+        .rail {
+          display: none;
+        }
+        .popover {
+          width: calc(100vw - 16px);
+          right: auto;
+          left: 8px;
+        }
+        .extras {
+          grid-template-columns: 1fr;
+          max-height: 28vh;
+          overflow: auto;
+        }
+        .panel {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" id="app">
+      <aside class="rail" aria-label="Workspace">
+        <b>db</b>
+        <button type="button" aria-label="Connections">⌘</button>
+        <button type="button" aria-label="Tables">T</button>
+        <span style="flex: 1"></span>
+        <button type="button" id="expandBtn" aria-label="Expand grid">⛶</button>
+      </aside>
+      <header class="head">
+        <b>public.users</b>
+        <span>postgres · warehouse</span>
+        <span>identity pk(id)</span>
+        <span class="grow"></span>
+        <span>Variant B · production direction</span>
+      </header>
+      <header class="expand-bar">
+        <b>public.users</b>
+        <span>expanded · chrome hidden</span>
+        <span class="grow"></span>
+        <button type="button" id="restoreBtn">Restore chrome</button>
+      </header>
+      <section class="main">
+        <div class="session" aria-label="Query session command bar">
+          <div class="row" aria-labelledby="cap-filter">
+            <span class="k cap" id="cap-filter">1 Filters</span>
+            <span class="chip"
+              ><b>email</b><span class="op">contains</span
+              ><span class="val">@acme.com</span
+              ><button type="button" aria-label="Remove email filter">×</button></span
+            >
+            <span class="chip null"
+              ><b>deleted_at</b><span class="op">is null</span
+              ><button type="button" aria-label="Remove deleted_at is null">
+                ×
+              </button></span
+            >
+            <span class="chip null"
+              ><b>email</b><span class="op">is not null</span
+              ><button type="button" aria-label="Remove email is not null">
+                ×
+              </button></span
+            >
+            <span class="chip"
+              ><b>role</b><span class="op">in</span>
+              <span class="inlist">
+                <span class="tag">admin</span>
+                <span class="tag">staff</span>
+                <input aria-label="Add role to in-list" placeholder="add…" />
+              </span>
+              <button type="button" aria-label="Remove role in-list">×</button></span
+            >
+            <button type="button" id="addFilter">+ Filter</button>
+            <span class="grow"></span>
+            <label class="chip"
+              ><input type="checkbox" id="rawOn" /> Raw WHERE</label
+            >
+            <span class="inspect-wrap">
+              <button type="button" id="inspectBtn" aria-expanded="true">
+                Inspect
+              </button>
+              <div class="popover" id="popover" role="dialog" aria-label="6 · Query inspection">
+                <header>
+                  <span class="cap">6 · Inspection</span>
+                  <span class="grow"></span>
+                  <button type="button" id="copySql">Copy SQL</button>
+                  <button type="button" id="copyParams">Copy params</button>
+                </header>
+                <pre class="sql">
+<span class="kw">SELECT</span> id, email, created_at
+<span class="kw">FROM</span> public.users
+<span class="kw">WHERE</span> (email <span class="kw">ILIKE</span> ($1::text)::text)
+  <span class="kw">AND</span> (deleted_at <span class="kw">IS NULL</span>)
+  <span class="kw">AND</span> (email <span class="kw">IS NOT NULL</span>)
+  <span class="kw">AND</span> (role = <span class="kw">ANY</span>(($2::text)::text[]))
+<span class="kw">ORDER BY</span> id
+<span class="kw">LIMIT</span> 25</pre>
+                <div class="params">
+                  <span class="cap">Ordered parameters</span>
+                  <ol>
+                    <li class="mono">$1 text · <span class="str">'%@acme.com%'</span></li>
+                    <li class="mono">
+                      $2 text[] · <span class="str">{admin,staff}</span>
+                    </li>
+                  </ol>
+                  <div class="notice">
+                    Partial result · 1,000 rows retained · remainder omitted
+                  </div>
+                  <span class="sr" id="copyStatus" role="status" aria-live="polite"></span>
+                </div>
+              </div>
+            </span>
+          </div>
+          <div class="row" id="rawRow" aria-labelledby="cap-raw">
+            <span class="k cap" id="cap-raw">2 Raw</span>
+            <textarea id="rawSql" rows="2" aria-invalid="true" aria-describedby="rawErr">
+created_at > now() - interva '7 days'</textarea
+            >
+            <div class="errbox" id="rawErr">
+              <b>database_error</b> · syntax error at or near
+              <code>'7</code> · position <code>12</code>
+            </div>
+          </div>
+          <div class="row" aria-labelledby="cap-sort">
+            <span class="k cap" id="cap-sort">3 Sort</span>
+            <span class="chip"><span class="pos">1</span><b>created_at</b><span class="op">desc</span></span>
+            <span class="chip"><span class="pos">2</span><b>email</b><span class="op">asc</span></span>
+            <div class="sorted">
+              <div class="srow">
+                <button type="button" aria-label="Move created_at down">↓</button>
+                <span class="pos">1</span>
+                <span>created_at</span>
+                <select aria-label="created_at direction">
+                  <option>asc</option>
+                  <option selected>desc</option>
+                </select>
+                <select aria-label="created_at nulls">
+                  <option>nulls first</option>
+                  <option selected>nulls last</option>
+                </select>
+                <button type="button" aria-label="Remove created_at sort">×</button>
+              </div>
+              <div class="srow">
+                <button type="button" aria-label="Move email up">↑</button>
+                <span class="pos">2</span>
+                <span>email</span>
+                <select aria-label="email direction">
+                  <option selected>asc</option>
+                  <option>desc</option>
+                </select>
+                <select aria-label="email nulls">
+                  <option selected>nulls first</option>
+                  <option>nulls last</option>
+                </select>
+                <button type="button" aria-label="Remove email sort">×</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="work">
+          <div class="live" id="live" role="status" aria-live="polite">
+            Loading · request 84 superseded 83
+          </div>
+          <div class="tablewrap">
+            <table aria-busy="true">
+              <thead>
+                <tr>
+                  <th>id</th>
+                  <th>email</th>
+                  <th>created_at</th>
+                </tr>
+              </thead>
+              <tbody class="stale" id="rows">
+                <tr>
+                  <td>1001</td>
+                  <td>ada@acme.com</td>
+                  <td>2026-08-12 09:14:02</td>
+                </tr>
+                <tr>
+                  <td>1002</td>
+                  <td>alan@acme.com</td>
+                  <td>2026-08-11 18:02:41</td>
+                </tr>
+                <tr>
+                  <td>1003</td>
+                  <td>grace@acme.com</td>
+                  <td>2026-08-10 11:55:09</td>
+                </tr>
+                <tr>
+                  <td>1004</td>
+                  <td class="null">null</td>
+                  <td>2026-08-09 07:22:18</td>
+                </tr>
+                <tr>
+                  <td>1005</td>
+                  <td>linus@acme.com</td>
+                  <td>2026-08-08 16:40:00</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <footer class="foot" aria-labelledby="cap-foot">
+          <span class="cap" id="cap-foot">4 Counts</span>
+          <label>
+            Page size
+            <select id="pageSize" aria-label="Page size">
+              <option>10</option>
+              <option selected>25</option>
+              <option>50</option>
+              <option>100</option>
+              <option>250</option>
+              <option>500</option>
+              <option>1000</option>
+            </select>
+          </label>
+          <span class="counts">
+            estimated <strong>~12,481</strong>
+            <span>· exact 12,481</span>
+            <span>· unknown —</span>
+          </span>
+          <button type="button">Count rows</button>
+          <span class="grow"></span>
+          <nav aria-label="5 · Keyset next-paging">
+            <button type="button">Prev</button>
+            <button type="button" class="next">Next →</button>
+            <span style="color: var(--muted)">no page count</span>
+          </nav>
+          <nav class="offset" aria-label="Offset numbered paging fallback">
+            offset
+            <button type="button">1</button>
+            <button type="button">2</button>
+            <button type="button">3</button>
+          </nav>
+        </footer>
+        <div class="extras">
+          <section class="panel" aria-labelledby="cap-discard">
+            <span class="cap" id="cap-discard">7 · Pending-edits discard</span>
+            <p>
+              3 cell edits are uncommitted. Changing filter or sort reloads this
+              page.
+            </p>
+            <div class="actions">
+              <button type="button" id="keepEdits">Keep editing</button>
+              <button type="button" style="color: var(--red)" id="discardEdits">
+                Discard and apply
+              </button>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="cap-expand">
+            <span class="cap" id="cap-expand">8 · Expanded / maximized</span>
+            <div class="mini">
+              <div class="top"><b>public.users</b><span class="grow"></span><span>Esc</span></div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>id</th>
+                    <th>email</th>
+                    <th>created_at</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>1001</td>
+                    <td>ada@acme.com</td>
+                    <td>2026-08-12 09:14:02</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="cap-nav">
+            <span class="cap" id="cap-nav">9 · Rapid navigation</span>
+            <p>
+              Previous rows stay dimmed. Live region announces supersession. No
+              empty flash.
+            </p>
+            <div class="actions">
+              <button type="button" id="toggleLoad">Toggle stale/ready</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script>
+      const app = document.getElementById("app");
+      const popover = document.getElementById("popover");
+      const rawRow = document.getElementById("rawRow");
+      const rawOn = document.getElementById("rawOn");
+      const live = document.getElementById("live");
+      const rows = document.getElementById("rows");
+      const copyStatus = document.getElementById("copyStatus");
+      document.getElementById("expandBtn").onclick = () => app.classList.add("expanded");
+      document.getElementById("restoreBtn").onclick = () =>
+        app.classList.remove("expanded");
+      document.getElementById("inspectBtn").onclick = () => {
+        const on = popover.hidden;
+        popover.hidden = !on;
+        document.getElementById("inspectBtn").setAttribute("aria-expanded", String(on));
+      };
+      rawOn.onchange = () => {
+        rawRow.hidden = !rawOn.checked;
+      };
+      rawOn.checked = true;
+      rawRow.hidden = false;
+      document.getElementById("addFilter").onclick = () =>
+        document.getElementById("keepEdits").focus();
+      document.getElementById("toggleLoad").onclick = () => {
+        const stale = rows.classList.toggle("stale");
+        live.hidden = !stale;
+        live.textContent = stale
+          ? "Loading · request 84 superseded 83"
+          : "Ready · 25 rows";
+      };
+      document.getElementById("copySql").onclick = () => {
+        copyStatus.textContent = "SQL copied";
+      };
+      document.getElementById("copyParams").onclick = () => {
+        copyStatus.textContent = "Params copied";
+      };
+    </script>
+  </body>
+</html>

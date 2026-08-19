@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Table Browse · Variant A</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --line: #262626;
+        --muted: #999;
+        --blue: #78a9ff;
+        --red: #ff7070;
+        --amber: #eab95a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+        color: #fff;
+        font:
+          13px/1.45 Inter,
+          system-ui,
+          sans-serif;
+      }
+      button,
+      select,
+      input,
+      textarea {
+        font: inherit;
+        color: #fff;
+        background: #080808;
+        border: 1px solid #333;
+        border-radius: 3px;
+        padding: 6px 9px;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--blue);
+        outline-offset: 1px;
+      }
+      textarea {
+        width: 100%;
+        resize: none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      .cap {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .app {
+        height: 100%;
+        display: grid;
+        grid-template-rows: 34px auto auto minmax(0, 1fr) auto auto;
+      }
+      .app.expanded {
+        grid-template-rows: 28px minmax(0, 1fr);
+      }
+      .app.expanded .hide-on-expand,
+      .app.expanded .extras,
+      .app.expanded .drawer,
+      .app.expanded .sorted {
+        display: none;
+      }
+      .app.expanded .body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .top span {
+        color: var(--muted);
+      }
+      .grow {
+        flex: 1;
+      }
+      .bar {
+        border-bottom: 1px solid var(--line);
+        padding: 7px 10px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--line);
+        background: #080808;
+        border-radius: 3px;
+        padding: 3px 7px;
+        min-height: 28px;
+      }
+      .chip b {
+        font-weight: 600;
+      }
+      .chip .op {
+        color: var(--blue);
+      }
+      .chip .val {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .chip.null .op {
+        color: var(--amber);
+      }
+      .chip .pos {
+        color: var(--muted);
+        min-width: 1em;
+      }
+      .chip button {
+        padding: 1px 5px;
+      }
+      .inlist {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .inlist input {
+        padding: 2px 6px;
+        min-width: 72px;
+        width: 88px;
+      }
+      .tag {
+        border: 1px solid #333;
+        border-radius: 3px;
+        padding: 1px 6px;
+        background: #0c0c0c;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .err {
+        color: var(--red);
+      }
+      .warn {
+        color: var(--amber);
+      }
+      .raw-row {
+        border-bottom: 1px solid var(--line);
+        padding: 7px 10px;
+        display: grid;
+        gap: 6px;
+      }
+      .raw-row label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+      }
+      .errbox {
+        border: 1px solid #4a2020;
+        background: #120808;
+        padding: 6px 8px;
+        color: var(--red);
+      }
+      .errbox code {
+        color: #fff;
+      }
+      .body {
+        min-height: 0;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+      }
+      .gridcol {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      .sorted {
+        border-bottom: 1px solid var(--line);
+        padding: 8px 10px;
+        display: grid;
+        gap: 6px;
+      }
+      .srow {
+        display: grid;
+        grid-template-columns: 28px 22px minmax(80px, 1fr) 88px 110px 28px;
+        gap: 6px;
+        align-items: center;
+      }
+      .tablewrap {
+        min-height: 0;
+        overflow: auto;
+        position: relative;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 6px 8px;
+        text-align: left;
+        white-space: nowrap;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-family: Inter, system-ui, sans-serif;
+        position: sticky;
+        top: 0;
+        background: #000;
+      }
+      .pos {
+        color: var(--muted);
+      }
+      .null {
+        color: var(--muted);
+        font-style: italic;
+      }
+      tbody.stale {
+        opacity: 0.38;
+      }
+      .live {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: #080808;
+        border: 1px solid #333;
+        padding: 4px 8px;
+        color: var(--blue);
+      }
+      .drawer {
+        min-width: 0;
+        min-height: 0;
+        border-left: 1px solid var(--line);
+        background: #050505;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+      .drawer header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .sql {
+        overflow: auto;
+        padding: 10px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: #ddd;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      .kw {
+        color: #d39cff;
+      }
+      .str {
+        color: #b6dc73;
+      }
+      .params {
+        border-top: 1px solid var(--line);
+        padding: 8px 10px;
+        display: grid;
+        gap: 6px;
+      }
+      .params ol {
+        margin: 0;
+        padding-left: 22px;
+      }
+      .notice {
+        border-left: 2px solid var(--amber);
+        background: #0c0902;
+        padding: 6px 8px;
+        color: var(--amber);
+      }
+      .foot {
+        border-top: 1px solid var(--line);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+      }
+      .pager {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .pager .on {
+        background: #fff;
+        color: #000;
+        border-color: #fff;
+        font-weight: 700;
+      }
+      .counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: var(--muted);
+      }
+      .counts strong {
+        color: #fff;
+        font-weight: 600;
+      }
+      .extras {
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        min-height: 0;
+      }
+      .panel {
+        min-width: 0;
+        padding: 8px 10px;
+        border-right: 1px solid var(--line);
+        display: grid;
+        gap: 6px;
+        align-content: start;
+      }
+      .panel:last-child {
+        border-right: 0;
+      }
+      .mini {
+        border: 1px solid var(--line);
+        background: #050505;
+        padding: 4px 0;
+      }
+      .mini table {
+        font-size: 11px;
+      }
+      .mini th,
+      .mini td {
+        padding: 3px 6px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      @media (max-width: 860px) {
+        .body {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(0, 1fr) minmax(140px, 34%);
+        }
+        .drawer {
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+        .extras {
+          grid-template-columns: 1fr;
+          max-height: 28vh;
+          overflow: auto;
+        }
+        .panel {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .srow {
+          grid-template-columns: 28px 22px 1fr;
+        }
+        .srow select,
+        .srow .rm {
+          grid-column: span 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="top hide-on-expand">
+        <b>dbunk</b>
+        <span>postgres · warehouse</span>
+        <span>public.users</span>
+        <span class="grow"></span>
+        <span>Variant A · chip-dense · offset pager · inspect drawer</span>
+        <button type="button" id="expandBtn">Expand grid</button>
+      </header>
+      <header class="top" id="expandBar" hidden>
+        <b>public.users</b>
+        <span>expanded · chrome hidden</span>
+        <span class="grow"></span>
+        <button type="button" id="restoreBtn">Restore chrome</button>
+      </header>
+
+      <section class="bar hide-on-expand" aria-labelledby="cap-filter">
+        <span class="cap" id="cap-filter">1 · Typed filters</span>
+        <span class="chip"
+          ><b>email</b><span class="op">contains</span
+          ><span class="val">@acme.com</span
+          ><button type="button" aria-label="Remove email filter">×</button></span
+        >
+        <span class="chip null"
+          ><b>deleted_at</b><span class="op">is null</span
+          ><button type="button" aria-label="Remove deleted_at is null">×</button></span
+        >
+        <span class="chip null"
+          ><b>email</b><span class="op">is not null</span
+          ><button type="button" aria-label="Remove email is not null">×</button></span
+        >
+        <span class="chip"
+          ><b>role</b><span class="op">in</span>
+          <span class="inlist">
+            <span class="tag">admin</span>
+            <span class="tag">staff</span>
+            <input
+              aria-label="Add role to in-list"
+              placeholder="add…"
+              value=""
+            />
+          </span>
+          <button type="button" aria-label="Remove role in-list">×</button></span
+        >
+        <button type="button" id="addFilter">+ Filter</button>
+        <span class="grow"></span>
+        <span class="chip"
+          ><span class="pos">1</span><b>created_at</b><span class="op">desc</span></span
+        >
+        <span class="chip"
+          ><span class="pos">2</span><b>email</b><span class="op">asc</span></span
+        >
+        <button type="button" id="toggleRaw">Raw WHERE</button>
+        <button type="button" id="inspectBtn" aria-expanded="true">Inspect</button>
+      </section>
+
+      <section class="raw-row hide-on-expand" id="rawPanel" aria-labelledby="cap-raw">
+        <span class="cap" id="cap-raw">2 · Raw WHERE + typed error</span>
+        <label>
+          <input type="checkbox" id="rawOn" checked />
+          Raw WHERE (AND-combined, wrapped)
+        </label>
+        <textarea id="rawSql" rows="2" aria-invalid="true" aria-describedby="rawErr">
+created_at > now() - interva '7 days'</textarea
+        >
+        <div class="errbox" id="rawErr">
+          <b>database_error</b> · syntax error at or near
+          <code class="mono">'7</code> · position <code>12</code>
+        </div>
+      </section>
+
+      <div class="body">
+        <div class="gridcol">
+          <section class="sorted" aria-labelledby="cap-sort">
+            <span class="cap" id="cap-sort">3 · Sort editor</span>
+            <div class="srow">
+              <button type="button" aria-label="Move created_at down">↓</button>
+              <span class="pos">1</span>
+              <span>created_at</span>
+              <select aria-label="created_at direction">
+                <option>asc</option>
+                <option selected>desc</option>
+              </select>
+              <select aria-label="created_at nulls">
+                <option>nulls first</option>
+                <option selected>nulls last</option>
+              </select>
+              <button class="rm" type="button" aria-label="Remove created_at sort">
+                ×
+              </button>
+            </div>
+            <div class="srow">
+              <button type="button" aria-label="Move email up">↑</button>
+              <span class="pos">2</span>
+              <span>email</span>
+              <select aria-label="email direction">
+                <option selected>asc</option>
+                <option>desc</option>
+              </select>
+              <select aria-label="email nulls">
+                <option selected>nulls first</option>
+                <option>nulls last</option>
+              </select>
+              <button class="rm" type="button" aria-label="Remove email sort">×</button>
+            </div>
+          </section>
+          <div class="tablewrap" aria-labelledby="cap-load">
+            <span class="sr" id="cap-load">9 · Superseded loading</span>
+            <div class="live" id="live" role="status" aria-live="polite">
+              Loading · request 84 superseded 83
+            </div>
+            <table aria-busy="true">
+              <thead>
+                <tr>
+                  <th>id</th>
+                  <th>email</th>
+                  <th>created_at</th>
+                </tr>
+              </thead>
+              <tbody class="stale" id="rows">
+                <tr>
+                  <td>1001</td>
+                  <td>ada@acme.com</td>
+                  <td>2026-08-12 09:14:02</td>
+                </tr>
+                <tr>
+                  <td>1002</td>
+                  <td>alan@acme.com</td>
+                  <td>2026-08-11 18:02:41</td>
+                </tr>
+                <tr>
+                  <td>1003</td>
+                  <td>grace@acme.com</td>
+                  <td>2026-08-10 11:55:09</td>
+                </tr>
+                <tr>
+                  <td>1004</td>
+                  <td class="null">null</td>
+                  <td>2026-08-09 07:22:18</td>
+                </tr>
+                <tr>
+                  <td>1005</td>
+                  <td>linus@acme.com</td>
+                  <td>2026-08-08 16:40:00</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <aside class="drawer" id="drawer" aria-labelledby="cap-inspect">
+          <header>
+            <span class="cap" id="cap-inspect">6 · Query inspection</span>
+            <span class="grow"></span>
+            <button type="button" id="copySql">Copy SQL</button>
+            <button type="button" id="copyParams">Copy params</button>
+          </header>
+          <pre class="sql" id="sql">
+<span class="kw">SELECT</span> id, email, created_at
+<span class="kw">FROM</span> public.users
+<span class="kw">WHERE</span> (email <span class="kw">ILIKE</span> ($1::text)::text)
+  <span class="kw">AND</span> (deleted_at <span class="kw">IS NULL</span>)
+  <span class="kw">AND</span> (email <span class="kw">IS NOT NULL</span>)
+  <span class="kw">AND</span> (role = <span class="kw">ANY</span>(($2::text)::text[]))
+  <span class="kw">AND</span> (created_at &gt; now() - interva <span class="str">'7 days'</span>)
+<span class="kw">ORDER BY</span> created_at <span class="kw">DESC NULLS LAST</span>,
+         email <span class="kw">ASC NULLS FIRST</span>
+<span class="kw">LIMIT</span> 25 <span class="kw">OFFSET</span> 50</pre>
+          <div class="params">
+            <span class="cap">Ordered parameters</span>
+            <ol class="mono">
+              <li>$1 text · <span class="str">'%@acme.com%'</span></li>
+              <li>$2 text[] · <span class="str">{admin,staff}</span></li>
+            </ol>
+            <div class="notice">
+              Partial result · 1,000 rows retained · remainder omitted
+            </div>
+            <span class="sr" id="copyStatus" role="status" aria-live="polite"></span>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="foot hide-on-expand" aria-labelledby="cap-foot">
+        <span class="cap" id="cap-foot">4 · Page size + counts</span>
+        <label>
+          Page size
+          <select id="pageSize" aria-label="Page size">
+            <option>10</option>
+            <option selected>25</option>
+            <option>50</option>
+            <option>100</option>
+            <option>250</option>
+            <option>500</option>
+            <option>1000</option>
+          </select>
+        </label>
+        <nav class="pager" aria-label="5 · Offset numbered paging">
+          <button type="button">Prev</button>
+          <button type="button">1</button>
+          <button type="button" class="on" aria-current="page">3</button>
+          <button type="button">4</button>
+          <button type="button">5</button>
+          <button type="button">Next</button>
+        </nav>
+        <nav class="pager" aria-label="Keyset next-paging">
+          <span class="cap">keyset</span>
+          <button type="button">Next →</button>
+          <span>no page count</span>
+        </nav>
+        <span class="grow"></span>
+        <div class="counts">
+          <span>exact <strong>12,481</strong></span>
+          <span>estimated <strong>~12,400</strong></span>
+          <span>unknown <strong>—</strong></span>
+        </div>
+        <button type="button">Count rows</button>
+      </footer>
+
+      <div class="extras hide-on-expand">
+        <section class="panel" aria-labelledby="cap-discard">
+          <span class="cap" id="cap-discard">7 · Pending-edits discard</span>
+          <p>
+            3 cell edits are uncommitted. Changing filter or sort reloads this
+            page.
+          </p>
+          <div class="actions">
+            <button type="button" id="keepEdits">Keep editing</button>
+            <button type="button" class="err" id="discardEdits">
+              Discard and apply
+            </button>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="cap-expand">
+          <span class="cap" id="cap-expand">8 · Expanded / maximized</span>
+          <div class="mini">
+            <div class="top" style="border: 0; height: 24px">
+              <b>public.users</b><span class="grow"></span><span>Esc</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>id</th>
+                  <th>email</th>
+                  <th>created_at</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1001</td>
+                  <td>ada@acme.com</td>
+                  <td>2026-08-12 09:14:02</td>
+                </tr>
+                <tr>
+                  <td>1002</td>
+                  <td>alan@acme.com</td>
+                  <td>2026-08-11 18:02:41</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="cap-nav">
+          <span class="cap" id="cap-nav">9 · Rapid navigation</span>
+          <p>
+            Previous rows stay on screen, dimmed. No empty flash. Live region
+            announces supersession.
+          </p>
+          <div class="actions">
+            <button type="button" id="toggleLoad">Toggle stale/ready</button>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script>
+      const app = document.getElementById("app");
+      const expandBar = document.getElementById("expandBar");
+      const live = document.getElementById("live");
+      const rows = document.getElementById("rows");
+      const drawer = document.getElementById("drawer");
+      const copyStatus = document.getElementById("copyStatus");
+      document.getElementById("expandBtn").onclick = () => {
+        app.classList.add("expanded");
+        expandBar.hidden = false;
+      };
+      document.getElementById("restoreBtn").onclick = () => {
+        app.classList.remove("expanded");
+        expandBar.hidden = true;
+      };
+      document.getElementById("inspectBtn").onclick = () => {
+        const on = drawer.style.display === "none";
+        drawer.style.display = on ? "" : "none";
+        document.getElementById("inspectBtn").setAttribute("aria-expanded", String(on));
+      };
+      document.getElementById("toggleRaw").onclick = () => {
+        document.getElementById("rawPanel").hidden =
+          !document.getElementById("rawPanel").hidden;
+      };
+      document.getElementById("addFilter").onclick = () => {
+        document.getElementById("keepEdits").focus();
+      };
+      document.getElementById("toggleLoad").onclick = () => {
+        const stale = rows.classList.toggle("stale");
+        live.hidden = !stale;
+        live.textContent = stale
+          ? "Loading · request 84 superseded 83"
+          : "Ready · 25 rows";
+      };
+      function copied(msg) {
+        copyStatus.textContent = msg;
+      }
+      document.getElementById("copySql").onclick = () => copied("SQL copied");
+      document.getElementById("copyParams").onclick = () => copied("Params copied");
+    </script>
+  </body>
+</html>
