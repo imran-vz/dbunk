@@ -7,6 +7,8 @@ import {
   type TableBrowseHistoryEntry,
   browseCellsToGrid,
   browseIdentityReadOnlyCopy,
+  browseOperatorNeedsValue,
+  buildBrowseFilter,
   filtersForRequest,
   GRID_NULL_SENTINEL,
   gridCellToEditValue,
@@ -42,6 +44,32 @@ describe("supportsServerTableBrowse", () => {
     for (const engine of engines) {
       expect(supportsServerTableBrowse(engine)).toBe(engine === "PostgreSQL");
     }
+  });
+});
+
+describe("buildBrowseFilter", () => {
+  it("builds null operators without a value", () => {
+    expect(browseOperatorNeedsValue("isNull")).toBe(false);
+    expect(browseOperatorNeedsValue("eq")).toBe(true);
+    expect(buildBrowseFilter("email", "isNull", "")).toEqual({
+      kind: "isNull",
+      column: "email",
+    });
+    expect(buildBrowseFilter("email", "isNotNull", "ignored")).toEqual({
+      kind: "isNotNull",
+      column: "email",
+    });
+  });
+
+  it("rejects empty comparison values and empty in-list tokens", () => {
+    expect(buildBrowseFilter("id", "eq", "  ")).toBeNull();
+    expect(buildBrowseFilter("id", "inList", " , ")).toBeNull();
+    expect(buildBrowseFilter("", "isNull", "")).toBeNull();
+    expect(buildBrowseFilter("id", "inList", "a, b")).toEqual({
+      kind: "inList",
+      column: "id",
+      values: ["a", "b"],
+    });
   });
 });
 

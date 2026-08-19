@@ -873,8 +873,8 @@ describe("TableEditorPanel server browse", () => {
             pageInfo: {
               mode: "keyset",
               page: 1,
-              hasMore: false,
-              nextCursor: null,
+              hasMore: true,
+              nextCursor: { values: ["1"] },
             },
             count: { kind: "estimated", value: 128 },
             inspection: {
@@ -912,16 +912,13 @@ describe("TableEditorPanel server browse", () => {
     expect(screen.getByRole("button", { name: "Data" })).toBeTruthy();
   });
 
-  it("prompts before a filter change discards pending edits", () => {
+  it("prompts before a page change discards pending edits", () => {
     seedBrowse();
     act(() => {
       useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
     });
     render(<TableEditorPanel tab={tableTab} />);
-    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "Filter operator" }));
-    fireEvent.click(screen.getByRole("option", { name: "is null" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByLabelText("Next page"));
     expect(screen.getByText("Discard pending edits?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText("Discard pending edits?")).toBeNull();

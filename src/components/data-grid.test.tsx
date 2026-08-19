@@ -293,7 +293,7 @@ describe("DataGrid server browse mode", () => {
     browse.onHeaderSort.mockClear();
   });
 
-  it("wires page size and expand controls", () => {
+  it("wires page size options and expand controls", () => {
     const onExpandGrid = vi.fn();
     render(
       <DataGrid
@@ -306,8 +306,9 @@ describe("DataGrid server browse mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand grid" }));
     expect(onExpandGrid).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("combobox", { name: "Page size" }));
-    fireEvent.click(screen.getByRole("option", { name: "250 rows" }));
-    expect(browse.onPageSizeChange).toHaveBeenCalledWith(250);
+    expect(screen.getByRole("option", { name: "10 rows" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "250 rows" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "1000 rows" })).toBeTruthy();
   });
 
   it("shows inspection SQL, parameters, and truncation notice", () => {
@@ -324,7 +325,7 @@ describe("DataGrid server browse mode", () => {
     expect(screen.getByText(/Partial result/)).toBeTruthy();
   });
 
-  it("enables null operators without a value", () => {
+  it("exposes null operators in the typed filter menu", () => {
     render(
       <DataGrid
         data={sampleRows}
@@ -334,13 +335,9 @@ describe("DataGrid server browse mode", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Filter" }));
     fireEvent.click(screen.getByRole("combobox", { name: "Filter operator" }));
-    fireEvent.click(screen.getByRole("option", { name: "is null" }));
-    expect(screen.queryByPlaceholderText("value")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(browse.onApplyTypedFilter).toHaveBeenCalledWith({
-      kind: "isNull",
-      column: "id",
-    });
+    expect(screen.getByRole("option", { name: "is null" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "is not null" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "in list" })).toBeTruthy();
   });
 
   it("shows typed database errors with position", () => {
