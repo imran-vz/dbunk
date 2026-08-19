@@ -1,39 +1,50 @@
 use futures_util::StreamExt;
-use tokio_postgres::error::ErrorPosition;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, Row};
 
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
-use crate::query_session::postgres::{self as session_postgres, SessionConnection};
+use crate::postgres::dedicated::{self, DedicatedConnection, DedicatedError, NoticeSink};
+use crate::postgres::row_budget::{bound_text, retained_row_bytes, shrink_row, MAX_RESPONSE_BYTES};
 
 use super::builder::{
     BoundParam, BuiltBrowseQuery, RelationColumn, RelationDescriptor, UniqueIndexCandidate,
 };
 use super::protocol::*;
 
-const MAX_CELL_BYTES: usize = 1024 * 1024;
-const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
-
 pub(crate) struct BrowseConnection {
-    pub inner: SessionConnection,
-    pub tls: bool,
+    pub inner: DedicatedConnection,
 }
 
 pub(crate) async fn connect(
     spec: &ResolvedPostgresConnectSpec,
 ) -> Result<BrowseConnection, TableBrowseError> {
-    let inner = session_postgres::connect(spec)
+    let inner = dedicated::connect(spec, NoticeSink::Ignore)
         .await
-        .map_err(map_session_error)?;
+        .map_err(map_dedicated)?;
     inner
         .client
         .batch_execute("SET default_transaction_read_only = on")
         .await
         .map_err(database_error)?;
-    Ok(BrowseConnection {
-        tls: spec.tls_prefer,
-        inner,
-    })
+    Ok(BrowseConnection { inner })
+}
+
+fn map_dedicated(error: DedicatedError) -> TableBrowseError {
+    match error {
+        DedicatedError::ConnectionLost => TableBrowseError::ConnectionLost,
+        DedicatedError::Timeout { operation } => TableBrowseError::Timeout { operation },
+        DedicatedError::Database {
+            code,
+            message,
+            severity,
+            position,
+        } => TableBrowseError::Database {
+            code,
+            message,
+            severity,
+            position,
+        },
+    }
 }
 
 pub(crate) async fn load_descriptor(
@@ -271,6 +282,7 @@ pub(crate) fn is_undefined_object(error: &TableBrowseError) -> bool {
     matches!(error.sqlstate(), Some("42703" | "42P01"))
 }
 
+#[cfg(test)]
 pub(crate) fn is_query_canceled(error: &TableBrowseError) -> bool {
     error.sqlstate() == Some("57014")
 }
@@ -280,41 +292,7 @@ pub(crate) fn is_dead_socket(error: &TableBrowseError) -> bool {
 }
 
 pub(crate) fn database_error(error: tokio_postgres::Error) -> TableBrowseError {
-    if let Some(db) = error.as_db_error() {
-        TableBrowseError::Database {
-            code: Some(db.code().code().into()),
-            message: db.message().into(),
-            severity: Some(db.severity().into()),
-            position: match db.position() {
-                Some(ErrorPosition::Original(pos)) => Some(*pos),
-                _ => None,
-            },
-        }
-    } else {
-        TableBrowseError::ConnectionLost
-    }
-}
-
-fn map_session_error(error: crate::query_session::protocol::QuerySessionError) -> TableBrowseError {
-    use crate::query_session::protocol::QuerySessionError;
-    match error {
-        QuerySessionError::UnsupportedEngine => TableBrowseError::UnsupportedEngine,
-        QuerySessionError::ConnectionClosing => TableBrowseError::ConnectionClosing,
-        QuerySessionError::ConnectionLost => TableBrowseError::ConnectionLost,
-        QuerySessionError::Timeout { operation } => TableBrowseError::Timeout { operation },
-        QuerySessionError::Database {
-            code,
-            message,
-            severity,
-            position,
-        } => TableBrowseError::Database {
-            code,
-            message,
-            severity,
-            position,
-        },
-        _ => TableBrowseError::ConnectionLost,
-    }
+    map_dedicated(dedicated::database_error(error))
 }
 
 fn undefined_table() -> TableBrowseError {
@@ -364,9 +342,7 @@ async fn decode_browse_stream(
             break;
         }
         let (cells, identity) = decode_row(&row, built, &mut truncated_cells);
-        let bytes = serde_json::to_vec(&cells)
-            .map(|json| json.len())
-            .unwrap_or(usize::MAX);
+        let bytes = retained_row_bytes(&cells, identity.as_deref());
         if retained_bytes.saturating_add(bytes) > MAX_RESPONSE_BYTES {
             omitted_rows += 1;
             has_more = true;
@@ -396,12 +372,31 @@ fn decode_row(
     let mut cells = (0..visible)
         .map(|index| cell_text(row, index))
         .collect::<Vec<_>>();
-    let identity = if built.projects_ctid {
+    let mut extra_identity = if built.projects_ctid {
         Some(
             (0..built.identity.columns.len())
                 .map(|offset| cell_text(row, visible + offset).unwrap_or_default())
-                .collect(),
+                .collect::<Vec<_>>(),
         )
+    } else {
+        None
+    };
+    let mut reasons = Vec::new();
+    for value in cells.iter_mut().flatten() {
+        bound_text(value, truncated_cells);
+    }
+    if let Some(identity) = extra_identity.as_mut() {
+        for value in identity {
+            bound_text(value, truncated_cells);
+        }
+    }
+    let before = reasons.len();
+    shrink_row(&mut cells, &mut reasons);
+    if reasons.len() > before {
+        *truncated_cells += 1;
+    }
+    let identity = if let Some(identity) = extra_identity {
+        Some(identity)
     } else if built.identity.exists() {
         Some(
             built
@@ -421,19 +416,6 @@ fn decode_row(
     } else {
         None
     };
-    let mut reasons = Vec::new();
-    for value in cells.iter_mut().flatten() {
-        let truncated = session_postgres::truncate_utf8(value, MAX_CELL_BYTES, &mut reasons);
-        if truncated.len() != value.len() {
-            *truncated_cells += 1;
-        }
-        *value = truncated;
-    }
-    let before = reasons.len();
-    session_postgres::shrink_row(&mut cells, &mut reasons);
-    if reasons.len() > before {
-        *truncated_cells += 1;
-    }
     (cells, identity)
 }
 
@@ -512,5 +494,24 @@ mod tests {
             severity: Some("ERROR".into()),
             position: None,
         }));
+    }
+
+    #[test]
+    fn wide_primary_key_identity_is_capped_and_counted() {
+        use crate::postgres::row_budget::{
+            bound_text, json_bytes, retained_row_bytes, MAX_CELL_BYTES,
+        };
+        let mut pk = "k".repeat(MAX_CELL_BYTES + 64);
+        let mut truncated = 0;
+        bound_text(&mut pk, &mut truncated);
+        let cells = vec![Some(pk.clone()), Some("body".into())];
+        let identity = vec![pk];
+        assert_eq!(identity[0].len(), MAX_CELL_BYTES);
+        assert_eq!(truncated, 1);
+        assert_eq!(
+            retained_row_bytes(&cells, Some(&identity)),
+            json_bytes(&cells) + json_bytes(&identity)
+        );
+        assert!(retained_row_bytes(&cells, Some(&identity)) > json_bytes(&cells));
     }
 }

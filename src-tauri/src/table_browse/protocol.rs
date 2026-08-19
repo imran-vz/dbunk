@@ -2,20 +2,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowseFilterOperator {
+pub(crate) enum ComparisonOperator {
     Eq,
     Neq,
     Lt,
     Lte,
     Gt,
     Gte,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TextMatchOperator {
     Contains,
     NotContains,
     StartsWith,
     EndsWith,
-    IsNull,
-    IsNotNull,
-    InList,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -25,13 +27,25 @@ pub(crate) enum BrowseFilterOperator {
     tag = "kind"
 )]
 pub(crate) enum BrowseFilter {
-    Column {
+    Comparison {
         column: String,
-        operator: BrowseFilterOperator,
-        #[serde(default)]
-        value: Option<String>,
-        #[serde(default)]
-        values: Option<Vec<String>>,
+        operator: ComparisonOperator,
+        value: String,
+    },
+    TextMatch {
+        column: String,
+        operator: TextMatchOperator,
+        value: String,
+    },
+    IsNull {
+        column: String,
+    },
+    IsNotNull {
+        column: String,
+    },
+    InList {
+        column: String,
+        values: Vec<String>,
     },
     RawSql {
         text: String,
@@ -228,10 +242,21 @@ pub(crate) struct BrowseCount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
+pub(crate) enum InspectionParam {
+    Text { value: String },
+    TextArray { values: Vec<String> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BrowseInspection {
     pub sql: String,
-    pub params: Vec<Option<String>>,
+    pub params: Vec<InspectionParam>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -330,16 +355,16 @@ mod tests {
         assert_eq!(database["code"], "42703");
         assert_eq!(database["position"], 12);
 
-        let filter = serde_json::to_value(BrowseFilter::Column {
+        let filter = serde_json::to_value(BrowseFilter::TextMatch {
             column: "name".into(),
-            operator: BrowseFilterOperator::NotContains,
-            value: Some("x".into()),
-            values: None,
+            operator: TextMatchOperator::NotContains,
+            value: "x".into(),
         })
         .unwrap();
-        assert_eq!(filter["kind"], "column");
+        assert_eq!(filter["kind"], "textMatch");
         assert_eq!(filter["operator"], "notContains");
         assert_eq!(filter["column"], "name");
+        assert_eq!(filter["value"], "x");
 
         let raw = serde_json::to_value(BrowseFilter::RawSql {
             text: "id > 1".into(),
@@ -396,7 +421,12 @@ mod tests {
             },
             inspection: BrowseInspection {
                 sql: "SELECT 1".into(),
-                params: vec![Some("a".into()), None],
+                params: vec![
+                    InspectionParam::Text { value: "a".into() },
+                    InspectionParam::TextArray {
+                        values: vec!["1".into(), "2".into()],
+                    },
+                ],
             },
             omitted_rows: 1,
             truncated_cells: 2,
@@ -412,6 +442,10 @@ mod tests {
         assert_eq!(result["truncatedCells"], 2);
         assert_eq!(result["runtimeMs"], 3);
         assert_eq!(result["columns"][0]["castType"], "integer");
+        assert_eq!(result["inspection"]["params"][0]["kind"], "text");
+        assert_eq!(result["inspection"]["params"][0]["value"], "a");
+        assert_eq!(result["inspection"]["params"][1]["kind"], "textArray");
+        assert_eq!(result["inspection"]["params"][1]["values"][1], "2");
     }
 
     #[test]
@@ -423,9 +457,8 @@ mod tests {
             "schema": "public",
             "table": "users",
             "filters": [{
-                "kind": "column",
+                "kind": "inList",
                 "column": "id",
-                "operator": "inList",
                 "values": ["1", "2"]
             }],
             "sort": [{
@@ -445,14 +478,28 @@ mod tests {
         assert_eq!(payload.count_policy, BrowseCountPolicy::Estimated);
         assert!(payload.refresh_structure);
         match &payload.filters[0] {
-            BrowseFilter::Column {
-                operator, values, ..
-            } => {
-                assert_eq!(*operator, BrowseFilterOperator::InList);
-                assert_eq!(values.as_ref().unwrap(), &["1", "2"]);
+            BrowseFilter::InList { values, .. } => {
+                assert_eq!(values, &["1".to_string(), "2".into()]);
             }
-            _ => panic!("expected column filter"),
+            other => panic!("expected inList filter, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn comparison_filter_requires_value_and_rejects_bag_shape() {
+        assert!(serde_json::from_value::<BrowseFilter>(serde_json::json!({
+            "kind": "comparison",
+            "column": "id",
+            "operator": "eq"
+        }))
+        .is_err());
+        assert!(serde_json::from_value::<BrowseFilter>(serde_json::json!({
+            "kind": "column",
+            "column": "id",
+            "operator": "eq",
+            "value": "1"
+        }))
+        .is_err());
     }
 
     #[test]
