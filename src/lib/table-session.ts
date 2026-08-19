@@ -10,6 +10,10 @@ import type {
   TableStructureStatus,
 } from "@/lib/store/types";
 import { tableSessionKey, tableStructureKey } from "@/lib/store/types";
+import {
+  type BrowseIdentityKind,
+  identityIsEditable,
+} from "@/lib/table-browse";
 
 export const EMPTY_TABLE_SESSION_CAPABILITIES: TableSessionCapabilities = {
   structureLoaded: false,
@@ -23,11 +27,14 @@ export const EMPTY_TABLE_SESSION_CAPABILITIES: TableSessionCapabilities = {
 export const deriveTableSessionCapabilities = (
   structure: TableStructure | undefined,
   writeStatus: TableEditsCommitStatus | undefined,
+  browseIdentityKind?: BrowseIdentityKind,
 ): TableSessionCapabilities => {
   const structureLoaded = Boolean(structure);
   const isWriting =
     writeStatus?.state === "running" || writeStatus?.state === "queued";
-  const isReadOnly = pickRowIdentity(structure) === null;
+  const isReadOnly = browseIdentityKind
+    ? !identityIsEditable(browseIdentityKind)
+    : pickRowIdentity(structure) === null;
   const caps = structure?.capabilities;
 
   if (!caps) return EMPTY_TABLE_SESSION_CAPABILITIES;
@@ -107,6 +114,7 @@ export const buildTableSessionSnapshot = ({
   structureStatus,
   writeStatus,
   edits,
+  browseIdentityKind,
 }: {
   ref: TableRef;
   data: TableDataState | undefined;
@@ -115,6 +123,7 @@ export const buildTableSessionSnapshot = ({
   structureStatus: TableStructureStatus | undefined;
   writeStatus: TableEditsCommitStatus | undefined;
   edits: Record<number, Record<number, string>> | undefined;
+  browseIdentityKind?: BrowseIdentityKind;
 }): TableSessionSnapshot => ({
   ref,
   key: tableSessionKey(ref),
@@ -124,5 +133,9 @@ export const buildTableSessionSnapshot = ({
   structureStatus,
   writeStatus,
   edits: edits ?? {},
-  capabilities: deriveTableSessionCapabilities(structure, writeStatus),
+  capabilities: deriveTableSessionCapabilities(
+    structure,
+    writeStatus,
+    browseIdentityKind,
+  ),
 });

@@ -24,6 +24,16 @@ import { useRowDetailsVisibility } from "@/components/table-editor/use-row-detai
 import { useRowSelection } from "@/components/table-editor/use-row-selection";
 import { useTableExportFilename } from "@/components/table-editor/use-table-export-filename";
 import { useTableSession } from "@/components/table-editor/use-table-session";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -116,10 +126,16 @@ export function TableEditorPanel({
     currentEdits,
     hasEdits,
     pagination,
+    serverBrowse,
+    readOnlyCopy,
   } = tableSession;
   // Terminal outcome lives component-local. Disappears on tab unmount,
   // which is the intended trade-off (CONTEXT.md — Edit Outcome).
   const [lastOutcome, setLastOutcome] = useState<EditOutcome | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(
+    null,
+  );
   const [exportError, setTableExportError] = useState<string | null>(null);
   const [savedExportTask, setSavedExportTask] =
     useState<SavedExportTask | null>(() =>
@@ -168,11 +184,29 @@ export function TableEditorPanel({
     return () => window.removeEventListener("keydown", handler);
   }, [inlineDrilldown]);
 
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [expanded]);
+
   const connections = useAppStore((s) => s.connections);
   const connection = connections.find((c) => c.id === tab.connectionId);
 
   const rows = data?.rows ?? [];
   const selection = useRowSelection(rows);
+  useEffect(() => {
+    selection.clear();
+    setInlineDrilldown(null);
+    // Rows were replaced by a new browse page or legacy reload.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- selection.clear is stable enough; we only want row-identity changes.
+  }, [data?.runtimeMs, data?.page, data?.pageSize, data?.rows.length]);
   const caps = deriveSelectedTableSessionCapabilities(
     tableSession.capabilities,
     selection.selectedCount,
@@ -487,6 +521,48 @@ export function TableEditorPanel({
     }
   };
 
+  const confirmIfEdits = (action: () => void) => {
+    if (hasEdits) {
+      setPendingDiscard(() => action);
+      return;
+    }
+    action();
+  };
+
+  const guardedBrowse = serverBrowse
+    ? {
+        ...serverBrowse,
+        onApplyTypedFilter: (
+          filter: (typeof serverBrowse)["typedFilters"][number],
+        ) => confirmIfEdits(() => serverBrowse.onApplyTypedFilter(filter)),
+        onRemoveTypedFilter: (column: string) =>
+          confirmIfEdits(() => serverBrowse.onRemoveTypedFilter(column)),
+        onClearTypedFilters: () =>
+          confirmIfEdits(() => serverBrowse.onClearTypedFilters()),
+        onRawFilterApply: (text: string) =>
+          confirmIfEdits(() => serverBrowse.onRawFilterApply(text)),
+        onSortChange: (sort: (typeof serverBrowse)["sort"]) =>
+          confirmIfEdits(() => serverBrowse.onSortChange(sort)),
+        onPageSizeChange: (pageSize: number) =>
+          confirmIfEdits(() => serverBrowse.onPageSizeChange(pageSize)),
+        onHeaderSort: (column: string, append: boolean) =>
+          confirmIfEdits(() => serverBrowse.onHeaderSort(column, append)),
+        onApplyPreset: (name: string) =>
+          confirmIfEdits(() => serverBrowse.onApplyPreset(name)),
+        onApplyHistory: (index: number) =>
+          confirmIfEdits(() => serverBrowse.onApplyHistory(index)),
+      }
+    : undefined;
+
+  const guardedPagination = {
+    ...pagination,
+    goToPage: (next: number) => confirmIfEdits(() => pagination.goToPage(next)),
+    onPrevPage: () => confirmIfEdits(() => pagination.onPrevPage()),
+    onNextPage: () => confirmIfEdits(() => pagination.onNextPage()),
+    onFirstPage: () => confirmIfEdits(() => pagination.onFirstPage()),
+    onLastPage: () => confirmIfEdits(() => pagination.onLastPage()),
+  };
+
   const isLoading = status?.state === "loading";
   const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
@@ -516,28 +592,31 @@ export function TableEditorPanel({
         />
       ) : null}
 
-      <TableEditorHeader
-        title={tab.table ?? tab.label}
-        schemaBadge={tab.schema}
-        rowCountLabel={rowCountLabel}
-        activeSubTab={activeSubTab}
-        onSubTabChange={setActiveSubTab}
-        showRowDetailsToggle={activeSubTab === "data"}
-        rowDetailsVisible={rowDetails.visible}
-        onToggleRowDetails={rowDetails.onToggle}
-        onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
-        onRefresh={onRefresh}
-        onExportTableDdl={handleExportTableDdl}
-        onOpenCopyTable={() => setIsCopyOpen(true)}
-        onRunMaintenance={handleRunMaintenance}
-        showSeedAction={SEEDABLE_ENGINES.has(connection?.engine ?? "")}
-        onOpenSeedTable={() => setIsSeedOpen(true)}
-        variant={isWorkbench ? "workbench" : "default"}
-      />
+      {!expanded ? (
+        <TableEditorHeader
+          title={tab.table ?? tab.label}
+          schemaBadge={tab.schema}
+          rowCountLabel={rowCountLabel}
+          activeSubTab={activeSubTab}
+          onSubTabChange={setActiveSubTab}
+          showRowDetailsToggle={activeSubTab === "data"}
+          rowDetailsVisible={rowDetails.visible}
+          onToggleRowDetails={rowDetails.onToggle}
+          onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
+          onRefresh={onRefresh}
+          onExportTableDdl={handleExportTableDdl}
+          onOpenCopyTable={() => setIsCopyOpen(true)}
+          onRunMaintenance={handleRunMaintenance}
+          showSeedAction={SEEDABLE_ENGINES.has(connection?.engine ?? "")}
+          onOpenSeedTable={() => setIsSeedOpen(true)}
+          variant={isWorkbench ? "workbench" : "default"}
+        />
+      ) : null}
 
       <TableStatusBanners
         errorMessage={exportError ?? errorMessage}
         showReadOnlyBanner={caps.isReadOnly && caps.structureLoaded}
+        readOnlyCopy={readOnlyCopy}
         commitStatus={commitStatus}
         lastOutcome={lastOutcome}
         onRetryLoad={onRefresh}
@@ -600,7 +679,7 @@ export function TableEditorPanel({
         selection={selection}
         caps={caps}
         rowDetails={rowDetails}
-        pagination={pagination}
+        pagination={guardedPagination}
         isLoading={isLoading}
         isSaving={isSaving}
         exportFilenameBase={exportFilenameBase}
@@ -657,9 +736,44 @@ export function TableEditorPanel({
         onSaveExportTask={handleSaveExportTask}
         onRunSavedExportTask={handleRunSavedExportTask}
         hasSavedExportTask={savedExportTask !== null}
+        serverBrowse={guardedBrowse}
+        onExpandGrid={() => setExpanded((open) => !open)}
+        expanded={expanded}
       />
 
-      {!isWorkbench ? <StatusBar items={statusItems} /> : null}
+      <AlertDialog
+        open={pendingDiscard !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDiscard(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard pending edits?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Changing filters, sort, or page replaces the loaded rows and
+              discards uncommitted cell edits.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingDiscard(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                tableSession.discardEdits();
+                pendingDiscard?.();
+                setPendingDiscard(null);
+              }}
+            >
+              Discard edits
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {!isWorkbench && !expanded ? <StatusBar items={statusItems} /> : null}
     </div>
   );
 }

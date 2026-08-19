@@ -337,6 +337,73 @@ describe("edit-strategies.resolveEditContext", () => {
     expect(result.columnIndexByName.get("id")).toBe(0);
     expect(result.columnIndexByName.get("name")).toBe(1);
   });
+
+  it("uses explicit browse identity columns and ignores pickRowIdentity", () => {
+    const result = resolveEditContext({
+      tableData: {},
+      tableStructure: { [structureKey]: makeStructure() },
+      connections: [pgConnection],
+      ref: { connectionId: "conn-1", schema: "public", table: "users" },
+      dataSource: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        columns: ["email", "id"],
+        rows: [["ada@x", "1"]],
+        identityKind: "uniqueIndex",
+        identityColumns: ["email"],
+      },
+      capability: "canUpdateRows",
+      action: "cell edits",
+    });
+    if (!result.ok) throw new Error(`expected ok, got: ${result.reason}`);
+    expect(result.identity.columns).toEqual(["email"]);
+    expect(result.data.rows[0]?.[0]).toBe("ada@x");
+  });
+
+  it("rejects virtual browse identity with honest copy", () => {
+    const result = resolveEditContext({
+      tableData: {},
+      tableStructure: { [structureKey]: makeStructure() },
+      connections: [pgConnection],
+      ref: { connectionId: "conn-1", schema: "public", table: "heap" },
+      dataSource: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "heap",
+        columns: ["note"],
+        rows: [["x"]],
+        identityKind: "virtual",
+        identityColumns: ["ctid"],
+      },
+      capability: "canUpdateRows",
+      action: "cell edits",
+    });
+    if (result.ok) throw new Error("expected error");
+    expect(result.reason).toMatch(/virtual identity/i);
+  });
+
+  it("rejects none browse identity with honest copy", () => {
+    const result = resolveEditContext({
+      tableData: {},
+      tableStructure: { [structureKey]: makeStructure() },
+      connections: [pgConnection],
+      ref: { connectionId: "conn-1", schema: "public", table: "foreign" },
+      dataSource: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "foreign",
+        columns: ["note"],
+        rows: [["x"]],
+        identityKind: "none",
+        identityColumns: [],
+      },
+      capability: "canDeleteRows",
+      action: "row deletes",
+    });
+    if (result.ok) throw new Error("expected error");
+    expect(result.reason).toMatch(/no usable row identity/i);
+  });
 });
 
 describe("edit-strategies.resolveStructureCommitContext", () => {

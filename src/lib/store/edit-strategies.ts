@@ -31,6 +31,11 @@
 import type { PendingMutation } from "@/lib/pending-mutations";
 import { type MutationOutcome, trackMutations } from "@/lib/pending-mutations";
 import { pickRowIdentity } from "@/lib/row-identity";
+import {
+  type BrowseIdentityKind,
+  browseIdentityReadOnlyCopy,
+  identityIsEditable,
+} from "@/lib/table-browse";
 
 import type {
   Connection,
@@ -92,12 +97,23 @@ export type EditContextResult = EditContextOk | EditContextErr;
  * supplied `action` label so the surfaced reason mirrors what the
  * original inline code wrote.
  */
+export type EditDataSource = {
+  connectionId: string;
+  schema: string;
+  table: string;
+  columns: string[];
+  rows: string[][];
+  identityKind: BrowseIdentityKind;
+  identityColumns: string[];
+};
+
 export const resolveEditContext = (params: {
   tableData: Record<string, TableDataState>;
   tableStructure: Record<string, TableStructure>;
   connections: Connection[];
   tableName?: string;
   ref?: TableRef;
+  dataSource?: EditDataSource;
   capability: "canUpdateRows" | "canDeleteRows";
   action: "cell edits" | "row deletes";
 }): EditContextResult => {
@@ -107,11 +123,30 @@ export const resolveEditContext = (params: {
     connections,
     tableName,
     ref,
+    dataSource,
     capability,
     action,
   } = params;
 
   const dataEntry = ((): [string, TableDataState] | null => {
+    if (dataSource) {
+      const key = tableDataKey(
+        dataSource.connectionId,
+        dataSource.schema,
+        dataSource.table,
+      );
+      const data: TableDataState = {
+        connectionId: dataSource.connectionId,
+        schema: dataSource.schema,
+        table: dataSource.table,
+        columns: dataSource.columns,
+        rows: dataSource.rows,
+        page: 1,
+        pageSize: dataSource.rows.length,
+        runtimeMs: 0,
+      };
+      return [key, data];
+    }
     if (ref) {
       const key = tableDataKey(ref.connectionId, ref.schema, ref.table);
       const data = tableData[key];
@@ -135,7 +170,15 @@ export const resolveEditContext = (params: {
     data.table,
   );
   const structure = tableStructure[structureKey];
-  const identity = pickRowIdentity(structure);
+  if (dataSource && !identityIsEditable(dataSource.identityKind)) {
+    return {
+      ok: false,
+      reason: browseIdentityReadOnlyCopy(dataSource.identityKind),
+    };
+  }
+  const identity = dataSource
+    ? { columns: dataSource.identityColumns }
+    : pickRowIdentity(structure);
   if (!identity) {
     return {
       ok: false,
