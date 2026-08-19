@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof -- Channel availability is a window-global check; `__TAURI_INTERNALS__` is required for Tauri v2 Channels and is not interchangeable with `isTauri()`. */
 import { Channel } from "@tauri-apps/api/core";
 
 import type {
@@ -61,6 +62,7 @@ type PendingRun = {
 };
 type SessionBinding = {
   sessionId: string;
+  tabId: string;
   handler: Handler;
   nextSequence: number;
   pendingAck: {
@@ -69,7 +71,6 @@ type SessionBinding = {
     retainMoreRows: boolean;
     terminal: boolean;
   } | null;
-  ackQueued: boolean;
   ackInFlight: boolean;
   pendingRun: PendingRun | null;
 };
@@ -78,9 +79,13 @@ const ownerId = crypto.randomUUID();
 const bindings = new Map<string, SessionBinding>();
 let registration: Promise<void> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let onFocusHeartbeat: (() => void) | null = null;
+let onVisibilityHeartbeat: (() => void) | null = null;
 
 export const querySessionChannelsAvailable = () =>
-  "__TAURI_INTERNALS__" in window;
+  // Tauri v2 Channels bind through `__TAURI_INTERNALS__` specifically;
+  // `isTauri()` also treats legacy `__TAURI__` as native and is not reused.
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 const heartbeat = async () => {
   if (!bindings.size) return;
@@ -98,11 +103,12 @@ const ensureHeartbeat = () => {
     () => void heartbeat().catch(() => undefined),
     30_000,
   );
-  const kick = () => void heartbeat().catch(() => undefined);
-  window.addEventListener("focus", kick);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") kick();
-  });
+  onFocusHeartbeat = () => void heartbeat().catch(() => undefined);
+  onVisibilityHeartbeat = () => {
+    if (document.visibilityState === "visible") onFocusHeartbeat?.();
+  };
+  window.addEventListener("focus", onFocusHeartbeat);
+  document.addEventListener("visibilitychange", onVisibilityHeartbeat);
 };
 
 const register = async () => {
@@ -114,35 +120,39 @@ const register = async () => {
 };
 
 const flushAck = async (binding: SessionBinding) => {
-  binding.ackQueued = false;
   if (binding.ackInFlight) return;
-  const ack = binding.pendingAck;
-  binding.pendingAck = null;
-  if (!ack) return;
   binding.ackInFlight = true;
   try {
-    await tauriInvoke("ack_query_session_events", {
-      payload: {
-        sessionId: binding.sessionId,
-        executionId: ack.executionId,
-        ackThroughSequence: ack.sequence,
-        retainMoreRows: ack.retainMoreRows,
-      },
-    });
-    if (ack.terminal && binding.pendingRun?.executionId === ack.executionId) {
-      const pending = binding.pendingRun;
-      binding.pendingRun = null;
-      pending.resolve();
+    while (binding.pendingAck) {
+      const ack = binding.pendingAck;
+      binding.pendingAck = null;
+      try {
+        await tauriInvoke("ack_query_session_events", {
+          payload: {
+            sessionId: binding.sessionId,
+            executionId: ack.executionId,
+            ackThroughSequence: ack.sequence,
+            retainMoreRows: ack.retainMoreRows,
+          },
+        });
+        if (
+          ack.terminal &&
+          binding.pendingRun?.executionId === ack.executionId
+        ) {
+          const pending = binding.pendingRun;
+          binding.pendingRun = null;
+          pending.resolve();
+        }
+      } catch {
+        binding.pendingRun?.reject({ kind: "connectionLost" });
+        binding.pendingRun = null;
+        break;
+      }
     }
-  } catch {
-    binding.pendingAck = null;
-    binding.pendingRun?.reject({ kind: "connectionLost" });
-    binding.pendingRun = null;
   } finally {
     binding.ackInFlight = false;
-    if (binding.pendingAck && !binding.ackQueued) {
-      binding.ackQueued = true;
-      queueMicrotask(() => void flushAck(binding));
+    if (binding.pendingAck) {
+      void flushAck(binding);
     }
   }
 };
@@ -156,6 +166,12 @@ const receive = (binding: SessionBinding, envelope: QueryEventEnvelope) => {
   if (envelope.sequence !== binding.nextSequence) {
     binding.pendingRun?.reject({ kind: "invalidSequence" });
     binding.pendingRun = null;
+    bindings.delete(binding.tabId);
+    binding.handler({
+      ...envelope,
+      requiresAck: false,
+      event: { kind: "sessionLost", reason: "invalidSequence" },
+    });
     void closeQuerySession(binding.sessionId);
     return;
   }
@@ -184,10 +200,7 @@ const receive = (binding: SessionBinding, envelope: QueryEventEnvelope) => {
       (binding.pendingAck?.terminal ?? false) ||
       envelope.event.kind === "executionCompleted",
   };
-  if (!binding.ackQueued) {
-    binding.ackQueued = true;
-    queueMicrotask(() => void flushAck(binding));
-  }
+  void flushAck(binding);
 };
 
 export async function openQuerySession(input: {
@@ -198,10 +211,11 @@ export async function openQuerySession(input: {
 }): Promise<QueryTransactionSnapshot> {
   await register();
   const binding: SessionBinding = {
-    ...input,
+    sessionId: input.sessionId,
+    tabId: input.tabId,
+    handler: input.handler,
     nextSequence: 1,
     pendingAck: null,
-    ackQueued: false,
     ackInFlight: false,
     pendingRun: null,
   };
@@ -307,4 +321,25 @@ async function closeQuerySession(sessionId: string) {
   await tauriInvoke("close_query_session", { payload: { sessionId } }).catch(
     () => undefined,
   );
+}
+
+export function hasQuerySessionBinding(tabId: string): boolean {
+  return bindings.has(tabId);
+}
+
+export function resetQuerySessionChannelForTests(): void {
+  bindings.clear();
+  registration = null;
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  if (onFocusHeartbeat) {
+    window.removeEventListener("focus", onFocusHeartbeat);
+    onFocusHeartbeat = null;
+  }
+  if (onVisibilityHeartbeat) {
+    document.removeEventListener("visibilitychange", onVisibilityHeartbeat);
+    onVisibilityHeartbeat = null;
+  }
 }
