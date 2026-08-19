@@ -4,8 +4,8 @@ import {
   IconDeviceFloppy,
   IconLayoutSidebarRightCollapse,
   IconLayoutSidebarRightExpand,
-  IconLoader2,
   IconPlayerPlay,
+  IconPlayerStop,
   IconSparkles,
   IconTerminal2,
   IconX,
@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { storageClassFor } from "@/lib/engine-policy";
-import type { Connection } from "@/lib/store";
+import type { Connection, QueryTransactionSnapshot } from "@/lib/store";
 
 interface QueryEditorToolbarProps {
   dbSelectorLabel: string;
@@ -29,6 +29,15 @@ interface QueryEditorToolbarProps {
   hasEdits: boolean;
   onDiscardEdits: () => void;
   isRunning: boolean;
+  isCancelling?: boolean;
+  transaction?: QueryTransactionSnapshot;
+  onStop?: () => void;
+  onTransactionModeChange?: (mode: "autocommit" | "manual") => void;
+  onTransactionIsolationChange?: (
+    isolation: "readCommitted" | "repeatableRead" | "serializable",
+  ) => void;
+  onTransactionAction?: (action: "commit" | "rollback" | "refresh") => void;
+  onCloseSession?: () => void;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
   onRunCurrent: () => void;
@@ -48,6 +57,13 @@ export function QueryEditorToolbar({
   hasEdits,
   onDiscardEdits,
   isRunning,
+  isCancelling = false,
+  transaction,
+  onStop,
+  onTransactionModeChange,
+  onTransactionIsolationChange,
+  onTransactionAction,
+  onCloseSession,
   isSidebarOpen,
   onToggleSidebar,
   onRunCurrent,
@@ -112,6 +128,78 @@ export function QueryEditorToolbar({
         ) : null}
       </div>
       <div className="flex items-center gap-1.5">
+        {transaction ? (
+          <>
+            <select
+              aria-label="Transaction mode"
+              value={transaction.mode}
+              disabled={transaction.status !== "idle" || isRunning}
+              onChange={(event) =>
+                onTransactionModeChange?.(
+                  event.target.value === "manual" ? "manual" : "autocommit",
+                )
+              }
+              className="h-7 border border-border-subtle bg-surface-panel px-1 text-[0.6875rem]"
+            >
+              <option value="autocommit">Autocommit</option>
+              <option value="manual">Manual</option>
+            </select>
+            <select
+              aria-label="Next manual transaction isolation"
+              title="Applies to the next manual transaction"
+              value={transaction.manualIsolation}
+              disabled={
+                transaction.mode === "autocommit" ||
+                transaction.status !== "idle" ||
+                isRunning
+              }
+              onChange={(event) =>
+                onTransactionIsolationChange?.(
+                  event.target.value === "serializable"
+                    ? "serializable"
+                    : event.target.value === "repeatableRead"
+                      ? "repeatableRead"
+                      : "readCommitted",
+                )
+              }
+              className="h-7 border border-border-subtle bg-surface-panel px-1 text-[0.6875rem]"
+            >
+              <option value="readCommitted">Read committed</option>
+              <option value="repeatableRead">Repeatable read</option>
+              <option value="serializable">Serializable</option>
+            </select>
+            {transaction.status === "unknown" ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onTransactionAction?.("refresh")}
+                >
+                  Recheck
+                </Button>
+                <Button size="sm" variant="outline" onClick={onCloseSession}>
+                  Close
+                </Button>
+              </>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={transaction.status !== "active" || isRunning}
+              onClick={() => onTransactionAction?.("commit")}
+            >
+              Commit
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={transaction.status === "idle" || isRunning}
+              onClick={() => onTransactionAction?.("rollback")}
+            >
+              Rollback
+            </Button>
+          </>
+        ) : null}
         {hasEdits ? (
           <>
             <Button size="sm" variant="ghost" onClick={onDiscardEdits}>
@@ -175,44 +263,48 @@ export function QueryEditorToolbar({
         </Button>
 
         <div className="flex items-center">
-          <Button
-            size="sm"
-            onClick={onRunCurrent}
-            disabled={isRunning}
-            aria-busy={isRunning}
-            aria-label={isRunning ? "Running" : "Run"}
-            className="rounded-r-none"
-          >
-            {isRunning ? (
-              <>
-                <IconLoader2 className="size-3.5 animate-spin" />
-                Running…
-              </>
-            ) : (
-              <>
-                <IconPlayerPlay className="size-3.5" />
-                Run
-              </>
-            )}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label="Run options"
-              className="inline-flex h-6 items-center justify-center rounded-r-sm border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground hover:bg-accent-hover disabled:opacity-50"
-              disabled={isRunning}
+          {isRunning && onStop ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onStop}
+              disabled={isCancelling}
+              aria-label={isCancelling ? "Cancelling query" : "Stop query"}
             >
-              <IconChevronDown className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onRunSelection}>
-                Run selection
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onRunCurrent}>
-                Run current statement
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onRunAll}>Run all</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <IconPlayerStop className="size-3.5" />
+              {isCancelling ? "Cancelling…" : "Stop"}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={onRunCurrent}
+              aria-label="Run"
+              className="rounded-r-none"
+            >
+              <IconPlayerPlay className="size-3.5" />
+              Run
+            </Button>
+          )}
+          {!isRunning ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="Run options"
+                className="inline-flex h-6 items-center justify-center rounded-r-sm border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground hover:bg-accent-hover disabled:opacity-50"
+                disabled={isRunning}
+              >
+                <IconChevronDown className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onRunSelection}>
+                  Run selection
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRunCurrent}>
+                  Run current statement
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRunAll}>Run all</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </div>
     </div>

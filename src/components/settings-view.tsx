@@ -400,7 +400,7 @@ function SecurityTab() {
               onClick={() => {
                 if (
                   window.confirm(
-                    "Reset credential storage? Saved database passwords will be deleted and cannot be recovered.",
+                    "Reset credential storage? All query sessions will close, active transactions will roll back, and saved database passwords will be deleted permanently.",
                   )
                 ) {
                   void resetCredentialStorage();

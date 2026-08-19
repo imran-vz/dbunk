@@ -1,6 +1,6 @@
 import { connectionStatusItem } from "@/components/connection-status";
 import type { StatusBarItem } from "@/components/status-bar";
-import type { Connection } from "@/lib/store";
+import type { Connection, QuerySessionState } from "@/lib/store";
 
 import type { MonacoPosition } from "./monaco-types";
 
@@ -9,6 +9,7 @@ interface BuildQueryStatusItemsArgs {
   cursor: MonacoPosition;
   errorMessage: string | null;
   activeConnection: Connection | undefined;
+  session?: QuerySessionState;
 }
 
 export function buildQueryStatusItems({
@@ -16,9 +17,17 @@ export function buildQueryStatusItems({
   cursor,
   errorMessage,
   activeConnection,
+  session,
 }: BuildQueryStatusItemsArgs): StatusBarItem[] {
   return [
     connectionStatusItem(activeConnection),
+    {
+      id: "query-session",
+      label: "Session",
+      value: session
+        ? `${session.state} · ${session.transaction.mode} · ${session.transaction.status}`
+        : "Legacy",
+    },
     {
       id: "tab",
       label: "Tab",

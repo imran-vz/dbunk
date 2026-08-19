@@ -6,14 +6,15 @@ import {
   IconRoute,
   IconTerminal2,
 } from "@tabler/icons-react";
+import { useState } from "react";
 
 import { DataGrid } from "@/components/data-grid";
 import { ExplainView } from "@/components/query-editor/explain/explain-view";
 import { Button } from "@/components/ui/button";
-import type { QueryPreviewData } from "@/lib/store";
+import type { QueryPreviewData, QuerySessionState } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-export type ResultsView = "results" | "explain";
+export type ResultsView = "results" | "explain" | "output";
 
 export type ExplainPlanData =
   | {
@@ -48,32 +49,51 @@ interface QueryResultsViewProps {
   view: ResultsView;
   onViewChange: (view: ResultsView) => void;
   preview: QueryPreviewData | null;
+  session?: QuerySessionState;
   explainPlan: ExplainPlanData | null;
   currentEdits: Record<number, Record<number, string>>;
   exportFilenameBase: string;
   isRunning: boolean;
   errorMessage: string | null;
   onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
+  onSwitchBudgetOwner?: (tabId: string) => void;
+  onReleaseBudgetOwner?: (tabId: string) => void;
   hideTabs?: boolean;
 }
 
 const TABS: ReadonlyArray<{ id: ResultsView; label: string }> = [
   { id: "results", label: "Results" },
   { id: "explain", label: "Explain" },
+  { id: "output", label: "Output" },
 ];
 
 export function QueryResultsView({
   view,
   onViewChange,
   preview,
+  session,
   explainPlan,
   currentEdits,
   exportFilenameBase,
   isRunning,
   errorMessage,
   onCellEdit,
+  onSwitchBudgetOwner,
+  onReleaseBudgetOwner,
   hideTabs = false,
 }: QueryResultsViewProps) {
+  const [resultIndex, setResultIndex] = useState(0);
+  const execution = session?.execution;
+  const selectedResult = execution?.resultSets[resultIndex];
+  const selectedPreview = selectedResult
+    ? {
+        columns: selectedResult.columns.map((column) => column ?? ""),
+        rows: selectedResult.rows.map((row) => row.map((cell) => cell ?? "")),
+        runtime: `${execution.runtimeMs} ms`,
+        rowCount: String(selectedResult.rowCount),
+        cache: "Cold",
+      }
+    : preview;
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface-app">
       {!hideTabs ? (
@@ -109,6 +129,25 @@ export function QueryResultsView({
               {preview?.runtime ?? "—"}
             </span>
           </div>
+          {execution && execution.resultSets.length > 1 ? (
+            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+              {execution.resultSets.map((result, index) => (
+                <button
+                  key={result.index}
+                  type="button"
+                  onClick={() => setResultIndex(index)}
+                  aria-current={index === resultIndex ? "true" : undefined}
+                  className="whitespace-nowrap border border-border-subtle px-2 py-1 text-[0.625rem] text-text-muted aria-[current=true]:border-accent aria-[current=true]:text-foreground"
+                >
+                  {index + 1} ·{" "}
+                  {result.columns.length
+                    ? `${result.rowCount} rows`
+                    : "command"}
+                  {result.partial ? " · partial" : ""}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="ml-auto flex items-center gap-1">
             <Button
               size="icon-sm"
@@ -139,13 +178,16 @@ export function QueryResultsView({
       <div className="min-h-0 flex-1 overflow-hidden">
         <ResultsContent
           view={view}
-          preview={preview}
+          preview={selectedPreview}
+          session={session}
           explainPlan={explainPlan}
           currentEdits={currentEdits}
           exportFilenameBase={exportFilenameBase}
           isRunning={isRunning}
           errorMessage={errorMessage}
           onCellEdit={onCellEdit}
+          onSwitchBudgetOwner={onSwitchBudgetOwner}
+          onReleaseBudgetOwner={onReleaseBudgetOwner}
         />
       </div>
     </div>
@@ -155,13 +197,92 @@ export function QueryResultsView({
 function ResultsContent({
   view,
   preview,
+  session,
   explainPlan,
   currentEdits,
   exportFilenameBase,
   isRunning,
   errorMessage,
   onCellEdit,
+  onSwitchBudgetOwner,
+  onReleaseBudgetOwner,
 }: Omit<QueryResultsViewProps, "onViewChange">) {
+  if (view === "output") {
+    const execution = session?.execution;
+    if (!execution) return <EmptyState />;
+    return (
+      <div className="h-full overflow-auto p-3 font-mono text-xs text-foreground">
+        <div
+          aria-live="polite"
+          className="mb-3 border-b border-border-subtle pb-2"
+        >
+          {execution.status} · {execution.runtimeMs} ms ·{" "}
+          {execution.resultSets.length} result sets
+        </div>
+        {execution.notices.map((notice) => (
+          <div
+            key={`${notice.severity}-${notice.message}`}
+            className="border-l-2 border-warning px-2 py-1"
+          >
+            <b>{notice.severity}</b> {notice.message}
+          </div>
+        ))}
+        {execution.error ? (
+          <div
+            role="alert"
+            className="mt-2 border-l-2 border-danger px-2 py-1 text-danger"
+          >
+            {execution.error.code ? `${execution.error.code} · ` : ""}
+            {execution.error.message}
+          </div>
+        ) : null}
+        {execution.omittedRows ||
+        execution.omittedResultSets ||
+        execution.omittedNotices ? (
+          <div className="mt-3 text-text-muted">
+            Omitted: {execution.omittedRows} rows ·{" "}
+            {execution.omittedResultSets} result sets ·{" "}
+            {execution.omittedNotices} notices
+          </div>
+        ) : null}
+        {execution.tombstone ? (
+          <div className="mt-3 border border-border-subtle p-3">
+            This result display was released to stay within the 128 MiB global
+            budget. Summary retained. Rerun the query to view rows again.
+          </div>
+        ) : null}
+        {session?.budgetOwners.length ? (
+          <div className="mt-3 border border-warning/40 p-3">
+            <div>
+              Result memory is full. Release another tab's results to continue
+              retaining rows.
+            </div>
+            {session.budgetOwners.map((owner) => (
+              <div key={owner.tabId} className="mt-2 flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate">
+                  {owner.label} · {Math.ceil(owner.retainedBytes / 1048576)} MiB
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onSwitchBudgetOwner?.(owner.tabId)}
+                >
+                  Switch
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onReleaseBudgetOwner?.(owner.tabId)}
+                >
+                  Release results
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   if (view === "explain") {
     return (
       <ExplainContent
