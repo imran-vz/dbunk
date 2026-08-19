@@ -311,7 +311,7 @@ impl TableBrowseManager {
     }
 
     async fn close_idle(&self) {
-        let idle = {
+        let candidates = {
             let state = self.inner.lock().await;
             state
                 .executors
@@ -319,23 +319,37 @@ impl TableBrowseManager {
                 .map(|(id, executor)| (id.clone(), executor.clone()))
                 .collect::<Vec<_>>()
         };
-        let mut close = Vec::new();
-        for (id, executor) in idle {
-            let inner = executor.inner.lock().await;
-            if !inner.busy
-                && inner.tabs.values().all(|tab| tab.queued.is_none())
-                && inner.last_used.elapsed() >= IDLE_TIMEOUT
-            {
-                close.push(id);
+        for (id, executor) in candidates {
+            if !is_idle(&*executor.inner.lock().await) {
+                continue;
             }
-        }
-        for id in close {
-            let executor = self.inner.lock().await.executors.remove(&id);
-            if let Some(executor) = executor {
+            let removed = {
+                let mut state = self.inner.lock().await;
+                let still_idle = match state.executors.get(&id) {
+                    Some(current) => is_idle(&*current.inner.lock().await),
+                    None => false,
+                };
+                if still_idle {
+                    state.executors.remove(&id)
+                } else {
+                    None
+                }
+            };
+            if let Some(executor) = removed {
                 let _ = tokio::time::timeout(CLOSE_TIMEOUT, close_executor(&executor, false)).await;
             }
         }
     }
+}
+
+fn is_idle(inner: &ExecutorInner) -> bool {
+    !inner.busy
+        && !inner.closed
+        && inner
+            .tabs
+            .values()
+            .all(|tab| tab.queued.is_none() && tab.in_flight_request_id.is_none())
+        && inner.last_used.elapsed() >= IDLE_TIMEOUT
 }
 
 fn check_admission(state: &ManagerState) -> Result<(), TableBrowseError> {
@@ -493,38 +507,22 @@ async fn next_job(executor: &Executor) -> Option<Job> {
         .into_iter()
         .filter_map(|id| inner.tabs.get_mut(&id)?.queued.take())
         .collect::<Vec<_>>();
-    let ready = ready_id.and_then(|id| inner.tabs.get_mut(&id)?.queued.take());
+    let ready = ready_id.and_then(|id| {
+        let tab = inner.tabs.get_mut(&id)?;
+        let job = tab.queued.take()?;
+        tab.in_flight_request_id = Some(job.request_id);
+        tab.interrupt = Interrupt::None;
+        inner.busy = true;
+        inner.last_used = Instant::now();
+        Some(job)
+    });
     drop(inner);
     for job in expired {
         let _ = job.reply.send(Err(TableBrowseError::Timeout {
             operation: "queueWait".into(),
         }));
     }
-    let job = ready?;
-    let mut missing_tab = false;
-    let mut superseded = false;
-    {
-        let mut inner = executor.inner.lock().await;
-        match inner.tabs.get_mut(&job.tab_id) {
-            None => missing_tab = true,
-            Some(tab) if job.request_id != tab.latest_request_id => superseded = true,
-            Some(tab) => {
-                tab.in_flight_request_id = Some(job.request_id);
-                tab.interrupt = Interrupt::None;
-                inner.busy = true;
-                inner.last_used = Instant::now();
-            }
-        }
-    }
-    if missing_tab {
-        let _ = job.reply.send(Err(TableBrowseError::Cancelled));
-        return None;
-    }
-    if superseded {
-        let _ = job.reply.send(Err(TableBrowseError::Superseded));
-        return None;
-    }
-    Some(job)
+    ready
 }
 
 async fn execute_job(executor: &Arc<Executor>, job: Job) {
@@ -532,11 +530,10 @@ async fn execute_job(executor: &Arc<Executor>, job: Job) {
         let run = run_kind(executor, &job);
         tokio::pin!(run);
         loop {
+            drain_pending_cancel(executor).await;
             tokio::select! {
                 result = &mut run => break result,
-                _ = executor.notify.notified() => {
-                    drain_pending_cancel(executor).await;
-                }
+                _ = executor.notify.notified() => {}
             }
         }
     };
@@ -890,6 +887,37 @@ mod tests {
                 Duration::from_secs(3),
             )
         );
+    }
+
+    #[test]
+    fn idle_check_requires_a_quiet_expired_executor() {
+        let mut slot = inner();
+        slot.last_used = Instant::now() - IDLE_TIMEOUT;
+        assert!(is_idle(&slot));
+        slot.busy = true;
+        assert!(!is_idle(&slot));
+        slot.busy = false;
+        slot.closed = true;
+        assert!(!is_idle(&slot));
+        slot.closed = false;
+        let (queued, _rx) = job("tab", 1);
+        slot.tabs.insert(
+            "tab".into(),
+            TabSlot {
+                queued: Some(queued),
+                ..TabSlot::default()
+            },
+        );
+        assert!(!is_idle(&slot));
+        slot.tabs.clear();
+        slot.tabs.insert(
+            "tab".into(),
+            TabSlot {
+                in_flight_request_id: Some(1),
+                ..TabSlot::default()
+            },
+        );
+        assert!(!is_idle(&slot));
     }
 
     #[test]
