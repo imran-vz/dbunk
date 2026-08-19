@@ -105,7 +105,7 @@ export type ConnectionsSlice = {
   updateConnection: (connection: Connection) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
-  disconnectConnection: (connectionId: string) => void;
+  disconnectConnection: (connectionId: string) => Promise<void>;
   testConnection: (
     connection: StoredConnection,
   ) => Promise<
@@ -257,13 +257,14 @@ export const createConnectionsSlice: StateCreator<
     // closes its open workspace/key/pubsub tabs and drops cached
     // query state. Without this, deleted connections leave orphan
     // tabs that point at a connectionId that no longer exists.
-    const cascade = () => {
+    const cascade = async () => {
       const state = get();
+      await state.closeQuerySessionsForConnection(connectionId);
       state.dropOpenQueryStateForConnection(connectionId);
       state.dropRelationalCachesForConnection(connectionId);
       state.closeKeyTabsForConnection(connectionId);
       state.closePubSubSessionsForConnection(connectionId);
-      state.closeTabsForConnection(connectionId);
+      await state.closeTabsForConnection(connectionId);
     };
 
     const finalize = (connections: ReturnType<typeof get>["connections"]) => {
@@ -288,18 +289,19 @@ export const createConnectionsSlice: StateCreator<
     };
 
     if (!isTauri()) {
-      cascade();
+      await cascade();
       finalize(get().connections.filter((c) => c.id !== connectionId));
       return;
     }
     try {
+      await get().closeQuerySessionsForConnection(connectionId);
       const stored = await tauriInvoke<StoredConnection[]>(
         "delete_connection",
         {
           payload: { connectionId },
         },
       );
-      cascade();
+      await cascade();
       finalize(stored.map(hydrateConnection));
     } catch (error) {
       console.error("Failed to delete connection", error);
@@ -501,7 +503,7 @@ export const createConnectionsSlice: StateCreator<
     }
   },
 
-  disconnectConnection: (connectionId) => {
+  disconnectConnection: async (connectionId) => {
     if (!connectionId) {
       return;
     }
@@ -512,18 +514,22 @@ export const createConnectionsSlice: StateCreator<
       return;
     }
 
+    await state.closeQuerySessionsForConnection(connectionId);
+    if (isTauri()) {
+      try {
+        await tauriInvoke("disconnect_connection", {
+          payload: { connectionId },
+        });
+      } catch (error) {
+        console.error("Failed to disconnect backend connection", error);
+        return;
+      }
+    }
     state.dropOpenQueryStateForConnection(connectionId);
     state.dropRelationalCachesForConnection(connectionId);
     state.closeKeyTabsForConnection(connectionId);
     state.closePubSubSessionsForConnection(connectionId);
-    state.closeTabsForConnection(connectionId);
-    if (isTauri()) {
-      void tauriInvoke("disconnect_connection", {
-        payload: { connectionId },
-      }).catch((error) => {
-        console.error("Failed to disconnect backend connection", error);
-      });
-    }
+    await state.closeTabsForConnection(connectionId);
 
     set((state) => {
       const { [connectionId]: _droppedTab, ...remainingTabs } =

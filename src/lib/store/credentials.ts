@@ -243,6 +243,11 @@ export const createCredentialsSlice: StateCreator<
     }
     set({ credentialStorageStatus: { state: "running" } });
     try {
+      await Promise.all(
+        get().connections.map((connection) =>
+          get().closeQuerySessionsForConnection(connection.id),
+        ),
+      );
       const snapshot = await tauriInvoke<AppSettingsSnapshot>(
         "reset_credential_storage",
       );

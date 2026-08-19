@@ -109,6 +109,7 @@ export function QueryEditorPanel({
 
   const {
     queryPreviews,
+    querySessions,
     queryStatus,
     queryEdits,
     schemaExplorer,
@@ -118,14 +119,33 @@ export function QueryEditorPanel({
     activeConnectionId,
     updateQuery,
     runQuery,
+    cancelQuery,
+    setQueryTransactionMode,
+    setQueryTransactionIsolation,
+    queryTransactionAction,
+    closeQuerySessionForTab: closeSession,
     loadTableStructure,
     setQueryEdit,
     discardQueryEdits,
     retargetQueryTab,
+    setActiveTabId,
+    releaseQueryResults,
   } = useAppStore();
 
   const status = queryStatus[tab.id];
+  const isCancelling = status?.state === "cancelling";
   const isRunning = status?.state === "running";
+  const isBusy = isRunning || isCancelling;
+  const session = querySessions[tab.id];
+  const closeUnknownSession = useCallback(() => {
+    if (
+      window.confirm(
+        "Close this query session? Its active or unresolved transaction will be rolled back.",
+      )
+    ) {
+      void closeSession(tab.id);
+    }
+  }, [closeSession, tab.id]);
   // Terminal outcome lives component-local. We store the full
   // QueryOutcome (not just the failure message) for shape parity
   // with sibling panels. See CONTEXT.md — Query Outcome.
@@ -155,7 +175,7 @@ export function QueryEditorPanel({
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
     if (tab.kind !== "query") return null;
     return (
-      queryPreviews[tab.label] ?? {
+      queryPreviews[tab.id] ?? {
         columns: ["column"],
         rows: [],
         runtime: "--",
@@ -198,7 +218,7 @@ export function QueryEditorPanel({
     query: tab.query ?? "",
     connectionId: tab.connectionId,
     completionContext,
-    isRunning,
+    isRunning: isBusy,
     loadTableStructure,
     runQuery,
     onOutcome: handleQueryOutcome,
@@ -216,7 +236,7 @@ export function QueryEditorPanel({
 
   const handleRetargetConnection = (newConnectionId: string) => {
     if (newConnectionId === tab.connectionId) return;
-    if (isRunning) return;
+    if (isBusy) return;
     if (hasEdits) {
       const ok = window.confirm(
         "Switching connections will discard pending edits in the results grid. Continue?",
@@ -242,7 +262,7 @@ export function QueryEditorPanel({
   };
 
   const handleExplain = async () => {
-    if (isRunning) return;
+    if (isBusy) return;
     const currentStatement = applyBindVariables(
       editor.currentStatement(),
       bindValues,
@@ -306,6 +326,7 @@ export function QueryEditorPanel({
     cursor: editor.cursor,
     errorMessage,
     activeConnection,
+    session,
   });
 
   useEffect(() => {
@@ -321,15 +342,18 @@ export function QueryEditorPanel({
       view={resultsView}
       onViewChange={setResultsView}
       preview={activeQueryPreview}
+      session={session}
       explainPlan={explainPlan}
       currentEdits={currentEdits}
       exportFilenameBase={exportFilenameBase}
-      isRunning={isRunning}
+      isRunning={isBusy}
       errorMessage={errorMessage}
       hideTabs={isWorkbench}
       onCellEdit={(rowIndex, colIndex, value) =>
         setQueryEdit(tab.id, rowIndex, colIndex, value)
       }
+      onSwitchBudgetOwner={setActiveTabId}
+      onReleaseBudgetOwner={releaseQueryResults}
     />
   );
 
@@ -347,7 +371,20 @@ export function QueryEditorPanel({
           onRetargetConnection={handleRetargetConnection}
           hasEdits={hasEdits}
           onDiscardEdits={() => discardQueryEdits(tab.id)}
-          isRunning={isRunning}
+          isRunning={isBusy}
+          isCancelling={isCancelling}
+          transaction={session?.transaction}
+          onStop={() => void cancelQuery(tab.id)}
+          onTransactionModeChange={(mode) =>
+            void setQueryTransactionMode(tab.id, mode)
+          }
+          onTransactionIsolationChange={(isolation) =>
+            void setQueryTransactionIsolation(tab.id, isolation)
+          }
+          onTransactionAction={(action) =>
+            void queryTransactionAction(tab.id, action)
+          }
+          onCloseSession={closeUnknownSession}
           isSidebarOpen={sidebar.isOpen}
           onToggleSidebar={sidebar.onToggle}
           onRunCurrent={runCurrentHandler}
@@ -404,7 +441,7 @@ export function QueryEditorPanel({
           storageKey={`query-${tab.id}`}
           consoleLabel={tab.label}
           onRun={runCurrentHandler}
-          runDisabled={isRunning}
+          runDisabled={isBusy}
           consoleContent={
             <pre className="px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground">
               {tab.query ?? ""}
@@ -445,7 +482,20 @@ export function QueryEditorPanel({
           onRetargetConnection={handleRetargetConnection}
           hasEdits={hasEdits}
           onDiscardEdits={() => discardQueryEdits(tab.id)}
-          isRunning={isRunning}
+          isRunning={isBusy}
+          isCancelling={isCancelling}
+          transaction={session?.transaction}
+          onStop={() => void cancelQuery(tab.id)}
+          onTransactionModeChange={(mode) =>
+            void setQueryTransactionMode(tab.id, mode)
+          }
+          onTransactionIsolationChange={(isolation) =>
+            void setQueryTransactionIsolation(tab.id, isolation)
+          }
+          onTransactionAction={(action) =>
+            void queryTransactionAction(tab.id, action)
+          }
+          onCloseSession={closeUnknownSession}
           isSidebarOpen={sidebar.isOpen}
           onToggleSidebar={sidebar.onToggle}
           onRunCurrent={
@@ -523,7 +573,7 @@ export function QueryEditorPanel({
             explainPlan={explainPlan}
             currentEdits={currentEdits}
             exportFilenameBase={exportFilenameBase}
-            isRunning={isRunning}
+            isRunning={isBusy}
             errorMessage={errorMessage}
             onCellEdit={(rowIndex, colIndex, value) =>
               setQueryEdit(tab.id, rowIndex, colIndex, value)

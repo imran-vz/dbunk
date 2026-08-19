@@ -11,18 +11,246 @@
 
 import type { StateCreator } from "zustand";
 
+import {
+  closeQuerySessionForTab,
+  executeQuerySession,
+  invokeQuerySession,
+  openQuerySession,
+  querySessionChannelsAvailable,
+  type QueryEventEnvelope,
+} from "@/lib/query-session-channel";
 import { pickSqlToRun } from "@/lib/sql";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import type {
   AppStoreState,
   QueryHistoryEntry,
+  QueryExecution,
   QueryOutcome,
   QueryPreviewData,
+  QuerySessionState,
   QueryStatus,
+  QueryTransactionIsolation,
+  QueryTransactionMode,
+  QueryTransactionSnapshot,
   SavedQueriesStatus,
   SavedQuery,
 } from "./types";
+
+const QUERY_RESULT_BUDGET = 128 * 1024 * 1024;
+const encodedBytes = (
+  value: Pick<QueryExecution, "resultSets" | "notices" | "error">,
+) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+type OmittedPayload = string | Array<string | null> | QueryExecution["error"];
+const encodedValueBytes = (value: OmittedPayload) =>
+  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+const defaultTransaction: QueryTransactionSnapshot = {
+  mode: "autocommit",
+  status: "idle",
+  manualIsolation: "readCommitted",
+};
+
+export const supportsPersistentQuerySessions = (engine: string) =>
+  engine === "PostgreSQL" && querySessionChannelsAvailable();
+
+const newExecution = (id: string): QueryExecution => ({
+  id,
+  status: "running",
+  startedAt: new Date().toISOString(),
+  completedAt: null,
+  runtimeMs: 0,
+  resultSets: [],
+  notices: [],
+  error: null,
+  omittedRows: 0,
+  omittedResultSets: 0,
+  omittedNotices: 0,
+  omittedMetadataBytes: 0,
+  truncationReasons: [],
+  retainedBytes: 0,
+  tombstone: null,
+});
+
+const releaseExecution = (execution: QueryExecution): QueryExecution => ({
+  ...execution,
+  resultSets: [],
+  notices: [],
+  error: null,
+  retainedBytes: 0,
+  tombstone: {
+    status: execution.status,
+    resultCount: execution.resultSets.length,
+    rowCount: execution.resultSets.reduce(
+      (total, result) => total + result.rowCount,
+      0,
+    ),
+    affectedCount: 0,
+    noticeCount: execution.notices.length,
+    omittedCount:
+      execution.omittedRows +
+      execution.omittedResultSets +
+      execution.omittedNotices,
+    runtimeMs: execution.runtimeMs,
+    releasedBytes: execution.retainedBytes,
+    completedAt: execution.completedAt ?? new Date().toISOString(),
+    reason: "globalBudget",
+  },
+});
+
+function reduceSessionEvent(
+  session: QuerySessionState,
+  envelope: QueryEventEnvelope,
+): QuerySessionState {
+  const event = envelope.event;
+  let execution = session.execution;
+  if (event.kind === "executionStarted" && envelope.executionId)
+    execution = newExecution(envelope.executionId);
+  if (execution && envelope.executionId === execution.id) {
+    if (event.kind === "resultSetStarted") {
+      execution = {
+        ...execution,
+        resultSets: [
+          ...execution.resultSets,
+          {
+            index: event.resultSetIndex,
+            columns: event.columns,
+            rows: [],
+            rowCount: 0,
+            partial: false,
+            completed: false,
+          },
+        ],
+      };
+    } else if (event.kind === "rowBatch") {
+      execution = {
+        ...execution,
+        resultSets: execution.resultSets.map((result) =>
+          result.index === event.resultSetIndex
+            ? { ...result, rows: [...result.rows, ...event.rows] }
+            : result,
+        ),
+      };
+    } else if (event.kind === "resultSetCompleted") {
+      execution = {
+        ...execution,
+        resultSets: execution.resultSets.map((result) =>
+          result.index === event.resultSetIndex
+            ? {
+                ...result,
+                rowCount: event.rowCount,
+                partial: event.partial,
+                completed: true,
+              }
+            : result,
+        ),
+      };
+    } else if (event.kind === "notice") {
+      execution = {
+        ...execution,
+        notices: [
+          ...execution.notices,
+          { severity: event.severity, message: event.message },
+        ],
+      };
+    } else if (event.kind === "executionCompleted") {
+      const completedAt = new Date().toISOString();
+      execution = {
+        ...execution,
+        status:
+          event.status === "cancelled"
+            ? "cancelled"
+            : event.status === "failed" || event.error
+              ? "failed"
+              : "completed",
+        completedAt,
+        runtimeMs: Math.max(
+          0,
+          Date.now() - new Date(execution.startedAt).getTime(),
+        ),
+        error: event.error,
+        omittedRows: event.omittedRows,
+        omittedResultSets: event.omittedResultSets,
+        omittedNotices: event.omittedNotices,
+        omittedMetadataBytes: event.omittedMetadataBytes,
+        truncationReasons: event.truncationReasons,
+      };
+    }
+    execution = {
+      ...execution,
+      retainedBytes: encodedBytes({
+        resultSets: execution.resultSets,
+        notices: execution.notices,
+        error: execution.error,
+      }),
+    };
+  }
+  if (event.kind === "sessionLost")
+    return {
+      ...session,
+      state: "lost",
+      execution: execution ? { ...execution, status: "lost" } : null,
+    };
+  if (event.kind === "sessionClosed")
+    return { ...session, state: "closed", execution };
+  return {
+    ...session,
+    generation: session.generation || envelope.generation,
+    nextSequence: envelope.sequence + 1,
+    transaction:
+      event.kind === "sessionState" || event.kind === "executionCompleted"
+        ? event.transaction
+        : session.transaction,
+    execution,
+  };
+}
+
+const omitEnvelopePayload = (
+  session: QuerySessionState,
+  envelope: QueryEventEnvelope,
+): QuerySessionState => {
+  const event = envelope.event;
+  let sanitized = event;
+  let omittedRows = 0;
+  let omittedNotices = 0;
+  let omittedMetadataBytes = 0;
+
+  if (event.kind === "rowBatch") {
+    omittedRows = event.rows.length;
+    sanitized = { ...event, rows: [] };
+  } else if (event.kind === "notice") {
+    omittedNotices = 1;
+    sanitized = { ...event, message: "" };
+    omittedMetadataBytes = encodedValueBytes(event.message);
+  } else if (event.kind === "resultSetStarted") {
+    sanitized = { ...event, columns: [] };
+    omittedMetadataBytes = encodedValueBytes(event.columns);
+  } else if (event.kind === "executionCompleted" && event.error) {
+    sanitized = { ...event, error: null };
+    omittedMetadataBytes = encodedValueBytes(event.error);
+  }
+
+  const reduced = reduceSessionEvent(session, {
+    ...envelope,
+    event: sanitized,
+  });
+  if (!reduced.execution || reduced.execution.id !== envelope.executionId)
+    return reduced;
+  return {
+    ...reduced,
+    execution: {
+      ...reduced.execution,
+      omittedRows: reduced.execution.omittedRows + omittedRows,
+      omittedNotices: reduced.execution.omittedNotices + omittedNotices,
+      omittedMetadataBytes:
+        reduced.execution.omittedMetadataBytes + omittedMetadataBytes,
+      truncationReasons: reduced.execution.truncationReasons.includes(
+        "frontendGlobalBudget",
+      )
+        ? reduced.execution.truncationReasons
+        : [...reduced.execution.truncationReasons, "frontendGlobalBudget"],
+    },
+  };
+};
 
 type RunQueryResult = {
   columns: string[];
@@ -56,6 +284,7 @@ export type RelationalQueriesSlice = {
   queryEdits: Record<string, Record<number, Record<number, string>>>;
   queryStatus: Record<string, QueryStatus>;
   queryPreviews: Record<string, QueryPreviewData>;
+  querySessions: Record<string, QuerySessionState>;
   queryHistory: QueryHistoryEntry[];
   savedQueries: SavedQuery[];
   savedQueriesStatus: SavedQueriesStatus;
@@ -72,6 +301,23 @@ export type RelationalQueriesSlice = {
     tabId: string,
     options?: { overrideSql?: string },
   ) => Promise<QueryOutcome>;
+  cancelQuery: (tabId: string) => Promise<void>;
+  setQueryTransactionMode: (
+    tabId: string,
+    mode: QueryTransactionMode,
+  ) => Promise<void>;
+  setQueryTransactionIsolation: (
+    tabId: string,
+    isolation: QueryTransactionIsolation,
+  ) => Promise<void>;
+  queryTransactionAction: (
+    tabId: string,
+    action: "commit" | "rollback" | "refresh",
+  ) => Promise<void>;
+  releaseQueryResults: (tabId: string) => void;
+  markQuerySessionViewed: (tabId: string) => void;
+  closeQuerySessionForTab: (tabId: string) => Promise<void>;
+  closeQuerySessionsForConnection: (connectionId: string) => Promise<void>;
   loadQueryHistory: () => Promise<void>;
   loadSavedQueries: () => Promise<void>;
   saveSavedQuery: (
@@ -113,6 +359,7 @@ export const createRelationalQueriesSlice: StateCreator<
   queryEdits: {},
   queryStatus: {},
   queryPreviews: {},
+  querySessions: {},
   queryHistory: [],
   savedQueries: [],
   savedQueriesStatus: { state: "idle" },
@@ -154,7 +401,7 @@ export const createRelationalQueriesSlice: StateCreator<
     if (!tab || tab.kind !== "query") {
       return { kind: "noop" };
     }
-    if (state.queryStatus[tabId]?.state === "running") {
+    if (state.queryStatus[tabId]) {
       return { kind: "noop" };
     }
     const fullText = tab.query ?? "";
@@ -202,9 +449,177 @@ export const createRelationalQueriesSlice: StateCreator<
       }
     };
     try {
-      const result = await tauriInvoke<RunQueryResult>("run_query", {
-        payload: { connectionId: tab.connectionId, query },
-      });
+      let result: RunQueryResult;
+      let wasCancelled = false;
+      if (
+        connectionAtRun &&
+        supportsPersistentQuerySessions(connectionAtRun.engine)
+      ) {
+        let session = get().querySessions[tabId];
+        if (
+          !session ||
+          session.connectionId !== tab.connectionId ||
+          session.state !== "open"
+        ) {
+          const sessionId = crypto.randomUUID();
+          session = {
+            id: sessionId,
+            tabId,
+            connectionId: tab.connectionId,
+            generation: 0,
+            nextSequence: 1,
+            transaction: defaultTransaction,
+            execution: null,
+            lastViewedAt: Date.now(),
+            budgetOwners: [],
+            state: "opening",
+            error: null,
+          };
+          set((current) => ({
+            querySessions: { ...current.querySessions, [tabId]: session },
+          }));
+          const transaction = await openQuerySession({
+            sessionId,
+            tabId,
+            connectionId: tab.connectionId,
+            handler: (envelope) => {
+              if (
+                envelope.tabId !== tabId ||
+                envelope.connectionId !== tab.connectionId
+              )
+                return { retainMoreRows: false };
+              let retainMoreRows = true;
+              set((current) => {
+                const currentSession = current.querySessions[tabId];
+                if (
+                  !currentSession ||
+                  (currentSession.generation &&
+                    currentSession.generation !== envelope.generation)
+                )
+                  return {};
+                let reduced = reduceSessionEvent(currentSession, envelope);
+                const sessions = { ...current.querySessions, [tabId]: reduced };
+                let retained = Object.values(sessions).reduce(
+                  (total, candidate) =>
+                    total + (candidate.execution?.retainedBytes ?? 0),
+                  0,
+                );
+                const candidates = Object.values(sessions)
+                  .filter(
+                    (candidate) =>
+                      candidate.tabId !== current.activeTabId &&
+                      candidate.execution?.status !== "running" &&
+                      (candidate.execution?.retainedBytes ?? 0) > 0,
+                  )
+                  .sort(
+                    (left, right) =>
+                      left.lastViewedAt - right.lastViewedAt ||
+                      left.tabId.localeCompare(right.tabId),
+                  );
+                for (const candidate of candidates) {
+                  if (retained <= QUERY_RESULT_BUDGET) break;
+                  const candidateExecution = candidate.execution;
+                  if (!candidateExecution) continue;
+                  retained -= candidateExecution.retainedBytes;
+                  sessions[candidate.tabId] = {
+                    ...candidate,
+                    execution: releaseExecution(candidateExecution),
+                  };
+                }
+                if (retained > QUERY_RESULT_BUDGET) {
+                  retainMoreRows = false;
+                  reduced = omitEnvelopePayload(currentSession, envelope);
+                  const retainedWithoutCurrent =
+                    retained - (sessions[tabId]?.execution?.retainedBytes ?? 0);
+                  if (
+                    reduced.execution &&
+                    retainedWithoutCurrent + reduced.execution.retainedBytes >
+                      QUERY_RESULT_BUDGET
+                  ) {
+                    reduced = {
+                      ...reduced,
+                      execution: releaseExecution(reduced.execution),
+                    };
+                  }
+                  reduced = {
+                    ...reduced,
+                    budgetOwners: Object.values(sessions)
+                      .filter(
+                        (candidate) =>
+                          candidate.tabId !== tabId &&
+                          (candidate.execution?.retainedBytes ?? 0) > 0,
+                      )
+                      .sort(
+                        (left, right) =>
+                          (right.execution?.retainedBytes ?? 0) -
+                            (left.execution?.retainedBytes ?? 0) ||
+                          left.tabId.localeCompare(right.tabId),
+                      )
+                      .slice(0, 3)
+                      .map((candidate) => ({
+                        tabId: candidate.tabId,
+                        label:
+                          current.workspaceTabs.find(
+                            (item) => item.id === candidate.tabId,
+                          )?.label ?? candidate.tabId,
+                        retainedBytes: candidate.execution?.retainedBytes ?? 0,
+                      })),
+                  };
+                  sessions[tabId] = reduced;
+                } else if (reduced.budgetOwners.length) {
+                  sessions[tabId] = { ...reduced, budgetOwners: [] };
+                }
+                return { querySessions: sessions };
+              });
+              return { retainMoreRows };
+            },
+          });
+          set((current) => ({
+            querySessions: {
+              ...current.querySessions,
+              [tabId]: {
+                ...current.querySessions[tabId],
+                transaction,
+                state: "open",
+              },
+            },
+          }));
+        }
+        const executionId = crypto.randomUUID();
+        await executeQuerySession(tabId, executionId, query);
+        const execution = get().querySessions[tabId]?.execution;
+        if (!execution)
+          throw new Error(
+            "Query session completed without an execution result",
+          );
+        const first = execution.resultSets.find(
+          (candidate) => candidate.columns.length > 0,
+        );
+        result = {
+          columns: (first?.columns ?? []).map((column) => column ?? ""),
+          rows: (first?.rows ?? []).map((row) => row.map((cell) => cell ?? "")),
+          runtimeMs: execution.runtimeMs,
+          rowCount:
+            execution.resultSets.reduce(
+              (total, item) => total + item.rowCount,
+              0,
+            ) + execution.omittedRows,
+        };
+        wasCancelled = execution.status === "cancelled";
+        if (execution.status === "failed")
+          throw execution.error ?? new Error("Query failed");
+      } else {
+        result = await tauriInvoke<RunQueryResult>("run_query", {
+          payload: { connectionId: tab.connectionId, query },
+        });
+      }
+      if (wasCancelled) {
+        set((state) => {
+          const { [tabId]: _status, ...queryStatus } = state.queryStatus;
+          return { queryStatus };
+        });
+        return { kind: "cancelled" };
+      }
       const entry = buildEntry({
         status: "success",
         runtimeMs: result.runtimeMs,
@@ -222,7 +637,7 @@ export const createRelationalQueriesSlice: StateCreator<
         return {
           queryPreviews: {
             ...s.queryPreviews,
-            [tab.label]: preview,
+            [tabId]: preview,
           },
           queryStatus: restStatus,
           queryHistory: [entry, ...s.queryHistory].slice(0, QUERY_HISTORY_CAP),
@@ -246,7 +661,12 @@ export const createRelationalQueriesSlice: StateCreator<
       };
     } catch (error) {
       const message = errorToMessage(error);
-      console.error("Failed to run query", error);
+      console.error("Query failed", {
+        kind:
+          error && typeof error === "object" && "kind" in error
+            ? error.kind
+            : "unknown",
+      });
       const entry = buildEntry({
         status: "error",
         runtimeMs: Math.max(0, Date.now() - new Date(startedAt).getTime()),
@@ -271,6 +691,110 @@ export const createRelationalQueriesSlice: StateCreator<
       await persistEntry(entry);
       return { kind: "failed", reason: message };
     }
+  },
+
+  cancelQuery: async (tabId) => {
+    const execution = get().querySessions[tabId]?.execution;
+    if (!execution || execution.status !== "running") return;
+    set((state) => ({
+      queryStatus: { ...state.queryStatus, [tabId]: { state: "cancelling" } },
+    }));
+    await invokeQuerySession(tabId, "cancel_query_execution", {
+      executionId: execution.id,
+    });
+  },
+
+  setQueryTransactionMode: async (tabId, mode) => {
+    const transaction = await invokeQuerySession<QueryTransactionSnapshot>(
+      tabId,
+      "set_query_transaction_mode",
+      { mode },
+    );
+    set((state) => ({
+      querySessions: {
+        ...state.querySessions,
+        [tabId]: { ...state.querySessions[tabId], transaction },
+      },
+    }));
+  },
+
+  setQueryTransactionIsolation: async (tabId, manualIsolation) => {
+    const transaction = await invokeQuerySession<QueryTransactionSnapshot>(
+      tabId,
+      "set_query_transaction_isolation",
+      { manualIsolation },
+    );
+    set((state) => ({
+      querySessions: {
+        ...state.querySessions,
+        [tabId]: { ...state.querySessions[tabId], transaction },
+      },
+    }));
+  },
+
+  queryTransactionAction: async (tabId, action) => {
+    const command =
+      action === "commit"
+        ? "commit_query_transaction"
+        : action === "rollback"
+          ? "rollback_query_transaction"
+          : "refresh_query_transaction_state";
+    const transaction = await invokeQuerySession<QueryTransactionSnapshot>(
+      tabId,
+      command,
+    );
+    set((state) => ({
+      querySessions: {
+        ...state.querySessions,
+        [tabId]: { ...state.querySessions[tabId], transaction },
+      },
+    }));
+  },
+
+  releaseQueryResults: (tabId) =>
+    set((state) => {
+      const session = state.querySessions[tabId];
+      const execution = session?.execution;
+      if (!session || !execution || execution.status === "running") return {};
+      return {
+        querySessions: {
+          ...state.querySessions,
+          [tabId]: {
+            ...session,
+            execution: releaseExecution(execution),
+          },
+        },
+      };
+    }),
+
+  markQuerySessionViewed: (tabId) =>
+    set((state) => {
+      const session = state.querySessions[tabId];
+      return session
+        ? {
+            querySessions: {
+              ...state.querySessions,
+              [tabId]: { ...session, lastViewedAt: Date.now() },
+            },
+          }
+        : {};
+    }),
+
+  closeQuerySessionForTab: async (tabId) => {
+    await closeQuerySessionForTab(tabId).catch(() => undefined);
+    set((state) => {
+      const { [tabId]: _session, ...querySessions } = state.querySessions;
+      return { querySessions };
+    });
+  },
+
+  closeQuerySessionsForConnection: async (connectionId) => {
+    const tabIds = Object.values(get().querySessions)
+      .filter((session) => session.connectionId === connectionId)
+      .map((session) => session.tabId);
+    await Promise.all(
+      tabIds.map((tabId) => get().closeQuerySessionForTab(tabId)),
+    );
   },
 
   loadQueryHistory: async () => {
@@ -358,11 +882,6 @@ export const createRelationalQueriesSlice: StateCreator<
         (tab) => tab.connectionId === connectionId,
       );
       const tabIdSet = new Set(tabsForConnection.map((tab) => tab.id));
-      const queryLabelSet = new Set(
-        tabsForConnection
-          .filter((tab) => tab.kind === "query")
-          .map((tab) => tab.label),
-      );
       const filterByTab = <T>(bag: Record<string, T>) => {
         const next: Record<string, T> = {};
         for (const [key, value] of Object.entries(bag)) {
@@ -372,19 +891,11 @@ export const createRelationalQueriesSlice: StateCreator<
         }
         return next;
       };
-      const filterByQueryLabel = <T>(bag: Record<string, T>) => {
-        const next: Record<string, T> = {};
-        for (const [key, value] of Object.entries(bag)) {
-          if (!queryLabelSet.has(key)) {
-            next[key] = value;
-          }
-        }
-        return next;
-      };
       return {
         queryStatus: filterByTab(state.queryStatus),
         queryEdits: filterByTab(state.queryEdits),
-        queryPreviews: filterByQueryLabel(state.queryPreviews),
+        queryPreviews: filterByTab(state.queryPreviews),
+        querySessions: filterByTab(state.querySessions),
       };
     }),
 
@@ -397,22 +908,17 @@ export const createRelationalQueriesSlice: StateCreator<
     }));
   },
 
-  dropQueryStateForTab: (tabId, queryLabel) =>
+  dropQueryStateForTab: (tabId) =>
     set((state) => {
       const { [tabId]: _droppedStatus, ...restStatus } = state.queryStatus;
       const { [tabId]: _droppedEdits, ...restEdits } = state.queryEdits;
-      const nextPreviews =
-        queryLabel === undefined
-          ? state.queryPreviews
-          : (() => {
-              const { [queryLabel]: _droppedPreview, ...rest } =
-                state.queryPreviews;
-              return rest;
-            })();
+      const { [tabId]: _droppedPreview, ...nextPreviews } = state.queryPreviews;
+      const { [tabId]: _droppedSession, ...nextSessions } = state.querySessions;
       return {
         queryStatus: restStatus,
         queryEdits: restEdits,
         queryPreviews: nextPreviews,
+        querySessions: nextSessions,
       };
     }),
 });

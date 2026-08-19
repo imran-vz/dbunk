@@ -347,7 +347,95 @@ export type Connection =
  * `QueryOutcome` returned by `runQuery`. Absence from `queryStatus`
  * means "nothing in flight." See CONTEXT.md — Query Outcome.
  */
-export type QueryStatus = { state: "running" };
+export type QueryStatus = { state: "running" | "cancelling" };
+
+export type QueryTransactionMode = "autocommit" | "manual";
+export type QueryTransactionStatus = "idle" | "active" | "failed" | "unknown";
+export type QueryTransactionIsolation =
+  | "readCommitted"
+  | "repeatableRead"
+  | "serializable";
+export type QueryTransactionSnapshot = {
+  mode: QueryTransactionMode;
+  status: QueryTransactionStatus;
+  manualIsolation: QueryTransactionIsolation;
+};
+export type QueryDatabaseError = {
+  code: string | null;
+  message: string;
+  severity: string | null;
+  position: number | null;
+};
+export type QuerySessionError =
+  | { kind: "unsupportedEngine" }
+  | { kind: "connectionClosing" }
+  | { kind: "sessionLimitReached"; limit: string }
+  | { kind: "sessionNotFound" }
+  | { kind: "ownerMismatch" }
+  | { kind: "executionInProgress" }
+  | { kind: "invalidSequence" }
+  | {
+      kind: "invalidTransactionTransition";
+      status: QueryTransactionStatus;
+      attemptedAction: string;
+      allowedActions: string[];
+    }
+  | { kind: "transactionStateUnknown"; canRecheck: boolean }
+  | { kind: "transactionObserverUnavailable" }
+  | { kind: "connectionLost" }
+  | { kind: "timeout"; operation: string }
+  | ({ kind: "database" } & QueryDatabaseError);
+export type QueryNotice = { severity: string; message: string };
+export type QueryResultSet = {
+  index: number;
+  columns: Array<string | null>;
+  rows: Array<Array<string | null>>;
+  rowCount: number;
+  partial: boolean;
+  completed: boolean;
+};
+export type QueryExecutionTombstone = {
+  status: string;
+  resultCount: number;
+  rowCount: number;
+  affectedCount: number;
+  noticeCount: number;
+  omittedCount: number;
+  runtimeMs: number;
+  releasedBytes: number;
+  completedAt: string;
+  reason: "globalBudget";
+};
+export type QueryExecution = {
+  id: string;
+  status: "running" | "completed" | "failed" | "cancelled" | "lost";
+  startedAt: string;
+  completedAt: string | null;
+  runtimeMs: number;
+  resultSets: QueryResultSet[];
+  notices: QueryNotice[];
+  error: QueryDatabaseError | null;
+  omittedRows: number;
+  omittedResultSets: number;
+  omittedNotices: number;
+  omittedMetadataBytes: number;
+  truncationReasons: string[];
+  retainedBytes: number;
+  tombstone: QueryExecutionTombstone | null;
+};
+export type QuerySessionState = {
+  id: string;
+  tabId: string;
+  connectionId: string;
+  generation: number;
+  nextSequence: number;
+  transaction: QueryTransactionSnapshot;
+  execution: QueryExecution | null;
+  lastViewedAt: number;
+  budgetOwners: Array<{ tabId: string; label: string; retainedBytes: number }>;
+  state: "opening" | "open" | "lost" | "closed";
+  error: QuerySessionError | null;
+};
 
 /**
  * Terminal result of one `runQuery` invocation — the caller-facing
@@ -366,6 +454,7 @@ export type QueryOutcome =
       preview: QueryPreviewData;
     }
   | { kind: "failed"; reason: string }
+  | { kind: "cancelled" }
   | { kind: "noop" };
 
 export type TableLoadStatus =
