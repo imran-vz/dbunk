@@ -144,9 +144,15 @@ identity; see the **Keyspace model** section below.
   constraints for one table. Includes a **capabilities** flag that tells the
   frontend which fields are populated for the active engine. Relational-only;
   Redis uses **Key Metadata** instead.
-- **Row Identity** — the columns the frontend uses to address a single row
-  for edit/delete. Picked from primary key first, falling back to non-null
-  unique indexes. Tables without a usable identity render **read-only**.
+- **Row Identity** — the columns used to address a single row. On the
+  legacy `load_table_data` path the frontend still picks them via
+  `pickRowIdentity` (primary key, else a non-null unique index; keyless
+  tables render **read-only**). Table Browse is backend-authoritative:
+  primary key, else the smallest qualifying unique index (valid,
+  immediate, non-partial, non-expression, all-non-nullable; ties by
+  index name), else a `ctid` virtual identity on PostgreSQL 14+ heap
+  tables, else `none`. `stable_order_columns` / `pickRowIdentity` are
+  unchanged for non-browse engines and the dark-period live path.
 
 ## Keyspace model (keyvalue class only)
 
@@ -210,6 +216,32 @@ ADR-0009 for the writes-by-default posture.
   caller-facing **Edit Outcome** actions for cell-edit commit, row insert, and
   row delete. Export, copy-table, schema-map, DDL, and maintenance workflows
   are table-adjacent but remain outside the Table Session.
+- **Table Browse** — the PostgreSQL-only server-backed path that pages,
+  filters, and sorts a relation on a dedicated read-only tokio-postgres
+  socket. Filters bind every value as `($N::text)::<cast_type>` using
+  `format_type`; keyset paging covers identity order (including `ctid` on
+  PostgreSQL 14+) and everything else falls back to labeled offset.
+  Estimated counts use `reltuples` or `EXPLAIN`; exact `COUNT(*)` is a
+  separate command. It is separate from the SQLx pool and from the live
+  `load_table_data` path, which remains canonical for every engine until
+  the grid is switched over. Other engines stay on `load_table_data`.
+- **Browse Request** — one Table Browse command keyed by
+  `(connectionId, tabId, requestId)`. `requestId` is a frontend-monotonic
+  u64 per tab. A newer request for the same tab supersedes the older one
+  (queued requests drop, in-flight requests are protocol-cancelled). Queue
+  wait on the single per-Connection socket is bounded at 10 seconds.
+- **Browse Filter** — a typed column operator (`eq`, `neq`, `lt`, `lte`,
+  `gt`, `gte`, `contains`, `notContains`, `startsWith`, `endsWith`,
+  `isNull`, `isNotNull`, `inList`) or a raw SQL WHERE fragment. Typed
+  filters AND-combine; a raw fragment is wrapped as `(<fragment>)` and
+  AND-combined with any typed filters. Raw mode runs with the Connection's
+  privileges inside the read-only browse transaction; cancellation is the
+  recourse for an expensive fragment.
+- **Grid Preferences** — a versioned JSON document of per-table browse UI
+  state (page size, sort, typed filters, raw filter text, filter/sort
+  history capped at 20 entries, named presets, optional column widths).
+  Persisted in `table_grid_prefs` keyed by `(connectionId, schema, table)`.
+  The backend treats the document as opaque validated JSON.
 - **Table Seeding** — generating and inserting fake rows into an
   *existing* relational table (relational class only; `not_applicable`
   for keyvalue engines). Backend-owned: the frontend submits a **Seed
@@ -346,7 +378,8 @@ dbunk.sqlite:
 ├── credential_verifier
 ├── query_history                 (relational only — SQL queries)
 ├── redis_command_history         (keyvalue only — CLI commands, cap 1000/connection)
-└── saved_queries
+├── saved_queries
+└── table_grid_prefs              (per-table Grid Preferences JSON)
 
 Optional OS keychain backend (service: "dbunk", account: "connection-credentials"):
 └── JSON blob: { connectionId: password }
@@ -438,6 +471,13 @@ Captures are never auto-pruned; users manage them manually.
 - **Query Session** — a PostgreSQL-only, tab-scoped backend actor owning one
   dedicated protocol connection. It is separate from the SQLx pool and legacy
   `run_query`, and is fenced by renderer owner, window, and connection generation.
+- **Table Browse Executor** — a PostgreSQL-only, Connection-scoped backend
+  actor owning one dedicated read-only protocol connection for Table Browse.
+  At most one executor per Connection and eight across the app, idle-closed
+  after 300 seconds, fenced at the same invalidation sites as Query Sessions.
+  It reuses the query-session connect spec, TLS, driver options, and
+  CancelToken machinery but not the simple-query session actor, because
+  bind parameters require the extended query protocol.
 - **Query Execution** — one simple-query request in a Query Session. It can
   produce multiple Result Sets and notices, and settles after its terminal
   event is acknowledged through the bounded credit protocol.

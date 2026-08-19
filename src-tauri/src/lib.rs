@@ -10,6 +10,7 @@ mod query_session;
 mod redis;
 mod seed;
 mod storage;
+mod table_browse;
 mod tunnel;
 mod types;
 mod xlsx;
@@ -37,6 +38,7 @@ pub(crate) struct AppState {
     pool: SqlitePool,
     paths: Paths,
     query_sessions: query_session::QuerySessionManager,
+    table_browse: table_browse::TableBrowseManager,
 }
 
 // ---------------------------------------------------------------------------
@@ -206,10 +208,13 @@ pub fn run() {
             log::info!("SQLite pool ready, migrations applied");
             let query_sessions = query_session::QuerySessionManager::new(pool.clone());
             query_sessions.start_monitor();
+            let table_browse = table_browse::TableBrowseManager::new();
+            table_browse.start_monitor();
             app.manage(AppState {
                 pool,
                 paths,
                 query_sessions,
+                table_browse,
             });
             Ok(())
         })
@@ -294,6 +299,12 @@ pub fn run() {
             commands::query_session::rollback_query_transaction,
             commands::query_session::close_query_session,
             commands::relational::load_table_data,
+            commands::table_browse::browse_table_data,
+            commands::table_browse::cancel_table_browse,
+            commands::table_browse::count_table_browse_rows,
+            commands::table_browse::close_table_browse_for_tab,
+            commands::table_browse::load_table_grid_prefs,
+            commands::table_browse::save_table_grid_prefs,
             commands::relational::load_table_structure,
             commands::relational::execute_ddl,
             commands::relational::export_ddl,
@@ -390,11 +401,11 @@ pub fn run() {
                 api.prevent_exit();
                 let handle = handle.clone();
                 let manager = handle.state::<AppState>().query_sessions.clone();
+                let table_browse = handle.state::<AppState>().table_browse.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = tokio::time::timeout(
-                        std::time::Duration::from_secs(3),
-                        manager.close_all(),
-                    )
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                        tokio::join!(manager.close_all(), table_browse.close_all())
+                    })
                     .await;
                     handle.exit(code.unwrap_or(0));
                 });

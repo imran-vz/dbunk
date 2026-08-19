@@ -12,6 +12,7 @@ use sqlx::{
 };
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 
+use crate::table_browse::protocol::TableGridPrefs;
 use crate::{
     ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
     PgStoredConnection, PositionRow, QueryHistoryEntry, RedisCliHistoryEntry,
@@ -291,6 +292,20 @@ CREATE TABLE managed_servers (
 );
 
 CREATE INDEX idx_managed_servers_name ON managed_servers(name COLLATE NOCASE);
+"#,
+    ),
+    (
+        13,
+        // ADR-0022: opaque per-table Grid Preferences JSON for Table Browse.
+        r#"
+CREATE TABLE table_grid_prefs (
+  connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  schema        TEXT NOT NULL,
+  table_name    TEXT NOT NULL,
+  prefs         TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  PRIMARY KEY (connection_id, schema, table_name)
+);
 "#,
     ),
 ];
@@ -1022,6 +1037,61 @@ pub async fn upsert_schema_map_prefs(
     Ok(prefs)
 }
 
+pub async fn read_table_grid_prefs(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Option<TableGridPrefs>, String> {
+    let row = sqlx::query(
+        "SELECT prefs
+         FROM table_grid_prefs
+         WHERE connection_id = ? AND schema = ? AND table_name = ?",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(table)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let json: String = row.get("prefs");
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|error| error.to_string())?;
+    Ok(Some(
+        crate::table_browse::protocol::validate_table_grid_prefs(TableGridPrefs(value))?,
+    ))
+}
+
+pub async fn upsert_table_grid_prefs(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+    prefs: &TableGridPrefs,
+) -> Result<(), String> {
+    let prefs = crate::table_browse::protocol::validate_table_grid_prefs(prefs.clone())?;
+    let json = serde_json::to_string(&prefs.0).map_err(|error| error.to_string())?;
+    sqlx::query(
+        "INSERT INTO table_grid_prefs (connection_id, schema, table_name, prefs, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(connection_id, schema, table_name) DO UPDATE SET
+            prefs = excluded.prefs,
+            updated_at = excluded.updated_at",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(table)
+    .bind(json)
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // SQLite credentials
 // ---------------------------------------------------------------------------
@@ -1719,6 +1789,35 @@ mod tests {
                 .expect("saved prefs"),
             prefs
         );
+    }
+
+    #[tokio::test]
+    async fn table_grid_prefs_round_trip_and_missing_is_null() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+
+        assert!(read_table_grid_prefs(&pool, "conn-1", "public", "users")
+            .await
+            .expect("missing")
+            .is_none());
+
+        let prefs = TableGridPrefs(serde_json::json!({
+            "version": 1,
+            "pageSize": 50,
+            "filterHistory": (0..25).collect::<Vec<u32>>(),
+        }));
+        upsert_table_grid_prefs(&pool, "conn-1", "public", "users", &prefs)
+            .await
+            .expect("save");
+        let loaded = read_table_grid_prefs(&pool, "conn-1", "public", "users")
+            .await
+            .expect("load")
+            .expect("present");
+        assert_eq!(loaded.0["version"], 1);
+        assert_eq!(loaded.0["pageSize"], 50);
+        assert_eq!(loaded.0["filterHistory"].as_array().unwrap().len(), 20);
     }
 
     #[tokio::test]

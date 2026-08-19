@@ -32,6 +32,10 @@ pub async fn save_connection(
         .query_sessions
         .begin_connection_teardown(connection.id())
         .await;
+    state
+        .table_browse
+        .begin_connection_teardown(connection.id())
+        .await;
     let save_result = async {
         storage::upsert_connection(&state.pool, &connection).await?;
         crate::credentials::upsert(&state.pool, mode, &connection).await
@@ -49,6 +53,10 @@ pub async fn save_connection(
         .query_sessions
         .end_connection_teardown(connection.id())
         .await;
+    state
+        .table_browse
+        .end_connection_teardown(connection.id())
+        .await;
     save_result?;
     public_connections(state).await
 }
@@ -62,6 +70,10 @@ pub async fn delete_connection(
     let mode = current_credential_mode(state).await?;
     state
         .query_sessions
+        .begin_connection_teardown(&payload.connection_id)
+        .await;
+    state
+        .table_browse
         .begin_connection_teardown(&payload.connection_id)
         .await;
     let delete_result = async {
@@ -88,6 +100,10 @@ pub async fn delete_connection(
         .query_sessions
         .end_connection_teardown(&payload.connection_id)
         .await;
+    state
+        .table_browse
+        .end_connection_teardown(&payload.connection_id)
+        .await;
     delete_result?;
     public_connections(state).await
 }
@@ -102,12 +118,22 @@ pub async fn disconnect_connection(
         .query_sessions
         .begin_connection_teardown(&payload.connection_id)
         .await;
+    state
+        .inner()
+        .table_browse
+        .begin_connection_teardown(&payload.connection_id)
+        .await;
     postgres::drop_pool(&payload.connection_id);
     redis::connection::drop_cached(&payload.connection_id);
     tunnel::drop_connection(&payload.connection_id);
     state
         .inner()
         .query_sessions
+        .end_connection_teardown(&payload.connection_id)
+        .await;
+    state
+        .inner()
+        .table_browse
         .end_connection_teardown(&payload.connection_id)
         .await;
     Ok(())
