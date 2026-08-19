@@ -221,16 +221,17 @@ export function QuerySectionToggle({
   value,
   onChange,
 }: {
-  value: "results" | "explain";
-  onChange: (next: "results" | "explain") => void;
+  value: "results" | "explain" | "output";
+  onChange: (next: "results" | "explain" | "output") => void;
 }) {
   return (
-    <Segmented<"results" | "explain">
+    <Segmented<"results" | "explain" | "output">
       value={value}
       onChange={onChange}
       options={[
         { id: "results", label: "Results" },
         { id: "explain", label: "Explain" },
+        { id: "output", label: "Output" },
       ]}
     />
   );

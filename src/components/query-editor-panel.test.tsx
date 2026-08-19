@@ -375,15 +375,71 @@ describe("QueryEditorPanel feedback", () => {
     expect(screen.getAllByText("orders").length).toBeGreaterThan(0);
   });
 
-  it("disables the Run button while a query is running", () => {
+  it("replaces Run with Stop while a query is running", () => {
     seedStatus({ state: "running" });
 
     render(<QueryEditorPanel tab={queryTab} isClient />);
 
-    const runButton = screen.getByRole("button", {
-      name: /running/i,
+    expect(screen.getByRole("button", { name: /stop query/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^run$/i })).toBeNull();
+  });
+
+  it("keeps the Stop presentation disabled while cancellation settles", () => {
+    seedStatus({ state: "cancelling" });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    const cancellingButton = screen.getByRole("button", {
+      name: /cancelling query/i,
     }) as HTMLButtonElement;
-    expect(runButton.disabled).toBe(true);
+    expect(cancellingButton.disabled).toBe(true);
+    expect(cancellingButton.textContent).toContain("Cancelling");
+    expect(screen.queryByRole("button", { name: /^run$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /run options/i })).toBeNull();
+  });
+
+  it("confirms before closing a session with unknown transaction state", () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const closeSpy = vi
+      .spyOn(useAppStore.getState(), "closeQuerySessionForTab")
+      .mockResolvedValue(undefined);
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+      querySessions: {
+        [queryTab.id]: {
+          id: "session-1",
+          tabId: queryTab.id,
+          connectionId: queryTab.connectionId,
+          generation: 1,
+          nextSequence: 1,
+          transaction: {
+            mode: "manual",
+            status: "unknown",
+            manualIsolation: "readCommitted",
+          },
+          execution: null,
+          lastViewedAt: Date.now(),
+          budgetOwners: [],
+          state: "open",
+          error: null,
+        },
+      },
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Close this query session? Its active or unresolved transaction will be rolled back.",
+    );
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    expect(closeSpy).toHaveBeenCalledWith(queryTab.id);
   });
 
   it("shows the error message in a banner when the query fails", async () => {
@@ -431,7 +487,7 @@ describe("QueryEditorPanel feedback", () => {
 
     render(<QueryEditorPanel tab={queryTab} isClient />);
 
-    const runButton = screen.getByRole("button", { name: /running/i });
+    const runButton = screen.getByRole("button", { name: /stop query/i });
 
     await act(async () => {
       runButton.click();
@@ -963,10 +1019,10 @@ describe("QueryEditorPanel connection selector", () => {
     });
   });
 
-  it("retargets the tab to the picked connection and clears stale per-tab state", () => {
+  it("retargets the tab to the picked connection and clears stale per-tab state", async () => {
     useAppStore.setState({
       queryPreviews: {
-        [queryTab.label]: {
+        [queryTab.id]: {
           columns: ["a"],
           rows: [["1"]],
           runtime: "1 ms",
@@ -985,10 +1041,14 @@ describe("QueryEditorPanel connection selector", () => {
       screen.getByRole("menuitem", { name: /staging postgres/i }),
     );
 
+    await waitFor(() =>
+      expect(useAppStore.getState().workspaceTabs[0].connectionId).toBe(
+        "conn-2",
+      ),
+    );
     const state = useAppStore.getState();
-    expect(state.workspaceTabs[0].connectionId).toBe("conn-2");
     expect(state.activeConnectionId).toBe("conn-2");
-    expect(state.queryPreviews[queryTab.label]).toBeUndefined();
+    expect(state.queryPreviews[queryTab.id]).toBeUndefined();
   });
 
   it("prompts before discarding pending grid edits and bails on cancel", () => {
