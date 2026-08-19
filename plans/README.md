@@ -14,7 +14,9 @@ and update its status here when work finishes.
 | Plan                                             | Title                                       | Priority | Effort | Depends on | Status                                         |
 | ------------------------------------------------ | ------------------------------------------- | -------: | -----: | ---------- | ---------------------------------------------- |
 | [001](./001-query-session-foundation.md)         | PostgreSQL Query Session backend foundation |       P0 |      L | None       | DONE: 657553d                                  |
-| [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration |       P0 |      L | 001        | READY FOR REVIEW (selected mock: B)            |
+| [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration |       P0 |      L | 001        | DONE: 26268ca (selected mock: B)               |
+| [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | TODO                                           |
+| [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -24,16 +26,33 @@ Executors update their own status row after each completed step and mark
 `DONE: <completion SHA>` after the work is committed. This makes resume state
 useful without authorizing commits implicitly.
 
+## Current selection
+
+- **Completed:** Plans 001 and 002 delivered the PostgreSQL query-session
+  foundation of `PAR-001` through commit `26268ca`.
+- **Selected next:** `PAR-002`, server-backed table browsing, now authored as
+  Plans 003 and 004 (planned at commit `26268ca`, 2026-08-19). Plan 003 lands
+  the dark typed browse backend; Plan 004 activates it in PostgreSQL table
+  tabs. It is the next unblocked P0 gap in dependency order, moves
+  filter/sort/pagination work to the full relation, and supplies the identity
+  and query metadata required by `PAR-003`.
+- **Planning boundary:** PostgreSQL first, with typed server-side filters and
+  sorting, bounded pagination/count behavior, cancellation, stale-response
+  rejection, query inspection, and durable grid preferences. Query-result
+  mutation remains in `PAR-003`.
+
 ## Dependency order after Plans 001 and 002
 
-These are candidate plans, not authored plans. Their identifiers refer to the
-gap register rather than files in this directory.
+Items 3 and later are candidate plans, not authored plans. Their identifiers
+refer to the gap register rather than files in this directory.
 
-1. Plan 001 lands the backend dark. Plan 002 begins only after Plan 001 records
-   its completion SHA, passes the local mock checkpoint, and then activates it.
-2. `PAR-001` is complete only when both plans are DONE.
-3. `PAR-002` server-backed browsing and `PAR-003` editable query results can
-   then share its bounded result protocol and cancellation semantics.
+1. Plans 001 and 002 delivered and activated the PostgreSQL query-session
+   foundation. Non-blocking `PAR-001` follow-ons remain in the gap register.
+2. `PAR-002` server-backed browsing is authored as Plans 003 and 004, reusing
+   the connect-spec, TLS, cancellation, and bounded-result semantics from the
+   query-session foundation.
+3. `PAR-003` editable-query-result work follows `PAR-002` so both table and
+   query results can share identity and query metadata.
 4. `PAR-004` safety policy should build on explicit transaction state and the
    generated mutation preview from `PAR-003`.
 5. `PAR-005` workspace restoration should persist descriptors, never live
