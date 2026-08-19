@@ -217,8 +217,10 @@ const runBrowse = async (
   const tab = get().tableBrowses[tabId];
   if (!tab) return;
   const generation = tab.generation;
+  const pendingId = (tab.inflightRequestId ?? 0) + 1;
   patchBrowse(set, tabId, {
     loadStatus: { state: "loading" },
+    inflightRequestId: pendingId,
     page: options.page,
     cursorStack: options.cursorStack,
   });
@@ -236,9 +238,20 @@ const runBrowse = async (
   });
   const current = get().tableBrowses[tabId];
   if (!current || current.generation !== generation) return;
-  if (result.kind === "superseded") return;
+  if (result.kind === "superseded") {
+    if (current.inflightRequestId === pendingId) {
+      patchBrowse(set, tabId, {
+        loadStatus: current.result ? { state: "success" } : { state: "idle" },
+        inflightRequestId: null,
+      });
+    }
+    return;
+  }
   if (result.kind === "cancelled") {
-    patchBrowse(set, tabId, { loadStatus: { state: "idle" } });
+    patchBrowse(set, tabId, {
+      loadStatus: { state: "idle" },
+      inflightRequestId: null,
+    });
     return;
   }
   if (result.kind === "error") {
@@ -252,36 +265,42 @@ const runBrowse = async (
     }
     patchBrowse(set, tabId, {
       loadStatus: { state: "error", error: result.error },
+      inflightRequestId: null,
     });
     return;
   }
   clearEditsForTab(get, current);
-  const prefs = options.recordHistory
-    ? {
-        ...current.prefs,
-        filterHistory: pushHistory(
-          current.prefs.filterHistory,
-          historySnapshot(current),
-        ),
-        sortHistory: pushHistory(
-          current.prefs.sortHistory,
-          historySnapshot(current),
-        ),
-        pageSize: current.pageSize,
-        sort: current.sort,
-        typedFilters: current.typedFilters,
-        rawFilterText: current.rawFilterText,
-        filterMode: current.filterMode,
-      }
-    : current.prefs;
+  const prefs = {
+    ...current.prefs,
+    pageSize: current.pageSize,
+    ...(options.recordHistory
+      ? {
+          filterHistory: pushHistory(
+            current.prefs.filterHistory,
+            historySnapshot(current),
+          ),
+          sortHistory: pushHistory(
+            current.prefs.sortHistory,
+            historySnapshot(current),
+          ),
+          sort: current.sort,
+          typedFilters: current.typedFilters,
+          rawFilterText: current.rawFilterText,
+          filterMode: current.filterMode,
+        }
+      : {}),
+  };
   patchBrowse(set, tabId, {
     result: result.value,
     appliedRequestId: result.value.requestId,
+    inflightRequestId: null,
     loadStatus: { state: "success" },
     prefs,
     page: result.value.pageInfo.page ?? options.page,
   });
-  if (options.recordHistory) schedulePrefsSave(get, { ...current, prefs });
+  if (options.recordHistory || prefs.pageSize !== current.prefs.pageSize) {
+    schedulePrefsSave(get, { ...current, prefs });
+  }
 };
 
 const ensurePrefs = async (set: SliceSet, get: SliceGet, tabId: string) => {
@@ -561,7 +580,10 @@ export const createTableBrowseSlice: StateCreator<
     });
     const current = get().tableBrowses[tabId];
     if (!current || current.generation !== generation) return;
-    if (result.kind === "superseded") return;
+    if (result.kind === "superseded") {
+      patchBrowse(set, tabId, { countStatus: { state: "idle" } });
+      return;
+    }
     if (result.kind === "cancelled") {
       patchBrowse(set, tabId, { countStatus: { state: "idle" } });
       return;

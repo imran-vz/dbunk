@@ -59,6 +59,7 @@ import type {
   ServerDetails,
   ServerDetailsStatus,
   StructureCommitStatus,
+  TableBrowseTabState,
   TableDataState,
   TableEditsCommitStatus,
   TableLoadStatus,
@@ -117,14 +118,18 @@ const refreshAfterWrite = async (
 const browseDataSourceFor = (
   state: AppStoreState,
   ref: TableRef,
+  tabId?: string,
 ): EditDataSource | undefined => {
-  const tab = Object.values(state.tableBrowses).find(
-    (item) =>
-      item.connectionId === ref.connectionId &&
-      item.schema === ref.schema &&
-      item.table === ref.table &&
-      item.result !== null,
-  );
+  const matchesTable = (item: TableBrowseTabState) =>
+    item.connectionId === ref.connectionId &&
+    item.schema === ref.schema &&
+    item.table === ref.table &&
+    item.result !== null;
+
+  const preferred = tabId ? state.tableBrowses[tabId] : undefined;
+  const tab =
+    (preferred && matchesTable(preferred) ? preferred : undefined) ??
+    Object.values(state.tableBrowses).find(matchesTable);
   if (!tab?.result) return undefined;
   return {
     connectionId: ref.connectionId,
@@ -295,7 +300,7 @@ export type RelationalTablesSlice = {
   discardTableEdits: (tableName: string) => void;
   discardTableCellEdits: (ref: TableRef) => void;
   commitTableEdits: (tableName: string) => Promise<EditOutcome>;
-  commitTableCellEdits: (ref: TableRef) => Promise<EditOutcome>;
+  commitTableCellEdits: (ref: TableRef, tabId?: string) => Promise<EditOutcome>;
   addTableRow: (
     tableName: string,
     values: Array<{ column: string; value: string | null }>,
@@ -311,6 +316,7 @@ export type RelationalTablesSlice = {
   deleteTableRows: (
     ref: TableRef,
     rowIndices: number[],
+    tabId?: string,
   ) => Promise<EditOutcome>;
 
   addPendingStructureChange: (
@@ -500,7 +506,7 @@ export const createRelationalTablesSlice: StateCreator<
     return get().commitTableCellEdits(resolution.ref);
   },
 
-  commitTableCellEdits: async (ref): Promise<EditOutcome> => {
+  commitTableCellEdits: async (ref, tabId): Promise<EditOutcome> => {
     const state = get();
     const key = tableSessionKey(ref);
     const editsForTable = state.tableEdits[key];
@@ -513,7 +519,7 @@ export const createRelationalTablesSlice: StateCreator<
       tableStructure: state.tableStructure,
       connections: state.connections,
       ref,
-      dataSource: browseDataSourceFor(state, ref),
+      dataSource: browseDataSourceFor(state, ref, tabId),
       capability: "canUpdateRows",
       action: "cell edits",
     });
@@ -726,7 +732,7 @@ export const createRelationalTablesSlice: StateCreator<
     return get().deleteTableRows(resolution.ref, rowIndices);
   },
 
-  deleteTableRows: async (ref, rowIndices): Promise<EditOutcome> => {
+  deleteTableRows: async (ref, rowIndices, tabId): Promise<EditOutcome> => {
     if (rowIndices.length === 0) {
       return { kind: "noop" };
     }
@@ -738,7 +744,7 @@ export const createRelationalTablesSlice: StateCreator<
       tableStructure: state.tableStructure,
       connections: state.connections,
       ref,
-      dataSource: browseDataSourceFor(state, ref),
+      dataSource: browseDataSourceFor(state, ref, tabId),
       capability: "canDeleteRows",
       action: "row deletes",
     });
