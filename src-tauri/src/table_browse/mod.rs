@@ -565,7 +565,7 @@ async fn rewrite_interrupt(
         .tabs
         .get(&job.tab_id)
         .map(|tab| tab.interrupt)
-        .unwrap_or_default();
+        .unwrap_or(Interrupt::Cancel);
     match (&result, interrupt) {
         (Err(error), Interrupt::Supersede) if postgres::is_query_canceled(error) => {
             Err(TableBrowseError::Superseded)
@@ -1030,6 +1030,37 @@ mod tests {
         let state = manager.inner.lock().await;
         assert!(state.executors.is_empty());
         assert!(state.closing.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rewrite_interrupt_treats_missing_tab_as_cancelled() {
+        let executor = dummy_executor();
+        let (job, _rx) = job("tab", 1);
+
+        let ok = rewrite_interrupt(
+            &executor,
+            &job,
+            Ok(JobResult::Count(BrowseExactCountResult {
+                kind: BrowseCountKind::Exact,
+                value: 1,
+                request_id: 1,
+            })),
+        )
+        .await;
+        assert!(matches!(ok, Err(TableBrowseError::Cancelled)));
+
+        let canceled = rewrite_interrupt(
+            &executor,
+            &job,
+            Err(TableBrowseError::Database {
+                code: Some("57014".into()),
+                message: "canceling statement due to user request".into(),
+                severity: Some("ERROR".into()),
+                position: None,
+            }),
+        )
+        .await;
+        assert!(matches!(canceled, Err(TableBrowseError::Cancelled)));
     }
 
     #[tokio::test]
