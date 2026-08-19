@@ -12,11 +12,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  type BrowseDraftOperator,
   type BrowseFilter,
   type BrowseNulls,
   type BrowseSortDirection,
   type ComparisonOperator,
   type TextMatchOperator,
+  browseOperatorNeedsValue,
+  buildBrowseFilter,
 } from "@/lib/table-browse";
 import { formatTableBrowseError } from "@/lib/table-browse-error";
 import { cn } from "@/lib/utils";
@@ -54,12 +57,7 @@ const NULL_OPS = [
 
 const IN_LIST_OP = { id: "inList", label: "in list", symbol: "IN" } as const;
 
-type DraftOperator =
-  | ComparisonOperator
-  | TextMatchOperator
-  | "isNull"
-  | "isNotNull"
-  | "inList";
+type DraftOperator = BrowseDraftOperator;
 
 const ALL_OPS: Array<{ id: DraftOperator; label: string; symbol: string }> = [
   ...COMPARISON_OPS,
@@ -67,9 +65,6 @@ const ALL_OPS: Array<{ id: DraftOperator; label: string; symbol: string }> = [
   IN_LIST_OP,
   ...NULL_OPS,
 ];
-
-const operatorNeedsValue = (operator: DraftOperator) =>
-  operator !== "isNull" && operator !== "isNotNull";
 
 const filterChipLabel = (filter: BrowseFilter): string => {
   switch (filter.kind) {
@@ -111,55 +106,16 @@ export function BrowseFilterBar({
     setRawDraft(browse.rawFilterText);
   }, [browse.rawFilterText]);
 
-  const needsValue = operatorNeedsValue(draftOperator);
+  const needsValue = browseOperatorNeedsValue(draftOperator);
   const canApply =
-    draftColumn !== "" &&
-    (!needsValue || draftValue.trim() !== "") &&
-    (draftOperator !== "inList" ||
-      draftValue
-        .split(",")
-        .map((part) => part.trim())
-        .filter((part) => part.length > 0).length > 0);
+    buildBrowseFilter(draftColumn, draftOperator, draftValue) !== null;
 
   const applyDraft = useCallback(() => {
-    if (!canApply) return;
-    const column = draftColumn;
-    let filter: BrowseFilter;
-    if (draftOperator === "isNull") filter = { kind: "isNull", column };
-    else if (draftOperator === "isNotNull")
-      filter = { kind: "isNotNull", column };
-    else if (draftOperator === "inList") {
-      filter = {
-        kind: "inList",
-        column,
-        values: draftValue
-          .split(",")
-          .map((part) => part.trim())
-          .filter((part) => part.length > 0),
-      };
-    } else if (
-      draftOperator === "contains" ||
-      draftOperator === "notContains" ||
-      draftOperator === "startsWith" ||
-      draftOperator === "endsWith"
-    ) {
-      filter = {
-        kind: "textMatch",
-        column,
-        operator: draftOperator,
-        value: draftValue.trim(),
-      };
-    } else {
-      filter = {
-        kind: "comparison",
-        column,
-        operator: draftOperator,
-        value: draftValue.trim(),
-      };
-    }
+    const filter = buildBrowseFilter(draftColumn, draftOperator, draftValue);
+    if (!filter) return;
     browse.onApplyTypedFilter(filter);
     setDraftValue("");
-  }, [browse, canApply, draftColumn, draftOperator, draftValue]);
+  }, [browse, draftColumn, draftOperator, draftValue]);
 
   const databaseError = browse.error?.kind === "database" ? browse.error : null;
 

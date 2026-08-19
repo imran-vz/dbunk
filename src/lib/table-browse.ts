@@ -15,6 +15,12 @@ export type TextMatchOperator =
   | "notContains"
   | "startsWith"
   | "endsWith";
+export type BrowseDraftOperator =
+  | ComparisonOperator
+  | TextMatchOperator
+  | "isNull"
+  | "isNotNull"
+  | "inList";
 
 export type BrowseFilter =
   | {
@@ -233,6 +239,41 @@ export function typedFiltersOf(filters: BrowseFilter[]): BrowseFilter[] {
 export function rawFilterTextOf(filters: BrowseFilter[]): string {
   const raw = filters.find((filter) => filter.kind === "rawSql");
   return raw && raw.kind === "rawSql" ? raw.text : "";
+}
+
+export function browseOperatorNeedsValue(
+  operator: BrowseDraftOperator,
+): boolean {
+  return operator !== "isNull" && operator !== "isNotNull";
+}
+
+export function buildBrowseFilter(
+  column: string,
+  operator: BrowseDraftOperator,
+  rawValue: string,
+): BrowseFilter | null {
+  if (column === "") return null;
+  if (operator === "isNull") return { kind: "isNull", column };
+  if (operator === "isNotNull") return { kind: "isNotNull", column };
+  if (operator === "inList") {
+    const values = rawValue
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    if (values.length === 0) return null;
+    return { kind: "inList", column, values };
+  }
+  const value = rawValue.trim();
+  if (value.length === 0) return null;
+  if (
+    operator === "contains" ||
+    operator === "notContains" ||
+    operator === "startsWith" ||
+    operator === "endsWith"
+  ) {
+    return { kind: "textMatch", column, operator, value };
+  }
+  return { kind: "comparison", column, operator, value };
 }
 
 export function filtersForRequest(
