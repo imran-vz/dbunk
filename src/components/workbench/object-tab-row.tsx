@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Segmented } from "@/components/ui/segmented";
 import { ObjectTabCloseButton } from "@/components/workbench/dock";
+import { confirmCloseQuerySession } from "@/lib/query-session-close";
 import { useAppStore, type WorkspaceTab } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -107,7 +108,13 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
               tab={tab}
               isActive={tab.id === activeTabId}
               onActivate={() => setActiveTabId(tab.id)}
-              onClose={() => closeTab(tab.id)}
+              onClose={() => {
+                const status =
+                  useAppStore.getState().querySessions[tab.id]?.transaction
+                    .status;
+                if (!confirmCloseQuerySession(status)) return;
+                void closeTab(tab.id);
+              }}
             />
           ))}
         </div>

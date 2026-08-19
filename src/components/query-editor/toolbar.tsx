@@ -19,9 +19,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { storageClassFor } from "@/lib/engine-policy";
-import type { Connection, QueryTransactionSnapshot } from "@/lib/store";
+import type { Connection } from "@/lib/store";
+
+import { TransactionControls } from "./transaction-controls";
 
 interface QueryEditorToolbarProps {
+  tabId: string;
   dbSelectorLabel: string;
   connections: Connection[];
   currentConnectionId: string;
@@ -30,14 +33,7 @@ interface QueryEditorToolbarProps {
   onDiscardEdits: () => void;
   isRunning: boolean;
   isCancelling?: boolean;
-  transaction?: QueryTransactionSnapshot;
   onStop?: () => void;
-  onTransactionModeChange?: (mode: "autocommit" | "manual") => void;
-  onTransactionIsolationChange?: (
-    isolation: "readCommitted" | "repeatableRead" | "serializable",
-  ) => void;
-  onTransactionAction?: (action: "commit" | "rollback" | "refresh") => void;
-  onCloseSession?: () => void;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
   onRunCurrent: () => void;
@@ -50,6 +46,7 @@ interface QueryEditorToolbarProps {
 }
 
 export function QueryEditorToolbar({
+  tabId,
   dbSelectorLabel,
   connections,
   currentConnectionId,
@@ -58,12 +55,7 @@ export function QueryEditorToolbar({
   onDiscardEdits,
   isRunning,
   isCancelling = false,
-  transaction,
   onStop,
-  onTransactionModeChange,
-  onTransactionIsolationChange,
-  onTransactionAction,
-  onCloseSession,
   isSidebarOpen,
   onToggleSidebar,
   onRunCurrent,
@@ -128,78 +120,7 @@ export function QueryEditorToolbar({
         ) : null}
       </div>
       <div className="flex items-center gap-1.5">
-        {transaction ? (
-          <>
-            <select
-              aria-label="Transaction mode"
-              value={transaction.mode}
-              disabled={transaction.status !== "idle" || isRunning}
-              onChange={(event) =>
-                onTransactionModeChange?.(
-                  event.target.value === "manual" ? "manual" : "autocommit",
-                )
-              }
-              className="h-7 border border-border-subtle bg-surface-panel px-1 text-[0.6875rem]"
-            >
-              <option value="autocommit">Autocommit</option>
-              <option value="manual">Manual</option>
-            </select>
-            <select
-              aria-label="Next manual transaction isolation"
-              title="Applies to the next manual transaction"
-              value={transaction.manualIsolation}
-              disabled={
-                transaction.mode === "autocommit" ||
-                transaction.status !== "idle" ||
-                isRunning
-              }
-              onChange={(event) =>
-                onTransactionIsolationChange?.(
-                  event.target.value === "serializable"
-                    ? "serializable"
-                    : event.target.value === "repeatableRead"
-                      ? "repeatableRead"
-                      : "readCommitted",
-                )
-              }
-              className="h-7 border border-border-subtle bg-surface-panel px-1 text-[0.6875rem]"
-            >
-              <option value="readCommitted">Read committed</option>
-              <option value="repeatableRead">Repeatable read</option>
-              <option value="serializable">Serializable</option>
-            </select>
-            {transaction.status === "unknown" ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onTransactionAction?.("refresh")}
-                >
-                  Recheck
-                </Button>
-                <Button size="sm" variant="outline" onClick={onCloseSession}>
-                  Close
-                </Button>
-              </>
-            ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={transaction.status !== "active" || isRunning}
-              onClick={() => onTransactionAction?.("commit")}
-            >
-              Commit
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={transaction.status === "idle" || isRunning}
-              onClick={() => onTransactionAction?.("rollback")}
-            >
-              Rollback
-            </Button>
-          </>
-        ) : null}
+        <TransactionControls tabId={tabId} />
         {hasEdits ? (
           <>
             <Button size="sm" variant="ghost" onClick={onDiscardEdits}>

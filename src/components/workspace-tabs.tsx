@@ -8,6 +8,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { confirmCloseQuerySession } from "@/lib/query-session-close";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -164,7 +165,13 @@ export function WorkspaceTabs() {
                   size="icon-xs"
                   variant="ghost"
                   aria-label={`Close ${tab.label}`}
-                  onClick={() => closeTab(tab.id)}
+                  onClick={() => {
+                    const status =
+                      useAppStore.getState().querySessions[tab.id]?.transaction
+                        .status;
+                    if (!confirmCloseQuerySession(status)) return;
+                    void closeTab(tab.id);
+                  }}
                   className="opacity-70 hover:opacity-100"
                 >
                   <IconX />
