@@ -97,6 +97,7 @@ const refreshAfterWrite = async (
   get: () => AppStoreState,
   ref: TableRef,
   dataKey: string,
+  countMayHaveChanged: boolean,
 ) => {
   const hasBrowse = Object.values(get().tableBrowses).some(
     (item) =>
@@ -109,6 +110,7 @@ const refreshAfterWrite = async (
       ref.connectionId,
       ref.schema,
       ref.table,
+      { invalidateExactCount: countMayHaveChanged },
     );
     return;
   }
@@ -127,9 +129,11 @@ const browseDataSourceFor = (
     item.result !== null;
 
   const preferred = tabId ? state.tableBrowses[tabId] : undefined;
-  const tab =
-    (preferred && matchesTable(preferred) ? preferred : undefined) ??
-    Object.values(state.tableBrowses).find(matchesTable);
+  const tab = tabId
+    ? preferred && matchesTable(preferred)
+      ? preferred
+      : undefined
+    : Object.values(state.tableBrowses).find(matchesTable);
   if (!tab?.result) return undefined;
   return {
     connectionId: ref.connectionId,
@@ -595,7 +599,7 @@ export const createRelationalTablesSlice: StateCreator<
         const editOutcome = await pollMutationsToCompletion(pendingMutations);
         clearLifecycle();
         if (editOutcome.kind === "completed") {
-          await refreshAfterWrite(get, ref, ctx.dataKey);
+          await refreshAfterWrite(get, ref, ctx.dataKey, false);
         }
         return editOutcome;
       }
@@ -605,7 +609,7 @@ export const createRelationalTablesSlice: StateCreator<
         const { [key]: _status, ...restStatus } = s.tableEditsCommitStatus;
         return { tableEdits: restEdits, tableEditsCommitStatus: restStatus };
       });
-      await refreshAfterWrite(get, ref, ctx.dataKey);
+      await refreshAfterWrite(get, ref, ctx.dataKey, false);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -704,7 +708,7 @@ export const createRelationalTablesSlice: StateCreator<
         },
       });
       clearLifecycle();
-      await refreshAfterWrite(get, ref, key);
+      await refreshAfterWrite(get, ref, key, true);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -809,12 +813,12 @@ export const createRelationalTablesSlice: StateCreator<
         const editOutcome = await pollMutationsToCompletion(pendingMutations);
         clearLifecycle();
         if (editOutcome.kind === "completed") {
-          await refreshAfterWrite(get, ref, ctx.dataKey);
+          await refreshAfterWrite(get, ref, ctx.dataKey, true);
         }
         return editOutcome;
       }
       clearLifecycle();
-      await refreshAfterWrite(get, ref, ctx.dataKey);
+      await refreshAfterWrite(get, ref, ctx.dataKey, true);
       return {
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -1597,7 +1601,10 @@ export const createRelationalTablesSlice: StateCreator<
         refreshes.push(get().refreshTableData(dataKey));
       }
       refreshes.push(
-        get().refreshTableBrowsesForRelation(connectionId, schema, table),
+        get().refreshTableBrowsesForRelation(connectionId, schema, table, {
+          refreshStructure: true,
+          invalidateExactCount: true,
+        }),
       );
       await Promise.all(refreshes);
       return { kind: "completed", runtimeMs: result.runtimeMs };

@@ -8,6 +8,7 @@ interface BuildStatusItemsArgs {
   errorMessage: string | null;
   isLoading: boolean;
   rowCount: number;
+  rowCountLabel?: string;
   pagination: TablePagination;
   activeConnection: Connection | undefined;
 }
@@ -16,6 +17,7 @@ export function buildStatusItems({
   errorMessage,
   isLoading,
   rowCount,
+  rowCountLabel,
   pagination,
   activeConnection,
 }: BuildStatusItemsArgs): StatusBarItem[] {
@@ -30,12 +32,16 @@ export function buildStatusItems({
     {
       id: "data",
       label: "Data",
-      value: `${rowCount.toLocaleString()} rows`,
+      value: rowCountLabel ?? `${rowCount.toLocaleString()} rows`,
     },
     {
       id: "page",
       label: "Page",
-      value: pageValue(pagination.page, pagination.totalPages),
+      value: pageValue(
+        pagination.page,
+        pagination.totalPages,
+        pagination.countApproximate,
+      ),
       align: "right",
     },
   ];
@@ -50,7 +56,11 @@ function queryStatusValue(
   return "Idle";
 }
 
-function pageValue(page: number, totalPages: number | undefined): string {
-  if (totalPages) return `${page} of ${totalPages}`;
+function pageValue(
+  page: number,
+  totalPages: number | undefined,
+  approximate: boolean | undefined,
+): string {
+  if (totalPages) return `${page} of ${approximate ? "~" : ""}${totalPages}`;
   return `${page}`;
 }

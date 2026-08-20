@@ -138,12 +138,15 @@ export const createWorkspaceTabsSlice: StateCreator<
     const state = get();
     set({ activeView: "workspace", activeConnectionId: tab.connectionId });
 
-    const existing = state.workspaceTabs.find(
-      (item) =>
-        item.kind === tab.kind &&
-        item.label === tab.label &&
-        item.connectionId === tab.connectionId,
-    );
+    const existing = state.workspaceTabs.find((item) => {
+      if (item.kind !== tab.kind || item.connectionId !== tab.connectionId) {
+        return false;
+      }
+      if (tab.kind === "table") {
+        return item.schema === tab.schema && item.table === tab.table;
+      }
+      return item.label === tab.label;
+    });
     if (existing) {
       set({ activeTabId: existing.id });
       return;

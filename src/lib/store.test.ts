@@ -270,6 +270,49 @@ describe("store.refreshTableData", () => {
 });
 
 describe("store.openTableTab", () => {
+  it("keeps same-named tables in different schemas as distinct tabs", () => {
+    useAppStore.getState().openWorkspaceTab({
+      kind: "table",
+      label: "users",
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+    });
+    const publicTabId = useAppStore.getState().activeTabId;
+    useAppStore.getState().openWorkspaceTab({
+      kind: "table",
+      label: "users",
+      connectionId: "conn-1",
+      schema: "audit",
+      table: "users",
+    });
+
+    const tabs = useAppStore.getState().workspaceTabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.map((tab) => [tab.schema, tab.table])).toEqual([
+      ["public", "users"],
+      ["audit", "users"],
+    ]);
+    expect(useAppStore.getState().activeTabId).not.toBe(publicTabId);
+  });
+
+  it("continues deduplicating query tabs by label and connection", () => {
+    const query = {
+      kind: "query" as const,
+      label: "query_1.sql",
+      connectionId: "conn-1",
+      schema: "public",
+      query: "select 1",
+    };
+    useAppStore.getState().openWorkspaceTab(query);
+    useAppStore.getState().openWorkspaceTab({
+      ...query,
+      schema: "audit",
+      query: "select 2",
+    });
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+  });
+
   it("invokes load_table_data and not run_query", async () => {
     mockedInvoke.mockResolvedValue({
       columns: [],
@@ -1817,6 +1860,46 @@ describe("store.commitStructureChanges", () => {
       throw new Error(`expected completed outcome, got ${outcome.kind}`);
     }
     expect(outcome.runtimeMs).toBe(12);
+  });
+
+  it("requests a descriptor refresh for post-DDL table browses", async () => {
+    const refreshBrowses = vi.fn(() => Promise.resolve());
+    useAppStore.setState({ refreshTableBrowsesForRelation: refreshBrowses });
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ runtimeMs: 12 })
+      .mockResolvedValueOnce({
+        columns: [],
+        primaryKey: null,
+        foreignKeys: [],
+        indexes: [],
+        constraints: [],
+        capabilities: {
+          columns: true,
+          primaryKey: true,
+          foreignKeys: true,
+          indexes: true,
+          constraints: true,
+          canInsertRows: true,
+          canUpdateRows: true,
+          canDeleteRows: true,
+          canAlterSchema: true,
+          uniquenessGuarantee: "exact",
+        },
+      });
+
+    await useAppStore.getState().commitStructureChanges(key);
+
+    expect(refreshBrowses).toHaveBeenCalledWith("conn-1", "public", "users", {
+      refreshStructure: true,
+      invalidateExactCount: true,
+    });
   });
 
   it("returns failed when the connection has been removed", async () => {
@@ -3690,6 +3773,7 @@ describe("closeTab table browse cleanup", () => {
           pageSize: 100,
           page: 1,
           cursorStack: [],
+          nextRequestToken: 0,
           inflightRequestId: null,
           appliedRequestId: null,
           result: null,

@@ -323,7 +323,19 @@ describe("DataGrid server browse mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Inspect query" }));
     expect(screen.getByText("SELECT 1")).toBeTruthy();
     expect(screen.getByText(/\$1 ada/)).toBeTruthy();
-    expect(screen.getByText(/Partial result/)).toBeTruthy();
+    expect(screen.getAllByText(/Partial result/)).toHaveLength(2);
+  });
+
+  it("shows partial-result status without opening SQL inspection", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        serverBrowse={browse}
+      />,
+    );
+    expect(screen.getByText(/Partial result: 1 omitted rows/)).toBeTruthy();
+    expect(screen.queryByTestId("browse-inspection")).toBeNull();
   });
 
   it("exposes null operators in the typed filter menu", () => {

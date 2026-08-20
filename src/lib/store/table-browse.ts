@@ -29,7 +29,12 @@ import {
   saveTableGridPrefs,
 } from "@/lib/table-browse-client";
 
-import type { AppStoreState, TableBrowseTabState, TableRef } from "./types";
+import {
+  type AppStoreState,
+  type TableBrowseTabState,
+  type TableRef,
+  tableSessionKey,
+} from "./types";
 
 const PREFS_DEBOUNCE_MS = 400;
 
@@ -48,11 +53,15 @@ export type TableBrowseSlice = {
     schema: string,
     table: string,
   ) => Promise<void>;
-  refreshTableBrowse: (tabId: string) => Promise<void>;
+  refreshTableBrowse: (
+    tabId: string,
+    options?: TableBrowseRefreshOptions,
+  ) => Promise<void>;
   refreshTableBrowsesForRelation: (
     connectionId: string,
     schema: string,
     table: string,
+    options?: TableBrowseRefreshOptions,
   ) => Promise<void>;
   setTableBrowseFilters: (
     tabId: string,
@@ -80,6 +89,13 @@ export type TableBrowseSlice = {
   closeTableBrowsesForConnection: (connectionId: string) => Promise<void>;
 };
 
+export type TableBrowseRefreshOptions = {
+  /** Re-read the backend relation descriptor before browsing. */
+  refreshStructure?: boolean;
+  /** Drop an exact count that may describe an older relation snapshot. */
+  invalidateExactCount?: boolean;
+};
+
 const prefsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const prefsKey = (connectionId: string, schema: string, table: string) =>
@@ -104,6 +120,7 @@ const initialTab = (
   pageSize: DEFAULT_TABLE_BROWSE_PAGE_SIZE,
   page: 1,
   cursorStack: [],
+  nextRequestToken: 0,
   inflightRequestId: null,
   appliedRequestId: null,
   result: null,
@@ -177,13 +194,8 @@ const schedulePrefsSave = (get: SliceGet, tab: TableBrowseTabState) => {
   prefsTimers.set(key, timer);
 };
 
-const clearEditsForTab = (get: SliceGet, tab: TableBrowseTabState) => {
-  get().discardTableCellEdits({
-    connectionId: tab.connectionId,
-    schema: tab.schema,
-    table: tab.table,
-  });
-};
+const hasEditsForTab = (get: SliceGet, tab: TableBrowseTabState): boolean =>
+  Object.keys(get().tableEdits[tableSessionKey(tab)] ?? {}).length > 0;
 
 const applyGridState = (
   set: SliceSet,
@@ -197,8 +209,6 @@ const applyGridState = (
 ) => {
   patchBrowse(set, tabId, {
     ...patch,
-    page: 1,
-    cursorStack: [],
     exactCount: null,
   });
 };
@@ -212,17 +222,22 @@ const runBrowse = async (
     recordHistory: boolean;
     page: number;
     cursorStack: Array<BrowseCursor | null>;
+    refreshStructure?: boolean;
+    invalidateExactCount?: boolean;
   },
 ) => {
   const tab = get().tableBrowses[tabId];
   if (!tab) return;
   const generation = tab.generation;
-  const pendingId = (tab.inflightRequestId ?? 0) + 1;
+  const pendingId = tab.nextRequestToken + 1;
   patchBrowse(set, tabId, {
     loadStatus: { state: "loading" },
     inflightRequestId: pendingId,
-    page: options.page,
-    cursorStack: options.cursorStack,
+    nextRequestToken: pendingId,
+    exactCount: options.invalidateExactCount ? null : tab.exactCount,
+    countStatus: options.invalidateExactCount
+      ? { state: "idle" }
+      : tab.countStatus,
   });
   const result = await browseTable({
     connectionId: tab.connectionId,
@@ -234,7 +249,7 @@ const runBrowse = async (
     pageRequest,
     pageSize: tab.pageSize,
     countPolicy: "estimated",
-    refreshStructure: false,
+    refreshStructure: options.refreshStructure ?? false,
   });
   const current = get().tableBrowses[tabId];
   if (!current || current.generation !== generation) return;
@@ -250,7 +265,7 @@ const runBrowse = async (
   if (current.inflightRequestId !== pendingId) return;
   if (result.kind === "cancelled") {
     patchBrowse(set, tabId, {
-      loadStatus: { state: "idle" },
+      loadStatus: current.result ? { state: "success" } : { state: "idle" },
       inflightRequestId: null,
     });
     return;
@@ -270,7 +285,16 @@ const runBrowse = async (
     });
     return;
   }
-  clearEditsForTab(get, current);
+  // The browse slice never owns edit disposal. Foreground UI flows discard
+  // only after confirmation; background refreshes keep the retained rows when
+  // positional edits exist so they cannot be applied to a different result.
+  if (hasEditsForTab(get, current)) {
+    patchBrowse(set, tabId, {
+      loadStatus: current.result ? { state: "success" } : { state: "idle" },
+      inflightRequestId: null,
+    });
+    return;
+  }
   const prefs = options.recordHistory
     ? {
         ...current.prefs,
@@ -296,6 +320,7 @@ const runBrowse = async (
     loadStatus: { state: "success" },
     prefs,
     page: result.value.pageInfo.page ?? options.page,
+    cursorStack: options.cursorStack,
   });
   if (options.recordHistory || prefs.pageSize !== current.prefs.pageSize) {
     schedulePrefsSave(get, { ...current, prefs });
@@ -372,17 +397,24 @@ export const createTableBrowseSlice: StateCreator<
     });
   },
 
-  refreshTableBrowse: async (tabId) => {
+  refreshTableBrowse: async (tabId, options) => {
     const tab = get().tableBrowses[tabId];
     if (!tab) return;
     await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
       recordHistory: false,
       page: 1,
       cursorStack: [],
+      refreshStructure: options?.refreshStructure ?? true,
+      invalidateExactCount: options?.invalidateExactCount ?? true,
     });
   },
 
-  refreshTableBrowsesForRelation: async (connectionId, schema, table) => {
+  refreshTableBrowsesForRelation: async (
+    connectionId,
+    schema,
+    table,
+    options,
+  ) => {
     const tabIds = Object.values(get().tableBrowses)
       .filter(
         (tab) =>
@@ -391,7 +423,14 @@ export const createTableBrowseSlice: StateCreator<
           tab.table === table,
       )
       .map((tab) => tab.tabId);
-    await Promise.all(tabIds.map((tabId) => get().refreshTableBrowse(tabId)));
+    await Promise.all(
+      tabIds.map((tabId) =>
+        get().refreshTableBrowse(tabId, {
+          refreshStructure: options?.refreshStructure ?? false,
+          invalidateExactCount: options?.invalidateExactCount ?? true,
+        }),
+      ),
+    );
   },
 
   setTableBrowseFilters: async (tabId, filters) => {

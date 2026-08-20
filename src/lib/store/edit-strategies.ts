@@ -191,19 +191,21 @@ export const resolveEditContext = (params: {
   if (!connection) {
     return { ok: false, reason: "Connection not found for this table." };
   }
-  // For commit (canUpdateRows) the original behaviour required the
-  // structure to be present (it dereferenced `structure.capabilities`
-  // directly). For delete (canDeleteRows) the original behaviour
-  // tolerated a missing structure (it guarded `structure &&`). We
-  // preserve both shapes exactly.
-  if (capability === "canUpdateRows") {
+  // Legacy engines keep their structure capability gates exactly. Browse
+  // mutations instead trust the backend-authoritative primary/unique
+  // identity; PostgreSQL's structure DTO still models the older PK-only gate.
+  if (!dataSource && capability === "canUpdateRows") {
     if (!structure.capabilities.canUpdateRows) {
       return {
         ok: false,
         reason: `This table does not support ${action} on ${connection.engine}.`,
       };
     }
-  } else if (structure && !structure.capabilities.canDeleteRows) {
+  } else if (
+    !dataSource &&
+    structure &&
+    !structure.capabilities.canDeleteRows
+  ) {
     return {
       ok: false,
       reason: `This table does not support ${action} on ${connection.engine}.`,
