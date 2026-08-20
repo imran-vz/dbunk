@@ -39,6 +39,7 @@ part of the recommended PostgreSQL-first critical path.
 
 | Status | Meaning |
 |---|---|
+| Complete | The selected parity scope is implemented and verified. |
 | Missing | No credible implementation was found. |
 | Partial | A useful surface exists but lacks parity-grade depth or correctness. |
 | Deferred | Real literal-parity work outside the recommended current boundary. |
@@ -52,7 +53,7 @@ implementation's blast radius, not the severity of the missing capability.
 | ID | Capability | Status | Priority | Effort | Risk | Confidence |
 |---|---|---|---:|---:|---:|---:|
 | PAR-001 | Query sessions, execution, results, and transactions | Partial | P0 | XL | High | High |
-| PAR-002 | Server-backed table browsing | Partial | P0 | L | Medium | High |
+| PAR-002 | Server-backed table browsing | Complete | P0 | L | Medium | High |
 | PAR-003 | Editable query results and staged mutation review | Partial | P0 | L | High | High |
 | PAR-004 | Production safety policy | Missing | P0 | L | High | High |
 | PAR-005 | Workspace persistence and global navigation | Partial | P0 | L | Medium | High |
@@ -120,59 +121,37 @@ identical semantics.
 contract, and lifecycle fencing as a dark backend. Plan 002 added the selected
 UI, typed frontend reducer, retained-result LRU release, controls, and
 activation. Both plans are DONE; the remaining items above are follow-on work
-and do not block the selected `PAR-002` plan.
+and do not block the completed `PAR-002` scope or the selected `PAR-003`
+planning target.
 
 **Dependency:** None. This unblocks `PAR-002`, `PAR-003`, `PAR-004`, and
 `PAR-005`.
 
 ### PAR-002: Server-backed table browsing
 
-**Current state:** Partial.
+**Current state:** Complete for the selected PostgreSQL table-browse scope.
 
-**Selection (2026-08-19):** Next P0 planning target. It is unblocked by the
-completed query-session foundation, has direct correctness and performance
-impact on daily table browsing, and unlocks the identity/query metadata needed
-by `PAR-003`.
-
-**Planning (2026-08-19):** Authored as Plans 003 and 004 at commit `26268ca`.
-Plan 003 is a dark PostgreSQL-only backend: a parameterized browse contract
-(typed filters, raw WHERE mode behind a read-only browse connection,
-multi-column sort, keyset pagination with a labeled offset fallback,
-estimated/deferred counts, protocol cancellation with per-tab supersession,
-backend-authoritative row identity including `ctid` virtual identity, query
-inspection, and SQLite-backed grid preferences). Plan 004 activates it in
-PostgreSQL table tabs with per-tab state, wires the dead sort/page-size/
-expand-grid controls, and adds filter/sort history and presets. Additional
-implementation split rationale: browsing cannot reuse the query-session actor
-for execution because its simple-query protocol carries no bind parameters;
-it reuses the connect-spec, TLS, cancel-token, and teardown-fencing
-infrastructure instead.
+**Progress (2026-08-21):** Plans 003 and 004 are DONE through commit
+`ecefce8`. PostgreSQL table tabs now use the typed browse contract end to end:
+server-side typed/raw filtering and multi-column sorting, bounded keyset/offset
+pagination, explicit count semantics, cancellation and stale-response fencing,
+backend-authoritative identity, query inspection, partial-result disclosure,
+durable preferences, history, and presets. The implementation keeps legacy
+engines and query-result grids on their existing paths and supplies the
+identity/query metadata needed by `PAR-003`.
 
 **Evidence:**
 
-- `src-tauri/src/commands/relational.rs:157-205` accepts page and page size but
-  no filter or sort contract.
-- `src/components/data-grid.tsx:544-687` filters the currently loaded page in
-  the frontend and has no complete sorting pipeline.
-- `src/components/table-editor/use-table-pagination.ts:34-90` contains a fixed
-  default page size; the displayed page-size control is not wired through the
-  data request.
-
-**Missing pieces:**
-
-- Typed, server-side filters over the full dataset.
-- Raw SQL filter mode with an explicit safety boundary.
-- Server-side multi-column sorting.
-- Filter and sort history plus reusable presets.
-- Adjustable page and fetch sizes.
-- Correct reset behavior when filter, sort, schema, or connection changes.
-- Keyset pagination for suitable tables and a documented offset fallback.
-- Estimated or deferred counts for large tables instead of unconditional
-  repeated `COUNT(*)`.
-- Query inspection showing the generated browsing SQL and parameters.
-- Cancellation and stale-response rejection during rapid navigation.
-- Virtual row identity for tables without a declared primary or unique key.
-- Functional expand-grid behavior and durable per-table grid preferences.
+- `src-tauri/src/table_browse/` owns parameterized SQL construction,
+  admission, cancellation, bounded execution, identity, and result metadata.
+- `src/lib/table-browse-client.ts` and `src/lib/store/table-browse.ts` own
+  monotonic requests, tab-scoped state, newest-request-wins, preferences,
+  history, presets, counts, and cleanup.
+- `src/components/data-grid/browse-controls.tsx` and
+  `src/components/table-editor/use-table-session.ts` activate the contract in
+  PostgreSQL table tabs while preserving legacy grid consumers.
+- Store, component, client, protocol, builder, executor, and live PostgreSQL
+  tests cover the delivered contract and failure paths.
 
 **Target outcome:** Sorting and filtering operate on the relation, not just the
 visible page. Large tables remain responsive and bounded, and every request is
@@ -184,6 +163,29 @@ cancelable and keyed to the current grid state.
 
 **Current state:** Partial for table tabs, effectively missing for query
 results.
+
+**Progress (2026-08-21):** Plans 005 and 006 were authored at commit
+`ecefce8` and are the selected execution path. Plan 005 is a dark
+PostgreSQL-only backend: updatability analysis through extended-protocol
+`Parse`/`Describe` column origins, a catalog descriptor with
+generated/identity-column awareness, persisted virtual keys, a pure
+parameterized DML builder with per-operation preview, and an
+all-or-nothing transactional apply with typed per-operation conflict
+detection. Plan 006 activates one identity-keyed staged Mutation Draft
+model across browse-mode table tabs and query results, with generated-DML
+review, per-change inclusion/exclusion/revert, and keyless editing via
+virtual keys and guarded `ctid`. Deep editors, Quick Look, batch paste,
+and copy formats stay in this register as follow-on scope after Plan 006.
+Both plans passed an independent adversarial review on 2026-08-21 and were
+amended for its findings, most notably: a conservative
+temp-table-shadowing refusal plus qualified-target display against
+cross-session name-resolution drift, indexable null-safe guard rendering
+instead of `IS NOT DISTINCT FROM`, full projected-row guards on keyed
+deletes with the keyed-update conflict limits documented rather than
+overclaimed, PostgreSQL 18 virtual generated columns classified
+non-writable, explicit draft-loss policy (budget release never drops a
+draft; re-run and close confirm), and a review-integrity rule that apply
+never runs DML differing from the previewed statements.
 
 **Evidence:**
 
@@ -665,8 +667,10 @@ Parity work should reuse rather than replace these credible foundations:
 
 1. `PAR-001`: query-session foundation delivered by Plans 001 and 002;
    remaining execution follow-ons stay tracked above.
-2. **Selected next:** `PAR-002`, server-backed grid operations.
-3. `PAR-003`: editable query results and generated DML review.
+2. `PAR-002`: server-backed table browsing delivered by Plans 003 and 004
+   through commit `ecefce8`.
+3. **Selected next:** `PAR-003`, editable query results and generated DML
+   review, via authored Plans 005 and 006.
 4. `PAR-004`: backend-enforced production safety.
 5. `PAR-005`: durable workspace restoration and global navigation.
 6. `PAR-006` and `PAR-007`: secure connections and full PostgreSQL object

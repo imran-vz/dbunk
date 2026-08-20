@@ -28,6 +28,7 @@
 - **Depends on**: Plan 003 at its recorded completion SHA
 - **Category**: direction
 - **Planned at**: commit `26268ca`, 2026-08-19
+- **Completed at**: commit `ecefce8`, 2026-08-21
 - **Gap**: `PAR-002` in `plans/parity-gap-register.md`
 
 ## Why this matters
