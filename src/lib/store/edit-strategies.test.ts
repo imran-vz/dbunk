@@ -338,10 +338,15 @@ describe("edit-strategies.resolveEditContext", () => {
     expect(result.columnIndexByName.get("name")).toBe(1);
   });
 
-  it("uses explicit browse identity columns and ignores pickRowIdentity", () => {
+  it("uses authoritative unique-index identity despite PK-only structure capabilities", () => {
     const result = resolveEditContext({
       tableData: {},
-      tableStructure: { [structureKey]: makeStructure() },
+      tableStructure: {
+        [structureKey]: makeStructure({
+          canUpdateRows: false,
+          canDeleteRows: false,
+        }),
+      },
       connections: [pgConnection],
       ref: { connectionId: "conn-1", schema: "public", table: "users" },
       dataSource: {
@@ -359,6 +364,30 @@ describe("edit-strategies.resolveEditContext", () => {
     if (!result.ok) throw new Error(`expected ok, got: ${result.reason}`);
     expect(result.identity.columns).toEqual(["email"]);
     expect(result.data.rows[0]?.[0]).toBe("ada@x");
+
+    const deleteResult = resolveEditContext({
+      tableData: {},
+      tableStructure: {
+        [structureKey]: makeStructure({ canDeleteRows: false }),
+      },
+      connections: [pgConnection],
+      ref: { connectionId: "conn-1", schema: "public", table: "users" },
+      dataSource: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+        columns: ["email", "id"],
+        rows: [["ada@x", "1"]],
+        identityKind: "uniqueIndex",
+        identityColumns: ["email"],
+      },
+      capability: "canDeleteRows",
+      action: "row deletes",
+    });
+    if (!deleteResult.ok) {
+      throw new Error(`expected delete context, got: ${deleteResult.reason}`);
+    }
+    expect(deleteResult.identity.columns).toEqual(["email"]);
   });
 
   it("rejects virtual browse identity with honest copy", () => {

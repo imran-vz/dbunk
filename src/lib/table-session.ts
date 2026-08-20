@@ -35,6 +35,7 @@ export const deriveTableSessionCapabilities = (
   const isReadOnly = browseIdentityKind
     ? !identityIsEditable(browseIdentityKind)
     : pickRowIdentity(structure) === null;
+  const hasAuthoritativeBrowseIdentity = browseIdentityKind !== undefined;
   const caps = structure?.capabilities;
 
   if (!caps) return EMPTY_TABLE_SESSION_CAPABILITIES;
@@ -44,8 +45,14 @@ export const deriveTableSessionCapabilities = (
     isReadOnly,
     isWriting,
     canAddRow: structureLoaded && caps.canInsertRows && !isWriting,
-    canDeleteRows: caps.canDeleteRows && !isReadOnly && !isWriting,
-    canEditCells: caps.canUpdateRows && !isReadOnly && !isWriting,
+    canDeleteRows:
+      !isReadOnly &&
+      !isWriting &&
+      (hasAuthoritativeBrowseIdentity || caps.canDeleteRows),
+    canEditCells:
+      !isReadOnly &&
+      !isWriting &&
+      (hasAuthoritativeBrowseIdentity || caps.canUpdateRows),
   };
 };
 

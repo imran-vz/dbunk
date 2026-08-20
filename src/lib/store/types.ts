@@ -506,6 +506,8 @@ export type TableBrowseTabState = {
   pageSize: number;
   page: number;
   cursorStack: Array<BrowseCursor | null>;
+  /** Monotonic within this tab generation; never derived from the in-flight slot. */
+  nextRequestToken: number;
   inflightRequestId: number | null;
   appliedRequestId: number | null;
   result: BrowseTableResult | null;
