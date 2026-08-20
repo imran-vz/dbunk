@@ -16,7 +16,9 @@ and update its status here when work finishes.
 | [001](./001-query-session-foundation.md)         | PostgreSQL Query Session backend foundation |       P0 |      L | None       | DONE: 657553d                                  |
 | [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration |       P0 |      L | 001        | DONE: 26268ca (selected mock: B)               |
 | [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | DONE: 202f756                                  |
-| [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | READY FOR REVIEW                               |
+| [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
+| [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | TODO                                           |
+| [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -29,30 +31,40 @@ useful without authorizing commits implicitly.
 ## Current selection
 
 - **Completed:** Plans 001 and 002 delivered the PostgreSQL query-session
-  foundation of `PAR-001` through commit `26268ca`. Plan 003 landed the
-  PostgreSQL Table Browse backend at `202f756`.
-- **Selected next:** `PAR-002` frontend activation, Plan 004 (planned at
-  commit `26268ca`, 2026-08-19). Selected mock: **B**. Plan 004 wires
-  PostgreSQL table tabs onto the typed browse contract.
-- **Selected mock (004):** B — stacked command bar, inspection popover,
-  keyset next as the primary pager.
-- **Planning boundary:** PostgreSQL first, with typed server-side filters and
-  sorting, bounded pagination/count behavior, cancellation, stale-response
-  rejection, query inspection, and durable grid preferences. Query-result
-  mutation remains in `PAR-003`.
+  foundation of `PAR-001` through commit `26268ca`. Plans 003 and 004
+  delivered and activated PostgreSQL Table Browse for `PAR-002` through
+  commit `ecefce8` on 2026-08-21.
+- **Selected next:** `PAR-003`, editable query results and staged mutation
+  review. Plans 005 and 006 were authored on 2026-08-21 at commit `ecefce8`
+  and are ready to execute in order. Plan 005 lands the dark
+  analysis/preview/apply backend; Plan 006 activates the shared staged
+  Mutation Draft model in table and query grids. Batch paste, deep value
+  editors, Quick Look, and configurable copy formats are the `PAR-003`
+  register items deliberately left for a follow-on plan after 006.
+- **Selected mock (004, completed):** B — stacked command bar, inspection
+  popover, keyset next as the primary pager.
+- **Delivered boundary:** PostgreSQL table tabs now use typed server-side
+  filters and sorting, bounded pagination/count behavior, cancellation,
+  stale-response rejection, query inspection, durable grid preferences, and
+  backend-authoritative row identity. Query-result mutation remains in
+  `PAR-003`.
 
-## Dependency order after Plans 001 and 002
+## Dependency order after Plans 001 through 004
 
 Items 3 and later are candidate plans, not authored plans. Their identifiers
 refer to the gap register rather than files in this directory.
 
 1. Plans 001 and 002 delivered and activated the PostgreSQL query-session
    foundation. Non-blocking `PAR-001` follow-ons remain in the gap register.
-2. `PAR-002` server-backed browsing is authored as Plans 003 and 004, reusing
-   the connect-spec, TLS, cancellation, and bounded-result semantics from the
-   query-session foundation.
-3. `PAR-003` editable-query-result work follows `PAR-002` so both table and
-   query results can share identity and query metadata.
+2. Plans 003 and 004 delivered and activated `PAR-002` server-backed table
+   browsing, reusing the query-session connect-spec, TLS, cancellation, and
+   bounded-result semantics.
+3. Plans 005 and 006 are the authored `PAR-003` execution path: a dark
+   PostgreSQL Result Mutation backend (updatability analysis via extended
+   protocol Describe, generated/identity-column awareness, virtual keys,
+   pure DML builder with preview, guarded all-or-nothing transactional
+   apply), then one staged Mutation Draft model shared by browse-mode table
+   tabs and query results with DML review before commit.
 4. `PAR-004` safety policy should build on explicit transaction state and the
    generated mutation preview from `PAR-003`.
 5. `PAR-005` workspace restoration should persist descriptors, never live
