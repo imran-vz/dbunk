@@ -127,6 +127,7 @@ export function TableEditorPanel({
     hasEdits,
     pagination,
     serverBrowse,
+    appliedBrowseRequestId,
     readOnlyCopy,
   } = tableSession;
   // Terminal outcome lives component-local. Disappears on tab unmount,
@@ -208,13 +209,7 @@ export function TableEditorPanel({
     setInlineDrilldown(null);
     // Rows were replaced by a new browse page.
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- selection.clear is stable enough; we only want row-identity changes.
-  }, [
-    isBrowseMode,
-    data?.runtimeMs,
-    data?.page,
-    data?.pageSize,
-    data?.rows.length,
-  ]);
+  }, [isBrowseMode, tab.id, appliedBrowseRequestId]);
   const caps = deriveSelectedTableSessionCapabilities(
     tableSession.capabilities,
     selection.selectedCount,
@@ -285,7 +280,7 @@ export function TableEditorPanel({
         } in ${result.runtimeMs} ms`,
       );
       if (dataKey) {
-        await tableSession.refresh();
+        await tableSession.refreshData();
       }
     } catch (error) {
       const message = errorToMessage(error);
@@ -518,7 +513,7 @@ export function TableEditorPanel({
       toast.success(
         `Seeded ${result.rowsInserted.toLocaleString()} rows (seed ${result.seedUsed})`,
       );
-      refreshTable();
+      void tableSession.refreshData();
     } catch (error) {
       setLastOutcome({ kind: "failed", reason: errorToMessage(error) });
       toast.error(`Seed failed: ${errorToMessage(error)}`);
@@ -580,12 +575,15 @@ export function TableEditorPanel({
   const isSaving = commitStatus?.state === "running";
   const errorMessage = status?.state === "error" ? status.error : null;
 
-  const rowCountLabel = `${(pagination.totalRows ?? rows.length).toLocaleString()} rows`;
+  const rowCountLabel = serverBrowse
+    ? pagination.countLabel
+    : `${(pagination.totalRows ?? rows.length).toLocaleString()} rows`;
 
   const statusItems = buildStatusItems({
     errorMessage,
     isLoading,
     rowCount: rows.length,
+    rowCountLabel: serverBrowse ? pagination.countLabel : undefined,
     pagination,
     activeConnection: connection,
   });
