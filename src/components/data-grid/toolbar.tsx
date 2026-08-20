@@ -50,6 +50,7 @@ import {
   BrowseFilterBar,
   BrowseInspectionPanel,
   BrowseLiveRegion,
+  BrowsePartialResultNotice,
   BrowseSortEditor,
 } from "./browse-controls";
 import type { ServerBrowseGridModel } from "./browse-model";
@@ -602,6 +603,9 @@ export function DataGridToolbar({
       </div>
 
       {serverBrowse ? <BrowseLiveRegion browse={serverBrowse} /> : null}
+      {serverBrowse ? (
+        <BrowsePartialResultNotice browse={serverBrowse} />
+      ) : null}
 
       {showFilters && serverBrowse ? (
         <BrowseFilterBar columnNames={columnNames} browse={serverBrowse} />

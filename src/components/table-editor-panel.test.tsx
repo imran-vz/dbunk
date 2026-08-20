@@ -1,5 +1,12 @@
 /* oxlint-disable anti-slop/no-module-mocking anti-slop/no-unknown-parameters anti-slop/require-safety-comment-for-type-assertion -- Test fixtures use controlled mocks and assertions to exercise otherwise inaccessible boundaries. */
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
@@ -831,6 +838,28 @@ describe("TableEditorPanel subtabs", () => {
 });
 
 describe("TableEditorPanel server browse", () => {
+  const refreshedBrowseResult = {
+    requestId: 1_000_000,
+    columns: [
+      { name: "id", castType: "integer", nullable: false },
+      { name: "email", castType: "text", nullable: false },
+    ],
+    rows: [["1", "ada@example.com"]],
+    identity: { kind: "primaryKey" as const, columns: ["id"] },
+    rowIdentity: [["1"]],
+    pageInfo: {
+      mode: "keyset" as const,
+      page: 1,
+      hasMore: false,
+      nextCursor: null,
+    },
+    count: { kind: "estimated" as const, value: 128 },
+    inspection: { sql: "SELECT id, email FROM public.users", params: [] },
+    omittedRows: 0,
+    truncatedCells: 0,
+    runtimeMs: 5,
+  };
+
   const seedBrowse = (overrides: Partial<TableBrowseTabState> = {}) => {
     seed({
       connectionId: "conn-1",
@@ -859,6 +888,7 @@ describe("TableEditorPanel server browse", () => {
           pageSize: 100,
           page: 1,
           cursorStack: [],
+          nextRequestToken: 1,
           inflightRequestId: null,
           appliedRequestId: 1,
           result: {
@@ -898,9 +928,38 @@ describe("TableEditorPanel server browse", () => {
 
   it("labels estimated counts and offers Count rows", () => {
     seedBrowse();
-    render(<TableEditorPanel tab={tableTab} />);
-    expect(screen.getByText("~128 rows (estimated)")).toBeTruthy();
+    const onStatusItemsChange = vi.fn();
+    render(
+      <TableEditorPanel
+        tab={tableTab}
+        onStatusItemsChange={onStatusItemsChange}
+      />,
+    );
+    expect(
+      screen.getAllByText("~128 rows (estimated)").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("button", { name: "Count rows" })).toBeTruthy();
+    const statusItems = onStatusItemsChange.mock.calls.at(-1)?.[0];
+    expect(statusItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "data", value: "~128 rows (estimated)" }),
+        expect.objectContaining({ id: "page", value: "1 of ~2" }),
+      ]),
+    );
+  });
+
+  it("does not display browse rows whose target differs from the tab", () => {
+    seedBrowse();
+    const auditTab = { ...tableTab, schema: "audit" };
+    render(<TableEditorPanel tab={auditTab} />);
+
+    expect(screen.queryByText("ada@example.com")).toBeNull();
+    expect(useAppStore.getState().tableBrowses["tab-1"]).toMatchObject({
+      connectionId: "conn-1",
+      schema: "audit",
+      table: "users",
+      result: null,
+    });
   });
 
   it("expands the grid and restores it with Escape", () => {
@@ -929,6 +988,25 @@ describe("TableEditorPanel server browse", () => {
     ).toBeTruthy();
   });
 
+  it("discards confirmed edits before starting a foreground page request", () => {
+    seedBrowse();
+    act(() => {
+      useAppStore.getState().setTableEdit("users", 0, 1, "ada@new.com");
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getByLabelText("Next page"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard edits" }));
+
+    expect(
+      useAppStore.getState().tableEdits[
+        tableDataKey("conn-1", "public", "users")
+      ],
+    ).toBeUndefined();
+    expect(useAppStore.getState().tableBrowses["tab-1"]?.loadStatus).toEqual({
+      state: "loading",
+    });
+  });
+
   it("prompts before refresh discards pending edits", () => {
     seedBrowse();
     act(() => {
@@ -944,6 +1022,167 @@ describe("TableEditorPanel server browse", () => {
         tableDataKey("conn-1", "public", "users")
       ],
     ).toBeTruthy();
+  });
+
+  it("refreshes the backend descriptor for an explicit user refresh", async () => {
+    seedBrowse({
+      exactCount: { requestId: 1, kind: "exact", value: 128 },
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    mockedInvoke.mockReset();
+    mockedInvoke.mockResolvedValue(refreshedBrowseResult);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("browse_table_data", {
+        payload: expect.objectContaining({ refreshStructure: true }),
+      }),
+    );
+    expect(useAppStore.getState().tableBrowses["tab-1"]?.exactCount).toBeNull();
+  });
+
+  it("refreshes imported browse data without refreshing the descriptor", async () => {
+    seedBrowse({
+      exactCount: { requestId: 1, kind: "exact", value: 128 },
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getByRole("button", { name: "Import data" }));
+    fireEvent.change(screen.getByLabelText("Import file"), {
+      target: {
+        files: [
+          {
+            name: "users.csv",
+            text: async () => "id,email\n2,grace@example.com",
+          } as File,
+        ],
+      },
+    });
+    await screen.findByText(/1 rows ready/);
+    mockedInvoke.mockReset();
+    mockedInvoke
+      .mockResolvedValueOnce({ runtimeMs: 3, rowsAffected: 1 })
+      .mockResolvedValueOnce(refreshedBrowseResult);
+
+    fireEvent.click(screen.getByRole("button", { name: "Import rows" }));
+
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("browse_table_data", {
+        payload: expect.objectContaining({ refreshStructure: false }),
+      }),
+    );
+    expect(useAppStore.getState().tableBrowses["tab-1"]?.exactCount).toBeNull();
+  });
+
+  it("refreshes seeded browse data without refreshing the descriptor", async () => {
+    seedBrowse({
+      exactCount: { requestId: 1, kind: "exact", value: 128 },
+    });
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getByRole("button", { name: "Table actions" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /seed table/i }),
+    );
+    mockedInvoke.mockReset();
+    mockedInvoke
+      .mockResolvedValueOnce({
+        runtimeMs: 4,
+        rowsInserted: 100,
+        seedUsed: 42,
+      })
+      .mockResolvedValueOnce(refreshedBrowseResult);
+
+    fireEvent.click(screen.getByTestId("seed-submit"));
+
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("browse_table_data", {
+        payload: expect.objectContaining({ refreshStructure: false }),
+      }),
+    );
+    expect(useAppStore.getState().tableBrowses["tab-1"]?.exactCount).toBeNull();
+  });
+
+  it("clears same-index selection when a same-shape result is applied", () => {
+    seedBrowse();
+    render(<TableEditorPanel tab={tableTab} />);
+    fireEvent.click(screen.getAllByRole("checkbox")[1] as HTMLInputElement);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Delete selected",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+
+    act(() => {
+      useAppStore.setState((state) => {
+        const current = state.tableBrowses["tab-1"];
+        if (!current?.result) return state;
+        return {
+          tableBrowses: {
+            ...state.tableBrowses,
+            "tab-1": {
+              ...current,
+              appliedRequestId: 2,
+              result: {
+                ...current.result,
+                requestId: 2,
+                rows: [["2", "grace@example.com"]],
+                rowIdentity: [["2"]],
+              },
+            },
+          },
+        };
+      });
+    });
+
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Delete selected",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("enables editing and deletion for authoritative unique-index identity", () => {
+    seedBrowse({
+      result: {
+        requestId: 1,
+        columns: [
+          { name: "id", castType: "integer", nullable: false },
+          { name: "email", castType: "text", nullable: false },
+        ],
+        rows: [["1", "ada@example.com"]],
+        identity: { kind: "uniqueIndex", columns: ["email"] },
+        rowIdentity: [["ada@example.com"]],
+        pageInfo: {
+          mode: "keyset",
+          page: 1,
+          hasMore: false,
+          nextCursor: null,
+        },
+        count: { kind: "exact", value: 1 },
+        inspection: { sql: "SELECT id, email FROM public.users", params: [] },
+        omittedRows: 0,
+        truncatedCells: 0,
+        runtimeMs: 5,
+      },
+    });
+    seedStructure(readOnlyStructure);
+    render(<TableEditorPanel tab={tableTab} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "ada@example.com" }));
+    expect(screen.getByDisplayValue("ada@example.com")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("checkbox")[1] as HTMLInputElement);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Delete selected",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(screen.queryByTestId("table-readonly-banner")).toBeNull();
   });
 
   it("offers Cancel while an exact count is loading", () => {

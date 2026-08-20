@@ -45,7 +45,14 @@ export function useTableSession(tab: WorkspaceTab) {
         ?.engine,
   );
   const browseEnabled = Boolean(engine && supportsServerTableBrowse(engine));
-  const browse = useAppStore((state) => state.tableBrowses[tab.id]);
+  const browseForTab = useAppStore((state) => state.tableBrowses[tab.id]);
+  const browse =
+    ref &&
+    browseForTab?.connectionId === ref.connectionId &&
+    browseForTab.schema === ref.schema &&
+    browseForTab.table === ref.table
+      ? browseForTab
+      : undefined;
 
   const storeData = useAppStore((state) =>
     refKey ? state.tableData[refKey] : undefined,
@@ -284,82 +291,85 @@ export function useTableSession(tab: WorkspaceTab) {
       return fn(ref, ...args);
     };
 
-  const serverBrowse: ServerBrowseGridModel | undefined = browseEnabled
-    ? {
-        typedFilters: browse?.typedFilters ?? [],
-        rawFilterText: browse?.rawFilterText ?? "",
-        filterMode: browse?.filterMode ?? "typed",
-        sort: browse?.sort ?? [],
-        pageSize: browse?.pageSize ?? 100,
-        loadStatus: browse?.loadStatus ?? { state: "idle" },
-        error:
-          browse?.loadStatus.state === "error" ? browse.loadStatus.error : null,
-        inspection: browse?.result?.inspection ?? null,
-        omittedRows: browse?.result?.omittedRows ?? 0,
-        truncatedCells: browse?.result?.truncatedCells ?? 0,
-        count: browse?.result?.count ?? { kind: "unknown", value: null },
-        exactCount: browse?.exactCount ?? null,
-        countStatus: browse?.countStatus ?? { state: "idle" },
-        pageInfo: browse?.result?.pageInfo ?? null,
-        history: browse?.prefs.filterHistory ?? [],
-        presets: browse?.prefs.presets ?? [],
-        onApplyTypedFilter: (filter) => {
-          const next = [
-            ...(browse?.typedFilters ?? []).filter((item) => {
-              if (item.kind === "rawSql" || filter.kind === "rawSql")
-                return true;
-              return item.column !== filter.column;
-            }),
-            filter,
-          ];
-          void setTableBrowseFilters(tab.id, next);
-        },
-        onRemoveTypedFilter: (column) => {
-          void setTableBrowseFilters(
-            tab.id,
-            (browse?.typedFilters ?? []).filter(
-              (item) => item.kind === "rawSql" || item.column !== column,
-            ),
-          );
-        },
-        onClearTypedFilters: () => {
-          void clearTableBrowseFilters(tab.id);
-        },
-        onRawFilterApply: (text) => {
-          void setTableBrowseRawFilter(tab.id, text);
-        },
-        onFilterModeChange: (mode) => {
-          void setTableBrowseFilterMode(tab.id, mode);
-        },
-        onSortChange: (sort) => {
-          void setTableBrowseSort(tab.id, sort);
-        },
-        onPageSizeChange: (pageSize) => {
-          void setTableBrowsePageSize(tab.id, pageSize);
-        },
-        onHeaderSort: (column, append) => {
-          void setTableBrowseSort(
-            tab.id,
-            cycleSort(browse?.sort ?? [], column, append),
-          );
-        },
-        onCountRows: () => {
-          void countTableBrowseRows(tab.id);
-        },
-        onCancel: () => {
-          void cancelTableBrowse(tab.id);
-        },
-        onApplyPreset: (name) => {
-          void applyTableBrowsePreset(tab.id, name);
-        },
-        onSavePreset: (name) => {
-          void saveTableBrowsePreset(tab.id, name);
-        },
-        onApplyHistory: (index) => {
-          void applyTableBrowseHistory(tab.id, index);
-        },
-      }
-    : undefined;
+  const serverBrowse: ServerBrowseGridModel | undefined =
+    browseEnabled && browse
+      ? {
+          typedFilters: browse?.typedFilters ?? [],
+          rawFilterText: browse?.rawFilterText ?? "",
+          filterMode: browse?.filterMode ?? "typed",
+          sort: browse?.sort ?? [],
+          pageSize: browse?.pageSize ?? 100,
+          loadStatus: browse?.loadStatus ?? { state: "idle" },
+          error:
+            browse?.loadStatus.state === "error"
+              ? browse.loadStatus.error
+              : null,
+          inspection: browse?.result?.inspection ?? null,
+          omittedRows: browse?.result?.omittedRows ?? 0,
+          truncatedCells: browse?.result?.truncatedCells ?? 0,
+          count: browse?.result?.count ?? { kind: "unknown", value: null },
+          exactCount: browse?.exactCount ?? null,
+          countStatus: browse?.countStatus ?? { state: "idle" },
+          pageInfo: browse?.result?.pageInfo ?? null,
+          history: browse?.prefs.filterHistory ?? [],
+          presets: browse?.prefs.presets ?? [],
+          onApplyTypedFilter: (filter) => {
+            const next = [
+              ...(browse?.typedFilters ?? []).filter((item) => {
+                if (item.kind === "rawSql" || filter.kind === "rawSql")
+                  return true;
+                return item.column !== filter.column;
+              }),
+              filter,
+            ];
+            void setTableBrowseFilters(tab.id, next);
+          },
+          onRemoveTypedFilter: (column) => {
+            void setTableBrowseFilters(
+              tab.id,
+              (browse?.typedFilters ?? []).filter(
+                (item) => item.kind === "rawSql" || item.column !== column,
+              ),
+            );
+          },
+          onClearTypedFilters: () => {
+            void clearTableBrowseFilters(tab.id);
+          },
+          onRawFilterApply: (text) => {
+            void setTableBrowseRawFilter(tab.id, text);
+          },
+          onFilterModeChange: (mode) => {
+            void setTableBrowseFilterMode(tab.id, mode);
+          },
+          onSortChange: (sort) => {
+            void setTableBrowseSort(tab.id, sort);
+          },
+          onPageSizeChange: (pageSize) => {
+            void setTableBrowsePageSize(tab.id, pageSize);
+          },
+          onHeaderSort: (column, append) => {
+            void setTableBrowseSort(
+              tab.id,
+              cycleSort(browse?.sort ?? [], column, append),
+            );
+          },
+          onCountRows: () => {
+            void countTableBrowseRows(tab.id);
+          },
+          onCancel: () => {
+            void cancelTableBrowse(tab.id);
+          },
+          onApplyPreset: (name) => {
+            void applyTableBrowsePreset(tab.id, name);
+          },
+          onSavePreset: (name) => {
+            void saveTableBrowsePreset(tab.id, name);
+          },
+          onApplyHistory: (index) => {
+            void applyTableBrowseHistory(tab.id, index);
+          },
+        }
+      : undefined;
 
   const identityKind = browse?.result?.identity.kind;
   const readOnlyCopy =
@@ -381,11 +391,25 @@ export function useTableSession(tab: WorkspaceTab) {
     pagination: browseEnabled ? browsePagination : legacyPagination,
     browseEnabled,
     serverBrowse,
+    appliedBrowseRequestId: browse?.appliedRequestId ?? null,
     readOnlyCopy,
     refresh: async () => {
       if (!ref) return;
       if (browseEnabled) {
         await refreshTableBrowse(tab.id);
+        return;
+      }
+      await refreshTableSession(ref);
+    },
+    // Data-only writes can change row counts without invalidating the
+    // backend relation descriptor. Legacy sessions already refresh data only.
+    refreshData: async () => {
+      if (!ref) return;
+      if (browseEnabled) {
+        await refreshTableBrowse(tab.id, {
+          refreshStructure: false,
+          invalidateExactCount: true,
+        });
         return;
       }
       await refreshTableSession(ref);
