@@ -280,6 +280,32 @@ ADR-0009 for the writes-by-default posture.
 - **Cell Edit** — a pending change to one cell, keyed by row index inside
   the loaded page. Buffered in memory and committed in a transaction.
   Relational-only.
+- **Result Mutation** — the PostgreSQL-only backend contract for changing
+  rows represented by a Table Browse page or SQL result. It analyzes column
+  origins, validates a Mutation Plan, produces a DML Preview, and applies the
+  plan all-or-nothing on a dedicated read-write socket. It remains dark until
+  Plan 006 activates one frontend flow; legacy mutation commands are distinct.
+- **Mutation Analysis** — a non-executing extended-protocol Parse/Describe of
+  one statement, or direct inspection of one named relation. It resolves
+  `table_oid` and column attnums, classifies writability from `attgenerated`,
+  `attidentity`, defaults, and system-column origins, and caches the result
+  behind an `analysisId`. A missing snapshot returns `analysisExpired`.
+- **Mutation Plan** — an ordered set of typed PostgreSQL update, delete, and
+  insert operations referencing one Mutation Analysis snapshot. User values
+  are text parameters with catalog-derived casts; apply revalidates the plan
+  and commits it all-or-nothing with `lock_timeout` and per-operation conflict
+  attribution.
+- **Mutation Draft** — the future client-side, identity-keyed collection of
+  staged row changes and captured original values. Plan 006 owns this frontend
+  model. A draft builds a Mutation Plan but is not itself database work and is
+  unrelated to ClickHouse Pending Mutation state.
+- **Virtual Key** — a versioned, persisted, ordered user-selected column set
+  used when a relation has no projected proven identity. It is a user claim,
+  not a database constraint, so operations use full-row guards and reject a
+  result affecting more than one row.
+- **DML Preview** — the display-only statements and ordered text parameters
+  produced from a Mutation Plan. Apply uses the same builder and analysis
+  snapshot. Preview content, SQL, parameters, and row values are never logged.
 - **DDL Statement** — a schema-level change (CREATE/ALTER/DROP), executed via
   the `execute_ddl` command rather than the regular query path so the
   frontend can model the response shape distinctly. Relational-only — Redis
@@ -381,7 +407,8 @@ dbunk.sqlite:
 ├── query_history                 (relational only — SQL queries)
 ├── redis_command_history         (keyvalue only — CLI commands, cap 1000/connection)
 ├── saved_queries
-└── table_grid_prefs              (per-table Grid Preferences JSON)
+├── table_grid_prefs              (per-table Grid Preferences JSON)
+└── virtual_keys                  (per-table Virtual Key JSON)
 
 Optional OS keychain backend (service: "dbunk", account: "connection-credentials"):
 └── JSON blob: { connectionId: password }

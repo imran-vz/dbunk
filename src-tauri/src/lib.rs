@@ -8,6 +8,7 @@ mod managed;
 mod postgres;
 mod query_session;
 mod redis;
+mod result_mutation;
 mod seed;
 mod socket_lifecycle;
 mod storage;
@@ -39,6 +40,7 @@ pub(crate) struct AppState {
     pool: SqlitePool,
     paths: Paths,
     query_sessions: query_session::QuerySessionManager,
+    result_mutations: result_mutation::ResultMutationManager,
     table_browse: table_browse::TableBrowseManager,
 }
 
@@ -211,10 +213,13 @@ pub fn run() {
             query_sessions.start_monitor();
             let table_browse = table_browse::TableBrowseManager::new();
             table_browse.start_monitor();
+            let result_mutations = result_mutation::ResultMutationManager::new();
+            result_mutations.start_monitor();
             app.manage(AppState {
                 pool,
                 paths,
                 query_sessions,
+                result_mutations,
                 table_browse,
             });
             Ok(())
@@ -306,6 +311,15 @@ pub fn run() {
             commands::table_browse::close_table_browse_for_tab,
             commands::table_browse::load_table_grid_prefs,
             commands::table_browse::save_table_grid_prefs,
+            // PostgreSQL result mutation (dark until Plan 006)
+            commands::result_mutation::analyze_result_set,
+            commands::result_mutation::preview_result_mutations,
+            commands::result_mutation::apply_result_mutations,
+            commands::result_mutation::cancel_result_mutation,
+            commands::result_mutation::close_result_mutation_for_connection,
+            commands::result_mutation::load_virtual_key,
+            commands::result_mutation::save_virtual_key,
+            commands::result_mutation::clear_virtual_key,
             commands::relational::load_table_structure,
             commands::relational::execute_ddl,
             commands::relational::export_ddl,
@@ -403,9 +417,14 @@ pub fn run() {
                 let handle = handle.clone();
                 let manager = handle.state::<AppState>().query_sessions.clone();
                 let table_browse = handle.state::<AppState>().table_browse.clone();
+                let result_mutations = handle.state::<AppState>().result_mutations.clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-                        tokio::join!(manager.close_all(), table_browse.close_all())
+                        tokio::join!(
+                            manager.close_all(),
+                            table_browse.close_all(),
+                            result_mutations.close_all()
+                        )
                     })
                     .await;
                     handle.exit(code.unwrap_or(0));

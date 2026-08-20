@@ -1,9 +1,10 @@
-//! Canonical fence for dedicated PostgreSQL sockets (Query Session + Table Browse).
+//! Canonical fence for dedicated PostgreSQL sockets.
 //!
-//! Begin/close both managers concurrently, run invalidation while admission is
+//! Begin/close all managers concurrently, run invalidation while admission is
 //! blocked, then release the fence even if the caller panics.
 
 use crate::query_session::QuerySessionManager;
+use crate::result_mutation::ResultMutationManager;
 use crate::table_browse::TableBrowseManager;
 use crate::tunnel;
 use crate::{postgres, redis, AppState, DatabaseEngine};
@@ -18,10 +19,14 @@ pub(crate) async fn with_connection_fence<T>(
             .query_sessions
             .begin_connection_teardown(connection_id),
         state.table_browse.begin_connection_teardown(connection_id),
+        state
+            .result_mutations
+            .begin_connection_teardown(connection_id),
     );
     let mut guard = FenceGuard::connection(
         state.query_sessions.clone(),
         state.table_browse.clone(),
+        state.result_mutations.clone(),
         connection_id.to_string(),
     );
     let result = work.await;
@@ -37,10 +42,12 @@ pub(crate) async fn with_connection_ids_fence<T>(
     futures_util::future::join_all(connection_ids.iter().map(|connection_id| {
         let query_sessions = state.query_sessions.clone();
         let table_browse = state.table_browse.clone();
+        let result_mutations = state.result_mutations.clone();
         async move {
             tokio::join!(
                 query_sessions.begin_connection_teardown(connection_id),
                 table_browse.begin_connection_teardown(connection_id),
+                result_mutations.begin_connection_teardown(connection_id),
             )
         }
     }))
@@ -48,6 +55,7 @@ pub(crate) async fn with_connection_ids_fence<T>(
     let mut guard = FenceGuard::connections(
         state.query_sessions.clone(),
         state.table_browse.clone(),
+        state.result_mutations.clone(),
         connection_ids.to_vec(),
     );
     let result = work.await;
@@ -62,8 +70,13 @@ pub(crate) async fn with_global_fence<T>(
     tokio::join!(
         state.query_sessions.begin_global_teardown(),
         state.table_browse.begin_global_teardown(),
+        state.result_mutations.begin_global_teardown(),
     );
-    let mut guard = FenceGuard::global(state.query_sessions.clone(), state.table_browse.clone());
+    let mut guard = FenceGuard::global(
+        state.query_sessions.clone(),
+        state.table_browse.clone(),
+        state.result_mutations.clone(),
+    );
     let result = work.await;
     guard.release().await;
     result
@@ -92,6 +105,7 @@ pub(crate) fn invalidate_bastion_caches(bastion_id: &str, connection_ids: &[Stri
 struct FenceGuard {
     query_sessions: QuerySessionManager,
     table_browse: TableBrowseManager,
+    result_mutations: ResultMutationManager,
     kind: Option<FenceKind>,
 }
 
@@ -105,11 +119,13 @@ impl FenceGuard {
     fn connection(
         query_sessions: QuerySessionManager,
         table_browse: TableBrowseManager,
+        result_mutations: ResultMutationManager,
         connection_id: String,
     ) -> Self {
         Self {
             query_sessions,
             table_browse,
+            result_mutations,
             kind: Some(FenceKind::Connection(connection_id)),
         }
     }
@@ -117,19 +133,26 @@ impl FenceGuard {
     fn connections(
         query_sessions: QuerySessionManager,
         table_browse: TableBrowseManager,
+        result_mutations: ResultMutationManager,
         connection_ids: Vec<String>,
     ) -> Self {
         Self {
             query_sessions,
             table_browse,
+            result_mutations,
             kind: Some(FenceKind::Connections(connection_ids)),
         }
     }
 
-    fn global(query_sessions: QuerySessionManager, table_browse: TableBrowseManager) -> Self {
+    fn global(
+        query_sessions: QuerySessionManager,
+        table_browse: TableBrowseManager,
+        result_mutations: ResultMutationManager,
+    ) -> Self {
         Self {
             query_sessions,
             table_browse,
+            result_mutations,
             kind: Some(FenceKind::Global),
         }
     }
@@ -138,7 +161,13 @@ impl FenceGuard {
         let Some(kind) = self.kind.take() else {
             return;
         };
-        release_fence(&self.query_sessions, &self.table_browse, kind).await;
+        release_fence(
+            &self.query_sessions,
+            &self.table_browse,
+            &self.result_mutations,
+            kind,
+        )
+        .await;
     }
 }
 
@@ -149,8 +178,9 @@ impl Drop for FenceGuard {
         };
         let query_sessions = self.query_sessions.clone();
         let table_browse = self.table_browse.clone();
+        let result_mutations = self.result_mutations.clone();
         tokio::spawn(async move {
-            release_fence(&query_sessions, &table_browse, kind).await;
+            release_fence(&query_sessions, &table_browse, &result_mutations, kind).await;
         });
     }
 }
@@ -158,6 +188,7 @@ impl Drop for FenceGuard {
 async fn release_fence(
     query_sessions: &QuerySessionManager,
     table_browse: &TableBrowseManager,
+    result_mutations: &ResultMutationManager,
     kind: FenceKind,
 ) {
     match kind {
@@ -165,6 +196,7 @@ async fn release_fence(
             tokio::join!(
                 query_sessions.end_connection_teardown(&connection_id),
                 table_browse.end_connection_teardown(&connection_id),
+                result_mutations.end_connection_teardown(&connection_id),
             );
         }
         FenceKind::Connections(connection_ids) => {
@@ -172,6 +204,7 @@ async fn release_fence(
                 tokio::join!(
                     query_sessions.end_connection_teardown(&connection_id),
                     table_browse.end_connection_teardown(&connection_id),
+                    result_mutations.end_connection_teardown(&connection_id),
                 );
             }
         }
@@ -179,6 +212,7 @@ async fn release_fence(
             tokio::join!(
                 query_sessions.end_global_teardown(),
                 table_browse.end_global_teardown(),
+                result_mutations.end_global_teardown(),
             );
         }
     }
