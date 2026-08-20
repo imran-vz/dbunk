@@ -11,6 +11,7 @@ pub(crate) mod keyvalue;
 pub(crate) mod managed;
 pub(crate) mod query_session;
 pub(crate) mod relational;
+pub(crate) mod result_mutation;
 pub(crate) mod settings;
 pub(crate) mod table_browse;
 

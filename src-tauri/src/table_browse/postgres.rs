@@ -4,11 +4,10 @@ use tokio_postgres::{Client, Row};
 
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::postgres::dedicated::{self, DedicatedConnection, DedicatedError, NoticeSink};
+use crate::postgres::identity::UniqueIndexCandidate;
 use crate::postgres::row_budget::{bound_text, retained_row_bytes, shrink_row, MAX_RESPONSE_BYTES};
 
-use super::builder::{
-    BoundParam, BuiltBrowseQuery, RelationColumn, RelationDescriptor, UniqueIndexCandidate,
-};
+use super::builder::{BoundParam, BuiltBrowseQuery, RelationColumn, RelationDescriptor};
 use super::protocol::*;
 
 pub(crate) struct BrowseConnection {

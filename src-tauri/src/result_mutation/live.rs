@@ -1,0 +1,1370 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use tokio::sync::Mutex;
+use tokio_postgres::types::ToSql;
+
+use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
+use crate::query_session::postgres as session_postgres;
+use crate::storage;
+use crate::PgDriverOptions;
+
+use super::protocol::*;
+use super::{ResultMutationManager, VirtualKeyLookup};
+
+type VirtualKeys = Arc<Mutex<HashMap<(String, String, String), VirtualKey>>>;
+
+fn live_spec(connection_id: &str) -> ResolvedPostgresConnectSpec {
+    ResolvedPostgresConnectSpec {
+        connection_id: connection_id.into(),
+        host: "127.0.0.1".into(),
+        port: 15432,
+        database: "dbunk_demo".into(),
+        user: "dbunk".into(),
+        password: "dbunk".into(),
+        tls_prefer: true,
+        connect_timeout: Some(Duration::from_secs(5)),
+        driver_options: PgDriverOptions::default(),
+    }
+}
+
+fn empty_virtual_keys() -> VirtualKeyLookup {
+    Arc::new(|_, _, _| Box::pin(async { Ok(None) }))
+}
+
+fn virtual_key_lookup(keys: VirtualKeys) -> VirtualKeyLookup {
+    Arc::new(move |connection_id, schema, table| {
+        let keys = keys.clone();
+        Box::pin(async move {
+            Ok(keys
+                .lock()
+                .await
+                .get(&(connection_id, schema, table))
+                .cloned())
+        })
+    })
+}
+
+fn statement_payload(
+    connection_id: &str,
+    tab_id: &str,
+    request_id: u64,
+    sql: impl Into<String>,
+) -> AnalyzeResultSetPayload {
+    AnalyzeResultSetPayload {
+        connection_id: connection_id.into(),
+        tab_id: tab_id.into(),
+        request_id,
+        source: AnalyzeSource::Statement { sql: sql.into() },
+        refresh_structure: false,
+    }
+}
+
+fn relation_payload(
+    connection_id: &str,
+    tab_id: &str,
+    request_id: u64,
+    schema: &str,
+    table: &str,
+) -> AnalyzeResultSetPayload {
+    AnalyzeResultSetPayload {
+        connection_id: connection_id.into(),
+        tab_id: tab_id.into(),
+        request_id,
+        source: AnalyzeSource::Relation {
+            schema: schema.into(),
+            table: table.into(),
+        },
+        refresh_structure: false,
+    }
+}
+
+fn table(schema: &str, table: &str) -> MutationTable {
+    MutationTable {
+        schema: schema.into(),
+        table: table.into(),
+    }
+}
+
+fn value(column: &str, value: Option<&str>) -> MutationValue {
+    MutationValue {
+        column: column.into(),
+        value: value.map(str::to_owned),
+    }
+}
+
+async fn cleanup_schema(admin: &session_postgres::SessionConnection, schema: &str) {
+    admin
+        .client
+        .batch_execute(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        .await
+        .ok();
+}
+
+fn unique_schema() -> String {
+    format!("result_mutation_live_{}", uuid::Uuid::new_v4().simple())
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_analysis_matrix() {
+    let connection_id = "result-mutation-analysis";
+    let spec = live_spec(connection_id);
+    let manager = ResultMutationManager::new();
+    let lookup = empty_virtual_keys();
+
+    let single = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "single",
+                1,
+                "SELECT id, body, note, body_length FROM result_mutation_fixture.generated_identity",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("single-table analysis");
+    assert_eq!(single.statement, AnalysisStatement::Analyzed);
+    assert_eq!(single.tables.len(), 1);
+    assert_eq!(
+        single.tables[0].identity.kind,
+        MutationIdentityKind::PrimaryKey
+    );
+    assert!(single.tables[0].identity_projected);
+    assert_eq!(
+        single.columns[0].writability,
+        ColumnWritability::IdentityAlways
+    );
+    assert_eq!(single.columns[3].writability, ColumnWritability::Generated);
+    assert!(single
+        .columns
+        .iter()
+        .all(|column| matches!(column.origin, ColumnOrigin::Table { .. })));
+
+    let join = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "join",
+                1,
+                "SELECT g.id, g.body, a.id AS account_id, a.name FROM result_mutation_fixture.generated_identity g JOIN crm.accounts a ON true",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("join analysis");
+    assert_eq!(join.tables.len(), 2);
+    assert!(join.tables.iter().all(|table| table.updatable.allowed));
+    assert!(join.tables.iter().all(|table| !table.deletable.allowed));
+    assert!(join.tables.iter().all(|table| !table.insertable.allowed));
+    let crafted_join_insert = MutationPlan {
+        operations: vec![MutationOp::Insert {
+            table: table("result_mutation_fixture", "generated_identity"),
+            values: vec![value("body", Some("must-not-insert"))],
+        }],
+    };
+    let join_preview = manager
+        .preview(PreviewResultMutationsPayload {
+            connection_id: connection_id.into(),
+            tab_id: "join".into(),
+            analysis_id: join.analysis_id,
+            plan: crafted_join_insert.clone(),
+        })
+        .await;
+    assert_eq!(
+        join_preview,
+        Err(ResultMutationError::InvalidPlan {
+            reason: InvalidPlanReason::MultipleOriginTables
+        })
+    );
+    let join_apply = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "join".into(),
+                request_id: 2,
+                analysis_id: join.analysis_id,
+                plan: crafted_join_insert,
+            },
+        )
+        .await;
+    assert_eq!(
+        join_apply,
+        Err(ResultMutationError::InvalidPlan {
+            reason: InvalidPlanReason::MultipleOriginTables
+        })
+    );
+
+    let expressions = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "expressions",
+                1,
+                "SELECT id, upper(body) AS upper_body, count(*) OVER () AS total FROM result_mutation_fixture.generated_identity",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("expression analysis");
+    assert!(matches!(
+        expressions.columns[0].origin,
+        ColumnOrigin::Table { .. }
+    ));
+    assert!(matches!(
+        expressions.columns[1].origin,
+        ColumnOrigin::Expression
+    ));
+    assert!(matches!(
+        expressions.columns[2].origin,
+        ColumnOrigin::Expression
+    ));
+
+    let system = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "system",
+                1,
+                "SELECT ctid, xmin, * FROM result_mutation_fixture.generated_identity",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("system-column analysis");
+    assert_eq!(
+        system.columns[0].writability,
+        ColumnWritability::SystemColumn
+    );
+    assert_eq!(
+        system.columns[1].writability,
+        ColumnWritability::SystemColumn
+    );
+    assert!(matches!(
+        system.columns[0].origin,
+        ColumnOrigin::Table { attnum: -1, .. }
+    ));
+    assert!(matches!(
+        system.columns[1].origin,
+        ColumnOrigin::Table { attnum: -2, .. }
+    ));
+
+    let multiple = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "multiple",
+                1,
+                "SELECT id FROM result_mutation_fixture.generated_identity; SELECT 1",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("typed multi-statement result");
+    assert_eq!(
+        multiple.statement,
+        AnalysisStatement::NotAnalyzable {
+            reason: NotAnalyzableReason::MultiStatement
+        }
+    );
+
+    let relation = manager
+        .analyze(
+            spec.clone(),
+            relation_payload(
+                connection_id,
+                "relation",
+                1,
+                "result_mutation_fixture",
+                "generated_identity",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("relation analysis");
+    assert_eq!(relation.columns.len(), 4);
+    assert!(relation.tables[0].insertable.allowed);
+
+    let shadow = session_postgres::connect(&spec)
+        .await
+        .expect("shadow connection");
+    shadow
+        .client
+        .batch_execute(
+            "CREATE TEMP TABLE generated_identity (id bigint PRIMARY KEY, body text, note text, body_length integer)",
+        )
+        .await
+        .expect("create temp shadow");
+    let shadowed = manager
+        .analyze(
+            spec,
+            statement_payload(
+                connection_id,
+                "shadow",
+                1,
+                "SELECT id, body FROM result_mutation_fixture.generated_identity",
+            ),
+            lookup,
+        )
+        .await
+        .expect("typed shadowing result");
+    assert_eq!(
+        shadowed.statement,
+        AnalysisStatement::NotAnalyzable {
+            reason: NotAnalyzableReason::PossibleTempShadowing
+        }
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_virtual_key_drift_and_analysis_expiry() {
+    let connection_id = "result-mutation-virtual-key";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {schema}; CREATE TABLE {schema}.rows (claimed_key text NOT NULL, body text NOT NULL); INSERT INTO {schema}.rows VALUES ('one', 'body')"
+        ))
+        .await
+        .expect("fixture schema");
+
+    let manager = ResultMutationManager::new();
+    let key_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("virtual-key database");
+    sqlx::query(
+        "CREATE TABLE virtual_keys (
+           connection_id TEXT NOT NULL,
+           schema TEXT NOT NULL,
+           table_name TEXT NOT NULL,
+           virtual_key TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           PRIMARY KEY (connection_id, schema, table_name)
+         )",
+    )
+    .execute(&key_pool)
+    .await
+    .expect("virtual-key table");
+    let saved_key = VirtualKey {
+        version: storage::VIRTUAL_KEY_VERSION,
+        columns: vec!["claimed_key".into()],
+    };
+    storage::upsert_virtual_key(&key_pool, connection_id, &schema, "rows", &saved_key)
+        .await
+        .expect("save virtual key");
+    assert_eq!(
+        storage::read_virtual_key(&key_pool, connection_id, &schema, "rows")
+            .await
+            .expect("load virtual key"),
+        Some(saved_key)
+    );
+    let lookup_pool = key_pool.clone();
+    let lookup: VirtualKeyLookup = Arc::new(move |connection_id, schema, table| {
+        let pool = lookup_pool.clone();
+        Box::pin(async move {
+            storage::read_virtual_key(&pool, &connection_id, &schema, &table)
+                .await
+                .map_err(|_| ResultMutationError::ConnectionLost)
+        })
+    });
+    let first = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "virtual",
+                1,
+                format!("SELECT claimed_key, body FROM {schema}.rows"),
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("virtual-key analysis");
+    assert_eq!(
+        first.tables[0].identity.kind,
+        MutationIdentityKind::VirtualKey
+    );
+    assert!(first.tables[0].updatable.allowed);
+
+    admin
+        .client
+        .batch_execute(&format!(
+            "ALTER TABLE {schema}.rows DROP COLUMN claimed_key"
+        ))
+        .await
+        .expect("drop virtual-key column");
+    let mut drift = statement_payload(
+        connection_id,
+        "virtual",
+        2,
+        format!("SELECT body FROM {schema}.rows"),
+    );
+    drift.refresh_structure = true;
+    let drift = manager
+        .analyze(spec.clone(), drift, lookup.clone())
+        .await
+        .expect("stale virtual key is classified");
+    assert_eq!(
+        drift.tables[0].updatable.reason,
+        Some(CapabilityReason::InvalidVirtualKey)
+    );
+    assert!(!drift.tables[0].updatable.allowed);
+    storage::clear_virtual_key(&key_pool, connection_id, &schema, "rows")
+        .await
+        .expect("clear virtual key");
+    assert_eq!(
+        storage::read_virtual_key(&key_pool, connection_id, &schema, "rows")
+            .await
+            .expect("load cleared virtual key"),
+        None
+    );
+
+    let expiry_tab = "expiry";
+    let oldest = manager
+        .analyze(
+            spec.clone(),
+            relation_payload(
+                connection_id,
+                expiry_tab,
+                1,
+                "result_mutation_fixture",
+                "generated_identity",
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("oldest analysis");
+    for request_id in 2..=17 {
+        manager
+            .analyze(
+                spec.clone(),
+                relation_payload(
+                    connection_id,
+                    expiry_tab,
+                    request_id,
+                    "result_mutation_fixture",
+                    "generated_identity",
+                ),
+                empty_virtual_keys(),
+            )
+            .await
+            .expect("fill analysis cache");
+    }
+    let expired = manager
+        .preview(PreviewResultMutationsPayload {
+            connection_id: connection_id.into(),
+            tab_id: expiry_tab.into(),
+            analysis_id: oldest.analysis_id,
+            plan: MutationPlan {
+                operations: Vec::new(),
+            },
+        })
+        .await;
+    assert_eq!(expired, Err(ResultMutationError::AnalysisExpired));
+
+    cleanup_schema(&admin, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_catalog_drift_expires_before_dml() {
+    let connection_id = "result-mutation-catalog-drift";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {schema};
+             CREATE TABLE {schema}.rows (
+               id integer PRIMARY KEY,
+               body text NOT NULL DEFAULT 'default-body'
+             );
+             INSERT INTO {schema}.rows (id, body) VALUES (1, 'before')"
+        ))
+        .await
+        .expect("fixture schema");
+    let manager = ResultMutationManager::new();
+
+    let type_analysis = manager
+        .analyze(
+            spec.clone(),
+            relation_payload(connection_id, "type-drift", 1, &schema, "rows"),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("type analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "ALTER TABLE {schema}.rows ALTER COLUMN body TYPE varchar(40)"
+        ))
+        .await
+        .expect("alter type");
+    let type_drift = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "type-drift".into(),
+                request_id: 2,
+                analysis_id: type_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "rows"),
+                        identity: vec![value("id", Some("1"))],
+                        guards: vec![value("body", Some("before"))],
+                        set: vec![value("body", Some("must-not-write"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(type_drift, Err(ResultMutationError::AnalysisExpired));
+
+    let oid_analysis = manager
+        .analyze(
+            spec.clone(),
+            relation_payload(connection_id, "oid-drift", 1, &schema, "rows"),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("oid analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "DROP TABLE {schema}.rows;
+             CREATE TABLE {schema}.rows (
+               id integer PRIMARY KEY,
+               body varchar(40) NOT NULL DEFAULT 'default-body'
+             );
+             INSERT INTO {schema}.rows (id, body) VALUES (1, 'before')"
+        ))
+        .await
+        .expect("drop and recreate table");
+    let oid_drift = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "oid-drift".into(),
+                request_id: 2,
+                analysis_id: oid_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "rows"),
+                        identity: vec![value("id", Some("1"))],
+                        guards: vec![value("body", Some("before"))],
+                        set: vec![value("body", Some("must-not-write"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(oid_drift, Err(ResultMutationError::AnalysisExpired));
+
+    let default_analysis = manager
+        .analyze(
+            spec.clone(),
+            relation_payload(connection_id, "default-drift", 1, &schema, "rows"),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("default analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "ALTER TABLE {schema}.rows ALTER COLUMN body SET DEFAULT 'changed-default'"
+        ))
+        .await
+        .expect("alter default");
+    let default_drift = manager
+        .apply(
+            spec,
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "default-drift".into(),
+                request_id: 2,
+                analysis_id: default_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Insert {
+                        table: table(&schema, "rows"),
+                        values: vec![value("id", Some("2"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(default_drift, Err(ResultMutationError::AnalysisExpired));
+    let count: i64 = admin
+        .client
+        .query_one(&format!("SELECT count(*) FROM {schema}.rows"), &[])
+        .await
+        .expect("no drifted DML")
+        .get(0);
+    assert_eq!(count, 1);
+
+    let identity_analysis = manager
+        .analyze(
+            live_spec(connection_id),
+            relation_payload(connection_id, "identity-drift", 1, &schema, "rows"),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("identity analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "ALTER TABLE {schema}.rows DROP CONSTRAINT rows_pkey;
+             ALTER TABLE {schema}.rows ADD PRIMARY KEY (id)"
+        ))
+        .await
+        .expect("replace identity index");
+    let identity_drift = manager
+        .apply(
+            live_spec(connection_id),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "identity-drift".into(),
+                request_id: 2,
+                analysis_id: identity_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "rows"),
+                        identity: vec![value("id", Some("1"))],
+                        guards: vec![value("body", Some("before"))],
+                        set: vec![value("body", Some("must-not-write"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(identity_drift, Err(ResultMutationError::AnalysisExpired));
+
+    cleanup_schema(&admin, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() {
+    let connection_id = "result-mutation-apply";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {schema};
+             CREATE TABLE {schema}.rows (id integer PRIMARY KEY, body text NOT NULL, note text DEFAULT 'default-note');
+             INSERT INTO {schema}.rows VALUES (1, 'alpha', 'note-a'), (2, 'beta', 'note-b'), (3, 'gamma', 'note-c');
+             CREATE TABLE {schema}.generated_rows (
+               id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+               body text NOT NULL,
+               note text DEFAULT 'default-note',
+               body_length integer GENERATED ALWAYS AS (length(body)) STORED
+             )"
+        ))
+        .await
+        .expect("fixture schema");
+
+    let manager = ResultMutationManager::new();
+    let analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "apply",
+                1,
+                format!("SELECT id, body, note FROM {schema}.rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("analysis");
+    let update = MutationOp::Update {
+        table: table(&schema, "rows"),
+        identity: vec![value("id", Some("1"))],
+        guards: vec![value("body", Some("alpha"))],
+        set: vec![value("body", Some("alpha-updated"))],
+    };
+    let preview = manager
+        .preview(PreviewResultMutationsPayload {
+            connection_id: connection_id.into(),
+            tab_id: "apply".into(),
+            analysis_id: analysis.analysis_id,
+            plan: MutationPlan {
+                operations: vec![update.clone()],
+            },
+        })
+        .await
+        .expect("preview");
+    assert_eq!(
+        preview.statements[0].sql,
+        format!(
+            "UPDATE \"{schema}\".\"rows\" SET \"body\" = ($1::text)::text WHERE \"id\" = ($2::text)::integer AND \"body\" = ($3::text)::text"
+        )
+    );
+    assert_eq!(
+        preview.statements[0].params,
+        vec![
+            DmlParam::Text {
+                value: Some("alpha-updated".into())
+            },
+            DmlParam::Text {
+                value: Some("1".into())
+            },
+            DmlParam::Text {
+                value: Some("alpha".into())
+            }
+        ]
+    );
+
+    admin
+        .client
+        .batch_execute("SET enable_seqscan = off")
+        .await
+        .expect("prefer index plan");
+    let explain_sql = format!("EXPLAIN (COSTS OFF) {}", preview.statements[0].sql);
+    let explain = admin
+        .client
+        .query(
+            &explain_sql,
+            &[
+                &Some("alpha-updated".to_string()) as &(dyn ToSql + Sync),
+                &Some("1".to_string()),
+                &Some("alpha".to_string()),
+            ],
+        )
+        .await
+        .expect("explain guarded update")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(explain.contains("Index Scan"));
+    assert!(!explain.contains("Seq Scan"));
+
+    let happy_plan = MutationPlan {
+        operations: vec![
+            update,
+            MutationOp::Insert {
+                table: table(&schema, "rows"),
+                values: vec![value("id", Some("4")), value("body", Some("inserted"))],
+            },
+            MutationOp::Delete {
+                table: table(&schema, "rows"),
+                identity: vec![value("id", Some("2"))],
+                guards: vec![
+                    value("id", Some("2")),
+                    value("body", Some("beta")),
+                    value("note", Some("note-b")),
+                ],
+            },
+            MutationOp::Insert {
+                table: table(&schema, "rows"),
+                values: vec![value("id", Some("5")), value("body", Some("alpha"))],
+            },
+        ],
+    };
+    let applied = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "apply".into(),
+                request_id: 2,
+                analysis_id: analysis.analysis_id,
+                plan: happy_plan,
+            },
+        )
+        .await
+        .expect("happy-path apply");
+    assert_eq!(
+        applied
+            .operations
+            .iter()
+            .map(|operation| operation.rows_affected)
+            .collect::<Vec<_>>(),
+        vec![1, 1, 1, 1]
+    );
+
+    let conflict_analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "conflict",
+                1,
+                format!("SELECT id, body, note FROM {schema}.rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("conflict analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "UPDATE {schema}.rows SET body = 'concurrent' WHERE id = 3"
+        ))
+        .await
+        .expect("concurrent update");
+    let conflict = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "conflict".into(),
+                request_id: 2,
+                analysis_id: conflict_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![
+                        MutationOp::Update {
+                            table: table(&schema, "rows"),
+                            identity: vec![value("id", Some("1"))],
+                            guards: vec![value("body", Some("alpha-updated"))],
+                            set: vec![value("body", Some("must-roll-back"))],
+                        },
+                        MutationOp::Update {
+                            table: table(&schema, "rows"),
+                            identity: vec![value("id", Some("3"))],
+                            guards: vec![value("body", Some("gamma"))],
+                            set: vec![value("body", Some("must-conflict"))],
+                        },
+                    ],
+                },
+            },
+        )
+        .await;
+    assert_eq!(conflict, Err(ResultMutationError::Conflict { op_index: 1 }));
+    let rolled_back: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("rollback proof")
+        .get(0);
+    assert_eq!(rolled_back, "alpha-updated");
+
+    let delete_analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "delete-conflict",
+                1,
+                format!("SELECT id, body, note FROM {schema}.rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("delete analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "UPDATE {schema}.rows SET note = 'changed' WHERE id = 5"
+        ))
+        .await
+        .expect("concurrent delete guard change");
+    let delete_conflict = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "delete-conflict".into(),
+                request_id: 2,
+                analysis_id: delete_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Delete {
+                        table: table(&schema, "rows"),
+                        identity: vec![value("id", Some("5"))],
+                        guards: vec![
+                            value("id", Some("5")),
+                            value("body", Some("alpha")),
+                            value("note", Some("default-note")),
+                        ],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(
+        delete_conflict,
+        Err(ResultMutationError::Conflict { op_index: 0 })
+    );
+
+    let generated = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "generated",
+                1,
+                format!("SELECT id, body, note, body_length FROM {schema}.generated_rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("generated analysis");
+    let generated_rejection = manager
+        .preview(PreviewResultMutationsPayload {
+            connection_id: connection_id.into(),
+            tab_id: "generated".into(),
+            analysis_id: generated.analysis_id,
+            plan: MutationPlan {
+                operations: vec![MutationOp::Insert {
+                    table: table(&schema, "generated_rows"),
+                    values: vec![value("body_length", Some("9"))],
+                }],
+            },
+        })
+        .await;
+    assert_eq!(
+        generated_rejection,
+        Err(ResultMutationError::InvalidPlan {
+            reason: InvalidPlanReason::GeneratedColumn
+        })
+    );
+    let defaults_plan = MutationPlan {
+        operations: vec![MutationOp::Insert {
+            table: table(&schema, "generated_rows"),
+            values: vec![value("body", Some("defaults"))],
+        }],
+    };
+    let defaults_preview = manager
+        .preview(PreviewResultMutationsPayload {
+            connection_id: connection_id.into(),
+            tab_id: "generated".into(),
+            analysis_id: generated.analysis_id,
+            plan: defaults_plan.clone(),
+        })
+        .await
+        .expect("default omission preview");
+    assert_eq!(
+        defaults_preview.statements[0].sql,
+        format!("INSERT INTO \"{schema}\".\"generated_rows\" (\"body\") VALUES (($1::text)::text)")
+    );
+    manager
+        .apply(
+            spec,
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "generated".into(),
+                request_id: 2,
+                analysis_id: generated.analysis_id,
+                plan: defaults_plan,
+            },
+        )
+        .await
+        .expect("default omission apply");
+    let generated_row = admin
+        .client
+        .query_one(
+            &format!(
+                "SELECT id > 0, note, body_length FROM {schema}.generated_rows WHERE body = 'defaults'"
+            ),
+            &[],
+        )
+        .await
+        .expect("generated/default values");
+    assert!(generated_row.get::<_, bool>(0));
+    assert_eq!(generated_row.get::<_, String>(1), "default-note");
+    assert_eq!(generated_row.get::<_, i32>(2), 8);
+
+    cleanup_schema(&admin, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
+    let connection_id = "result-mutation-guards";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {schema};
+             CREATE TABLE {schema}.duplicates (claimed_key text NOT NULL, body text NOT NULL);
+             INSERT INTO {schema}.duplicates VALUES ('duplicate', 'same'), ('duplicate', 'same');
+             CREATE TABLE {schema}.heap_rows (body text NOT NULL);
+             INSERT INTO {schema}.heap_rows VALUES ('before');
+             CREATE TABLE {schema}.locked_rows (id integer PRIMARY KEY, body text NOT NULL);
+             INSERT INTO {schema}.locked_rows VALUES (1, 'before')"
+        ))
+        .await
+        .expect("fixture schema");
+    let manager = ResultMutationManager::new();
+
+    let keys = Arc::new(Mutex::new(HashMap::new()));
+    keys.lock().await.insert(
+        (connection_id.into(), schema.clone(), "duplicates".into()),
+        VirtualKey {
+            version: 1,
+            columns: vec!["claimed_key".into()],
+        },
+    );
+    let duplicate_analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "duplicates",
+                1,
+                format!("SELECT claimed_key, body FROM {schema}.duplicates"),
+            ),
+            virtual_key_lookup(keys),
+        )
+        .await
+        .expect("virtual-key analysis");
+    let not_unique = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "duplicates".into(),
+                request_id: 2,
+                analysis_id: duplicate_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "duplicates"),
+                        identity: vec![value("claimed_key", Some("duplicate"))],
+                        guards: vec![
+                            value("claimed_key", Some("duplicate")),
+                            value("body", Some("same")),
+                        ],
+                        set: vec![value("body", Some("changed"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(
+        not_unique,
+        Err(ResultMutationError::IdentityNotUnique { op_index: 0 })
+    );
+    let unchanged: i64 = admin
+        .client
+        .query_one(
+            &format!("SELECT count(*) FROM {schema}.duplicates WHERE body = 'same'"),
+            &[],
+        )
+        .await
+        .expect("identity rollback")
+        .get(0);
+    assert_eq!(unchanged, 2);
+
+    let ctid_analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "ctid",
+                1,
+                format!("SELECT ctid, body FROM {schema}.heap_rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("ctid analysis");
+    assert_eq!(
+        ctid_analysis.tables[0].identity.kind,
+        MutationIdentityKind::CtidFallback
+    );
+    let ctid: String = admin
+        .client
+        .query_one(&format!("SELECT ctid::text FROM {schema}.heap_rows"), &[])
+        .await
+        .expect("ctid")
+        .get(0);
+    manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "ctid".into(),
+                request_id: 2,
+                analysis_id: ctid_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "heap_rows"),
+                        identity: vec![value("ctid", Some(&ctid))],
+                        guards: vec![value("ctid", Some(&ctid)), value("body", Some("before"))],
+                        set: vec![value("body", Some("after"))],
+                    }],
+                },
+            },
+        )
+        .await
+        .expect("ctid update");
+    let current_ctid: String = admin
+        .client
+        .query_one(&format!("SELECT ctid::text FROM {schema}.heap_rows"), &[])
+        .await
+        .expect("current ctid")
+        .get(0);
+    admin
+        .client
+        .batch_execute(&format!(
+            "UPDATE {schema}.heap_rows SET body = 'concurrent'"
+        ))
+        .await
+        .expect("concurrent heap update");
+    let stale_ctid = manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "ctid".into(),
+                request_id: 3,
+                analysis_id: ctid_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "heap_rows"),
+                        identity: vec![value("ctid", Some(&current_ctid))],
+                        guards: vec![
+                            value("ctid", Some(&current_ctid)),
+                            value("body", Some("after")),
+                        ],
+                        set: vec![value("body", Some("must-not-write"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    assert_eq!(
+        stale_ctid,
+        Err(ResultMutationError::Conflict { op_index: 0 })
+    );
+
+    let lock_analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "lock",
+                1,
+                format!("SELECT id, body FROM {schema}.locked_rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("lock analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "BEGIN; UPDATE {schema}.locked_rows SET body = 'held' WHERE id = 1"
+        ))
+        .await
+        .expect("hold row lock");
+    let lock_timeout = manager
+        .apply(
+            spec,
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "lock".into(),
+                request_id: 2,
+                analysis_id: lock_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "locked_rows"),
+                        identity: vec![value("id", Some("1"))],
+                        guards: vec![value("body", Some("before"))],
+                        set: vec![value("body", Some("after"))],
+                    }],
+                },
+            },
+        )
+        .await;
+    admin.client.batch_execute("ROLLBACK").await.ok();
+    assert_eq!(
+        lock_timeout,
+        Err(ResultMutationError::LockTimeout { op_index: 0 })
+    );
+
+    cleanup_schema(&admin, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
+    let connection_id = "result-mutation-cancel";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {schema};
+             CREATE TABLE {schema}.rows (id integer PRIMARY KEY, body text NOT NULL);
+             INSERT INTO {schema}.rows VALUES (1, 'before');
+             CREATE FUNCTION {schema}.delay_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN PERFORM pg_sleep(30); RETURN NEW; END $$;
+             CREATE TRIGGER delay_mutation BEFORE UPDATE ON {schema}.rows
+             FOR EACH ROW EXECUTE FUNCTION {schema}.delay_mutation()"
+        ))
+        .await
+        .expect("fixture schema");
+    let manager = ResultMutationManager::new();
+    let analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "cancel",
+                1,
+                format!("SELECT id, body FROM {schema}.rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("cancel analysis");
+    let payload = ApplyResultMutationsPayload {
+        connection_id: connection_id.into(),
+        tab_id: "cancel".into(),
+        request_id: 2,
+        analysis_id: analysis.analysis_id,
+        plan: MutationPlan {
+            operations: vec![MutationOp::Update {
+                table: table(&schema, "rows"),
+                identity: vec![value("id", Some("1"))],
+                guards: vec![value("body", Some("before"))],
+                set: vec![value("body", Some("cancelled"))],
+            }],
+        },
+    };
+    let apply_manager = manager.clone();
+    let apply_spec = spec.clone();
+    let apply = tokio::spawn(async move { apply_manager.apply(apply_spec, payload).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let cancelled = manager.cancel_tab(connection_id, "cancel").await;
+    assert!(cancelled.cancel_requested);
+    assert_eq!(
+        apply.await.expect("cancel task"),
+        Err(ResultMutationError::Cancelled)
+    );
+    let unchanged: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("cancel rollback")
+        .get(0);
+    assert_eq!(unchanged, "before");
+
+    admin
+        .client
+        .batch_execute(&format!("DROP TRIGGER delay_mutation ON {schema}.rows"))
+        .await
+        .expect("remove delay trigger");
+    manager
+        .apply(
+            spec.clone(),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "cancel".into(),
+                request_id: 3,
+                analysis_id: analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "rows"),
+                        identity: vec![value("id", Some("1"))],
+                        guards: vec![value("body", Some("before"))],
+                        set: vec![value("body", Some("recovered"))],
+                    }],
+                },
+            },
+        )
+        .await
+        .expect("socket usable after cancellation");
+
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE CONSTRAINT TRIGGER delay_mutation AFTER UPDATE ON {schema}.rows
+             DEFERRABLE INITIALLY DEFERRED
+             FOR EACH ROW EXECUTE FUNCTION {schema}.delay_mutation()"
+        ))
+        .await
+        .expect("install deferred commit trigger");
+    let teardown_analysis = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "teardown",
+                1,
+                format!("SELECT id, body FROM {schema}.rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("teardown analysis");
+    let teardown_payload = ApplyResultMutationsPayload {
+        connection_id: connection_id.into(),
+        tab_id: "teardown".into(),
+        request_id: 2,
+        analysis_id: teardown_analysis.analysis_id,
+        plan: MutationPlan {
+            operations: vec![MutationOp::Update {
+                table: table(&schema, "rows"),
+                identity: vec![value("id", Some("1"))],
+                guards: vec![value("body", Some("recovered"))],
+                set: vec![value("body", Some("teardown"))],
+            }],
+        },
+    };
+    let teardown_manager = manager.clone();
+    let teardown_spec = spec.clone();
+    let teardown_apply = tokio::spawn(async move {
+        teardown_manager
+            .apply(teardown_spec, teardown_payload)
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    manager.begin_connection_teardown(connection_id).await;
+    assert_eq!(
+        teardown_apply.await.expect("teardown task"),
+        Err(ResultMutationError::ConnectionClosing)
+    );
+    manager.end_connection_teardown(connection_id).await;
+    let after_teardown: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("teardown rollback")
+        .get(0);
+    assert_eq!(after_teardown, "recovered");
+
+    admin
+        .client
+        .batch_execute(&format!("DROP TRIGGER delay_mutation ON {schema}.rows"))
+        .await
+        .expect("remove teardown trigger");
+    let recovered_analysis = manager
+        .analyze(
+            spec,
+            statement_payload(
+                connection_id,
+                "recovered",
+                1,
+                format!("SELECT id, body FROM {schema}.rows"),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("manager usable after teardown fence");
+    assert_eq!(recovered_analysis.statement, AnalysisStatement::Analyzed);
+
+    cleanup_schema(&admin, &schema).await;
+}

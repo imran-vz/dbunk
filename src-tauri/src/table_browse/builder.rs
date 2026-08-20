@@ -1,11 +1,12 @@
+use crate::postgres::identity::{
+    resolve_identity, RelationIdentityKind, UniqueIndexCandidate, CTID_COLUMN, TABLEOID_COLUMN,
+};
 use crate::quote_double;
 use crate::MAX_TABLE_PAGE_SIZE;
 
 use super::protocol::*;
 
-pub(crate) const CTID_COLUMN: &str = "ctid";
 pub(crate) const CTID_CAST_TYPE: &str = "tid";
-pub(crate) const TABLEOID_COLUMN: &str = "tableoid";
 pub(crate) const TABLEOID_CAST_TYPE: &str = "oid";
 pub(crate) const CTID_KEYSET_VERSION: i32 = 140000;
 
@@ -14,12 +15,6 @@ pub(crate) struct RelationColumn {
     pub name: String,
     pub cast_type: String,
     pub nullable: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UniqueIndexCandidate {
-    pub name: String,
-    pub columns: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,40 +34,15 @@ impl RelationDescriptor {
     }
 
     pub(crate) fn identity(&self) -> BrowseIdentity {
-        if !self.primary_key.is_empty() {
-            return BrowseIdentity {
-                kind: BrowseIdentityKind::PrimaryKey,
-                columns: self.primary_key.clone(),
-            };
-        }
-        let mut indexes = self.unique_indexes.clone();
-        indexes.sort_by(|left, right| {
-            left.columns
-                .len()
-                .cmp(&right.columns.len())
-                .then_with(|| left.name.cmp(&right.name))
-        });
-        if let Some(index) = indexes.first() {
-            return BrowseIdentity {
-                kind: BrowseIdentityKind::UniqueIndex,
-                columns: index.columns.clone(),
-            };
-        }
-        if self.relkind == 'p' {
-            return BrowseIdentity {
-                kind: BrowseIdentityKind::Virtual,
-                columns: vec![TABLEOID_COLUMN.to_string(), CTID_COLUMN.to_string()],
-            };
-        }
-        if self.relkind == 'r' {
-            return BrowseIdentity {
-                kind: BrowseIdentityKind::Virtual,
-                columns: vec![CTID_COLUMN.to_string()],
-            };
-        }
+        let resolved = resolve_identity(self.relkind, &self.primary_key, &self.unique_indexes);
         BrowseIdentity {
-            kind: BrowseIdentityKind::None,
-            columns: Vec::new(),
+            kind: match resolved.kind {
+                RelationIdentityKind::PrimaryKey => BrowseIdentityKind::PrimaryKey,
+                RelationIdentityKind::UniqueIndex => BrowseIdentityKind::UniqueIndex,
+                RelationIdentityKind::CtidFallback => BrowseIdentityKind::Virtual,
+                RelationIdentityKind::None => BrowseIdentityKind::None,
+            },
+            columns: resolved.columns,
         }
     }
 
