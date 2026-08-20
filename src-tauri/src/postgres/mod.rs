@@ -13,6 +13,7 @@ mod admin;
 pub(crate) mod connect_spec;
 mod ddl;
 pub(crate) mod dedicated;
+pub(crate) mod identity;
 mod mutations;
 pub(crate) mod options;
 mod pool;

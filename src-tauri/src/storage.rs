@@ -4,7 +4,7 @@
 //! This module owns path resolution, pool setup, lightweight embedded
 //! migrations, and per-entity read/write helpers.
 
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fmt, fs, path::PathBuf, str::FromStr};
 
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
@@ -12,6 +12,7 @@ use sqlx::{
 };
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 
+use crate::result_mutation::protocol::VirtualKey;
 use crate::table_browse::protocol::TableGridPrefs;
 use crate::{
     ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
@@ -24,6 +25,53 @@ pub(crate) mod bastions;
 pub(crate) mod managed;
 
 const DB_FILE: &str = "dbunk.sqlite";
+pub(crate) const VIRTUAL_KEY_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum VirtualKeyValidationError {
+    UnsupportedVersion(u32),
+    EmptyIdentity,
+    DuplicateColumn,
+}
+
+impl fmt::Display for VirtualKeyValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedVersion(version) => {
+                write!(formatter, "Unsupported virtual key version {version}")
+            }
+            Self::EmptyIdentity => {
+                formatter.write_str("A virtual key must contain non-empty column names")
+            }
+            Self::DuplicateColumn => {
+                formatter.write_str("A virtual key cannot contain duplicate columns")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum VirtualKeyStorageError {
+    ConnectionNotFound,
+    UnsupportedEngine,
+    InvalidInput(VirtualKeyValidationError),
+    CorruptDocument(String),
+    Database(String),
+}
+
+impl fmt::Display for VirtualKeyStorageError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConnectionNotFound => formatter.write_str("Connection not found"),
+            Self::UnsupportedEngine => formatter.write_str("Unsupported database engine"),
+            Self::InvalidInput(error) => error.fmt(formatter),
+            Self::CorruptDocument(error) => {
+                write!(formatter, "Invalid stored virtual key: {error}")
+            }
+            Self::Database(error) => error.fmt(formatter),
+        }
+    }
+}
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -303,6 +351,21 @@ CREATE TABLE table_grid_prefs (
   schema        TEXT NOT NULL,
   table_name    TEXT NOT NULL,
   prefs         TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  PRIMARY KEY (connection_id, schema, table_name)
+);
+"#,
+    ),
+    (
+        14,
+        // ADR-0023: user-selected ordered column sets for relations whose
+        // catalog identity cannot safely identify the projected result.
+        r#"
+CREATE TABLE virtual_keys (
+  connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  schema        TEXT NOT NULL,
+  table_name    TEXT NOT NULL,
+  virtual_key   TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (connection_id, schema, table_name)
 );
@@ -1092,6 +1155,152 @@ pub async fn upsert_table_grid_prefs(
     Ok(())
 }
 
+pub async fn read_virtual_key(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Option<VirtualKey>, VirtualKeyStorageError> {
+    let row = sqlx::query(
+        "SELECT virtual_key
+         FROM virtual_keys
+         WHERE connection_id = ? AND schema = ? AND table_name = ?",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(table)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| VirtualKeyStorageError::Database(error.to_string()))?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let json: String = row.get("virtual_key");
+    let virtual_key = serde_json::from_str(&json)
+        .map_err(|error| VirtualKeyStorageError::CorruptDocument(error.to_string()))?;
+    validate_virtual_key(&virtual_key)
+        .map_err(|error| VirtualKeyStorageError::CorruptDocument(error.to_string()))?;
+    Ok(Some(virtual_key))
+}
+
+pub async fn read_postgres_virtual_key(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+) -> Result<Option<VirtualKey>, VirtualKeyStorageError> {
+    ensure_postgres_virtual_key_connection(pool, connection_id).await?;
+    read_virtual_key(pool, connection_id, schema, table).await
+}
+
+pub async fn upsert_virtual_key(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+    virtual_key: &VirtualKey,
+) -> Result<(), VirtualKeyStorageError> {
+    validate_virtual_key(virtual_key).map_err(VirtualKeyStorageError::InvalidInput)?;
+    let json = serde_json::to_string(virtual_key)
+        .map_err(|error| VirtualKeyStorageError::Database(error.to_string()))?;
+    sqlx::query(
+        "INSERT INTO virtual_keys (connection_id, schema, table_name, virtual_key, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(connection_id, schema, table_name) DO UPDATE SET
+            virtual_key = excluded.virtual_key,
+            updated_at = excluded.updated_at",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(table)
+    .bind(json)
+    .bind(now())
+    .execute(pool)
+    .await
+    .map_err(|error| VirtualKeyStorageError::Database(error.to_string()))?;
+    Ok(())
+}
+
+pub async fn upsert_postgres_virtual_key(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+    virtual_key: &VirtualKey,
+) -> Result<(), VirtualKeyStorageError> {
+    ensure_postgres_virtual_key_connection(pool, connection_id).await?;
+    upsert_virtual_key(pool, connection_id, schema, table, virtual_key).await
+}
+
+pub async fn clear_virtual_key(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+) -> Result<(), VirtualKeyStorageError> {
+    sqlx::query(
+        "DELETE FROM virtual_keys
+         WHERE connection_id = ? AND schema = ? AND table_name = ?",
+    )
+    .bind(connection_id)
+    .bind(schema)
+    .bind(table)
+    .execute(pool)
+    .await
+    .map_err(|error| VirtualKeyStorageError::Database(error.to_string()))?;
+    Ok(())
+}
+
+pub async fn clear_postgres_virtual_key(
+    pool: &SqlitePool,
+    connection_id: &str,
+    schema: &str,
+    table: &str,
+) -> Result<(), VirtualKeyStorageError> {
+    ensure_postgres_virtual_key_connection(pool, connection_id).await?;
+    clear_virtual_key(pool, connection_id, schema, table).await
+}
+
+async fn ensure_postgres_virtual_key_connection(
+    pool: &SqlitePool,
+    connection_id: &str,
+) -> Result<(), VirtualKeyStorageError> {
+    let engine: Option<(String,)> = sqlx::query_as("SELECT engine FROM connections WHERE id = ?")
+        .bind(connection_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| VirtualKeyStorageError::Database(error.to_string()))?;
+    let Some((engine,)) = engine else {
+        return Err(VirtualKeyStorageError::ConnectionNotFound);
+    };
+    let engine = DatabaseEngine::from_str(&engine).map_err(VirtualKeyStorageError::Database)?;
+    if engine != DatabaseEngine::PostgreSQL {
+        return Err(VirtualKeyStorageError::UnsupportedEngine);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_virtual_key(
+    virtual_key: &VirtualKey,
+) -> Result<(), VirtualKeyValidationError> {
+    if virtual_key.version != VIRTUAL_KEY_VERSION {
+        return Err(VirtualKeyValidationError::UnsupportedVersion(
+            virtual_key.version,
+        ));
+    }
+    if virtual_key.columns.is_empty() || virtual_key.columns.iter().any(String::is_empty) {
+        return Err(VirtualKeyValidationError::EmptyIdentity);
+    }
+    let unique_columns = virtual_key
+        .columns
+        .iter()
+        .collect::<std::collections::HashSet<_>>();
+    if unique_columns.len() != virtual_key.columns.len() {
+        return Err(VirtualKeyValidationError::DuplicateColumn);
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // SQLite credentials
 // ---------------------------------------------------------------------------
@@ -1534,6 +1743,15 @@ mod tests {
         })
     }
 
+    async fn set_connection_engine(pool: &SqlitePool, connection_id: &str, engine: &str) {
+        sqlx::query("UPDATE connections SET engine = ? WHERE id = ?")
+            .bind(engine)
+            .bind(connection_id)
+            .execute(pool)
+            .await
+            .expect("set connection engine");
+    }
+
     fn bastion(id: &str) -> BastionServer {
         let timestamp = now();
         BastionServer {
@@ -1818,6 +2036,293 @@ mod tests {
         assert_eq!(loaded.0["version"], 1);
         assert_eq!(loaded.0["pageSize"], 50);
         assert_eq!(loaded.0["filterHistory"].as_array().unwrap().len(), 20);
+    }
+
+    #[tokio::test]
+    async fn virtual_key_migration_is_applied() {
+        let pool = test_pool().await;
+        let migration: (i64,) =
+            sqlx::query_as("SELECT version FROM schema_migrations WHERE version = 14")
+                .fetch_one(&pool)
+                .await
+                .expect("migration 14");
+        let table: (String,) = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'virtual_keys'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("virtual_keys table");
+        assert_eq!(migration.0, 14);
+        assert_eq!(table.0, "virtual_keys");
+    }
+
+    #[tokio::test]
+    async fn virtual_key_round_trip_preserves_order_and_clear_removes_it() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        assert_eq!(
+            read_postgres_virtual_key(&pool, "conn-1", "public", "users")
+                .await
+                .expect("missing"),
+            None
+        );
+
+        let virtual_key = VirtualKey {
+            version: 1,
+            columns: vec!["tenant_id".to_string(), "email".to_string()],
+        };
+        upsert_postgres_virtual_key(&pool, "conn-1", "public", "users", &virtual_key)
+            .await
+            .expect("save");
+        assert_eq!(
+            read_postgres_virtual_key(&pool, "conn-1", "public", "users")
+                .await
+                .expect("load"),
+            Some(virtual_key)
+        );
+
+        let replacement = VirtualKey {
+            version: VIRTUAL_KEY_VERSION,
+            columns: vec!["email".to_string(), "tenant_id".to_string()],
+        };
+        upsert_postgres_virtual_key(&pool, "conn-1", "public", "users", &replacement)
+            .await
+            .expect("replace");
+        assert_eq!(
+            read_postgres_virtual_key(&pool, "conn-1", "public", "users")
+                .await
+                .expect("load replacement"),
+            Some(replacement)
+        );
+
+        clear_postgres_virtual_key(&pool, "conn-1", "public", "users")
+            .await
+            .expect("clear");
+        assert_eq!(
+            read_postgres_virtual_key(&pool, "conn-1", "public", "users")
+                .await
+                .expect("cleared"),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn read_virtual_key_rejects_every_non_postgres_engine() {
+        let pool = test_pool().await;
+        for engine in ["MySQL", "SQLite", "ClickHouse", "Redis"] {
+            let connection_id = format!("read-{engine}");
+            upsert_connection(&pool, &connection(&connection_id))
+                .await
+                .expect("connection");
+            upsert_virtual_key(
+                &pool,
+                &connection_id,
+                "public",
+                "users",
+                &VirtualKey {
+                    version: VIRTUAL_KEY_VERSION,
+                    columns: vec!["id".to_string()],
+                },
+            )
+            .await
+            .expect("seed virtual key");
+            set_connection_engine(&pool, &connection_id, engine).await;
+
+            assert_eq!(
+                read_postgres_virtual_key(&pool, &connection_id, "public", "users")
+                    .await
+                    .expect_err("non-Postgres load must fail"),
+                VirtualKeyStorageError::UnsupportedEngine
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_virtual_key_rejects_every_non_postgres_engine_without_overwriting() {
+        let pool = test_pool().await;
+        let original = VirtualKey {
+            version: VIRTUAL_KEY_VERSION,
+            columns: vec!["id".to_string()],
+        };
+        let replacement = VirtualKey {
+            version: VIRTUAL_KEY_VERSION,
+            columns: vec!["email".to_string()],
+        };
+        for engine in ["MySQL", "SQLite", "ClickHouse", "Redis"] {
+            let connection_id = format!("save-{engine}");
+            upsert_connection(&pool, &connection(&connection_id))
+                .await
+                .expect("connection");
+            upsert_virtual_key(&pool, &connection_id, "public", "users", &original)
+                .await
+                .expect("seed virtual key");
+            set_connection_engine(&pool, &connection_id, engine).await;
+
+            assert_eq!(
+                upsert_postgres_virtual_key(
+                    &pool,
+                    &connection_id,
+                    "public",
+                    "users",
+                    &replacement,
+                )
+                    .await
+                    .expect_err("non-Postgres save must fail"),
+                VirtualKeyStorageError::UnsupportedEngine
+            );
+            let stored: (String,) = sqlx::query_as(
+                "SELECT virtual_key FROM virtual_keys
+                 WHERE connection_id = ? AND schema = ? AND table_name = ?",
+            )
+            .bind(&connection_id)
+            .bind("public")
+            .bind("users")
+            .fetch_one(&pool)
+            .await
+            .expect("stored virtual key");
+            assert_eq!(
+                serde_json::from_str::<VirtualKey>(&stored.0).expect("valid stored virtual key"),
+                original
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn clear_virtual_key_rejects_every_non_postgres_engine_without_deleting() {
+        let pool = test_pool().await;
+        let virtual_key = VirtualKey {
+            version: VIRTUAL_KEY_VERSION,
+            columns: vec!["id".to_string()],
+        };
+        for engine in ["MySQL", "SQLite", "ClickHouse", "Redis"] {
+            let connection_id = format!("clear-{engine}");
+            upsert_connection(&pool, &connection(&connection_id))
+                .await
+                .expect("connection");
+            upsert_virtual_key(&pool, &connection_id, "public", "users", &virtual_key)
+                .await
+                .expect("seed virtual key");
+            set_connection_engine(&pool, &connection_id, engine).await;
+
+            assert_eq!(
+                clear_postgres_virtual_key(&pool, &connection_id, "public", "users")
+                    .await
+                    .expect_err("non-Postgres clear must fail"),
+                VirtualKeyStorageError::UnsupportedEngine
+            );
+            let row_count: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM virtual_keys
+                 WHERE connection_id = ? AND schema = ? AND table_name = ?",
+            )
+            .bind(&connection_id)
+            .bind("public")
+            .bind("users")
+            .fetch_one(&pool)
+            .await
+            .expect("virtual key count");
+            assert_eq!(row_count.0, 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn virtual_key_validation_rejects_invalid_documents() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+
+        for (invalid, expected) in [
+            (
+                VirtualKey {
+                    version: 2,
+                    columns: vec!["id".to_string()],
+                },
+                VirtualKeyValidationError::UnsupportedVersion(2),
+            ),
+            (
+                VirtualKey {
+                    version: 1,
+                    columns: Vec::new(),
+                },
+                VirtualKeyValidationError::EmptyIdentity,
+            ),
+            (
+                VirtualKey {
+                    version: 1,
+                    columns: vec!["id".to_string(), "id".to_string()],
+                },
+                VirtualKeyValidationError::DuplicateColumn,
+            ),
+        ] {
+            assert_eq!(
+                upsert_postgres_virtual_key(&pool, "conn-1", "public", "users", &invalid)
+                    .await
+                    .expect_err("invalid virtual key"),
+                VirtualKeyStorageError::InvalidInput(expected)
+            );
+        }
+        let rows_after_invalid_saves: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM virtual_keys WHERE connection_id = ?")
+                .bind("conn-1")
+                .fetch_one(&pool)
+                .await
+                .expect("virtual key count");
+        assert_eq!(rows_after_invalid_saves.0, 0);
+
+        sqlx::query(
+            "INSERT INTO virtual_keys
+                (connection_id, schema, table_name, virtual_key, updated_at)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("conn-1")
+        .bind("public")
+        .bind("users")
+        .bind(r#"{"version":2,"columns":["id"]}"#)
+        .bind(now())
+        .execute(&pool)
+        .await
+        .expect("seed unsupported document");
+        assert!(matches!(
+            read_virtual_key(&pool, "conn-1", "public", "users")
+                .await
+                .expect_err("read validates the stored document"),
+            VirtualKeyStorageError::CorruptDocument(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn deleting_connection_cascades_virtual_keys() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        upsert_virtual_key(
+            &pool,
+            "conn-1",
+            "public",
+            "users",
+            &VirtualKey {
+                version: 1,
+                columns: vec!["id".to_string()],
+            },
+        )
+        .await
+        .expect("virtual key");
+
+        assert!(delete_connection(&pool, "conn-1").await.expect("delete"));
+        let remaining: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM virtual_keys
+             WHERE connection_id = ? AND schema = ? AND table_name = ?",
+        )
+        .bind("conn-1")
+        .bind("public")
+        .bind("users")
+        .fetch_one(&pool)
+        .await
+        .expect("cascaded virtual key count");
+        assert_eq!(remaining.0, 0);
     }
 
     #[tokio::test]
