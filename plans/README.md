@@ -17,7 +17,7 @@ and update its status here when work finishes.
 | [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration |       P0 |      L | 001        | DONE: 26268ca (selected mock: B)               |
 | [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | DONE: 202f756                                  |
 | [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
-| [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | READY FOR REVIEW                               |
+| [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | DONE: 2dea918                                  |
 | [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
