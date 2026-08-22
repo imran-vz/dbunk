@@ -222,6 +222,48 @@ transactionally, or discard it without ambiguity.
 **Current state:** Missing for relational workflows. Redis has more explicit
 destructive-command guards.
 
+**Progress (2026-08-23):** Plans 007 and 008 were authored at commit
+`4e52c8a` and are the selected execution path. Plan 007 is a dark backend:
+per-connection `environment` (development/test/staging/production) and
+`safeMode` (inherit/disabled/protected/strict) fields plus a relational
+`readOnly` flag reusing the migration-7 column; a fail-closed PostgreSQL
+statement classifier built on the extracted Plan 005 lexer (unknown/`DO`/
+`CALL`/lex-failure treated as destructive writes, `EXPLAIN ANALYZE`
+unwrapping, `COPY` direction, `WITH` write detection, paren-depth-aware
+unbounded UPDATE/DELETE detection); one shared `assert_permitted` gate at
+all fifteen write-capable surfaces including the query-session admission
+point, the result-mutation apply, the `copy_table_rows` destination, and
+the subprocess restore; typed `policyBlocked` / `policyNeedsConfirmation`
+refusals on the actor surfaces and `[policy:…]`-tagged strings on legacy
+`Result<T, String>` commands; a `default_transaction_read_only` session GUC
+as belt-and-braces (documented as not the boundary); and a capped,
+cascade-deleted audit of confirmed overrides. Plan 008 activates it in the
+UI: form controls, environment badges and production identity across
+sidebar/header/tabs/banner/status bar, one shared confirmation dialog that
+re-sends with `confirmed: true` after deliberate acknowledgment (typed
+confirm for destructive/production), read-only affordance gating in
+`resolveEditContext`, and the override audit in Settings. Deliberately
+deferred from this pair: environment-scoped smart-commit/manual-transaction
+defaults (`PAR-001` savepoint follow-ons), user-picked connection colors
+(`PAR-005`/`PAR-006`), script stop/continue/prompt error policies, and
+typed error migration for legacy commands (`PAR-007`/`PAR-014`).
+Both plans passed an independent adversarial review on 2026-08-23 and were
+amended for its findings, most notably: a read-class escalation denylist
+closing four write-through-`read` smuggling routes (`SELECT setval(…)`
+sequence templates, `SELECT set_config('default_transaction_read_only',
+…)`, the legacy no-parentheses `EXPLAIN ANALYZE <dml>` form, and write
+CTEs inside `COPY (…) TO`); an explicit mistakes-not-adversaries threat
+model in the ADR replacing an overclaimed "unreachable" for GUC
+overrides; fully fail-closed `unknown` classification for all
+non-PostgreSQL `run_query` text instead of reusing the defeatable
+`should_fetch_rows` heuristic; strict-prefix-only matching for
+`[policy:…]` refusal tags (substring matches are spoofable via
+user-controlled error text); apply-path confirmation summaries
+synthesized from staged operations; explicit pass-through semantics for
+`transaction`/`session` classes; and a corrected Scope list covering the
+`managed.rs` production struct literals and five test-literal files that
+would otherwise trip the plan's own STOP condition.
+
 **Evidence:**
 
 - `src/components/connection-form/common-fields.tsx:240-257` captures a role as
@@ -669,9 +711,12 @@ Parity work should reuse rather than replace these credible foundations:
    remaining execution follow-ons stay tracked above.
 2. `PAR-002`: server-backed table browsing delivered by Plans 003 and 004
    through commit `ecefce8`.
-3. **Selected next:** `PAR-003`, editable query results and generated DML
-   review, via authored Plans 005 and 006.
-4. `PAR-004`: backend-enforced production safety.
+3. `PAR-003`: editable query results and generated DML review delivered by
+   Plans 005 and 006 (Plan 006 `READY FOR REVIEW` at `4e52c8a`); deep
+   editors, Quick Look, batch paste, and copy formats remain register
+   scope.
+4. **Selected next:** `PAR-004`, backend-enforced production safety, via
+   authored Plans 007 and 008.
 5. `PAR-005`: durable workspace restoration and global navigation.
 6. `PAR-006` and `PAR-007`: secure connections and full PostgreSQL object
    lifecycle.

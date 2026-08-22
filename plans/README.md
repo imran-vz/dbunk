@@ -19,6 +19,8 @@ and update its status here when work finishes.
 | [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
 | [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | DONE: d98f8a1                                  |
 | [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | READY FOR REVIEW (selected mock: A) |
+| [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | TODO                                           |
+| [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -34,13 +36,28 @@ useful without authorizing commits implicitly.
   foundation of `PAR-001` through commit `26268ca`. Plans 003 and 004
   delivered and activated PostgreSQL Table Browse for `PAR-002` through
   commit `ecefce8` on 2026-08-21.
-- **Selected next:** `PAR-003`, editable query results and staged mutation
-  review. Plans 005 and 006 were authored on 2026-08-21 at commit `ecefce8`
-  and are ready to execute in order. Plan 005 lands the dark
-  analysis/preview/apply backend; Plan 006 activates the shared staged
-  Mutation Draft model in table and query grids. Batch paste, deep value
-  editors, Quick Look, and configurable copy formats are the `PAR-003`
-  register items deliberately left for a follow-on plan after 006.
+- **Completed (pending stamp):** Plans 005 and 006 delivered the `PAR-003`
+  staged mutation review core; Plan 006 is `READY FOR REVIEW` with
+  hardening commits through `4e52c8a` awaiting the operator's `DONE` stamp.
+  Batch paste, deep value editors, Quick Look, and configurable copy
+  formats are the `PAR-003` register items deliberately left for a
+  follow-on plan.
+- **Selected next:** `PAR-004`, backend-enforced production safety policy.
+  Plans 007 and 008 were authored on 2026-08-23 at commit `4e52c8a` and
+  execute in order after Plan 006 is stamped `DONE`. Plan 007 lands the
+  dark backend: per-connection environment / Safe Mode / relational
+  read-only fields (migration 15), a fail-closed PostgreSQL statement
+  classifier extracted from the Plan 005 lexer, one shared policy gate
+  asserted at all fifteen write-capable surfaces (typed
+  `policyBlocked`/`policyNeedsConfirmation` on the query-session and
+  result-mutation actors; tagged refusal strings on legacy commands), a
+  belt-and-braces `default_transaction_read_only` session GUC, and a
+  persisted confirmed-override audit. Plan 008 activates it: form
+  controls, environment badges and production identity across sidebar /
+  header / tabs / banner / status bar, one shared confirmation dialog that
+  re-sends with `confirmed: true`, and the audit view in Settings.
+  Smart-commit environment defaults and user-picked connection colors are
+  deliberately deferred (`PAR-001` follow-ons / `PAR-005`–`PAR-006`).
 - **Selected mock (004, completed):** B — stacked command bar, inspection
   popover, keyset next as the primary pager.
 - **Selected mock (006):** A — persistent right-side mutation review
@@ -62,14 +79,18 @@ refer to the gap register rather than files in this directory.
 2. Plans 003 and 004 delivered and activated `PAR-002` server-backed table
    browsing, reusing the query-session connect-spec, TLS, cancellation, and
    bounded-result semantics.
-3. Plans 005 and 006 are the authored `PAR-003` execution path: a dark
-   PostgreSQL Result Mutation backend (updatability analysis via extended
-   protocol Describe, generated/identity-column awareness, virtual keys,
-   pure DML builder with preview, guarded all-or-nothing transactional
-   apply), then one staged Mutation Draft model shared by browse-mode table
-   tabs and query results with DML review before commit.
-4. `PAR-004` safety policy should build on explicit transaction state and the
-   generated mutation preview from `PAR-003`.
+3. Plans 005 and 006 delivered the `PAR-003` execution path: the dark
+   PostgreSQL Result Mutation backend, then one staged Mutation Draft model
+   shared by browse-mode table tabs and query results with DML review
+   before commit. Deep editors, Quick Look, batch paste, and copy formats
+   remain follow-on register scope.
+4. Plans 007 and 008 are the authored `PAR-004` execution path: a dark
+   backend safety policy (environment classification, Safe Mode levels,
+   enforced relational read-only, fail-closed statement classification,
+   one gate at every write surface, override audit), then UI activation
+   (form fields, production identity, confirmation flows). They build on
+   `PAR-001` transaction state and the `PAR-003` mutation preview as
+   planned.
 5. `PAR-005` workspace restoration should persist descriptors, never live
    database handles or server transaction state.
 6. Professional PostgreSQL features (`PAR-007` through `PAR-011`) should follow
