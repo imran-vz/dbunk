@@ -19,7 +19,7 @@ and update its status here when work finishes.
 | [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
 | [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | DONE: d98f8a1                                  |
 | [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | DONE: 4e52c8a (selected mock: A) |
-| [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | READY FOR REVIEW                               |
+| [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | DONE: cc16b3c                                  |
 | [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
