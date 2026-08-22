@@ -15,6 +15,7 @@
 
 import type { StateCreator } from "zustand";
 
+import { resetResultMutationClientForTab } from "@/lib/result-mutation-client";
 import { supportsServerTableBrowse } from "@/lib/table-browse";
 
 import type {
@@ -117,8 +118,21 @@ export const createWorkspaceTabsSlice: StateCreator<
   setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
 
   closeTab: async (tabId) => {
+    const hasStagedChanges = Object.values(get().mutationDrafts).some(
+      (draft) => draft?.owner.tabId === tabId && draft.changeOrder.length > 0,
+    );
+    if (
+      hasStagedChanges &&
+      !window.confirm(
+        "Closing this tab clears its staged result changes. Continue?",
+      )
+    ) {
+      return;
+    }
     await get().closeQuerySessionForTab(tabId);
     await get().closeTableBrowseForTab(tabId);
+    resetResultMutationClientForTab(tabId);
+    get().dropMutationDraftsForTab(tabId);
     set((state) => {
       const index = state.workspaceTabs.findIndex((tab) => tab.id === tabId);
       if (index === -1) {
@@ -301,6 +315,8 @@ export const createWorkspaceTabsSlice: StateCreator<
     if (!tab || tab.kind !== "query") return;
     if (tab.connectionId === newConnectionId) return;
     await get().closeQuerySessionForTab(tab.id);
+    resetResultMutationClientForTab(tab.id);
+    get().dropMutationDraftsForTab(tab.id);
     get().dropQueryStateForTab(tab.id);
     set((s) => ({
       activeConnectionId: newConnectionId,

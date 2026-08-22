@@ -218,6 +218,69 @@ describe("DataGrid read-only mode", () => {
     }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
   });
+
+  it("starts lazy analysis from pointer and keyboard edit intent", () => {
+    const onEditIntent = vi.fn();
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        readOnly
+        onEditIntent={onEditIntent}
+      />,
+    );
+
+    const cell = screen.getByRole("button", { name: "Ada" });
+    fireEvent.click(cell);
+    fireEvent.keyDown(cell, { key: "Enter" });
+
+    expect(onEditIntent).toHaveBeenNthCalledWith(1, 0, 1);
+    expect(onEditIntent).toHaveBeenNthCalledWith(2, 0, 1);
+  });
+
+  it("keeps blocked columns read only and exposes the reason", () => {
+    const onEdit = vi.fn();
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        onEdit={onEdit}
+        getCellReadOnlyReason={(_rowIndex, columnIndex) =>
+          columnIndex === 1 ? "Generated columns are read only." : undefined
+        }
+      />,
+    );
+
+    const blocked = screen.getByRole("button", { name: "Ada" });
+    expect(blocked.getAttribute("title")).toBe(
+      "Generated columns are read only.",
+    );
+    fireEvent.click(blocked);
+    expect(screen.queryByDisplayValue("Ada")).toBeNull();
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it("renders presentation-only staged row states", () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        getRowState={(rowIndex) =>
+          (["deleted", "inserted", "excluded"] as const)[rowIndex]
+        }
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Ada" }).closest("tr")?.className,
+    ).toContain("line-through");
+    expect(
+      screen.getByRole("button", { name: "Grace" }).closest("tr")?.className,
+    ).toContain("bg-success/5");
+    expect(
+      screen.getByRole("button", { name: "Edsger" }).closest("tr")?.className,
+    ).toContain("opacity-50");
+  });
 });
 
 describe("DataGrid cell display", () => {

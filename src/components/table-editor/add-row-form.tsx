@@ -14,18 +14,37 @@ import type { ColumnInfo } from "@/lib/store";
 interface AddRowFormProps {
   columns: ColumnInfo[];
   isWriting: boolean;
+  initialValues?: InsertRowPayloadEntry[];
+  title?: string;
+  submitLabel?: string;
   onSubmit: (values: InsertRowPayloadEntry[]) => Promise<void>;
   onClose: () => void;
+}
+
+function formStateWithInitialValues(
+  columns: ColumnInfo[],
+  initialValues: InsertRowPayloadEntry[] | undefined,
+): InsertRowFormState {
+  const state = initialFormState(columns);
+  for (const { column, value } of initialValues ?? []) {
+    if (!state[column]) continue;
+    state[column] =
+      value === null ? { mode: "null", value: "" } : { mode: "value", value };
+  }
+  return state;
 }
 
 export function AddRowForm({
   columns,
   isWriting,
+  initialValues,
+  title = "Add row",
+  submitLabel = "Insert",
   onSubmit,
   onClose,
 }: AddRowFormProps) {
   const [form, setForm] = useState<InsertRowFormState>(() =>
-    initialFormState(columns),
+    formStateWithInitialValues(columns, initialValues),
   );
 
   const setMode = (column: string, mode: InsertRowFieldMode) => {
@@ -52,7 +71,7 @@ export function AddRowForm({
       className="flex flex-col gap-2 border-b border-border-subtle bg-surface-panel px-3 py-2"
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold">Add row</span>
+        <span className="text-xs font-semibold">{title}</span>
         <Button variant="ghost" size="sm" onClick={onClose}>
           Cancel
         </Button>
@@ -76,7 +95,7 @@ export function AddRowForm({
             void handleSubmit();
           }}
         >
-          {isWriting ? "Inserting…" : "Insert"}
+          {isWriting ? "Staging…" : submitLabel}
         </Button>
       </div>
     </div>

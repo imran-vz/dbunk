@@ -10,17 +10,18 @@ relevant entity (e.g. a new Pub/Sub Session action goes in
 
 ## Slices
 
-| Slice file              | Owns                                                                             | Class      |
-| ----------------------- | -------------------------------------------------------------------------------- | ---------- |
-| `connections.ts`        | Connection records, Active Connection ID, health checks                          | shared     |
-| `workspace-tabs.ts`     | Workspace Tab list, active tab ID, sidebar/theme/UI flags                        | shared     |
-| `credentials.ts`        | App Settings, Credential Storage Mode lifecycle                                  | shared     |
-| `relational-tables.ts`  | Schema Explorer, Table Structure, Cell Edits, DDL, Database Overview, Table Data | relational |
-| `relational-queries.ts` | Query History, Saved Queries, query editor + run state                           | relational |
+| Slice file              | Owns                                                                                                     | Class      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- | ---------- |
+| `connections.ts`        | Connection records, Active Connection ID, health checks                                                  | shared     |
+| `workspace-tabs.ts`     | Workspace Tab list, active tab ID, sidebar/theme/UI flags                                                | shared     |
+| `credentials.ts`        | App Settings, Credential Storage Mode lifecycle                                                          | shared     |
+| `relational-tables.ts`  | Schema Explorer, Table Structure, Cell Edits, DDL, Database Overview, Table Data                         | relational |
+| `relational-queries.ts` | Query History, Saved Queries, query editor + run state                                                   | relational |
+| `mutation-drafts.ts`    | Identity-keyed staged result mutations, review and apply lifecycle                                       | relational |
 | `query-sessions.ts`     | Persistent PostgreSQL session lifecycle, streamed results, transactions (`applyQueryTransactionCommand`) | relational |
-| `table-browse.ts`       | PostgreSQL Table Browse grid state keyed by Workspace Tab id                             | relational |
-| `keyvalue-workspace.ts` | (placeholder) Keyspace Browser + Key Inspector client cache                      | keyvalue   |
-| `keyvalue-pubsub.ts`    | (placeholder) Pub/Sub Session client metadata                                    | keyvalue   |
+| `table-browse.ts`       | PostgreSQL Table Browse grid state keyed by Workspace Tab id                                             | relational |
+| `keyvalue-workspace.ts` | (placeholder) Keyspace Browser + Key Inspector client cache                                              | keyvalue   |
+| `keyvalue-pubsub.ts`    | (placeholder) Pub/Sub Session client metadata                                                            | keyvalue   |
 
 The slice file names match the **domain glossary** entries from
 `CONTEXT.md`. Searching for "where does Cell Edit live?" lands you
@@ -62,16 +63,17 @@ is `deleteConnection`:
 
 Each downstream slice exposes a named cleanup method:
 
-| Slice                   | Cleanup method                                                       | What it does                                                                                                 |
-| ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `workspace-tabs.ts`     | `closeTabsForConnection(id)`                                         | Drops every Workspace Tab pointing at that connection.                                                       |
-| `query-sessions.ts`     | `closeQuerySessionForTab(id)`, `closeQuerySessionsForConnection(id)` | Closes persistent PostgreSQL editor sessions before tab, connection, or credential teardown.                 |
-| `table-browse.ts`       | `closeTableBrowseForTab(id)`, `closeTableBrowsesForConnection(id)`   | Closes PostgreSQL Table Browse executors before tab, connection, or credential teardown.                     |
-| `relational-tables.ts`  | `dropRelationalCachesForConnection(id)`                              | Drops every per-connection cache entry (schema explorer, table structure, table data, overview stats, etc.). |
-| `relational-queries.ts` | `dropOpenQueryStateForConnection(id)`                                | Drops open-tab query status, edits, and previews without removing query history.                             |
-| `relational-queries.ts` | `dropQueryStateForConnection(id)`                                    | Drops query history rows pinned to the connection plus query status/edits for its open tabs.                 |
-| `keyvalue-workspace.ts` | `closeKeyTabsForConnection(id)`                                      | No-op today; reserved for future per-key cache.                                                              |
-| `keyvalue-pubsub.ts`    | `closePubSubSessionsForConnection(id)`                               | No-op today; reserved for future pub/sub auto-reconnect state.                                               |
+| Slice                   | Cleanup method                                                                                                                                                  | What it does                                                                                                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace-tabs.ts`     | `closeTabsForConnection(id)`                                                                                                                                    | Drops every Workspace Tab pointing at that connection.                                                                                          |
+| `query-sessions.ts`     | `closeQuerySessionForTab(id)`, `closeQuerySessionsForConnection(id)`                                                                                            | Closes persistent PostgreSQL editor sessions before tab, connection, or credential teardown.                                                    |
+| `table-browse.ts`       | `closeTableBrowseForTab(id)`, `closeTableBrowsesForConnection(id)`                                                                                              | Closes PostgreSQL Table Browse executors before tab, connection, or credential teardown.                                                        |
+| `relational-tables.ts`  | `dropRelationalCachesForConnection(id)`                                                                                                                         | Drops every per-connection cache entry (schema explorer, table structure, table data, overview stats, etc.).                                    |
+| `relational-queries.ts` | `dropOpenQueryStateForConnection(id)`                                                                                                                           | Drops open-tab query status, edits, and previews without removing query history.                                                                |
+| `relational-queries.ts` | `dropQueryStateForConnection(id)`                                                                                                                               | Drops query history rows pinned to the connection plus query status/edits for its open tabs.                                                    |
+| `mutation-drafts.ts`    | `dropMutationDraftForScope(scope)`, `dropMutationDraftsForTab(id)`, `dropMutationDraftsForExecution(tabId, executionId)`, `dropMutationDraftsForConnection(id)` | Drops staged mutations at explicit lifecycle boundaries. Result-row budget release intentionally calls none of these because drafts survive it. |
+| `keyvalue-workspace.ts` | `closeKeyTabsForConnection(id)`                                                                                                                                 | No-op today; reserved for future per-key cache.                                                                                                 |
+| `keyvalue-pubsub.ts`    | `closePubSubSessionsForConnection(id)`                                                                                                                          | No-op today; reserved for future pub/sub auto-reconnect state.                                                                                  |
 
 `deleteConnection` and `disconnectConnection` both use the canonical
 `teardownConnectionWorkspace` coordinator in `connections.ts`. It closes query

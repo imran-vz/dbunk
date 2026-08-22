@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Result mutations · Variant B · Review console</title>
+    <style>
+      :root { color-scheme: dark; --bg:#000; --panel:#070707; --line:#292929; --strong:#444; --text:#fff; --muted:#999; --blue:#78a9ff; --amber:#edba58; --red:#ff7474; --green:#70d797; }
+      * { box-sizing: border-box; }
+      html, body { height:100%; margin:0; overflow:hidden; background:var(--bg); color:var(--text); font:12px/1.45 Inter,system-ui,sans-serif; }
+      button, input, select { font:inherit; color:inherit; background:#080808; border:1px solid var(--strong); border-radius:3px; padding:5px 8px; }
+      button { cursor:pointer; } button:hover { background:#171717; } button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--blue); outline-offset:1px; }
+      button.primary { background:#fff; color:#000; border-color:#fff; font-weight:700; } button.danger { color:var(--red); } button:disabled { opacity:.45; cursor:not-allowed; }
+      code, pre, .mono { font-family:"SF Mono","JetBrains Mono",ui-monospace,monospace; }
+      .muted { color:var(--muted); } .good { color:var(--green); } .warn { color:var(--amber); } .bad { color:var(--red); } .grow { flex:1; }
+      .shell { height:100%; display:grid; grid-template-columns:50px 198px minmax(0,1fr); grid-template-rows:36px minmax(0,1fr); }
+      .rail { grid-row:1/3; border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; gap:8px; padding:8px 0; }
+      .rail button { width:32px; height:30px; padding:0; border-color:transparent; } .rail .active { border-color:var(--strong); }
+      .head { grid-column:2/4; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; padding:0 10px; }
+      .history { min-height:0; border-right:1px solid var(--line); overflow:auto; }
+      .history h2 { margin:0; padding:9px 10px; color:var(--muted); font-size:10px; letter-spacing:.08em; text-transform:uppercase; border-bottom:1px solid var(--line); }
+      .runitem { display:block; width:100%; border:0; border-left:2px solid transparent; border-radius:0; padding:9px 10px; text-align:left; color:#bbb; }
+      .runitem.active { border-left-color:#fff; background:#0d0d0d; color:#fff; } .runitem small { display:block; color:var(--muted); margin-top:2px; }
+      .main { min-width:0; min-height:0; display:grid; grid-template-rows:118px minmax(210px,1fr) minmax(250px,45%); }
+      .editor { border-bottom:1px solid var(--line); display:grid; grid-template-rows:38px 1fr; background:#030303; }
+      .editorbar,.resultbar,.consolehead,.consolefoot { display:flex; align-items:center; gap:7px; padding:0 10px; min-width:0; }
+      .editorbar { border-bottom:1px solid #191919; } .editorbar button { padding:4px 7px; }
+      .sqlsource { margin:0; padding:10px 14px; white-space:pre; overflow:auto; color:#ddd; }
+      .kw { color:#d6a5ff; } .str { color:#b8dc7b; }
+      .results { min-width:0; min-height:0; display:grid; grid-template-rows:34px minmax(0,1fr) 29px; }
+      .resultbar { border-bottom:1px solid var(--line); overflow-x:auto; } .resultbar button { padding:3px 7px; white-space:nowrap; }
+      .editmode { color:var(--green); white-space:nowrap; } .count { color:var(--amber); white-space:nowrap; }
+      .grid { min-width:0; overflow:auto; }
+      table { width:100%; min-width:760px; border-collapse:collapse; table-layout:fixed; }
+      th,td { height:29px; padding:5px 7px; text-align:left; border-right:1px solid #1e1e1e; border-bottom:1px solid #1e1e1e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      th { position:sticky; top:0; z-index:2; background:#090909; color:#bbb; font-weight:500; } th small { display:block; color:#6f6f6f; font-size:9px; }
+      th.locked { color:#777; } th.locked small { color:var(--amber); }
+      td:first-child,th:first-child { width:34px; text-align:center; color:#777; }
+      td.pending { box-shadow:inset 0 -2px var(--amber); } td.pending .old { color:#777; text-decoration:line-through; margin-right:7px; }
+      tr.deleted { color:#777; text-decoration:line-through; background:#100707; } tr.inserted { background:#061008; } tr.duplicate { background:#100d05; }
+      .pager { display:flex; align-items:center; gap:7px; padding:0 10px; border-top:1px solid var(--line); color:var(--muted); }
+      .console { min-height:0; border-top:1px solid var(--strong); display:grid; grid-template-rows:38px minmax(0,1fr) 47px; background:var(--panel); }
+      .consolehead { border-bottom:1px solid var(--line); } .consolehead h1 { margin:0; font-size:13px; } .consolehead .target { color:var(--muted); } .consolehead code { color:#fff; }
+      .consolebody { min-height:0; display:grid; grid-template-columns:minmax(360px,1.1fr) minmax(300px,.9fr); }
+      .changes { min-height:0; overflow:auto; border-right:1px solid var(--line); }
+      .grouphead { position:sticky; top:0; z-index:1; display:flex; align-items:center; gap:7px; padding:6px 10px; background:#0c0c0c; border-bottom:1px solid var(--line); color:#aaa; font-size:10px; letter-spacing:.07em; text-transform:uppercase; }
+      .change { display:grid; grid-template-columns:20px 80px minmax(0,1fr) auto; gap:7px; align-items:start; padding:7px 10px; border-bottom:1px solid #202020; }
+      .change input { margin:2px 0; accent-color:var(--blue); } .change.excluded { opacity:.4; } .change.conflict { background:#180707; box-shadow:inset 3px 0 var(--red); }
+      .change .kind { color:var(--amber); } .change button { padding:1px 4px; border:0; color:var(--muted); }
+      .change .detail { overflow-wrap:anywhere; } .change .old { color:var(--red); } .change .new { color:var(--green); }
+      .preview { min-height:0; display:grid; grid-template-rows:31px minmax(0,1fr) auto; }
+      .preview header { display:flex; align-items:center; padding:0 9px; border-bottom:1px solid var(--line); } .preview pre { margin:0; padding:9px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; color:#ddd; font-size:10px; background:#020202; }
+      .guard { padding:7px 9px; border-top:1px solid var(--line); color:var(--muted); }
+      .consolefoot { border-top:1px solid var(--line); } .consolefoot [data-message] { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .statebar { position:fixed; bottom:8px; left:58px; z-index:30; display:flex; gap:3px; padding:4px; background:#030303; border:1px solid var(--strong); box-shadow:0 8px 28px #000; }
+      .statebar button { border-color:transparent; padding:4px 7px; color:var(--muted); } .statebar button.active { color:#fff; border-color:var(--strong); }
+      .identity { position:absolute; z-index:15; top:76px; right:12px; width:min(390px,calc(100vw - 24px)); border:1px solid var(--strong); background:#070707; box-shadow:0 12px 40px #000; }
+      .identity header { padding:9px 10px; border-bottom:1px solid var(--line); } .identity .body { padding:10px; } .identity label { display:block; margin:6px 0; } .identity footer { display:flex; justify-content:flex-end; gap:7px; padding:9px 10px; border-top:1px solid var(--line); }
+      dialog { width:min(410px,calc(100vw - 24px)); padding:0; color:#fff; background:#070707; border:1px solid var(--strong); } dialog::backdrop { background:rgb(0 0 0/.78); } dialog h2,dialog p,dialog footer { margin:0; padding:11px; } dialog h2 { border-bottom:1px solid var(--line); font-size:14px; } dialog p { color:#bbb; } dialog footer { display:flex; justify-content:flex-end; gap:7px; border-top:1px solid var(--line); }
+      [hidden] { display:none!important; }
+      @media (max-width:850px) {
+        .shell { grid-template-columns:1fr; } .rail,.history { display:none; } .head { grid-column:1; }
+        .main { grid-template-rows:96px minmax(210px,1fr) minmax(270px,48%); }
+        .consolebody { grid-template-columns:1fr; grid-template-rows:minmax(120px,1fr) minmax(100px,.8fr); } .changes { border-right:0; border-bottom:1px solid var(--line); }
+        .statebar { left:8px; right:8px; overflow:auto; } .statebar button { white-space:nowrap; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Variant B keeps the query session intact and treats review as a bottom console beside generated DML. -->
+    <main class="shell">
+      <nav class="rail" aria-label="Workspace"><strong>db</strong><button class="active">Q</button><button>T</button><span class="grow"></span><button>⚙</button></nav>
+      <header class="head"><strong>query-9.sql</strong><span class="muted">local-postgres / app</span><span class="grow"></span><span class="good">● Connected</span></header>
+      <aside class="history"><h2>Execution history</h2><button class="runitem active"><strong>09:41:12 · 4 rows</strong><small>Editable · 5 staged</small></button><button class="runitem"><strong>09:38:50 · 4 rows</strong><small>Point-in-time result</small></button><button class="runitem"><strong>09:33:07 · failed</strong><small>42P01 · relation missing</small></button></aside>
+      <section class="main">
+        <section class="editor"><div class="editorbar"><button class="primary">Run</button><button class="danger" data-confirm>Re-run</button><span class="grow"></span><span class="muted">Single statement · Result 1</span></div><pre class="sqlsource"><span class="kw">select</span> c.id, c.email, c.status, c.total, c.total * 1.2 <span class="kw">as</span> gross
+<span class="kw">from</span> public.customers c <span class="kw">where</span> c.status != <span class="str">'archived'</span>;</pre></section>
+        <section class="results" aria-label="Query results"><div class="resultbar"><strong>Results</strong><span class="editmode" data-analysis>✓ Edit mode · primary key id</span><span class="grow"></span><button>Discard</button><button class="primary">Save / review</button><span class="count">5 staged</span></div>
+          <div class="grid"><table><thead><tr><th>#</th><th>id<small>key · writable</small></th><th>email<small>writable</small></th><th>status<small>writable</small></th><th class="locked">total<small>generated · read only</small></th><th class="locked">gross<small>expression · read only</small></th></tr></thead><tbody>
+            <tr><td>1</td><td>1842</td><td class="pending" title="Original: iman@old.test"><span class="old">iman@old.test</span>iman@example.com</td><td>active</td><td>149.00</td><td>178.80</td></tr>
+            <tr class="deleted"><td>DEL</td><td>1843</td><td>nora@example.com</td><td>paused</td><td>84.00</td><td>100.80</td></tr>
+            <tr><td>3</td><td>1844</td><td>kai@example.com</td><td class="pending"><span class="old">trial</span>active</td><td>215.50</td><td>258.60</td></tr>
+            <tr class="inserted"><td>NEW</td><td class="muted">default</td><td>maya@example.com</td><td>trial</td><td class="muted">generated</td><td class="muted">expression</td></tr>
+            <tr class="duplicate"><td>COPY</td><td class="muted">default</td><td>kai+copy@example.com</td><td>active</td><td class="muted">generated</td><td class="muted">expression</td></tr>
+          </tbody></table></div><footer class="pager"><span>Page 3 of 41 · drafts survive pagination</span><span class="grow"></span><button>Previous</button><button>Next</button></footer></section>
+        <section class="console" aria-label="Mutation review console"><header class="consolehead"><h1>Review changes</h1><span class="target">resolved target <code>public.customers</code></span><span class="grow"></span><button>Revert all</button></header>
+          <div class="consolebody"><section class="changes"><div class="grouphead"><span>5 operations</span><span class="grow"></span><span>before → after</span></div>
+            <article class="change" data-change="email"><input type="checkbox" checked aria-label="Include email update"><span class="kind">Update</span><div class="detail"><strong>id 1842 · email</strong><br><span class="old">iman@old.test</span> → <span class="new">iman@example.com</span><div class="bad" data-conflict hidden>Conflict · no changes applied. Revise, exclude, or refresh.</div></div><button>Revert</button></article>
+            <article class="change"><input type="checkbox" checked><span class="kind">Update</span><div class="detail"><strong>id 1844 · status</strong><br><span class="old">trial</span> → <span class="new">active</span></div><button>Revert</button></article>
+            <article class="change"><input type="checkbox" checked><span class="kind">Delete</span><div class="detail"><strong>id 1843</strong><br><span class="muted">full projected row guarded</span></div><button>Revert</button></article>
+            <article class="change"><input type="checkbox" checked><span class="kind">Insert</span><div class="detail"><strong>maya@example.com</strong><br><span class="muted">generated values omitted</span></div><button>Revert</button></article>
+            <article class="change"><input type="checkbox" checked><span class="kind">Duplicate</span><div class="detail"><strong>from id 1844</strong><br><span class="warn">Off-page after browse pagination · still committable</span></div><button>Revert</button></article>
+          </section><section class="preview"><header><strong>Generated DML</strong><span class="grow"></span><button data-copy>Copy SQL</button><button data-copy>Copy params</button></header><pre>UPDATE "public"."customers"
+SET "email" = ($1::text)::text
+WHERE "id" = ($2::text)::bigint
+  AND "email" = ($3::text)::text;
+
+params
+["iman@example.com", "1842", "iman@old.test"]</pre><div class="guard">Keyed updates guard edited columns only. Deletes guard every projected column.</div></section></div>
+          <footer class="consolefoot"><span data-message><strong>Ready.</strong> All included operations apply in one transaction.</span><span class="grow"></span><button class="danger" data-cancel hidden>Cancel apply</button><button class="primary" data-apply>Apply 5 changes</button></footer>
+        </section>
+      </section>
+    </main>
+    <aside class="identity" data-identity hidden><header><strong>Choose row identity · public.import_queue</strong></header><div class="body"><p class="warn">No proven key is projected. Editing stays read only until you choose.</p><label><input type="checkbox" checked> external_id</label><label><input type="checkbox" checked> source</label><p class="muted">A virtual key is your uniqueness claim. Full projected rows are guarded. Or use guarded <code>ctid</code> for this heap.</p></div><footer><button>Use guarded ctid</button><button class="primary">Save virtual key</button></footer></aside>
+    <nav class="statebar" aria-label="Prototype states"><button class="active" data-state="review">Review</button><button data-state="conflict">Conflict</button><button data-state="keyless">Keyless</button><button data-state="applying">Applying</button><button data-state="success">Success</button><button data-state="blocked">Not analyzable</button><button data-confirm>Discard prompt</button></nav>
+    <dialog id="confirm"><h2>Discard 5 staged changes?</h2><p>Re-running this query or closing its tab clears the draft. Keep editing or discard explicitly.</p><footer><button data-close>Keep editing</button><button class="danger" data-close>Discard and continue</button></footer></dialog>
+    <script>
+      const message=document.querySelector('[data-message]'),apply=document.querySelector('[data-apply]'),cancel=document.querySelector('[data-cancel]'),email=document.querySelector('[data-change="email"]'),failure=document.querySelector('[data-conflict]'),identity=document.querySelector('[data-identity]'),analysis=document.querySelector('[data-analysis]'),dialog=document.querySelector('#confirm');
+      const reset=()=>{message.innerHTML='<strong>Ready.</strong> All included operations apply in one transaction.';apply.textContent='Apply 5 changes';apply.disabled=false;cancel.hidden=true;email.classList.remove('conflict');failure.hidden=true;identity.hidden=true;analysis.textContent='✓ Edit mode · primary key id';};
+      const states={review:reset,conflict:()=>{reset();email.classList.add('conflict');failure.hidden=false;message.innerHTML='<strong class="bad">Transaction rolled back.</strong> Conflict attributed to the email update. All changes remain staged.';},keyless:()=>{reset();identity.hidden=false;analysis.textContent='Read only · identity required';message.innerHTML='<strong class="warn">Identity required.</strong> Pick a persisted virtual key or guarded ctid.';},applying:()=>{reset();message.innerHTML='<strong>Applying 3 of 5…</strong> Draft locked. Cancel rolls back.';apply.textContent='Applying…';apply.disabled=true;cancel.hidden=false;},success:()=>{reset();message.innerHTML='<strong class="good">Applied.</strong> Ops affected 1, 1, 1, 1, 1 rows. Result is stale. <button>Re-run result</button>';apply.textContent='Applied';apply.disabled=true;},blocked:()=>{reset();analysis.textContent='Read only · statement not analyzable';message.innerHTML='<strong class="warn">Editing unavailable.</strong> Run one statement and use its first result set. This execution cannot be analyzed.';apply.disabled=true;}};
+      document.querySelectorAll('[data-state]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-state]').forEach(item=>item.classList.toggle('active',item===button));states[button.dataset.state]();}));
+      document.querySelectorAll('.change input').forEach(input=>input.addEventListener('change',()=>input.closest('.change').classList.toggle('excluded',!input.checked)));
+      document.querySelectorAll('[data-copy]').forEach(button=>button.addEventListener('click',()=>button.textContent='Copied'));
+      document.querySelectorAll('[data-confirm]').forEach(button=>button.addEventListener('click',()=>dialog.showModal()));document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>dialog.close()));
+    </script>
+  </body>
+</html>

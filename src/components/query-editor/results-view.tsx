@@ -6,13 +6,14 @@ import {
   IconRoute,
   IconTerminal2,
 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useMemo } from "react";
 
 import { DataGrid } from "@/components/data-grid";
 import { ExplainView } from "@/components/query-editor/explain/explain-view";
 import { Button } from "@/components/ui/button";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
 import type { QueryPreviewData, QuerySessionState } from "@/lib/store";
+import { browseCellsToGrid } from "@/lib/table-browse";
 import { cn } from "@/lib/utils";
 
 export type ResultsView = "results" | "explain" | "output";
@@ -57,9 +58,27 @@ interface QueryResultsViewProps {
   isRunning: boolean;
   errorMessage: string | null;
   onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
+  resultIndex: number;
+  onResultIndexChange: (index: number) => void;
+  mutationGrid?: QueryMutationGridProps;
   onSwitchBudgetOwner?: (tabId: string) => void;
   onReleaseBudgetOwner?: (tabId: string) => void;
   hideTabs?: boolean;
+}
+
+export interface QueryMutationGridProps {
+  edits: Record<number, Record<number, string>>;
+  readOnly: boolean;
+  onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
+  onEditIntent: (rowIndex: number, colIndex: number) => void;
+  getCellReadOnlyReason: (
+    rowIndex: number,
+    colIndex: number,
+  ) => string | undefined;
+  statusCopy: string;
+  statusTone: "muted" | "success" | "warning";
+  stale: boolean;
+  onRerun: () => void;
 }
 
 const TABS: ReadonlyArray<{ id: ResultsView; label: string }> = [
@@ -79,33 +98,30 @@ export function QueryResultsView({
   isRunning,
   errorMessage,
   onCellEdit,
+  resultIndex,
+  onResultIndexChange,
+  mutationGrid,
   onSwitchBudgetOwner,
   onReleaseBudgetOwner,
   hideTabs = false,
 }: QueryResultsViewProps) {
   const execution = session?.execution;
-  const executionId = execution?.id ?? "";
-  const [resultIndex, setResultIndex] = useState(0);
-  const [trackedExecutionId, setTrackedExecutionId] = useState(executionId);
-  if (trackedExecutionId !== executionId) {
-    setTrackedExecutionId(executionId);
-    setResultIndex(0);
-  }
   const selectedResult = execution?.resultSets[resultIndex];
-  const selectedPreview =
-    session && execution && selectedResult && !execution.tombstone
-      ? {
-          columns: selectedResult.columns.map((column) => column ?? ""),
-          rows: flattenResultSetRows(selectedResult).map((row) =>
-            row.map((cell) => cell ?? ""),
-          ),
-          runtime: `${execution.runtimeMs} ms`,
-          rowCount: String(selectedResult.rowCount),
-          cache: "Cold",
-        }
-      : session
-        ? null
-        : preview;
+  const selectedPreview = useMemo(
+    () =>
+      session && execution && selectedResult && !execution.tombstone
+        ? {
+            columns: selectedResult.columns.map((column) => column ?? ""),
+            rows: browseCellsToGrid(flattenResultSetRows(selectedResult)),
+            runtime: `${execution.runtimeMs} ms`,
+            rowCount: String(selectedResult.rowCount),
+            cache: "Cold",
+          }
+        : session
+          ? null
+          : preview,
+    [execution, preview, selectedResult, session],
+  );
   const returnedRowCount = session
     ? (execution?.tombstone?.rowCount ??
       execution?.resultSets.reduce(
@@ -159,7 +175,7 @@ export function QueryResultsView({
                 <button
                   key={result.index}
                   type="button"
-                  onClick={() => setResultIndex(index)}
+                  onClick={() => onResultIndexChange(index)}
                   aria-current={index === resultIndex ? "true" : undefined}
                   className="whitespace-nowrap border border-border-subtle px-2 py-1 text-[0.625rem] text-text-muted aria-[current=true]:border-accent aria-[current=true]:text-foreground"
                 >
@@ -199,6 +215,25 @@ export function QueryResultsView({
         </div>
       ) : null}
 
+      {mutationGrid?.statusCopy ? (
+        <div
+          data-testid="query-mutation-status"
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-1.5 text-xs",
+            mutationGrid.statusTone === "success" && "text-success",
+            mutationGrid.statusTone === "warning" && "text-warning",
+            mutationGrid.statusTone === "muted" && "text-text-muted",
+          )}
+        >
+          <span>{mutationGrid.statusCopy}</span>
+          {mutationGrid.stale ? (
+            <Button size="sm" variant="ghost" onClick={mutationGrid.onRerun}>
+              Re-run result
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-hidden">
         <ResultsContent
           view={view}
@@ -210,6 +245,7 @@ export function QueryResultsView({
           isRunning={isRunning}
           errorMessage={errorMessage}
           onCellEdit={onCellEdit}
+          mutationGrid={mutationGrid}
           onSwitchBudgetOwner={onSwitchBudgetOwner}
           onReleaseBudgetOwner={onReleaseBudgetOwner}
         />
@@ -230,7 +266,11 @@ function ResultsContent({
   onCellEdit,
   onSwitchBudgetOwner,
   onReleaseBudgetOwner,
-}: Omit<QueryResultsViewProps, "onViewChange">) {
+  mutationGrid,
+}: Omit<
+  QueryResultsViewProps,
+  "onViewChange" | "onResultIndexChange" | "resultIndex"
+>) {
   if (view === "output") {
     return (
       <OutputView
@@ -256,8 +296,11 @@ function ResultsContent({
       <DataGrid
         data={preview.rows}
         columns={preview.columns}
-        edits={currentEdits}
-        onEdit={onCellEdit}
+        edits={mutationGrid?.edits ?? currentEdits}
+        onEdit={mutationGrid?.onCellEdit ?? onCellEdit}
+        onEditIntent={mutationGrid?.onEditIntent}
+        getCellReadOnlyReason={mutationGrid?.getCellReadOnlyReason}
+        readOnly={mutationGrid?.readOnly}
         exportFilenameBase={exportFilenameBase}
       />
     );

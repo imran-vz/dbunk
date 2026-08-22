@@ -16,6 +16,11 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
+vi.mock("@/lib/result-mutation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/result-mutation")>();
+  return { ...actual, supportsResultMutations: vi.fn(() => false) };
+});
+
 vi.mock("@xyflow/react", () => ({
   __esModule: true,
   default: () => null,
@@ -34,6 +39,8 @@ import {
   TableEditorPanel,
   TableSidebar,
 } from "@/components/table-editor-panel";
+import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
+import { supportsResultMutations } from "@/lib/result-mutation";
 import {
   type Connection,
   type TableBrowseTabState,
@@ -41,6 +48,7 @@ import {
   type TableLoadStatus,
   type TableStructure,
   tableDataKey,
+  tableMutationDraftScope,
   tableStructureKey,
   useAppStore,
   type WorkspaceTab,
@@ -49,6 +57,7 @@ import { defaultTableGridPrefs } from "@/lib/table-browse";
 import { tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
+const mockedSupportsResultMutations = vi.mocked(supportsResultMutations);
 
 const tableTab: WorkspaceTab = {
   id: "tab-1",
@@ -77,6 +86,7 @@ const seed = (
 beforeEach(() => {
   useAppStore.setState(initialStoreState, true);
   mockedInvoke.mockReset();
+  mockedSupportsResultMutations.mockReturnValue(false);
   // The panel kicks off a fetch on mount. Default to a never-resolving
   // promise so seeded tableData/tableLoadStatus survive in tests that
   // don't care about the mount fetch. Status will be "loading" but the
@@ -306,6 +316,83 @@ const readOnlyStructure: TableStructure = {
     canDeleteRows: false,
     uniquenessGuarantee: "best-effort",
   },
+};
+
+const mutationAnalysis = (
+  identity: AnalyzeResultSetResult["tables"][number]["identity"] = {
+    kind: "primaryKey",
+    columns: ["id"],
+  },
+  options: {
+    identityProjected?: boolean;
+    emailWritability?: "writable" | "generated" | "identityAlways";
+  } = {},
+): AnalyzeResultSetResult => ({
+  requestId: 1,
+  analysisId: 91,
+  columns: [
+    {
+      name: "id",
+      origin: {
+        kind: "table",
+        schema: "public",
+        table: "users",
+        column: "id",
+        attnum: 1,
+      },
+      castType: "integer",
+      nullable: false,
+      writability: { kind: "writable" },
+    },
+    {
+      name: "email",
+      origin: {
+        kind: "table",
+        schema: "public",
+        table: "users",
+        column: "email",
+        attnum: 2,
+      },
+      castType: "text",
+      nullable: true,
+      writability: { kind: options.emailWritability ?? "writable" },
+    },
+  ],
+  tables: [
+    {
+      schema: "public",
+      table: "users",
+      identity,
+      identityProjected: options.identityProjected ?? true,
+      identityProjectionIndexes: identity.columns.map((column) =>
+        column === "id" ? 0 : column === "email" ? 1 : -1,
+      ),
+      updatable:
+        identity.kind === "none"
+          ? { allowed: false, reason: "noIdentity" }
+          : { allowed: true },
+      deletable:
+        identity.kind === "none"
+          ? { allowed: false, reason: "noIdentity" }
+          : { allowed: true },
+      insertable: { allowed: true },
+    },
+  ],
+  statement: { kind: "analyzed" },
+});
+
+const seedMutationDraftAnalysis = (analysis: AnalyzeResultSetResult) => {
+  const handle = useAppStore.getState().openMutationDraft({
+    owner: { kind: "table", tabId: "tab-1" },
+    connectionId: "conn-1",
+    source: {
+      kind: "relation",
+      schema: "public",
+      table: "users",
+    },
+  });
+  useAppStore.getState().setMutationDraftAnalysis(handle, analysis);
+  return handle;
 };
 
 describe("TableEditorPanel read-only handling", () => {
@@ -1219,5 +1306,339 @@ describe("TableEditorPanel server browse", () => {
         "This table is paged with a virtual identity and is read-only.",
       ),
     ).toBeTruthy();
+  });
+
+  describe("activated mutation drafts", () => {
+    beforeEach(() => {
+      mockedSupportsResultMutations.mockReturnValue(true);
+    });
+
+    it("lazily analyzes the relation on the first edit gesture", async () => {
+      seedBrowse();
+      const analyzed = mutationAnalysis();
+      mockedInvoke.mockImplementation((command) =>
+        command === "analyze_result_set"
+          ? Promise.resolve(analyzed)
+          : new Promise(() => {}),
+      );
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "ada@example.com" }));
+
+      await waitFor(() =>
+        expect(mockedInvoke).toHaveBeenCalledWith("analyze_result_set", {
+          payload: expect.objectContaining({
+            connectionId: "conn-1",
+            tabId: "tab-1",
+            source: {
+              kind: "relation",
+              schema: "public",
+              table: "users",
+            },
+          }),
+        }),
+      );
+      expect(
+        useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")]
+          ?.analysis?.analysisId,
+      ).toBe(91);
+      expect(screen.getByTestId("table-mutation-status").textContent).toContain(
+        "Staged editing ready",
+      );
+    });
+
+    it("stages a true-NULL cell update by browse row identity and opens Variant A review", async () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          requestId: 2,
+          rows: [["1", null]],
+          rowIdentity: [["1"]],
+        },
+      });
+      seedMutationDraftAnalysis(mutationAnalysis());
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "NULL" }));
+      const input = screen.getByDisplayValue("NULL") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "ada@new.com" } });
+      fireEvent.blur(input);
+
+      const draft =
+        useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")];
+      const change = draft?.changes[draft.changeOrder[0] ?? ""];
+      expect(change).toMatchObject({
+        kind: "updateRow",
+        identity: [{ column: "id", value: "1" }],
+        originals: [
+          { column: "id", value: "1" },
+          { column: "email", value: null },
+        ],
+        cells: {
+          email: { original: null, value: "ada@new.com" },
+        },
+      });
+      expect(screen.getByLabelText("Review 1 staged changes")).toBeTruthy();
+
+      fireEvent.click(screen.getByLabelText("Review 1 staged changes"));
+      expect(
+        screen.getByRole("complementary", { name: "Mutation review" }),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("row-details-panel")).toBeNull();
+    });
+
+    it("stages multi-row deletes without confirmation or delete_rows and paginates silently", async () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          requestId: 3,
+          rows: [
+            ["1", "ada@example.com"],
+            ["2", "grace@example.com"],
+          ],
+          rowIdentity: [["1"], ["2"]],
+          pageInfo: {
+            mode: "keyset",
+            page: 1,
+            hasMore: true,
+            nextCursor: { values: ["2"] },
+          },
+        },
+      });
+      seedMutationDraftAnalysis(mutationAnalysis());
+      const confirmSpy = vi.spyOn(window, "confirm");
+      render(<TableEditorPanel tab={tableTab} />);
+      fireEvent.click(screen.getAllByRole("checkbox")[0] as HTMLInputElement);
+      mockedInvoke.mockClear();
+
+      fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+      await waitFor(() =>
+        expect(
+          useAppStore.getState().mutationDrafts[
+            tableMutationDraftScope("tab-1")
+          ]?.changeOrder,
+        ).toHaveLength(2),
+      );
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(mockedInvoke).not.toHaveBeenCalledWith(
+        "delete_rows",
+        expect.anything(),
+      );
+
+      fireEvent.click(screen.getByLabelText("Next page"));
+      expect(screen.queryByText("Discard pending edits?")).toBeNull();
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(useAppStore.getState().tableBrowses["tab-1"]?.loadStatus).toEqual({
+        state: "loading",
+      });
+      confirmSpy.mockRestore();
+    });
+
+    it("stages new rows, duplicate provenance, and a bulk edit without immediate commands", async () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          requestId: 4,
+          rows: [
+            ["1", "ada@example.com"],
+            ["2", "grace@example.com"],
+          ],
+          rowIdentity: [["1"], ["2"]],
+        },
+      });
+      seedMutationDraftAnalysis(mutationAnalysis());
+      render(<TableEditorPanel tab={tableTab} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+        await Promise.resolve();
+      });
+      fireEvent.change(screen.getByTestId("add-row-value-id"), {
+        target: { value: "3" },
+      });
+      fireEvent.change(screen.getByTestId("add-row-value-email"), {
+        target: { value: "lin@example.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Stage row" }));
+      await waitFor(() =>
+        expect(screen.queryByTestId("add-row-form")).toBeNull(),
+      );
+
+      fireEvent.click(screen.getAllByRole("checkbox")[1] as HTMLInputElement);
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Duplicate selected row" }),
+        );
+        await Promise.resolve();
+      });
+      expect(
+        (screen.getByTestId("add-row-value-email") as HTMLInputElement).value,
+      ).toBe("ada@example.com");
+      fireEvent.click(screen.getByRole("button", { name: "Stage duplicate" }));
+      await waitFor(() =>
+        expect(screen.queryByTestId("add-row-form")).toBeNull(),
+      );
+
+      fireEvent.click(screen.getAllByRole("checkbox")[0] as HTMLInputElement);
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Bulk edit selected rows" }),
+        );
+        await Promise.resolve();
+      });
+      fireEvent.change(screen.getByLabelText("Bulk edit column"), {
+        target: { value: "email" },
+      });
+      fireEvent.change(screen.getByLabelText("Bulk edit value"), {
+        target: { value: "team@example.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Stage bulk edit" }));
+      await waitFor(() =>
+        expect(screen.queryByTestId("bulk-edit-form")).toBeNull(),
+      );
+
+      const draft =
+        useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")];
+      const changes = draft?.changeOrder.map((id) => draft.changes[id]);
+      expect(changes?.filter((change) => change?.kind === "insertRow")).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: "new" }),
+          expect.objectContaining({ source: "duplicate" }),
+        ]),
+      );
+      expect(
+        changes?.filter((change) => change?.kind === "updateRow"),
+      ).toHaveLength(2);
+      expect(mockedInvoke).not.toHaveBeenCalledWith(
+        "insert_row",
+        expect.anything(),
+      );
+      expect(screen.getByText("lin@example.com")).toBeTruthy();
+    });
+
+    it("uses ctid identity with full raw originals and keeps generated columns read-only", () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          requestId: 5,
+          rows: [["1", "generated@example.com"]],
+          identity: { kind: "virtual", columns: ["ctid"] },
+          rowIdentity: [["(0,1)"]],
+        },
+      });
+      seedMutationDraftAnalysis(
+        mutationAnalysis(
+          { kind: "ctidFallback", columns: ["ctid"] },
+          { emailWritability: "generated" },
+        ),
+      );
+      render(<TableEditorPanel tab={tableTab} />);
+
+      const generated = screen.getByRole("button", {
+        name: "generated@example.com",
+      });
+      expect(generated.getAttribute("title")).toBe(
+        "Generated columns are read-only.",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "1" }));
+      const input = screen.getByDisplayValue("1");
+      fireEvent.change(input, { target: { value: "7" } });
+      fireEvent.blur(input);
+
+      const draft =
+        useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")];
+      expect(draft?.changes[draft.changeOrder[0] ?? ""]).toMatchObject({
+        identityKind: "ctidFallback",
+        identity: [{ column: "ctid", value: "(0,1)" }],
+        originals: [
+          { column: "id", value: "1" },
+          { column: "email", value: "generated@example.com" },
+        ],
+      });
+      expect(screen.getByTestId("table-mutation-status").textContent).toContain(
+        "full-row guards",
+      );
+    });
+
+    it("persists and clears a projected virtual key, then reanalyzes", async () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          requestId: 6,
+          identity: { kind: "none", columns: [] },
+          rowIdentity: null,
+        },
+      });
+      seedMutationDraftAnalysis(
+        mutationAnalysis({ kind: "none", columns: [] }),
+      );
+      const virtualAnalysis = mutationAnalysis({
+        kind: "virtualKey",
+        columns: ["email"],
+      });
+      let analysisCalls = 0;
+      mockedInvoke.mockImplementation((command) => {
+        if (command === "save_virtual_key" || command === "clear_virtual_key") {
+          return Promise.resolve(undefined);
+        }
+        if (command === "analyze_result_set") {
+          analysisCalls += 1;
+          return Promise.resolve(
+            analysisCalls === 1
+              ? virtualAnalysis
+              : mutationAnalysis({ kind: "none", columns: [] }),
+          );
+        }
+        return new Promise(() => {});
+      });
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose virtual key" }),
+      );
+      fireEvent.click(screen.getByRole("checkbox", { name: "email" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save virtual key" }));
+
+      await waitFor(() =>
+        expect(mockedInvoke).toHaveBeenCalledWith("save_virtual_key", {
+          payload: {
+            connectionId: "conn-1",
+            schema: "public",
+            table: "users",
+            columns: ["email"],
+          },
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          useAppStore.getState().mutationDrafts[
+            tableMutationDraftScope("tab-1")
+          ]?.analysis?.snapshot.tables[0]?.identity.kind,
+        ).toBe("virtualKey"),
+      );
+      expect(screen.getByTestId("table-mutation-status").textContent).toContain(
+        "Virtual key: email",
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Clear virtual key" }),
+      );
+      await waitFor(() =>
+        expect(mockedInvoke).toHaveBeenCalledWith("clear_virtual_key", {
+          payload: {
+            connectionId: "conn-1",
+            schema: "public",
+            table: "users",
+          },
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          useAppStore.getState().mutationDrafts[
+            tableMutationDraftScope("tab-1")
+          ]?.analysis?.snapshot.tables[0]?.identity.kind,
+        ).toBe("none"),
+      );
+    });
   });
 });
