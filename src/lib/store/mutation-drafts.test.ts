@@ -88,6 +88,7 @@ const openTableDraft = () => {
     connectionId: "conn-1",
     source: { kind: "relation", schema: "public", table: "users" },
   });
+  if (!handle) throw new Error("Expected mutation draft handle");
   expect(
     useAppStore.getState().setMutationDraftAnalysis(handle, analysis()),
   ).toBe(true);
@@ -177,7 +178,7 @@ describe("mutation draft staging", () => {
   it("removes reverted cells and then the identity-keyed update without reusing its ordinal", () => {
     openTableDraft();
     const firstId = stageUpdate("1", "old", "new");
-    expect(stageUpdate("1", "ignored", "old")).toBe(firstId);
+    expect(stageUpdate("1", "ignored", "old")).toBeNull();
     expect(
       useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")]
         ?.changeOrder,
@@ -601,6 +602,24 @@ describe("mutation draft display rebinding", () => {
 });
 
 describe("mutation draft fencing and cleanup", () => {
+  it("refuses to replace staged changes with a different source", () => {
+    const handle = openTableDraft();
+    stageUpdate("1", "A", "B");
+
+    const replacement = useAppStore.getState().openMutationDraft({
+      owner: { kind: "table", tabId: "tab-1" },
+      connectionId: "conn-1",
+      source: { kind: "relation", schema: "public", table: "accounts" },
+    });
+
+    expect(replacement).toBeNull();
+    expect(useAppStore.getState().mutationDrafts[handle.scope]).toMatchObject({
+      generation: handle.generation,
+      source: { kind: "relation", schema: "public", table: "users" },
+      changeOrder: [expect.any(String)],
+    });
+  });
+
   it("rejects stale preview and apply completions after scope recreation", () => {
     openTableDraft();
     stageUpdate("1", "A", "B");
@@ -707,6 +726,7 @@ describe("mutation draft fencing and cleanup", () => {
       connectionId: "conn-1",
       source: { kind: "statement", sql: "select id, name from users" },
     });
+    if (!handle) throw new Error("Expected mutation draft handle");
     useAppStore.getState().setMutationDraftAnalysis(handle, analysis());
     useAppStore.getState().stageMutationDraftUpdate(handle.scope, {
       table,

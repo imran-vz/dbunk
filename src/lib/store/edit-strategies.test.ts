@@ -172,6 +172,20 @@ describe("edit-strategies.buildEditPayload", () => {
     const payload = buildEditPayload(edits, data, identity, columnIndexByName);
     expect(payload.map((p) => p.rowIndex)).toEqual([0, 1]);
   });
+
+  it("keeps the legacy commit payload byte-stable", () => {
+    const data = makeData({ rows: [["1"]] });
+    const payload = buildEditPayload(
+      { 0: { 1: "Ada" } },
+      data,
+      identity,
+      columnIndexByName,
+    );
+
+    expect(JSON.stringify(payload)).toBe(
+      '[{"rowIndex":0,"identity":[{"column":"id","value":"1"}],"set":[{"column":"name","value":"Ada"}]}]',
+    );
+  });
 });
 
 describe("edit-strategies.buildDeleteRowsPayload", () => {
@@ -210,6 +224,19 @@ describe("edit-strategies.buildDeleteRowsPayload", () => {
     expect(
       buildDeleteRowsPayload([], makeData(), identity, columnIndexByName),
     ).toEqual([]);
+  });
+
+  it("keeps the legacy delete payload byte-stable", () => {
+    const payload = buildDeleteRowsPayload(
+      [1, 0],
+      makeData(),
+      identity,
+      columnIndexByName,
+    );
+
+    expect(JSON.stringify(payload)).toBe(
+      '[[{"column":"id","value":"1"}],[{"column":"id","value":"2"}]]',
+    );
   });
 });
 

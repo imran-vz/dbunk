@@ -181,22 +181,3 @@ export async function closeResultMutationForConnection(
     connectionId,
   });
 }
-
-type RetryableResult<T> = ResultMutationClientResult<T>;
-
-/**
- * Retries an operation once after analysis recovery. The caller owns the
- * refreshed analysis id and, for apply, the reviewed-DML equality check.
- */
-export async function retryOnceAfterAnalysisExpired<T>(
-  operation: () => Promise<RetryableResult<T>>,
-  recoverAnalysis: () => Promise<RetryableResult<unknown>>,
-): Promise<RetryableResult<T>> {
-  const initial = await operation();
-  if (initial.kind !== "error" || initial.error.kind !== "analysisExpired") {
-    return initial;
-  }
-  const recovered = await recoverAnalysis();
-  if (recovered.kind !== "ok") return recovered;
-  return operation();
-}

@@ -141,6 +141,7 @@ const openDraft = ({
         ? { kind: "relation", schema: "public", table: "users" }
         : { kind: "statement", sql: "select id, email from public.users" },
   });
+  if (!handle) throw new Error("Expected mutation draft handle");
   if (withAnalysis) state.setMutationDraftAnalysis(handle, analysis());
   state.stageMutationDraftUpdate(handle.scope, {
     table: { schema: "public", table: "users" },
