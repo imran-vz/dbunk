@@ -118,9 +118,11 @@ const applySuccess = (operations = 2): ApplyResult => ({
 const openDraft = ({
   owner = "table",
   withAnalysis = true,
+  offPage = false,
 }: {
   owner?: "table" | "query";
   withAnalysis?: boolean;
+  offPage?: boolean;
 } = {}): MutationDraftScope => {
   const state = useAppStore.getState();
   const handle = state.openMutationDraft({
@@ -155,7 +157,7 @@ const openDraft = ({
         value: SECRET_VALUE,
       },
     ],
-    rowIndex: 0,
+    rowIndex: offPage ? undefined : 0,
   });
   state.stageMutationDraftInsert(handle.scope, {
     table: { schema: "public", table: "users" },
@@ -215,6 +217,23 @@ afterEach(() => {
 });
 
 describe("MutationReviewPanel", () => {
+  it("labels off-page updates and deletes", async () => {
+    const scope = openDraft({ offPage: true });
+    useAppStore.getState().stageMutationDraftDelete(scope, {
+      table: { schema: "public", table: "users" },
+      identityKind: "primaryKey",
+      identity: [{ column: "id", value: "2" }],
+      originals: [
+        { column: "id", value: "2" },
+        { column: "email", value: "grace@example.test" },
+      ],
+    });
+    renderPanel(scope);
+
+    await screen.findByText(/Generated DML/);
+    expect(screen.getAllByText("Off page")).toHaveLength(2);
+  });
+
   it("renders dense grouped changes, qualified targets, DML, ordered params, and copy actions", async () => {
     const scope = openDraft();
     renderPanel(scope);
