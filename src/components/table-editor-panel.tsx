@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ForeignKeyTarget } from "@/components/data-grid";
+import { MutationReviewPanel } from "@/components/mutation-review";
 import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
@@ -129,6 +130,18 @@ export function TableEditorPanel({
     serverBrowse,
     appliedBrowseRequestId,
     readOnlyCopy,
+    mutationEnabled,
+    mutationScope,
+    mutationDraft,
+    mutationAnalysis,
+    mutationTable,
+    mutationAnalysisState,
+    mutationStatusCopy,
+    mutationLocked,
+    editableMutationColumns,
+    insertableMutationColumns,
+    virtualKeyColumns,
+    needsVirtualKey,
   } = tableSession;
   // Terminal outcome lives component-local. Disappears on tab unmount,
   // which is the intended trade-off (CONTEXT.md — Edit Outcome).
@@ -150,6 +163,13 @@ export function TableEditorPanel({
   const { openQueryForTable, openTableTab } = useAppStore();
 
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
+  const [addRowSource, setAddRowSource] = useState<"new" | "duplicate">("new");
+  const [addRowInitialValues, setAddRowInitialValues] = useState<
+    InsertRowPayloadEntry[] | undefined
+  >();
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [isVirtualKeyOpen, setIsVirtualKeyOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isCopyOpen, setIsCopyOpen] = useState(false);
   const [isSeedOpen, setIsSeedOpen] = useState(false);
@@ -171,6 +191,10 @@ export function TableEditorPanel({
   useEffect(() => {
     setInlineDrilldown(null);
     setLastOutcome(null);
+    setIsAddRowOpen(false);
+    setIsBulkEditOpen(false);
+    setIsVirtualKeyOpen(false);
+    setReviewOpen(false);
   }, [tableName]);
 
   useEffect(() => {
@@ -221,6 +245,14 @@ export function TableEditorPanel({
   };
 
   const handleSubmitAddRow = async (values: InsertRowPayloadEntry[]) => {
+    if (mutationEnabled) {
+      const staged = await tableSession.stageInsert(values, addRowSource);
+      if (staged) {
+        setIsAddRowOpen(false);
+        setAddRowInitialValues(undefined);
+      }
+      return;
+    }
     const outcome = await tableSession.addRow(values);
     setLastOutcome(outcome);
     if (outcome.kind === "completed") {
@@ -291,6 +323,12 @@ export function TableEditorPanel({
 
   const handleDeleteSelected = async () => {
     if (selection.selectedCount === 0) return;
+    if (mutationEnabled) {
+      if (await tableSession.stageDeleteRows(selection.selectedIndices)) {
+        selection.clear();
+      }
+      return;
+    }
     const message = `Delete ${selection.selectedCount} row${
       selection.selectedCount === 1 ? "" : "s"
     }? This cannot be undone.`;
@@ -298,6 +336,45 @@ export function TableEditorPanel({
     const outcome = await tableSession.deleteRows(selection.selectedIndices);
     setLastOutcome(outcome);
     if (outcome.kind === "completed") selection.clear();
+  };
+
+  const handleOpenAddRow = async () => {
+    if (mutationEnabled) {
+      const analysis = await tableSession.ensureMutationAnalysis();
+      if (!analysis) return;
+    }
+    setAddRowSource("new");
+    setAddRowInitialValues(undefined);
+    setIsAddRowOpen(true);
+  };
+
+  const handleDuplicateSelected = async () => {
+    if (selection.selectedIndex === null) return;
+    const values = await tableSession.duplicateRowValues(
+      selection.selectedIndex,
+    );
+    if (!values) return;
+    setAddRowSource("duplicate");
+    setAddRowInitialValues(values);
+    setIsAddRowOpen(true);
+  };
+
+  const handleDiscardEdits = () => {
+    if (!mutationEnabled) {
+      tableSession.discardEdits();
+      return;
+    }
+    const count = mutationDraft?.changeOrder.length ?? 0;
+    if (count === 0 || mutationLocked) return;
+    if (
+      !window.confirm(
+        `Discard ${count} staged change${count === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+    tableSession.discardEdits();
+    setReviewOpen(false);
   };
 
   const exportWholeTable = async (options: {
@@ -525,7 +602,7 @@ export function TableEditorPanel({
   };
 
   const confirmIfEdits = (action: () => void) => {
-    if (hasEdits) {
+    if (hasEdits && !mutationEnabled) {
       setPendingDiscard(() => action);
       return;
     }
@@ -634,6 +711,28 @@ export function TableEditorPanel({
         onDismissOutcome={() => setLastOutcome(null)}
       />
 
+      {mutationEnabled && mutationStatusCopy ? (
+        <output
+          data-testid="table-mutation-status"
+          className="border-b border-border-subtle bg-black px-3 py-1.5 text-[0.6875rem] text-text-secondary"
+        >
+          {mutationStatusCopy}
+        </output>
+      ) : null}
+
+      {mutationEnabled &&
+      (needsVirtualKey || mutationTable?.identity.kind === "virtualKey") ? (
+        <VirtualKeyEditor
+          columns={data?.columns ?? []}
+          savedColumns={virtualKeyColumns}
+          open={isVirtualKeyOpen}
+          busy={mutationAnalysisState.state === "loading"}
+          onOpenChange={setIsVirtualKeyOpen}
+          onSave={tableSession.saveMutationVirtualKey}
+          onClear={tableSession.clearMutationVirtualKey}
+        />
+      ) : null}
+
       {isSeedOpen && structure ? (
         <SeedTableForm
           columns={structure.columns}
@@ -646,10 +745,45 @@ export function TableEditorPanel({
 
       {isAddRowOpen && structure ? (
         <AddRowForm
-          columns={structure.columns}
+          columns={
+            mutationEnabled && mutationAnalysis
+              ? structure.columns.filter((column) =>
+                  insertableMutationColumns.includes(column.name),
+                )
+              : structure.columns
+          }
           isWriting={caps.isWriting}
+          initialValues={addRowInitialValues}
+          title={addRowSource === "duplicate" ? "Duplicate row" : "Add row"}
+          submitLabel={
+            addRowSource === "duplicate"
+              ? "Stage duplicate"
+              : mutationEnabled
+                ? "Stage row"
+                : "Insert"
+          }
           onSubmit={handleSubmitAddRow}
-          onClose={() => setIsAddRowOpen(false)}
+          onClose={() => {
+            setIsAddRowOpen(false);
+            setAddRowInitialValues(undefined);
+          }}
+        />
+      ) : null}
+
+      {isBulkEditOpen ? (
+        <BulkEditForm
+          columns={editableMutationColumns}
+          selectedCount={selection.selectedCount}
+          isWriting={mutationLocked}
+          onClose={() => setIsBulkEditOpen(false)}
+          onSubmit={async (column, value) => {
+            const count = await tableSession.stageBulkEdit(
+              selection.selectedIndices,
+              column,
+              value,
+            );
+            if (count > 0) setIsBulkEditOpen(false);
+          }}
         />
       ) : null}
 
@@ -695,7 +829,7 @@ export function TableEditorPanel({
         isSaving={isSaving}
         exportFilenameBase={exportFilenameBase}
         onRefresh={onRefresh}
-        onOpenAddRow={() => setIsAddRowOpen(true)}
+        onOpenAddRow={() => void handleOpenAddRow()}
         onOpenImport={() => setIsImportOpen(true)}
         onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
         onOpenTable={openTableTab}
@@ -703,14 +837,39 @@ export function TableEditorPanel({
         onCellEdit={(rowIndex, colIndex, value) =>
           tableSession.setCellEdit(rowIndex, colIndex, value)
         }
-        onDiscardEdits={tableSession.discardEdits}
+        onEditIntent={mutationEnabled ? tableSession.onEditIntent : undefined}
+        getCellReadOnlyReason={
+          mutationEnabled ? tableSession.getCellReadOnlyReason : undefined
+        }
+        getRowState={mutationEnabled ? tableSession.getRowState : undefined}
+        onDiscardEdits={handleDiscardEdits}
         onSaveEdits={async () => {
+          if (mutationEnabled) {
+            setReviewOpen(true);
+            return;
+          }
           const outcome = await tableSession.commitEdits();
           setLastOutcome(outcome);
         }}
         onDeleteSelected={() => {
           void handleDeleteSelected();
         }}
+        onDuplicateSelected={
+          mutationEnabled ? () => void handleDuplicateSelected() : undefined
+        }
+        onBulkEditSelected={
+          mutationEnabled
+            ? () => {
+                void tableSession.ensureMutationAnalysis().then((analysis) => {
+                  if (analysis) setIsBulkEditOpen(true);
+                });
+              }
+            : undefined
+        }
+        stagedChangeCount={
+          mutationEnabled ? (mutationDraft?.changeOrder.length ?? 0) : 0
+        }
+        onOpenReview={mutationEnabled ? () => setReviewOpen(true) : undefined}
         onFollowForeignKey={(rowIndex, target, value) =>
           setInlineDrilldown((current) => {
             // Clicking the same FK arrow twice closes the expansion.
@@ -750,6 +909,21 @@ export function TableEditorPanel({
         serverBrowse={guardedBrowse}
         onExpandGrid={() => setExpanded((open) => !open)}
         expanded={expanded}
+        reviewPanel={
+          mutationEnabled && reviewOpen ? (
+            <div className="h-full w-[min(30rem,42vw)] shrink-0 bg-black max-[820px]:absolute max-[820px]:inset-y-0 max-[820px]:right-0 max-[820px]:z-40 max-[820px]:w-full">
+              <MutationReviewPanel
+                scope={mutationScope}
+                onClose={() => setReviewOpen(false)}
+                onApplySuccess={async () => {
+                  selection.clear();
+                  await tableSession.refreshData();
+                }}
+                onRefresh={tableSession.refreshData}
+              />
+            </div>
+          ) : null
+        }
       />
 
       <AlertDialog
@@ -785,6 +959,147 @@ export function TableEditorPanel({
       </AlertDialog>
 
       {!isWorkbench && !expanded ? <StatusBar items={statusItems} /> : null}
+    </div>
+  );
+}
+
+function VirtualKeyEditor({
+  columns,
+  savedColumns,
+  open,
+  busy,
+  onOpenChange,
+  onSave,
+  onClear,
+}: {
+  columns: string[];
+  savedColumns: string[];
+  open: boolean;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (columns: string[]) => Promise<boolean>;
+  onClear: () => Promise<boolean>;
+}) {
+  const [selected, setSelected] = useState(savedColumns);
+  useEffect(() => setSelected(savedColumns), [savedColumns]);
+  return (
+    <div
+      data-testid="virtual-key-editor"
+      className="border-b border-border-subtle bg-black px-3 py-2 text-xs"
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-text-secondary">
+          Keyless relation. Pick projected columns that uniquely identify a row.
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          onClick={() => onOpenChange(!open)}
+        >
+          {open ? "Hide virtual key" : "Choose virtual key"}
+        </Button>
+      </div>
+      {open ? (
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {columns.map((column) => (
+            <label key={column} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={selected.includes(column)}
+                onChange={(event) =>
+                  setSelected((current) =>
+                    event.target.checked
+                      ? [...current, column]
+                      : current.filter((value) => value !== column),
+                  )
+                }
+              />
+              <span className="font-mono">{column}</span>
+            </label>
+          ))}
+          <Button
+            size="sm"
+            disabled={busy || selected.length === 0}
+            onClick={() => void onSave(selected)}
+          >
+            Save virtual key
+          </Button>
+          {savedColumns.length > 0 ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => void onClear()}
+            >
+              Clear virtual key
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BulkEditForm({
+  columns,
+  selectedCount,
+  isWriting,
+  onClose,
+  onSubmit,
+}: {
+  columns: string[];
+  selectedCount: number;
+  isWriting: boolean;
+  onClose: () => void;
+  onSubmit: (column: string, value: string | null) => Promise<void>;
+}) {
+  const [column, setColumn] = useState(columns[0] ?? "");
+  const [value, setValue] = useState("");
+  const [setNull, setSetNull] = useState(false);
+  return (
+    <div
+      data-testid="bulk-edit-form"
+      className="flex items-center gap-2 border-b border-border-subtle bg-black px-3 py-2 text-xs"
+    >
+      <span>Set {selectedCount} selected rows</span>
+      <select
+        aria-label="Bulk edit column"
+        className="h-7 border border-border-subtle bg-surface-input px-2 font-mono"
+        value={column}
+        onChange={(event) => setColumn(event.target.value)}
+      >
+        {columns.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+      </select>
+      <Input
+        aria-label="Bulk edit value"
+        className="h-7 min-w-32 flex-1"
+        value={value}
+        disabled={setNull}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <label className="flex items-center gap-1 text-text-secondary">
+        <input
+          type="checkbox"
+          checked={setNull}
+          onChange={(event) => setSetNull(event.target.checked)}
+        />
+        NULL
+      </label>
+      <Button
+        size="sm"
+        disabled={isWriting || !column}
+        onClick={() => void onSubmit(column, setNull ? null : value)}
+      >
+        Stage bulk edit
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onClose}>
+        Cancel
+      </Button>
     </div>
   );
 }

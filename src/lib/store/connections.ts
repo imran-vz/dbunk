@@ -18,6 +18,7 @@ import type { StateCreator } from "zustand";
 import { storageClassFor } from "@/lib/engine-policy";
 import { formatLatencyMs } from "@/lib/format";
 import { fetchRedisAclSelf } from "@/lib/redis/api";
+import { closeResultMutationForConnection } from "@/lib/result-mutation-client";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import type {
@@ -93,7 +94,9 @@ const teardownConnectionWorkspace = async (
 ) => {
   await state.closeQuerySessionsForConnection(connectionId);
   await state.closeTableBrowsesForConnection(connectionId);
+  await closeResultMutationForConnection(connectionId).catch(() => undefined);
   await teardownBackend?.();
+  state.dropMutationDraftsForConnection(connectionId);
   state.dropOpenQueryStateForConnection(connectionId);
   state.dropRelationalCachesForConnection(connectionId);
   state.closeKeyTabsForConnection(connectionId);
@@ -517,6 +520,18 @@ export const createConnectionsSlice: StateCreator<
     const state = get();
     if (
       !state.connections.some((connection) => connection.id === connectionId)
+    ) {
+      return;
+    }
+    const hasStagedChanges = Object.values(state.mutationDrafts).some(
+      (draft) =>
+        draft?.connectionId === connectionId && draft.changeOrder.length > 0,
+    );
+    if (
+      hasStagedChanges &&
+      !window.confirm(
+        "Disconnecting clears staged result changes for this connection. Continue?",
+      )
     ) {
       return;
     }

@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import "@/lib/monaco-local";
+import { MutationReviewPanel } from "@/components/mutation-review";
 import {
   type ExplainPlanData,
   type ExplainPlanNode,
+  type QueryMutationGridProps,
   QueryResultsView,
   type ResultsView,
 } from "@/components/query-editor/results-view";
@@ -26,14 +28,29 @@ import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkbenchDock } from "@/components/workbench/dock";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
+import {
+  type AnalyzedColumn,
+  type AnalyzedTable,
+  type AnalyzeResultSetResult,
+  type ApplyResult,
+  type MutationTable,
+  type NotAnalyzableReason,
+  type ResultMutationError,
+  supportsResultMutations,
+} from "@/lib/result-mutation";
+import { analyzeResultSet } from "@/lib/result-mutation-client";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import { formatSql } from "@/lib/sql-format";
 import {
   type QueryOutcome,
   type QueryPreviewData,
+  type MutationDraft,
+  queryMutationDraftScope,
+  type QueryMutationDraftScope,
   useAppStore,
   type WorkspaceTab,
 } from "@/lib/store";
+import { GRID_NULL_SENTINEL, gridCellToEditValue } from "@/lib/table-browse";
 import {
   useContainerWidth,
   useResizableWidth,
@@ -47,6 +64,11 @@ interface QueryEditorPanelProps {
   onResultsViewChange?: (view: ResultsView) => void;
   onStatusItemsChange?: (items: StatusBarItem[]) => void;
 }
+
+type MutationGridStatus = {
+  copy: string;
+  tone: QueryMutationGridProps["statusTone"];
+};
 
 export function QueryEditorPanel({
   tab,
@@ -66,6 +88,16 @@ export function QueryEditorPanel({
   activeTabIdRef.current = tab.id;
   const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
   const sidebar = useQuerySidebarVisibility(containerWidth);
+  const [resultIndex, setResultIndex] = useState(0);
+  const [reviewScope, setReviewScope] =
+    useState<QueryMutationDraftScope | null>(null);
+  const [analysisState, setAnalysisState] = useState<
+    | { scope: QueryMutationDraftScope; state: "loading" }
+    | { scope: QueryMutationDraftScope; state: "error"; message: string }
+    | null
+  >(null);
+  const analysisRequestsRef = useRef(new Set<QueryMutationDraftScope>());
+  const [staleExecutionId, setStaleExecutionId] = useState<string | null>(null);
 
   // Split-pane resize: editor on top, results below. Storage key is
   // global so the user's chosen height applies across every query tab.
@@ -111,8 +143,10 @@ export function QueryEditorPanel({
   const {
     queryPreviews,
     querySessions,
+    queryExecutionSql,
     queryStatus,
     queryEdits,
+    mutationDrafts,
     schemaExplorer,
     tableStructure,
     editorTheme,
@@ -124,6 +158,11 @@ export function QueryEditorPanel({
     loadTableStructure,
     setQueryEdit,
     discardQueryEdits,
+    openMutationDraft,
+    setMutationDraftAnalysis,
+    stageMutationDraftUpdate,
+    discardMutationDraft,
+    dropMutationDraftsForExecution,
     retargetQueryTab,
     setActiveTabId,
     releaseQueryResults,
@@ -134,6 +173,15 @@ export function QueryEditorPanel({
   const isRunning = status?.state === "running";
   const isBusy = isRunning || isCancelling;
   const session = querySessions[tab.id];
+  const execution = session?.execution;
+  const executionId = execution?.id ?? null;
+  useEffect(() => {
+    setResultIndex(0);
+    setReviewScope(null);
+    setAnalysisState(null);
+    analysisRequestsRef.current.clear();
+    setStaleExecutionId(null);
+  }, [executionId, tab.id]);
   // Terminal outcome lives component-local. We store the full
   // QueryOutcome (not just the failure message) for shape parity
   // with sibling panels. See CONTEXT.md — Query Outcome.
@@ -206,6 +254,57 @@ export function QueryEditorPanel({
     [activeConnectionId, connections, tab.connectionId],
   );
 
+  const mutationCapable =
+    execution?.status === "completed" &&
+    !execution.tombstone &&
+    Boolean(
+      activeConnection && supportsResultMutations(activeConnection.engine),
+    );
+  const mutationScope =
+    mutationCapable && executionId
+      ? queryMutationDraftScope(tab.id, executionId, resultIndex)
+      : null;
+  const mutationDraft = mutationScope ? mutationDrafts[mutationScope] : null;
+  const stagedChangeCount = mutationDraft?.changeOrder.length ?? 0;
+  const mutationLocked = mutationDraft?.apply.state === "applying";
+  const exactExecutionSql = queryExecutionSql[tab.id] ?? null;
+  const executionDraftChangeCount = useMemo(
+    () =>
+      Object.values(mutationDrafts).reduce((count, draft) => {
+        if (
+          !draft ||
+          draft.owner.kind !== "query" ||
+          draft.owner.tabId !== tab.id ||
+          draft.owner.executionId !== executionId
+        ) {
+          return count;
+        }
+        return count + draft.changeOrder.length;
+      }, 0),
+    [executionId, mutationDrafts, tab.id],
+  );
+
+  const guardedRunQuery = useCallback(
+    async (tabId: string, options?: { overrideSql?: string }) => {
+      if (executionId && executionDraftChangeCount > 0) {
+        const ok = window.confirm(
+          `Re-running will discard ${executionDraftChangeCount} staged ${pluralize("change", executionDraftChangeCount)}. Continue?`,
+        );
+        if (!ok) return { kind: "noop" } as const;
+        dropMutationDraftsForExecution(tab.id, executionId);
+        setReviewScope(null);
+      }
+      return runQuery(tabId, options);
+    },
+    [
+      dropMutationDraftsForExecution,
+      executionDraftChangeCount,
+      executionId,
+      runQuery,
+      tab.id,
+    ],
+  );
+
   const editor = useMonacoQueryEditor({
     tabId: tab.id,
     query: tab.query ?? "",
@@ -213,12 +312,176 @@ export function QueryEditorPanel({
     completionContext,
     isRunning: isBusy,
     loadTableStructure,
-    runQuery,
+    runQuery: guardedRunQuery,
     onOutcome: handleQueryOutcome,
     onFormat: () => handleFormat(),
   });
 
-  const hasEdits = Object.keys(currentEdits).length > 0;
+  const ensureMutationAnalysis = useCallback(async () => {
+    if (
+      !mutationScope ||
+      !executionId ||
+      resultIndex !== 0 ||
+      mutationDraft?.analysis ||
+      analysisRequestsRef.current.has(mutationScope)
+    ) {
+      return;
+    }
+    if (!exactExecutionSql) {
+      setAnalysisState({
+        scope: mutationScope,
+        state: "error",
+        message:
+          "The exact SQL for this result is unavailable. Re-run the query.",
+      });
+      return;
+    }
+
+    const handle = openMutationDraft({
+      owner: {
+        kind: "query",
+        tabId: tab.id,
+        executionId,
+        resultSetIndex: resultIndex,
+      },
+      connectionId: tab.connectionId,
+      source: { kind: "statement", sql: exactExecutionSql },
+    });
+    analysisRequestsRef.current.add(mutationScope);
+    setAnalysisState({ scope: mutationScope, state: "loading" });
+    const result = await analyzeResultSet({
+      connectionId: tab.connectionId,
+      tabId: tab.id,
+      source: { kind: "statement", sql: exactExecutionSql },
+      refreshStructure: false,
+    });
+    analysisRequestsRef.current.delete(mutationScope);
+    if (result.kind === "ok") {
+      setMutationDraftAnalysis(handle, result.value);
+      setAnalysisState((current) =>
+        current?.scope === mutationScope ? null : current,
+      );
+      return;
+    }
+    if (result.kind === "superseded" || result.kind === "cancelled") {
+      setAnalysisState((current) =>
+        current?.scope === mutationScope ? null : current,
+      );
+      return;
+    }
+    setAnalysisState({
+      scope: mutationScope,
+      state: "error",
+      message: mutationClientErrorCopy(result.error),
+    });
+  }, [
+    exactExecutionSql,
+    executionId,
+    mutationDraft?.analysis,
+    mutationScope,
+    openMutationDraft,
+    resultIndex,
+    setMutationDraftAnalysis,
+    tab.connectionId,
+    tab.id,
+  ]);
+
+  const mutationAnalysis = mutationDraft?.analysis?.snapshot ?? null;
+  const selectedResult = execution?.resultSets[resultIndex];
+  const selectedRawRows = useMemo(
+    () => flattenResultSetRows(selectedResult),
+    [selectedResult],
+  );
+  const isResultStale = staleExecutionId === executionId;
+  const mutationEdits = useMemo(
+    () =>
+      mutationDraft && mutationAnalysis
+        ? mutationDraftGridEdits(mutationDraft, mutationAnalysis)
+        : {},
+    [mutationAnalysis, mutationDraft],
+  );
+  const mutationStatus = mutationGridStatus({
+    resultIndex,
+    analysis: mutationAnalysis,
+    analysisState:
+      analysisState?.scope === mutationScope ? analysisState : null,
+    stale: isResultStale,
+  });
+  const getMutationCellReadOnlyReason = useCallback(
+    (rowIndex: number, colIndex: number) => {
+      if (isResultStale) return "Re-run the query before editing this result.";
+      if (resultIndex !== 0) return "Only the first result set can be edited.";
+      if (!mutationAnalysis) return mutationStatus.copy;
+      return queryCellReadOnlyReason(
+        mutationAnalysis,
+        selectedRawRows[rowIndex],
+        colIndex,
+      );
+    },
+    [
+      isResultStale,
+      mutationAnalysis,
+      mutationStatus.copy,
+      resultIndex,
+      selectedRawRows,
+    ],
+  );
+  const handleMutationCellEdit = useCallback(
+    (rowIndex: number, colIndex: number, value: string) => {
+      if (
+        !mutationScope ||
+        !mutationAnalysis ||
+        mutationLocked ||
+        getMutationCellReadOnlyReason(rowIndex, colIndex)
+      ) {
+        return;
+      }
+      const row = selectedRawRows[rowIndex];
+      const column = mutationAnalysis.columns[colIndex];
+      if (!row || !column || column.origin.kind !== "table") return;
+      const table = analyzedTableForColumn(mutationAnalysis, column);
+      if (!table || table.identity.kind === "none") return;
+      const identity = table.identity.columns.map((identityColumn, index) => ({
+        column: identityColumn,
+        value: row[table.identityProjectionIndexes[index] ?? -1] ?? null,
+      }));
+      const originals = projectedOriginalsForTable(
+        mutationAnalysis,
+        table,
+        row,
+      );
+      const target: MutationTable = {
+        schema: table.schema,
+        table: table.table,
+      };
+      stageMutationDraftUpdate(mutationScope, {
+        table: target,
+        identityKind: table.identity.kind,
+        identity,
+        originals,
+        cells: [
+          {
+            column: column.origin.column,
+            original: row[colIndex] ?? null,
+            value: gridCellToEditValue(value),
+          },
+        ],
+        rowIndex,
+      });
+    },
+    [
+      getMutationCellReadOnlyReason,
+      mutationAnalysis,
+      mutationLocked,
+      mutationScope,
+      selectedRawRows,
+      stageMutationDraftUpdate,
+    ],
+  );
+
+  const hasEdits = mutationCapable
+    ? stagedChangeCount > 0
+    : Object.keys(currentEdits).length > 0;
   const bindNames = useMemo(
     () => extractBindVariables(tab.query ?? ""),
     [tab.query],
@@ -227,14 +490,57 @@ export function QueryEditorPanel({
     editor.runSql(applyBindVariables(editor.currentStatement(), bindValues));
   };
 
+  const handleDiscardEdits = () => {
+    if (!mutationCapable || !mutationScope) {
+      discardQueryEdits(tab.id);
+      return;
+    }
+    if (stagedChangeCount === 0 || mutationLocked) return;
+    const ok = window.confirm(
+      `Discard ${stagedChangeCount} staged ${pluralize("change", stagedChangeCount)}?`,
+    );
+    if (!ok) return;
+    discardMutationDraft(mutationScope);
+    setReviewScope(null);
+  };
+
+  const handleReviewEdits = () => {
+    if (!mutationScope || stagedChangeCount === 0 || mutationLocked) return;
+    setReviewScope(mutationScope);
+    sidebar.setOverlayOpen(false);
+  };
+
+  const handleMutationApplySuccess = (_result: ApplyResult) => {
+    if (executionId) setStaleExecutionId(executionId);
+  };
+
+  const handleRerunResult = async () => {
+    if (!exactExecutionSql) return;
+    const outcome = await guardedRunQuery(tab.id, {
+      overrideSql: exactExecutionSql,
+    });
+    if (outcome.kind !== "noop") handleQueryOutcome(outcome, exactExecutionSql);
+  };
+
   const handleRetargetConnection = (newConnectionId: string) => {
     if (newConnectionId === tab.connectionId) return;
     if (isBusy) return;
-    if (hasEdits) {
+    const pendingCount = mutationCapable
+      ? executionDraftChangeCount
+      : hasEdits
+        ? 1
+        : 0;
+    if (pendingCount > 0) {
       const ok = window.confirm(
-        "Switching connections will discard pending edits in the results grid. Continue?",
+        mutationCapable
+          ? `Switching connections will discard ${pendingCount} staged ${pluralize("change", pendingCount)}. Continue?`
+          : "Switching connections will discard pending edits in the results grid. Continue?",
       );
       if (!ok) return;
+      if (mutationCapable && executionId) {
+        dropMutationDraftsForExecution(tab.id, executionId);
+        setReviewScope(null);
+      }
     }
     retargetQueryTab(tab.id, newConnectionId);
   };
@@ -277,7 +583,9 @@ export function QueryEditorPanel({
     setResultsView("explain");
     setExplainPlan(null);
     const requestedTabId = tab.id;
-    const outcome = await runQuery(requestedTabId, { overrideSql: sql });
+    const outcome = await guardedRunQuery(requestedTabId, {
+      overrideSql: sql,
+    });
     if (requestedTabId !== activeTabIdRef.current) return;
     if (outcome.kind !== "noop") setOutcome(outcome);
     if (outcome.kind === "completed") {
@@ -331,6 +639,37 @@ export function QueryEditorPanel({
   const isWorkbench = variant === "workbench";
   const runCurrentHandler =
     bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent;
+  const mutationGrid = mutationCapable
+    ? {
+        edits: mutationEdits,
+        readOnly:
+          isResultStale ||
+          !mutationAnalysis ||
+          mutationAnalysis.statement.kind !== "analyzed" ||
+          !mutationAnalysis.columns.some(
+            (_column, colIndex) =>
+              !queryCellReadOnlyReason(mutationAnalysis, undefined, colIndex),
+          ),
+        onCellEdit: handleMutationCellEdit,
+        onEditIntent: () => void ensureMutationAnalysis(),
+        getCellReadOnlyReason: getMutationCellReadOnlyReason,
+        statusCopy: mutationStatus.copy,
+        statusTone: mutationStatus.tone,
+        stale: isResultStale && !reviewScope,
+        onRerun: () => void handleRerunResult(),
+      }
+    : undefined;
+
+  const reviewPanel = reviewScope ? (
+    <aside className="flex h-full w-[min(410px,42vw)] shrink-0 border-l border-border-subtle bg-black max-[820px]:h-[48%] max-[820px]:w-full max-[820px]:border-l-0 max-[820px]:border-t">
+      <MutationReviewPanel
+        scope={reviewScope}
+        onClose={() => setReviewScope(null)}
+        onApplySuccess={handleMutationApplySuccess}
+        onRerunQuery={handleRerunResult}
+      />
+    </aside>
+  ) : null;
 
   const resultsPane = (
     <QueryResultsView
@@ -343,6 +682,9 @@ export function QueryEditorPanel({
       exportFilenameBase={exportFilenameBase}
       isRunning={isBusy}
       errorMessage={errorMessage}
+      resultIndex={resultIndex}
+      onResultIndexChange={setResultIndex}
+      mutationGrid={mutationGrid}
       hideTabs={isWorkbench}
       onCellEdit={(rowIndex, colIndex, value) =>
         setQueryEdit(tab.id, rowIndex, colIndex, value)
@@ -357,98 +699,106 @@ export function QueryEditorPanel({
       <div
         ref={containerRef}
         data-workspace-density={workspaceDensity}
-        className="relative flex h-full min-h-0 flex-col bg-surface-app"
+        className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col"
       >
-        <QueryEditorToolbar
-          tabId={tab.id}
-          dbSelectorLabel={dbSelectorLabel}
-          connections={connections}
-          currentConnectionId={tab.connectionId}
-          onRetargetConnection={handleRetargetConnection}
-          hasEdits={hasEdits}
-          onDiscardEdits={() => discardQueryEdits(tab.id)}
-          isRunning={isBusy}
-          isCancelling={isCancelling}
-          onStop={() => void cancelQuery(tab.id)}
-          isSidebarOpen={sidebar.isOpen}
-          onToggleSidebar={sidebar.onToggle}
-          onRunCurrent={runCurrentHandler}
-          onRunSelection={editor.handleRunSelection}
-          onRunAll={editor.handleRunAll}
-          onExplain={handleExplain}
-          onFormat={handleFormat}
-          onInsertSnippet={(sql) =>
-            updateQuery(
-              tab.id,
-              [tab.query ?? "", sql].filter(Boolean).join("\n\n"),
-            )
-          }
-          hideConnectionSwitcher
-        />
-        {bindNames.length > 0 ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs">
-            <span className="text-text-muted">Bind variables</span>
-            {bindNames.map((name) => (
-              <label key={name} className="flex items-center gap-1">
-                <span className="font-mono text-text-muted">:{name}</span>
-                <input
-                  value={bindValues[name] ?? ""}
-                  onChange={(event) =>
-                    setBindValues((current) => ({
-                      ...current,
-                      [name]: event.target.value,
-                    }))
-                  }
-                  className="h-7 w-28 rounded-sm border border-border-subtle bg-surface-input px-2 font-mono text-xs"
-                />
-              </label>
-            ))}
-          </div>
-        ) : null}
-        <div className="relative min-h-0 flex-1 bg-surface-app">
-          {isClient ? (
-            <MonacoEditor
-              height="100%"
-              language="sql"
-              theme={editorTheme}
-              value={tab.query ?? ""}
-              options={editorOptions}
-              onChange={(value) => updateQuery(tab.id, value ?? "")}
-              onMount={editor.onMount}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-text-muted">
-              Loading editor…
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <QueryEditorToolbar
+            tabId={tab.id}
+            dbSelectorLabel={dbSelectorLabel}
+            connections={connections}
+            currentConnectionId={tab.connectionId}
+            onRetargetConnection={handleRetargetConnection}
+            hasEdits={hasEdits}
+            onDiscardEdits={handleDiscardEdits}
+            onReviewEdits={mutationCapable ? handleReviewEdits : undefined}
+            stagedChangeCount={mutationCapable ? stagedChangeCount : undefined}
+            mutationLocked={mutationLocked}
+            isRunning={isBusy}
+            isCancelling={isCancelling}
+            onStop={() => void cancelQuery(tab.id)}
+            isSidebarOpen={sidebar.isOpen}
+            onToggleSidebar={sidebar.onToggle}
+            onRunCurrent={runCurrentHandler}
+            onRunSelection={editor.handleRunSelection}
+            onRunAll={editor.handleRunAll}
+            onExplain={handleExplain}
+            onFormat={handleFormat}
+            onInsertSnippet={(sql) =>
+              updateQuery(
+                tab.id,
+                [tab.query ?? "", sql].filter(Boolean).join("\n\n"),
+              )
+            }
+            hideConnectionSwitcher
+          />
+          {bindNames.length > 0 ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs">
+              <span className="text-text-muted">Bind variables</span>
+              {bindNames.map((name) => (
+                <label key={name} className="flex items-center gap-1">
+                  <span className="font-mono text-text-muted">:{name}</span>
+                  <input
+                    value={bindValues[name] ?? ""}
+                    onChange={(event) =>
+                      setBindValues((current) => ({
+                        ...current,
+                        [name]: event.target.value,
+                      }))
+                    }
+                    className="h-7 w-28 rounded-sm border border-border-subtle bg-surface-input px-2 font-mono text-xs"
+                  />
+                </label>
+              ))}
             </div>
-          )}
+          ) : null}
+          <div className="relative min-h-0 flex-1 bg-surface-app">
+            {isClient ? (
+              <MonacoEditor
+                height="100%"
+                language="sql"
+                theme={editorTheme}
+                value={tab.query ?? ""}
+                options={editorOptions}
+                onChange={(value) => updateQuery(tab.id, value ?? "")}
+                onMount={editor.onMount}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-text-muted">
+                Loading editor…
+              </div>
+            )}
+          </div>
+          <WorkbenchDock
+            storageKey={`query-${tab.id}`}
+            consoleLabel={tab.label}
+            onRun={runCurrentHandler}
+            runDisabled={isBusy}
+            consoleContent={
+              <pre className="px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground">
+                {tab.query ?? ""}
+              </pre>
+            }
+            outputContent={resultsPane}
+          />
+          {!reviewScope ? (
+            <ResponsiveEdgePanel
+              side="right"
+              storageKey="dbunk.sidebar.query"
+              title="Query"
+              width={QUERY_SIDEBAR_WIDTH}
+              containerWidth={containerWidth}
+              compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
+              protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+              wideVisible={sidebar.wideVisible}
+              open={sidebar.overlayOpen}
+              onOpenChange={sidebar.setOverlayOpen}
+              contentClassName="overflow-auto p-4"
+            >
+              <QuerySidebar tab={tab} />
+            </ResponsiveEdgePanel>
+          ) : null}
         </div>
-        <WorkbenchDock
-          storageKey={`query-${tab.id}`}
-          consoleLabel={tab.label}
-          onRun={runCurrentHandler}
-          runDisabled={isBusy}
-          consoleContent={
-            <pre className="px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground">
-              {tab.query ?? ""}
-            </pre>
-          }
-          outputContent={resultsPane}
-        />
-        <ResponsiveEdgePanel
-          side="right"
-          storageKey="dbunk.sidebar.query"
-          title="Query"
-          width={QUERY_SIDEBAR_WIDTH}
-          containerWidth={containerWidth}
-          compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
-          protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-          wideVisible={sidebar.wideVisible}
-          open={sidebar.overlayOpen}
-          onOpenChange={sidebar.setOverlayOpen}
-          contentClassName="overflow-auto p-4"
-        >
-          <QuerySidebar tab={tab} />
-        </ResponsiveEdgePanel>
+        {reviewPanel}
       </div>
     );
   }
@@ -457,7 +807,7 @@ export function QueryEditorPanel({
     <div
       ref={containerRef}
       data-workspace-density={workspaceDensity}
-      className="relative flex h-full min-h-0 bg-surface-app"
+      className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col"
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <QueryEditorToolbar
@@ -467,7 +817,10 @@ export function QueryEditorPanel({
           currentConnectionId={tab.connectionId}
           onRetargetConnection={handleRetargetConnection}
           hasEdits={hasEdits}
-          onDiscardEdits={() => discardQueryEdits(tab.id)}
+          onDiscardEdits={handleDiscardEdits}
+          onReviewEdits={mutationCapable ? handleReviewEdits : undefined}
+          stagedChangeCount={mutationCapable ? stagedChangeCount : undefined}
+          mutationLocked={mutationLocked}
           isRunning={isBusy}
           isCancelling={isCancelling}
           onStop={() => void cancelQuery(tab.id)}
@@ -551,6 +904,9 @@ export function QueryEditorPanel({
             exportFilenameBase={exportFilenameBase}
             isRunning={isBusy}
             errorMessage={errorMessage}
+            resultIndex={resultIndex}
+            onResultIndexChange={setResultIndex}
+            mutationGrid={mutationGrid}
             onCellEdit={(rowIndex, colIndex, value) =>
               setQueryEdit(tab.id, rowIndex, colIndex, value)
             }
@@ -561,21 +917,24 @@ export function QueryEditorPanel({
 
         <StatusBar items={statusItems} />
       </div>
-      <ResponsiveEdgePanel
-        side="right"
-        storageKey="dbunk.sidebar.query"
-        title="Query"
-        width={QUERY_SIDEBAR_WIDTH}
-        containerWidth={containerWidth}
-        compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
-        protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-        wideVisible={sidebar.wideVisible}
-        open={sidebar.overlayOpen}
-        onOpenChange={sidebar.setOverlayOpen}
-        contentClassName="overflow-auto p-4"
-      >
-        <QuerySidebar tab={tab} />
-      </ResponsiveEdgePanel>
+      {!reviewScope ? (
+        <ResponsiveEdgePanel
+          side="right"
+          storageKey="dbunk.sidebar.query"
+          title="Query"
+          width={QUERY_SIDEBAR_WIDTH}
+          containerWidth={containerWidth}
+          compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
+          protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+          wideVisible={sidebar.wideVisible}
+          open={sidebar.overlayOpen}
+          onOpenChange={sidebar.setOverlayOpen}
+          contentClassName="overflow-auto p-4"
+        >
+          <QuerySidebar tab={tab} />
+        </ResponsiveEdgePanel>
+      ) : null}
+      {reviewPanel}
     </div>
   );
 }
@@ -718,6 +1077,271 @@ function numberOrUndefined(value: unknown): number | undefined {
 function numberOrNull(value: unknown): number | null {
   // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function analyzedTableForColumn(
+  analysis: AnalyzeResultSetResult,
+  column: AnalyzedColumn,
+): AnalyzedTable | null {
+  if (column.origin.kind !== "table") return null;
+  const origin = column.origin;
+  return (
+    analysis.tables.find(
+      (table) => table.schema === origin.schema && table.table === origin.table,
+    ) ?? null
+  );
+}
+
+function queryCellReadOnlyReason(
+  analysis: AnalyzeResultSetResult,
+  row: Array<string | null> | undefined,
+  colIndex: number,
+): string | undefined {
+  if (analysis.statement.kind === "notAnalyzable") {
+    return notAnalyzableCopy(analysis.statement.reason);
+  }
+  const column = analysis.columns[colIndex];
+  if (!column) return "This column is not part of the analyzed result.";
+  if (column.origin.kind === "expression") {
+    return "Computed columns are read-only.";
+  }
+  switch (column.writability.kind) {
+    case "generated":
+      return "Generated columns are read-only.";
+    case "identityAlways":
+      return "Identity-always columns are read-only.";
+    case "systemColumn":
+      return "System columns are read-only.";
+    case "writable":
+      break;
+  }
+  const table = analyzedTableForColumn(analysis, column);
+  if (!table) return "The source table could not be resolved.";
+  if (!table.updatable.allowed) {
+    return capabilityReasonCopy(table.updatable.reason);
+  }
+  if (table.identity.kind === "none") {
+    return "This table has no stable row identity.";
+  }
+  if (!table.identityProjected) {
+    return "Project the row identity columns to edit this table.";
+  }
+  if (
+    table.identityProjectionIndexes.length !== table.identity.columns.length
+  ) {
+    return "The projected row identity is incomplete.";
+  }
+  if (
+    row &&
+    table.identityProjectionIndexes.some((index) => row[index] == null)
+  ) {
+    return "This row has a NULL identity value and cannot be edited safely.";
+  }
+  return undefined;
+}
+
+function projectedOriginalsForTable(
+  analysis: AnalyzeResultSetResult,
+  table: AnalyzedTable,
+  row: Array<string | null>,
+) {
+  const originals = new Map<string, string | null>();
+  analysis.columns.forEach((column, index) => {
+    if (
+      column.origin.kind === "table" &&
+      column.origin.schema === table.schema &&
+      column.origin.table === table.table &&
+      !originals.has(column.origin.column)
+    ) {
+      originals.set(column.origin.column, row[index] ?? null);
+    }
+  });
+  return [...originals].map(([column, value]) => ({ column, value }));
+}
+
+function mutationDraftGridEdits(
+  draft: MutationDraft,
+  analysis: AnalyzeResultSetResult,
+): QueryMutationGridProps["edits"] {
+  const edits: QueryMutationGridProps["edits"] = {};
+  for (const changeId of draft.changeOrder) {
+    const change = draft.changes[changeId];
+    if (!change || change.kind !== "updateRow" || change.rowIndex === null) {
+      continue;
+    }
+    const rowIndex = change.rowIndex;
+    analysis.columns.forEach((column, colIndex) => {
+      if (
+        column.origin.kind !== "table" ||
+        column.origin.schema !== change.table.schema ||
+        column.origin.table !== change.table.table
+      ) {
+        return;
+      }
+      const cell = change.cells[column.origin.column];
+      if (!cell) return;
+      const rowEdits = edits[rowIndex] ?? {};
+      rowEdits[colIndex] = cell.value ?? GRID_NULL_SENTINEL;
+      edits[rowIndex] = rowEdits;
+    });
+  }
+  return edits;
+}
+
+function mutationGridStatus({
+  resultIndex,
+  analysis,
+  analysisState,
+  stale,
+}: {
+  resultIndex: number;
+  analysis: AnalyzeResultSetResult | null;
+  analysisState:
+    | { state: "loading" }
+    | { state: "error"; message: string }
+    | null;
+  stale: boolean;
+}): MutationGridStatus {
+  if (stale) {
+    return {
+      copy: "Changes were applied. This result is stale until you re-run it.",
+      tone: "warning",
+    };
+  }
+  if (resultIndex !== 0) {
+    return {
+      copy: "Only the first result set can be edited.",
+      tone: "muted",
+    };
+  }
+  if (analysisState?.state === "loading") {
+    return { copy: "Analyzing result editability…", tone: "muted" };
+  }
+  if (analysisState?.state === "error") {
+    return { copy: analysisState.message, tone: "warning" };
+  }
+  if (!analysis) {
+    return {
+      copy: "Select a cell to analyze result editability.",
+      tone: "muted",
+    };
+  }
+  if (analysis.statement.kind === "notAnalyzable") {
+    return {
+      copy: notAnalyzableCopy(analysis.statement.reason),
+      tone: "warning",
+    };
+  }
+  const editableTables = analysis.tables.filter(
+    (table) =>
+      table.updatable.allowed &&
+      table.identityProjected &&
+      table.identity.kind !== "none",
+  );
+  if (editableTables.length === 0) {
+    return {
+      copy: "No projected table columns have a stable writable identity.",
+      tone: "warning",
+    };
+  }
+  const identities = [
+    ...new Set(
+      editableTables.map((table) => identityLabel(table.identity.kind)),
+    ),
+  ].join(", ");
+  return { copy: `Editable · ${identities}`, tone: "success" };
+}
+
+function identityLabel(kind: AnalyzedTable["identity"]["kind"]): string {
+  switch (kind) {
+    case "primaryKey":
+      return "primary key";
+    case "uniqueIndex":
+      return "unique index";
+    case "virtualKey":
+      return "virtual key";
+    case "ctidFallback":
+      return "ctid fallback";
+    case "none":
+      return "no identity";
+  }
+}
+
+function capabilityReasonCopy(
+  reason: AnalyzedTable["updatable"]["reason"],
+): string {
+  switch (reason) {
+    case "noIdentity":
+      return "This table has no stable row identity.";
+    case "identityNotProjected":
+      return "Project the row identity columns to edit this table.";
+    case "multipleOriginTables":
+      return "This column cannot be attributed to one writable table.";
+    case "noWritableColumns":
+      return "This table has no writable projected columns.";
+    case "ctidInsertUnsupported":
+      return "This table only has a temporary ctid identity.";
+    case "invalidVirtualKey":
+      return "The saved virtual key is invalid.";
+    case "notAnalyzable":
+    case undefined:
+      return "This table is read-only for this result.";
+  }
+}
+
+function notAnalyzableCopy(reason: NotAnalyzableReason): string {
+  switch (reason.kind) {
+    case "multiStatement":
+      return "Editing requires one SQL statement. Re-run a single statement.";
+    case "noProjectedColumns":
+      return "This result has no projected columns to edit.";
+    case "noTableOrigins":
+      return "This result has no direct table columns to edit.";
+    case "possibleTempShadowing":
+      return "Editing is blocked because a temporary table may shadow the resolved target.";
+    case "database":
+      return reason.code
+        ? `Analysis failed (${reason.code}): ${reason.message}`
+        : `Analysis failed: ${reason.message}`;
+  }
+}
+
+function mutationClientErrorCopy(error: ResultMutationError): string {
+  if (error.kind === "notAnalyzable") return notAnalyzableCopy(error.reason);
+  switch (error.kind) {
+    case "unsupportedEngine":
+      return "Result editing is unavailable for this database engine.";
+    case "connectionClosing":
+      return "The connection is closing. Reconnect and re-run the query.";
+    case "connectionLost":
+      return "The database connection was lost. Reconnect and re-run the query.";
+    case "timeout":
+      return `Analysis timed out during ${error.operation}.`;
+    case "database":
+      return error.code
+        ? `Analysis failed (${error.code}): ${error.message}`
+        : `Analysis failed: ${error.message}`;
+    case "superseded":
+      return "Analysis was replaced by a newer request.";
+    case "cancelled":
+      return "Analysis was cancelled.";
+    case "busy":
+      return "Another result mutation is already running.";
+    case "unknownColumn":
+      return `Analysis returned an unknown column: ${error.column}.`;
+    case "invalidPlan":
+      return `The mutation plan is invalid (${error.reason}).`;
+    case "analysisExpired":
+      return "The result analysis expired. Re-run the query.";
+    case "conflict":
+    case "identityNotUnique":
+    case "lockTimeout":
+      return "The result could not be prepared for editing.";
+  }
+}
+
+function pluralize(noun: string, count: number): string {
+  return count === 1 ? noun : `${noun}s`;
 }
 
 function slug(value: string): string {

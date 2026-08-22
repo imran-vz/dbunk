@@ -17,6 +17,14 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
+vi.mock("@/lib/result-mutation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/result-mutation")>();
+  return {
+    ...actual,
+    supportsResultMutations: (engine: string) => engine === "PostgreSQL",
+  };
+});
+
 // Monaco is loaded locally in the real app but the heavy editor module
 // can't run in jsdom. The editor component itself is already mocked
 // below; this prevents the side-effectful local-loader from importing
@@ -150,7 +158,9 @@ vi.mock("@monaco-editor/react", () => ({
 }));
 
 import { QueryEditorPanel } from "@/components/query-editor-panel";
+import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
 import {
+  type QuerySessionState,
   type QueryStatus,
   tableStructureKey,
   useAppStore,
@@ -171,6 +181,174 @@ const queryTab: WorkspaceTab = {
   schema: "public",
   query: "select 1;",
 };
+
+const pgConnection = {
+  id: "conn-1",
+  name: "Local Postgres",
+  database: "app",
+  host: "localhost",
+  port: 5432,
+  user: "postgres",
+  password: "",
+  role: "",
+  engine: "PostgreSQL" as const,
+  ssl: false,
+  status: "Connected" as const,
+  latency: "1ms",
+};
+
+const analyzedUsersResult: AnalyzeResultSetResult = {
+  requestId: 1,
+  analysisId: 11,
+  statement: { kind: "analyzed" },
+  columns: [
+    {
+      name: "id",
+      origin: {
+        kind: "table",
+        schema: "public",
+        table: "users",
+        column: "id",
+        attnum: 1,
+      },
+      castType: "int4",
+      nullable: false,
+      writability: { kind: "writable" },
+    },
+    {
+      name: "name",
+      origin: {
+        kind: "table",
+        schema: "public",
+        table: "users",
+        column: "name",
+        attnum: 2,
+      },
+      castType: "text",
+      nullable: true,
+      writability: { kind: "writable" },
+    },
+    {
+      name: "generated_slug",
+      origin: {
+        kind: "table",
+        schema: "public",
+        table: "users",
+        column: "generated_slug",
+        attnum: 3,
+      },
+      castType: "text",
+      nullable: true,
+      writability: { kind: "generated" },
+    },
+  ],
+  tables: [
+    {
+      schema: "public",
+      table: "users",
+      identity: { kind: "primaryKey", columns: ["id"] },
+      identityProjected: true,
+      identityProjectionIndexes: [0],
+      updatable: { allowed: true },
+      deletable: { allowed: true },
+      insertable: { allowed: true },
+    },
+  ],
+};
+
+function persistentQuerySession(
+  resultSets: NonNullable<QuerySessionState["execution"]>["resultSets"] = [
+    {
+      index: 0,
+      columns: ["id", "name", "generated_slug"],
+      rowChunks: [
+        [
+          ["1", null, "ada"],
+          ["2", "Ada", "ada-2"],
+        ],
+      ],
+      rowCount: 2,
+      partial: false,
+      completed: true,
+    },
+  ],
+): QuerySessionState {
+  return {
+    id: "session-1",
+    tabId: queryTab.id,
+    connectionId: queryTab.connectionId,
+    generation: 1,
+    transaction: {
+      mode: "autocommit",
+      status: "idle",
+      manualIsolation: "readCommitted",
+    },
+    execution: {
+      id: "execution-1",
+      status: "completed",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      completedAt: "2026-08-22T00:00:00.010Z",
+      runtimeMs: 10,
+      resultSets,
+      notices: [],
+      error: null,
+      omittedRows: 0,
+      omittedResultSets: 0,
+      omittedNotices: 0,
+      omittedMetadataBytes: 0,
+      truncationReasons: [],
+      retainedBytes: 64,
+      tombstone: null,
+    },
+    lastViewedAt: Date.now(),
+    budgetOwners: [],
+    state: "open",
+  };
+}
+
+function seedPersistentQuery(
+  resultSets?: NonNullable<QuerySessionState["execution"]>["resultSets"],
+) {
+  useAppStore.setState({
+    workspaceTabs: [queryTab],
+    activeConnectionId: "conn-1",
+    activeTabId: queryTab.id,
+    connections: [pgConnection],
+    queryStatus: {},
+    queryExecutionSql: { [queryTab.id]: "select id, name from users" },
+    querySessions: {
+      [queryTab.id]: persistentQuerySession(resultSets),
+    },
+  });
+}
+
+function seedUsersUpdateDraft() {
+  const store = useAppStore.getState();
+  const handle = store.openMutationDraft({
+    owner: {
+      kind: "query",
+      tabId: queryTab.id,
+      executionId: "execution-1",
+      resultSetIndex: 0,
+    },
+    connectionId: queryTab.connectionId,
+    source: { kind: "statement", sql: "select id, name from users" },
+  });
+  store.setMutationDraftAnalysis(handle, analyzedUsersResult);
+  store.stageMutationDraftUpdate(handle.scope, {
+    table: { schema: "public", table: "users" },
+    identityKind: "primaryKey",
+    identity: [{ column: "id", value: "2" }],
+    originals: [
+      { column: "id", value: "2" },
+      { column: "name", value: "Ada" },
+      { column: "generated_slug", value: "ada-2" },
+    ],
+    cells: [{ column: "name", original: "Ada", value: "Grace" }],
+    rowIndex: 1,
+  });
+  return handle.scope;
+}
 
 const seedStatus = (status: QueryStatus) => {
   useAppStore.setState({
@@ -977,6 +1155,253 @@ describe("QueryEditorPanel onMount branches", () => {
     // never get applied — the branch that gates them on the collection has
     // now been exercised.
     expect(decorationState.values).toHaveLength(0);
+  });
+});
+
+describe("QueryEditorPanel result mutations", () => {
+  it("analyzes lazily from the exact execution SQL, gates columns, and preserves NULLs", async () => {
+    seedPersistentQuery();
+    mockedInvoke.mockImplementation((command) =>
+      command === "analyze_result_set"
+        ? Promise.resolve(analyzedUsersResult)
+        : Promise.resolve(undefined),
+    );
+
+    render(
+      <QueryEditorPanel
+        tab={{ ...queryTab, query: "select now()" }}
+        isClient
+      />,
+    );
+
+    expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+      "Select a cell to analyze",
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "ada" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+        "Editable · primary key",
+      );
+    });
+    const analyzeCall = mockedInvoke.mock.calls.find(
+      ([command]) => command === "analyze_result_set",
+    );
+    expect(analyzeCall?.[1]).toMatchObject({
+      payload: {
+        source: {
+          kind: "statement",
+          sql: "select id, name from users",
+        },
+      },
+    });
+    const generatedCell = screen.getByRole("button", { name: "ada" });
+    expect(generatedCell.getAttribute("title")).toBe(
+      "Generated columns are read-only.",
+    );
+    fireEvent.click(generatedCell);
+    expect(screen.queryByDisplayValue("ada")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "NULL" }));
+    const nullInput = screen.getByDisplayValue("NULL");
+    fireEvent.change(nullInput, { target: { value: "Grace" } });
+    fireEvent.blur(nullInput);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const valueInput = screen.getByDisplayValue("Ada");
+    fireEvent.change(valueInput, { target: { value: "NULL" } });
+    fireEvent.blur(valueInput);
+
+    const draft = Object.values(useAppStore.getState().mutationDrafts).find(
+      (candidate) => candidate?.owner.kind === "query",
+    );
+    const updates = draft?.changeOrder
+      .map((changeId) => draft.changes[changeId])
+      .filter((change) => change?.kind === "updateRow");
+    expect(updates?.[0]).toMatchObject({
+      cells: { name: { original: null, value: "Grace" } },
+      originals: expect.arrayContaining([{ column: "name", value: null }]),
+    });
+    expect(updates?.[1]).toMatchObject({
+      cells: { name: { original: "Ada", value: null } },
+    });
+  });
+
+  it("shows typed analysis reasons and keeps non-first results read-only", async () => {
+    seedPersistentQuery([
+      {
+        index: 0,
+        columns: ["id", "name", "generated_slug"],
+        rowChunks: [[["1", "Ada", "ada"]]],
+        rowCount: 1,
+        partial: false,
+        completed: true,
+      },
+      {
+        index: 1,
+        columns: ["count"],
+        rowChunks: [[["1"]]],
+        rowCount: 1,
+        partial: false,
+        completed: true,
+      },
+    ]);
+    mockedInvoke.mockResolvedValue({
+      ...analyzedUsersResult,
+      statement: {
+        kind: "notAnalyzable",
+        reason: { kind: "multiStatement" },
+      },
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+        "Editing requires one SQL statement",
+      );
+    });
+
+    mockedInvoke.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /2 · 1 rows/i }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+      "Only the first result set can be edited",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1" }));
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("uses explicit temporary-shadowing analysis copy", async () => {
+    seedPersistentQuery();
+    mockedInvoke.mockResolvedValue({
+      ...analyzedUsersResult,
+      statement: {
+        kind: "notAnalyzable",
+        reason: { kind: "possibleTempShadowing" },
+      },
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+        "temporary table may shadow the resolved target",
+      );
+    });
+  });
+
+  it("opens the mutation review from Review & save", async () => {
+    seedPersistentQuery();
+    seedUsersUpdateDraft();
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "preview_result_mutations") {
+        return Promise.resolve({
+          statements: [
+            {
+              opIndex: 0,
+              sql: "UPDATE public.users SET name = $1 WHERE id = $2",
+              params: [
+                { kind: "text", value: "Grace" },
+                { kind: "text", value: "2" },
+              ],
+            },
+          ],
+        });
+      }
+      if (command === "apply_result_mutations") {
+        return Promise.resolve({
+          operations: [{ opIndex: 0, rowsAffected: 1 }],
+          runtimeMs: 4,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /Review & save/i }));
+
+    expect(
+      screen.getByRole("complementary", { name: "Mutation review" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Review 1 change" }),
+    ).toBeTruthy();
+
+    const applyButton = await screen.findByRole("button", {
+      name: "Apply 1 change",
+    });
+    await waitFor(() =>
+      expect((applyButton as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(applyButton);
+    await waitFor(() => {
+      expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+        "result is stale",
+      );
+    });
+    expect(screen.getByRole("button", { name: "Re-run result" })).toBeTruthy();
+  });
+
+  it("confirms before discarding or re-running staged query changes", async () => {
+    seedPersistentQuery();
+    const scope = seedUsersUpdateDraft();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: /^Discard$/i }));
+    expect(confirmSpy).toHaveBeenCalledWith("Discard 1 staged change?");
+    expect(
+      useAppStore.getState().mutationDrafts[scope]?.changeOrder,
+    ).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
+    expect(confirmSpy).toHaveBeenLastCalledWith(
+      "Re-running will discard 1 staged change. Continue?",
+    );
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(
+      useAppStore.getState().mutationDrafts[scope]?.changeOrder,
+    ).toHaveLength(1);
+  });
+
+  it("leaves legacy query previews and toolbar edits on the legacy path", () => {
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      connections: [pgConnection],
+      queryStatus: {},
+      querySessions: {},
+      queryPreviews: {
+        [queryTab.id]: {
+          columns: ["name"],
+          rows: [["Ada"]],
+          runtime: "1 ms",
+          rowCount: "1",
+          cache: "Cold",
+        },
+      },
+      queryEdits: { [queryTab.id]: { 0: { 0: "Grace" } } },
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    expect(screen.getByRole("button", { name: /^Save$/i })).toBeTruthy();
+    expect(screen.queryByTestId("query-mutation-status")).toBeNull();
+    expect(screen.getByRole("button", { name: "Grace" })).toBeTruthy();
   });
 });
 

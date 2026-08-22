@@ -87,6 +87,8 @@ interface EditableCellProps {
   columnType?: string;
   editValue?: string;
   onEdit?: (rowIndex: number, columnIndex: number, value: string) => void;
+  onEditIntent?: (rowIndex: number, columnIndex: number) => void;
+  readOnlyReason?: string;
   /** When set, the cell renders a hover arrow that opens a
    *  drill-down to the referenced row(s). Caller wires the click
    *  through `onFollowForeignKey`. */
@@ -317,6 +319,8 @@ function EditableCell({
   columnType,
   editValue,
   onEdit,
+  onEditIntent,
+  readOnlyReason,
   foreignKeyTarget,
   onFollowForeignKey,
 }: EditableCellProps) {
@@ -350,7 +354,10 @@ function EditableCell({
   };
 
   const openEditor = () => {
-    if (!onEdit) return;
+    if (!onEdit) {
+      onEditIntent?.(rowIndex, columnIndex);
+      return;
+    }
     if (SpecializedEditor) {
       setOverlayOpen(true);
       return;
@@ -411,18 +418,22 @@ function EditableCell({
         className={cn(
           "h-full w-full truncate px-2 py-1 text-left text-muted-foreground group-hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
           isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-          !isEditing && onEdit && "cursor-pointer",
-          !onEdit && "cursor-default",
+          !isEditing && (onEdit || onEditIntent) && "cursor-pointer",
+          !onEdit && !onEditIntent && "cursor-default",
+          readOnlyReason && "text-text-muted/70",
           canFollowFk && "pr-6",
         )}
         onClick={openEditor}
         onKeyDown={(e) => {
-          if (onEdit && (e.key === "Enter" || e.key === " ")) {
+          if (
+            (onEdit || onEditIntent) &&
+            (e.key === "Enter" || e.key === " ")
+          ) {
             openEditor();
           }
         }}
-        tabIndex={onEdit ? 0 : -1}
-        title={displayValue}
+        tabIndex={onEdit || onEditIntent ? 0 : -1}
+        title={readOnlyReason ?? displayValue}
       >
         {previewValue}
       </button>
@@ -445,6 +456,12 @@ function EditableCell({
 }
 
 export type TableViewMode = "data" | "structure";
+
+export type DataGridRowState =
+  | "deleted"
+  | "inserted"
+  | "duplicate"
+  | "excluded";
 
 export interface DataGridProps {
   data: string[][];
@@ -478,6 +495,18 @@ export interface DataGridProps {
   ) => void;
   edits?: Record<number, Record<number, string>>;
   onEdit?: (rowIndex: number, colIndex: number, value: string) => void;
+  /** Invoked when a read-only cell is activated so its owner can lazily
+   * analyze the result set before exposing an editor. */
+  onEditIntent?: (rowIndex: number, colIndex: number) => void;
+  /** A reason here disables editing for this cell while keeping the rest of
+   * the row editable. The reason is exposed as the cell tooltip. */
+  getCellReadOnlyReason?: (
+    rowIndex: number,
+    colIndex: number,
+  ) => string | undefined;
+  /** Presentation-only staged row state. Draft identity remains owned by the
+   * caller; the grid never treats row indexes as mutation identity. */
+  getRowState?: (rowIndex: number) => DataGridRowState | undefined;
   className?: string;
   onSave?: () => void;
   onDiscard?: () => void;
@@ -543,6 +572,9 @@ export function DataGrid({
   rowExpansion,
   edits,
   onEdit,
+  onEditIntent,
+  getCellReadOnlyReason,
+  getRowState,
   className,
   onSave,
   onDiscard,
@@ -690,7 +722,13 @@ export function DataGrid({
             columnName={colName}
             columnType={columnTypes?.[index]}
             editValue={edits?.[props.row.index]?.[index]}
-            onEdit={effectiveOnEdit}
+            onEdit={
+              getCellReadOnlyReason?.(props.row.index, index)
+                ? undefined
+                : effectiveOnEdit
+            }
+            onEditIntent={effectiveOnEdit ? undefined : onEditIntent}
+            readOnlyReason={getCellReadOnlyReason?.(props.row.index, index)}
             foreignKeyTarget={meta?.foreignKeyTarget}
             onFollowForeignKey={onFollowForeignKey}
           />
@@ -705,6 +743,8 @@ export function DataGrid({
     columnMetadata,
     edits,
     effectiveOnEdit,
+    getCellReadOnlyReason,
+    onEditIntent,
     onFollowForeignKey,
     serverBrowse,
   ]);
@@ -849,6 +889,13 @@ export function DataGrid({
                         "group hover:bg-surface-row-hover",
                         row.getIsSelected() &&
                           "bg-accent-overlay text-foreground",
+                        getRowState?.(row.index) === "deleted" &&
+                          "bg-danger/5 text-text-muted line-through",
+                        getRowState?.(row.index) === "inserted" &&
+                          "bg-success/5",
+                        getRowState?.(row.index) === "duplicate" &&
+                          "bg-warning/5",
+                        getRowState?.(row.index) === "excluded" && "opacity-50",
                       )}
                     >
                       {visibleCells.map((cell) => (
