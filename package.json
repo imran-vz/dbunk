@@ -40,7 +40,7 @@
     "lint": "oxlint .",
     "fix": "oxfmt \"**/*.{json,js,jsx,ts,tsx,mjs,mts}\" && oxlint . --fix",
     "typecheck": "tsc --noEmit",
-    "check:slice-isolation": "! grep -rE 'from \"\\./(connections|workspace-tabs|credentials|relational-tables|relational-queries|query-sessions|table-browse|keyvalue-workspace|keyvalue-pubsub)\"' src/lib/store/connections.ts src/lib/store/workspace-tabs.ts src/lib/store/credentials.ts src/lib/store/relational-tables.ts src/lib/store/relational-queries.ts src/lib/store/query-sessions.ts src/lib/store/table-browse.ts src/lib/store/keyvalue-workspace.ts src/lib/store/keyvalue-pubsub.ts",
+    "check:slice-isolation": "! grep -rE 'from \"\\./(connections|workspace-tabs|credentials|relational-tables|relational-queries|query-sessions|table-browse|keyvalue-workspace|keyvalue-pubsub|mutation-drafts)\"' src/lib/store/connections.ts src/lib/store/workspace-tabs.ts src/lib/store/credentials.ts src/lib/store/relational-tables.ts src/lib/store/relational-queries.ts src/lib/store/query-sessions.ts src/lib/store/table-browse.ts src/lib/store/keyvalue-workspace.ts src/lib/store/keyvalue-pubsub.ts src/lib/store/mutation-drafts.ts",
     "generate:redis-commands": "node scripts/generate-redis-commands.mjs",
     "check:redis-commands": "node scripts/generate-redis-commands.mjs --check",
     "dev": "tauri dev",

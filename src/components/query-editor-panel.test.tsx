@@ -160,6 +160,7 @@ vi.mock("@monaco-editor/react", () => ({
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
 import {
+  queryMutationDraftScope,
   type QuerySessionState,
   type QueryStatus,
   tableStructureKey,
@@ -323,6 +324,23 @@ function seedPersistentQuery(
 }
 
 function seedUsersUpdateDraft() {
+  const scope = seedUsersAnalysisDraft();
+  useAppStore.getState().stageMutationDraftUpdate(scope, {
+    table: { schema: "public", table: "users" },
+    identityKind: "primaryKey",
+    identity: [{ column: "id", value: "2" }],
+    originals: [
+      { column: "id", value: "2" },
+      { column: "name", value: "Ada" },
+      { column: "generated_slug", value: "ada-2" },
+    ],
+    cells: [{ column: "name", original: "Ada", value: "Grace" }],
+    rowIndex: 1,
+  });
+  return scope;
+}
+
+function seedUsersAnalysisDraft() {
   const store = useAppStore.getState();
   const handle = store.openMutationDraft({
     owner: {
@@ -335,19 +353,24 @@ function seedUsersUpdateDraft() {
     source: { kind: "statement", sql: "select id, name from users" },
   });
   store.setMutationDraftAnalysis(handle, analyzedUsersResult);
-  store.stageMutationDraftUpdate(handle.scope, {
-    table: { schema: "public", table: "users" },
-    identityKind: "primaryKey",
-    identity: [{ column: "id", value: "2" }],
-    originals: [
-      { column: "id", value: "2" },
-      { column: "name", value: "Ada" },
-      { column: "generated_slug", value: "ada-2" },
-    ],
-    cells: [{ column: "name", original: "Ada", value: "Grace" }],
-    rowIndex: 1,
-  });
   return handle.scope;
+}
+
+function resolveUsersDraftApply(
+  scope: ReturnType<typeof seedUsersUpdateDraft>,
+) {
+  const store = useAppStore.getState();
+  const previewRequest = store.beginMutationDraftPreview(scope);
+  if (!previewRequest) throw new Error("Expected a preview request");
+  store.resolveMutationDraftPreview(previewRequest, {
+    statements: [{ opIndex: 0, sql: "UPDATE users", params: [] }],
+  });
+  const applyRequest = store.beginMutationDraftApply(scope);
+  if (!applyRequest) throw new Error("Expected an apply request");
+  store.resolveMutationDraftApply(applyRequest, {
+    operations: [{ opIndex: 0, rowsAffected: 1 }],
+    runtimeMs: 1,
+  });
 }
 
 const seedStatus = (status: QueryStatus) => {
@@ -1303,6 +1326,131 @@ describe("QueryEditorPanel result mutations", () => {
     });
   });
 
+  it("persists and clears a virtual key for a keyless query result, reanalyzing after each change", async () => {
+    seedPersistentQuery();
+    const keylessAnalysis: AnalyzeResultSetResult = {
+      ...analyzedUsersResult,
+      tables: [
+        {
+          ...analyzedUsersResult.tables[0]!,
+          identity: { kind: "none", columns: [] },
+          identityProjected: false,
+          identityProjectionIndexes: [],
+        },
+      ],
+    };
+    const virtualKeyAnalysis: AnalyzeResultSetResult = {
+      ...analyzedUsersResult,
+      analysisId: 12,
+      tables: [
+        {
+          ...analyzedUsersResult.tables[0]!,
+          identity: { kind: "virtualKey", columns: ["name"] },
+          identityProjected: true,
+          identityProjectionIndexes: [1],
+        },
+      ],
+    };
+    let analysisCalls = 0;
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "analyze_result_set") {
+        analysisCalls += 1;
+        return Promise.resolve(
+          analysisCalls === 2 ? virtualKeyAnalysis : keylessAnalysis,
+        );
+      }
+      if (command === "load_virtual_key") return Promise.resolve(null);
+      if (command === "save_virtual_key" || command === "clear_virtual_key") {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+
+    const chooseButton = await screen.findByRole("button", {
+      name: "Choose virtual key",
+    });
+    fireEvent.click(chooseButton);
+    fireEvent.click(screen.getByRole("checkbox", { name: "name" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save virtual key" }));
+
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("save_virtual_key", {
+        payload: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+          columns: ["name"],
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().mutationDrafts[
+          queryMutationDraftScope("tab-1", "execution-1", 0)
+        ]?.analysis?.snapshot.tables[0]?.identity.kind,
+      ).toBe("virtualKey"),
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith("analyze_result_set", {
+      payload: expect.objectContaining({ refreshStructure: true }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear virtual key" }));
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("clear_virtual_key", {
+        payload: {
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().mutationDrafts[
+          queryMutationDraftScope("tab-1", "execution-1", 0)
+        ]?.analysis?.snapshot.tables[0]?.identity.kind,
+      ).toBe("none"),
+    );
+    expect(analysisCalls).toBe(3);
+  });
+
+  it("offers a virtual key when the proven identity is not fully projected", async () => {
+    seedPersistentQuery();
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "analyze_result_set") {
+        return Promise.resolve({
+          ...analyzedUsersResult,
+          tables: [
+            {
+              ...analyzedUsersResult.tables[0]!,
+              identityProjected: false,
+              identityProjectionIndexes: [],
+            },
+          ],
+        });
+      }
+      if (command === "load_virtual_key") return Promise.resolve(null);
+      return Promise.resolve(undefined);
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Choose virtual key" }),
+    ).toBeTruthy();
+    expect(mockedInvoke).toHaveBeenCalledWith("load_virtual_key", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+      },
+    });
+  });
+
   it("opens the mutation review from Review & save", async () => {
     seedPersistentQuery();
     seedUsersUpdateDraft();
@@ -1354,6 +1502,85 @@ describe("QueryEditorPanel result mutations", () => {
     });
     expect(screen.getByRole("button", { name: "Re-run result" })).toBeTruthy();
   });
+
+  it("keeps tombstoned staged changes visible and reviewable from draft originals", async () => {
+    seedPersistentQuery();
+    seedUsersUpdateDraft();
+    const session = useAppStore.getState().querySessions[queryTab.id]!;
+    const execution = session.execution!;
+    useAppStore.setState({
+      querySessions: {
+        [queryTab.id]: {
+          ...session,
+          execution: {
+            ...execution,
+            resultSets: [],
+            notices: [],
+            retainedBytes: 0,
+            tombstone: {
+              status: "completed",
+              resultCount: 1,
+              rowCount: 2,
+              noticeCount: 0,
+              omittedCount: 0,
+              runtimeMs: 10,
+              releasedBytes: 64,
+              completedAt: execution.completedAt!,
+              reason: "globalBudget",
+            },
+          },
+        },
+      },
+    });
+    mockedInvoke.mockImplementation((command) =>
+      command === "preview_result_mutations"
+        ? Promise.resolve({
+            statements: [
+              {
+                opIndex: 0,
+                sql: "UPDATE public.users SET name = $1 WHERE id = $2",
+                params: [],
+              },
+            ],
+          })
+        : Promise.resolve(undefined),
+    );
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    expect(screen.getByText("1 staged")).toBeTruthy();
+    expect(screen.getByText(/result display was released/i)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Review & save/i }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(
+      screen.getByRole("heading", { name: "Review 1 change" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Grace")).toBeTruthy();
+    expect(screen.getByText("Ada")).toBeTruthy();
+  });
+
+  it.each(["analysis-only", "apply-success"] as const)(
+    "drops a %s draft on reexecution without prompting",
+    (draftState) => {
+      seedPersistentQuery();
+      const scope =
+        draftState === "analysis-only"
+          ? seedUsersAnalysisDraft()
+          : seedUsersUpdateDraft();
+      if (draftState === "apply-success") resolveUsersDraftApply(scope);
+      mockedIsTauri.mockReturnValue(false);
+      const confirmSpy = vi.spyOn(window, "confirm");
+      confirmSpy.mockClear();
+
+      render(<QueryEditorPanel tab={queryTab} isClient />);
+      fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(useAppStore.getState().mutationDrafts[scope]).toBeUndefined();
+    },
+  );
 
   it("confirms before discarding or re-running staged query changes", async () => {
     seedPersistentQuery();

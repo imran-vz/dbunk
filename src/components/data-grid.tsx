@@ -19,7 +19,7 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import type { ServerBrowseGridModel } from "@/components/data-grid/browse-model";
 import {
@@ -329,6 +329,18 @@ function EditableCell({
   const displayValue = editValue ?? initialValue;
   const previewValue = formatCellDisplayValue(displayValue);
   const isDirty = editValue !== undefined;
+  const dirtyValueDescriptionId = useId();
+  const dirtyValueTitle = isDirty
+    ? `Edited: ${displayValue}\nOriginal: ${initialValue}`
+    : null;
+  const dirtyValueDescription = isDirty ? (
+    <span id={dirtyValueDescriptionId} className="sr-only">
+      Original value: {initialValue}
+    </span>
+  ) : null;
+  const cellTitle = isDirty
+    ? [readOnlyReason, dirtyValueTitle].filter(Boolean).join("\n")
+    : (readOnlyReason ?? displayValue);
   const specializedKind = specializedCellKind(columnType);
   const SpecializedEditor = specializedKind
     ? CELL_EDITORS[specializedKind]
@@ -375,10 +387,14 @@ function EditableCell({
             isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
           )}
           tabIndex={-1}
-          title={displayValue}
+          title={cellTitle}
+          aria-describedby={
+            dirtyValueDescription ? dirtyValueDescriptionId : undefined
+          }
         >
           {previewValue}
         </button>
+        {dirtyValueDescription}
         <SpecializedEditor
           initialValue={displayValue}
           columnName={columnName}
@@ -396,12 +412,18 @@ function EditableCell({
 
   if (isEditing && onEdit) {
     return (
-      <Input
-        className="h-full w-full rounded-none border-0 bg-background px-2 py-0 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
-        defaultValue={displayValue}
-        onBlur={onBlur}
-        onKeyDown={onKeyDown}
-      />
+      <>
+        <Input
+          className="h-full w-full rounded-none border-0 bg-background px-2 py-0 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
+          defaultValue={displayValue}
+          onBlur={onBlur}
+          onKeyDown={onKeyDown}
+          aria-describedby={
+            dirtyValueDescription ? dirtyValueDescriptionId : undefined
+          }
+        />
+        {dirtyValueDescription}
+      </>
     );
   }
 
@@ -433,10 +455,14 @@ function EditableCell({
           }
         }}
         tabIndex={onEdit || onEditIntent ? 0 : -1}
-        title={readOnlyReason ?? displayValue}
+        title={cellTitle}
+        aria-describedby={
+          dirtyValueDescription ? dirtyValueDescriptionId : undefined
+        }
       >
         {previewValue}
       </button>
+      {dirtyValueDescription}
       {canFollowFk ? (
         <button
           type="button"
