@@ -6,6 +6,7 @@ import { createCredentialsSlice } from "./credentials";
 import { createKeyValuePubSubSlice } from "./keyvalue-pubsub";
 import { createKeyValueWorkspaceSlice } from "./keyvalue-workspace";
 import { createManagedServersSlice } from "./managed-servers";
+import { createMutationDraftsSlice } from "./mutation-drafts";
 import { createQuerySessionsSlice } from "./query-sessions";
 import { createRelationalQueriesSlice } from "./relational-queries";
 import { createRelationalTablesSlice } from "./relational-tables";
@@ -95,6 +96,39 @@ export type {
   TableStructureStatus,
   WorkspaceTab,
 } from "./types";
+export {
+  buildMutationDraftPlan,
+  mutationDraftPreviewsEqual,
+  queryMutationDraftScope,
+  rebindMutationDraftChanges,
+  tableMutationDraftScope,
+} from "./mutation-drafts";
+export type {
+  MutationDraft,
+  MutationDraftAnalysisRecovery,
+  MutationDraftApplyRequest,
+  MutationDraftApplyState,
+  MutationDraftCell,
+  MutationDraftChange,
+  MutationDraftChangeFailure,
+  MutationDraftDelete,
+  MutationDraftHandle,
+  MutationDraftInsert,
+  MutationDraftLoadedRow,
+  MutationDraftOwner,
+  MutationDraftPlanBuild,
+  MutationDraftPreviewRequest,
+  MutationDraftPreviewState,
+  MutationDraftScope,
+  MutationDraftUpdate,
+  MutationDraftsSlice,
+  OpenMutationDraftInput,
+  QueryMutationDraftScope,
+  StageMutationDraftDeleteInput,
+  StageMutationDraftInsertInput,
+  StageMutationDraftUpdateInput,
+  TableMutationDraftScope,
+} from "./mutation-drafts";
 export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
 export type { QueryTransactionCommand } from "./query-sessions";
 
@@ -116,6 +150,7 @@ export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createConnectionsSlice(set, get, store),
   ...createWorkspaceTabsSlice(set, get, store),
   ...createRelationalTablesSlice(set, get, store),
+  ...createMutationDraftsSlice(set, get, store),
   ...createQuerySessionsSlice(set, get, store),
   ...createTableBrowseSlice(set, get, store),
   ...createRelationalQueriesSlice(set, get, store),

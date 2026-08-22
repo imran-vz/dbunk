@@ -344,8 +344,8 @@ describe("table browse refresh semantics", () => {
   });
 });
 
-describe("table browse pending edit safety", () => {
-  it("keeps edits and retained rows when an edit appears after refresh starts", async () => {
+describe("table browse refresh with identity-keyed drafts", () => {
+  it("applies refreshed rows even when legacy edit state appears in flight", async () => {
     await useAppStore
       .getState()
       .openTableBrowse("tab-1", "conn-1", "public", "users");
@@ -365,15 +365,15 @@ describe("table browse pending edit safety", () => {
     refresh.resolve(okResult({ requestId: 2, rows: [["replacement"]] }));
     await refreshPromise;
 
-    expect(tabState()?.result?.rows).toEqual([["1"]]);
-    expect(tabState()?.appliedRequestId).toBe(1);
+    expect(tabState()?.result?.rows).toEqual([["replacement"]]);
+    expect(tabState()?.appliedRequestId).toBe(2);
     expect(
       useAppStore.getState().tableEdits["conn-1::public::users"]?.[0]?.[0],
     ).toBe("edited");
     expect(tabState()?.loadStatus).toEqual({ state: "success" });
   });
 
-  it("blocks import- and seed-style refresh application while edits exist", async () => {
+  it("applies import- and seed-style refreshes without dropping draft-neutral state", async () => {
     await useAppStore
       .getState()
       .openTableBrowse("tab-1", "conn-1", "public", "users");
@@ -392,7 +392,7 @@ describe("table browse pending edit safety", () => {
     // Import and seed both finish by calling the same explicit table refresh.
     await useAppStore.getState().refreshTableBrowse("tab-1");
 
-    expect(tabState()?.result?.rows).toEqual([["1"]]);
+    expect(tabState()?.result?.rows).toEqual([["background-write"]]);
     expect(
       useAppStore.getState().tableEdits["conn-1::public::users"]?.[0]?.[0],
     ).toBe("pending");
@@ -969,7 +969,7 @@ describe("table browse edit identity", () => {
     });
   });
 
-  it("keeps pending edits and old rows across an insert-triggered refresh", async () => {
+  it("applies insert-triggered refreshes without dropping draft-neutral state", async () => {
     mockedBrowseTable.mockResolvedValueOnce(
       okResult({ columns: nameColumns, rows: [["1", "old"]] }),
     );
@@ -1012,7 +1012,7 @@ describe("table browse edit identity", () => {
       );
 
     expect(outcome.kind).toBe("completed");
-    expect(tabState()?.result?.rows).toEqual([["1", "old"]]);
+    expect(tabState()?.result?.rows).toEqual([["2", "new"]]);
     expect(tabState()?.exactCount).toBeNull();
     expect(
       useAppStore.getState().tableEdits["conn-1::public::users"]?.[0]?.[1],

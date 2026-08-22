@@ -31,6 +31,9 @@ interface QueryEditorToolbarProps {
   onRetargetConnection: (connectionId: string) => void;
   hasEdits: boolean;
   onDiscardEdits: () => void;
+  onReviewEdits?: () => void;
+  stagedChangeCount?: number;
+  mutationLocked?: boolean;
   isRunning: boolean;
   isCancelling?: boolean;
   onStop?: () => void;
@@ -53,6 +56,9 @@ export function QueryEditorToolbar({
   onRetargetConnection,
   hasEdits,
   onDiscardEdits,
+  onReviewEdits,
+  stagedChangeCount,
+  mutationLocked = false,
   isRunning,
   isCancelling = false,
   onStop,
@@ -123,12 +129,23 @@ export function QueryEditorToolbar({
         <TransactionControls tabId={tabId} />
         {hasEdits ? (
           <>
-            <Button size="sm" variant="ghost" onClick={onDiscardEdits}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onDiscardEdits}
+              disabled={mutationLocked}
+            >
               <IconX className="size-3.5" /> Discard
             </Button>
-            <Button size="sm">
-              <IconDeviceFloppy className="size-3.5" /> Save
+            <Button size="sm" onClick={onReviewEdits} disabled={mutationLocked}>
+              <IconDeviceFloppy className="size-3.5" />
+              {onReviewEdits ? "Review & save" : "Save"}
             </Button>
+            {stagedChangeCount !== undefined ? (
+              <span className="text-[0.6875rem] tabular-nums text-warning">
+                {stagedChangeCount} staged
+              </span>
+            ) : null}
             <div className="h-5 w-px bg-border-subtle" />
           </>
         ) : null}

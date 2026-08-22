@@ -1,4 +1,4 @@
-import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconCopy, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import type * as React from "react";
 import { useMemo } from "react";
 
@@ -56,9 +56,21 @@ interface TableEditorBodyProps {
   onOpenTable: (schema: string, tableName: string) => void;
   onSubTabChange: (next: SubTab) => void;
   onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
+  onEditIntent?: (rowIndex: number, colIndex: number) => void;
+  getCellReadOnlyReason?: (
+    rowIndex: number,
+    colIndex: number,
+  ) => string | undefined;
+  getRowState?: (
+    rowIndex: number,
+  ) => "deleted" | "inserted" | "duplicate" | "excluded" | undefined;
   onDiscardEdits: () => void;
   onSaveEdits: () => Promise<void>;
   onDeleteSelected: () => void;
+  onDuplicateSelected?: () => void;
+  onBulkEditSelected?: () => void;
+  stagedChangeCount?: number;
+  onOpenReview?: () => void;
   onFollowForeignKey?: (
     rowIndex: number,
     target: ForeignKeyTarget,
@@ -82,6 +94,7 @@ interface TableEditorBodyProps {
   serverBrowse?: ServerBrowseGridModel;
   onExpandGrid?: () => void;
   expanded?: boolean;
+  reviewPanel?: React.ReactNode;
 }
 
 export function TableEditorBody({
@@ -110,9 +123,16 @@ export function TableEditorBody({
   onOpenTable,
   onSubTabChange,
   onCellEdit,
+  onEditIntent,
+  getCellReadOnlyReason,
+  getRowState,
   onDiscardEdits,
   onSaveEdits,
   onDeleteSelected,
+  onDuplicateSelected,
+  onBulkEditSelected,
+  stagedChangeCount = 0,
+  onOpenReview,
   onFollowForeignKey,
   rowExpansion,
   onExportWholeTable,
@@ -122,6 +142,7 @@ export function TableEditorBody({
   serverBrowse,
   onExpandGrid,
   expanded,
+  reviewPanel,
 }: TableEditorBodyProps) {
   const columns = useMemo(() => data?.columns ?? [], [data?.columns]);
   const rows = data?.rows ?? [];
@@ -153,6 +174,9 @@ export function TableEditorBody({
               rowExpansion={rowExpansion}
               edits={currentEdits}
               onEdit={onCellEdit}
+              onEditIntent={onEditIntent}
+              getCellReadOnlyReason={getCellReadOnlyReason}
+              getRowState={getRowState}
               hasEdits={hasEdits}
               readOnly={caps.isReadOnly || !caps.canEditCells}
               isSaving={isSaving}
@@ -174,9 +198,20 @@ export function TableEditorBody({
                 <DataToolbar
                   canAddRow={caps.canAddRow}
                   canDeleteSelected={caps.canDeleteSelected}
+                  canDuplicateSelected={
+                    Boolean(onDuplicateSelected) &&
+                    selection.selectedCount === 1
+                  }
+                  canBulkEditSelected={
+                    Boolean(onBulkEditSelected) && selection.selectedCount > 0
+                  }
                   onOpenAddRow={onOpenAddRow}
                   onOpenImport={onOpenImport}
                   onDeleteSelected={onDeleteSelected}
+                  onDuplicateSelected={onDuplicateSelected}
+                  onBulkEditSelected={onBulkEditSelected}
+                  stagedChangeCount={stagedChangeCount}
+                  onOpenReview={onOpenReview}
                 />
               }
             />
@@ -218,7 +253,9 @@ export function TableEditorBody({
           )}
         </div>
 
-        {activeSubTab === "data" && !expanded ? (
+        {reviewPanel}
+
+        {activeSubTab === "data" && !expanded && !reviewPanel ? (
           <RowDetailsPanel
             columns={columns}
             selectedRow={selection.selectedRow}
@@ -292,17 +329,29 @@ export function TableEditorBody({
 interface DataToolbarProps {
   canAddRow: boolean;
   canDeleteSelected: boolean;
+  canDuplicateSelected: boolean;
+  canBulkEditSelected: boolean;
   onOpenAddRow: () => void;
   onOpenImport: () => void;
   onDeleteSelected: () => void;
+  onDuplicateSelected?: () => void;
+  onBulkEditSelected?: () => void;
+  stagedChangeCount: number;
+  onOpenReview?: () => void;
 }
 
 function DataToolbar({
   canAddRow,
   canDeleteSelected,
+  canDuplicateSelected,
+  canBulkEditSelected,
   onOpenAddRow,
   onOpenImport,
   onDeleteSelected,
+  onDuplicateSelected,
+  onBulkEditSelected,
+  stagedChangeCount,
+  onOpenReview,
 }: DataToolbarProps) {
   return (
     <div className="flex items-center gap-2">
@@ -316,6 +365,32 @@ function DataToolbar({
         <IconPlus className="size-3.5" />{" "}
         <span className="dbunk-primary-label">Add row</span>
       </Button>
+      {onDuplicateSelected ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canDuplicateSelected}
+          onClick={onDuplicateSelected}
+          aria-label="Duplicate selected row"
+          title="Duplicate selected row"
+        >
+          <IconCopy className="size-3.5" />
+          <span className="dbunk-primary-label">Duplicate</span>
+        </Button>
+      ) : null}
+      {onBulkEditSelected ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canBulkEditSelected}
+          onClick={onBulkEditSelected}
+          aria-label="Bulk edit selected rows"
+          title="Bulk edit selected rows"
+        >
+          <IconPencil className="size-3.5" />
+          <span className="dbunk-primary-label">Bulk edit</span>
+        </Button>
+      ) : null}
       <Button
         size="sm"
         variant="outline"
@@ -327,6 +402,16 @@ function DataToolbar({
         <IconPlus className="size-3.5" />{" "}
         <span className="dbunk-primary-label">Import</span>
       </Button>
+      {stagedChangeCount > 0 && onOpenReview ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onOpenReview}
+          aria-label={`Review ${stagedChangeCount} staged changes`}
+        >
+          Review {stagedChangeCount}
+        </Button>
+      ) : null}
       <Button
         size="sm"
         variant="outline"
