@@ -381,6 +381,15 @@ export function useTableSession(tab: WorkspaceTab) {
           table: ref.table,
         },
       });
+      if (!handle) {
+        analysisRequest.current = null;
+        setMutationAnalysisState({
+          state: "error",
+          message:
+            "This relation cannot replace a draft that still has staged changes. Discard or apply them first.",
+        });
+        return null;
+      }
       const result = await analyzeResultSet({
         connectionId: ref.connectionId,
         tabId: tab.id,

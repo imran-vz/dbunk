@@ -352,6 +352,7 @@ function seedUsersAnalysisDraft() {
     connectionId: queryTab.connectionId,
     source: { kind: "statement", sql: "select id, name from users" },
   });
+  if (!handle) throw new Error("Expected mutation draft handle");
   store.setMutationDraftAnalysis(handle, analyzedUsersResult);
   return handle.scope;
 }

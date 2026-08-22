@@ -154,6 +154,25 @@ identity; see the **Keyspace model** section below.
   `(tableoid, ctid)` on partitioned tables), else `none`.
   `stable_order_columns` / `pickRowIdentity` are
   unchanged for non-browse engines and the dark-period live path.
+- **Result Mutation** — the PostgreSQL-only analyze, preview, and atomic apply
+  workflow for editing rows represented by a table browse or query result.
+  It is distinct from ClickHouse **Pending Mutation**, which is an already
+  submitted asynchronous database operation.
+- **Mutation Draft** — the frontend-owned, identity-keyed collection of
+  **Staged Changes** for one table browse or one query result. A draft survives
+  pagination, refresh, and result-budget release until an explicit lifecycle
+  boundary discards it or a reviewed apply succeeds.
+- **Staged Change** — one uncommitted row update, delete, or insert inside a
+  Mutation Draft. A staged change stores its original guard values, proposed
+  values, inclusion state, and stable change ID; it never means DML has run.
+- **Virtual Key** — an ordered, persisted set of projected columns selected by
+  the user as a row-identity claim when PostgreSQL cannot prove or project a
+  primary/unique identity. It is guarded as a full projected row and is never
+  treated as a database uniqueness constraint.
+- **Result Mutation Scope** — the stable owner key for a Mutation Draft: one
+  table tab, or one query tab + execution + result-set index. A **Result
+  Mutation Handle** pairs that scope with its **Generation** so stale analysis,
+  preview, and apply completions cannot mutate a recreated draft.
 
 ## Keyspace model (keyvalue class only)
 
