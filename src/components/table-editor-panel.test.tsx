@@ -42,6 +42,7 @@ import {
 import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
 import { supportsResultMutations } from "@/lib/result-mutation";
 import {
+  buildMutationDraftPlan,
   type Connection,
   type TableBrowseTabState,
   type TableDataState,
@@ -364,8 +365,8 @@ const mutationAnalysis = (
       table: "users",
       identity,
       identityProjected: options.identityProjected ?? true,
-      identityProjectionIndexes: identity.columns.map((column) =>
-        column === "id" ? 0 : column === "email" ? 1 : -1,
+      identityProjectionIndexes: identity.columns.flatMap((column) =>
+        column === "id" ? [0] : column === "email" ? [1] : [],
       ),
       updatable:
         identity.kind === "none"
@@ -1516,14 +1517,17 @@ describe("TableEditorPanel server browse", () => {
       expect(screen.getByText("lin@example.com")).toBeTruthy();
     });
 
-    it("uses ctid identity with full raw originals and keeps generated columns read-only", () => {
+    it("includes hidden ctid with the full visible row in staged update and delete plans", async () => {
       seedBrowse({
         result: {
           ...refreshedBrowseResult,
           requestId: 5,
-          rows: [["1", "generated@example.com"]],
+          rows: [
+            ["1", "generated@example.com"],
+            ["2", null],
+          ],
           identity: { kind: "virtual", columns: ["ctid"] },
-          rowIdentity: [["(0,1)"]],
+          rowIdentity: [["(0,1)"], ["(0,2)"]],
         },
       });
       seedMutationDraftAnalysis(
@@ -1545,6 +1549,17 @@ describe("TableEditorPanel server browse", () => {
       fireEvent.change(input, { target: { value: "7" } });
       fireEvent.blur(input);
 
+      fireEvent.click(screen.getAllByRole("checkbox")[2] as HTMLInputElement);
+      fireEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+
+      await waitFor(() =>
+        expect(
+          useAppStore.getState().mutationDrafts[
+            tableMutationDraftScope("tab-1")
+          ]?.changeOrder,
+        ).toHaveLength(2),
+      );
+
       const draft =
         useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")];
       expect(draft?.changes[draft.changeOrder[0] ?? ""]).toMatchObject({
@@ -1553,8 +1568,41 @@ describe("TableEditorPanel server browse", () => {
         originals: [
           { column: "id", value: "1" },
           { column: "email", value: "generated@example.com" },
+          { column: "ctid", value: "(0,1)" },
         ],
       });
+      expect(draft?.changes[draft.changeOrder[1] ?? ""]).toMatchObject({
+        identityKind: "ctidFallback",
+        identity: [{ column: "ctid", value: "(0,2)" }],
+        originals: [
+          { column: "id", value: "2" },
+          { column: "email", value: null },
+          { column: "ctid", value: "(0,2)" },
+        ],
+      });
+      expect(draft && buildMutationDraftPlan(draft).plan.operations).toEqual([
+        {
+          kind: "update",
+          table: { schema: "public", table: "users" },
+          identity: [{ column: "ctid", value: "(0,1)" }],
+          guards: [
+            { column: "id", value: "1" },
+            { column: "email", value: "generated@example.com" },
+            { column: "ctid", value: "(0,1)" },
+          ],
+          set: [{ column: "id", value: "7" }],
+        },
+        {
+          kind: "delete",
+          table: { schema: "public", table: "users" },
+          identity: [{ column: "ctid", value: "(0,2)" }],
+          guards: [
+            { column: "id", value: "2" },
+            { column: "email", value: null },
+            { column: "ctid", value: "(0,2)" },
+          ],
+        },
+      ]);
       expect(screen.getByTestId("table-mutation-status").textContent).toContain(
         "full-row guards",
       );

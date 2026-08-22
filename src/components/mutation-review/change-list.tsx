@@ -121,8 +121,13 @@ export function MutationChangeList({
                 className="mt-0.5 size-3.5 accent-primary"
               />
               <div className="min-w-0">
-                <div className="break-words text-xs font-medium text-foreground">
-                  {title}
+                <div className="flex flex-wrap items-baseline gap-x-2 text-xs font-medium text-foreground">
+                  <span className="break-words">{title}</span>
+                  {change.kind !== "insertRow" && change.rowIndex === null ? (
+                    <span className="text-[0.625rem] font-normal text-warning">
+                      Off page
+                    </span>
+                  ) : null}
                 </div>
                 <div className="text-[0.625rem] text-text-muted">
                   {mutationChangeGuardCopy(change)}
