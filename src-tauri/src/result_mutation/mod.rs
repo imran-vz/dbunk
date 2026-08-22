@@ -39,9 +39,9 @@ pub(crate) type VirtualKeyLookup = Arc<
 #[derive(Default)]
 struct ManagerState {
     executors: HashMap<String, Arc<Executor>>,
-    opening: HashSet<String>,
     closing: HashSet<String>,
     lingering_closes: HashSet<String>,
+    connection_end_requested: HashSet<String>,
     global_closing: bool,
     global_close_pending: usize,
     global_end_requested: bool,
@@ -50,12 +50,14 @@ struct ManagerState {
 #[derive(Clone)]
 pub(crate) struct ResultMutationManager {
     inner: Arc<Mutex<ManagerState>>,
+    changed: Arc<Notify>,
 }
 
 impl ResultMutationManager {
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(ManagerState::default())),
+            changed: Arc::new(Notify::new()),
         }
     }
 
@@ -151,17 +153,31 @@ impl ResultMutationManager {
 
     pub(crate) async fn apply(
         &self,
-        spec: ResolvedPostgresConnectSpec,
+        _spec: ResolvedPostgresConnectSpec,
         payload: ApplyResultMutationsPayload,
     ) -> Result<ApplyResult, ResultMutationError> {
-        let executor = self.executor_for(spec, &payload.connection_id).await?;
+        // An analysis snapshot can only live on an existing executor. Validate
+        // this before opening or consuming admission capacity: stale IDs are a
+        // cache miss, not a reason to create a database socket.
+        let executor = self
+            .existing_executor(&payload.connection_id)
+            .await
+            .ok_or(ResultMutationError::AnalysisExpired)?;
         {
             let mut state = executor.state.lock().await;
             begin_apply(&mut state, &payload)?;
         }
-        let result = run_apply(&executor, &payload).await;
-        let result = finish_active(&executor, result).await;
-        executor.notify.notify_waiters();
+        let (reply, result) = oneshot::channel();
+        let (caller_dropped, dropped) = oneshot::channel();
+        let task_executor = executor.clone();
+        tokio::spawn(async move {
+            run_owned_apply(task_executor, payload, dropped, reply).await;
+        });
+        let mut guard = ApplyCallerGuard::new(caller_dropped);
+        let result = result
+            .await
+            .unwrap_or(Err(ResultMutationError::ConnectionLost));
+        guard.complete();
         result
     }
 
@@ -201,14 +217,29 @@ impl ResultMutationManager {
     }
 
     pub(crate) async fn begin_connection_teardown(&self, connection_id: &str) {
+        self.begin_connection_teardown_with_timeout(connection_id, CLOSE_TIMEOUT)
+            .await;
+    }
+
+    async fn begin_connection_teardown_with_timeout(
+        &self,
+        connection_id: &str,
+        close_timeout: Duration,
+    ) {
         let executor = {
             let mut state = self.inner.lock().await;
+            state.connection_end_requested.remove(connection_id);
             state.closing.insert(connection_id.into());
             state.executors.remove(connection_id)
         };
+        self.changed.notify_waiters();
         if let Some(executor) = executor {
-            executor.teardown_requested.store(true, Ordering::Release);
-            if tokio::time::timeout(CLOSE_TIMEOUT, close_executor(&executor, true))
+            let preparation = prepare_executor_close(&executor, true).await;
+            let close_executor = executor.clone();
+            let mut close = tokio::spawn(async move {
+                finish_executor_close(&close_executor, preparation).await;
+            });
+            if tokio::time::timeout(close_timeout, &mut close)
                 .await
                 .is_err()
             {
@@ -220,10 +251,14 @@ impl ResultMutationManager {
                 let manager = self.clone();
                 let connection_id = connection_id.to_string();
                 tokio::spawn(async move {
-                    close_executor(&executor, true).await;
+                    let _ = close.await;
                     let mut state = manager.inner.lock().await;
                     state.lingering_closes.remove(&connection_id);
-                    state.closing.remove(&connection_id);
+                    if state.connection_end_requested.remove(&connection_id) {
+                        state.closing.remove(&connection_id);
+                    }
+                    drop(state);
+                    manager.changed.notify_waiters();
                 });
             }
         }
@@ -231,9 +266,14 @@ impl ResultMutationManager {
 
     pub(crate) async fn end_connection_teardown(&self, connection_id: &str) {
         let mut state = self.inner.lock().await;
-        if !state.lingering_closes.contains(connection_id) {
+        if state.lingering_closes.contains(connection_id) {
+            state.connection_end_requested.insert(connection_id.into());
+        } else {
             state.closing.remove(connection_id);
+            state.connection_end_requested.remove(connection_id);
         }
+        drop(state);
+        self.changed.notify_waiters();
     }
 
     pub(crate) async fn close_all(&self) {
@@ -244,9 +284,6 @@ impl ResultMutationManager {
                 .drain()
                 .map(|(_, executor)| executor)
                 .collect::<Vec<_>>();
-            for executor in &executors {
-                executor.teardown_requested.store(true, Ordering::Release);
-            }
             let track_global = state.global_closing;
             if track_global {
                 state.global_close_pending =
@@ -254,21 +291,21 @@ impl ResultMutationManager {
             }
             (executors, track_global)
         };
-        let mut tasks = executors
-            .into_iter()
-            .map(|executor| {
-                let manager = self.clone();
-                tokio::spawn(async move {
-                    close_executor(&executor, true).await;
-                    if track_global {
-                        manager.complete_global_close().await;
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
+        let mut closes = Vec::new();
+        for executor in executors {
+            let preparation = prepare_executor_close(&executor, true).await;
+            let manager = self.clone();
+            let close = tokio::spawn(async move {
+                finish_executor_close(&executor, preparation).await;
+                if track_global {
+                    manager.complete_global_close().await;
+                }
+            });
+            closes.push(close);
+        }
         let _ = tokio::time::timeout(
             CLOSE_TIMEOUT,
-            futures_util::future::join_all(tasks.iter_mut()),
+            futures_util::future::join_all(closes.iter_mut()),
         )
         .await;
     }
@@ -278,6 +315,7 @@ impl ResultMutationManager {
         state.global_closing = true;
         state.global_end_requested = false;
         drop(state);
+        self.changed.notify_waiters();
         self.close_all().await;
     }
 
@@ -288,6 +326,8 @@ impl ResultMutationManager {
         } else {
             state.global_end_requested = true;
         }
+        drop(state);
+        self.changed.notify_waiters();
     }
 
     async fn complete_global_close(&self) {
@@ -297,6 +337,8 @@ impl ResultMutationManager {
             state.global_closing = false;
             state.global_end_requested = false;
         }
+        drop(state);
+        self.changed.notify_waiters();
     }
 
     async fn existing_executor(&self, connection_id: &str) -> Option<Arc<Executor>> {
@@ -313,47 +355,24 @@ impl ResultMutationManager {
         spec: ResolvedPostgresConnectSpec,
         connection_id: &str,
     ) -> Result<Arc<Executor>, ResultMutationError> {
-        loop {
-            let should_open = {
-                let mut state = self.inner.lock().await;
-                if state.global_closing || state.closing.contains(connection_id) {
-                    return Err(ResultMutationError::ConnectionClosing);
-                }
-                if let Some(executor) = state.executors.get(connection_id).cloned() {
-                    return Ok(executor);
-                }
-                if state.opening.contains(connection_id) {
-                    false
-                } else {
-                    check_admission(&state)?;
-                    state.opening.insert(connection_id.into());
-                    true
-                }
-            };
-            if should_open {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let executor = spawn_executor(spec);
-        self.install_spawned_executor(connection_id, executor).await
-    }
-
-    async fn install_spawned_executor(
-        &self,
-        connection_id: &str,
-        executor: Arc<Executor>,
-    ) -> Result<Arc<Executor>, ResultMutationError> {
         let mut state = self.inner.lock().await;
-        state.opening.remove(connection_id);
         if state.global_closing || state.closing.contains(connection_id) {
-            drop(state);
-            close_executor(&executor, true).await;
             return Err(ResultMutationError::ConnectionClosing);
         }
+        if let Some(executor) = state.executors.get(connection_id).cloned() {
+            return Ok(executor);
+        }
+        check_admission(&state)?;
+        let executor = new_executor(spec);
         state
             .executors
             .insert(connection_id.into(), executor.clone());
+        // Installation and worker startup are one cancellation-free critical
+        // section. Before this point no worker exists; after it the manager
+        // owns and can fence the worker.
+        start_executor_worker(&executor);
+        drop(state);
+        self.changed.notify_waiters();
         Ok(executor)
     }
 
@@ -386,6 +405,7 @@ impl ResultMutationManager {
             if let Some(executor) = removed {
                 let _ = tokio::time::timeout(CLOSE_TIMEOUT, close_executor(&executor, false)).await;
                 self.inner.lock().await.closing.remove(&connection_id);
+                self.changed.notify_waiters();
             }
         }
     }
@@ -395,6 +415,7 @@ struct Executor {
     spec: ResolvedPostgresConnectSpec,
     state: Mutex<ExecutorState>,
     notify: Notify,
+    worker_running: AtomicBool,
     teardown_requested: AtomicBool,
 }
 
@@ -445,7 +466,13 @@ struct ActiveRequest {
     request_id: u64,
     kind: ActiveKind,
     interrupt: Interrupt,
-    commit_pending: bool,
+    apply_phase: Option<ApplyPhase>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApplyPhase {
+    Preparing,
+    CommitAdmitted,
 }
 
 impl ActiveRequest {
@@ -455,8 +482,12 @@ impl ActiveRequest {
             request_id,
             kind,
             interrupt: Interrupt::None,
-            commit_pending: false,
+            apply_phase: (kind == ActiveKind::Apply).then_some(ApplyPhase::Preparing),
         }
+    }
+
+    fn commit_admitted(&self) -> bool {
+        self.apply_phase == Some(ApplyPhase::CommitAdmitted)
     }
 }
 
@@ -503,8 +534,8 @@ impl SnapshotCache {
     }
 }
 
-fn spawn_executor(spec: ResolvedPostgresConnectSpec) -> Arc<Executor> {
-    let executor = Arc::new(Executor {
+fn new_executor(spec: ResolvedPostgresConnectSpec) -> Arc<Executor> {
+    Arc::new(Executor {
         spec,
         state: Mutex::new(ExecutorState {
             connection: None,
@@ -518,10 +549,21 @@ fn spawn_executor(spec: ResolvedPostgresConnectSpec) -> Arc<Executor> {
             closed: false,
         }),
         notify: Notify::new(),
+        worker_running: AtomicBool::new(false),
         teardown_requested: AtomicBool::new(false),
-    });
+    })
+}
+
+fn start_executor_worker(executor: &Arc<Executor>) {
+    executor.worker_running.store(true, Ordering::Release);
     let worker = executor.clone();
     tokio::spawn(async move { run_analysis_worker(worker).await });
+}
+
+#[cfg(test)]
+fn spawn_executor(spec: ResolvedPostgresConnectSpec) -> Arc<Executor> {
+    let executor = new_executor(spec);
+    start_executor_worker(&executor);
     executor
 }
 
@@ -566,7 +608,7 @@ fn cancel_tab_state(state: &mut ExecutorState, tab_id: &str) -> (bool, Option<Ca
     let can_interrupt = state
         .active
         .as_ref()
-        .is_some_and(|active| active.tab_id == tab_id);
+        .is_some_and(|active| active.tab_id == tab_id && !active.commit_admitted());
     if can_interrupt {
         state.active.as_mut().unwrap().interrupt = Interrupt::Cancel;
         requested = true;
@@ -614,16 +656,20 @@ async fn perform_cancel(executor: &Executor, cancel: Option<CancelRequest>) {
 
 async fn run_analysis_worker(executor: Arc<Executor>) {
     loop {
+        let notified = executor.notify.notified();
+        tokio::pin!(notified);
         match next_analysis(&executor).await {
             Some(job) => execute_analysis(&executor, job).await,
             None => {
                 if executor.state.lock().await.closed {
                     break;
                 }
-                executor.notify.notified().await;
+                notified.await;
             }
         }
     }
+    executor.worker_running.store(false, Ordering::Release);
+    executor.notify.notify_waiters();
 }
 
 async fn next_analysis(executor: &Executor) -> Option<AnalysisJob> {
@@ -673,6 +719,63 @@ async fn execute_analysis(executor: &Arc<Executor>, job: AnalysisJob) {
     let result = finish_active(executor, result).await;
     let _ = job.reply.send(result);
     executor.notify.notify_waiters();
+}
+
+struct ApplyCallerGuard {
+    dropped: Option<oneshot::Sender<()>>,
+}
+
+impl ApplyCallerGuard {
+    fn new(dropped: oneshot::Sender<()>) -> Self {
+        Self {
+            dropped: Some(dropped),
+        }
+    }
+
+    fn complete(&mut self) {
+        self.dropped.take();
+    }
+}
+
+impl Drop for ApplyCallerGuard {
+    fn drop(&mut self) {
+        if let Some(dropped) = self.dropped.take() {
+            let _ = dropped.send(());
+        }
+    }
+}
+
+async fn run_owned_apply(
+    executor: Arc<Executor>,
+    payload: ApplyResultMutationsPayload,
+    mut caller_dropped: oneshot::Receiver<()>,
+    reply: oneshot::Sender<Result<ApplyResult, ResultMutationError>>,
+) {
+    let apply = run_apply(&executor, &payload);
+    tokio::pin!(apply);
+    let result = tokio::select! {
+        result = &mut apply => result,
+        _ = &mut caller_dropped => {
+            let cancel = cancel_dropped_apply(&mut *executor.state.lock().await);
+            perform_cancel(&executor, cancel).await;
+            apply.await
+        }
+    };
+    let result = finish_active(&executor, result).await;
+    executor.notify.notify_waiters();
+    let _ = reply.send(result);
+}
+
+fn cancel_dropped_apply(state: &mut ExecutorState) -> Option<CancelRequest> {
+    let can_cancel = state
+        .active
+        .as_ref()
+        .is_some_and(|active| active.kind == ActiveKind::Apply && !active.commit_admitted());
+    if !can_cancel {
+        return None;
+    }
+    state.active.as_mut().unwrap().interrupt = Interrupt::Cancel;
+    queue_cancel(state)
 }
 
 async fn run_analysis(
@@ -745,59 +848,20 @@ async fn run_apply(
             .filter(|snapshot| snapshot.tab_id == payload.tab_id)
             .ok_or(ResultMutationError::AnalysisExpired)?
     };
-    let mut cache = std::mem::take(&mut executor.state.lock().await.descriptors);
-    let first =
-        postgres::refresh_for_apply(&connection.inner.client, &snapshot.descriptors, &mut cache)
-            .await;
-    let (descriptors, structurally_invalidated) = match first {
-        Err(error) if postgres::is_undefined_object(&error) => {
-            cache.clear();
-            (
-                postgres::refresh_for_apply(
-                    &connection.inner.client,
-                    &snapshot.descriptors,
-                    &mut cache,
-                )
-                .await,
-                true,
-            )
-        }
-        Err(ResultMutationError::AnalysisExpired) => {
-            (Err(ResultMutationError::AnalysisExpired), true)
-        }
-        result => (result, false),
-    };
-    {
-        let mut state = executor.state.lock().await;
-        if !state.closed {
-            state.descriptors = cache;
-        }
-        if structurally_invalidated {
-            invalidate_structure_state(&mut state);
-        }
-    }
-    let descriptors = descriptors.map_err(|error| {
-        if postgres::is_undefined_object(&error) {
-            ResultMutationError::AnalysisExpired
-        } else {
-            error
-        }
-    })?;
-    let statements = build_mutation_plan(&descriptors, &payload.plan)?;
     check_interrupted(executor).await?;
     let control_executor = executor.clone();
-    let check: postgres::ApplyCheck = Arc::new(move |commit_pending| {
+    let check: postgres::ApplyCheck = Arc::new(move |checkpoint| {
         let executor = control_executor.clone();
         Box::pin(async move {
             let mut state = executor.state.lock().await;
             let active = state
                 .active
-                .as_mut()
+                .as_ref()
                 .ok_or(ResultMutationError::ConnectionClosing)?;
             match active.interrupt {
                 Interrupt::None => {
-                    if commit_pending {
-                        active.commit_pending = true;
+                    if checkpoint == postgres::ApplyCheckpoint::AdmitCommit {
+                        admit_commit(&executor, &mut state)?;
                     }
                     Ok(())
                 }
@@ -807,32 +871,24 @@ async fn run_apply(
             }
         })
     });
-    let commit_executor = executor.clone();
     let commit_connection = connection.clone();
     let commit: postgres::ApplyCommit = Arc::new(move || {
-        let executor = commit_executor.clone();
         let connection = commit_connection.clone();
         Box::pin(async move {
-            // The atomic fence makes teardown win before COMMIT admission.
-            // Once admitted, teardown marks the active request and sends a
-            // protocol cancel while COMMIT is in flight.
-            {
-                let state = executor.state.lock().await;
-                if let Some(error) = commit_rejection(&executor, &state) {
-                    return postgres::CommitOutcome::Rejected(error);
-                }
-            }
             match connection.inner.client.batch_execute("COMMIT").await {
-                Ok(()) if executor.teardown_requested.load(Ordering::Acquire) => {
-                    postgres::CommitOutcome::Failed(ResultMutationError::ConnectionClosing)
-                }
                 Ok(()) => postgres::CommitOutcome::Committed,
                 Err(error) => postgres::CommitOutcome::Failed(postgres::database_error(error)),
             }
         })
     });
-    let execution =
-        postgres::execute_apply(&connection.inner.client, &statements, &check, &commit).await;
+    let execution = postgres::execute_apply(
+        &connection.inner.client,
+        &snapshot.descriptors,
+        &payload.plan,
+        &check,
+        &commit,
+    )
+    .await;
     if !execution.healthy {
         let mut state = executor.state.lock().await;
         state.connection = None;
@@ -847,15 +903,22 @@ async fn run_apply(
     result
 }
 
-fn commit_rejection(executor: &Executor, state: &ExecutorState) -> Option<ResultMutationError> {
+fn admit_commit(executor: &Executor, state: &mut ExecutorState) -> Result<(), ResultMutationError> {
     if executor.teardown_requested.load(Ordering::Acquire) {
-        return Some(ResultMutationError::ConnectionClosing);
+        return Err(ResultMutationError::ConnectionClosing);
     }
-    match state.active.as_ref().map(|active| active.interrupt) {
-        Some(Interrupt::None) => None,
-        Some(Interrupt::Supersede) => Some(ResultMutationError::Superseded),
-        Some(Interrupt::Cancel) => Some(ResultMutationError::Cancelled),
-        Some(Interrupt::Closing) | None => Some(ResultMutationError::ConnectionClosing),
+    let active = state
+        .active
+        .as_mut()
+        .ok_or(ResultMutationError::ConnectionClosing)?;
+    match active.interrupt {
+        Interrupt::None => {
+            active.apply_phase = Some(ApplyPhase::CommitAdmitted);
+            Ok(())
+        }
+        Interrupt::Supersede => Err(ResultMutationError::Superseded),
+        Interrupt::Cancel => Err(ResultMutationError::Cancelled),
+        Interrupt::Closing => Err(ResultMutationError::ConnectionClosing),
     }
 }
 
@@ -941,26 +1004,47 @@ async fn finish_active<T>(
 }
 
 async fn close_executor(executor: &Executor, fence: bool) {
+    let preparation = prepare_executor_close(executor, fence).await;
+    finish_executor_close(executor, preparation).await;
+}
+
+struct ClosePreparation {
+    queued: QueuedClose,
+    cancel: CloseCancel,
+    has_active: bool,
+}
+
+async fn prepare_executor_close(executor: &Executor, fence: bool) -> ClosePreparation {
+    let mut state = executor.state.lock().await;
     if fence {
+        // This lock is also the apply COMMIT admission lock. Whichever
+        // transition wins defines whether teardown cancels or waits.
         executor.teardown_requested.store(true, Ordering::Release);
     }
-    let (queued, cancel, has_active) = {
-        let mut state = executor.state.lock().await;
-        prepare_close(&mut state, fence)
-    };
-    for (job, error) in queued {
+    let (queued, cancel, has_active) = prepare_close(&mut state, fence);
+    ClosePreparation {
+        queued,
+        cancel,
+        has_active,
+    }
+}
+
+async fn finish_executor_close(executor: &Executor, preparation: ClosePreparation) {
+    for (job, error) in preparation.queued {
         let _ = job.reply.send(Err(error));
     }
-    if let Some((token, tls)) = cancel {
+    if let Some((token, tls)) = preparation.cancel {
         let _ = crate::postgres::dedicated::cancel(token, tls).await;
     }
     executor.notify.notify_waiters();
-    if has_active {
+    if preparation.has_active {
         loop {
+            let notified = executor.notify.notified();
+            tokio::pin!(notified);
             if executor.state.lock().await.active.is_none() {
                 break;
             }
-            executor.notify.notified().await;
+            notified.await;
         }
     }
     let mut state = executor.state.lock().await;
@@ -985,7 +1069,11 @@ fn prepare_close(state: &mut ExecutorState, fence: bool) -> (QueuedClose, CloseC
         .filter_map(|slot| slot.queued.take())
         .map(|job| (job, error.clone()))
         .collect::<Vec<_>>();
-    if let Some(active) = state.active.as_mut() {
+    if let Some(active) = state
+        .active
+        .as_mut()
+        .filter(|active| !active.commit_admitted())
+    {
         active.interrupt = if fence {
             Interrupt::Closing
         } else {
@@ -995,6 +1083,7 @@ fn prepare_close(state: &mut ExecutorState, fence: bool) -> (QueuedClose, CloseC
     let cancel = state
         .active
         .as_ref()
+        .filter(|active| !active.commit_admitted())
         .and(state.connection.as_ref())
         .map(|connection| (connection.inner.cancel.clone(), connection.inner.tls));
     (queued, cancel, state.active.is_some())
@@ -1011,7 +1100,7 @@ fn check_admission(state: &ManagerState) -> Result<(), ResultMutationError> {
     if state.global_closing {
         return Err(ResultMutationError::ConnectionClosing);
     }
-    if state.executors.len() + state.opening.len() + state.closing.len() >= MAX_EXECUTORS {
+    if state.executors.len() + state.closing.len() >= MAX_EXECUTORS {
         Err(ResultMutationError::Timeout {
             operation: "admission".into(),
         })
@@ -1259,7 +1348,10 @@ mod tests {
     fn admission_rejects_the_ninth_executor() {
         let mut manager = ManagerState::default();
         for index in 0..MAX_EXECUTORS {
-            manager.opening.insert(format!("c{index}"));
+            manager.executors.insert(
+                format!("c{index}"),
+                new_executor(spec(&format!("c{index}"))),
+            );
         }
         assert!(
             matches!(check_admission(&manager), Err(ResultMutationError::Timeout { operation }) if operation == "admission")
@@ -1294,38 +1386,136 @@ mod tests {
     }
 
     #[test]
-    fn teardown_revokes_apply_after_precommit_check() {
+    fn teardown_before_commit_admission_cancels_apply() {
         let mut state = state();
-        let mut active = ActiveRequest::new("tab", 7, ActiveKind::Apply);
-        active.commit_pending = true;
-        state.active = Some(active);
+        state.active = Some(ActiveRequest::new("tab", 7, ActiveKind::Apply));
 
-        let (_, _, has_active) = prepare_close(&mut state, true);
+        let (_, cancel, has_active) = prepare_close(&mut state, true);
 
         assert!(has_active);
         assert!(state.closed);
         let active = state.active.as_ref().unwrap();
-        assert!(active.commit_pending);
+        assert!(!active.commit_admitted());
         assert_eq!(active.interrupt, Interrupt::Closing);
+        assert!(cancel.is_none());
     }
 
     #[test]
-    fn teardown_fence_wins_before_executor_state_close_is_installed() {
+    fn commit_admission_linearizes_teardown_outcomes() {
         let mut executor_state = state();
-        let mut active = ActiveRequest::new("tab", 7, ActiveKind::Apply);
-        active.commit_pending = true;
-        executor_state.active = Some(active);
+        executor_state.active = Some(ActiveRequest::new("tab", 7, ActiveKind::Apply));
         let executor = Executor {
             spec: spec("c"),
             state: Mutex::new(state()),
             notify: Notify::new(),
+            worker_running: AtomicBool::new(false),
             teardown_requested: AtomicBool::new(true),
         };
 
         assert_eq!(
-            commit_rejection(&executor, &executor_state),
-            Some(ResultMutationError::ConnectionClosing)
+            admit_commit(&executor, &mut executor_state),
+            Err(ResultMutationError::ConnectionClosing)
         );
+
+        executor.teardown_requested.store(false, Ordering::Release);
+        admit_commit(&executor, &mut executor_state).unwrap();
+        let (_, cancel, has_active) = prepare_close(&mut executor_state, true);
+        assert!(has_active);
+        assert!(cancel.is_none());
+        let active = executor_state.active.as_ref().unwrap();
+        assert!(active.commit_admitted());
+        assert_eq!(active.interrupt, Interrupt::None);
+    }
+
+    #[tokio::test]
+    async fn admitted_teardown_is_bounded_and_fence_releases_only_at_terminal() {
+        let manager = ResultMutationManager::new();
+        let connection_id = "blocked-commit";
+        let executor = spawn_executor(spec(connection_id));
+        {
+            let mut state = executor.state.lock().await;
+            state.active = Some(ActiveRequest::new("tab", 7, ActiveKind::Apply));
+            admit_commit(&executor, &mut state).unwrap();
+        }
+        manager
+            .inner
+            .lock()
+            .await
+            .executors
+            .insert(connection_id.into(), executor.clone());
+
+        let started = Instant::now();
+        manager
+            .begin_connection_teardown_with_timeout(connection_id, Duration::from_millis(20))
+            .await;
+        assert!(started.elapsed() < Duration::from_secs(1));
+        manager.end_connection_teardown(connection_id).await;
+        {
+            let state = manager.inner.lock().await;
+            assert!(state.closing.contains(connection_id));
+            assert!(state.lingering_closes.contains(connection_id));
+        }
+
+        assert_eq!(finish_active(&executor, Ok(())).await, Ok(()));
+        executor.notify.notify_waiters();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let notified = manager.changed.notified();
+                tokio::pin!(notified);
+                if !manager.inner.lock().await.closing.contains(connection_id) {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .expect("detached close released the fence after terminal success");
+    }
+
+    #[tokio::test]
+    async fn terminal_close_does_not_release_connection_fence_before_lifecycle_end() {
+        let manager = ResultMutationManager::new();
+        let connection_id = "lifecycle-work";
+        let executor = spawn_executor(spec(connection_id));
+        {
+            let mut state = executor.state.lock().await;
+            state.active = Some(ActiveRequest::new("tab", 7, ActiveKind::Apply));
+            admit_commit(&executor, &mut state).unwrap();
+        }
+        manager
+            .inner
+            .lock()
+            .await
+            .executors
+            .insert(connection_id.into(), executor.clone());
+        manager
+            .begin_connection_teardown_with_timeout(connection_id, Duration::from_millis(20))
+            .await;
+
+        assert_eq!(finish_active(&executor, Ok(())).await, Ok(()));
+        executor.notify.notify_waiters();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let notified = manager.changed.notified();
+                tokio::pin!(notified);
+                if !manager
+                    .inner
+                    .lock()
+                    .await
+                    .lingering_closes
+                    .contains(connection_id)
+                {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .expect("detached cleanup reached terminal state");
+        assert!(manager.inner.lock().await.closing.contains(connection_id));
+
+        manager.end_connection_teardown(connection_id).await;
+        assert!(!manager.inner.lock().await.closing.contains(connection_id));
     }
 
     #[tokio::test]
@@ -1348,24 +1538,100 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawned_executor_rejected_by_teardown_is_explicitly_closed() {
+    async fn cancelled_executor_installation_cannot_spawn_an_unowned_worker() {
         let manager = ResultMutationManager::new();
-        let connection_id = "opening-during-close";
-        let executor = spawn_executor(spec(connection_id));
-        {
-            let mut state = manager.inner.lock().await;
-            state.opening.insert(connection_id.into());
-            state.closing.insert(connection_id.into());
-        }
+        let manager_lock = manager.inner.lock().await;
+        let opening_manager = manager.clone();
+        let opening = tokio::spawn(async move {
+            opening_manager
+                .executor_for(spec("cancelled-install"), "cancelled-install")
+                .await
+        });
+        tokio::task::yield_now().await;
+        opening.abort();
+        let cancellation = opening.await;
+        assert!(matches!(cancellation, Err(error) if error.is_cancelled()));
+        drop(manager_lock);
 
-        assert!(matches!(
-            manager
-                .install_spawned_executor(connection_id, executor.clone())
-                .await,
-            Err(ResultMutationError::ConnectionClosing)
-        ));
-        let state = executor.state.lock().await;
-        assert!(state.closed);
-        assert!(state.connection.is_none());
+        let state = manager.inner.lock().await;
+        assert!(state.executors.is_empty());
+        assert!(check_admission(&state).is_ok());
+    }
+
+    #[tokio::test]
+    async fn stale_apply_ids_do_not_create_or_count_executors() {
+        let manager = ResultMutationManager::new();
+        for index in 0..MAX_EXECUTORS {
+            let mut payload = apply_payload("tab", index as u64 + 1);
+            payload.connection_id = format!("stale-{index}");
+            assert_eq!(
+                manager.apply(spec(&payload.connection_id), payload).await,
+                Err(ResultMutationError::AnalysisExpired)
+            );
+        }
+        let state = manager.inner.lock().await;
+        assert!(state.executors.is_empty());
+        assert!(check_admission(&state).is_ok());
+    }
+
+    #[tokio::test]
+    async fn close_idle_removes_executor_stops_worker_and_releases_capacity() {
+        let manager = ResultMutationManager::new();
+        let executor = spawn_executor(spec("idle"));
+        executor.state.lock().await.last_used = Instant::now() - IDLE_TIMEOUT;
+        manager
+            .inner
+            .lock()
+            .await
+            .executors
+            .insert("idle".into(), executor.clone());
+
+        manager.close_idle().await;
+
+        let notified = executor.notify.notified();
+        tokio::pin!(notified);
+        if executor.worker_running.load(Ordering::Acquire) {
+            tokio::time::timeout(Duration::from_secs(1), &mut notified)
+                .await
+                .expect("analysis worker stopped");
+        }
+        assert!(!executor.worker_running.load(Ordering::Acquire));
+        let executor_state = executor.state.lock().await;
+        assert!(executor_state.closed);
+        assert!(executor_state.connection.is_none());
+        drop(executor_state);
+        let manager_state = manager.inner.lock().await;
+        assert!(!manager_state.executors.contains_key("idle"));
+        assert!(!manager_state.closing.contains("idle"));
+        assert!(check_admission(&manager_state).is_ok());
+    }
+
+    #[tokio::test]
+    async fn dropped_apply_waiter_cancels_and_finalizes_owned_state() {
+        let executor = spawn_executor(spec("dropped"));
+        executor.state.lock().await.active = Some(ActiveRequest::new("tab", 7, ActiveKind::Apply));
+        let (dropped, mut signal) = oneshot::channel();
+        drop(ApplyCallerGuard::new(dropped));
+        (&mut signal).await.expect("drop signal");
+
+        let cancel = cancel_dropped_apply(&mut *executor.state.lock().await);
+        assert!(cancel.is_none());
+        assert_eq!(
+            executor
+                .state
+                .lock()
+                .await
+                .active
+                .as_ref()
+                .unwrap()
+                .interrupt,
+            Interrupt::Cancel
+        );
+        assert_eq!(
+            finish_active::<()>(&executor, Err(ResultMutationError::Cancelled)).await,
+            Err(ResultMutationError::Cancelled)
+        );
+        assert!(executor.state.lock().await.active.is_none());
+        close_executor(&executor, false).await;
     }
 }
