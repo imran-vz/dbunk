@@ -36,6 +36,19 @@ pub(crate) type VirtualKeyLookup = Arc<
         + Sync,
 >;
 
+fn apply_write_intent(plan: &MutationPlan) -> crate::safety::policy::WriteIntent {
+    crate::safety::policy::WriteIntent::ApplyMutations {
+        classes: plan
+            .operations
+            .iter()
+            .map(|_| crate::postgres::sql_class::StatementClass::Dml {
+                unbounded: false,
+                destructive: false,
+            })
+            .collect(),
+    }
+}
+
 #[derive(Default)]
 struct ManagerState {
     executors: HashMap<String, Arc<Executor>>,
@@ -51,6 +64,33 @@ struct ManagerState {
 pub(crate) struct ResultMutationManager {
     inner: Arc<Mutex<ManagerState>>,
     changed: Arc<Notify>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApplyOutcome {
+    result: ApplyResult,
+    intent: crate::safety::policy::WriteIntent,
+    authorization: crate::safety::policy::SafetyAuthorization,
+}
+
+impl ApplyOutcome {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        ApplyResult,
+        crate::safety::policy::WriteIntent,
+        crate::safety::policy::SafetyAuthorization,
+    ) {
+        (self.result, self.intent, self.authorization)
+    }
+}
+
+impl std::ops::Deref for ApplyOutcome {
+    type Target = ApplyResult;
+
+    fn deref(&self) -> &Self::Target {
+        &self.result
+    }
 }
 
 impl ResultMutationManager {
@@ -153,9 +193,25 @@ impl ResultMutationManager {
 
     pub(crate) async fn apply(
         &self,
-        _spec: ResolvedPostgresConnectSpec,
+        spec: ResolvedPostgresConnectSpec,
         payload: ApplyResultMutationsPayload,
-    ) -> Result<ApplyResult, ResultMutationError> {
+    ) -> Result<ApplyOutcome, ResultMutationError> {
+        let intent = apply_write_intent(&payload.plan);
+        let authorization = crate::safety::policy::assert_permitted(
+            &spec.safety_policy,
+            &intent,
+            payload.confirmed,
+        )
+        .map_err(|refusal| match refusal {
+            crate::safety::policy::SafetyRefusal::Blocked { reason, .. } => {
+                ResultMutationError::PolicyBlocked {
+                    reason: reason.to_string(),
+                }
+            }
+            crate::safety::policy::SafetyRefusal::NeedsConfirmation { statements } => {
+                ResultMutationError::PolicyNeedsConfirmation { statements }
+            }
+        })?;
         // An analysis snapshot can only live on an existing executor. Validate
         // this before opening or consuming admission capacity: stale IDs are a
         // cache miss, not a reason to create a database socket.
@@ -178,7 +234,11 @@ impl ResultMutationManager {
             .await
             .unwrap_or(Err(ResultMutationError::ConnectionLost));
         guard.complete();
-        result
+        result.map(|result| ApplyOutcome {
+            result,
+            intent,
+            authorization,
+        })
     }
 
     pub(crate) async fn cancel_tab(
@@ -1173,6 +1233,7 @@ mod tests {
             tls_prefer: false,
             connect_timeout: None,
             driver_options: crate::PgDriverOptions::default(),
+            safety_policy: Default::default(),
         }
     }
 
@@ -1182,6 +1243,7 @@ mod tests {
             tab_id: tab_id.into(),
             request_id: 10,
             analysis_id,
+            confirmed: false,
             plan: MutationPlan {
                 operations: Vec::new(),
             },
@@ -1572,6 +1634,44 @@ mod tests {
         let state = manager.inner.lock().await;
         assert!(state.executors.is_empty());
         assert!(check_admission(&state).is_ok());
+    }
+
+    #[tokio::test]
+    async fn policy_refusal_leaves_the_apply_executor_idle() {
+        let manager = ResultMutationManager::new();
+        let executor = new_executor(spec("c"));
+        let analysis_id = executor
+            .state
+            .lock()
+            .await
+            .snapshots
+            .insert(AnalysisSnapshot {
+                tab_id: "tab".into(),
+                descriptors: Vec::new(),
+            });
+        manager
+            .inner
+            .lock()
+            .await
+            .executors
+            .insert("c".into(), executor.clone());
+
+        let mut guarded_spec = spec("c");
+        guarded_spec.safety_policy = crate::safety::policy::resolve_policy(
+            crate::Environment::Production,
+            crate::SafeMode::Inherit,
+            false,
+        );
+        let result = manager
+            .apply(guarded_spec, apply_payload("tab", analysis_id))
+            .await;
+        assert!(matches!(
+            result,
+            Err(ResultMutationError::PolicyNeedsConfirmation { .. })
+        ));
+        let state = executor.state.lock().await;
+        assert!(state.active.is_none());
+        assert!(state.cancel_pending.is_none());
     }
 
     #[tokio::test]

@@ -44,13 +44,51 @@ pub async fn execute_query_session(
     window: Window,
     payload: ExecutePayload,
 ) -> Result<AcceptedResult, QuerySessionError> {
+    execute_query_session_inner(state.inner(), window.label(), payload).await
+}
+
+pub(crate) async fn execute_query_session_inner(
+    state: &AppState,
+    window_label: &str,
+    payload: ExecutePayload,
+) -> Result<AcceptedResult, QuerySessionError> {
+    let connection_id = state
+        .query_sessions
+        .connection_id(&payload.session_id, window_label)
+        .await?;
+    let connection = find_connection(state, &connection_id)
+        .await
+        .map_err(|_| QuerySessionError::ConnectionLost)?;
+    let policy = super::safety::resolved_policy(&connection);
+    let pool = state.pool.clone();
+    let audit_connection_id = connection_id.clone();
     state
         .query_sessions
         .execute(
             &payload.session_id,
             payload.execution_id,
             payload.sql,
-            window.label(),
+            window_label,
+            crate::query_session::ExecutionSafety {
+                policy: &policy,
+                confirmed: payload.confirmed,
+                on_success: Some(Box::new(move |intent, authorization| {
+                    Box::pin(async move {
+                        if matches!(
+                            authorization.audit_disposition(),
+                            crate::safety::policy::AuditDisposition::RequiredAfterSuccess
+                        ) {
+                            super::safety::record_override(
+                                &pool,
+                                &audit_connection_id,
+                                "execute_query_session",
+                                &intent,
+                            )
+                            .await;
+                        }
+                    })
+                })),
+            },
         )
         .await
 }

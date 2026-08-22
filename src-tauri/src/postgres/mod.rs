@@ -22,6 +22,8 @@ mod relationship_metadata;
 pub(crate) mod row_budget;
 mod schema;
 mod seed;
+pub(crate) mod sql_class;
+pub(crate) mod sql_lex;
 mod table_relationships;
 
 use sqlx::postgres::PgRow;

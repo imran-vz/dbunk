@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::postgres::sql_class::StatementClassSummary;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum QueryTransactionMode {
@@ -67,6 +69,12 @@ pub(crate) enum QuerySessionError {
     #[allow(dead_code)]
     TransactionObserverUnavailable,
     ConnectionLost,
+    PolicyBlocked {
+        reason: String,
+    },
+    PolicyNeedsConfirmation {
+        statements: Vec<StatementClassSummary>,
+    },
     Timeout {
         operation: String,
     },
@@ -107,6 +115,8 @@ pub(crate) struct ExecutePayload {
     pub session_id: String,
     pub execution_id: String,
     pub sql: String,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -236,6 +246,25 @@ mod tests {
             serde_json::to_value(QueryTransactionSnapshot::default()).unwrap()["manualIsolation"],
             "readCommitted"
         );
+        let confirmation = serde_json::to_value(QuerySessionError::PolicyNeedsConfirmation {
+            statements: vec![crate::postgres::sql_class::StatementClass::Dml {
+                unbounded: true,
+                destructive: false,
+            }
+            .summary(0)],
+        })
+        .unwrap();
+        assert_eq!(confirmation["kind"], "policyNeedsConfirmation");
+        assert_eq!(confirmation["statements"][0]["class"], "dml");
+        assert_eq!(confirmation["statements"][0]["unbounded"], true);
+
+        let payload: ExecutePayload = serde_json::from_value(serde_json::json!({
+            "sessionId": "s",
+            "executionId": "e",
+            "sql": "SELECT 1"
+        }))
+        .unwrap();
+        assert!(!payload.confirmed);
     }
     #[test]
     fn nullable_column_names_keep_positions() {

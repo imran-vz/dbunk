@@ -12,6 +12,7 @@ pub(crate) struct ResolvedPostgresConnectSpec {
     pub tls_prefer: bool,
     pub connect_timeout: Option<Duration>,
     pub driver_options: PgDriverOptions,
+    pub safety_policy: crate::safety::policy::ResolvedSafetyPolicy,
 }
 
 impl ResolvedPostgresConnectSpec {
@@ -35,6 +36,11 @@ impl ResolvedPostgresConnectSpec {
                 .connect_timeout_ms
                 .map(|ms| Duration::from_millis(ms.into())),
             driver_options,
+            safety_policy: crate::safety::policy::resolve_policy(
+                pg.environment,
+                pg.safe_mode,
+                pg.read_only,
+            ),
         }
     }
     pub(crate) fn tokio_config(&self) -> tokio_postgres::Config {
@@ -58,6 +64,7 @@ impl std::fmt::Debug for ResolvedPostgresConnectSpec {
             .field("port", &self.port)
             .field("tls_prefer", &self.tls_prefer)
             .field("connect_timeout", &self.connect_timeout)
+            .field("read_only", &self.safety_policy.read_only)
             .finish_non_exhaustive()
     }
 }
@@ -78,6 +85,9 @@ mod tests {
             user: "postgres".into(),
             password: String::new(),
             role: String::new(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
             ssl: false,
             driver_options: Some(PgDriverOptions {
