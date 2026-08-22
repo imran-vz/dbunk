@@ -124,8 +124,14 @@ export const createWorkspaceTabsSlice: StateCreator<
   setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
 
   closeTab: async (tabId) => {
-    const hasStagedChanges = Object.values(get().mutationDrafts).some(
-      (draft) => draft?.owner.tabId === tabId && draft.changeOrder.length > 0,
+    const tabDrafts = Object.values(get().mutationDrafts).filter(
+      (draft) => draft?.owner.tabId === tabId,
+    );
+    if (tabDrafts.some((draft) => draft?.apply.state === "applying")) {
+      return;
+    }
+    const hasStagedChanges = tabDrafts.some(
+      (draft) => draft && draft.changeOrder.length > 0,
     );
     if (
       hasStagedChanges &&
