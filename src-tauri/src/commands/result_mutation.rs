@@ -47,10 +47,37 @@ pub async fn apply_result_mutations(
     state: State<'_, AppState>,
     payload: ApplyResultMutationsPayload,
 ) -> Result<ApplyResult, ResultMutationError> {
-    let spec = postgres_spec(state.inner(), &payload.connection_id).await?;
+    apply_result_mutations_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn apply_result_mutations_inner(
+    state: &AppState,
+    payload: ApplyResultMutationsPayload,
+) -> Result<ApplyResult, ResultMutationError> {
+    let connection = find_connection(state, &payload.connection_id)
+        .await
+        .map_err(|_| ResultMutationError::ConnectionLost)?;
+    if connection.engine() != DatabaseEngine::PostgreSQL {
+        return Err(ResultMutationError::UnsupportedEngine);
+    }
+    let spec = ResolvedPostgresConnectSpec::from_connection(&connection)
+        .map_err(|_| ResultMutationError::UnsupportedEngine)?;
     let connection_id = payload.connection_id.clone();
-    let result = state.inner().result_mutations.apply(spec, payload).await?;
-    touch_connection_activity(state.inner(), &connection_id).await;
+    let outcome = state.result_mutations.apply(spec, payload).await?;
+    let (result, intent, authorization) = outcome.into_parts();
+    if matches!(
+        authorization.audit_disposition(),
+        crate::safety::policy::AuditDisposition::RequiredAfterSuccess
+    ) {
+        super::safety::record_override(
+            &state.pool,
+            &connection_id,
+            "apply_result_mutations",
+            &intent,
+        )
+        .await;
+    }
+    touch_connection_activity(state, &connection_id).await;
     Ok(result)
 }
 
@@ -188,6 +215,26 @@ fn virtual_key_storage_error(error: storage::VirtualKeyStorageError) -> ResultMu
 mod tests {
     use super::*;
 
+    fn strict_connection(connection_id: &str) -> crate::StoredConnection {
+        crate::StoredConnection::PostgreSQL(crate::PgStoredConnection {
+            id: connection_id.into(),
+            name: "Strict mutation".into(),
+            database: "dbunk_demo".into(),
+            host: "127.0.0.1".into(),
+            port: 15432,
+            user: "dbunk".into(),
+            password: "dbunk".into(),
+            role: "read/write".into(),
+            environment: crate::Environment::Production,
+            safe_mode: crate::SafeMode::Inherit,
+            read_only: false,
+            last_activity_at: None,
+            ssl: true,
+            driver_options: None,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
+        })
+    }
+
     #[test]
     fn virtual_key_storage_errors_preserve_the_command_contract() {
         assert_eq!(
@@ -220,5 +267,84 @@ mod tests {
             )),
             ResultMutationError::Database { .. }
         ));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn apply_command_core_refusal_and_failure_never_audit() {
+        let (_directory, state) = crate::test_app_state().await;
+        let connection_id = "strict-apply-command";
+        crate::commands::connections::save_connection_inner(
+            &state,
+            strict_connection(connection_id),
+        )
+        .await
+        .expect("save strict connection");
+
+        let result = apply_result_mutations_inner(
+            &state,
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "tab".into(),
+                request_id: 1,
+                confirmed: false,
+                analysis_id: 1,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Insert {
+                        table: MutationTable {
+                            schema: "public".into(),
+                            table: "rows".into(),
+                        },
+                        values: vec![MutationValue {
+                            column: "body".into(),
+                            value: Some("value".into()),
+                        }],
+                    }],
+                },
+            },
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(ResultMutationError::PolicyNeedsConfirmation { .. })
+        ));
+
+        let failed_after_admission = apply_result_mutations_inner(
+            &state,
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "tab".into(),
+                request_id: 2,
+                confirmed: true,
+                analysis_id: 1,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Insert {
+                        table: MutationTable {
+                            schema: "public".into(),
+                            table: "rows".into(),
+                        },
+                        values: vec![MutationValue {
+                            column: "body".into(),
+                            value: Some("value".into()),
+                        }],
+                    }],
+                },
+            },
+        )
+        .await;
+        assert_eq!(
+            failed_after_admission,
+            Err(ResultMutationError::AnalysisExpired)
+        );
+        assert!(storage::read_safety_overrides(&state.pool, connection_id)
+            .await
+            .expect("read audits")
+            .is_empty());
+        assert!(storage::read_connection_by_id(&state.pool, connection_id)
+            .await
+            .expect("read connection")
+            .expect("stored connection")
+            .last_activity_at()
+            .is_none());
     }
 }

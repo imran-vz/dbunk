@@ -333,6 +333,9 @@ mod sqlite_live_tests {
             user: String::new(),
             password: String::new(),
             role: "read/write".into(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
         })
     }
@@ -582,6 +585,9 @@ mod mysql_live_tests {
             user: "dbunk".into(),
             password: "dbunk".into(),
             role: "read/write".into(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
             ssl: false,
             ssh_tunnel: SshTunnelConfig::default(),

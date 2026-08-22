@@ -79,7 +79,7 @@ pub(crate) async fn connect(
         let driver = spawn_driver(connection, notices);
         (client, driver)
     };
-    for statement in driver_option_sql(&spec.driver_options) {
+    for statement in driver_option_sql(&spec.driver_options, spec.safety_policy.read_only) {
         client
             .batch_execute(&statement)
             .await

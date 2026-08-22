@@ -31,6 +31,76 @@ pub(crate) enum DatabaseEngine {
     Redis,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Environment {
+    #[default]
+    Development,
+    Test,
+    Staging,
+    Production,
+}
+
+impl Environment {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Development => "development",
+            Self::Test => "test",
+            Self::Staging => "staging",
+            Self::Production => "production",
+        }
+    }
+}
+
+impl FromStr for Environment {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "development" => Ok(Self::Development),
+            "test" => Ok(Self::Test),
+            "staging" => Ok(Self::Staging),
+            "production" => Ok(Self::Production),
+            _ => Err(format!("Unsupported connection environment: {value}")),
+        }
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SafeMode {
+    #[default]
+    Inherit,
+    Disabled,
+    Protected,
+    Strict,
+}
+
+impl SafeMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Inherit => "inherit",
+            Self::Disabled => "disabled",
+            Self::Protected => "protected",
+            Self::Strict => "strict",
+        }
+    }
+}
+
+impl FromStr for SafeMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "inherit" => Ok(Self::Inherit),
+            "disabled" => Ok(Self::Disabled),
+            "protected" => Ok(Self::Protected),
+            "strict" => Ok(Self::Strict),
+            _ => Err(format!("Unsupported connection Safe Mode: {value}")),
+        }
+    }
+}
+
 /// Top-level engine class — `Relational` engines share schemas/tables/
 /// rows/SQL; `KeyValue` engines share a keyspace of typed keys. The
 /// class is derived from `DatabaseEngine::storage_class()`; never
@@ -387,6 +457,12 @@ pub(crate) struct PgStoredConnection {
     pub user: String,
     pub password: String,
     pub role: String,
+    #[serde(default)]
+    pub environment: Environment,
+    #[serde(default)]
+    pub safe_mode: SafeMode,
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
     /// TLS for the wire-protocol upgrade. Distinct concept from
@@ -437,6 +513,12 @@ pub(crate) struct MySqlStoredConnection {
     pub user: String,
     pub password: String,
     pub role: String,
+    #[serde(default)]
+    pub environment: Environment,
+    #[serde(default)]
+    pub safe_mode: SafeMode,
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
     #[serde(default = "default_true")]
@@ -464,6 +546,12 @@ pub(crate) struct SqliteStoredConnection {
     #[serde(default)]
     pub password: String,
     pub role: String,
+    #[serde(default)]
+    pub environment: Environment,
+    #[serde(default)]
+    pub safe_mode: SafeMode,
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
 }
@@ -479,6 +567,12 @@ pub(crate) struct ClickHouseStoredConnection {
     pub user: String,
     pub password: String,
     pub role: String,
+    #[serde(default)]
+    pub environment: Environment,
+    #[serde(default)]
+    pub safe_mode: SafeMode,
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
     /// When true the URL builder uses `https://` and defaults the
@@ -507,6 +601,10 @@ pub(crate) struct RedisStoredConnection {
     pub user: String,
     pub password: String,
     pub role: String,
+    #[serde(default)]
+    pub environment: Environment,
+    #[serde(default)]
+    pub safe_mode: SafeMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
     /// Which numbered DB (0–15 on standalone).
@@ -624,6 +722,36 @@ impl StoredConnection {
         }
     }
 
+    pub(crate) fn environment(&self) -> Environment {
+        match self {
+            Self::PostgreSQL(c) => c.environment,
+            Self::MySQL(c) => c.environment,
+            Self::SQLite(c) => c.environment,
+            Self::ClickHouse(c) => c.environment,
+            Self::Redis(c) => c.environment,
+        }
+    }
+
+    pub(crate) fn safe_mode(&self) -> SafeMode {
+        match self {
+            Self::PostgreSQL(c) => c.safe_mode,
+            Self::MySQL(c) => c.safe_mode,
+            Self::SQLite(c) => c.safe_mode,
+            Self::ClickHouse(c) => c.safe_mode,
+            Self::Redis(c) => c.safe_mode,
+        }
+    }
+
+    pub(crate) fn read_only(&self) -> bool {
+        match self {
+            Self::PostgreSQL(c) => c.read_only,
+            Self::MySQL(c) => c.read_only,
+            Self::SQLite(c) => c.read_only,
+            Self::ClickHouse(c) => c.read_only,
+            Self::Redis(c) => c.read_only,
+        }
+    }
+
     pub fn last_activity_at(&self) -> Option<&str> {
         match self {
             Self::PostgreSQL(c) => c.last_activity_at.as_deref(),
@@ -681,6 +809,14 @@ impl StoredConnection {
             Self::Redis(c) => Some(&c.ssh_tunnel),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SafetyOverrideRecord {
+    pub command: String,
+    pub classes: Vec<String>,
+    pub occurred_at: String,
 }
 
 /// Connect-time pipeline result for Redis. Surfaced in the connection-
@@ -1018,6 +1154,8 @@ pub(crate) struct TestConnectionPayload {
 pub(crate) struct RunQueryPayload {
     pub connection_id: String,
     pub query: String,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1160,6 +1298,8 @@ pub(crate) struct SeedTablePayload {
     pub seed: Option<u64>,
     #[serde(default)]
     pub columns: Vec<SeedColumnSpec>,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1256,6 +1396,8 @@ pub(crate) struct LoadServerDetailsPayload {
 pub(crate) struct ExecuteDdlPayload {
     pub connection_id: String,
     pub sql: String,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1288,6 +1430,8 @@ pub(crate) struct CommitCellEditsPayload {
     pub schema: String,
     pub table: String,
     pub edits: Vec<CellEdit>,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1300,6 +1444,8 @@ pub(crate) struct InsertRowPayload {
     // get the database default — that lets users insert rows that rely on
     // SERIAL/identity columns or DEFAULT NOW() etc.
     pub values: Vec<CellEditKeyValue>,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1311,6 +1457,8 @@ pub(crate) struct ImportRowsPayload {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Option<String>>>,
     pub use_copy: bool,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1340,6 +1488,8 @@ pub(crate) struct PgRestorePayload {
     pub format: String,
     #[serde(default)]
     pub clean: bool,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1352,6 +1502,8 @@ pub(crate) struct CopyTablePayload {
     pub destination_schema: String,
     pub destination_table: String,
     pub page_size: Option<u32>,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1362,6 +1514,8 @@ pub(crate) struct RefreshMaterializedViewPayload {
     pub view: String,
     #[serde(default)]
     pub concurrently: bool,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1369,6 +1523,8 @@ pub(crate) struct RefreshMaterializedViewPayload {
 pub(crate) struct PgBackendActionPayload {
     pub connection_id: String,
     pub pid: i32,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1378,6 +1534,8 @@ pub(crate) struct PgMaintenancePayload {
     pub schema: String,
     pub table: String,
     pub action: String,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1390,6 +1548,8 @@ pub(crate) struct DeleteRowsPayload {
     // identified row inside a single transaction; if any identified row
     // misses (rows_affected == 0) we ROLLBACK the whole batch.
     pub rows: Vec<Vec<CellEditKeyValue>>,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]

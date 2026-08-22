@@ -5,6 +5,7 @@ use tauri::Emitter;
 use tauri::State;
 
 use crate::dispatch;
+use crate::safety::policy::{AuditDisposition, WriteIntent};
 use crate::storage;
 use crate::{
     parse_total_rows, qualified_table_name, AppState, CommitCellEditsPayload,
@@ -23,7 +24,10 @@ use crate::{
     TableStructure, DEFAULT_TABLE_PAGE_SIZE, MAX_QUERY_HISTORY, MAX_TABLE_PAGE_SIZE,
 };
 
-use super::{find_connection, touch_connection_activity, with_active_connection};
+use super::{
+    find_connection, touch_connection_activity, with_active_connection,
+    with_gated_active_connection,
+};
 
 // ---------------------------------------------------------------------------
 // Schema exploration
@@ -143,13 +147,33 @@ pub async fn run_query(
     state: State<'_, AppState>,
     payload: RunQueryPayload,
 ) -> Result<QueryResult, String> {
+    run_query_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn run_query_inner(
+    state: &AppState,
+    payload: RunQueryPayload,
+) -> Result<QueryResult, String> {
     let RunQueryPayload {
         connection_id,
         query,
+        confirmed,
     } = payload;
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::run_query(&connection, &query).await
-    })
+    let query_for_policy = query.clone();
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "run_query",
+        confirmed,
+        move |connection| WriteIntent::Statement {
+            classes: if connection.engine() == crate::DatabaseEngine::PostgreSQL {
+                crate::postgres::sql_class::classify_script(&query_for_policy)
+            } else {
+                vec![crate::postgres::sql_class::StatementClass::Unknown]
+            },
+        },
+        |connection| async move { dispatch::run_query(&connection, &query).await },
+    )
     .await
 }
 
@@ -231,13 +255,29 @@ pub async fn execute_ddl(
     state: State<'_, AppState>,
     payload: ExecuteDdlPayload,
 ) -> Result<ExecuteDdlResult, String> {
-    let ExecuteDdlPayload { connection_id, sql } = payload;
+    execute_ddl_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn execute_ddl_inner(
+    state: &AppState,
+    payload: ExecuteDdlPayload,
+) -> Result<ExecuteDdlResult, String> {
+    let ExecuteDdlPayload {
+        connection_id,
+        sql,
+        confirmed,
+    } = payload;
     if sql.trim().is_empty() {
         return Err("DDL statement is empty".to_string());
     }
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::execute_ddl(&connection, &sql).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "execute_ddl",
+        confirmed,
+        |_| WriteIntent::Ddl,
+        |connection| async move { dispatch::execute_ddl(&connection, &sql).await },
+    )
     .await
 }
 
@@ -288,15 +328,30 @@ pub async fn run_pg_restore(
     state: State<'_, AppState>,
     payload: PgRestorePayload,
 ) -> Result<PgRestoreResult, String> {
+    run_pg_restore_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn run_pg_restore_inner(
+    state: &AppState,
+    payload: PgRestorePayload,
+) -> Result<PgRestoreResult, String> {
     let PgRestorePayload {
         connection_id,
         data_base64,
         format,
         clean,
+        confirmed,
     } = payload;
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::run_pg_restore(&connection, &data_base64, &format, clean).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "run_pg_restore",
+        confirmed,
+        |_| WriteIntent::Restore,
+        |connection| async move {
+            dispatch::run_pg_restore(&connection, &data_base64, &format, clean).await
+        },
+    )
     .await
 }
 
@@ -305,15 +360,30 @@ pub async fn refresh_materialized_view(
     state: State<'_, AppState>,
     payload: RefreshMaterializedViewPayload,
 ) -> Result<ExecuteDdlResult, String> {
+    refresh_materialized_view_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn refresh_materialized_view_inner(
+    state: &AppState,
+    payload: RefreshMaterializedViewPayload,
+) -> Result<ExecuteDdlResult, String> {
     let RefreshMaterializedViewPayload {
         connection_id,
         schema,
         view,
         concurrently,
+        confirmed,
     } = payload;
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::refresh_materialized_view(&connection, &schema, &view, concurrently).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "refresh_materialized_view",
+        confirmed,
+        |_| WriteIntent::RefreshMatView,
+        |connection| async move {
+            dispatch::refresh_materialized_view(&connection, &schema, &view, concurrently).await
+        },
+    )
     .await
 }
 
@@ -322,15 +392,30 @@ pub async fn run_pg_maintenance(
     state: State<'_, AppState>,
     payload: PgMaintenancePayload,
 ) -> Result<ExecuteDdlResult, String> {
+    run_pg_maintenance_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn run_pg_maintenance_inner(
+    state: &AppState,
+    payload: PgMaintenancePayload,
+) -> Result<ExecuteDdlResult, String> {
     let PgMaintenancePayload {
         connection_id,
         schema,
         table,
         action,
+        confirmed,
     } = payload;
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::run_maintenance(&connection, &schema, &table, &action).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "run_pg_maintenance",
+        confirmed,
+        |_| WriteIntent::Maintenance,
+        |connection| async move {
+            dispatch::run_maintenance(&connection, &schema, &table, &action).await
+        },
+    )
     .await
 }
 
@@ -343,18 +428,33 @@ pub async fn commit_cell_edits(
     state: State<'_, AppState>,
     payload: CommitCellEditsPayload,
 ) -> Result<CommitCellEditsResult, String> {
+    commit_cell_edits_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn commit_cell_edits_inner(
+    state: &AppState,
+    payload: CommitCellEditsPayload,
+) -> Result<CommitCellEditsResult, String> {
     let CommitCellEditsPayload {
         connection_id,
         schema,
         table,
         edits,
+        confirmed,
     } = payload;
     if edits.is_empty() {
         return Err("no edits to commit".to_string());
     }
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::commit_cell_edits(&connection, &schema, &table, &edits).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "commit_cell_edits",
+        confirmed,
+        |_| WriteIntent::RowMutation,
+        |connection| async move {
+            dispatch::commit_cell_edits(&connection, &schema, &table, &edits).await
+        },
+    )
     .await
 }
 
@@ -363,18 +463,33 @@ pub async fn insert_row(
     state: State<'_, AppState>,
     payload: InsertRowPayload,
 ) -> Result<InsertRowResult, String> {
+    insert_row_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn insert_row_inner(
+    state: &AppState,
+    payload: InsertRowPayload,
+) -> Result<InsertRowResult, String> {
     let InsertRowPayload {
         connection_id,
         schema,
         table,
         values,
+        confirmed,
     } = payload;
     if values.is_empty() {
         return Err("no values provided".to_string());
     }
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::insert_row(&connection, &schema, &table, &values).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "insert_row",
+        confirmed,
+        |_| WriteIntent::RowMutation,
+        |connection| async move {
+            dispatch::insert_row(&connection, &schema, &table, &values).await
+        },
+    )
     .await
 }
 
@@ -384,14 +499,40 @@ pub async fn seed_table(
     state: State<'_, AppState>,
     payload: SeedTablePayload,
 ) -> Result<SeedTableResult, String> {
+    let operation_id = payload.operation_id.clone();
+    let total_rows = u64::from(payload.row_count);
+    seed_table_inner(state.inner(), payload, move |rows_completed| {
+        if let Err(error) = app.emit(
+            "seed-table-progress",
+            crate::SeedTableProgress {
+                operation_id: operation_id.clone(),
+                rows_completed,
+                total_rows,
+            },
+        ) {
+            log::warn!("seed progress emit failed: {error}");
+        }
+    })
+    .await
+}
+
+pub(crate) async fn seed_table_inner<F>(
+    state: &AppState,
+    payload: SeedTablePayload,
+    report_progress: F,
+) -> Result<SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync + 'static,
+{
     let SeedTablePayload {
-        operation_id,
+        operation_id: _,
         connection_id,
         schema,
         table,
         row_count,
         seed,
         columns,
+        confirmed,
     } = payload;
     // An omitted seed is picked here and echoed back in the result so
     // the run stays reproducible after the fact (ADR-0020).
@@ -401,36 +542,38 @@ pub async fn seed_table(
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0x5eed_5eed)
     });
-    let total_rows = u64::from(row_count);
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::seed_table(
-            &connection,
-            &schema,
-            &table,
-            row_count,
-            seed,
-            &columns,
-            move |rows_completed| {
-                if let Err(error) = app.emit(
-                    "seed-table-progress",
-                    crate::SeedTableProgress {
-                        operation_id: operation_id.clone(),
-                        rows_completed,
-                        total_rows,
-                    },
-                ) {
-                    log::warn!("seed progress emit failed: {error}");
-                }
-            },
-        )
-        .await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "seed_table",
+        confirmed,
+        |_| WriteIntent::Seed,
+        |connection| async move {
+            dispatch::seed_table(
+                &connection,
+                &schema,
+                &table,
+                row_count,
+                seed,
+                &columns,
+                report_progress,
+            )
+            .await
+        },
+    )
     .await
 }
 
 #[tauri::command]
 pub async fn import_rows(
     state: State<'_, AppState>,
+    payload: ImportRowsPayload,
+) -> Result<ImportRowsResult, String> {
+    import_rows_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn import_rows_inner(
+    state: &AppState,
     payload: ImportRowsPayload,
 ) -> Result<ImportRowsResult, String> {
     let ImportRowsPayload {
@@ -440,6 +583,7 @@ pub async fn import_rows(
         columns,
         rows,
         use_copy,
+        confirmed,
     } = payload;
     if columns.is_empty() {
         return Err("no columns mapped for import".to_string());
@@ -450,15 +594,29 @@ pub async fn import_rows(
             rows_affected: 0,
         });
     }
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::import_rows(&connection, &schema, &table, &columns, &rows, use_copy).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "import_rows",
+        confirmed,
+        |_| WriteIntent::Import,
+        |connection| async move {
+            dispatch::import_rows(&connection, &schema, &table, &columns, &rows, use_copy).await
+        },
+    )
     .await
 }
 
 #[tauri::command]
 pub async fn copy_table_rows(
     state: State<'_, AppState>,
+    payload: CopyTablePayload,
+) -> Result<CopyTableResult, String> {
+    copy_table_rows_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn copy_table_rows_inner(
+    state: &AppState,
     payload: CopyTablePayload,
 ) -> Result<CopyTableResult, String> {
     let CopyTablePayload {
@@ -469,9 +627,12 @@ pub async fn copy_table_rows(
         destination_schema,
         destination_table,
         page_size,
+        confirmed,
     } = payload;
-    let source = find_connection(state.inner(), &source_connection_id).await?;
-    let destination = find_connection(state.inner(), &destination_connection_id).await?;
+    let source = find_connection(state, &source_connection_id).await?;
+    let destination = find_connection(state, &destination_connection_id).await?;
+    let intent = WriteIntent::CopyDestination;
+    let authorization = super::safety::assert_legacy_permitted(&destination, &intent, confirmed)?;
     let result = dispatch::copy_table_rows(
         &source,
         &destination,
@@ -482,8 +643,17 @@ pub async fn copy_table_rows(
         page_size.unwrap_or(DEFAULT_TABLE_PAGE_SIZE),
     )
     .await?;
-    touch_connection_activity(state.inner(), &source_connection_id).await;
-    touch_connection_activity(state.inner(), &destination_connection_id).await;
+    if authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess {
+        super::safety::record_override(
+            &state.pool,
+            &destination_connection_id,
+            "copy_table_rows",
+            &intent,
+        )
+        .await;
+    }
+    touch_connection_activity(state, &source_connection_id).await;
+    touch_connection_activity(state, &destination_connection_id).await;
     Ok(result)
 }
 
@@ -492,18 +662,33 @@ pub async fn delete_rows(
     state: State<'_, AppState>,
     payload: DeleteRowsPayload,
 ) -> Result<DeleteRowsResult, String> {
+    delete_rows_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn delete_rows_inner(
+    state: &AppState,
+    payload: DeleteRowsPayload,
+) -> Result<DeleteRowsResult, String> {
     let DeleteRowsPayload {
         connection_id,
         schema,
         table,
         rows,
+        confirmed,
     } = payload;
     if rows.is_empty() {
         return Err("no rows provided".to_string());
     }
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::delete_rows(&connection, &schema, &table, &rows).await
-    })
+    with_gated_active_connection(
+        state,
+        &connection_id,
+        "delete_rows",
+        confirmed,
+        |_| WriteIntent::RowMutation,
+        |connection| async move {
+            dispatch::delete_rows(&connection, &schema, &table, &rows).await
+        },
+    )
     .await
 }
 
@@ -589,9 +774,19 @@ pub async fn cancel_pg_backend(
     state: State<'_, AppState>,
     payload: PgBackendActionPayload,
 ) -> Result<PgBackendActionResult, String> {
-    with_active_connection(
-        state.inner(),
+    cancel_pg_backend_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn cancel_pg_backend_inner(
+    state: &AppState,
+    payload: PgBackendActionPayload,
+) -> Result<PgBackendActionResult, String> {
+    with_gated_active_connection(
+        state,
         &payload.connection_id,
+        "cancel_pg_backend",
+        payload.confirmed,
+        |_| WriteIntent::CancelBackend,
         |connection| async move { dispatch::cancel_backend(&connection, payload.pid).await },
     )
     .await
@@ -602,9 +797,19 @@ pub async fn terminate_pg_backend(
     state: State<'_, AppState>,
     payload: PgBackendActionPayload,
 ) -> Result<PgBackendActionResult, String> {
-    with_active_connection(
-        state.inner(),
+    terminate_pg_backend_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn terminate_pg_backend_inner(
+    state: &AppState,
+    payload: PgBackendActionPayload,
+) -> Result<PgBackendActionResult, String> {
+    with_gated_active_connection(
+        state,
         &payload.connection_id,
+        "terminate_pg_backend",
+        payload.confirmed,
+        |_| WriteIntent::TerminateBackend,
         |connection| async move { dispatch::terminate_backend(&connection, payload.pid).await },
     )
     .await
@@ -668,4 +873,345 @@ pub async fn delete_saved_query(
     let state = state.inner();
     storage::delete_saved_query(&state.pool, &payload.id).await?;
     storage::read_saved_queries(&state.pool).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        CellEdit, CellEditKeyValue, Environment, MySqlStoredConnection, SafeMode, SshTunnelConfig,
+        StoredConnection,
+    };
+
+    #[derive(Debug, Clone, Copy)]
+    enum LegacyCommand {
+        RunQuery,
+        ExecuteDdl,
+        RunPgRestore,
+        RefreshMaterializedView,
+        RunPgMaintenance,
+        CommitCellEdits,
+        InsertRow,
+        SeedTable,
+        ImportRows,
+        CopyTableRows,
+        DeleteRows,
+        TerminatePgBackend,
+    }
+
+    impl LegacyCommand {
+        const ALL: [Self; 12] = [
+            Self::RunQuery,
+            Self::ExecuteDdl,
+            Self::RunPgRestore,
+            Self::RefreshMaterializedView,
+            Self::RunPgMaintenance,
+            Self::CommitCellEdits,
+            Self::InsertRow,
+            Self::SeedTable,
+            Self::ImportRows,
+            Self::CopyTableRows,
+            Self::DeleteRows,
+            Self::TerminatePgBackend,
+        ];
+
+        fn name(self) -> &'static str {
+            match self {
+                Self::RunQuery => "run_query",
+                Self::ExecuteDdl => "execute_ddl",
+                Self::RunPgRestore => "run_pg_restore",
+                Self::RefreshMaterializedView => "refresh_materialized_view",
+                Self::RunPgMaintenance => "run_pg_maintenance",
+                Self::CommitCellEdits => "commit_cell_edits",
+                Self::InsertRow => "insert_row",
+                Self::SeedTable => "seed_table",
+                Self::ImportRows => "import_rows",
+                Self::CopyTableRows => "copy_table_rows",
+                Self::DeleteRows => "delete_rows",
+                Self::TerminatePgBackend => "terminate_pg_backend",
+            }
+        }
+
+        async fn call(
+            self,
+            state: &AppState,
+            connection_id: &str,
+            confirmed: bool,
+        ) -> Result<(), String> {
+            let identity = || CellEditKeyValue {
+                column: "id".into(),
+                value: Some("1".into()),
+            };
+            match self {
+                Self::RunQuery => run_query_inner(
+                    state,
+                    RunQueryPayload {
+                        connection_id: connection_id.into(),
+                        query: "UPDATE items SET active = TRUE WHERE id = 1".into(),
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::ExecuteDdl => execute_ddl_inner(
+                    state,
+                    ExecuteDdlPayload {
+                        connection_id: connection_id.into(),
+                        sql: "CREATE TABLE command_gate_probe (id INTEGER)".into(),
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::RunPgRestore => run_pg_restore_inner(
+                    state,
+                    PgRestorePayload {
+                        connection_id: connection_id.into(),
+                        data_base64: String::new(),
+                        format: "plain".into(),
+                        clean: false,
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::RefreshMaterializedView => refresh_materialized_view_inner(
+                    state,
+                    RefreshMaterializedViewPayload {
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        view: "command_gate_probe".into(),
+                        concurrently: false,
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::RunPgMaintenance => run_pg_maintenance_inner(
+                    state,
+                    PgMaintenancePayload {
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        table: "command_gate_probe".into(),
+                        action: "analyze".into(),
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::CommitCellEdits => commit_cell_edits_inner(
+                    state,
+                    CommitCellEditsPayload {
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        table: "command_gate_probe".into(),
+                        edits: vec![CellEdit {
+                            row_index: 0,
+                            identity: vec![identity()],
+                            set: vec![CellEditKeyValue {
+                                column: "active".into(),
+                                value: Some("true".into()),
+                            }],
+                        }],
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::InsertRow => insert_row_inner(
+                    state,
+                    InsertRowPayload {
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        table: "command_gate_probe".into(),
+                        values: vec![identity()],
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::SeedTable => seed_table_inner(
+                    state,
+                    SeedTablePayload {
+                        operation_id: "command-gate-probe".into(),
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        table: "command_gate_probe".into(),
+                        row_count: 1,
+                        seed: Some(7),
+                        columns: Vec::new(),
+                        confirmed,
+                    },
+                    |_| {},
+                )
+                .await
+                .map(|_| ()),
+                Self::ImportRows => import_rows_inner(
+                    state,
+                    ImportRowsPayload {
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        table: "command_gate_probe".into(),
+                        columns: vec!["id".into()],
+                        rows: vec![vec![Some("1".into())]],
+                        use_copy: false,
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::CopyTableRows => copy_table_rows_inner(
+                    state,
+                    CopyTablePayload {
+                        source_connection_id: SOURCE_ID.into(),
+                        source_schema: "public".into(),
+                        source_table: "command_gate_source".into(),
+                        destination_connection_id: connection_id.into(),
+                        destination_schema: "public".into(),
+                        destination_table: "command_gate_probe".into(),
+                        page_size: Some(1),
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::DeleteRows => delete_rows_inner(
+                    state,
+                    DeleteRowsPayload {
+                        connection_id: connection_id.into(),
+                        schema: "public".into(),
+                        table: "command_gate_probe".into(),
+                        rows: vec![vec![identity()]],
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                Self::TerminatePgBackend => terminate_pg_backend_inner(
+                    state,
+                    PgBackendActionPayload {
+                        connection_id: connection_id.into(),
+                        pid: 1,
+                        confirmed,
+                    },
+                )
+                .await
+                .map(|_| ()),
+            }
+        }
+    }
+
+    const SOURCE_ID: &str = "legacy-command-source";
+
+    fn mysql_connection(id: &str, environment: Environment) -> StoredConnection {
+        StoredConnection::MySQL(MySqlStoredConnection {
+            id: id.into(),
+            name: id.into(),
+            database: "dbunk_demo".into(),
+            host: "127.0.0.1".into(),
+            port: 1,
+            user: "dbunk".into(),
+            password: "dbunk".into(),
+            role: "read/write".into(),
+            environment,
+            safe_mode: SafeMode::Inherit,
+            read_only: false,
+            last_activity_at: None,
+            ssl: false,
+            ssh_tunnel: SshTunnelConfig::default(),
+        })
+    }
+
+    async fn assert_no_activity_or_audit(state: &AppState, connection_id: &str, command: &str) {
+        let connection = storage::read_connection_by_id(&state.pool, connection_id)
+            .await
+            .expect("read stored connection")
+            .expect("connection exists");
+        assert!(
+            connection.last_activity_at().is_none(),
+            "{command} unexpectedly bumped lastActivityAt"
+        );
+        assert!(
+            storage::read_safety_overrides(&state.pool, connection_id)
+                .await
+                .expect("read safety audits")
+                .is_empty(),
+            "{command} unexpectedly recorded an audit"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn every_legacy_command_core_refuses_before_dispatch_and_confirmed_reaches_dispatch() {
+        let (_directory, state) = crate::test_app_state().await;
+        let connection_id = "legacy-command-strict";
+        crate::commands::connections::save_connection_inner(
+            &state,
+            mysql_connection(SOURCE_ID, Environment::Development),
+        )
+        .await
+        .expect("save source");
+        crate::commands::connections::save_connection_inner(
+            &state,
+            mysql_connection(connection_id, Environment::Production),
+        )
+        .await
+        .expect("save strict connection");
+
+        for command in LegacyCommand::ALL {
+            let name = command.name();
+            let refusal = command
+                .call(&state, connection_id, false)
+                .await
+                .expect_err("strict command unexpectedly passed unconfirmed");
+            assert_eq!(
+                refusal.get(..crate::safety::CONFIRM_TAG.len()),
+                Some(crate::safety::CONFIRM_TAG),
+                "{name} returned the wrong confirmation tag: {refusal}"
+            );
+            assert_no_activity_or_audit(&state, connection_id, name).await;
+
+            let dispatch_error = command
+                .call(&state, connection_id, true)
+                .await
+                .expect_err("the test connection must fail after the policy gate");
+            assert!(
+                !dispatch_error.starts_with(crate::safety::CONFIRM_TAG)
+                    && !dispatch_error.starts_with(crate::safety::READ_ONLY_TAG),
+                "{name} did not pass the confirmed policy gate: {dispatch_error}"
+            );
+            assert_no_activity_or_audit(&state, connection_id, name).await;
+        }
+
+        assert_no_activity_or_audit(&state, SOURCE_ID, "copy_table_rows source").await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn cancel_command_core_remains_ungated() {
+        let (_directory, state) = crate::test_app_state().await;
+        let connection_id = "cancel-command-strict";
+        crate::commands::connections::save_connection_inner(
+            &state,
+            mysql_connection(connection_id, Environment::Production),
+        )
+        .await
+        .expect("save strict connection");
+
+        let dispatch_error = cancel_pg_backend_inner(
+            &state,
+            PgBackendActionPayload {
+                connection_id: connection_id.into(),
+                pid: 1,
+                confirmed: false,
+            },
+        )
+        .await
+        .expect_err("the unsupported engine must reject after command admission");
+        assert!(
+            !dispatch_error.starts_with(crate::safety::CONFIRM_TAG)
+                && !dispatch_error.starts_with(crate::safety::READ_ONLY_TAG)
+        );
+        assert_no_activity_or_audit(&state, connection_id, "cancel_pg_backend").await;
+    }
 }
