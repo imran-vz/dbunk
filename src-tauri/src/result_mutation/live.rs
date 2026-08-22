@@ -108,9 +108,105 @@ fn unique_schema() -> String {
 
 #[tokio::test]
 #[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_idle_close_releases_socket_worker_and_capacity() {
+    let connection_id = "result-mutation-idle-close";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let manager = ResultMutationManager::new();
+    manager
+        .analyze(
+            spec.clone(),
+            relation_payload(
+                connection_id,
+                "idle",
+                1,
+                "result_mutation_fixture",
+                "generated_identity",
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("open mutation executor");
+    let executor = manager
+        .existing_executor(connection_id)
+        .await
+        .expect("installed executor");
+    let backend_pid: i32 = executor
+        .state
+        .lock()
+        .await
+        .connection
+        .as_ref()
+        .expect("open socket")
+        .inner
+        .client
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await
+        .expect("backend pid")
+        .get(0);
+    executor.state.lock().await.last_used = std::time::Instant::now() - super::IDLE_TIMEOUT;
+
+    manager.close_idle().await;
+
+    assert!(manager.existing_executor(connection_id).await.is_none());
+    assert!(executor.state.lock().await.connection.is_none());
+    let closed = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let gone: bool = admin
+                .client
+                .query_one(
+                    "SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = $1)",
+                    &[&backend_pid],
+                )
+                .await
+                .expect("inspect socket lifecycle")
+                .get(0);
+            if gone {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(closed.is_ok(), "idle backend socket closed");
+    let worker_stopped = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let notified = executor.notify.notified();
+            tokio::pin!(notified);
+            if !executor
+                .worker_running
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                break;
+            }
+            notified.await;
+        }
+    })
+    .await;
+    assert!(worker_stopped.is_ok(), "idle analysis worker stopped");
+
+    manager
+        .analyze(
+            spec,
+            relation_payload(
+                connection_id,
+                "replacement",
+                1,
+                "result_mutation_fixture",
+                "generated_identity",
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("idle close released executor capacity");
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
 async fn result_mutation_live_analysis_matrix() {
     let connection_id = "result-mutation-analysis";
     let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
     let manager = ResultMutationManager::new();
     let lookup = empty_virtual_keys();
 
@@ -199,6 +295,211 @@ async fn result_mutation_live_analysis_matrix() {
             reason: InvalidPlanReason::MultipleOriginTables
         })
     );
+
+    let self_join = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "self-join",
+                1,
+                "SELECT left_row.id AS left_id, right_row.body AS right_body FROM result_mutation_fixture.generated_identity left_row JOIN result_mutation_fixture.generated_identity right_row ON left_row.id = right_row.id",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("typed self-join refusal");
+    assert_eq!(
+        self_join.statement,
+        AnalysisStatement::NotAnalyzable {
+            reason: NotAnalyzableReason::Database {
+                code: None,
+                message: "PostgreSQL could not unambiguously resolve relation range variables"
+                    .into(),
+                severity: None,
+                position: None,
+            }
+        }
+    );
+    assert!(self_join.tables.is_empty());
+
+    let duplicate_projection = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "duplicate-projection",
+                1,
+                "SELECT id, id FROM result_mutation_fixture.generated_identity",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("ordinary duplicate projection remains analyzable");
+    assert_eq!(duplicate_projection.statement, AnalysisStatement::Analyzed);
+    assert_eq!(duplicate_projection.tables.len(), 1);
+
+    let parameterized = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "parameterized",
+                1,
+                "SELECT id, body FROM result_mutation_fixture.generated_identity WHERE id = $1",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("raw positional parameter analysis");
+    assert_eq!(parameterized.statement, AnalysisStatement::Analyzed);
+
+    let quoted_schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {quoted_schema};
+             CREATE TABLE {quoted_schema}.\"Odd Rows\" (id integer PRIMARY KEY, body text NOT NULL)"
+        ))
+        .await
+        .expect("quoted-name fixture");
+    let executor = manager
+        .existing_executor(connection_id)
+        .await
+        .expect("analysis executor");
+    let mutation_connection = executor
+        .state
+        .lock()
+        .await
+        .connection
+        .clone()
+        .expect("analysis connection");
+    mutation_connection
+        .inner
+        .client
+        .batch_execute("SET search_path TO result_mutation_fixture")
+        .await
+        .expect("set self-join search path");
+    let mixed_spelling_self_join = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "mixed-spelling-self-join",
+                1,
+                "SELECT left_row.id, right_row.body \
+                 FROM result_mutation_fixture.generated_identity left_row \
+                 JOIN generated_identity right_row ON left_row.id = right_row.id",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("qualified and unqualified self-join refusal");
+    assert!(matches!(
+        mixed_spelling_self_join.statement,
+        AnalysisStatement::NotAnalyzable {
+            reason: NotAnalyzableReason::Database { code: None, .. }
+        }
+    ));
+    mutation_connection
+        .inner
+        .client
+        .batch_execute("RESET search_path")
+        .await
+        .expect("restore analysis search path");
+    mutation_connection
+        .inner
+        .client
+        .batch_execute(&format!("SET search_path TO {quoted_schema}"))
+        .await
+        .expect("set analysis search path");
+    let quoted_duplicate = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "quoted-duplicate",
+                1,
+                "SELECT id, id AS id_again FROM \"Odd Rows\"",
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("search-path and quoted-name duplicate projection");
+    assert_eq!(quoted_duplicate.statement, AnalysisStatement::Analyzed);
+    mutation_connection
+        .inner
+        .client
+        .batch_execute("RESET search_path")
+        .await
+        .expect("restore analysis search path");
+    cleanup_schema(&admin, &quoted_schema).await;
+
+    let inheritance_schema = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {inheritance_schema};
+             CREATE TABLE {inheritance_schema}.ordinary_parent (
+               id integer PRIMARY KEY,
+               body text NOT NULL
+             );
+             CREATE TABLE {inheritance_schema}.ordinary_child ()
+               INHERITS ({inheritance_schema}.ordinary_parent);
+             CREATE TABLE {inheritance_schema}.partitioned_parent (
+               id integer,
+               body text NOT NULL
+             ) PARTITION BY RANGE (id);
+             CREATE TABLE {inheritance_schema}.partitioned_child
+               PARTITION OF {inheritance_schema}.partitioned_parent
+               FOR VALUES FROM (0) TO (100)"
+        ))
+        .await
+        .expect("inheritance fixtures");
+    let inherited = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "ordinary-inheritance",
+                1,
+                format!("SELECT id, body FROM {inheritance_schema}.ordinary_parent"),
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("ordinary inheritance refusal");
+    assert!(matches!(
+        inherited.statement,
+        AnalysisStatement::NotAnalyzable {
+            reason: NotAnalyzableReason::Database { code: None, .. }
+        }
+    ));
+    let partitioned = manager
+        .analyze(
+            spec.clone(),
+            statement_payload(
+                connection_id,
+                "partitioned-parent",
+                1,
+                format!(
+                    "SELECT tableoid, ctid, id, body \
+                     FROM {inheritance_schema}.partitioned_parent"
+                ),
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("partitioned parent analysis");
+    assert_eq!(partitioned.statement, AnalysisStatement::Analyzed);
+    assert_eq!(
+        partitioned.tables[0].identity,
+        MutationIdentity {
+            kind: MutationIdentityKind::CtidFallback,
+            columns: vec!["tableoid".into(), "ctid".into()],
+        }
+    );
+    cleanup_schema(&admin, &inheritance_schema).await;
 
     let expressions = manager
         .analyze(
@@ -653,6 +954,130 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
         )
         .await;
     assert_eq!(identity_drift, Err(ResultMutationError::AnalysisExpired));
+
+    let locked_analysis = manager
+        .analyze(
+            live_spec(connection_id),
+            relation_payload(connection_id, "locked-drift", 1, &schema, "rows"),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("locked drift analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "BEGIN;
+             LOCK TABLE {schema}.rows IN ACCESS EXCLUSIVE MODE;
+             ALTER TABLE {schema}.rows ALTER COLUMN body TYPE varchar(80)"
+        ))
+        .await
+        .expect("hold changed catalog behind a relation lock");
+    let locked_manager = manager.clone();
+    let locked_spec = live_spec(connection_id);
+    let locked_schema = schema.clone();
+    let locked_apply = tokio::spawn(async move {
+        locked_manager
+            .apply(
+                locked_spec,
+                ApplyResultMutationsPayload {
+                    connection_id: connection_id.into(),
+                    tab_id: "locked-drift".into(),
+                    request_id: 2,
+                    analysis_id: locked_analysis.analysis_id,
+                    plan: MutationPlan {
+                        operations: vec![MutationOp::Update {
+                            table: table(&locked_schema, "rows"),
+                            identity: vec![value("id", Some("1"))],
+                            guards: vec![value("body", Some("before"))],
+                            set: vec![value("body", Some("must-not-write"))],
+                        }],
+                    },
+                },
+            )
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    admin
+        .client
+        .batch_execute("COMMIT")
+        .await
+        .expect("release DDL");
+    assert_eq!(
+        locked_apply.await.expect("locked apply task"),
+        Err(ResultMutationError::AnalysisExpired)
+    );
+
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE TABLE {schema}.unrelated (
+               id integer PRIMARY KEY,
+               note text NOT NULL
+             );
+             INSERT INTO {schema}.unrelated VALUES (1, 'unrelated')"
+        ))
+        .await
+        .expect("unrelated fixture");
+    let joined_analysis = manager
+        .analyze(
+            live_spec(connection_id),
+            statement_payload(
+                connection_id,
+                "unrelated-drift",
+                1,
+                format!(
+                    "SELECT a.id, a.body, b.id AS unrelated_id, b.note \
+                     FROM {schema}.rows a JOIN {schema}.unrelated b ON true"
+                ),
+            ),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("joined analysis");
+    admin
+        .client
+        .batch_execute(&format!(
+            "BEGIN;
+             ALTER TABLE {schema}.unrelated ALTER COLUMN note TYPE varchar(80)"
+        ))
+        .await
+        .expect("hold unrelated catalog drift behind an exclusive lock");
+    let unrelated_apply = tokio::time::timeout(
+        Duration::from_secs(2),
+        manager.apply(
+            live_spec(connection_id),
+            ApplyResultMutationsPayload {
+                connection_id: connection_id.into(),
+                tab_id: "unrelated-drift".into(),
+                request_id: 2,
+                analysis_id: joined_analysis.analysis_id,
+                plan: MutationPlan {
+                    operations: vec![MutationOp::Update {
+                        table: table(&schema, "rows"),
+                        identity: vec![value("id", Some("1"))],
+                        guards: vec![value("body", Some("before"))],
+                        set: vec![value("body", Some("updated-with-unrelated-lock"))],
+                    }],
+                },
+            },
+        ),
+    )
+    .await
+    .expect("unrelated lock cannot delay target apply")
+    .expect("unrelated drift cannot expire target apply");
+    assert_eq!(unrelated_apply.operations[0].rows_affected, 1);
+    admin
+        .client
+        .batch_execute("COMMIT")
+        .await
+        .expect("release unrelated drift");
+    let updated: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("read targeted row")
+        .get(0);
+    assert_eq!(updated, "updated-with-unrelated-lock");
 
     cleanup_schema(&admin, &schema).await;
 }
@@ -1262,6 +1687,50 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         .get(0);
     assert_eq!(unchanged, "before");
 
+    let dropped_manager = manager.clone();
+    let dropped_spec = spec.clone();
+    let dropped_payload = ApplyResultMutationsPayload {
+        connection_id: connection_id.into(),
+        tab_id: "cancel".into(),
+        request_id: 3,
+        analysis_id: analysis.analysis_id,
+        plan: MutationPlan {
+            operations: vec![MutationOp::Update {
+                table: table(&schema, "rows"),
+                identity: vec![value("id", Some("1"))],
+                guards: vec![value("body", Some("before"))],
+                set: vec![value("body", Some("dropped"))],
+            }],
+        },
+    };
+    let dropped_apply =
+        tokio::spawn(async move { dropped_manager.apply(dropped_spec, dropped_payload).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    dropped_apply.abort();
+    let executor = manager
+        .existing_executor(connection_id)
+        .await
+        .expect("executor remains owned by manager");
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let notified = executor.notify.notified();
+            tokio::pin!(notified);
+            if executor.state.lock().await.active.is_none() {
+                break;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .expect("dropped apply finalizes");
+    let unchanged_after_drop: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("dropped apply rollback")
+        .get(0);
+    assert_eq!(unchanged_after_drop, "before");
+
     admin
         .client
         .batch_execute(&format!("DROP TRIGGER delay_mutation ON {schema}.rows"))
@@ -1273,7 +1742,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
             ApplyResultMutationsPayload {
                 connection_id: connection_id.into(),
                 tab_id: "cancel".into(),
-                request_id: 3,
+                request_id: 4,
                 analysis_id: analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1291,9 +1760,69 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
     admin
         .client
         .batch_execute(&format!(
-            "CREATE CONSTRAINT TRIGGER delay_mutation AFTER UPDATE ON {schema}.rows
-             DEFERRABLE INITIALLY DEFERRED
+            "CREATE TRIGGER delay_mutation BEFORE UPDATE ON {schema}.rows
              FOR EACH ROW EXECUTE FUNCTION {schema}.delay_mutation()"
+        ))
+        .await
+        .expect("restore pre-commit delay trigger");
+    let teardown_before_payload = ApplyResultMutationsPayload {
+        connection_id: connection_id.into(),
+        tab_id: "teardown-before".into(),
+        request_id: 2,
+        analysis_id: manager
+            .analyze(
+                spec.clone(),
+                statement_payload(
+                    connection_id,
+                    "teardown-before",
+                    1,
+                    format!("SELECT id, body FROM {schema}.rows"),
+                ),
+                empty_virtual_keys(),
+            )
+            .await
+            .expect("pre-commit teardown analysis")
+            .analysis_id,
+        plan: MutationPlan {
+            operations: vec![MutationOp::Update {
+                table: table(&schema, "rows"),
+                identity: vec![value("id", Some("1"))],
+                guards: vec![value("body", Some("recovered"))],
+                set: vec![value("body", Some("must-rollback"))],
+            }],
+        },
+    };
+    let before_manager = manager.clone();
+    let before_spec = spec.clone();
+    let teardown_before = tokio::spawn(async move {
+        before_manager
+            .apply(before_spec, teardown_before_payload)
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    manager.begin_connection_teardown(connection_id).await;
+    assert_eq!(
+        teardown_before.await.expect("pre-commit teardown task"),
+        Err(ResultMutationError::ConnectionClosing)
+    );
+    manager.end_connection_teardown(connection_id).await;
+    let after_precommit_teardown: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("pre-commit teardown rollback")
+        .get(0);
+    assert_eq!(after_precommit_teardown, "recovered");
+
+    admin
+        .client
+        .batch_execute(&format!(
+            "DROP TRIGGER delay_mutation ON {schema}.rows;
+             CREATE FUNCTION {schema}.delay_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN PERFORM pg_sleep(1); RETURN NEW; END $$;
+             CREATE CONSTRAINT TRIGGER delay_mutation AFTER UPDATE ON {schema}.rows
+             DEFERRABLE INITIALLY DEFERRED
+             FOR EACH ROW EXECUTE FUNCTION {schema}.delay_commit()"
         ))
         .await
         .expect("install deferred commit trigger");
@@ -1331,12 +1860,33 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
             .apply(teardown_spec, teardown_payload)
             .await
     });
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let executor = manager
+                .existing_executor(connection_id)
+                .await
+                .expect("post-admission executor");
+            let admitted = executor
+                .state
+                .lock()
+                .await
+                .active
+                .as_ref()
+                .is_some_and(super::ActiveRequest::commit_admitted);
+            if admitted {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("COMMIT admission observed");
     manager.begin_connection_teardown(connection_id).await;
-    assert_eq!(
-        teardown_apply.await.expect("teardown task"),
-        Err(ResultMutationError::ConnectionClosing)
-    );
+    let committed = teardown_apply
+        .await
+        .expect("post-admission teardown task")
+        .expect("COMMIT remains authoritative after admission");
+    assert_eq!(committed.operations[0].rows_affected, 1);
     manager.end_connection_teardown(connection_id).await;
     let after_teardown: String = admin
         .client
@@ -1344,7 +1894,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         .await
         .expect("teardown rollback")
         .get(0);
-    assert_eq!(after_teardown, "recovered");
+    assert_eq!(after_teardown, "teardown");
 
     admin
         .client
