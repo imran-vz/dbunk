@@ -19,7 +19,6 @@ import {
   loadVirtualKey,
   previewResultMutations,
   resetResultMutationClientForTab,
-  retryOnceAfterAnalysisExpired,
   saveVirtualKey,
 } from "@/lib/result-mutation-client";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
@@ -293,58 +292,6 @@ describe("result mutation client", () => {
       kind: "error",
       error: { kind: "connectionLost" },
     });
-  });
-
-  it("retries analysisExpired only once after successful recovery", async () => {
-    const operation = vi
-      .fn()
-      .mockResolvedValueOnce({
-        kind: "error",
-        error: { kind: "analysisExpired" },
-      })
-      .mockResolvedValueOnce({ kind: "ok", value: "preview" });
-    const recover = vi.fn().mockResolvedValue({
-      kind: "ok",
-      value: analysisResult(2),
-    });
-
-    await expect(
-      retryOnceAfterAnalysisExpired(operation, recover),
-    ).resolves.toEqual({ kind: "ok", value: "preview" });
-    expect(operation).toHaveBeenCalledTimes(2);
-    expect(recover).toHaveBeenCalledTimes(1);
-
-    operation.mockReset().mockResolvedValue({
-      kind: "error",
-      error: { kind: "analysisExpired" },
-    });
-    await expect(
-      retryOnceAfterAnalysisExpired(operation, recover),
-    ).resolves.toEqual({
-      kind: "error",
-      error: { kind: "analysisExpired" },
-    });
-    expect(operation).toHaveBeenCalledTimes(2);
-    expect(recover).toHaveBeenCalledTimes(2);
-  });
-
-  it("stops recovery when re-analysis does not succeed", async () => {
-    const operation = vi.fn().mockResolvedValue({
-      kind: "error",
-      error: { kind: "analysisExpired" },
-    });
-    const recover = vi.fn().mockResolvedValue({
-      kind: "error",
-      error: { kind: "notAnalyzable", reason: { kind: "noTableOrigins" } },
-    });
-
-    await expect(
-      retryOnceAfterAnalysisExpired(operation, recover),
-    ).resolves.toEqual({
-      kind: "error",
-      error: { kind: "notAnalyzable", reason: { kind: "noTableOrigins" } },
-    });
-    expect(operation).toHaveBeenCalledTimes(1);
   });
 
   it("resets matching tab request state when a connection closes", async () => {

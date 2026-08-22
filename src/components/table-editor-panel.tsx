@@ -160,7 +160,8 @@ export function TableEditorPanel({
       }),
     );
 
-  const { openQueryForTable, openTableTab } = useAppStore();
+  const { openQueryForTable, openTableTab, refreshTableBrowsesForRelation } =
+    useAppStore();
 
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [addRowSource, setAddRowSource] = useState<"new" | "duplicate">("new");
@@ -917,7 +918,13 @@ export function TableEditorPanel({
                 onClose={() => setReviewOpen(false)}
                 onApplySuccess={async () => {
                   selection.clear();
-                  await tableSession.refreshData();
+                  if (!ref) return;
+                  await refreshTableBrowsesForRelation(
+                    ref.connectionId,
+                    ref.schema,
+                    ref.table,
+                    { refreshStructure: false, invalidateExactCount: true },
+                  );
                 }}
                 onRefresh={tableSession.refreshData}
               />

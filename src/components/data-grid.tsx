@@ -739,26 +739,28 @@ export function DataGrid({
           />
         ),
         meta: { index },
-        cell: (props) => (
-          <EditableCell
-            // SAFETY: The value is constrained by the typed component or library contract at this boundary.
-            initialValue={props.getValue() as string}
-            rowIndex={props.row.index}
-            columnIndex={index}
-            columnName={colName}
-            columnType={columnTypes?.[index]}
-            editValue={edits?.[props.row.index]?.[index]}
-            onEdit={
-              getCellReadOnlyReason?.(props.row.index, index)
-                ? undefined
-                : effectiveOnEdit
-            }
-            onEditIntent={effectiveOnEdit ? undefined : onEditIntent}
-            readOnlyReason={getCellReadOnlyReason?.(props.row.index, index)}
-            foreignKeyTarget={meta?.foreignKeyTarget}
-            onFollowForeignKey={onFollowForeignKey}
-          />
-        ),
+        cell: (props) => {
+          const readOnlyReason = getCellReadOnlyReason?.(
+            props.row.index,
+            index,
+          );
+          return (
+            <EditableCell
+              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+              initialValue={props.getValue() as string}
+              rowIndex={props.row.index}
+              columnIndex={index}
+              columnName={colName}
+              columnType={columnTypes?.[index]}
+              editValue={edits?.[props.row.index]?.[index]}
+              onEdit={readOnlyReason ? undefined : effectiveOnEdit}
+              onEditIntent={effectiveOnEdit ? undefined : onEditIntent}
+              readOnlyReason={readOnlyReason}
+              foreignKeyTarget={meta?.foreignKeyTarget}
+              onFollowForeignKey={onFollowForeignKey}
+            />
+          );
+        },
       });
     });
 
@@ -905,6 +907,7 @@ export function DataGrid({
             <tbody className="bg-surface-app">
               {table.getRowModel().rows.map((row) => {
                 const visibleCells = row.getVisibleCells();
+                const rowState = getRowState?.(row.index);
                 const hasExpansion =
                   rowExpansion?.rowIndex === row.index &&
                   rowExpansion.content !== null;
@@ -915,13 +918,11 @@ export function DataGrid({
                         "group hover:bg-surface-row-hover",
                         row.getIsSelected() &&
                           "bg-accent-overlay text-foreground",
-                        getRowState?.(row.index) === "deleted" &&
+                        rowState === "deleted" &&
                           "bg-danger/5 text-text-muted line-through",
-                        getRowState?.(row.index) === "inserted" &&
-                          "bg-success/5",
-                        getRowState?.(row.index) === "duplicate" &&
-                          "bg-warning/5",
-                        getRowState?.(row.index) === "excluded" && "opacity-50",
+                        rowState === "inserted" && "bg-success/5",
+                        rowState === "duplicate" && "bg-warning/5",
+                        rowState === "excluded" && "opacity-50",
                       )}
                     >
                       {visibleCells.map((cell) => (

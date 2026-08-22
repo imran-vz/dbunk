@@ -45,9 +45,10 @@ import {
 } from "@/lib/query-session-channel";
 import type { QueryExecution, QuerySessionState } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
-import { isTauri } from "@/lib/tauri";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedIsTauri = vi.mocked(isTauri);
+const mockedInvoke = vi.mocked(tauriInvoke);
 const mockedChannelsAvailable = vi.mocked(querySessionChannelsAvailable);
 const mockedOpenQuerySession = vi.mocked(openQuerySession);
 const mockedExecuteQuerySession = vi.mocked(executeQuerySession);
@@ -348,6 +349,82 @@ describe("query-session budget machinery", () => {
       }),
     );
     expect(omitted.execution?.error).toEqual(error);
+  });
+});
+
+describe("query execution replacement", () => {
+  const seedStagedExecution = () => {
+    const tabId = "tab-1";
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: tabId,
+          kind: "query",
+          label: "query_1.sql",
+          connectionId: "conn-1",
+          schema: "public",
+          query: "select id from users",
+        },
+      ],
+      querySessions: {
+        [tabId]: makeSession(tabId, { execution: completedExecution() }),
+      },
+    });
+    const handle = useAppStore.getState().openMutationDraft({
+      owner: {
+        kind: "query",
+        tabId,
+        executionId: "exec-1",
+        resultSetIndex: 0,
+      },
+      connectionId: "conn-1",
+      source: { kind: "statement", sql: "select id from users" },
+    });
+    if (!handle) throw new Error("Expected mutation draft handle");
+    useAppStore.getState().stageMutationDraftInsert(handle.scope, {
+      table: { schema: "public", table: "users" },
+      values: [{ column: "id", value: "2" }],
+    });
+    return { handle, tabId };
+  };
+
+  it("fails closed when a non-UI caller would replace staged changes", async () => {
+    mockedInvoke.mockClear();
+    const { handle, tabId } = seedStagedExecution();
+
+    await expect(useAppStore.getState().runQuery(tabId)).resolves.toEqual({
+      kind: "noop",
+    });
+
+    expect(useAppStore.getState().mutationDrafts[handle.scope]).toBeDefined();
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("drops the exact execution draft through the named action after confirmation", async () => {
+    mockedInvoke.mockReset();
+    const { handle, tabId } = seedStagedExecution();
+    const confirmDiscardStagedChanges = vi.fn(() => true);
+    mockedInvoke
+      .mockResolvedValueOnce({
+        columns: ["id"],
+        rows: [["2"]],
+        runtimeMs: 1,
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce([]);
+
+    await useAppStore.getState().runQuery(tabId, {
+      confirmDiscardStagedChanges,
+    });
+
+    expect(confirmDiscardStagedChanges).toHaveBeenCalledWith(1);
+    expect(useAppStore.getState().mutationDrafts[handle.scope]).toBeUndefined();
+    expect(mockedInvoke).toHaveBeenCalledWith("run_query", {
+      payload: {
+        connectionId: "conn-1",
+        query: "select id from users",
+      },
+    });
   });
 });
 

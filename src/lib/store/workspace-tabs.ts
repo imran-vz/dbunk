@@ -79,7 +79,13 @@ export type WorkspaceTabsSlice = {
    * references that don't exist on the new connection are the user's
    * problem to resolve.
    */
-  retargetQueryTab: (tabId: string, newConnectionId: string) => Promise<void>;
+  retargetQueryTab: (
+    tabId: string,
+    newConnectionId: string,
+    options?: {
+      confirmDiscardStagedChanges?: (changeCount: number) => boolean;
+    },
+  ) => Promise<boolean>;
 };
 
 export const createWorkspaceTabsSlice: StateCreator<
@@ -309,11 +315,22 @@ export const createWorkspaceTabsSlice: StateCreator<
     });
   },
 
-  retargetQueryTab: async (tabId, newConnectionId) => {
+  retargetQueryTab: async (tabId, newConnectionId, options) => {
     const state = get();
     const tab = state.workspaceTabs.find((item) => item.id === tabId);
-    if (!tab || tab.kind !== "query") return;
-    if (tab.connectionId === newConnectionId) return;
+    if (!tab || tab.kind !== "query") return false;
+    if (tab.connectionId === newConnectionId) return false;
+    const stagedChangeCount = Object.values(state.mutationDrafts).reduce(
+      (count, draft) =>
+        draft?.owner.tabId === tabId ? count + draft.changeOrder.length : count,
+      0,
+    );
+    if (
+      stagedChangeCount > 0 &&
+      !options?.confirmDiscardStagedChanges?.(stagedChangeCount)
+    ) {
+      return false;
+    }
     await get().closeQuerySessionForTab(tab.id);
     resetResultMutationClientForTab(tab.id);
     get().dropMutationDraftsForTab(tab.id);
@@ -326,5 +343,6 @@ export const createWorkspaceTabsSlice: StateCreator<
           : item,
       ),
     }));
+    return true;
   },
 });

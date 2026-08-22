@@ -215,7 +215,13 @@ export type MutationDraftAnalysisRecovery = "stale" | "identical" | "changed";
 export type MutationDraftsSlice = {
   mutationDrafts: Partial<Record<MutationDraftScope, MutationDraft>>;
   mutationDraftGenerations: Partial<Record<MutationDraftScope, number>>;
-  openMutationDraft: (input: OpenMutationDraftInput) => MutationDraftHandle;
+  /**
+   * Opens or reuses a draft. Returns null rather than replacing staged changes
+   * when the same owner scope is rebound to a different source.
+   */
+  openMutationDraft: (
+    input: OpenMutationDraftInput,
+  ) => MutationDraftHandle | null;
   setMutationDraftAnalysis: (
     handle: MutationDraftHandle,
     snapshot: AnalyzeResultSetResult,
@@ -312,6 +318,18 @@ const scopeForOwner = (owner: MutationDraftOwner): MutationDraftScope =>
 const cloneValues = (values: MutationValue[]): MutationValue[] =>
   values.map(({ column, value }) => ({ column, value }));
 
+const mutationSourceEqual = (
+  left: OpenMutationDraftInput["source"],
+  right: OpenMutationDraftInput["source"],
+): boolean => {
+  if (left.kind !== right.kind) return false;
+  return left.kind === "relation" && right.kind === "relation"
+    ? left.schema === right.schema && left.table === right.table
+    : left.kind === "statement" &&
+        right.kind === "statement" &&
+        left.sql === right.sql;
+};
+
 const identityKey = (table: MutationTable, identity: MutationValue[]): string =>
   JSON.stringify([
     table.schema,
@@ -320,13 +338,6 @@ const identityKey = (table: MutationTable, identity: MutationValue[]): string =>
       .sort((left, right) => left.column.localeCompare(right.column))
       .map(({ column, value }) => [column, value]),
   ]);
-
-const valuesKey = (values: MutationValue[]): string =>
-  JSON.stringify(
-    [...values]
-      .sort((left, right) => left.column.localeCompare(right.column))
-      .map(({ column, value }) => [column, value]),
-  );
 
 const removeChange = (
   draft: MutationDraft,
@@ -428,7 +439,98 @@ export const buildMutationDraftPlan = (
 export const mutationDraftPreviewsEqual = (
   left: PreviewResult,
   right: PreviewResult,
-): boolean => JSON.stringify(left) === JSON.stringify(right);
+): boolean =>
+  left.statements.length === right.statements.length &&
+  left.statements.every((statement, index) => {
+    const other = right.statements[index];
+    return (
+      other !== undefined &&
+      statement.opIndex === other.opIndex &&
+      statement.sql === other.sql &&
+      statement.params.length === other.params.length &&
+      statement.params.every((param, paramIndex) => {
+        const otherParam = other.params[paramIndex];
+        return (
+          otherParam !== undefined &&
+          param.kind === otherParam.kind &&
+          param.value === otherParam.value
+        );
+      })
+    );
+  });
+
+const mutationValueListsEqual = (
+  left: MutationValue[],
+  right: MutationValue[],
+): boolean =>
+  left.length === right.length &&
+  left.every(
+    ({ column, value }, index) =>
+      column === right[index]?.column && value === right[index]?.value,
+  );
+
+const mutationValueSetsEqual = (
+  left: MutationValue[],
+  right: MutationValue[],
+): boolean => {
+  if (left.length !== right.length) return false;
+  const rightByColumn = new Map(
+    right.map(({ column, value }) => [column, value] as const),
+  );
+  if (rightByColumn.size !== right.length) return false;
+  return left.every(
+    ({ column, value }) =>
+      rightByColumn.has(column) && rightByColumn.get(column) === value,
+  );
+};
+
+const mutationDraftPlansEqual = (
+  left: MutationDraftPlanBuild,
+  right: MutationDraftPlanBuild,
+): boolean => {
+  if (
+    left.opIndexToChangeId.length !== right.opIndexToChangeId.length ||
+    left.plan.operations.length !== right.plan.operations.length
+  ) {
+    return false;
+  }
+  if (
+    left.opIndexToChangeId.some(
+      (changeId, index) => changeId !== right.opIndexToChangeId[index],
+    )
+  ) {
+    return false;
+  }
+  return left.plan.operations.every((operation, index) => {
+    const other = right.plan.operations[index];
+    if (
+      !other ||
+      operation.kind !== other.kind ||
+      operation.table.schema !== other.table.schema ||
+      operation.table.table !== other.table.table
+    ) {
+      return false;
+    }
+    if (operation.kind === "insert") {
+      return (
+        other.kind === "insert" &&
+        mutationValueListsEqual(operation.values, other.values)
+      );
+    }
+    if (other.kind === "insert") return false;
+    if (
+      !mutationValueListsEqual(operation.identity, other.identity) ||
+      !mutationValueListsEqual(operation.guards, other.guards)
+    ) {
+      return false;
+    }
+    return (
+      operation.kind === "delete" ||
+      (other.kind === "update" &&
+        mutationValueListsEqual(operation.set, other.set))
+    );
+  });
+};
 
 /**
  * Rebind display row indexes after a browse load. Proven identities match on
@@ -442,6 +544,13 @@ export const rebindMutationDraftChanges = (
 ): MutationDraft => {
   let changed = false;
   const changes = { ...draft.changes };
+  const rowsByIdentity = new Map<string, MutationDraftLoadedRow[]>();
+  for (const row of rows) {
+    const key = identityKey(table, row.identity);
+    const matches = rowsByIdentity.get(key);
+    if (matches) matches.push(row);
+    else rowsByIdentity.set(key, [row]);
+  }
   for (const changeId of draft.changeOrder) {
     const change = draft.changes[changeId];
     if (
@@ -452,15 +561,12 @@ export const rebindMutationDraftChanges = (
     ) {
       continue;
     }
-    const candidates = rows.filter(
-      (loaded) => identityKey(table, loaded.identity) === change.identityKey,
-    );
+    const candidates = rowsByIdentity.get(change.identityKey) ?? [];
     const safeCandidates =
       change.identityKind === "virtualKey" ||
       change.identityKind === "ctidFallback"
-        ? candidates.filter(
-            (loaded) =>
-              valuesKey(loaded.values) === valuesKey(change.originals),
+        ? candidates.filter((loaded) =>
+            mutationValueSetsEqual(loaded.values, change.originals),
           )
         : candidates;
     const rowIndex =
@@ -535,10 +641,11 @@ export const createMutationDraftsSlice: StateCreator<
     if (
       existing &&
       existing.connectionId === input.connectionId &&
-      JSON.stringify(existing.source) === JSON.stringify(input.source)
+      mutationSourceEqual(existing.source, input.source)
     ) {
       return { scope, generation: existing.generation };
     }
+    if (existing && existing.changeOrder.length > 0) return null;
     const generation = (get().mutationDraftGenerations[scope] ?? 0) + 1;
     set((state) => ({
       mutationDrafts: {
@@ -573,7 +680,7 @@ export const createMutationDraftsSlice: StateCreator<
   },
 
   stageMutationDraftUpdate: (scope, input) => {
-    let stagedChangeId: string | null = null;
+    let activeChangeId: string | null = null;
     set((state) => {
       const current = state.mutationDrafts[scope];
       if (!current || isLocked(current)) return {};
@@ -600,7 +707,6 @@ export const createMutationDraftsSlice: StateCreator<
       if (cellOrder.length === 0) {
         if (!existing) return {};
         draft = removeChange(draft, existing.changeId);
-        stagedChangeId = existing.changeId;
       } else {
         const change: MutationDraftUpdate = {
           kind: "updateRow",
@@ -626,13 +732,13 @@ export const createMutationDraftsSlice: StateCreator<
             ? draft.nextChangeOrdinal
             : draft.nextChangeOrdinal + 1,
         };
-        stagedChangeId = changeId;
+        activeChangeId = changeId;
       }
       return {
         mutationDrafts: { ...state.mutationDrafts, [scope]: draft },
       };
     });
-    return stagedChangeId;
+    return activeChangeId;
   },
 
   stageMutationDraftDelete: (scope, input) => {
@@ -926,7 +1032,7 @@ export const createMutationDraftsSlice: StateCreator<
       return null;
     }
     const build = buildMutationDraftPlan(draft);
-    if (JSON.stringify(build) !== JSON.stringify(draft.preview.build)) {
+    if (!mutationDraftPlansEqual(build, draft.preview.build)) {
       return null;
     }
     set((state) => {
@@ -1054,7 +1160,7 @@ export const createMutationDraftsSlice: StateCreator<
       draft.apply.state !== "applying" ||
       draft.preview.state !== "ready" ||
       !draft.preview.reviewed ||
-      JSON.stringify(draft.apply.build) !== JSON.stringify(draft.preview.build)
+      !mutationDraftPlansEqual(draft.apply.build, draft.preview.build)
     ) {
       return null;
     }

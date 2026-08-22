@@ -392,6 +392,7 @@ const seedMutationDraftAnalysis = (analysis: AnalyzeResultSetResult) => {
       table: "users",
     },
   });
+  if (!handle) throw new Error("Expected mutation draft handle");
   useAppStore.getState().setMutationDraftAnalysis(handle, analysis);
   return handle;
 };
@@ -1386,6 +1387,86 @@ describe("TableEditorPanel server browse", () => {
         screen.getByRole("complementary", { name: "Mutation review" }),
       ).toBeTruthy();
       expect(screen.queryByTestId("row-details-panel")).toBeNull();
+    });
+
+    it("refreshes every browse tab for the relation after apply", async () => {
+      seedBrowse();
+      useAppStore.setState((state) => {
+        const first = state.tableBrowses["tab-1"];
+        if (!first) throw new Error("Expected seeded table browse");
+        return {
+          tableBrowses: {
+            ...state.tableBrowses,
+            "tab-2": { ...first, tabId: "tab-2", generation: 2 },
+          },
+        };
+      });
+      const handle = seedMutationDraftAnalysis(mutationAnalysis());
+      useAppStore.getState().stageMutationDraftUpdate(handle.scope, {
+        table: { schema: "public", table: "users" },
+        identityKind: "primaryKey",
+        identity: [{ column: "id", value: "1" }],
+        originals: [
+          { column: "id", value: "1" },
+          { column: "email", value: "ada@example.com" },
+        ],
+        cells: [
+          {
+            column: "email",
+            original: "ada@example.com",
+            value: "ada@new.example",
+          },
+        ],
+        rowIndex: 0,
+      });
+      mockedInvoke.mockImplementation((command) => {
+        if (command === "preview_result_mutations") {
+          return Promise.resolve({
+            statements: [
+              { opIndex: 0, sql: "UPDATE public.users", params: [] },
+            ],
+          });
+        }
+        if (command === "apply_result_mutations") {
+          return Promise.resolve({
+            operations: [{ opIndex: 0, rowsAffected: 1 }],
+            runtimeMs: 1,
+          });
+        }
+        if (command === "browse_table_data") {
+          return Promise.resolve(refreshedBrowseResult);
+        }
+        return new Promise(() => {});
+      });
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(screen.getByLabelText("Review 1 staged changes"));
+      const apply = await screen.findByRole("button", {
+        name: "Apply 1 change",
+      });
+      await waitFor(() =>
+        expect((apply as HTMLButtonElement).disabled).toBe(false),
+      );
+      fireEvent.click(apply);
+
+      await waitFor(() => {
+        const refreshCalls = mockedInvoke.mock.calls.filter(
+          ([command]) => command === "browse_table_data",
+        );
+        expect(refreshCalls).toHaveLength(2);
+        expect(refreshCalls).toEqual(
+          expect.arrayContaining([
+            [
+              "browse_table_data",
+              { payload: expect.objectContaining({ tabId: "tab-1" }) },
+            ],
+            [
+              "browse_table_data",
+              { payload: expect.objectContaining({ tabId: "tab-2" }) },
+            ],
+          ]),
+        );
+      });
     });
 
     it("stages multi-row deletes without confirmation or delete_rows and paginates silently", async () => {
