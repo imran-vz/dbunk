@@ -314,6 +314,7 @@ pub(crate) fn dummy_spec(id: &str) -> ResolvedPostgresConnectSpec {
         tls_prefer: false,
         connect_timeout: Some(std::time::Duration::from_millis(1)),
         driver_options: crate::PgDriverOptions::default(),
+        safety_policy: Default::default(),
     }
 }
 

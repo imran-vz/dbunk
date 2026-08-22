@@ -1,7 +1,7 @@
 use crate::{quote_double, PgDriverOptions};
 
 /// Ordered post-connect statements shared by every PostgreSQL driver.
-pub(crate) fn driver_option_sql(options: &PgDriverOptions) -> Vec<String> {
+pub(crate) fn driver_option_sql(options: &PgDriverOptions, read_only: bool) -> Vec<String> {
     let mut statements = Vec::new();
     if let Some(ms) = options.statement_timeout_ms {
         statements.push(format!("SET statement_timeout = {ms}"));
@@ -29,6 +29,9 @@ pub(crate) fn driver_option_sql(options: &PgDriverOptions) -> Vec<String> {
     {
         statements.push(format!("SET ROLE {}", quote_double(role)));
     }
+    if read_only {
+        statements.push("SET default_transaction_read_only = on".to_string());
+    }
     statements
 }
 
@@ -45,13 +48,17 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            driver_option_sql(&options),
+            driver_option_sql(&options, false),
             vec![
                 "SET statement_timeout = 1",
                 "SET idle_in_transaction_session_timeout = 2",
                 "SET search_path TO \"public\", \"a\"\"b\"",
                 "SET ROLE \"reader\""
             ]
+        );
+        assert_eq!(
+            driver_option_sql(&PgDriverOptions::default(), true),
+            vec!["SET default_transaction_read_only = on"]
         );
     }
 }

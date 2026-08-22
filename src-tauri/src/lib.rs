@@ -9,6 +9,7 @@ mod postgres;
 mod query_session;
 mod redis;
 mod result_mutation;
+mod safety;
 mod seed;
 mod socket_lifecycle;
 mod storage;
@@ -42,6 +43,24 @@ pub(crate) struct AppState {
     query_sessions: query_session::QuerySessionManager,
     result_mutations: result_mutation::ResultMutationManager,
     table_browse: table_browse::TableBrowseManager,
+}
+
+#[cfg(test)]
+pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
+    let directory = tempfile::tempdir().expect("app state temp dir");
+    let paths = Paths::from_dir(directory.path().to_path_buf());
+    let pool = storage::open_pool(&paths).await.expect("app state pool");
+    credentials::configure(&pool, CredentialStorageMode::PlainSqlite, None)
+        .await
+        .expect("plain SQLite credential storage");
+    let state = AppState {
+        query_sessions: query_session::QuerySessionManager::new(pool.clone()),
+        result_mutations: result_mutation::ResultMutationManager::new(),
+        table_browse: table_browse::TableBrowseManager::new(),
+        pool,
+        paths,
+    };
+    (directory, state)
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +339,7 @@ pub fn run() {
             commands::result_mutation::load_virtual_key,
             commands::result_mutation::save_virtual_key,
             commands::result_mutation::clear_virtual_key,
+            commands::safety::load_safety_overrides,
             commands::relational::load_table_structure,
             commands::relational::execute_ddl,
             commands::relational::export_ddl,

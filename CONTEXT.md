@@ -86,6 +86,28 @@ these terms rather than coining synonyms.
 - **Active Connection** — the one currently selected in the sidebar; drives
   the schema explorer (relational engines) or keyspace browser (Redis), the
   overview / server tab, and any newly opened tab.
+- **Environment** — a Connection's operator-assigned deployment identity:
+  `development`, `test`, `staging`, or `production`. It defaults to
+  `development` and supplies the inherited Safe Mode level. Environment is
+  policy input, not a claim about server identity.
+- **Production Identity** — the consistent UI treatment derived from a
+  Connection whose Environment is `production`. It makes the selected target
+  visible across workspaces and confirmation flows; it is not itself an
+  enforcement boundary.
+- **Safe Mode** — a Connection policy level: `disabled`, `protected`, or
+  `strict`, plus `inherit`. Inherited levels resolve development and test to
+  disabled, staging to protected, and production to strict.
+- **Safety Policy** — the backend-resolved combination of Environment, Safe
+  Mode, and relational read-only. It is asserted before every write-capable
+  command dispatch. UI warnings explain policy but cannot enforce it.
+- **Statement Class** — a SQL statement's backend classification as `read`,
+  `dml`, `ddl`, `transaction`, `session`, or `unknown`, with boundedness and
+  destructiveness where relevant. Classification fails closed and never
+  enters refusal or audit records with the original SQL text.
+- **Confirmed Override** — a deliberate `confirmed: true` unlock of an
+  operation that `protected` or `strict` Safe Mode would otherwise refuse. It
+  is recorded in a bounded, class-labels-only local audit. Confirmation never
+  overrides relational read-only.
 - **Engine** — `PostgreSQL`, `MySQL`, `SQLite`, `ClickHouse`, or `Redis`.
   PostgreSQL is the reference implementation for the relational class (see
   ADR-0001); other relational engines have selective coverage and may return

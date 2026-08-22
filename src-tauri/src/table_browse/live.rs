@@ -19,6 +19,7 @@ fn live_spec(port: u16, tls_prefer: bool, connection_id: &str) -> ResolvedPostgr
         tls_prefer,
         connect_timeout: Some(Duration::from_secs(5)),
         driver_options: PgDriverOptions::default(),
+        safety_policy: Default::default(),
     }
 }
 

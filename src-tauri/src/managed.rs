@@ -16,9 +16,10 @@ use sqlx::sqlite::SqlitePool;
 use sqlx::ConnectOptions;
 
 use crate::{
-    credentials, docker, storage, CredentialStorageMode, DatabaseEngine, ManagedServer,
-    ManagedServerWithStatus, MySqlStoredConnection, PgStoredConnection,
-    ProvisionManagedServerPayload, ProvisionManagedServerResult, SshTunnelConfig, StoredConnection,
+    credentials, docker, storage, CredentialStorageMode, DatabaseEngine, Environment,
+    ManagedServer, ManagedServerWithStatus, MySqlStoredConnection, PgStoredConnection,
+    ProvisionManagedServerPayload, ProvisionManagedServerResult, SafeMode, SshTunnelConfig,
+    StoredConnection,
 };
 
 /// Image major versions dbunk will provision, newest first. Doubles as
@@ -207,6 +208,9 @@ fn build_connection(
             user: server.user.clone(),
             password: password.to_string(),
             role: "read/write".to_string(),
+            environment: Environment::default(),
+            safe_mode: SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
             ssl: false,
             driver_options: None,
@@ -221,6 +225,9 @@ fn build_connection(
             user: server.user.clone(),
             password: password.to_string(),
             role: "read/write".to_string(),
+            environment: Environment::default(),
+            safe_mode: SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
             ssl: false,
             ssh_tunnel: SshTunnelConfig::default(),

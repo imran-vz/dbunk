@@ -132,6 +132,8 @@ mod tests {
             user: String::new(),
             password: String::new(),
             role: String::new(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
             last_activity_at: None,
             db_number: 0,
             use_tls: false,

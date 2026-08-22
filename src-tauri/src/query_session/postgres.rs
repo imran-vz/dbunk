@@ -512,6 +512,7 @@ mod tests {
             tls_prefer,
             connect_timeout: Some(Duration::from_secs(5)),
             driver_options: PgDriverOptions::default(),
+            safety_policy: Default::default(),
         }
     }
 
