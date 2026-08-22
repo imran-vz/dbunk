@@ -77,7 +77,15 @@ export type RelationalQueriesSlice = {
   updateQuery: (tabId: string, query: string) => void;
   runQuery: (
     tabId: string,
-    options?: { overrideSql?: string },
+    options?: {
+      overrideSql?: string;
+      /**
+       * Execution replacement is fail-closed when staged changes exist.
+       * UI callers provide the confirmation boundary; headless callers omit
+       * it and receive a no-op without losing the draft.
+       */
+      confirmDiscardStagedChanges?: (changeCount: number) => boolean;
+    },
   ) => Promise<QueryOutcome>;
   markQueryCancelling: (tabId: string) => void;
   loadQueryHistory: () => Promise<void>;
@@ -169,6 +177,29 @@ export const createRelationalQueriesSlice: StateCreator<
     }
     if (!isTauri()) {
       return { kind: "noop" };
+    }
+    const executionId = state.querySessions[tabId]?.execution?.id;
+    if (executionId) {
+      const executionDrafts = Object.values(state.mutationDrafts).flatMap(
+        (draft) =>
+          draft?.owner.kind === "query" &&
+          draft.owner.tabId === tabId &&
+          draft.owner.executionId === executionId
+            ? [draft]
+            : [],
+      );
+      const stagedChangeCount = executionDrafts.reduce(
+        (count, draft) => count + draft.changeOrder.length,
+        0,
+      );
+      if (stagedChangeCount > 0) {
+        if (!options?.confirmDiscardStagedChanges?.(stagedChangeCount)) {
+          return { kind: "noop" };
+        }
+      }
+      if (executionDrafts.length > 0) {
+        get().dropMutationDraftsForExecution(tabId, executionId);
+      }
     }
     const connectionAtRun = state.connections.find(
       (c) => c.id === tab.connectionId,

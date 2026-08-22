@@ -333,17 +333,23 @@ export function QueryEditorPanel({
 
   const guardedRunQuery = useCallback(
     async (tabId: string, options?: { overrideSql?: string }) => {
-      if (executionId && executionDraftSummary.exists) {
-        if (executionDraftSummary.changeCount > 0) {
-          const ok = window.confirm(
-            `Re-running will discard ${executionDraftSummary.changeCount} staged ${pluralize("change", executionDraftSummary.changeCount)}. Continue?`,
-          );
-          if (!ok) return { kind: "noop" } as const;
+      if (executionDraftSummary.changeCount === 0) {
+        if (executionId && executionDraftSummary.exists) {
+          dropMutationDraftsForExecution(tab.id, executionId);
+          setReviewScope(null);
         }
-        dropMutationDraftsForExecution(tab.id, executionId);
-        setReviewScope(null);
+        return runQuery(tabId, options);
       }
-      return runQuery(tabId, options);
+      return runQuery(tabId, {
+        ...options,
+        confirmDiscardStagedChanges: (changeCount) => {
+          const confirmed = window.confirm(
+            `Re-running will discard ${changeCount} staged ${pluralize("change", changeCount)}. Continue?`,
+          );
+          if (confirmed) setReviewScope(null);
+          return confirmed;
+        },
+      });
     },
     [
       dropMutationDraftsForExecution,
@@ -401,6 +407,15 @@ export function QueryEditorPanel({
         connectionId: tab.connectionId,
         source: { kind: "statement", sql: exactExecutionSql },
       });
+      if (!handle) {
+        setAnalysisState({
+          scope: mutationScope,
+          state: "error",
+          message:
+            "This result cannot replace a draft that still has staged changes. Discard or apply them first.",
+        });
+        return null;
+      }
       analysisRequestsRef.current.add(mutationScope);
       setAnalysisState({ scope: mutationScope, state: "loading" });
       const result = await analyzeResultSet({
@@ -703,24 +718,21 @@ export function QueryEditorPanel({
   const handleRetargetConnection = (newConnectionId: string) => {
     if (newConnectionId === tab.connectionId) return;
     if (isBusy) return;
-    const pendingCount = usesMutationDraftToolbar
-      ? executionDraftSummary.changeCount
-      : hasEdits
-        ? 1
-        : 0;
-    if (pendingCount > 0) {
+    if (!usesMutationDraftToolbar && hasEdits) {
       const ok = window.confirm(
-        usesMutationDraftToolbar
-          ? `Switching connections will discard ${pendingCount} staged ${pluralize("change", pendingCount)}. Continue?`
-          : "Switching connections will discard pending edits in the results grid. Continue?",
+        "Switching connections will discard pending edits in the results grid. Continue?",
       );
       if (!ok) return;
-      if (usesMutationDraftToolbar && executionId) {
-        dropMutationDraftsForExecution(tab.id, executionId);
-        setReviewScope(null);
-      }
     }
-    retargetQueryTab(tab.id, newConnectionId);
+    void retargetQueryTab(tab.id, newConnectionId, {
+      confirmDiscardStagedChanges: (changeCount) => {
+        const confirmed = window.confirm(
+          `Switching connections will discard ${changeCount} staged ${pluralize("change", changeCount)}. Continue?`,
+        );
+        if (confirmed) setReviewScope(null);
+        return confirmed;
+      },
+    });
   };
 
   const handleFormat = () => {
