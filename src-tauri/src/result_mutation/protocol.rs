@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::postgres::sql_class::StatementClassSummary;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(
     rename_all = "camelCase",
@@ -218,6 +220,8 @@ pub(crate) struct ApplyResultMutationsPayload {
     pub request_id: u64,
     pub analysis_id: u64,
     pub plan: MutationPlan,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -358,6 +362,12 @@ pub(crate) enum ResultMutationError {
     Cancelled,
     ConnectionClosing,
     ConnectionLost,
+    PolicyBlocked {
+        reason: String,
+    },
+    PolicyNeedsConfirmation {
+        statements: Vec<StatementClassSummary>,
+    },
     Timeout {
         operation: String,
     },
@@ -453,11 +463,23 @@ mod tests {
             tab_id: "t1".into(),
             request_id: 9,
             analysis_id: 8,
+            confirmed: false,
             plan: plan(),
         })
         .unwrap();
         assert_eq!(apply["requestId"], 9);
         assert_eq!(apply["analysisId"], 8);
+        assert_eq!(apply["confirmed"], false);
+
+        let legacy_apply: ApplyResultMutationsPayload = serde_json::from_value(json!({
+            "connectionId": "c1",
+            "tabId": "t1",
+            "requestId": 9,
+            "analysisId": 8,
+            "plan": { "operations": [] }
+        }))
+        .unwrap();
+        assert!(!legacy_apply.confirmed);
 
         assert_eq!(
             serde_json::to_value(CancelResultMutationPayload {
@@ -716,6 +738,22 @@ mod tests {
             (ResultMutationError::Cancelled, "cancelled"),
             (ResultMutationError::ConnectionClosing, "connectionClosing"),
             (ResultMutationError::ConnectionLost, "connectionLost"),
+            (
+                ResultMutationError::PolicyBlocked {
+                    reason: "read-only".into(),
+                },
+                "policyBlocked",
+            ),
+            (
+                ResultMutationError::PolicyNeedsConfirmation {
+                    statements: vec![crate::postgres::sql_class::StatementClass::Dml {
+                        unbounded: false,
+                        destructive: false,
+                    }
+                    .summary(0)],
+                },
+                "policyNeedsConfirmation",
+            ),
             (
                 ResultMutationError::Timeout {
                     operation: "queueWait".into(),

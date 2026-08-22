@@ -15,10 +15,11 @@ use tauri::{path::BaseDirectory, AppHandle, Manager};
 use crate::result_mutation::protocol::VirtualKey;
 use crate::table_browse::protocol::TableGridPrefs;
 use crate::{
-    ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, MySqlStoredConnection,
-    PgStoredConnection, PositionRow, QueryHistoryEntry, RedisCliHistoryEntry,
-    RedisStoredConnection, SavedQuery, SavedRedisCommand, SchemaMapPrefs, SchemaMapPrefsPatch,
-    SqliteStoredConnection, SshTunnelConfig, StoredConnection,
+    ClickHouseStoredConnection, CredentialStorageMode, DatabaseEngine, Environment,
+    MySqlStoredConnection, PgStoredConnection, PositionRow, QueryHistoryEntry,
+    RedisCliHistoryEntry, RedisStoredConnection, SafeMode, SafetyOverrideRecord, SavedQuery,
+    SavedRedisCommand, SchemaMapPrefs, SchemaMapPrefsPatch, SqliteStoredConnection,
+    SshTunnelConfig, StoredConnection,
 };
 
 pub(crate) mod bastions;
@@ -371,6 +372,26 @@ CREATE TABLE virtual_keys (
 );
 "#,
     ),
+    (
+        15,
+        // ADR-0024: shared Connection policy fields plus the bounded,
+        // class-labels-only audit of deliberate safety overrides.
+        r#"
+ALTER TABLE connections ADD COLUMN environment TEXT NOT NULL DEFAULT 'development';
+ALTER TABLE connections ADD COLUMN safe_mode TEXT NOT NULL DEFAULT 'inherit';
+
+CREATE TABLE safety_overrides (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  command       TEXT NOT NULL,
+  classes       TEXT NOT NULL,
+  occurred_at   TEXT NOT NULL
+);
+
+CREATE INDEX idx_safety_overrides_connection_occurred_at
+  ON safety_overrides(connection_id, occurred_at DESC, id DESC);
+"#,
+    ),
 ];
 
 pub struct Paths {
@@ -566,7 +587,7 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
 const CONNECTION_COLUMNS: &str = "id, name, database_name, engine, host, port, user_name, role,
      last_activity_at, use_https, url_path,
      db_number, use_tls, verify_tls_cert, ssl, driver_options,
-     read_only,
+     read_only, environment, safe_mode,
      ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
      ssh_tunnel_local_bind_host, ssh_tunnel_local_port,
      ssh_tunnel_compression, ssh_tunnel_keepalive_interval_seconds,
@@ -644,6 +665,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
     let port = i64_to_u16(row.get("port"));
     let user: String = row.get("user_name");
     let role: String = row.get("role");
+    let environment = Environment::from_str(row.get::<String, _>("environment").as_str())?;
+    let safe_mode = SafeMode::from_str(row.get::<String, _>("safe_mode").as_str())?;
+    let read_only = row.get::<i64, _>("read_only") != 0;
     let last_activity_at: Option<String> = row.get("last_activity_at");
     let ssh_tunnel = row_to_ssh_tunnel(&row, &id)?;
 
@@ -671,6 +695,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             user,
             password: String::new(),
             role,
+            environment,
+            safe_mode,
+            read_only,
             last_activity_at,
             ssl: row.get::<i64, _>("ssl") != 0,
             driver_options,
@@ -685,6 +712,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             user,
             password: String::new(),
             role,
+            environment,
+            safe_mode,
+            read_only,
             last_activity_at,
             ssl: row.get::<i64, _>("ssl") != 0,
             ssh_tunnel,
@@ -698,6 +728,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             user,
             password: String::new(),
             role,
+            environment,
+            safe_mode,
+            read_only,
             last_activity_at,
         }),
         DatabaseEngine::ClickHouse => StoredConnection::ClickHouse(ClickHouseStoredConnection {
@@ -709,6 +742,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             user,
             password: String::new(),
             role,
+            environment,
+            safe_mode,
+            read_only,
             last_activity_at,
             use_https: row.get::<i64, _>("use_https") != 0,
             url_path: row.get("url_path"),
@@ -723,11 +759,13 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             user,
             password: String::new(),
             role,
+            environment,
+            safe_mode,
             last_activity_at,
             db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
             use_tls: row.get::<i64, _>("use_tls") != 0,
             verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
-            read_only: row.get::<i64, _>("read_only") != 0,
+            read_only,
             ssh_tunnel,
         }),
     })
@@ -779,20 +817,22 @@ pub async fn upsert_connection(
     let user = connection.user().to_string();
     let role = connection.role().to_string();
     let last_activity_at = connection.last_activity_at().map(str::to_string);
+    let environment = connection.environment().as_str();
+    let safe_mode = connection.safe_mode().as_str();
 
     let (use_https, url_path) = match connection {
         StoredConnection::ClickHouse(c) => (bool_to_i64(c.use_https), c.url_path.clone()),
         _ => (0, String::new()),
     };
-    let (db_number, use_tls, verify_tls_cert, read_only) = match connection {
+    let (db_number, use_tls, verify_tls_cert) = match connection {
         StoredConnection::Redis(c) => (
             i64::from(c.db_number),
             bool_to_i64(c.use_tls),
             bool_to_i64(c.verify_tls_cert),
-            bool_to_i64(c.read_only),
         ),
-        _ => (0, 0, 1, 0),
+        _ => (0, 0, 1),
     };
+    let read_only = bool_to_i64(connection.read_only());
     let ssl = match connection {
         StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl),
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
@@ -833,14 +873,14 @@ pub async fn upsert_connection(
             id, name, database_name, engine, host, port, user_name, role,
             last_activity_at, use_https, url_path,
             db_number, use_tls, verify_tls_cert, ssl, driver_options,
-            read_only,
+            read_only, environment, safe_mode,
             ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
             ssh_tunnel_local_bind_host, ssh_tunnel_local_port,
             ssh_tunnel_compression, ssh_tunnel_keepalive_interval_seconds,
             ssh_tunnel_keepalive_want_reply, ssh_tunnel_jump_chain,
             ssh_tunnel_proxy_command
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -858,6 +898,8 @@ pub async fn upsert_connection(
             ssl = excluded.ssl,
             driver_options = excluded.driver_options,
             read_only = excluded.read_only,
+            environment = excluded.environment,
+            safe_mode = excluded.safe_mode,
             ssh_tunnel_enabled = excluded.ssh_tunnel_enabled,
             ssh_tunnel_bastion_server_id = excluded.ssh_tunnel_bastion_server_id,
             ssh_tunnel_local_bind_host = excluded.ssh_tunnel_local_bind_host,
@@ -885,6 +927,8 @@ pub async fn upsert_connection(
     .bind(ssl)
     .bind(driver_options)
     .bind(read_only)
+    .bind(environment)
+    .bind(safe_mode)
     .bind(ssh_tunnel_enabled)
     .bind(ssh_tunnel_bastion_server_id)
     .bind(ssh_tunnel_local_bind_host)
@@ -1572,6 +1616,73 @@ pub async fn insert_redis_cli_history(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Safety override audit
+// ---------------------------------------------------------------------------
+
+pub(crate) const SAFETY_OVERRIDE_CAP: u32 = 1000;
+
+pub(crate) async fn insert_safety_override(
+    pool: &SqlitePool,
+    connection_id: &str,
+    command: &str,
+    classes: &[String],
+) -> Result<(), String> {
+    let classes = serde_json::to_string(classes).map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    sqlx::query(
+        "INSERT INTO safety_overrides (connection_id, command, classes, occurred_at)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(connection_id)
+    .bind(command)
+    .bind(classes)
+    .bind(now())
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| error.to_string())?;
+    sqlx::query(&format!(
+        "DELETE FROM safety_overrides
+         WHERE id NOT IN (
+           SELECT id FROM safety_overrides ORDER BY occurred_at DESC, id DESC LIMIT {}
+         )",
+        SAFETY_OVERRIDE_CAP
+    ))
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| error.to_string())?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) async fn read_safety_overrides(
+    pool: &SqlitePool,
+    connection_id: &str,
+) -> Result<Vec<SafetyOverrideRecord>, String> {
+    let rows = sqlx::query(
+        "SELECT command, classes, occurred_at
+         FROM safety_overrides
+         WHERE connection_id = ?
+         ORDER BY occurred_at DESC, id DESC",
+    )
+    .bind(connection_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    rows.into_iter()
+        .map(|row| {
+            let classes: String = row.get("classes");
+            Ok(SafetyOverrideRecord {
+                command: row.get("command"),
+                classes: serde_json::from_str(&classes).map_err(|error| error.to_string())?,
+                occurred_at: row.get("occurred_at"),
+            })
+        })
+        .collect()
+}
+
 pub async fn clear_query_history(pool: &SqlitePool) -> Result<(), String> {
     sqlx::query("DELETE FROM query_history")
         .execute(pool)
@@ -1726,6 +1837,49 @@ mod tests {
         pool
     }
 
+    async fn test_pool_through(max_version: i64) -> SqlitePool {
+        let dir = tempdir().expect("temp dir");
+        let options = SqliteConnectOptions::new()
+            .filename(dir.path().join(DB_FILE))
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("pool");
+        sqlx::query(
+            "CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("migration table");
+        for (version, sql) in MIGRATIONS
+            .iter()
+            .filter(|(version, _)| *version <= max_version)
+        {
+            let mut transaction = pool.begin().await.expect("migration transaction");
+            for statement in sql.split(';').map(str::trim).filter(|sql| !sql.is_empty()) {
+                sqlx::query(statement)
+                    .execute(&mut *transaction)
+                    .await
+                    .expect("migration statement");
+            }
+            sqlx::query("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+                .bind(version)
+                .bind(now())
+                .execute(&mut *transaction)
+                .await
+                .expect("migration record");
+            transaction.commit().await.expect("migration commit");
+        }
+        std::mem::forget(dir);
+        pool
+    }
+
     fn connection(id: &str) -> StoredConnection {
         StoredConnection::PostgreSQL(PgStoredConnection {
             id: id.to_string(),
@@ -1736,11 +1890,236 @@ mod tests {
             user: "postgres".to_string(),
             password: String::new(),
             role: String::new(),
+            environment: Environment::default(),
+            safe_mode: SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
             ssl: true,
             driver_options: None,
             ssh_tunnel: SshTunnelConfig::default(),
         })
+    }
+
+    fn policy_connections() -> Vec<StoredConnection> {
+        vec![
+            StoredConnection::PostgreSQL(PgStoredConnection {
+                id: "pg-policy".into(),
+                name: "Postgres policy".into(),
+                database: "postgres".into(),
+                host: "localhost".into(),
+                port: 5432,
+                user: "postgres".into(),
+                password: String::new(),
+                role: "read/write".into(),
+                environment: Environment::Staging,
+                safe_mode: SafeMode::Protected,
+                read_only: true,
+                last_activity_at: None,
+                ssl: true,
+                driver_options: None,
+                ssh_tunnel: SshTunnelConfig::default(),
+            }),
+            StoredConnection::MySQL(MySqlStoredConnection {
+                id: "mysql-policy".into(),
+                name: "MySQL policy".into(),
+                database: "mysql".into(),
+                host: "localhost".into(),
+                port: 3306,
+                user: "mysql".into(),
+                password: String::new(),
+                role: "read/write".into(),
+                environment: Environment::Staging,
+                safe_mode: SafeMode::Protected,
+                read_only: true,
+                last_activity_at: None,
+                ssl: true,
+                ssh_tunnel: SshTunnelConfig::default(),
+            }),
+            StoredConnection::SQLite(SqliteStoredConnection {
+                id: "sqlite-policy".into(),
+                name: "SQLite policy".into(),
+                database: ":memory:".into(),
+                host: String::new(),
+                port: 0,
+                user: String::new(),
+                password: String::new(),
+                role: "read/write".into(),
+                environment: Environment::Staging,
+                safe_mode: SafeMode::Protected,
+                read_only: true,
+                last_activity_at: None,
+            }),
+            StoredConnection::ClickHouse(ClickHouseStoredConnection {
+                id: "clickhouse-policy".into(),
+                name: "ClickHouse policy".into(),
+                database: "default".into(),
+                host: "localhost".into(),
+                port: 8123,
+                user: "default".into(),
+                password: String::new(),
+                role: "read/write".into(),
+                environment: Environment::Staging,
+                safe_mode: SafeMode::Protected,
+                read_only: true,
+                last_activity_at: None,
+                use_https: false,
+                url_path: String::new(),
+                ssh_tunnel: SshTunnelConfig::default(),
+            }),
+            StoredConnection::Redis(RedisStoredConnection {
+                id: "redis-policy".into(),
+                name: "Redis policy".into(),
+                database: String::new(),
+                host: "localhost".into(),
+                port: 6379,
+                user: "default".into(),
+                password: String::new(),
+                role: "read/write".into(),
+                environment: Environment::Staging,
+                safe_mode: SafeMode::Protected,
+                last_activity_at: None,
+                db_number: 0,
+                use_tls: false,
+                verify_tls_cert: true,
+                read_only: true,
+                ssh_tunnel: SshTunnelConfig::default(),
+            }),
+        ]
+    }
+
+    #[tokio::test]
+    async fn safety_policy_migration_is_applied() {
+        let pool = test_pool().await;
+        let version: i64 =
+            sqlx::query_scalar("SELECT version FROM schema_migrations WHERE version = 15")
+                .fetch_one(&pool)
+                .await
+                .expect("migration 15");
+        assert_eq!(version, 15);
+
+        let columns: Vec<String> = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await
+            .expect("connection columns")
+            .into_iter()
+            .map(|row| row.get("name"))
+            .collect();
+        assert!(columns.iter().any(|column| column == "environment"));
+        assert!(columns.iter().any(|column| column == "safe_mode"));
+
+        let audit_table: String = sqlx::query_scalar(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'safety_overrides'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("audit table");
+        assert_eq!(audit_table, "safety_overrides");
+    }
+
+    #[tokio::test]
+    async fn safety_policy_fields_round_trip_for_every_engine() {
+        let pool = test_pool().await;
+        for connection in policy_connections() {
+            let id = connection.id().to_string();
+            let engine = connection.engine();
+            upsert_connection(&pool, &connection)
+                .await
+                .expect("upsert policy connection");
+            let stored = read_connection_by_id(&pool, &id)
+                .await
+                .expect("read policy connection")
+                .expect("policy connection");
+            assert_eq!(stored.engine(), engine);
+            assert_eq!(stored.environment(), Environment::Staging);
+            assert_eq!(stored.safe_mode(), SafeMode::Protected);
+            assert!(stored.read_only());
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_15_defaults_legacy_rows_to_dark_policy() {
+        let pool = test_pool_through(14).await;
+        sqlx::query(
+            "INSERT INTO connections (
+                id, name, database_name, engine, host, port, user_name, role
+             ) VALUES ('legacy', 'Legacy', 'postgres', 'PostgreSQL', 'localhost', 5432, 'postgres', 'read/write')",
+        )
+        .execute(&pool)
+        .await
+        .expect("legacy connection");
+
+        run_migrations(&pool).await.expect("migration 15");
+        let stored = read_connection_by_id(&pool, "legacy")
+            .await
+            .expect("read legacy")
+            .expect("legacy row");
+        assert_eq!(stored.environment(), Environment::Development);
+        assert_eq!(stored.safe_mode(), SafeMode::Inherit);
+        assert!(!stored.read_only());
+    }
+
+    #[tokio::test]
+    async fn safety_override_audit_is_scoped_and_cascades() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection 1");
+        upsert_connection(&pool, &connection("conn-2"))
+            .await
+            .expect("connection 2");
+        insert_safety_override(&pool, "conn-1", "run_query", &["dml".into()])
+            .await
+            .expect("audit 1");
+        insert_safety_override(&pool, "conn-2", "execute_ddl", &["ddl".into()])
+            .await
+            .expect("audit 2");
+
+        let first = read_safety_overrides(&pool, "conn-1")
+            .await
+            .expect("first audit");
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].command, "run_query");
+        assert_eq!(first[0].classes, vec!["dml"]);
+
+        delete_connection(&pool, "conn-1").await.expect("delete");
+        assert!(read_safety_overrides(&pool, "conn-1")
+            .await
+            .expect("deleted audit")
+            .is_empty());
+        assert_eq!(
+            read_safety_overrides(&pool, "conn-2")
+                .await
+                .expect("second audit")
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn safety_override_audit_trims_to_global_cap() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("conn-1"))
+            .await
+            .expect("connection");
+        sqlx::query(
+            "WITH RECURSIVE seq(value) AS (
+               VALUES(1) UNION ALL SELECT value + 1 FROM seq WHERE value < 1000
+             )
+             INSERT INTO safety_overrides (connection_id, command, classes, occurred_at)
+             SELECT 'conn-1', 'run_query', '[]', printf('%04d', value) FROM seq",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed audit");
+
+        insert_safety_override(&pool, "conn-1", "run_query", &["dml".into()])
+            .await
+            .expect("capped insert");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM safety_overrides")
+            .fetch_one(&pool)
+            .await
+            .expect("audit count");
+        assert_eq!(count, i64::from(SAFETY_OVERRIDE_CAP));
     }
 
     async fn set_connection_engine(pool: &SqlitePool, connection_id: &str, engine: &str) {

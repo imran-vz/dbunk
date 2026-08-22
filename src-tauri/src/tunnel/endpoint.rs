@@ -93,6 +93,9 @@ mod tests {
             user: "postgres".into(),
             password: String::new(),
             role: "read/write".into(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
             ssl: true,
             driver_options: None,
@@ -116,6 +119,8 @@ mod tests {
             user: "default".into(),
             password: String::new(),
             role: "read/write".into(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
             last_activity_at: None,
             db_number: 2,
             use_tls: false,
@@ -153,6 +158,9 @@ mod tests {
             user: String::new(),
             password: String::new(),
             role: "read/write".into(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
             last_activity_at: None,
         });
 

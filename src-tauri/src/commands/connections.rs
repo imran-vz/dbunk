@@ -24,7 +24,13 @@ pub async fn save_connection(
     state: State<'_, AppState>,
     connection: StoredConnection,
 ) -> Result<Vec<StoredConnection>, String> {
-    let state = state.inner();
+    save_connection_inner(state.inner(), connection).await
+}
+
+pub(crate) async fn save_connection_inner(
+    state: &AppState,
+    connection: StoredConnection,
+) -> Result<Vec<StoredConnection>, String> {
     let mode = current_credential_mode(state).await?;
     tunnel::validate_connection_tunnel(&connection)?;
     let engine = connection.engine();

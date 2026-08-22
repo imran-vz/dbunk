@@ -26,6 +26,7 @@ fn live_spec(connection_id: &str) -> ResolvedPostgresConnectSpec {
         tls_prefer: true,
         connect_timeout: Some(Duration::from_secs(5)),
         driver_options: PgDriverOptions::default(),
+        safety_policy: Default::default(),
     }
 }
 
@@ -284,6 +285,7 @@ async fn result_mutation_live_analysis_matrix() {
                 connection_id: connection_id.into(),
                 tab_id: "join".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: join.analysis_id,
                 plan: crafted_join_insert,
             },
@@ -822,6 +824,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
                 connection_id: connection_id.into(),
                 tab_id: "type-drift".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: type_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -863,6 +866,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
                 connection_id: connection_id.into(),
                 tab_id: "oid-drift".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: oid_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -899,6 +903,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
                 connection_id: connection_id.into(),
                 tab_id: "default-drift".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: default_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Insert {
@@ -941,6 +946,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
                 connection_id: connection_id.into(),
                 tab_id: "identity-drift".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: identity_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -983,6 +989,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
                     connection_id: connection_id.into(),
                     tab_id: "locked-drift".into(),
                     request_id: 2,
+                    confirmed: false,
                     analysis_id: locked_analysis.analysis_id,
                     plan: MutationPlan {
                         operations: vec![MutationOp::Update {
@@ -1050,6 +1057,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
                 connection_id: connection_id.into(),
                 tab_id: "unrelated-drift".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: joined_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1211,6 +1219,7 @@ async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() 
                 connection_id: connection_id.into(),
                 tab_id: "apply".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: analysis.analysis_id,
                 plan: happy_plan,
             },
@@ -1253,6 +1262,7 @@ async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() 
                 connection_id: connection_id.into(),
                 tab_id: "conflict".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: conflict_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![
@@ -1309,6 +1319,7 @@ async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() 
                 connection_id: connection_id.into(),
                 tab_id: "delete-conflict".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: delete_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Delete {
@@ -1387,6 +1398,7 @@ async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() 
                 connection_id: connection_id.into(),
                 tab_id: "generated".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: generated.analysis_id,
                 plan: defaults_plan,
             },
@@ -1460,6 +1472,7 @@ async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
                 connection_id: connection_id.into(),
                 tab_id: "duplicates".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: duplicate_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1520,6 +1533,7 @@ async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
                 connection_id: connection_id.into(),
                 tab_id: "ctid".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: ctid_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1553,6 +1567,7 @@ async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
                 connection_id: connection_id.into(),
                 tab_id: "ctid".into(),
                 request_id: 3,
+                confirmed: false,
                 analysis_id: ctid_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1600,6 +1615,7 @@ async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
                 connection_id: connection_id.into(),
                 tab_id: "lock".into(),
                 request_id: 2,
+                confirmed: false,
                 analysis_id: lock_analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1659,6 +1675,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         connection_id: connection_id.into(),
         tab_id: "cancel".into(),
         request_id: 2,
+        confirmed: false,
         analysis_id: analysis.analysis_id,
         plan: MutationPlan {
             operations: vec![MutationOp::Update {
@@ -1693,6 +1710,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         connection_id: connection_id.into(),
         tab_id: "cancel".into(),
         request_id: 3,
+        confirmed: false,
         analysis_id: analysis.analysis_id,
         plan: MutationPlan {
             operations: vec![MutationOp::Update {
@@ -1743,6 +1761,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
                 connection_id: connection_id.into(),
                 tab_id: "cancel".into(),
                 request_id: 4,
+                confirmed: false,
                 analysis_id: analysis.analysis_id,
                 plan: MutationPlan {
                     operations: vec![MutationOp::Update {
@@ -1769,6 +1788,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         connection_id: connection_id.into(),
         tab_id: "teardown-before".into(),
         request_id: 2,
+        confirmed: false,
         analysis_id: manager
             .analyze(
                 spec.clone(),
@@ -1843,6 +1863,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         connection_id: connection_id.into(),
         tab_id: "teardown".into(),
         request_id: 2,
+        confirmed: false,
         analysis_id: teardown_analysis.analysis_id,
         plan: MutationPlan {
             operations: vec![MutationOp::Update {
@@ -1916,5 +1937,128 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
         .expect("manager usable after teardown fence");
     assert_eq!(recovered_analysis.statement, AnalysisStatement::Analyzed);
 
+    cleanup_schema(&admin, &schema).await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+#[ignore = "requires pnpm db:postgres"]
+async fn safety_live_apply_strict_confirmation_and_audit() {
+    let connection_id = format!("safety-apply-{}", uuid::Uuid::new_v4().simple());
+    let schema = unique_schema();
+    let (_directory, state) = crate::test_app_state().await;
+    let strict_connection = crate::StoredConnection::PostgreSQL(crate::PgStoredConnection {
+        id: connection_id.clone(),
+        name: "Safety apply".into(),
+        database: "dbunk_demo".into(),
+        host: "127.0.0.1".into(),
+        port: 15432,
+        user: "dbunk".into(),
+        password: "dbunk".into(),
+        role: "read/write".into(),
+        environment: crate::Environment::Production,
+        safe_mode: crate::SafeMode::Inherit,
+        read_only: false,
+        last_activity_at: None,
+        ssl: true,
+        driver_options: None,
+        ssh_tunnel: crate::SshTunnelConfig::default(),
+    });
+    crate::commands::connections::save_connection_inner(&state, strict_connection.clone())
+        .await
+        .expect("save strict connection through command core");
+    let default_spec = ResolvedPostgresConnectSpec::from_connection(&strict_connection)
+        .expect("strict Postgres spec");
+    let admin = session_postgres::connect(&default_spec)
+        .await
+        .expect("admin session");
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {schema}; \
+             CREATE TABLE {schema}.rows(id integer PRIMARY KEY, body text NOT NULL); \
+             INSERT INTO {schema}.rows VALUES (1, 'before')"
+        ))
+        .await
+        .expect("fixture");
+
+    let analysis = state
+        .result_mutations
+        .analyze(
+            default_spec.clone(),
+            relation_payload(&connection_id, "safety", 1, &schema, "rows"),
+            empty_virtual_keys(),
+        )
+        .await
+        .expect("analysis");
+    let plan = MutationPlan {
+        operations: vec![MutationOp::Update {
+            table: table(&schema, "rows"),
+            identity: vec![value("id", Some("1"))],
+            guards: vec![value("body", Some("before"))],
+            set: vec![value("body", Some("after"))],
+        }],
+    };
+    let payload = |confirmed| ApplyResultMutationsPayload {
+        connection_id: connection_id.clone(),
+        tab_id: "safety".into(),
+        request_id: 2,
+        analysis_id: analysis.analysis_id,
+        plan: plan.clone(),
+        confirmed,
+    };
+    assert!(matches!(
+        crate::commands::result_mutation::apply_result_mutations_inner(&state, payload(false))
+            .await,
+        Err(ResultMutationError::PolicyNeedsConfirmation { .. })
+    ));
+    let refused_row: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("read refused row")
+        .get(0);
+    assert_eq!(refused_row, "before");
+    assert!(storage::read_safety_overrides(&state.pool, &connection_id)
+        .await
+        .expect("audit rows after refusal")
+        .is_empty());
+    assert!(storage::read_connection_by_id(&state.pool, &connection_id)
+        .await
+        .expect("read refused connection")
+        .expect("stored connection")
+        .last_activity_at()
+        .is_none());
+
+    let applied =
+        crate::commands::result_mutation::apply_result_mutations_inner(&state, payload(true))
+            .await
+            .expect("confirmed apply");
+    assert_eq!(applied.operations[0].rows_affected, 1);
+    let stored: String = admin
+        .client
+        .query_one(&format!("SELECT body FROM {schema}.rows WHERE id = 1"), &[])
+        .await
+        .expect("read applied row")
+        .get(0);
+    assert_eq!(stored, "after");
+
+    let audit_rows = storage::read_safety_overrides(&state.pool, &connection_id)
+        .await
+        .expect("audit rows");
+    assert_eq!(audit_rows.len(), 1);
+    assert_eq!(audit_rows[0].command, "apply_result_mutations");
+    assert_eq!(audit_rows[0].classes, vec!["dml"]);
+    assert!(storage::read_connection_by_id(&state.pool, &connection_id)
+        .await
+        .expect("read active connection")
+        .expect("stored connection")
+        .last_activity_at()
+        .is_some());
+
+    state
+        .result_mutations
+        .close_connection(&connection_id)
+        .await;
     cleanup_schema(&admin, &schema).await;
 }

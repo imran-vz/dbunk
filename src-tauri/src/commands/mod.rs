@@ -12,10 +12,12 @@ pub(crate) mod managed;
 pub(crate) mod query_session;
 pub(crate) mod relational;
 pub(crate) mod result_mutation;
+pub(crate) mod safety;
 pub(crate) mod settings;
 pub(crate) mod table_browse;
 
 use crate::credentials;
+use crate::safety::policy::{AuditDisposition, WriteIntent};
 use crate::storage;
 use crate::{AppState, CredentialStorageMode, StoredConnection};
 
@@ -73,6 +75,35 @@ where
     let result = op(connection).await?;
     touch_connection_activity(state, connection_id).await;
     Ok(result)
+}
+
+/// Policy-aware form of `with_active_connection` for legacy string-error
+/// commands. The gate runs against the hydrated record before `op`, and a
+/// required confirmed override is audited only after `op` succeeds.
+pub(super) async fn with_gated_active_connection<T, Intent, Op, Fut>(
+    state: &AppState,
+    connection_id: &str,
+    command: &'static str,
+    confirmed: bool,
+    intent: Intent,
+    op: Op,
+) -> Result<T, String>
+where
+    Intent: FnOnce(&StoredConnection) -> WriteIntent,
+    Op: FnOnce(StoredConnection) -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let pool = state.pool.clone();
+    with_active_connection(state, connection_id, |connection| async move {
+        let intent = intent(&connection);
+        let authorization = safety::assert_legacy_permitted(&connection, &intent, confirmed)?;
+        let result = op(connection).await?;
+        if authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess {
+            safety::record_override(&pool, connection_id, command, &intent).await;
+        }
+        Ok(result)
+    })
+    .await
 }
 
 /// Bump the `lastActivityAt` field on a connection record. Best-effort —
