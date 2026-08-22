@@ -42,10 +42,15 @@ vi.mock("@/lib/result-mutation-client", async (importOriginal) => {
 
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import { querySessionChannelsAvailable } from "@/lib/query-session-channel";
+import type {
+  AnalyzeResultSetResult,
+  PreviewResult,
+} from "@/lib/result-mutation";
 import {
   type Connection,
   type ManagedServerWithStatus,
   type QueryOutcome,
+  tableMutationDraftScope,
   tableDataKey,
   tableStructureKey,
   useAppStore,
@@ -3772,6 +3777,86 @@ describe("connectionOverviewTab", () => {
 });
 
 describe("closeTab table browse cleanup", () => {
+  it("keeps an applying mutation and its tab open", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const scope = tableMutationDraftScope("tab-1");
+    const analysis: AnalyzeResultSetResult = {
+      requestId: 1,
+      analysisId: 1,
+      columns: [],
+      tables: [
+        {
+          schema: "public",
+          table: "users",
+          identity: { kind: "primaryKey", columns: ["id"] },
+          identityProjected: true,
+          identityProjectionIndexes: [],
+          updatable: { allowed: true },
+          deletable: { allowed: true },
+          insertable: { allowed: true },
+        },
+      ],
+      statement: { kind: "analyzed" },
+    };
+    const preview: PreviewResult = {
+      statements: [
+        {
+          opIndex: 0,
+          sql: "INSERT INTO public.users (name) VALUES ($1)",
+          params: [{ kind: "text", value: "Ada" }],
+        },
+      ],
+    };
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "tab-1",
+          kind: "table",
+          label: "users",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+    const handle = useAppStore.getState().openMutationDraft({
+      owner: { kind: "table", tabId: "tab-1" },
+      connectionId: "conn-1",
+      source: { kind: "relation", schema: "public", table: "users" },
+    });
+    if (!handle) throw new Error("Expected mutation draft handle");
+    expect(
+      useAppStore.getState().setMutationDraftAnalysis(handle, analysis),
+    ).toBe(true);
+    useAppStore.getState().stageMutationDraftInsert(scope, {
+      table: { schema: "public", table: "users" },
+      values: [{ column: "name", value: "Ada" }],
+    });
+    const previewRequest = useAppStore
+      .getState()
+      .beginMutationDraftPreview(scope);
+    if (!previewRequest) throw new Error("Expected mutation preview request");
+    expect(
+      useAppStore
+        .getState()
+        .resolveMutationDraftPreview(previewRequest, preview),
+    ).toBe(true);
+    expect(
+      useAppStore.getState().beginMutationDraftApply(scope),
+    ).not.toBeNull();
+
+    await useAppStore.getState().closeTab("tab-1");
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+    expect(useAppStore.getState().mutationDrafts[scope]?.apply.state).toBe(
+      "applying",
+    );
+    expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
   it("keeps a tab and its staged changes when closing is not confirmed", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     useAppStore.setState({
