@@ -27,7 +27,7 @@ const ChangeValues = ({ change }: { change: MutationDraftChange }) => {
               <dt className="truncate text-text-muted" title={column}>
                 {column}
               </dt>
-              <dd className="min-w-0 break-words text-foreground">
+              <dd className="min-w-0 wrap-break-word text-foreground">
                 <span className="text-danger line-through">
                   {displayMutationValue(cell.original)}
                 </span>
@@ -53,7 +53,7 @@ const ChangeValues = ({ change }: { change: MutationDraftChange }) => {
           <dt className="truncate text-text-muted" title={column}>
             {column}
           </dt>
-          <dd className="min-w-0 break-words text-foreground">
+          <dd className="min-w-0 wrap-break-word text-foreground">
             {change.kind === "deleteRow" ? (
               <>
                 <span className="text-danger line-through">
@@ -122,7 +122,7 @@ export function MutationChangeList({
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-baseline gap-x-2 text-xs font-medium text-foreground">
-                  <span className="break-words">{title}</span>
+                  <span className="wrap-break-word">{title}</span>
                   {change.kind !== "insertRow" && change.rowIndex === null ? (
                     <span className="text-[0.625rem] font-normal text-warning">
                       Off page
