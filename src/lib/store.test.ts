@@ -31,6 +31,15 @@ vi.mock("@/lib/table-browse-client", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/result-mutation-client", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/result-mutation-client")>();
+  return {
+    ...actual,
+    closeResultMutationForConnection: vi.fn(() => Promise.resolve()),
+  };
+});
+
 import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import { querySessionChannelsAvailable } from "@/lib/query-session-channel";
 import {
@@ -1016,6 +1025,30 @@ describe("disconnectConnection cleanup", () => {
 
     expect(closeSessions).toHaveBeenCalledOnce();
     expect(closeSessions).toHaveBeenCalledWith("conn-1");
+  });
+
+  it("keeps a live connection when staged changes are not confirmed", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    useAppStore.setState({
+      connections: [connectedPostgres("conn-1", "Primary")],
+    });
+    useAppStore.getState().openMutationDraft({
+      owner: { kind: "table", tabId: "tab-1" },
+      connectionId: "conn-1",
+      source: { kind: "relation", schema: "public", table: "users" },
+    });
+    useAppStore.getState().stageMutationDraftInsert("table:tab-1", {
+      table: { schema: "public", table: "users" },
+      values: [{ column: "name", value: "Ada" }],
+    });
+
+    await useAppStore.getState().disconnectConnection("conn-1");
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
+    expect(useAppStore.getState().mutationDrafts["table:tab-1"]).toBeDefined();
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 
   it("still disconnects locally when backend teardown fails", async () => {
@@ -3739,6 +3772,40 @@ describe("connectionOverviewTab", () => {
 });
 
 describe("closeTab table browse cleanup", () => {
+  it("keeps a tab and its staged changes when closing is not confirmed", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "tab-1",
+          kind: "table",
+          label: "users",
+          connectionId: "conn-1",
+          schema: "public",
+          table: "users",
+        },
+      ],
+      activeTabId: "tab-1",
+    });
+    useAppStore.getState().openMutationDraft({
+      owner: { kind: "table", tabId: "tab-1" },
+      connectionId: "conn-1",
+      source: { kind: "relation", schema: "public", table: "users" },
+    });
+    useAppStore.getState().stageMutationDraftInsert("table:tab-1", {
+      table: { schema: "public", table: "users" },
+      values: [{ column: "name", value: "Ada" }],
+    });
+
+    await useAppStore.getState().closeTab("tab-1");
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+    expect(useAppStore.getState().mutationDrafts["table:tab-1"]).toBeDefined();
+    expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
   it("awaits closeTableBrowseForTab before dropping the tab", async () => {
     let resolveClose: (() => void) | undefined;
     mockedCloseTableBrowseForTab.mockImplementationOnce(

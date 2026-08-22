@@ -33,7 +33,6 @@ import {
   type AppStoreState,
   type TableBrowseTabState,
   type TableRef,
-  tableSessionKey,
 } from "./types";
 
 const PREFS_DEBOUNCE_MS = 400;
@@ -194,9 +193,6 @@ const schedulePrefsSave = (get: SliceGet, tab: TableBrowseTabState) => {
   prefsTimers.set(key, timer);
 };
 
-const hasEditsForTab = (get: SliceGet, tab: TableBrowseTabState): boolean =>
-  Object.keys(get().tableEdits[tableSessionKey(tab)] ?? {}).length > 0;
-
 const applyGridState = (
   set: SliceSet,
   tabId: string,
@@ -281,16 +277,6 @@ const runBrowse = async (
     }
     patchBrowse(set, tabId, {
       loadStatus: { state: "error", error: result.error },
-      inflightRequestId: null,
-    });
-    return;
-  }
-  // The browse slice never owns edit disposal. Foreground UI flows discard
-  // only after confirmation; background refreshes keep the retained rows when
-  // positional edits exist so they cannot be applied to a different result.
-  if (hasEditsForTab(get, current)) {
-    patchBrowse(set, tabId, {
-      loadStatus: current.result ? { state: "success" } : { state: "idle" },
       inflightRequestId: null,
     });
     return;

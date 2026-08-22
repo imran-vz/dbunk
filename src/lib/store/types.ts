@@ -970,6 +970,7 @@ import type { CredentialsSlice } from "./credentials";
 import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
 import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
 import type { ManagedServersSlice } from "./managed-servers";
+import type { MutationDraftsSlice } from "./mutation-drafts";
 import type { QuerySessionsSlice } from "./query-sessions";
 import type { RelationalQueriesSlice } from "./relational-queries";
 import type { RelationalTablesSlice } from "./relational-tables";
@@ -992,6 +993,7 @@ export type AppStoreState = ConnectionsSlice &
   CredentialsSlice &
   WorkspaceTabsSlice &
   RelationalTablesSlice &
+  MutationDraftsSlice &
   QuerySessionsSlice &
   TableBrowseSlice &
   RelationalQueriesSlice &

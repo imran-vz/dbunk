@@ -59,6 +59,8 @@ const generateHistoryId = (): string => {
 
 export type RelationalQueriesSlice = {
   queryEdits: Record<string, Record<number, Record<number, string>>>;
+  /** Exact SQL that produced the currently retained result for each tab. */
+  queryExecutionSql: Record<string, string>;
   queryStatus: Record<string, QueryStatus>;
   queryPreviews: Record<string, QueryPreviewData>;
   queryHistory: QueryHistoryEntry[];
@@ -116,6 +118,7 @@ export const createRelationalQueriesSlice: StateCreator<
   RelationalQueriesSlice
 > = (set, get) => ({
   queryEdits: {},
+  queryExecutionSql: {},
   queryStatus: {},
   queryPreviews: {},
   queryHistory: [],
@@ -231,6 +234,10 @@ export const createRelationalQueriesSlice: StateCreator<
           return {
             queryPreviews: restPreviews,
             queryStatus: restStatus,
+            queryExecutionSql: {
+              ...s.queryExecutionSql,
+              [tabId]: query,
+            },
             queryHistory: [entry, ...s.queryHistory].slice(
               0,
               QUERY_HISTORY_CAP,
@@ -274,6 +281,10 @@ export const createRelationalQueriesSlice: StateCreator<
             [tabId]: preview,
           },
           queryStatus: restStatus,
+          queryExecutionSql: {
+            ...s.queryExecutionSql,
+            [tabId]: query,
+          },
           queryHistory: [entry, ...s.queryHistory].slice(0, QUERY_HISTORY_CAP),
           workspaceTabs: s.workspaceTabs.map((item) =>
             item.id === tabId
@@ -432,6 +443,7 @@ export const createRelationalQueriesSlice: StateCreator<
         queryStatus: filterByTab(state.queryStatus),
         queryEdits: filterByTab(state.queryEdits),
         queryPreviews: filterByTab(state.queryPreviews),
+        queryExecutionSql: filterByTab(state.queryExecutionSql),
       };
     }),
 
@@ -449,10 +461,13 @@ export const createRelationalQueriesSlice: StateCreator<
       const { [tabId]: _droppedStatus, ...restStatus } = state.queryStatus;
       const { [tabId]: _droppedEdits, ...restEdits } = state.queryEdits;
       const { [tabId]: _droppedPreview, ...nextPreviews } = state.queryPreviews;
+      const { [tabId]: _droppedExecutionSql, ...nextExecutionSql } =
+        state.queryExecutionSql;
       return {
         queryStatus: restStatus,
         queryEdits: restEdits,
         queryPreviews: nextPreviews,
+        queryExecutionSql: nextExecutionSql,
       };
     }),
 });
