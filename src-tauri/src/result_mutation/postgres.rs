@@ -84,30 +84,35 @@ async fn analyze_once(
     cache: &mut DescriptorCache,
     virtual_keys: &VirtualKeyLookup,
 ) -> Result<AnalysisData, ResultMutationError> {
-    let projected = match source {
-        AnalyzeSource::Statement { sql } => describe_statement(client, sql).await?,
+    let (projected, statement_relations) = match source {
+        AnalyzeSource::Statement { sql } => {
+            let description = describe_statement(client, sql).await?;
+            (description.columns, Some(description.relations))
+        }
         AnalyzeSource::Relation { schema, table } => {
             let descriptor = descriptor_by_name(client, schema, table, cache).await?;
-            descriptor
-                .columns
-                .iter()
-                .map(|column| ProjectedColumn {
-                    name: column.name.clone(),
-                    table_oid: Some(descriptor.oid),
-                    attnum: Some(column.attnum),
-                    cast_type: descriptor
-                        .mutation
-                        .column(&column.name)
-                        .map(|value| value.cast_type.clone())
-                        .unwrap_or_else(|| "text".into()),
-                })
-                .collect()
+            (
+                descriptor
+                    .columns
+                    .iter()
+                    .map(|column| ProjectedColumn {
+                        name: column.name.clone(),
+                        table_oid: Some(descriptor.oid),
+                        attnum: Some(column.attnum),
+                        cast_type: descriptor
+                            .mutation
+                            .column(&column.name)
+                            .map(|value| value.cast_type.clone())
+                            .unwrap_or_else(|| "text".into()),
+                    })
+                    .collect(),
+                None,
+            )
         }
     };
     if projected.is_empty() {
         return Err(not_analyzable(NotAnalyzableReason::NoProjectedColumns));
     }
-
     let origin_oids = projected
         .iter()
         .filter_map(|column| column.table_oid)
@@ -120,6 +125,14 @@ async fn analyze_once(
     for oid in origin_oids {
         let descriptor = descriptor_by_oid(client, oid, cache).await?;
         descriptors_by_oid.insert(oid, descriptor);
+    }
+
+    if let Some(relations) = statement_relations {
+        ensure_unambiguous_range_variables(&projected, &relations)?;
+    }
+
+    if has_unsafe_inheritance_children(client, descriptors_by_oid.keys().copied()).await? {
+        return Err(unsupported_statement());
     }
 
     if matches!(source, AnalyzeSource::Statement { .. })
@@ -221,10 +234,51 @@ struct ProjectedColumn {
     cast_type: String,
 }
 
+#[derive(Debug)]
+struct StatementDescription {
+    columns: Vec<ProjectedColumn>,
+    relations: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SqlIdentifier {
+    value: String,
+    quoted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SqlToken {
+    Identifier(SqlIdentifier),
+    Symbol(char),
+    Opaque,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RangeVariable {
+    parts: Vec<SqlIdentifier>,
+}
+
+impl RangeVariable {
+    fn regclass_name(&self) -> String {
+        self.parts
+            .iter()
+            .map(|part| {
+                let value = if part.quoted {
+                    part.value.clone()
+                } else {
+                    part.value.to_ascii_lowercase()
+                };
+                quote_identifier(&value)
+            })
+            .collect::<Vec<_>>()
+            .join(".")
+    }
+}
+
 async fn describe_statement(
     client: &Client,
     sql: &str,
-) -> Result<Vec<ProjectedColumn>, ResultMutationError> {
+) -> Result<StatementDescription, ResultMutationError> {
     let statement = match client.prepare(sql).await {
         Ok(statement) => statement,
         Err(error) => {
@@ -259,23 +313,389 @@ async fn describe_statement(
             return Err(not_analyzable(reason));
         }
     };
-    let mut projected = Vec::with_capacity(statement.columns().len());
-    for column in statement.columns() {
-        let formatted = client
-            .query_one(
-                "SELECT pg_catalog.format_type($1::oid, $2)",
-                &[&column.type_().oid(), &column.type_modifier()],
-            )
-            .await
-            .map_err(database_error)?;
-        projected.push(ProjectedColumn {
+    let type_oids = statement
+        .columns()
+        .iter()
+        .map(|column| column.type_().oid())
+        .collect::<Vec<_>>();
+    let type_modifiers = statement
+        .columns()
+        .iter()
+        .map(|column| column.type_modifier())
+        .collect::<Vec<_>>();
+    let formatted = client
+        .query(
+            r#"
+            SELECT pg_catalog.format_type(types.type_oid, types.type_modifier)
+            FROM unnest($1::oid[], $2::int4[])
+                 AS types(type_oid, type_modifier)
+            "#,
+            &[&type_oids, &type_modifiers],
+        )
+        .await
+        .map_err(database_error)?;
+    if formatted.len() != statement.columns().len() {
+        return Err(ResultMutationError::ConnectionLost);
+    }
+    let columns: Vec<ProjectedColumn> = statement
+        .columns()
+        .iter()
+        .zip(formatted)
+        .map(|(column, formatted)| ProjectedColumn {
             name: column.name().into(),
             table_oid: column.table_oid(),
             attnum: column.column_id(),
             cast_type: formatted.get(0),
-        });
+        })
+        .collect();
+    let range_variables = parse_range_variables(sql).map_err(|()| unsupported_statement())?;
+    let relations = resolve_range_variables(client, &range_variables).await?;
+    Ok(StatementDescription { columns, relations })
+}
+
+/// RowDescription intentionally omits range-variable identity. The local parser
+/// accepts only top-level SELECT range tables it can enumerate completely, then
+/// the catalog resolves those names with the analysis session's search_path.
+fn ensure_unambiguous_range_variables(
+    columns: &[ProjectedColumn],
+    relations: &[u32],
+) -> Result<(), ResultMutationError> {
+    for oid in columns.iter().filter_map(|column| column.table_oid) {
+        if relations
+            .iter()
+            .filter(|relation| **relation == oid)
+            .count()
+            != 1
+        {
+            return Err(unsupported_statement());
+        }
     }
-    Ok(projected)
+    Ok(())
+}
+
+async fn resolve_range_variables(
+    client: &Client,
+    range_variables: &[RangeVariable],
+) -> Result<Vec<u32>, ResultMutationError> {
+    if range_variables.is_empty() {
+        return Ok(Vec::new());
+    }
+    let names = range_variables
+        .iter()
+        .map(RangeVariable::regclass_name)
+        .collect::<Vec<_>>();
+    let rows = client
+        .query(
+            r#"
+            SELECT pg_catalog.to_regclass(names.name)::oid
+            FROM unnest($1::text[]) WITH ORDINALITY AS names(name, ord)
+            ORDER BY names.ord
+            "#,
+            &[&names],
+        )
+        .await
+        .map_err(analysis_database_error)?;
+    if rows.len() != names.len() {
+        return Err(unsupported_statement());
+    }
+    rows.into_iter()
+        .map(|row| {
+            row.get::<_, Option<u32>>(0)
+                .ok_or_else(unsupported_statement)
+        })
+        .collect()
+}
+
+fn parse_range_variables(sql: &str) -> Result<Vec<RangeVariable>, ()> {
+    let mut tokens = lex_sql(sql)?;
+    if matches!(tokens.last(), Some(SqlToken::Symbol(';'))) {
+        tokens.pop();
+    }
+    if tokens.is_empty()
+        || tokens
+            .iter()
+            .any(|token| matches!(token, SqlToken::Symbol(';')))
+        || !is_keyword(&tokens[0], "select")
+    {
+        return Err(());
+    }
+
+    let mut depth = 0usize;
+    let mut from_index = None;
+    for (index, token) in tokens.iter().enumerate() {
+        match token {
+            SqlToken::Symbol('(') => depth += 1,
+            SqlToken::Symbol(')') => depth = depth.checked_sub(1).ok_or(())?,
+            _ if is_keyword(token, "select") && index != 0 => return Err(()),
+            _ if depth == 0
+                && ["union", "intersect", "except", "into"]
+                    .iter()
+                    .any(|keyword| is_keyword(token, keyword)) =>
+            {
+                return Err(());
+            }
+            _ if depth == 0 && is_keyword(token, "from") && from_index.is_some() => return Err(()),
+            _ if depth == 0 && is_keyword(token, "from") => from_index = Some(index),
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return Err(());
+    }
+    let Some(from_index) = from_index else {
+        return Ok(Vec::new());
+    };
+
+    let mut variables = Vec::new();
+    let (first, mut index) = parse_range_variable(&tokens, from_index + 1)?;
+    variables.push(first);
+    let mut depth = 0usize;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        match token {
+            SqlToken::Symbol('(') => depth += 1,
+            SqlToken::Symbol(')') => depth = depth.checked_sub(1).ok_or(())?,
+            SqlToken::Symbol(',') if depth == 0 => {
+                return Err(());
+            }
+            _ if depth == 0 && is_from_clause_end(token) => break,
+            _ if depth == 0 && is_keyword(token, "tablesample") => return Err(()),
+            _ if depth == 0 && is_keyword(token, "join") => {
+                let (variable, next) = parse_range_variable(&tokens, index + 1)?;
+                variables.push(variable);
+                index = next;
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    Ok(variables)
+}
+
+fn parse_range_variable(tokens: &[SqlToken], start: usize) -> Result<(RangeVariable, usize), ()> {
+    let first = tokens.get(start).and_then(identifier).ok_or(())?;
+    if !first.quoted
+        && ["only", "lateral", "table"]
+            .iter()
+            .any(|keyword| first.value.eq_ignore_ascii_case(keyword))
+    {
+        return Err(());
+    }
+    let mut parts = vec![first.clone()];
+    let mut index = start + 1;
+    while matches!(tokens.get(index), Some(SqlToken::Symbol('.'))) {
+        if parts.len() == 3 {
+            return Err(());
+        }
+        parts.push(
+            tokens
+                .get(index + 1)
+                .and_then(identifier)
+                .ok_or(())?
+                .clone(),
+        );
+        index += 2;
+    }
+    if matches!(tokens.get(index), Some(SqlToken::Symbol('(' | '*'))) {
+        return Err(());
+    }
+    Ok((RangeVariable { parts }, index))
+}
+
+fn identifier(token: &SqlToken) -> Option<&SqlIdentifier> {
+    match token {
+        SqlToken::Identifier(identifier) => Some(identifier),
+        _ => None,
+    }
+}
+
+fn is_keyword(token: &SqlToken, keyword: &str) -> bool {
+    matches!(
+        token,
+        SqlToken::Identifier(SqlIdentifier { value, quoted: false })
+            if value.eq_ignore_ascii_case(keyword)
+    )
+}
+
+fn is_from_clause_end(token: &SqlToken) -> bool {
+    [
+        "where",
+        "group",
+        "having",
+        "window",
+        "order",
+        "limit",
+        "offset",
+        "fetch",
+        "for",
+        "union",
+        "intersect",
+        "except",
+    ]
+    .iter()
+    .any(|keyword| is_keyword(token, keyword))
+}
+
+fn lex_sql(sql: &str) -> Result<Vec<SqlToken>, ()> {
+    let bytes = sql.as_bytes();
+    let mut tokens = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            byte if byte.is_ascii_whitespace() => index += 1,
+            b'-' if bytes.get(index + 1) == Some(&b'-') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index = lex_block_comment(bytes, index + 2)?;
+            }
+            b'\'' => {
+                index = lex_single_quote(bytes, index + 1, false)?;
+                tokens.push(SqlToken::Opaque);
+            }
+            b'"' => {
+                let (value, next) = lex_quoted_identifier(sql, index + 1)?;
+                tokens.push(SqlToken::Identifier(SqlIdentifier {
+                    value,
+                    quoted: true,
+                }));
+                index = next;
+            }
+            b'$' => {
+                index = lex_dollar(bytes, index)?;
+                tokens.push(SqlToken::Opaque);
+            }
+            byte if is_identifier_start(byte) => {
+                let start = index;
+                index += 1;
+                while index < bytes.len() && is_identifier_continue(bytes[index]) {
+                    index += 1;
+                }
+                let value = &sql[start..index];
+                if value.eq_ignore_ascii_case("e") && bytes.get(index) == Some(&b'\'') {
+                    index = lex_single_quote(bytes, index + 1, true)?;
+                    tokens.push(SqlToken::Opaque);
+                } else {
+                    tokens.push(SqlToken::Identifier(SqlIdentifier {
+                        value: value.into(),
+                        quoted: false,
+                    }));
+                }
+            }
+            byte @ (b'(' | b')' | b',' | b'.' | b';' | b'*') => {
+                tokens.push(SqlToken::Symbol(char::from(byte)));
+                index += 1;
+            }
+            byte if byte.is_ascii() => {
+                tokens.push(SqlToken::Opaque);
+                index += 1;
+            }
+            _ => return Err(()),
+        }
+    }
+    Ok(tokens)
+}
+
+fn lex_block_comment(bytes: &[u8], mut index: usize) -> Result<usize, ()> {
+    let mut depth = 1usize;
+    while index < bytes.len() {
+        if bytes.get(index..index + 2) == Some(b"/*") {
+            depth += 1;
+            index += 2;
+        } else if bytes.get(index..index + 2) == Some(b"*/") {
+            depth -= 1;
+            index += 2;
+            if depth == 0 {
+                return Ok(index);
+            }
+        } else {
+            index += 1;
+        }
+    }
+    Err(())
+}
+
+fn lex_single_quote(bytes: &[u8], mut index: usize, escapes: bool) -> Result<usize, ()> {
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\'' if bytes.get(index + 1) == Some(&b'\'') => index += 2,
+            b'\'' => return Ok(index + 1),
+            b'\\' if escapes && index + 1 < bytes.len() => index += 2,
+            // Plain-string backslash semantics depend on standard_conforming_strings.
+            b'\\' => return Err(()),
+            _ => index += 1,
+        }
+    }
+    Err(())
+}
+
+fn lex_quoted_identifier(sql: &str, mut index: usize) -> Result<(String, usize), ()> {
+    let bytes = sql.as_bytes();
+    let mut value = String::new();
+    let mut segment = index;
+    while index < bytes.len() {
+        if bytes[index] != b'"' {
+            index += 1;
+            continue;
+        }
+        value.push_str(&sql[segment..index]);
+        if bytes.get(index + 1) == Some(&b'"') {
+            value.push('"');
+            index += 2;
+            segment = index;
+        } else {
+            return Ok((value, index + 1));
+        }
+    }
+    Err(())
+}
+
+fn lex_dollar(bytes: &[u8], index: usize) -> Result<usize, ()> {
+    if bytes.get(index + 1).is_some_and(u8::is_ascii_digit) {
+        let mut end = index + 2;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        return Ok(end);
+    }
+    let mut tag_end = index + 1;
+    if bytes.get(tag_end) != Some(&b'$') {
+        if !bytes
+            .get(tag_end)
+            .is_some_and(|byte| is_identifier_start(*byte))
+        {
+            return Err(());
+        }
+        tag_end += 1;
+        while bytes
+            .get(tag_end)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            tag_end += 1;
+        }
+    }
+    if bytes.get(tag_end) != Some(&b'$') {
+        return Err(());
+    }
+    let delimiter = &bytes[index..=tag_end];
+    let body_start = tag_end + 1;
+    bytes[body_start..]
+        .windows(delimiter.len())
+        .position(|window| window == delimiter)
+        .map(|offset| body_start + offset + delimiter.len())
+        .ok_or(())
+}
+
+fn is_identifier_start(byte: u8) -> bool {
+    byte.is_ascii_alphabetic() || byte == b'_'
+}
+
+fn is_identifier_continue(byte: u8) -> bool {
+    is_identifier_start(byte) || byte.is_ascii_digit() || byte == b'$'
 }
 
 fn expression_column(column: &ProjectedColumn) -> AnalyzedColumn {
@@ -516,14 +936,21 @@ fn ensure_descriptor_unchanged(
     }
 }
 
-pub(crate) type ApplyCheck =
-    Arc<dyn Fn(bool) -> BoxFuture<'static, Result<(), ResultMutationError>> + Send + Sync>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ApplyCheckpoint {
+    BeforeTransaction,
+    BeforeOperation,
+    AdmitCommit,
+}
+
+pub(crate) type ApplyCheck = Arc<
+    dyn Fn(ApplyCheckpoint) -> BoxFuture<'static, Result<(), ResultMutationError>> + Send + Sync,
+>;
 
 pub(crate) type ApplyCommit = Arc<dyn Fn() -> BoxFuture<'static, CommitOutcome> + Send + Sync>;
 
 pub(crate) enum CommitOutcome {
     Committed,
-    Rejected(ResultMutationError),
     Failed(ResultMutationError),
 }
 
@@ -534,12 +961,23 @@ pub(crate) struct ApplyExecution {
 
 pub(crate) async fn execute_apply(
     client: &Client,
-    statements: &[PreviewStatement],
+    snapshot: &[CatalogDescriptor],
+    plan: &MutationPlan,
     check: &ApplyCheck,
     commit: &ApplyCommit,
 ) -> ApplyExecution {
     let started = Instant::now();
-    if let Err(error) = check(false).await {
+    let snapshot_descriptors = snapshot
+        .iter()
+        .map(|descriptor| descriptor.mutation.clone())
+        .collect::<Vec<_>>();
+    if let Err(error) = super::builder::build_mutation_plan(&snapshot_descriptors, plan) {
+        return ApplyExecution {
+            result: Err(error),
+            healthy: true,
+        };
+    }
+    if let Err(error) = check(ApplyCheckpoint::BeforeTransaction).await {
         return ApplyExecution {
             result: Err(error),
             healthy: true,
@@ -551,15 +989,23 @@ pub(crate) async fn execute_apply(
             healthy: !client.is_closed(),
         };
     }
-    if let Err(error) = check(false).await {
+    if let Err(error) = check(ApplyCheckpoint::BeforeOperation).await {
         return failed_apply(client, error).await;
     }
     if let Err(error) = client.batch_execute(LOCK_TIMEOUT_SQL).await {
         return failed_apply(client, database_error(error)).await;
     }
+    let descriptors = match lock_and_refresh_for_apply(client, snapshot, plan).await {
+        Ok(descriptors) => descriptors,
+        Err(error) => return failed_apply(client, error).await,
+    };
+    let statements = match super::builder::build_mutation_plan(&descriptors, plan) {
+        Ok(statements) => statements,
+        Err(error) => return failed_apply(client, error).await,
+    };
     let mut operations = Vec::with_capacity(statements.len());
-    for statement in statements {
-        if let Err(error) = check(false).await {
+    for statement in &statements {
+        if let Err(error) = check(ApplyCheckpoint::BeforeOperation).await {
             return failed_apply(client, error).await;
         }
         let values = statement
@@ -602,12 +1048,11 @@ pub(crate) async fn execute_apply(
             rows_affected: affected,
         });
     }
-    if let Err(error) = check(true).await {
+    if let Err(error) = check(ApplyCheckpoint::AdmitCommit).await {
         return failed_apply(client, error).await;
     }
     match commit().await {
         CommitOutcome::Committed => {}
-        CommitOutcome::Rejected(error) => return failed_apply(client, error).await,
         CommitOutcome::Failed(error) => {
             // A transport failure during COMMIT has an unknown outcome. Discard
             // the socket and never represent it as a successful rollback.
@@ -624,6 +1069,108 @@ pub(crate) async fn execute_apply(
         }),
         healthy: true,
     }
+}
+
+async fn lock_and_refresh_for_apply(
+    client: &Client,
+    snapshot: &[CatalogDescriptor],
+    plan: &MutationPlan,
+) -> Result<Vec<MutationTableDescriptor>, ResultMutationError> {
+    let targets = operation_targets(plan);
+    let mut targeted_snapshots = Vec::with_capacity(targets.len());
+    for (target, op_index) in &targets {
+        let previous = snapshot
+            .iter()
+            .find(|descriptor| {
+                descriptor.mutation.schema == target.schema
+                    && descriptor.mutation.table == target.table
+            })
+            .ok_or(ResultMutationError::InvalidPlan {
+                reason: InvalidPlanReason::TableMismatch,
+            })?;
+        let relation = client
+            .query_opt(
+                r#"
+                SELECT n.nspname::text, c.relname::text
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.oid = $1 AND c.relkind IN ('r', 'p', 'f', 'v', 'm')
+                "#,
+                &[&previous.oid],
+            )
+            .await
+            .map_err(database_error)?
+            .ok_or(ResultMutationError::AnalysisExpired)?;
+        let schema: String = relation.get(0);
+        let table: String = relation.get(1);
+        if schema != previous.mutation.schema || table != previous.mutation.table {
+            return Err(ResultMutationError::AnalysisExpired);
+        }
+        let lock = format!(
+            "LOCK TABLE {}.{} IN ROW EXCLUSIVE MODE",
+            quote_identifier(&schema),
+            quote_identifier(&table)
+        );
+        client
+            .batch_execute(&lock)
+            .await
+            .map_err(|error| map_apply_error(error, *op_index))?;
+        targeted_snapshots.push(previous.clone());
+    }
+
+    if has_unsafe_inheritance_children(client, targeted_snapshots.iter().map(|value| value.oid))
+        .await?
+    {
+        return Err(ResultMutationError::AnalysisExpired);
+    }
+
+    let mut cache = DescriptorCache::new();
+    let refreshed = refresh_for_apply(client, &targeted_snapshots, &mut cache)
+        .await
+        .map_err(|error| {
+            if is_undefined_object(&error) {
+                ResultMutationError::AnalysisExpired
+            } else {
+                error
+            }
+        })?;
+    let mut refreshed_by_table = targets
+        .into_iter()
+        .map(|(table, _)| (table.schema, table.table))
+        .zip(refreshed)
+        .collect::<HashMap<_, _>>();
+    Ok(snapshot
+        .iter()
+        .map(|descriptor| {
+            refreshed_by_table
+                .remove(&(
+                    descriptor.mutation.schema.clone(),
+                    descriptor.mutation.table.clone(),
+                ))
+                .unwrap_or_else(|| descriptor.mutation.clone())
+        })
+        .collect())
+}
+
+fn operation_targets(plan: &MutationPlan) -> Vec<(MutationTable, usize)> {
+    let mut seen = HashSet::new();
+    plan.operations
+        .iter()
+        .enumerate()
+        .filter_map(|(op_index, operation)| {
+            let table = match operation {
+                MutationOp::Update { table, .. }
+                | MutationOp::Delete { table, .. }
+                | MutationOp::Insert { table, .. } => table,
+            };
+            seen.insert((table.schema.clone(), table.table.clone()))
+                .then(|| (table.clone(), op_index))
+        })
+        .collect()
+}
+
+fn quote_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 async fn failed_apply(client: &Client, error: ResultMutationError) -> ApplyExecution {
@@ -884,6 +1431,31 @@ async fn possible_temp_shadow<'a>(
     Ok(row.get(0))
 }
 
+async fn has_unsafe_inheritance_children(
+    client: &Client,
+    oids: impl Iterator<Item = u32>,
+) -> Result<bool, ResultMutationError> {
+    let oids = oids.collect::<Vec<_>>();
+    if oids.is_empty() {
+        return Ok(false);
+    }
+    let row = client
+        .query_one(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_class parent
+                JOIN pg_inherits inheritance ON inheritance.inhparent = parent.oid
+                WHERE parent.oid = ANY($1) AND parent.relkind = 'r'
+            )
+            "#,
+            &[&oids],
+        )
+        .await
+        .map_err(database_error)?;
+    Ok(row.get(0))
+}
+
 fn system_column_name(attnum: i16) -> Option<&'static str> {
     match attnum {
         -1 => Some("ctid"),
@@ -985,6 +1557,33 @@ fn not_analyzable(reason: NotAnalyzableReason) -> ResultMutationError {
     ResultMutationError::NotAnalyzable { reason }
 }
 
+fn unsupported_statement() -> ResultMutationError {
+    not_analyzable(NotAnalyzableReason::Database {
+        code: None,
+        message: "PostgreSQL could not unambiguously resolve relation range variables".into(),
+        severity: None,
+        position: None,
+    })
+}
+
+fn analysis_database_error(error: tokio_postgres::Error) -> ResultMutationError {
+    match database_error(error) {
+        ResultMutationError::Database {
+            code,
+            message,
+            severity,
+            position,
+            ..
+        } => not_analyzable(NotAnalyzableReason::Database {
+            code,
+            message,
+            severity,
+            position,
+        }),
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1044,6 +1643,133 @@ mod tests {
         assert_eq!(system_column_name(-5), Some("cmax"));
         assert_eq!(system_column_name(-6), Some("tableoid"));
         assert_eq!(system_column_name(0), None);
+    }
+
+    #[test]
+    fn range_variable_check_allows_duplicate_projection_but_rejects_self_join() {
+        let duplicate_projection = vec![
+            ProjectedColumn {
+                name: "id".into(),
+                table_oid: Some(42),
+                attnum: Some(1),
+                cast_type: "integer".into(),
+            },
+            ProjectedColumn {
+                name: "id_again".into(),
+                table_oid: Some(42),
+                attnum: Some(1),
+                cast_type: "integer".into(),
+            },
+        ];
+        assert!(ensure_unambiguous_range_variables(&duplicate_projection, &[42]).is_ok());
+        assert!(matches!(
+            ensure_unambiguous_range_variables(&duplicate_projection, &[42, 42]),
+            Err(ResultMutationError::NotAnalyzable {
+                reason: NotAnalyzableReason::Database { code: None, .. }
+            })
+        ));
+    }
+
+    fn range_names(sql: &str) -> Result<Vec<String>, ()> {
+        parse_range_variables(sql)
+            .map(|variables| variables.iter().map(RangeVariable::regclass_name).collect())
+    }
+
+    #[test]
+    fn range_parser_ignores_comments_strings_and_dollar_quotes() {
+        assert_eq!(
+            range_names(
+                "SELECT 'from fake join fake', $$select * from fake$$, rows.id \
+                 FROM /* join ignored */ public.rows rows -- from ignored\n\
+                 WHERE rows.body = $1"
+            ),
+            Ok(vec!["\"public\".\"rows\"".into()])
+        );
+    }
+
+    #[test]
+    fn range_parser_preserves_quoted_names_and_expression_nesting() {
+        assert_eq!(
+            range_names(
+                "SELECT substring(r.body FROM 1), count(*) OVER (PARTITION BY r.id) \
+                 FROM \"Odd Schema\".\"Odd Rows\" AS r"
+            ),
+            Ok(vec!["\"Odd Schema\".\"Odd Rows\"".into()])
+        );
+    }
+
+    #[test]
+    fn range_parser_enumerates_joins_and_repeated_spelling() {
+        assert_eq!(
+            range_names(
+                "SELECT l.id, r.body FROM public.rows l \
+                 JOIN rows r ON (l.id = r.id AND r.body = $1)"
+            ),
+            Ok(vec!["\"public\".\"rows\"".into(), "\"rows\"".into()])
+        );
+    }
+
+    #[test]
+    fn range_parser_fails_closed_for_comma_nested_cte_and_function_ranges() {
+        for sql in [
+            "SELECT a.id FROM rows a, rows b",
+            "SELECT nested.id FROM (SELECT id FROM rows) nested",
+            "WITH nested AS (SELECT id FROM rows) SELECT id FROM nested",
+            "SELECT value FROM unnest(ARRAY[1]) value",
+        ] {
+            assert_eq!(range_names(sql), Err(()), "{sql}");
+        }
+    }
+
+    #[test]
+    fn catalog_work_is_scoped_and_attributed_to_operation_targets() {
+        let plan = MutationPlan {
+            operations: vec![
+                MutationOp::Insert {
+                    table: MutationTable {
+                        schema: "public".into(),
+                        table: "other".into(),
+                    },
+                    values: Vec::new(),
+                },
+                MutationOp::Delete {
+                    table: MutationTable {
+                        schema: "public".into(),
+                        table: "rows".into(),
+                    },
+                    identity: Vec::new(),
+                    guards: Vec::new(),
+                },
+                MutationOp::Update {
+                    table: MutationTable {
+                        schema: "public".into(),
+                        table: "rows".into(),
+                    },
+                    identity: Vec::new(),
+                    guards: Vec::new(),
+                    set: Vec::new(),
+                },
+            ],
+        };
+        assert_eq!(
+            operation_targets(&plan),
+            vec![
+                (
+                    MutationTable {
+                        schema: "public".into(),
+                        table: "other".into(),
+                    },
+                    0,
+                ),
+                (
+                    MutationTable {
+                        schema: "public".into(),
+                        table: "rows".into(),
+                    },
+                    1,
+                ),
+            ]
+        );
     }
 
     #[test]
