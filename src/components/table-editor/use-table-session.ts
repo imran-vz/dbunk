@@ -135,6 +135,19 @@ const rowOriginals = (
 ): MutationValue[] =>
   columns.map((column, index) => ({ column, value: row[index] ?? null }));
 
+const guardedRowOriginals = (
+  columns: string[],
+  row: Array<string | null>,
+  identity: MutationValue[],
+): MutationValue[] => {
+  const originals = rowOriginals(columns, row);
+  const visibleColumns = new Set(originals.map(({ column }) => column));
+  return [
+    ...originals,
+    ...identity.filter(({ column }) => !visibleColumns.has(column)),
+  ];
+};
+
 const identityForBrowseRow = (
   table: AnalyzedTable,
   columns: string[],
@@ -452,7 +465,7 @@ export function useTableSession(tab: WorkspaceTab) {
             {
               rowIndex,
               identity,
-              values: rowOriginals(browseColumns, row),
+              values: guardedRowOriginals(browseColumns, row, identity),
             },
           ]
         : [];
@@ -669,7 +682,7 @@ export function useTableSession(tab: WorkspaceTab) {
         table: { schema: table.schema, table: table.table },
         identityKind: table.identity.kind,
         identity,
-        originals: rowOriginals(browseColumns, row),
+        originals: guardedRowOriginals(browseColumns, row, identity),
         cells: [
           {
             column: analyzedColumn.origin.column,
@@ -721,7 +734,7 @@ export function useTableSession(tab: WorkspaceTab) {
             table: { schema: table.schema, table: table.table },
             identityKind: table.identity.kind,
             identity,
-            originals: rowOriginals(browseColumns, row),
+            originals: guardedRowOriginals(browseColumns, row, identity),
             rowIndex,
           }) !== null || staged;
       }
@@ -837,7 +850,7 @@ export function useTableSession(tab: WorkspaceTab) {
           table: { schema: table.schema, table: table.table },
           identityKind: table.identity.kind,
           identity,
-          originals: rowOriginals(browseColumns, row),
+          originals: guardedRowOriginals(browseColumns, row, identity),
           cells: [
             {
               column: columnName,

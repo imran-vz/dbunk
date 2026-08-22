@@ -284,6 +284,27 @@ describe("DataGrid read-only mode", () => {
 });
 
 describe("DataGrid cell display", () => {
+  it("exposes edited and original values for dirty cells", () => {
+    render(
+      <DataGrid
+        data={[["1", "old@example.test"]]}
+        columns={sampleColumns}
+        edits={{ 0: { 1: "new@example.test" } }}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const cell = screen.getByRole("button", { name: "new@example.test" });
+    expect(cell.getAttribute("title")).toBe(
+      "Edited: new@example.test\nOriginal: old@example.test",
+    );
+    const descriptionId = cell.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(descriptionId)?.textContent).toBe(
+      "Original value: old@example.test",
+    );
+    expect(cell.textContent).toBe("new@example.test");
+  });
+
   it("limits long text previews while editing the full value", () => {
     const longValue =
       "This address is intentionally longer than fifty characters for display testing.";
