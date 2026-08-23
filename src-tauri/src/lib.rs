@@ -46,7 +46,16 @@ pub(crate) struct AppState {
 }
 
 #[cfg(test)]
+pub(crate) fn configure_test_keyring() {
+    static MOCK_KEYRING: std::sync::Once = std::sync::Once::new();
+    MOCK_KEYRING.call_once(|| {
+        keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+    });
+}
+
+#[cfg(test)]
 pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
+    configure_test_keyring();
     let directory = tempfile::tempdir().expect("app state temp dir");
     let paths = Paths::from_dir(directory.path().to_path_buf());
     let pool = storage::open_pool(&paths).await.expect("app state pool");
