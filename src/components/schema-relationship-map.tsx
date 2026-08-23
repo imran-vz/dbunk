@@ -163,7 +163,7 @@ export async function exportSchemaMapImage(
   renderer.classList.add("export-light");
   try {
     const options = {
-      backgroundColor: "#ffffff",
+      backgroundColor: "white",
       cacheBust: true,
       pixelRatio: format === "png" ? 2 : 1,
     };

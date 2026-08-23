@@ -776,7 +776,7 @@ export function TableEditorPanel({
       {mutationEnabled && mutationStatusCopy ? (
         <output
           data-testid="table-mutation-status"
-          className="border-b border-border-subtle bg-black px-3 py-1.5 text-2xs text-text-secondary"
+          className="border-b border-border-subtle bg-surface-window px-3 py-1.5 text-2xs text-text-secondary"
         >
           {mutationStatusCopy}
         </output>
@@ -1063,7 +1063,7 @@ function VirtualKeyEditor({
   return (
     <div
       data-testid="virtual-key-editor"
-      className="border-b border-border-subtle bg-black px-3 py-2 text-xs"
+      className="border-b border-border-subtle bg-surface-window px-3 py-2 text-xs"
     >
       <div className="flex items-center gap-2">
         <span className="text-text-secondary">
@@ -1138,7 +1138,7 @@ function BulkEditForm({
   return (
     <div
       data-testid="bulk-edit-form"
-      className="flex items-center gap-2 border-b border-border-subtle bg-black px-3 py-2 text-xs"
+      className="flex items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs"
     >
       <span>Set {selectedCount} selected rows</span>
       <select

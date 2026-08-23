@@ -221,7 +221,7 @@ export function PubsubToolbar({
                   <li key={entry.channel}>
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1 text-left font-mono text-2xs hover:bg-white/5"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1 text-left font-mono text-2xs hover:bg-surface-row-hover"
                       onClick={() => {
                         onSubscribeChannel(entry.channel);
                         setDiscoverOpen(false);
