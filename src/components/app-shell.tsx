@@ -16,6 +16,7 @@ import { SafetyConfirmDialog } from "@/components/safety-confirm-dialog";
 import { SettingsView } from "@/components/settings-view";
 import { KeyValueWorkbench } from "@/components/workbench/keyvalue-workbench";
 import { RelationalWorkbench } from "@/components/workbench/relational-workbench";
+import { TabShortcuts } from "@/components/workbench/tab-shortcuts";
 import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
 import { useAppStore } from "@/lib/store";
 import { applyTheme, subscribeSystem } from "@/lib/theme";
@@ -248,6 +249,7 @@ export function AppShell() {
       <CommandPalette />
       <SafetyConfirmDialog />
       <ConfirmDialogHost />
+      <TabShortcuts />
     </div>
   );
 }

@@ -87,6 +87,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/state-panel";
 import { useDensity } from "@/lib/density";
 import type { ExportTable } from "@/lib/export";
+import { shortcutKeys } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 export type { ColumnHeaderMeta, ForeignKeyTarget };
@@ -1164,7 +1165,7 @@ export function DataGrid({
               <>
                 <ContextMenuItem onClick={() => void copySelection("tsv")}>
                   Copy
-                  <ContextMenuShortcut keys={["mod", "C"]} />
+                  <ContextMenuShortcut keys={shortcutKeys("copy-selection")} />
                 </ContextMenuItem>
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>Copy as</ContextMenuSubTrigger>
@@ -1186,7 +1187,7 @@ export function DataGrid({
                   }}
                 >
                   Inspect value
-                  <ContextMenuShortcut keys={["Space"]} />
+                  <ContextMenuShortcut keys={shortcutKeys("inspect-value")} />
                 </ContextMenuItem>
                 {focused && focusedFkTarget && onFollowForeignKey ? (
                   <ContextMenuItem
@@ -1226,11 +1227,13 @@ export function DataGrid({
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => setSelection({ kind: "all" })}>
                   Select all
-                  <ContextMenuShortcut keys={["mod", "A"]} />
+                  <ContextMenuShortcut
+                    keys={shortcutKeys("select-all-cells")}
+                  />
                 </ContextMenuItem>
                 <ContextMenuItem onClick={() => setGoToOpen(true)}>
                   Go to row…
-                  <ContextMenuShortcut keys={["mod", "G"]} />
+                  <ContextMenuShortcut keys={shortcutKeys("go-to-row")} />
                 </ContextMenuItem>
                 {onCloneSelectedRow || onDeleteSelectedRows ? (
                   <>
@@ -1241,7 +1244,7 @@ export function DataGrid({
                         onClick={onCloneSelectedRow}
                       >
                         Clone selected row
-                        <ContextMenuShortcut keys={["mod", "D"]} />
+                        <ContextMenuShortcut keys={shortcutKeys("clone-row")} />
                       </ContextMenuItem>
                     ) : null}
                     {onDeleteSelectedRows ? (
@@ -1251,7 +1254,9 @@ export function DataGrid({
                         onClick={onDeleteSelectedRows}
                       >
                         Delete selected rows
-                        <ContextMenuShortcut keys={["Del"]} />
+                        <ContextMenuShortcut
+                          keys={shortcutKeys("delete-rows")}
+                        />
                       </ContextMenuItem>
                     ) : null}
                   </>
