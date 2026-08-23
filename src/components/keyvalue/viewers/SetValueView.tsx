@@ -192,7 +192,7 @@ export function SetValueView({
             return (
               <li
                 key={name}
-                className={`flex items-center justify-between gap-2 px-3 py-1 hover:bg-white/5 ${
+                className={`flex items-center justify-between gap-2 px-3 py-1 hover:bg-surface-row-hover ${
                   isRemoved ? "opacity-40 line-through" : ""
                 }`}
               >

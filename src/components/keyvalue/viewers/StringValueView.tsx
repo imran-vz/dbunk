@@ -186,7 +186,7 @@ export function StringValueView({
         />
       )}
       {data.truncated && !editing ? (
-        <p className="text-2xs text-amber-400">
+        <p className="text-2xs text-warning">
           Showing first {(maxBytes / 1024).toFixed(0)} KB of{" "}
           {(data.totalBytes / 1024).toFixed(0)} KB.
         </p>
@@ -270,7 +270,7 @@ function BitmapGrid({
         ))}
       </div>
       {totalBits > MAX_BITS_RENDERED ? (
-        <p className="mt-2 text-2xs text-amber-400">
+        <p className="mt-2 text-2xs text-warning">
           Showing first {MAX_BITS_RENDERED.toLocaleString()} of{" "}
           {totalBits.toLocaleString()} bits. Higher offsets are still editable
           via the CLI.

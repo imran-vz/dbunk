@@ -228,7 +228,7 @@ export function HashValueView({
               return (
                 <tr
                   key={name}
-                  className={`hover:bg-white/5 ${isDeleted ? "opacity-40 line-through" : ""}`}
+                  className={`hover:bg-surface-row-hover ${isDeleted ? "opacity-40 line-through" : ""}`}
                 >
                   <td className="px-3 py-1 text-text-secondary">{name}</td>
                   <td className="break-all px-3 py-1">
