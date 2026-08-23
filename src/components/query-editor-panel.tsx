@@ -22,7 +22,10 @@ import {
   useQuerySidebarVisibility,
 } from "@/components/query-editor/use-query-sidebar-visibility";
 import { QuerySidebar } from "@/components/query-sidebar";
-import type { StatusBarItem } from "@/components/status-bar";
+import {
+  type StatusBarItem,
+  useStableStatusItems,
+} from "@/components/status-bar";
 import { Button } from "@/components/ui/button";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkbenchDock } from "@/components/workbench/dock";
@@ -788,9 +791,7 @@ export function QueryEditorPanel({
     session,
   });
 
-  useEffect(() => {
-    onStatusItemsChange?.(statusItems);
-  }, [onStatusItemsChange, statusItems]);
+  useStableStatusItems(statusItems, onStatusItemsChange);
 
   const runCurrentHandler =
     bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent;
