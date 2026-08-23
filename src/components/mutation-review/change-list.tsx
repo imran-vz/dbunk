@@ -90,7 +90,7 @@ export function MutationChangeList({
 }: MutationChangeListProps) {
   return groups.map((group) => (
     <section key={group.key} className="border-b border-border-subtle">
-      <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-[#0b0b0b] px-3 py-1.5 text-2xs font-semibold uppercase tracking-[0.08em] text-text-secondary">
+      <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-surface-window px-3 py-1.5 text-2xs font-semibold uppercase tracking-[0.08em] text-text-secondary">
         {group.label} · {group.target}
       </h2>
       {group.changes.map((change) => {

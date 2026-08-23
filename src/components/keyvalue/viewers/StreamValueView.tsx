@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useRedisFetch } from "@/components/keyvalue/viewers/use-redis-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { requestConfirm } from "@/lib/confirm";
 import {
   applyRedisStreamEdits,
   createStreamGroup,
@@ -517,9 +518,14 @@ function ConsumerGroupsPanel({
   };
 
   const handleDestroy = async (group: string) => {
-    if (
-      !window.confirm(`Destroy consumer group ${group}? This is permanent.`)
-    ) {
+    const confirmed = await requestConfirm({
+      title: "Destroy consumer group?",
+      message: "This is permanent.",
+      detail: group,
+      confirmLabel: "Destroy group",
+      danger: true,
+    });
+    if (!confirmed) {
       return;
     }
     try {

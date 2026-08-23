@@ -85,7 +85,9 @@ export type RelationalQueriesSlice = {
        * UI callers provide the confirmation boundary; headless callers omit
        * it and receive a no-op without losing the draft.
        */
-      confirmDiscardStagedChanges?: (changeCount: number) => boolean;
+      confirmDiscardStagedChanges?: (
+        changeCount: number,
+      ) => boolean | Promise<boolean>;
     },
   ) => Promise<QueryOutcome>;
   markQueryCancelling: (tabId: string) => void;
@@ -194,7 +196,9 @@ export const createRelationalQueriesSlice: StateCreator<
         0,
       );
       if (stagedChangeCount > 0) {
-        if (!options?.confirmDiscardStagedChanges?.(stagedChangeCount)) {
+        if (
+          !(await options?.confirmDiscardStagedChanges?.(stagedChangeCount))
+        ) {
           return { kind: "noop" };
         }
       }

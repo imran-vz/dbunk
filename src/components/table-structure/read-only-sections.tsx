@@ -20,7 +20,7 @@ export function ClickHousePhysicalLayout({
 }) {
   return (
     <Section title="Physical layout" testId="structure-physical-layout">
-      <div className="divide-y divide-white/8">
+      <div className="divide-y divide-border-subtle">
         {partitionBy ? (
           <LayoutRow label="PARTITION BY" value={partitionBy} />
         ) : null}
@@ -128,7 +128,7 @@ function ForeignKeysBody({
     return <EmptyRow>No foreign keys defined.</EmptyRow>;
   }
   return (
-    <div className="divide-y divide-white/8">
+    <div className="divide-y divide-border-subtle">
       {foreignKeys.map((fk) => (
         <ForeignKeyRow key={fk.name} fk={fk} />
       ))}
@@ -179,7 +179,7 @@ export function IndexesSection({
       ) : indexes.length === 0 ? (
         <EmptyRow>{policy.labels.noIndexes}</EmptyRow>
       ) : (
-        <div className="divide-y divide-white/8">
+        <div className="divide-y divide-border-subtle">
           {indexes.map((index) => (
             <IndexRow key={index.name} index={index} />
           ))}
@@ -231,7 +231,7 @@ export function ConstraintsSection({
       ) : constraints.length === 0 ? (
         <EmptyRow>No additional constraints defined.</EmptyRow>
       ) : (
-        <div className="divide-y divide-white/8">
+        <div className="divide-y divide-border-subtle">
           {constraints.map((constraint) => (
             <ConstraintRow key={constraint.name} constraint={constraint} />
           ))}
