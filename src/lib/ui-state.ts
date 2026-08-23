@@ -18,7 +18,7 @@
  * throws and never blocks launch on a storage failure.
  */
 
-import { isTauri, tauriInvoke } from "@/lib/tauri";
+import { isTauri, tauriInvoke, tauriOnCloseRequested } from "@/lib/tauri";
 
 type UiStateEntry = { key: string; value: string };
 
@@ -127,14 +127,61 @@ export function initUiState(): Promise<void> {
       cache = new Map();
     }
     ready = true;
-    // Best-effort flush of the last debounce window on quit.
+    // Belt-and-braces for reloads; wry does not reliably fire
+    // beforeunload on native window close — the close-requested hook
+    // below is the real shutdown flush.
     if (typeof window !== "undefined") {
       window.addEventListener("beforeunload", () => {
-        void flushUiState();
+        void flushBeforeClose();
       });
     }
+    void registerCloseFlush();
   })();
   return initPromise;
+}
+
+/**
+ * Cap the shutdown flush so a stuck backend can never hold the window
+ * open; anything not durable by then is lost either way.
+ */
+const CLOSE_FLUSH_TIMEOUT_MS = 3000;
+
+/**
+ * Pre-close hooks let debounced writers (session persistence) push
+ * their pending state into the queue before the final flush snapshots
+ * it.
+ */
+const preCloseHooks = new Set<() => void>();
+
+export function registerUiStatePreCloseHook(hook: () => void): () => void {
+  preCloseHooks.add(hook);
+  return () => preCloseHooks.delete(hook);
+}
+
+async function flushBeforeClose(): Promise<void> {
+  for (const hook of preCloseHooks) {
+    try {
+      hook();
+    } catch (error) {
+      console.error("UI-state pre-close hook failed", error);
+    }
+  }
+  await flushUiState();
+}
+
+async function registerCloseFlush(): Promise<void> {
+  try {
+    await tauriOnCloseRequested(async () => {
+      await Promise.race([
+        flushBeforeClose(),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, CLOSE_FLUSH_TIMEOUT_MS);
+        }),
+      ]);
+    });
+  } catch (error) {
+    console.error("Failed to register the close-requested flush", error);
+  }
 }
 
 /** One-shot import of legacy `dbunk.*` localStorage values (P8). */
@@ -363,6 +410,7 @@ export function resetUiStateForTests(): void {
   deletedKeys.clear();
   deletedPrefixes.clear();
   pendingLegacyRemovals = [];
+  preCloseHooks.clear();
   flushChain = Promise.resolve();
   if (flushTimer !== null) {
     clearTimeout(flushTimer);

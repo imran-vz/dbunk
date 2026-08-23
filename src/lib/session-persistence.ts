@@ -11,6 +11,7 @@
 import { useAppStore, type WorkspaceTab } from "@/lib/store";
 import {
   exceedsUtf8Length,
+  registerUiStatePreCloseHook,
   UI_STATE_MAX_VALUE_BYTES,
   uiSet,
 } from "@/lib/ui-state";
@@ -98,6 +99,16 @@ export function startSessionPersistence(): void {
     lastExpanded = state.expandedSchemas;
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(persist, PERSIST_DEBOUNCE_MS);
+  });
+
+  // On shutdown the last debounce window (the newest tab/SQL state —
+  // the feature's whole point) must reach the queue before the final
+  // flush snapshots it.
+  registerUiStatePreCloseHook(() => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      persist();
+    }
   });
 }
 
