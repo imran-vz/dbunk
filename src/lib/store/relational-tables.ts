@@ -229,7 +229,14 @@ export type RelationalTablesSlice = {
   setExpandedSchemas: (
     schemas: string[] | ((prev: string[]) => string[]),
   ) => void;
-  toggleSchema: (schemaName: string) => void;
+  /**
+   * Toggle a navigator schema row. Takes the full expansion id
+   * (`"<connectionId>:<schemaName>"`) built by the caller — the store
+   * must not prefix with `activeConnectionId`, which can differ from
+   * the rendered connection (e.g. a keyvalue connection is active while
+   * the relational workbench shows the first relational connection).
+   */
+  toggleSchema: (schemaId: string) => void;
   focusTableInSchemaMap: (
     connectionId: string,
     schema: string,
@@ -413,9 +420,7 @@ export const createRelationalTablesSlice: StateCreator<
           : schemas,
     })),
 
-  toggleSchema: (schemaName) => {
-    const state = get();
-    const schemaId = `${state.activeConnectionId}:${schemaName}`;
+  toggleSchema: (schemaId) => {
     set((state) => ({
       expandedSchemas: state.expandedSchemas.includes(schemaId)
         ? state.expandedSchemas.filter((item) => item !== schemaId)
