@@ -9,7 +9,10 @@ import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
 } from "@/components/schema-relationship-map";
-import type { StatusBarItem } from "@/components/status-bar";
+import {
+  type StatusBarItem,
+  useStableStatusItems,
+} from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
 import { TableEditorBody } from "@/components/table-editor/body";
 import { DataImportWizard } from "@/components/table-editor/data-import-wizard";
@@ -692,9 +695,7 @@ export function TableEditorPanel({
     activeConnection: connection,
   });
 
-  useEffect(() => {
-    onStatusItemsChange?.(statusItems);
-  }, [onStatusItemsChange, statusItems]);
+  useStableStatusItems(statusItems, onStatusItemsChange);
 
   return (
     <div className="flex h-full flex-col bg-surface-app">
