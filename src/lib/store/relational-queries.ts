@@ -237,6 +237,24 @@ export const createRelationalQueriesSlice: StateCreator<
         console.error("Failed to persist query history entry", error);
       }
     };
+    // Cross-tab query log (§5.6): every terminal run lands one console
+    // event, so the dock is a complete activity trail across tabs.
+    const logEntryToConsole = (entry: QueryHistoryEntry) => {
+      const sqlSnippet =
+        entry.sql.replace(/\s+/g, " ").trim().slice(0, 300) || entry.sql;
+      get().appendConsoleEvent({
+        severity: entry.status === "error" ? "error" : "info",
+        source: "query",
+        message:
+          entry.status === "error"
+            ? `Query failed on ${entry.connectionName || entry.connectionId}`
+            : `Query on ${entry.connectionName || entry.connectionId} · ${entry.rowCount ?? 0} rows · ${entry.runtimeMs} ms`,
+        detail: entry.errorMessage
+          ? `${sqlSnippet}\n${entry.errorMessage}`
+          : sqlSnippet,
+        connectionId: entry.connectionId,
+      });
+    };
     try {
       let result: RunQueryResult;
       if (
@@ -282,6 +300,7 @@ export const createRelationalQueriesSlice: StateCreator<
           };
         });
         get().applyConnectionActivity(tab.connectionId);
+        logEntryToConsole(entry);
         await persistEntry(entry);
         return {
           kind: "completed",
@@ -331,6 +350,7 @@ export const createRelationalQueriesSlice: StateCreator<
       // record. Lives outside the set above so each slice is
       // responsible for mutating its own state.
       get().applyConnectionActivity(tab.connectionId);
+      logEntryToConsole(entry);
       await persistEntry(entry);
       return {
         kind: "completed",
@@ -369,6 +389,7 @@ export const createRelationalQueriesSlice: StateCreator<
           ),
         };
       });
+      logEntryToConsole(entry);
       await persistEntry(entry);
       return { kind: "failed", reason: message };
     }

@@ -8,7 +8,8 @@ import {
 import { WorkbenchHeader } from "@/components/app-shell/workbench-header";
 import { connectionStatusItem } from "@/components/connection-status";
 import { StatusBar, type StatusBarItem } from "@/components/status-bar";
-import type { Connection } from "@/lib/store";
+import { GlobalConsoleDock } from "@/components/workbench/dock";
+import { type Connection, useAppStore } from "@/lib/store";
 
 export interface WorkbenchShellProps<T extends string> {
   activeConnection: Connection | undefined;
@@ -39,6 +40,10 @@ export function WorkbenchShell<T extends string>({
   toolbar,
   children,
 }: WorkbenchShellProps<T>) {
+  const consoleUnread = useAppStore((state) => state.consoleUnread);
+  const dockOpen = useAppStore((state) => state.dockOpen);
+  const toggleDock = useAppStore((state) => state.toggleDock);
+
   const defaultStatusItems = useMemo((): StatusBarItem[] => {
     if (!activeConnection) {
       return [{ id: "idle", value: "No connection" }];
@@ -52,6 +57,22 @@ export function WorkbenchShell<T extends string>({
       },
     ];
   }, [activeConnection]);
+
+  // Dock badge (§5.6): the status bar is the console's only ambient
+  // affordance — new events while hidden increment the count here.
+  const consoleBadge = useMemo(
+    (): StatusBarItem => ({
+      id: "console-badge",
+      value:
+        consoleUnread > 0 && !dockOpen
+          ? `Console · ${consoleUnread}`
+          : "Console",
+      tone: consoleUnread > 0 && !dockOpen ? "info" : undefined,
+      align: "right",
+      onClick: toggleDock,
+    }),
+    [consoleUnread, dockOpen, toggleDock],
+  );
 
   return (
     // min-w-0 is load-bearing: as a flex item of AppShell's row, this
@@ -85,8 +106,12 @@ export function WorkbenchShell<T extends string>({
           </div>
         </div>
       </div>
+      <GlobalConsoleDock />
       <StatusBar
-        items={statusItems.length > 0 ? statusItems : defaultStatusItems}
+        items={[
+          ...(statusItems.length > 0 ? statusItems : defaultStatusItems),
+          consoleBadge,
+        ]}
         className="w-full"
       />
     </div>
