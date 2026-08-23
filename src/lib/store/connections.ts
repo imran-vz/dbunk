@@ -126,7 +126,13 @@ export type ConnectionsSlice = {
   setActiveConnectionId: (id: string) => void;
   setConnectionOverviewTab: (connectionId: string, tab: OverviewTabId) => void;
   setConnectionSchemaMapSchema: (connectionId: string, schema: string) => void;
-  loadConnections: () => Promise<void>;
+  /**
+   * Loads stored connections into the slice. Resolves `true` on
+   * success and `false` when the backend load failed — callers that
+   * gate destructive work on the connection list (session restore)
+   * must not treat a failed load as "no connections exist".
+   */
+  loadConnections: () => Promise<boolean>;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
@@ -188,7 +194,7 @@ export const createConnectionsSlice: StateCreator<
 
   loadConnections: async () => {
     if (!isTauri()) {
-      return;
+      return true;
     }
     try {
       const stored = await tauriInvoke<StoredConnection[]>("load_connections");
@@ -212,8 +218,10 @@ export const createConnectionsSlice: StateCreator<
           ),
         ),
       }));
+      return true;
     } catch (error) {
       console.error("Failed to load connections", error);
+      return false;
     }
   },
 
