@@ -34,6 +34,23 @@ export async function tauriStartDragging() {
   await getCurrentWindow().startDragging();
 }
 
+/**
+ * Runs `handler` when the user requests to close the window, completing
+ * before the window is destroyed. wry does not reliably fire
+ * `beforeunload` on native window close, so shutdown work (e.g. the
+ * UI-state flush) must hook here instead.
+ */
+export async function tauriOnCloseRequested(
+  handler: () => Promise<void>,
+): Promise<UnlistenFn | null> {
+  if (!isTauri()) {
+    return null;
+  }
+  return getCurrentWindow().onCloseRequested(async () => {
+    await handler();
+  });
+}
+
 export async function tauriRestoreWindowTrafficLightPosition() {
   if (!isTauri()) {
     return;

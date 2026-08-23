@@ -5,13 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(),
+  tauriOnCloseRequested: vi.fn(async () => null),
   errorToMessage: (error: unknown) => String(error),
 }));
 
-import { isTauri, tauriInvoke } from "@/lib/tauri";
+import { isTauri, tauriInvoke, tauriOnCloseRequested } from "@/lib/tauri";
 import {
   flushUiState,
   initUiState,
+  registerUiStatePreCloseHook,
   resetUiStateForTests,
   uiGet,
   uiRemove,
@@ -293,6 +295,30 @@ describe("ui-state store (P8)", () => {
       { key: "ui.v1.panel.a.size", value: "100" },
       { key: "ui.v1.panel.a.size", value: "200" },
     ]);
+  });
+
+  it("flushes pending writes (and pre-close hooks) on window close", async () => {
+    const mockedOnClose = vi.mocked(tauriOnCloseRequested);
+    await initUiState();
+    await flushUiState();
+    mockedInvoke.mockClear();
+
+    const closeHandler = mockedOnClose.mock.calls.at(-1)?.[0];
+    expect(closeHandler).toBeDefined();
+
+    // A debounced writer (session persistence) with pending state.
+    registerUiStatePreCloseHook(() => {
+      uiSet("dbunk.session", '{"tabs":[]}');
+    });
+    uiSet("dbunk.panel.a.size", "100");
+    await closeHandler?.();
+
+    const entries = savedEntries();
+    expect(entries).toContainEqual({ key: "ui.v1.panel.a.size", value: "100" });
+    expect(entries).toContainEqual({
+      key: "ui.v1.session",
+      value: '{"tabs":[]}',
+    });
   });
 
   it("never blocks launch on a storage failure", async () => {
