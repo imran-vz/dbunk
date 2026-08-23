@@ -36,11 +36,11 @@ impl ResolvedPostgresConnectSpec {
                 .connect_timeout_ms
                 .map(|ms| Duration::from_millis(ms.into())),
             driver_options,
-            safety_policy: crate::safety::policy::resolve_policy(
-                pg.environment,
-                pg.safe_mode,
-                pg.read_only,
-            ),
+            safety_policy: crate::safety::policy::resolve_policy(crate::ConnectionPolicy {
+                environment: pg.environment,
+                safe_mode: pg.safe_mode,
+                read_only: pg.read_only,
+            }),
         }
     }
     pub(crate) fn tokio_config(&self) -> tokio_postgres::Config {

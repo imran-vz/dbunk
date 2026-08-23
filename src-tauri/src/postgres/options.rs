@@ -1,5 +1,7 @@
 use crate::{quote_double, PgDriverOptions};
 
+pub(crate) const READ_ONLY_SESSION_SQL: &str = "SET default_transaction_read_only = on";
+
 /// Ordered post-connect statements shared by every PostgreSQL driver.
 pub(crate) fn driver_option_sql(options: &PgDriverOptions, read_only: bool) -> Vec<String> {
     let mut statements = Vec::new();
@@ -30,7 +32,7 @@ pub(crate) fn driver_option_sql(options: &PgDriverOptions, read_only: bool) -> V
         statements.push(format!("SET ROLE {}", quote_double(role)));
     }
     if read_only {
-        statements.push("SET default_transaction_read_only = on".to_string());
+        statements.push(READ_ONLY_SESSION_SQL.to_string());
     }
     statements
 }

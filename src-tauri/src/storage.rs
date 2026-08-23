@@ -817,8 +817,9 @@ pub async fn upsert_connection(
     let user = connection.user().to_string();
     let role = connection.role().to_string();
     let last_activity_at = connection.last_activity_at().map(str::to_string);
-    let environment = connection.environment().as_str();
-    let safe_mode = connection.safe_mode().as_str();
+    let policy = connection.policy();
+    let environment = policy.environment.as_str();
+    let safe_mode = policy.safe_mode.as_str();
 
     let (use_https, url_path) = match connection {
         StoredConnection::ClickHouse(c) => (bool_to_i64(c.use_https), c.url_path.clone()),
@@ -832,7 +833,7 @@ pub async fn upsert_connection(
         ),
         _ => (0, 0, 1),
     };
-    let read_only = bool_to_i64(connection.read_only());
+    let read_only = bool_to_i64(policy.read_only);
     let ssl = match connection {
         StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl),
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
@@ -2030,9 +2031,9 @@ mod tests {
                 .expect("read policy connection")
                 .expect("policy connection");
             assert_eq!(stored.engine(), engine);
-            assert_eq!(stored.environment(), Environment::Staging);
-            assert_eq!(stored.safe_mode(), SafeMode::Protected);
-            assert!(stored.read_only());
+            assert_eq!(stored.policy().environment, Environment::Staging);
+            assert_eq!(stored.policy().safe_mode, SafeMode::Protected);
+            assert!(stored.policy().read_only);
         }
     }
 
@@ -2053,9 +2054,7 @@ mod tests {
             .await
             .expect("read legacy")
             .expect("legacy row");
-        assert_eq!(stored.environment(), Environment::Development);
-        assert_eq!(stored.safe_mode(), SafeMode::Inherit);
-        assert!(!stored.read_only());
+        assert_eq!(stored.policy(), crate::ConnectionPolicy::default());
     }
 
     #[tokio::test]

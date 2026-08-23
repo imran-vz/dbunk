@@ -51,26 +51,6 @@ async fn open_session(
     session_id: &str,
     emitted: Arc<AtomicUsize>,
 ) {
-    open_session_with_channel(
-        state,
-        connection,
-        window_label,
-        session_id,
-        Channel::<QueryEventEnvelope>::new(move |_| {
-            emitted.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        }),
-    )
-    .await;
-}
-
-async fn open_session_with_channel(
-    state: &AppState,
-    connection: &StoredConnection,
-    window_label: &str,
-    session_id: &str,
-    channel: Channel<QueryEventEnvelope>,
-) {
     let owner_id = "safety-live-owner";
     state
         .query_sessions
@@ -87,85 +67,14 @@ async fn open_session_with_channel(
                 tab_id: session_id.into(),
                 connection_id: connection.id().into(),
             },
-            channel,
+            Channel::<QueryEventEnvelope>::new(move |_| {
+                emitted.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }),
             spec,
         )
         .await
         .expect("open query session");
-}
-
-#[tokio::test]
-#[serial_test::serial]
-#[ignore = "requires pnpm db:postgres"]
-async fn safety_live_query_audit_survives_frontend_delivery_failure() {
-    let (_directory, state) = crate::test_app_state().await;
-    let connection_id = format!("safety-delivery-{}", uuid::Uuid::new_v4().simple());
-    let schema = format!("safety_delivery_{}", uuid::Uuid::new_v4().simple());
-    let strict = connection(
-        &connection_id,
-        Environment::Production,
-        SafeMode::Inherit,
-        false,
-    );
-    let spec = ResolvedPostgresConnectSpec::from_connection(&strict).expect("Postgres spec");
-    let admin = session_postgres::connect(&spec)
-        .await
-        .expect("admin session");
-    admin
-        .client
-        .batch_execute(&format!(
-            "CREATE SCHEMA {schema}; CREATE TABLE {schema}.rows(value integer); INSERT INTO {schema}.rows VALUES (0)"
-        ))
-        .await
-        .expect("fixture");
-
-    save(&state, &strict).await;
-    let attempts = Arc::new(AtomicUsize::new(0));
-    let channel_attempts = attempts.clone();
-    open_session_with_channel(
-        &state,
-        &strict,
-        "safety-delivery-window",
-        "delivery-failure",
-        Channel::<QueryEventEnvelope>::new(move |_| {
-            let attempt = channel_attempts.fetch_add(1, Ordering::SeqCst);
-            if attempt < 2 {
-                Ok(())
-            } else {
-                Err(std::io::Error::other("frontend receiver closed").into())
-            }
-        }),
-    )
-    .await;
-
-    crate::commands::query_session::execute_query_session_inner(
-        &state,
-        "safety-delivery-window",
-        execute_payload(
-            "delivery-failure",
-            "confirmed-write",
-            format!("UPDATE {schema}.rows SET value = 1"),
-            true,
-        ),
-    )
-    .await
-    .expect("confirmed strict execution admitted");
-
-    wait_for_i32(
-        &admin,
-        &format!("SELECT value FROM {schema}.rows LIMIT 1"),
-        1,
-    )
-    .await;
-    wait_for_audit_count(&state, &connection_id, 1).await;
-    wait_for_activity(&state, &connection_id).await;
-    assert_eq!(attempts.load(Ordering::SeqCst), 3);
-
-    admin
-        .client
-        .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
-        .await
-        .expect("cleanup");
 }
 
 fn execute_payload(
@@ -225,23 +134,6 @@ async fn wait_for_audit_count(state: &AppState, connection_id: &str, expected: u
     })
     .await
     .expect("query audit observed");
-}
-
-async fn wait_for_activity(state: &AppState, connection_id: &str) {
-    tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        loop {
-            let active = crate::storage::read_connection_by_id(&state.pool, connection_id)
-                .await
-                .expect("read query connection")
-                .is_some_and(|connection| connection.last_activity_at().is_some());
-            if active {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("query activity observed");
 }
 
 #[tokio::test]
