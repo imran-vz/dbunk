@@ -11,6 +11,10 @@ interface BuildStatusItemsArgs {
   rowCountLabel?: string;
   pagination: TablePagination;
   activeConnection: Connection | undefined;
+  /** Staged mutation count — renders the pending badge (§3.1). */
+  stagedChangeCount?: number;
+  /** Opens the mutation review panel; wired to the badge click. */
+  onOpenReview?: () => void;
 }
 
 export function buildStatusItems({
@@ -20,8 +24,20 @@ export function buildStatusItems({
   rowCountLabel,
   pagination,
   activeConnection,
+  stagedChangeCount = 0,
+  onOpenReview,
 }: BuildStatusItemsArgs): StatusBarItem[] {
   return [
+    ...(stagedChangeCount > 0
+      ? [
+          {
+            id: "pending",
+            value: `${stagedChangeCount} staged`,
+            tone: "warning",
+            onClick: onOpenReview,
+          } satisfies StatusBarItem,
+        ]
+      : []),
     connectionStatusItem(activeConnection),
     {
       id: "query",

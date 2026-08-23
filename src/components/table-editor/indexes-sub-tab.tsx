@@ -23,7 +23,7 @@ export function IndexesSubTab({
   const view = useStructure({ connectionId, schema, tableName });
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-app">
       {view.isLoading ? (
         <div className="h-0.5 w-full animate-pulse bg-primary" />
       ) : null}

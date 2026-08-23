@@ -89,8 +89,12 @@ export function TransactionControls({ tabId }: { tabId: string }) {
             size="sm"
             variant="outline"
             onClick={() => {
-              if (!confirmCloseQuerySession(transaction.status)) return;
-              void closeQuerySessionForTab(tabId);
+              void (async () => {
+                if (!(await confirmCloseQuerySession(transaction.status))) {
+                  return;
+                }
+                await closeQuerySessionForTab(tabId);
+              })();
             }}
           >
             Close

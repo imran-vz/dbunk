@@ -14,7 +14,7 @@ export function DmlPreview({ preview, onCopy }: DmlPreviewProps) {
   return (
     <section
       aria-label="Generated DML"
-      className="m-3 border border-border-subtle bg-black"
+      className="m-3 border border-border-subtle bg-surface-window"
     >
       <header className="flex min-h-8 items-center gap-2 border-b border-border-subtle px-2">
         <h2 className="text-2xs font-semibold text-foreground">
@@ -50,7 +50,7 @@ export function DmlPreview({ preview, onCopy }: DmlPreviewProps) {
                   <IconCopy /> Copy params
                 </Button>
               </div>
-              <pre className="m-0 whitespace-pre-wrap break-words bg-[#030303] p-2 font-mono text-2xs leading-relaxed text-text-secondary">
+              <pre className="m-0 whitespace-pre-wrap break-words bg-surface-window p-2 font-mono text-2xs leading-relaxed text-text-secondary">
                 {statement.sql}
               </pre>
               <div className="border-t border-border-subtle px-2 py-1.5">

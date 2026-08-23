@@ -68,7 +68,7 @@ export function RelationsSubTab({
     relationshipsStatus?.state === "error" ? relationshipsStatus.error : null;
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface-app">
       {view.isLoading || isLoadingRelations ? <LoadingBar /> : null}
       {view.errorMessage ? (
         <ErrorState message={view.errorMessage} onRetry={view.retry} />
@@ -158,7 +158,7 @@ function InboundSection({
       ) : inbound.length === 0 ? (
         <EmptyState title="No tables reference this one." className="p-3" />
       ) : (
-        <ul className="divide-y divide-white/8">
+        <ul className="divide-y divide-border-subtle">
           {inbound.map((fk) => (
             <li
               key={`${fk.fromSchema}.${fk.fromTable}.${fk.constraintName}`}

@@ -58,6 +58,24 @@ export function WorkbenchShell<T extends string>({
     ];
   }, [activeConnection]);
 
+  // Ambient environment segment (§3.1, D17): a staging/production
+  // connection colors a persistent status-bar segment on every screen.
+  const environmentItem = useMemo((): StatusBarItem | null => {
+    const environment = activeConnection?.environment;
+    if (!environment || environment === "development") return null;
+    return {
+      id: "environment",
+      value: environment.toUpperCase(),
+      tone:
+        environment === "production"
+          ? "danger"
+          : environment === "staging"
+            ? "warning"
+            : "info",
+      align: "right",
+    };
+  }, [activeConnection?.environment]);
+
   // Dock badge (§5.6): the status bar is the console's only ambient
   // affordance — new events while hidden increment the count here.
   const consoleBadge = useMemo(
@@ -110,6 +128,7 @@ export function WorkbenchShell<T extends string>({
       <StatusBar
         items={[
           ...(statusItems.length > 0 ? statusItems : defaultStatusItems),
+          ...(environmentItem ? [environmentItem] : []),
           consoleBadge,
         ]}
         className="w-full"

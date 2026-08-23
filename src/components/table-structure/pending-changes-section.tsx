@@ -104,7 +104,7 @@ function PendingList({
 }) {
   if (pending.length === 0) return <EmptyRow>No pending changes.</EmptyRow>;
   return (
-    <ul className="divide-y divide-white/8">
+    <ul className="divide-y divide-border-subtle">
       {pending.map((entry) => (
         <li
           key={entry.id}
@@ -134,7 +134,7 @@ function SqlPreview({ sql }: { sql: string }) {
   return (
     <pre
       data-testid="structure-sql-preview"
-      className="overflow-x-auto whitespace-pre-wrap border-t border-white/8 bg-[#05090c] px-3 py-2 font-mono text-xs text-foreground"
+      className="overflow-x-auto whitespace-pre-wrap border-t border-border-subtle bg-surface-window px-3 py-2 font-mono text-xs text-foreground"
     >
       {sql}
     </pre>
@@ -158,7 +158,7 @@ function SuccessBanner({ runtimeMs }: { runtimeMs: number }) {
   return (
     <div
       data-testid="structure-commit-success"
-      className="border-t border-white/8 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-400"
+      className="border-t border-border-subtle bg-success/10 px-4 py-2 text-xs text-success"
     >
       Committed in {runtimeMs} ms.
     </div>

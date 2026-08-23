@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { requestConfirm, requestPrompt } from "@/lib/confirm";
 import {
   appendRedisCliHistory,
   closeRedisCliSession,
@@ -226,7 +227,11 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
       toast.info("Type a command before saving");
       return;
     }
-    const name = window.prompt("Name for this command:", trimmed.slice(0, 40));
+    const name = await requestPrompt({
+      title: "Save command",
+      message: "Name for this command:",
+      defaultValue: trimmed.slice(0, 40),
+    });
     if (!name?.trim()) return;
     try {
       const now = new Date().toISOString();
@@ -254,7 +259,14 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
   };
 
   const handleDeleteSaved = async (cmd: SavedRedisCommand) => {
-    if (!window.confirm(`Delete saved command "${cmd.name}"?`)) return;
+    const confirmed = await requestConfirm({
+      title: "Delete saved command?",
+      detail: cmd.name,
+      message: "This removes the saved command permanently.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       const updated = await deleteSavedRedisCommand({ id: cmd.id });
       setSavedCommands(updated);

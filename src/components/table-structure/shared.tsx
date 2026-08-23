@@ -22,7 +22,7 @@ export function Section({
         </h3>
         {action ? <div>{action}</div> : null}
       </div>
-      <div className="overflow-hidden rounded-sm border border-white/8 bg-white/[0.025]">
+      <div className="overflow-hidden rounded-sm border border-border-subtle bg-surface-panel">
         {children}
       </div>
     </section>
