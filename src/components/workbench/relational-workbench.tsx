@@ -248,7 +248,6 @@ export function RelationalWorkbench({
         <QueryEditorPanel
           tab={activeTab}
           isClient={isClient}
-          variant="workbench"
           resultsView={querySection}
           onResultsViewChange={setQuerySection}
           onStatusItemsChange={setStatusItems}
@@ -260,7 +259,6 @@ export function RelationalWorkbench({
       return (
         <TableEditorPanel
           tab={activeTab}
-          variant="workbench"
           activeSubTab={tableSectionToSubTab(tableSubTab)}
           onSubTabChange={(next) => {
             if (next === "data" || next === "schema" || next === "indexes") {

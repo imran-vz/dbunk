@@ -9,7 +9,7 @@ import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
 } from "@/components/schema-relationship-map";
-import { StatusBar, type StatusBarItem } from "@/components/status-bar";
+import type { StatusBarItem } from "@/components/status-bar";
 import { AddRowForm } from "@/components/table-editor/add-row-form";
 import { TableEditorBody } from "@/components/table-editor/body";
 import { DataImportWizard } from "@/components/table-editor/data-import-wizard";
@@ -98,7 +98,6 @@ const SEEDABLE_ENGINES = new Set([
 
 interface TableEditorPanelProps {
   tab: WorkspaceTab;
-  variant?: "default" | "workbench";
   activeSubTab?: SubTab;
   onSubTabChange?: (next: SubTab) => void;
   onStatusItemsChange?: (items: StatusBarItem[]) => void;
@@ -106,7 +105,6 @@ interface TableEditorPanelProps {
 
 export function TableEditorPanel({
   tab,
-  variant = "default",
   activeSubTab: controlledSubTab,
   onSubTabChange,
   onStatusItemsChange,
@@ -698,8 +696,6 @@ export function TableEditorPanel({
     onStatusItemsChange?.(statusItems);
   }, [onStatusItemsChange, statusItems]);
 
-  const isWorkbench = variant === "workbench";
-
   return (
     <div className="flex h-full flex-col bg-surface-app">
       {isLoading ? (
@@ -714,8 +710,6 @@ export function TableEditorPanel({
           title={tab.table ?? tab.label}
           schemaBadge={tab.schema}
           rowCountLabel={rowCountLabel}
-          activeSubTab={activeSubTab}
-          onSubTabChange={setActiveSubTab}
           showRowDetailsToggle={activeSubTab === "data"}
           rowDetailsVisible={rowDetails.visible}
           onToggleRowDetails={rowDetails.onToggle}
@@ -726,7 +720,6 @@ export function TableEditorPanel({
           onRunMaintenance={handleRunMaintenance}
           showSeedAction={SEEDABLE_ENGINES.has(connection?.engine ?? "")}
           onOpenSeedTable={() => setIsSeedOpen(true)}
-          variant={isWorkbench ? "workbench" : "default"}
         />
       ) : null}
 
@@ -992,8 +985,6 @@ export function TableEditorPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {!isWorkbench && !expanded ? <StatusBar items={statusItems} /> : null}
     </div>
   );
 }

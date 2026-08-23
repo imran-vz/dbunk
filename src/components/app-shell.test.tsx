@@ -8,7 +8,6 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tauriMocks = vi.hoisted(() => {
@@ -46,35 +45,28 @@ vi.mock("@/lib/tauri", () => ({
     error instanceof Error ? error.message : String(error),
 }));
 
-vi.mock("@/components/workspace-view", () => ({
-  WorkspaceView: () => <div data-testid="workspace-view" />,
-}));
-
-vi.mock("@/components/sidebar", () => ({
-  Sidebar: () => <aside data-testid="sidebar" />,
-}));
-
+// The workbench mocks mirror the real shells' contract: a top drag region
+// wired to the handlers AppShell passes down, so drag/zoom behaviour can be
+// exercised without rendering the full workbench tree.
 vi.mock("@/components/workbench/relational-workbench", () => ({
-  RelationalWorkbench: () => <div data-testid="relational-workbench" />,
+  RelationalWorkbench: ({
+    onPointerDown,
+    onDoubleClick,
+  }: {
+    onPointerDown: React.PointerEventHandler<HTMLElement>;
+    onDoubleClick: React.MouseEventHandler<HTMLElement>;
+  }) => (
+    <div
+      data-testid="relational-workbench"
+      data-window-drag-region
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+    />
+  ),
 }));
 
 vi.mock("@/components/workbench/keyvalue-workbench", () => ({
   KeyValueWorkbench: () => <div data-testid="keyvalue-workbench" />,
-}));
-
-vi.mock("@/components/workbench/workbench-policy", async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import("@/components/workbench/workbench-policy")
-    >();
-  return {
-    ...actual,
-    usesWorkbenchShell: vi.fn(() => false),
-  };
-});
-
-vi.mock("@/components/connections-view", () => ({
-  ConnectionsView: () => <div data-testid="connections-view" />,
 }));
 
 vi.mock("@/components/settings-view", () => ({
@@ -86,12 +78,7 @@ vi.mock("@/components/credential-onboarding", () => ({
   CredentialUnlock: () => <div data-testid="credential-unlock" />,
 }));
 
-vi.mock("@/components/new-connection-dialog", () => ({
-  NewConnectionDialog: ({ trigger }: { trigger: React.ReactNode }) => trigger,
-}));
-
 import { AppShell } from "@/components/app-shell";
-import { usesWorkbenchShell } from "@/components/workbench/workbench-policy";
 import { type Connection, useAppStore } from "@/lib/store";
 import {
   tauriPrepareWindowZoomTransition,
@@ -100,7 +87,6 @@ import {
 } from "@/lib/tauri";
 
 const initialStoreState = useAppStore.getState();
-const mockedUsesWorkbenchShell = vi.mocked(usesWorkbenchShell);
 const mockedStartDragging = vi.mocked(tauriStartDragging);
 const mockedPrepareWindowZoomTransition = vi.mocked(
   tauriPrepareWindowZoomTransition,
@@ -120,16 +106,6 @@ const connection: Connection = {
   role: "",
   latency: "12 ms",
   ssl: true,
-};
-
-const postgresConnection: Connection = {
-  ...connection,
-  id: "conn-pg",
-  name: "Local Postgres",
-  database: "postgres",
-  engine: "PostgreSQL",
-  port: 5432,
-  user: "postgres",
 };
 
 const readySettings = {
@@ -161,7 +137,6 @@ beforeEach(() => {
     loadQueryHistory: vi.fn(async () => undefined),
     loadSavedQueries: vi.fn(async () => undefined),
     runHealthChecks: vi.fn(async () => undefined),
-    createNewQueryTab: vi.fn(),
   });
   mockedStartDragging.mockClear();
   mockedPrepareWindowZoomTransition.mockClear();
@@ -171,7 +146,6 @@ beforeEach(() => {
   tauriMocks.tauriOnWindowFullscreenChange.mockClear();
   tauriMocks.unlistenFullscreen.mockClear();
   tauriMocks.state.fullscreenHandler = undefined;
-  mockedUsesWorkbenchShell.mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -179,7 +153,7 @@ afterEach(() => {
   useAppStore.setState(initialStoreState, true);
 });
 
-describe("AppShell title bar dragging", () => {
+describe("AppShell window controls", () => {
   it("starts a Tauri window drag while the app is still loading settings", () => {
     useAppStore.setState({
       appSettings: null,
@@ -195,25 +169,23 @@ describe("AppShell title bar dragging", () => {
     expect(mockedStartDragging).toHaveBeenCalledTimes(1);
   });
 
-  it("starts a Tauri window drag from non-interactive top-bar space", () => {
+  it("starts a Tauri window drag from the workbench drag region", () => {
     render(<AppShell />);
 
-    fireEvent.pointerDown(screen.getByTestId("window-drag-spacer"), {
+    fireEvent.pointerDown(screen.getByTestId("relational-workbench"), {
       button: 0,
     });
 
     expect(mockedStartDragging).toHaveBeenCalledTimes(1);
   });
 
-  it("zooms the window on a top-bar double click", async () => {
+  it("zooms the window on a drag-region double click", async () => {
     render(<AppShell />);
 
-    const dragSpacer = screen.getByTestId("window-drag-spacer");
-    fireEvent.pointerDown(dragSpacer, { button: 0, detail: 2 });
-    fireEvent.doubleClick(dragSpacer, { button: 0 });
+    const dragRegion = screen.getByTestId("relational-workbench");
+    fireEvent.pointerDown(dragRegion, { button: 0, detail: 2 });
+    fireEvent.doubleClick(dragRegion, { button: 0 });
 
-    expect(dragSpacer.hasAttribute("data-tauri-drag-region")).toBe(false);
-    expect(dragSpacer.hasAttribute("data-window-drag-region")).toBe(true);
     expect(mockedStartDragging).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(mockedPrepareWindowZoomTransition).toHaveBeenCalledTimes(1);
@@ -233,7 +205,7 @@ describe("AppShell title bar dragging", () => {
       render(<AppShell />);
 
       const shell = screen.getByTestId("app-shell");
-      fireEvent.doubleClick(screen.getByTestId("window-drag-spacer"), {
+      fireEvent.doubleClick(screen.getByTestId("relational-workbench"), {
         button: 0,
       });
 
@@ -271,7 +243,7 @@ describe("AppShell title bar dragging", () => {
     render(<AppShell />);
 
     const shell = screen.getByTestId("app-shell");
-    fireEvent.doubleClick(screen.getByTestId("window-drag-spacer"), {
+    fireEvent.doubleClick(screen.getByTestId("relational-workbench"), {
       button: 0,
     });
 
@@ -280,75 +252,6 @@ describe("AppShell title bar dragging", () => {
     });
     expect(shell.dataset.windowViewportZoom).toBeUndefined();
     expect(shell.style.transform).toBe("");
-  });
-
-  it("does not start dragging from top-bar controls", () => {
-    render(<AppShell />);
-
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Run Query" }), {
-      button: 0,
-    });
-    fireEvent.pointerDown(screen.getByLabelText("Search tables"), {
-      button: 0,
-    });
-
-    expect(mockedStartDragging).not.toHaveBeenCalled();
-  });
-
-  it("renders a bounded resize handle for the connections and tables sidebar", () => {
-    window.localStorage.setItem("dbunk.sidebar.globalWidth", "999");
-    render(<AppShell />);
-
-    const resizer = screen.getByRole("separator", {
-      name: "Resize connections and tables sidebar",
-    });
-    const sidebarPanel = resizer.previousElementSibling as HTMLElement;
-
-    expect(resizer.getAttribute("aria-valuemin")).toBe("220");
-    expect(resizer.getAttribute("aria-valuemax")).toBe("420");
-    expect(resizer.getAttribute("aria-valuenow")).toBe("420");
-    expect(sidebarPanel.style.width).toBe("420px");
-
-    fireEvent.keyDown(resizer, { key: "ArrowLeft", shiftKey: true });
-
-    expect(resizer.getAttribute("aria-valuenow")).toBe("388");
-    expect(sidebarPanel.style.width).toBe("388px");
-  });
-
-  it("does not zoom the window from top-bar controls", () => {
-    render(<AppShell />);
-
-    fireEvent.doubleClick(screen.getByRole("button", { name: "Run Query" }), {
-      button: 0,
-    });
-    fireEvent.doubleClick(screen.getByLabelText("Search tables"), {
-      button: 0,
-    });
-
-    expect(mockedToggleWindowZoom).not.toHaveBeenCalled();
-  });
-
-  it("collapses the macOS traffic-light gutter while the native window is fullscreen", () => {
-    render(<AppShell />);
-
-    const topBar = screen.getByTestId("app-top-bar");
-    expect(topBar.dataset.windowFullscreen).toBe("false");
-    expect(topBar.className).toContain("pl-22");
-
-    act(() => {
-      tauriMocks.state.fullscreenHandler?.(true);
-    });
-
-    expect(topBar.dataset.windowFullscreen).toBe("true");
-    expect(topBar.className).toContain("pl-2.5");
-    expect(topBar.className).not.toContain("pl-22");
-
-    act(() => {
-      tauriMocks.state.fullscreenHandler?.(false);
-    });
-
-    expect(topBar.dataset.windowFullscreen).toBe("false");
-    expect(topBar.className).toContain("pl-22");
   });
 
   it("restores the native macOS traffic-light position after leaving fullscreen", async () => {
@@ -388,22 +291,17 @@ describe("AppShell title bar dragging", () => {
       vi.useRealTimers();
     }
   });
+});
 
+describe("AppShell workbench routing", () => {
   it("renders RelationalWorkbench for relational connections", () => {
-    mockedUsesWorkbenchShell.mockReturnValue(true);
-    useAppStore.setState({
-      activeConnectionId: postgresConnection.id,
-      connections: [postgresConnection],
-    });
-
     render(<AppShell />);
 
     expect(screen.getByTestId("relational-workbench")).toBeTruthy();
-    expect(screen.queryByTestId("app-top-bar")).toBeNull();
+    expect(screen.queryByTestId("keyvalue-workbench")).toBeNull();
   });
 
   it("renders KeyValueWorkbench for Redis connections", () => {
-    mockedUsesWorkbenchShell.mockReturnValue(true);
     const redisConnection: Connection = {
       id: "conn-redis",
       name: "Local Redis",
