@@ -392,6 +392,21 @@ CREATE INDEX idx_safety_overrides_connection_occurred_at
   ON safety_overrides(connection_id, occurred_at DESC, id DESC);
 "#,
     ),
+    (
+        16,
+        // UI refresh P8: namespaced, versioned `ui.v1.*` key/value store
+        // for layout state and per-connection content state (session
+        // restore, hot-exit SQL, grid layouts). Values are opaque JSON
+        // owned by the frontend; corrupt values fall back to defaults
+        // there.
+        r#"
+CREATE TABLE ui_state (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+"#,
+    ),
 ];
 
 pub struct Paths {
@@ -576,6 +591,102 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
     .await
     .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// UI state (P8) — namespaced `ui.v1.*` key/value blobs
+// ---------------------------------------------------------------------------
+
+/// Guard against runaway blobs; UI-state values are small JSON strings.
+pub const UI_STATE_MAX_VALUE_BYTES: usize = 512 * 1024;
+pub const UI_STATE_MAX_KEY_BYTES: usize = 512;
+
+fn validate_ui_state_key(key: &str) -> Result<(), String> {
+    if !key.starts_with("ui.v1.") {
+        return Err(format!(
+            "UI-state key '{key}' is outside the ui.v1 namespace"
+        ));
+    }
+    if key.len() > UI_STATE_MAX_KEY_BYTES {
+        return Err("UI-state key exceeds the maximum length".to_string());
+    }
+    Ok(())
+}
+
+pub async fn read_ui_state(pool: &SqlitePool) -> Result<Vec<(String, String)>, String> {
+    let rows = sqlx::query("SELECT key, value FROM ui_state ORDER BY key")
+        .fetch_all(pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.get::<String, _>("key"), row.get::<String, _>("value")))
+        .collect())
+}
+
+pub async fn upsert_ui_state(
+    pool: &SqlitePool,
+    entries: &[(String, String)],
+) -> Result<(), String> {
+    for (key, value) in entries {
+        validate_ui_state_key(key)?;
+        if value.len() > UI_STATE_MAX_VALUE_BYTES {
+            return Err(format!("UI-state value for '{key}' exceeds the size limit"));
+        }
+    }
+    let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
+    for (key, value) in entries {
+        sqlx::query(
+            "INSERT INTO ui_state (key, value, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        )
+        .bind(key)
+        .bind(value)
+        .bind(now())
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| error.to_string())?;
+    }
+    tx.commit().await.map_err(|error| error.to_string())
+}
+
+/// Escape LIKE wildcards so connection ids and table names in prefixes
+/// match literally.
+fn escape_like_prefix(prefix: &str) -> String {
+    prefix
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+pub async fn delete_ui_state(
+    pool: &SqlitePool,
+    keys: &[String],
+    prefixes: &[String],
+) -> Result<(), String> {
+    for key in keys {
+        validate_ui_state_key(key)?;
+    }
+    for prefix in prefixes {
+        validate_ui_state_key(prefix)?;
+    }
+    let mut tx = pool.begin().await.map_err(|error| error.to_string())?;
+    for key in keys {
+        sqlx::query("DELETE FROM ui_state WHERE key = ?")
+            .bind(key)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    for prefix in prefixes {
+        sqlx::query("DELETE FROM ui_state WHERE key LIKE ? ESCAPE '\\'")
+            .bind(format!("{}%", escape_like_prefix(prefix)))
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    tx.commit().await.map_err(|error| error.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -2385,6 +2496,67 @@ mod tests {
                 .expect("saved prefs"),
             prefs
         );
+    }
+
+    #[tokio::test]
+    async fn ui_state_round_trip_overwrite_and_prefix_delete() {
+        let pool = test_pool().await;
+
+        assert!(read_ui_state(&pool).await.expect("empty").is_empty());
+
+        upsert_ui_state(
+            &pool,
+            &[
+                ("ui.v1.layout.navigator.size".to_string(), "260".to_string()),
+                (
+                    "ui.v1.grid.conn-1.public.users".to_string(),
+                    r#"{"widths":{"id":80}}"#.to_string(),
+                ),
+                (
+                    "ui.v1.grid.conn-2.public.users".to_string(),
+                    r#"{"widths":{}}"#.to_string(),
+                ),
+            ],
+        )
+        .await
+        .expect("upsert");
+
+        // Overwrite keeps one row per key.
+        upsert_ui_state(
+            &pool,
+            &[("ui.v1.layout.navigator.size".to_string(), "300".to_string())],
+        )
+        .await
+        .expect("overwrite");
+
+        let entries = read_ui_state(&pool).await.expect("read");
+        assert_eq!(entries.len(), 3);
+        assert!(entries
+            .iter()
+            .any(|(key, value)| key == "ui.v1.layout.navigator.size" && value == "300"));
+
+        // Prefix delete drops only conn-1's state (connection GC).
+        delete_ui_state(&pool, &[], &["ui.v1.grid.conn-1.".to_string()])
+            .await
+            .expect("prefix delete");
+        let entries = read_ui_state(&pool).await.expect("read after gc");
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|(key, _)| !key.contains("conn-1")));
+
+        // Exact-key delete.
+        delete_ui_state(&pool, &["ui.v1.layout.navigator.size".to_string()], &[])
+            .await
+            .expect("key delete");
+        assert_eq!(read_ui_state(&pool).await.expect("final").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ui_state_rejects_foreign_namespaces() {
+        let pool = test_pool().await;
+        let error = upsert_ui_state(&pool, &[("theme".to_string(), "dark".to_string())])
+            .await
+            .expect_err("namespace guard");
+        assert!(error.contains("outside the ui.v1 namespace"));
     }
 
     #[tokio::test]

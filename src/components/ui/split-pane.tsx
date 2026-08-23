@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Sash } from "@/components/ui/resizer-handle";
+import { uiGet, uiSet } from "@/lib/ui-state";
 import { cn } from "@/lib/utils";
 
 export interface SplitPaneProps {
@@ -34,18 +35,12 @@ export interface SplitPaneProps {
 }
 
 const readStoredRatio = (key: string, fallback: number): number => {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return fallback;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 && parsed < 1
-      ? parsed
-      : fallback;
-  } catch {
-    return fallback;
-  }
+  const raw = uiGet(key);
+  if (raw === null) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 && parsed < 1
+    ? parsed
+    : fallback;
 };
 
 export function SplitPane({
@@ -70,11 +65,7 @@ export function SplitPane({
   );
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(`${storageKey}.ratio`, String(ratio));
-    } catch {
-      // Best-effort persistence.
-    }
+    uiSet(`${storageKey}.ratio`, String(ratio));
   }, [storageKey, ratio]);
 
   const isColumn = direction === "column";

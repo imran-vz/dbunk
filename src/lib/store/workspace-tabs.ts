@@ -18,6 +18,7 @@ import type { StateCreator } from "zustand";
 import { requestConfirm } from "@/lib/confirm";
 import { resetResultMutationClientForTab } from "@/lib/result-mutation-client";
 import { supportsServerTableBrowse } from "@/lib/table-browse";
+import { uiGet } from "@/lib/ui-state";
 
 import type {
   ActiveView,
@@ -65,6 +66,14 @@ export type WorkspaceTabsSlice = {
   createNewQueryTab: () => void;
   createNewTableTab: () => void;
   reopenHistoryEntry: (entry: { sql: string; connectionId: string }) => void;
+
+  /**
+   * P8 session restore: rebuilds open tabs / active tab / expanded
+   * tree nodes from the persisted `ui.v1.session` blob. Only tabs
+   * whose connection still exists are restored; any parse failure
+   * falls back to an empty session silently (corrupt-state rule).
+   */
+  restoreSession: () => void;
 
   /**
    * Cascade cleanup — drops every Workspace Tab whose
@@ -271,6 +280,86 @@ export const createWorkspaceTabsSlice: StateCreator<
       return;
     }
     get().openTableTab(schemaName, tableName);
+  },
+
+  restoreSession: () => {
+    const raw = uiGet("dbunk.session");
+    if (!raw) return;
+    const connectionIds = new Set(get().connections.map((c) => c.id));
+    let tabs: WorkspaceTab[] = [];
+    let activeTabId = "";
+    let expandedSchemas: string[] = [];
+    try {
+      // SAFETY: parsed session data is validated field-by-field below.
+      const parsed = JSON.parse(raw) as {
+        tabs?: unknown;
+        activeTabId?: unknown;
+        expandedSchemas?: unknown;
+      };
+      if (Array.isArray(parsed.tabs)) {
+        tabs = parsed.tabs.flatMap((candidate): WorkspaceTab[] => {
+          if (typeof candidate !== "object" || candidate === null) return [];
+          // SAFETY: every field is re-validated below before use.
+          const tab = candidate as Partial<WorkspaceTab>;
+          if (
+            typeof tab.id !== "string" ||
+            typeof tab.label !== "string" ||
+            typeof tab.connectionId !== "string" ||
+            typeof tab.schema !== "string" ||
+            (tab.kind !== "query" && tab.kind !== "table") ||
+            !connectionIds.has(tab.connectionId)
+          ) {
+            return [];
+          }
+          const restored: WorkspaceTab = {
+            id: tab.id,
+            kind: tab.kind,
+            label: tab.label,
+            connectionId: tab.connectionId,
+            schema: tab.schema,
+          };
+          if (typeof tab.table === "string") restored.table = tab.table;
+          if (typeof tab.query === "string") restored.query = tab.query;
+          if (tab.pinned === true) restored.pinned = true;
+          if (tab.isDirty === true) restored.isDirty = true;
+          return [restored];
+        });
+      }
+      if (typeof parsed.activeTabId === "string") {
+        activeTabId = parsed.activeTabId;
+      }
+      if (Array.isArray(parsed.expandedSchemas)) {
+        expandedSchemas = parsed.expandedSchemas.filter(
+          (value): value is string => typeof value === "string",
+        );
+      }
+    } catch {
+      return;
+    }
+    if (tabs.length === 0 && expandedSchemas.length === 0) return;
+    // Bump the id/label counters past restored tabs so new tabs never
+    // collide with restored ids.
+    for (const tab of tabs) {
+      const idMatch = /^tab-(\d+)$/.exec(tab.id);
+      if (idMatch) {
+        nextTabIndex = Math.max(nextTabIndex, Number(idMatch[1]) + 1);
+      }
+      const labelMatch = /^query_(\d+)\.sql$/.exec(tab.label);
+      if (labelMatch) {
+        nextQueryIndex = Math.max(nextQueryIndex, Number(labelMatch[1]) + 1);
+      }
+    }
+    const active = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+    set((state) => {
+      const next: Partial<AppStoreState> = {
+        workspaceTabs: [...tabs, ...state.workspaceTabs],
+        activeTabId: active?.id ?? state.activeTabId,
+        expandedSchemas:
+          expandedSchemas.length > 0 ? expandedSchemas : state.expandedSchemas,
+      };
+      if (active) next.activeConnectionId = active.connectionId;
+      return next;
+    });
   },
 
   reopenHistoryEntry: (entry) => {

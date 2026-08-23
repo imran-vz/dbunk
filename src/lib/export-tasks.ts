@@ -22,17 +22,12 @@ export type SavedExportTask = {
   createdAt: string;
 };
 
+import { uiGet, uiSet } from "@/lib/ui-state";
+
 const STORAGE_KEY = "dbunk.exportTasks.v1";
 
-const storage = () =>
-  typeof window === "undefined" ? null : window.localStorage;
-
 export function readExportTasks(): SavedExportTask[] {
-  const localStorage = storage();
-  if (!localStorage) {
-    return [];
-  }
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = uiGet(STORAGE_KEY);
   if (!raw) {
     return [];
   }
@@ -49,10 +44,7 @@ export function saveExportTask(task: SavedExportTask): SavedExportTask[] {
     task,
     ...readExportTasks().filter((entry) => entry.id !== task.id),
   ];
-  const localStorage = storage();
-  if (localStorage) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  }
+  uiSet(STORAGE_KEY, JSON.stringify(next));
   return next;
 }
 
