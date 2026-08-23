@@ -1262,13 +1262,13 @@ describe("QueryEditorPanel result mutations", () => {
     fireEvent.click(generatedCell);
     expect(screen.queryByDisplayValue("ada")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "NULL" }));
+    fireEvent.doubleClick(screen.getByRole("button", { name: "NULL" }));
     const nullInput = screen.getByDisplayValue("NULL");
     fireEvent.change(nullInput, { target: { value: "Grace" } });
     fireEvent.blur(nullInput);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+      fireEvent.doubleClick(screen.getByRole("button", { name: "Ada" }));
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     const valueInput = screen.getByDisplayValue("Ada");

@@ -545,7 +545,7 @@ export function BrowsePartialResultNotice({
 }) {
   if (browse.omittedRows === 0 && browse.truncatedCells === 0) return null;
   return (
-    <output className="block border-b border-border-subtle bg-black px-3 py-1 text-2xs text-warning">
+    <output className="block border-b border-border-subtle bg-surface-window px-3 py-1 text-2xs text-warning">
       Partial result: {browse.omittedRows.toLocaleString()} omitted rows,{" "}
       {browse.truncatedCells.toLocaleString()} truncated cells.
     </output>
