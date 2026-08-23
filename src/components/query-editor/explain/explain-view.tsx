@@ -83,7 +83,7 @@ function ExplainSummary({
     <div className="shrink-0 border-b border-border-subtle bg-surface-window">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-[0.625rem] uppercase tracking-wide text-text-muted">
+          <span className="text-2xs uppercase tracking-wide text-text-muted">
             Total
           </span>
           <span className="font-mono text-sm font-semibold text-foreground">
@@ -93,7 +93,7 @@ function ExplainSummary({
         {planFrac != null && execFrac != null ? (
           <div className="flex min-w-[280px] flex-1 items-center gap-2">
             <SplitBar planFrac={planFrac} execFrac={execFrac} />
-            <div className="flex shrink-0 items-baseline gap-2 font-mono text-[0.6875rem] text-text-secondary">
+            <div className="flex shrink-0 items-baseline gap-2 font-mono text-2xs text-text-secondary">
               <span>
                 <span className="text-text-muted">plan</span>{" "}
                 {formatMs(planningMs)}
@@ -180,7 +180,7 @@ function InsightChip({
       onClick={clickable ? onClick : undefined}
       disabled={!clickable}
       className={cn(
-        "flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium transition-colors",
+        "flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium transition-colors",
         styles,
         clickable
           ? "cursor-pointer hover:brightness-110"
@@ -216,7 +216,7 @@ function ExplainWaterfall({
 
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-surface-app">
-      <div className="grid grid-cols-[1fr_120px_110px_60px] items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-1.5 text-[0.625rem] font-semibold uppercase tracking-wide text-text-muted">
+      <div className="grid grid-cols-[1fr_120px_110px_60px] items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide text-text-muted">
         <div>Plan</div>
         <div>Self time</div>
         <div>Rows act / plan</div>
@@ -316,12 +316,12 @@ function ExplainRow({
           {node.node.nodeType}
         </span>
         {node.node.relation ? (
-          <span className="ml-1.5 truncate rounded-sm bg-surface-panel px-1.5 py-0.5 font-mono text-[0.6875rem] text-text-secondary">
+          <span className="ml-1.5 truncate rounded-sm bg-surface-panel px-1.5 py-0.5 font-mono text-2xs text-text-secondary">
             {node.node.relation}
           </span>
         ) : null}
         {node.node.alias && node.node.alias !== node.node.relation ? (
-          <span className="ml-1.5 truncate font-mono text-[0.625rem] text-text-muted">
+          <span className="ml-1.5 truncate font-mono text-2xs text-text-muted">
             {node.node.alias}
           </span>
         ) : null}
@@ -332,7 +332,7 @@ function ExplainRow({
           {node.node.buffers.slice(0, 2).map((buffer) => (
             <span
               key={buffer}
-              className="hidden rounded-sm border border-border-subtle/60 bg-surface-panel/60 px-1 py-0.5 font-mono text-[0.625rem] text-text-muted md:inline"
+              className="hidden rounded-sm border border-border-subtle/60 bg-surface-panel/60 px-1 py-0.5 font-mono text-2xs text-text-muted md:inline"
             >
               {buffer}
             </span>
@@ -352,12 +352,12 @@ function ExplainRow({
             style={{ width: `${fillPct}%` }}
           />
         </div>
-        <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-text-secondary">
+        <span className="shrink-0 font-mono text-2xs tabular-nums text-text-secondary">
           {formatMs(node.selfMs)}
         </span>
       </div>
 
-      <div className="flex items-center gap-1 font-mono text-[0.6875rem] tabular-nums text-text-secondary">
+      <div className="flex items-center gap-1 font-mono text-2xs tabular-nums text-text-secondary">
         <span>
           {formatNumber(node.node.actualRows)} /{" "}
           <span className="text-text-muted">
@@ -367,7 +367,7 @@ function ExplainRow({
         <EstimateChip estimate={node.estimate} />
       </div>
 
-      <div className="text-right font-mono text-[0.6875rem] tabular-nums text-text-muted">
+      <div className="text-right font-mono text-2xs tabular-nums text-text-muted">
         {node.node.actualLoops != null
           ? node.node.actualLoops.toLocaleString()
           : "—"}
@@ -407,7 +407,7 @@ function EstimateChip({ estimate }: { estimate: EstimateAccuracy }) {
   const direction = estimate.kind === "over" ? "over" : "under";
   return (
     <span
-      className="ml-0.5 inline-flex items-center gap-0.5 rounded-sm bg-warning/15 px-1 py-0.5 text-[0.625rem] font-medium text-warning"
+      className="ml-0.5 inline-flex items-center gap-0.5 rounded-sm bg-warning/15 px-1 py-0.5 text-2xs font-medium text-warning"
       title={`Planner ${direction}estimated rows by ${label}`}
     >
       <IconAlertTriangle className="size-2.5" />
@@ -426,14 +426,14 @@ function ExplainDetail({
   return (
     <aside className="hidden w-72 shrink-0 flex-col overflow-auto border-l border-border-subtle bg-surface-window md:flex">
       <div className="border-b border-border-subtle px-3 py-2">
-        <div className="text-[0.625rem] uppercase tracking-wide text-text-muted">
+        <div className="text-2xs uppercase tracking-wide text-text-muted">
           Selected node
         </div>
         <div className="mt-0.5 text-sm font-semibold text-foreground">
           {node.node.nodeType}
         </div>
         {node.node.relation ? (
-          <div className="mt-1 font-mono text-[0.6875rem] text-text-secondary">
+          <div className="mt-1 font-mono text-2xs text-text-secondary">
             {node.node.relation}
             {node.node.alias && node.node.alias !== node.node.relation ? (
               <span className="ml-1 text-text-muted">
@@ -444,7 +444,7 @@ function ExplainDetail({
         ) : null}
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-3 py-3 text-[0.6875rem]">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-3 py-3 text-2xs">
         <DetailMetric label="Self time" value={formatMs(node.selfMs)} />
         <DetailMetric label="% of exec" value={formatPct(node.selfPct)} />
         <DetailMetric
@@ -491,14 +491,14 @@ function ExplainDetail({
 
       {node.node.buffers.length > 0 ? (
         <div className="border-t border-border-subtle px-3 py-3">
-          <div className="text-[0.625rem] uppercase tracking-wide text-text-muted">
+          <div className="text-2xs uppercase tracking-wide text-text-muted">
             Buffers
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {node.node.buffers.map((buffer) => (
               <span
                 key={buffer}
-                className="rounded-sm border border-border-subtle bg-surface-panel px-1.5 py-0.5 font-mono text-[0.625rem] text-text-secondary"
+                className="rounded-sm border border-border-subtle bg-surface-panel px-1.5 py-0.5 font-mono text-2xs text-text-secondary"
               >
                 {buffer}
               </span>
@@ -523,14 +523,12 @@ function DetailMetric({
 }) {
   return (
     <div className={cn("min-w-0", span && "col-span-2")}>
-      <dt className="truncate text-[0.625rem] uppercase tracking-wide text-text-muted">
+      <dt className="truncate text-2xs uppercase tracking-wide text-text-muted">
         {label}
       </dt>
       <dd className="truncate font-mono text-xs text-foreground">{value}</dd>
       {help ? (
-        <div className="mt-0.5 truncate text-[0.625rem] text-text-muted">
-          {help}
-        </div>
+        <div className="mt-0.5 truncate text-2xs text-text-muted">{help}</div>
       ) : null}
     </div>
   );
@@ -541,7 +539,7 @@ function EstimateBlock({ estimate }: { estimate: EstimateAccuracy }) {
   if (estimate.kind === "accurate") {
     return (
       <div className="border-t border-border-subtle px-3 py-3">
-        <div className="text-[0.625rem] uppercase tracking-wide text-text-muted">
+        <div className="text-2xs uppercase tracking-wide text-text-muted">
           Estimate
         </div>
         <div className="mt-1 flex items-center gap-1.5 text-xs text-accent">
@@ -558,16 +556,14 @@ function EstimateBlock({ estimate }: { estimate: EstimateAccuracy }) {
       : "Planner expected fewer rows than arrived. ANALYZE the table or refine statistics target.";
   return (
     <div className="border-t border-border-subtle px-3 py-3">
-      <div className="flex items-center gap-1.5 text-[0.625rem] uppercase tracking-wide text-warning">
+      <div className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-warning">
         <IconAlertTriangle className="size-3" />
         Estimate miss
       </div>
       <div className="mt-1 font-mono text-xs text-foreground">
         {formatRatio(estimate.ratio)} {direction}
       </div>
-      <p className="mt-1.5 text-[0.6875rem] leading-relaxed text-text-muted">
-        {hint}
-      </p>
+      <p className="mt-1.5 text-2xs leading-relaxed text-text-muted">{hint}</p>
     </div>
   );
 }

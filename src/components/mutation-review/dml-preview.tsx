@@ -17,7 +17,7 @@ export function DmlPreview({ preview, onCopy }: DmlPreviewProps) {
       className="m-3 border border-border-subtle bg-black"
     >
       <header className="flex min-h-8 items-center gap-2 border-b border-border-subtle px-2">
-        <h2 className="text-[0.6875rem] font-semibold text-foreground">
+        <h2 className="text-2xs font-semibold text-foreground">
           Generated DML · {preview.statements.length} operations
         </h2>
       </header>
@@ -27,7 +27,7 @@ export function DmlPreview({ preview, onCopy }: DmlPreviewProps) {
           return (
             <article key={statement.opIndex} className="min-w-0">
               <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1">
-                <span className="text-[0.625rem] text-text-muted">
+                <span className="text-2xs text-text-muted">
                   Operation {statement.opIndex + 1}
                 </span>
                 <span className="flex-1" />
@@ -50,15 +50,15 @@ export function DmlPreview({ preview, onCopy }: DmlPreviewProps) {
                   <IconCopy /> Copy params
                 </Button>
               </div>
-              <pre className="m-0 whitespace-pre-wrap break-words bg-[#030303] p-2 font-mono text-[0.625rem] leading-relaxed text-text-secondary">
+              <pre className="m-0 whitespace-pre-wrap break-words bg-[#030303] p-2 font-mono text-2xs leading-relaxed text-text-secondary">
                 {statement.sql}
               </pre>
               <div className="border-t border-border-subtle px-2 py-1.5">
-                <div className="mb-1 text-[0.625rem] font-medium text-text-muted">
+                <div className="mb-1 text-2xs font-medium text-text-muted">
                   Ordered parameters
                 </div>
                 {statement.params.length > 0 ? (
-                  <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[0.625rem] text-text-secondary">
+                  <pre className="m-0 whitespace-pre-wrap break-words font-mono text-2xs text-text-secondary">
                     {statement.params
                       .map(
                         (param, index) =>
@@ -67,7 +67,7 @@ export function DmlPreview({ preview, onCopy }: DmlPreviewProps) {
                       .join("\n")}
                   </pre>
                 ) : (
-                  <div className="text-[0.625rem] text-text-muted">None</div>
+                  <div className="text-2xs text-text-muted">None</div>
                 )}
               </div>
             </article>

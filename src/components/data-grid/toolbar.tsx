@@ -640,7 +640,7 @@ export function DataGridToolbar({
                   className="flex h-6 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-xs"
                 >
                   <span className="font-medium">{f.column}</span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
+                  <span className="font-mono text-2xs text-muted-foreground">
                     {OPERATOR_SYMBOL[f.operator] ?? f.operator}
                   </span>
                   <span className="max-w-32 truncate text-muted-foreground">
@@ -694,7 +694,7 @@ export function DataGridToolbar({
                     <SelectItem key={op.label} value={op.label}>
                       <div className="flex w-full items-center justify-between gap-4">
                         <span>{op.label}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground bg-muted/50 px-1 rounded-xs">
+                        <span className="font-mono text-2xs text-muted-foreground bg-muted/50 px-1 rounded-xs">
                           {op.symbol}
                         </span>
                       </div>

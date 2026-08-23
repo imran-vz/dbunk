@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkbenchDock } from "@/components/workbench/dock";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
+import { MONO_FONT_FAMILY } from "@/lib/fonts";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
 import {
   type AnalyzedColumn,
@@ -755,7 +756,8 @@ export function QueryEditorPanel({
       ({
         minimap: { enabled: false },
         fontSize: 13,
-        fontFamily: "SF Mono, JetBrains Mono Variable, monospace",
+        lineHeight: 20,
+        fontFamily: MONO_FONT_FAMILY,
         scrollBeyondLastLine: false,
         wordWrap: "on" as const,
         lineNumbersMinChars: 3,
@@ -765,8 +767,10 @@ export function QueryEditorPanel({
         overviewRulerBorder: false,
         hideCursorInOverviewRuler: true,
         scrollbar: {
-          vertical: "hidden",
-          horizontal: "hidden",
+          vertical: "auto",
+          horizontal: "auto",
+          verticalScrollbarSize: 8,
+          horizontalScrollbarSize: 8,
           useShadows: false,
         },
       }) as const,
@@ -776,9 +780,6 @@ export function QueryEditorPanel({
   const dbSelectorLabel = activeConnection
     ? `${activeConnection.engine} (${activeConnection.host || activeConnection.database})`
     : "No connection";
-  const workspaceDensity =
-    containerWidth > 0 && containerWidth < 760 ? "compact" : "cozy";
-
   const statusItems = buildQueryStatusItems({
     tabLabel: tab.label,
     cursor: editor.cursor,
@@ -870,7 +871,6 @@ export function QueryEditorPanel({
   return (
     <div
       ref={containerRef}
-      data-workspace-density={workspaceDensity}
       className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col"
     >
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">

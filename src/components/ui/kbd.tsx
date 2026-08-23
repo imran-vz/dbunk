@@ -71,7 +71,7 @@ export function Kbd({ keys, className }: KbdProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-app px-1 py-0.5 font-mono text-[0.6rem] leading-none text-text-muted",
+        "inline-flex items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-app px-1 py-0.5 font-mono text-2xs leading-none text-text-muted",
         className,
       )}
     >

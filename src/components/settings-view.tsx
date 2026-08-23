@@ -1,5 +1,8 @@
 import {
   IconAdjustments,
+  IconBaselineDensityLarge,
+  IconBaselineDensityMedium,
+  IconBaselineDensitySmall,
   IconBox,
   IconDatabase,
   IconInfoCircle,
@@ -16,6 +19,7 @@ import { ConnectionsView } from "@/components/connections-view";
 import { ManagedServersTab } from "@/components/managed-servers-tab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { type Density, setDensity, useDensity } from "@/lib/density";
 import type { CredentialStorageMode, SettingsTab } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import {
@@ -50,7 +54,7 @@ export function SettingsView() {
         aria-label="Settings sections"
         className="flex w-48 shrink-0 flex-col gap-0.5 border-r border-border-subtle bg-surface-sidebar px-2 py-4"
       >
-        <div className="px-2 pb-2 text-[0.65rem] uppercase tracking-wider text-text-muted">
+        <div className="px-2 pb-2 text-2xs uppercase tracking-wider text-text-muted">
           Settings
         </div>
         {TABS.map((tab) => {
@@ -139,6 +143,32 @@ const THEME_PRESETS: Array<{
   },
 ];
 
+const DENSITY_OPTIONS: Array<{
+  id: Density;
+  label: string;
+  description: string;
+  icon: typeof IconBaselineDensityMedium;
+}> = [
+  {
+    id: "compact",
+    label: "Compact",
+    description: "Tightest rows and controls — maximum data on screen.",
+    icon: IconBaselineDensitySmall,
+  },
+  {
+    id: "default",
+    label: "Default",
+    description: "Dense, balanced metrics for everyday work.",
+    icon: IconBaselineDensityMedium,
+  },
+  {
+    id: "comfortable",
+    label: "Comfortable",
+    description: "Roomier rows and controls.",
+    icon: IconBaselineDensityLarge,
+  },
+];
+
 function GeneralTab() {
   const theme: ThemeMode = useAppStore(
     (state) => state.appSettings?.theme ?? "system",
@@ -148,6 +178,7 @@ function GeneralTab() {
   );
   const setTheme = useAppStore((state) => state.setTheme);
   const setThemePreset = useAppStore((state) => state.setThemePreset);
+  const density = useDensity();
 
   const modeLocked = isPresetIntrinsicallyDark(preset);
 
@@ -225,6 +256,41 @@ function GeneralTab() {
                     )}
                   >
                     <div className="text-sm font-medium">{option.label}</div>
+                    <div className="text-xs text-text-muted">
+                      {option.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-border-subtle bg-surface-window p-5">
+            <h2 className="text-sm font-semibold text-foreground">Density</h2>
+            <p className="mt-1 text-xs text-text-muted">
+              Adjusts control and row heights. Typography stays the same in
+              every mode.
+            </p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {DENSITY_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const active = density === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setDensity(option.id)}
+                    className={cn(
+                      "flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors",
+                      active
+                        ? "border-accent/50 bg-accent/10"
+                        : "border-border-subtle bg-surface-panel hover:border-border-strong",
+                    )}
+                  >
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Icon className="size-3.5" />
+                      {option.label}
+                    </div>
                     <div className="text-xs text-text-muted">
                       {option.description}
                     </div>
@@ -330,7 +396,7 @@ function SecurityTab() {
             </div>
             <span
               className={cn(
-                "rounded-md px-2 py-1 text-[0.6875rem]",
+                "rounded-md px-2 py-1 text-2xs",
                 settings?.credentialState === "ready"
                   ? "bg-accent/10 text-accent"
                   : "bg-warning/10 text-warning",
@@ -478,7 +544,7 @@ function SectionHeader({
 }) {
   return (
     <header className="shrink-0 border-b border-border-subtle bg-surface-window px-6 py-4">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">
+      <h1 className="text-lg font-semibold tracking-tight text-foreground">
         {title}
       </h1>
       <p className="mt-1 text-xs text-text-muted">{subtitle}</p>

@@ -162,7 +162,7 @@ export function QueryResultsView({
               );
             })}
           </div>
-          <div className="flex items-center gap-2 text-[0.625rem] text-text-muted">
+          <div className="flex items-center gap-2 text-2xs text-text-muted">
             <span className="dbunk-optional-label">
               Returned {returnedRowCount} rows in {returnedRuntime}
             </span>
@@ -175,7 +175,7 @@ export function QueryResultsView({
                   type="button"
                   onClick={() => onResultIndexChange(index)}
                   aria-current={index === resultIndex ? "true" : undefined}
-                  className="whitespace-nowrap border border-border-subtle px-2 py-1 text-[0.625rem] text-text-muted aria-[current=true]:border-accent aria-[current=true]:text-foreground"
+                  className="whitespace-nowrap border border-border-subtle px-2 py-1 text-2xs text-text-muted aria-[current=true]:border-accent aria-[current=true]:text-foreground"
                 >
                   {index + 1} ·{" "}
                   {result.columns.length

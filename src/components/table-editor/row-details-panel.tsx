@@ -127,10 +127,10 @@ function RowDetailCell({
 }) {
   return (
     <div className="rounded-md border border-border-subtle bg-surface-panel-elevated px-3 py-2">
-      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+      <div className="text-2xs font-medium uppercase tracking-[0.12em] text-text-muted">
         {column}
       </div>
-      <div className="mt-1 truncate font-mono text-[0.75rem] text-foreground">
+      <div className="mt-1 truncate font-mono text-xs text-foreground">
         {value || "NULL"}
       </div>
     </div>
@@ -153,7 +153,7 @@ function SummaryCard({
   ];
   return (
     <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3">
-      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+      <div className="text-2xs font-medium uppercase tracking-[0.12em] text-text-muted">
         Summary
       </div>
       <dl className="mt-2 space-y-1.5 text-xs">

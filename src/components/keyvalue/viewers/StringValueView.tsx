@@ -71,7 +71,7 @@ export function StringValueView({
     return (
       <div
         role="alert"
-        className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        className="m-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
       >
         {error}
       </div>
@@ -102,7 +102,7 @@ export function StringValueView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
-      <div className="flex items-center justify-between text-[0.65rem] text-text-muted">
+      <div className="flex items-center justify-between text-2xs text-text-muted">
         <span>
           {data.totalBytes.toLocaleString()} bytes · encoding: {encoding}
         </span>
@@ -111,7 +111,7 @@ export function StringValueView({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-[0.65rem]"
+              className="h-6 px-2 text-2xs"
               onClick={() => setMaxBytes(FULL_LOAD_MAX_BYTES)}
             >
               Load full ({(data.totalBytes / (1024 * 1024)).toFixed(2)} MB)
@@ -121,7 +121,7 @@ export function StringValueView({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-[0.65rem]"
+              className="h-6 px-2 text-2xs"
               onClick={() => {
                 setDraft(value);
                 setEditing(true);
@@ -134,7 +134,7 @@ export function StringValueView({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-2 text-[0.65rem]"
+                className="h-6 px-2 text-2xs"
                 onClick={() => {
                   setDraft(value);
                   setEditing(false);
@@ -145,7 +145,7 @@ export function StringValueView({
               </Button>
               <Button
                 size="sm"
-                className="h-6 px-2 text-[0.65rem]"
+                className="h-6 px-2 text-2xs"
                 disabled={saving || draft === value}
                 onClick={() => {
                   void handleSave();
@@ -157,11 +157,11 @@ export function StringValueView({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2 text-[0.65rem]">
+      <div className="flex items-center gap-2 text-2xs">
         <Button
           size="sm"
           variant={bitmapMode ? "default" : "outline"}
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => setBitmapMode((value) => !value)}
           disabled={editing}
           title="Treat the value as a bitmap and render each byte as 8 bits"
@@ -186,7 +186,7 @@ export function StringValueView({
         />
       )}
       {data.truncated && !editing ? (
-        <p className="text-[0.65rem] text-amber-400">
+        <p className="text-2xs text-amber-400">
           Showing first {(maxBytes / 1024).toFixed(0)} KB of{" "}
           {(data.totalBytes / 1024).toFixed(0)} KB.
         </p>
@@ -245,7 +245,7 @@ function BitmapGrid({
   };
 
   return (
-    <div className="flex-1 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-[0.6rem]">
+    <div className="flex-1 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-3 font-mono text-2xs">
       <div className="grid grid-cols-[repeat(64,_minmax(0,_1fr))] gap-0.5">
         {visibleBits.map((bit, idx) => (
           <button
@@ -270,13 +270,13 @@ function BitmapGrid({
         ))}
       </div>
       {totalBits > MAX_BITS_RENDERED ? (
-        <p className="mt-2 text-[0.6rem] text-amber-400">
+        <p className="mt-2 text-2xs text-amber-400">
           Showing first {MAX_BITS_RENDERED.toLocaleString()} of{" "}
           {totalBits.toLocaleString()} bits. Higher offsets are still editable
           via the CLI.
         </p>
       ) : (
-        <p className="mt-2 text-[0.6rem] text-text-muted">
+        <p className="mt-2 text-2xs text-text-muted">
           {totalBits.toLocaleString()} bits · click a cell to toggle (SETBIT)
         </p>
       )}

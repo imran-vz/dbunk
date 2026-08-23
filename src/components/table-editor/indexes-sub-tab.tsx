@@ -52,7 +52,7 @@ export function IndexesSubTab({
                 <h2 className="text-sm font-semibold text-foreground">
                   Indexes
                 </h2>
-                <p className="text-[0.6875rem] text-text-muted">
+                <p className="text-2xs text-text-muted">
                   {schema}.{tableName}
                 </p>
               </div>

@@ -140,7 +140,7 @@ export function SchemaMapToolbar({
               aria-pressed={prefs.attrMode === option.id}
               onClick={() => onPrefsChange({ attrMode: option.id })}
               className={cn(
-                "px-2 text-[0.6875rem] font-medium transition-colors",
+                "px-2 text-2xs font-medium transition-colors",
                 prefs.attrMode === option.id
                   ? "bg-accent/15 text-accent-hover"
                   : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
@@ -180,7 +180,7 @@ export function SchemaMapToolbar({
               aria-pressed={prefs.routing === routing}
               onClick={() => onPrefsChange({ routing })}
               className={cn(
-                "inline-flex items-center gap-1 px-2 text-[0.6875rem] font-medium transition-colors",
+                "inline-flex items-center gap-1 px-2 text-2xs font-medium transition-colors",
                 prefs.routing === routing
                   ? "bg-accent/15 text-accent-hover"
                   : "text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",
@@ -227,7 +227,7 @@ export function SchemaMapToolbar({
       {exportError ? (
         <div
           role="alert"
-          className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-[0.6875rem] text-danger"
+          className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-1 text-2xs text-danger"
         >
           {exportError}
         </div>
@@ -253,7 +253,7 @@ function ToggleChip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "inline-flex h-6 items-center gap-1 rounded-sm border px-2 text-[0.6875rem] font-medium transition-colors",
+        "inline-flex h-6 items-center gap-1 rounded-sm border px-2 text-2xs font-medium transition-colors",
         active
           ? "border-accent/40 bg-accent/10 text-accent-hover"
           : "border-border-subtle bg-surface-panel text-text-muted hover:bg-surface-panel-elevated hover:text-foreground",

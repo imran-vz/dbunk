@@ -85,7 +85,7 @@ export function KeyInspectorTab({
         {error ? (
           <div
             role="alert"
-            className="mx-4 mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            className="mx-4 mt-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
           >
             {error}
           </div>
@@ -105,7 +105,7 @@ export function KeyInspectorTab({
       {actions.actionError ? (
         <div
           role="alert"
-          className="absolute top-12 left-1/2 z-10 -translate-x-1/2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          className="absolute top-12 left-1/2 z-10 -translate-x-1/2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
         >
           {actions.actionError}
         </div>

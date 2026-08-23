@@ -55,10 +55,10 @@ export function BastionRow({
             <span className="text-sm font-medium text-foreground">
               {bastion.name}
             </span>
-            <span className="rounded-sm bg-surface-panel-elevated px-1.5 py-0.5 text-[0.625rem] text-text-muted">
+            <span className="rounded-sm bg-surface-panel-elevated px-1.5 py-0.5 text-2xs text-text-muted">
               {authLabel(bastion.authMethod)}
             </span>
-            <span className="rounded-sm bg-surface-panel-elevated px-1.5 py-0.5 text-[0.625rem] text-text-muted">
+            <span className="rounded-sm bg-surface-panel-elevated px-1.5 py-0.5 text-2xs text-text-muted">
               {referenceCount === 1
                 ? "1 Connection"
                 : `${referenceCount} Connections`}
@@ -69,21 +69,19 @@ export function BastionRow({
           </div>
           <div
             className={cn(
-              "mt-1 text-[0.6875rem]",
+              "mt-1 text-2xs",
               bastion.hostKeyFingerprint ? "text-text-muted" : "text-warning",
             )}
           >
             Host key: {bastion.hostKeyFingerprint ?? "not trusted yet"}
           </div>
           {latestTest?.state === "success" ? (
-            <div className="mt-1 text-[0.6875rem] text-accent">
+            <div className="mt-1 text-2xs text-accent">
               SSH reachable in {latestTest.latencyMs}ms
             </div>
           ) : null}
           {latestTest?.state === "error" ? (
-            <div className="mt-1 text-[0.6875rem] text-danger">
-              {latestTest.error}
-            </div>
+            <div className="mt-1 text-2xs text-danger">{latestTest.error}</div>
           ) : null}
         </button>
         <div className="flex flex-wrap items-start justify-end gap-2">
@@ -118,7 +116,7 @@ export function BastionRow({
           <legend className="text-xs font-medium text-foreground">
             Reset trusted host key
           </legend>
-          <p className="text-[0.6875rem] text-text-secondary">
+          <p className="text-2xs text-text-secondary">
             Current fingerprint:{" "}
             {bastion.hostKeyFingerprint ?? "not trusted yet"}. Type{" "}
             {bastion.host} to reset trust for the next SSH handshake.

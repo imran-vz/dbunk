@@ -153,10 +153,10 @@ export function NewKeyDialog({
               placeholder={placeholderFor(type)}
               className="min-h-32 rounded-md border border-border-subtle bg-surface-panel p-2 font-mono text-xs"
             />
-            <p className="text-[0.65rem] text-text-muted">{hintFor(type)}</p>
+            <p className="text-2xs text-text-muted">{hintFor(type)}</p>
           </div>
           {error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
               {error}
             </div>
           ) : null}

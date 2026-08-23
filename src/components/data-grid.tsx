@@ -276,11 +276,11 @@ function ColumnHeaderLabel({
       />
       <TooltipContent className="w-64 p-0">
         <div className="flex items-baseline gap-2 border-b border-border-subtle/60 px-3 py-2">
-          <span className="truncate font-mono text-[0.75rem] font-semibold text-foreground">
+          <span className="truncate font-mono text-xs font-semibold text-foreground">
             {name}
           </span>
           {meta.dataType ? (
-            <span className="ml-auto shrink-0 rounded-sm bg-primary/15 px-1.5 py-0.5 font-mono text-[0.6rem] text-primary">
+            <span className="ml-auto shrink-0 rounded-sm bg-primary/15 px-1.5 py-0.5 font-mono text-2xs text-primary">
               {meta.dataType}
             </span>
           ) : null}
@@ -288,10 +288,7 @@ function ColumnHeaderLabel({
         {rows.length > 0 ? (
           <ul className="space-y-1 px-3 py-2">
             {rows.map(({ key, Icon, iconClass, label, detail }) => (
-              <li
-                key={key}
-                className="flex items-baseline gap-2 text-[0.65rem]"
-              >
+              <li key={key} className="flex items-baseline gap-2 text-2xs">
                 <Icon
                   className={cn("size-3 shrink-0 self-center", iconClass)}
                   aria-hidden

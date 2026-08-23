@@ -46,7 +46,7 @@ export function TransactionControls({ tabId }: { tabId: string }) {
           if (!isTransactionMode(mode)) return;
           void applyQueryTransactionCommand(tabId, { kind: "setMode", mode });
         }}
-        className="h-7 border border-border-subtle bg-surface-panel px-1 text-[0.6875rem]"
+        className="h-7 border border-border-subtle bg-surface-panel px-1 text-2xs"
       >
         <option value="autocommit">Autocommit</option>
         <option value="manual">Manual</option>
@@ -68,7 +68,7 @@ export function TransactionControls({ tabId }: { tabId: string }) {
             isolation,
           });
         }}
-        className="h-7 border border-border-subtle bg-surface-panel px-1 text-[0.6875rem]"
+        className="h-7 border border-border-subtle bg-surface-panel px-1 text-2xs"
       >
         <option value="readCommitted">Read committed</option>
         <option value="repeatableRead">Repeatable read</option>

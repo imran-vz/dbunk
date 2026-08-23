@@ -173,12 +173,12 @@ function Header({
       </div>
       <div className="flex items-center gap-1.5">
         {tableEngine ? (
-          <Badge variant="outline" className="text-[0.625rem]">
+          <Badge variant="outline" className="text-2xs">
             {tableEngine}
           </Badge>
         ) : null}
         {primaryKey && primaryKey.length > 0 ? (
-          <Badge variant="secondary" className="text-[0.625rem]">
+          <Badge variant="secondary" className="text-2xs">
             {primaryKeyBadge} {primaryKey.join(", ")}
           </Badge>
         ) : null}
@@ -198,7 +198,7 @@ function ErrorBanner({
     <div
       data-testid="structure-error"
       role="alert"
-      className="flex items-center gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+      className="flex items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
     >
       <IconAlertTriangle className="size-4" />
       <span>Failed to load structure: {message}</span>

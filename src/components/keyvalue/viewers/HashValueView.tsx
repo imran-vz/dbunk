@@ -144,7 +144,7 @@ export function HashValueView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
-      <div className="flex items-center gap-2 text-[0.65rem] text-text-muted">
+      <div className="flex items-center gap-2 text-2xs text-text-muted">
         <Input
           placeholder={
             mode === "scan"
@@ -167,7 +167,7 @@ export function HashValueView({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-[0.65rem]"
+              className="h-7 px-2 text-2xs"
               onClick={() => setEditing(true)}
             >
               Edit
@@ -177,7 +177,7 @@ export function HashValueView({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 onClick={() => {
                   setEditing(false);
                   setPendingSets({});
@@ -191,7 +191,7 @@ export function HashValueView({
               </Button>
               <Button
                 size="sm"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving || !dirty}
                 onClick={() => {
                   void handleSave();
@@ -204,13 +204,13 @@ export function HashValueView({
         </div>
       </div>
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       ) : null}
       <div className="flex-1 overflow-auto rounded-md border border-border-subtle">
         <table className="min-w-full divide-y divide-border-subtle font-mono text-xs">
-          <thead className="bg-surface-panel-elevated text-[0.65rem] uppercase text-text-muted">
+          <thead className="bg-surface-panel-elevated text-2xs uppercase text-text-muted">
             <tr>
               <th className="px-3 py-1.5 text-left">Field</th>
               <th className="px-3 py-1.5 text-left">Value</th>
@@ -259,7 +259,7 @@ export function HashValueView({
                             return next;
                           });
                         }}
-                        className="text-[0.65rem] text-destructive hover:underline"
+                        className="text-2xs text-danger hover:underline"
                       >
                         {isDeleted ? "undo" : "delete"}
                       </button>
@@ -299,7 +299,7 @@ export function HashValueView({
                       setNewField("");
                       setNewValue("");
                     }}
-                    className="text-[0.65rem] text-primary hover:underline disabled:opacity-30"
+                    className="text-2xs text-primary hover:underline disabled:opacity-30"
                   >
                     add
                   </button>
@@ -309,7 +309,7 @@ export function HashValueView({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between text-[0.65rem] text-text-muted">
+      <div className="flex items-center justify-between text-2xs text-text-muted">
         <span>
           {mode === "scan"
             ? "Filtering all fields (server-side SCAN)"
@@ -319,7 +319,7 @@ export function HashValueView({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[0.65rem]"
+            className="h-6 px-2 text-2xs"
             onClick={() => {
               void loadMore();
             }}

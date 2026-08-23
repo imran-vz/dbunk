@@ -118,7 +118,7 @@ function CompareKeysButton({ connectionId }: { connectionId: string }) {
       <Button
         size="sm"
         variant="ghost"
-        className="h-6 px-2 text-[0.65rem]"
+        className="h-6 px-2 text-2xs"
         onClick={() => setOpen(true)}
       >
         Compare…
@@ -136,20 +136,20 @@ function CompareKeysButton({ connectionId }: { connectionId: string }) {
           value={leftKey}
           onChange={(event) => setLeftKey(event.target.value)}
           placeholder="key A"
-          className="h-6 flex-1 font-mono text-[0.65rem]"
+          className="h-6 flex-1 font-mono text-2xs"
           aria-label="Left key"
         />
         <Input
           value={rightKey}
           onChange={(event) => setRightKey(event.target.value)}
           placeholder="key B"
-          className="h-6 flex-1 font-mono text-[0.65rem]"
+          className="h-6 flex-1 font-mono text-2xs"
           aria-label="Right key"
         />
         <Button
           size="sm"
           variant="outline"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           disabled={busy || !leftKey.trim() || !rightKey.trim()}
           onClick={() => {
             void handleCompare();
@@ -160,7 +160,7 @@ function CompareKeysButton({ connectionId }: { connectionId: string }) {
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => {
             setOpen(false);
             reset();
@@ -170,7 +170,7 @@ function CompareKeysButton({ connectionId }: { connectionId: string }) {
         </Button>
       </div>
       {error ? (
-        <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[0.65rem] text-destructive">
+        <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-2xs text-danger">
           {error}
         </div>
       ) : null}
@@ -178,17 +178,17 @@ function CompareKeysButton({ connectionId }: { connectionId: string }) {
         <div className="mt-2 space-y-1">
           <div
             className={cn(
-              "text-[0.65rem] font-semibold",
+              "text-2xs font-semibold",
               equal ? "text-accent" : "text-warning",
             )}
           >
             {equal ? "Values are identical." : "Values differ."}
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-1 font-mono text-[0.6rem]">
+            <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-1 font-mono text-2xs">
               {leftValue}
             </pre>
-            <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-1 font-mono text-[0.6rem]">
+            <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-surface-panel p-1 font-mono text-2xs">
               {rightValue}
             </pre>
           </div>
@@ -320,7 +320,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
       <Button
         size="sm"
         variant="ghost"
-        className="h-6 px-2 text-[0.65rem]"
+        className="h-6 px-2 text-2xs"
         onClick={() => setOpen(true)}
       >
         Bulk ops…
@@ -351,7 +351,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
             setPreview(null);
             setConfirmText("");
           }}
-          className="h-6 rounded border border-border-subtle bg-surface-panel px-1 text-[0.65rem]"
+          className="h-6 rounded border border-border-subtle bg-surface-panel px-1 text-2xs"
           aria-label="Bulk operation"
         >
           <option value="delete">DEL</option>
@@ -364,7 +364,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
           placeholder={
             op === "rename" ? "old prefix" : "pattern (e.g. session:*)"
           }
-          className="h-6 flex-1 font-mono text-[0.65rem]"
+          className="h-6 flex-1 font-mono text-2xs"
           aria-label="Bulk pattern"
         />
         {op === "expire" ? (
@@ -373,7 +373,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
             value={ttlSeconds}
             onChange={(event) => setTtlSeconds(event.target.value)}
             placeholder="ttl seconds"
-            className="h-6 w-24 font-mono text-[0.65rem]"
+            className="h-6 w-24 font-mono text-2xs"
             aria-label="TTL seconds"
           />
         ) : null}
@@ -382,14 +382,14 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
             value={newPrefix}
             onChange={(event) => setNewPrefix(event.target.value)}
             placeholder="new prefix"
-            className="h-6 w-32 font-mono text-[0.65rem]"
+            className="h-6 w-32 font-mono text-2xs"
             aria-label="New prefix"
           />
         ) : null}
         <Button
           size="sm"
           variant="outline"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           disabled={busy || !pattern.trim() || !ttlValid || !renameValid}
           onClick={() => {
             void handlePreview();
@@ -400,7 +400,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => {
             setOpen(false);
             reset();
@@ -410,7 +410,7 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
         </Button>
       </div>
       {preview ? (
-        <div className="mt-2 text-[0.6rem]">
+        <div className="mt-2 text-2xs">
           <div className="text-text-secondary">
             Scanned {scanned.toLocaleString()} · matched{" "}
             <span className="font-semibold text-warning">
@@ -444,13 +444,13 @@ function BulkDeleteButton({ connectionId }: { connectionId: string }) {
                 value={confirmText}
                 onChange={(event) => setConfirmText(event.target.value)}
                 placeholder={`Type "${confirmWord}" to confirm`}
-                className="h-6 flex-1 font-mono text-[0.65rem]"
+                className="h-6 flex-1 font-mono text-2xs"
                 aria-label="Confirm bulk operation"
               />
               <Button
                 size="sm"
                 variant="destructive"
-                className="h-6 px-2 text-[0.65rem]"
+                className="h-6 px-2 text-2xs"
                 disabled={busy || confirmText !== confirmWord}
                 onClick={() => {
                   void handleApply();
@@ -679,7 +679,7 @@ export function KeyspaceBrowser({
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2 text-xs">
       {showReplicaWarning ? (
-        <output className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[0.65rem] text-warning">
+        <output className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-2xs text-warning">
           <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <div className="flex-1">
             This is a primary with{" "}
@@ -702,7 +702,7 @@ export function KeyspaceBrowser({
         </output>
       ) : null}
       {showAclHint ? (
-        <output className="flex items-start gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated/60 px-2 py-1.5 text-[0.65rem] text-text-secondary">
+        <output className="flex items-start gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated/60 px-2 py-1.5 text-2xs text-text-secondary">
           <IconKey className="mt-0.5 size-3.5 shrink-0 text-text-muted" />
           <div className="flex-1">
             Connected as{" "}
@@ -714,7 +714,7 @@ export function KeyspaceBrowser({
               {aclSelf.keyPatterns.map((pattern) => (
                 <span
                   key={pattern}
-                  className="rounded bg-surface-panel px-1.5 py-0.5 text-[0.6rem] text-foreground"
+                  className="rounded bg-surface-panel px-1.5 py-0.5 text-2xs text-foreground"
                 >
                   {pattern}
                 </span>
@@ -727,7 +727,7 @@ export function KeyspaceBrowser({
         <select
           value={activeDb}
           onChange={(event) => setActiveDb(Number(event.target.value))}
-          className="h-8 rounded border border-border-subtle bg-surface-panel px-1 text-[0.65rem]"
+          className="h-8 rounded border border-border-subtle bg-surface-panel px-1 text-2xs"
           aria-label="Browse DB"
           title="Switch the keyspace browser to a different DB. Key tabs continue to use the connection's default DB."
         >
@@ -749,7 +749,7 @@ export function KeyspaceBrowser({
         </div>
         <label
           className={cn(
-            "flex h-8 cursor-pointer items-center gap-1 rounded border border-border-subtle px-2 text-[0.6rem]",
+            "flex h-8 cursor-pointer items-center gap-1 rounded border border-border-subtle px-2 text-2xs",
             liveUpdates
               ? "border-accent/60 bg-accent/10 text-accent"
               : "text-text-muted",
@@ -774,7 +774,7 @@ export function KeyspaceBrowser({
               setTypeFilter((prev) => (prev === t.id ? null : t.id))
             }
             className={cn(
-              "rounded-md border px-2 py-0.5 text-[0.625rem]",
+              "rounded-md border px-2 py-0.5 text-2xs",
               typeFilter === t.id
                 ? "border-primary bg-primary/15 text-primary"
                 : "border-border-subtle text-text-muted hover:border-border hover:text-foreground",
@@ -787,7 +787,7 @@ export function KeyspaceBrowser({
       {error ? (
         <div
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[0.65rem] text-destructive"
+          className="rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-2xs text-danger"
         >
           {error}
         </div>
@@ -795,7 +795,7 @@ export function KeyspaceBrowser({
       <div className="flex-1 overflow-auto rounded-md border border-border-subtle bg-surface-panel">
         {watchedKeys.length > 0 ? (
           <div className="border-b border-border-subtle bg-surface-panel-elevated/40">
-            <div className="px-2 py-1 text-[0.6rem] uppercase tracking-wide text-text-muted">
+            <div className="px-2 py-1 text-2xs uppercase tracking-wide text-text-muted">
               Watched ({watchedKeys.length})
             </div>
             <ul className="divide-y divide-border-subtle">
@@ -813,7 +813,7 @@ export function KeyspaceBrowser({
                       )}
                     >
                       <KeyTypeIcon type={type} />
-                      <span className="truncate font-mono text-[0.65rem]">
+                      <span className="truncate font-mono text-2xs">
                         {name}
                       </span>
                     </button>
@@ -832,7 +832,7 @@ export function KeyspaceBrowser({
           </div>
         ) : null}
         {keys.length === 0 && !loading ? (
-          <div className="px-2 py-3 text-[0.65rem] text-text-muted">
+          <div className="px-2 py-3 text-2xs text-text-muted">
             No keys match. Adjust the filter or clear the search.
           </div>
         ) : (
@@ -850,7 +850,7 @@ export function KeyspaceBrowser({
                     )}
                   >
                     <KeyTypeIcon type={key.type} />
-                    <span className="truncate font-mono text-[0.65rem]">
+                    <span className="truncate font-mono text-2xs">
                       {key.name}
                     </span>
                   </button>
@@ -883,7 +883,7 @@ export function KeyspaceBrowser({
           </ul>
         )}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[0.65rem] text-text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-2xs text-text-muted">
         <span>{keys.length.toLocaleString()} loaded</span>
         <CompareKeysButton connectionId={connection.id} />
         <BulkDeleteButton connectionId={connection.id} />
@@ -891,7 +891,7 @@ export function KeyspaceBrowser({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[0.65rem] text-destructive hover:text-destructive"
+            className="h-6 px-2 text-2xs text-danger hover:text-danger"
             onClick={() => {
               void handleCancelScan();
             }}
@@ -902,7 +902,7 @@ export function KeyspaceBrowser({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[0.65rem]"
+            className="h-6 px-2 text-2xs"
             onClick={() => {
               void runScan(cursor);
             }}

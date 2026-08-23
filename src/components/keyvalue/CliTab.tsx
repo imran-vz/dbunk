@@ -265,11 +265,11 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-border-subtle bg-surface-panel/40 px-3 py-1 text-[0.65rem]">
+      <div className="flex items-center gap-1 border-b border-border-subtle bg-surface-panel/40 px-3 py-1 text-2xs">
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => {
             void handleSaveCurrent();
           }}
@@ -279,14 +279,14 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => setSavedPanelOpen((value) => !value)}
         >
           Saved ({savedCommands.length})
         </Button>
       </div>
       {savedPanelOpen ? (
-        <div className="max-h-48 overflow-auto border-b border-border-subtle bg-surface-panel/60 text-[0.65rem]">
+        <div className="max-h-48 overflow-auto border-b border-border-subtle bg-surface-panel/60 text-2xs">
           {savedCommands.length === 0 ? (
             <div className="px-3 py-2 text-text-muted">
               No saved commands yet. Use Save to pin the current input.
@@ -315,7 +315,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
                     onClick={() => {
                       void handleDeleteSaved(cmd);
                     }}
-                    className="px-2 text-destructive hover:underline"
+                    className="px-2 text-danger hover:underline"
                   >
                     delete
                   </button>
@@ -342,7 +342,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
             className={cn(
               "border-b border-border-subtle py-1",
               entry.kind === "command" && "text-foreground",
-              entry.kind === "rejected" && "text-destructive",
+              entry.kind === "rejected" && "text-danger",
             )}
           >
             {entry.kind === "command" ? (
@@ -350,7 +350,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
                 <span className="text-text-muted">{">"}</span> {entry.text}
               </div>
             ) : entry.kind === "rejected" ? (
-              <div className="text-destructive">(error) {entry.reason}</div>
+              <div className="text-danger">(error) {entry.reason}</div>
             ) : entry.kind === "needs-confirmation" ? (
               <div className="text-amber-400">
                 {entry.command} requires confirmation ({entry.severity})
@@ -363,7 +363,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
       </div>
       <div className="relative shrink-0 border-t border-border-subtle bg-surface-panel/60">
         {docSpec ? (
-          <div className="flex items-baseline gap-2 border-b border-border-subtle bg-surface-window/40 px-3 py-1 font-mono text-[0.65rem]">
+          <div className="flex items-baseline gap-2 border-b border-border-subtle bg-surface-window/40 px-3 py-1 font-mono text-2xs">
             <span className="font-semibold text-foreground">
               {docSpec.name}
             </span>
@@ -385,7 +385,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
                 }}
                 onMouseEnter={() => setSuggestionIndex(idx)}
                 className={cn(
-                  "flex w-full items-baseline gap-2 px-3 py-1 text-left font-mono text-[0.7rem]",
+                  "flex w-full items-baseline gap-2 px-3 py-1 text-left font-mono text-2xs",
                   idx === suggestionIndex
                     ? "bg-primary/15 text-foreground"
                     : "text-text-secondary",
@@ -395,7 +395,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
                   {spec.name}
                 </span>
                 <span className="text-text-muted">{spec.args}</span>
-                <span className="ml-auto truncate text-[0.65rem] text-text-muted">
+                <span className="ml-auto truncate text-2xs text-text-muted">
                   {spec.description}
                 </span>
               </button>
@@ -490,7 +490,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
             const replacement = scanReplacementFor(pendingConfirm.tokens);
             if (!replacement) return null;
             return (
-              <p className="mb-2 text-[0.6875rem] text-text-secondary">
+              <p className="mb-2 text-2xs text-text-secondary">
                 <code className="rounded bg-surface-panel px-1 py-0.5 font-mono">
                   KEYS
                 </code>{" "}
@@ -593,7 +593,7 @@ function renderBody(value: SerializedValue): React.ReactNode {
         </pre>
       );
     case "error":
-      return <span className="text-destructive">(error) {value.value}</span>;
+      return <span className="text-danger">(error) {value.value}</span>;
     case "array":
       return (
         <ol className="ml-3 list-decimal text-text-muted">
