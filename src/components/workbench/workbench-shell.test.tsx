@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unknown-parameters -- Test fixtures use controlled values. */
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
@@ -34,5 +34,58 @@ describe("WorkbenchShell", () => {
     const root = container.firstElementChild;
     expect(root?.className).toContain("min-w-0");
     expect(root?.className).toContain("flex-1");
+  });
+});
+
+describe("WorkbenchShell ambient environment", () => {
+  const baseProps = {
+    isWindowFullscreen: false,
+    onPointerDown: () => {},
+    onDoubleClick: () => {},
+    railItems: [],
+    activeRail: "tables",
+    onRailChange: () => {},
+    onOpenSettings: () => {},
+    statusItems: [],
+  };
+
+  const connection = (environment?: "production" | "development") => ({
+    id: "c1",
+    name: "Main",
+    database: "app",
+    host: "db",
+    port: 5432,
+    user: "u",
+    password: "",
+    role: "",
+    engine: "PostgreSQL" as const,
+    ssl: false,
+    status: "Connected" as const,
+    latency: "1ms",
+    environment,
+  });
+
+  it("shows a PRODUCTION status-bar segment for prod-tagged connections", () => {
+    render(
+      <WorkbenchShell
+        {...baseProps}
+        activeConnection={connection("production")}
+      >
+        <div>content</div>
+      </WorkbenchShell>,
+    );
+    expect(screen.getByText("PRODUCTION")).toBeTruthy();
+  });
+
+  it("shows no environment segment for development connections", () => {
+    render(
+      <WorkbenchShell
+        {...baseProps}
+        activeConnection={connection("development")}
+      >
+        <div>content</div>
+      </WorkbenchShell>,
+    );
+    expect(screen.queryByText("DEVELOPMENT")).toBeNull();
   });
 });

@@ -2,6 +2,14 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockedRequestConfirm } = vi.hoisted(() => ({
+  mockedRequestConfirm: vi.fn(() => Promise.resolve(true)),
+}));
+vi.mock("@/lib/confirm", () => ({
+  requestConfirm: mockedRequestConfirm,
+  requestPrompt: vi.fn(() => Promise.resolve(null)),
+}));
+
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(),
@@ -554,7 +562,8 @@ describe("TableStructureView edit flow", () => {
       fireEvent.click(screen.getByTestId("structure-drop-column-email"));
     });
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(false);
     mockedInvoke.mockReset();
     mockedInvoke.mockImplementation(() => new Promise(() => {}));
 
@@ -562,7 +571,7 @@ describe("TableStructureView edit flow", () => {
       fireEvent.click(screen.getByTestId("structure-commit"));
     });
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockedRequestConfirm).toHaveBeenCalled();
     // Pending preserved; no execute_ddl.
     expect(
       useAppStore.getState().pendingStructureChanges[key] ?? [],
@@ -570,8 +579,6 @@ describe("TableStructureView edit flow", () => {
     expect(
       mockedInvoke.mock.calls.some(([name]) => name === "execute_ddl"),
     ).toBe(false);
-
-    confirmSpy.mockRestore();
   });
 
   it("sends execute_ddl when the destructive confirm dialog is accepted", async () => {
@@ -589,7 +596,8 @@ describe("TableStructureView edit flow", () => {
       fireEvent.click(screen.getByTestId("structure-drop-column-email"));
     });
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(true);
     mockedInvoke.mockReset();
     mockedInvoke
       .mockResolvedValueOnce({ runtimeMs: 8 })
@@ -602,7 +610,7 @@ describe("TableStructureView edit flow", () => {
       await Promise.resolve();
     });
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockedRequestConfirm).toHaveBeenCalled();
     const ddlCall = mockedInvoke.mock.calls.find(
       ([name]) => name === "execute_ddl",
     );
@@ -611,6 +619,5 @@ describe("TableStructureView edit flow", () => {
       const payload = (ddlCall[1] as { payload: { sql: string } }).payload;
       expect(payload.sql).toContain('DROP COLUMN "email"');
     }
-    confirmSpy.mockRestore();
   });
 });

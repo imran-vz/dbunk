@@ -2,6 +2,14 @@
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockedRequestConfirm } = vi.hoisted(() => ({
+  mockedRequestConfirm: vi.fn(() => Promise.resolve(true)),
+}));
+vi.mock("@/lib/confirm", () => ({
+  requestConfirm: mockedRequestConfirm,
+  requestPrompt: vi.fn(() => Promise.resolve(null)),
+}));
+
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(() => Promise.resolve()),
@@ -1033,7 +1041,8 @@ describe("disconnectConnection cleanup", () => {
   });
 
   it("keeps a live connection when staged changes are not confirmed", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(false);
     useAppStore.setState({
       connections: [connectedPostgres("conn-1", "Primary")],
     });
@@ -1049,11 +1058,10 @@ describe("disconnectConnection cleanup", () => {
 
     await useAppStore.getState().disconnectConnection("conn-1");
 
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(mockedRequestConfirm).toHaveBeenCalledOnce();
     expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
     expect(useAppStore.getState().mutationDrafts["table:tab-1"]).toBeDefined();
     expect(mockedInvoke).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it("still disconnects locally when backend teardown fails", async () => {
@@ -3778,7 +3786,8 @@ describe("connectionOverviewTab", () => {
 
 describe("closeTab table browse cleanup", () => {
   it("keeps an applying mutation and its tab open", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(true);
     const scope = tableMutationDraftScope("tab-1");
     const analysis: AnalyzeResultSetResult = {
       requestId: 1,
@@ -3848,17 +3857,17 @@ describe("closeTab table browse cleanup", () => {
 
     await useAppStore.getState().closeTab("tab-1");
 
-    expect(confirm).not.toHaveBeenCalled();
+    expect(mockedRequestConfirm).not.toHaveBeenCalled();
     expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
     expect(useAppStore.getState().mutationDrafts[scope]?.apply.state).toBe(
       "applying",
     );
     expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it("keeps a tab and its staged changes when closing is not confirmed", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(false);
     useAppStore.setState({
       workspaceTabs: [
         {
@@ -3884,11 +3893,10 @@ describe("closeTab table browse cleanup", () => {
 
     await useAppStore.getState().closeTab("tab-1");
 
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(mockedRequestConfirm).toHaveBeenCalledOnce();
     expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
     expect(useAppStore.getState().mutationDrafts["table:tab-1"]).toBeDefined();
     expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it("awaits closeTableBrowseForTab before dropping the tab", async () => {

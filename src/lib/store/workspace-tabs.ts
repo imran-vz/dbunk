@@ -15,6 +15,7 @@
 
 import type { StateCreator } from "zustand";
 
+import { requestConfirm } from "@/lib/confirm";
 import { resetResultMutationClientForTab } from "@/lib/result-mutation-client";
 import { supportsServerTableBrowse } from "@/lib/table-browse";
 
@@ -84,8 +85,12 @@ export type WorkspaceTabsSlice = {
     tabId: string,
     newConnectionId: string,
     options?: {
-      confirmDiscardStagedChanges?: (changeCount: number) => boolean;
-      confirmProductionTarget?: (connection: Connection) => boolean;
+      confirmDiscardStagedChanges?: (
+        changeCount: number,
+      ) => boolean | Promise<boolean>;
+      confirmProductionTarget?: (
+        connection: Connection,
+      ) => boolean | Promise<boolean>;
     },
   ) => Promise<boolean>;
 };
@@ -137,9 +142,12 @@ export const createWorkspaceTabsSlice: StateCreator<
     );
     if (
       hasStagedChanges &&
-      !window.confirm(
-        "Closing this tab clears its staged result changes. Continue?",
-      )
+      !(await requestConfirm({
+        title: "Close tab?",
+        message: "Closing this tab clears its staged result changes.",
+        confirmLabel: "Close tab",
+        danger: true,
+      }))
     ) {
       return;
     }

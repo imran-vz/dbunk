@@ -1,10 +1,13 @@
 import { IconCopy, IconMaximize, IconX } from "@tabler/icons-react";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ForeignKeyTarget } from "@/components/data-grid";
-import { MutationReviewPanel } from "@/components/mutation-review";
+import {
+  MutationReviewAside,
+  MutationReviewPanel,
+} from "@/components/mutation-review";
 import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
@@ -47,12 +50,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Dialog, DialogBody, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   type SchemaMapExportFormat,
   SchemaMapToolbar,
   schemaMapExportFilename,
 } from "@/components/workspace-overview/schema-map-toolbar";
+import { requestConfirm } from "@/lib/confirm";
 import { downloadBlob, downloadFile } from "@/lib/download";
 import {
   type ExportCompression,
@@ -339,10 +344,15 @@ export function TableEditorPanel({
       }
       return;
     }
-    const message = `Delete ${selection.selectedCount} row${
-      selection.selectedCount === 1 ? "" : "s"
-    }? This cannot be undone.`;
-    if (!window.confirm(message)) return;
+    const confirmed = await requestConfirm({
+      title: `Delete ${selection.selectedCount} row${
+        selection.selectedCount === 1 ? "" : "s"
+      }?`,
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
     const outcome = await tableSession.deleteRows(selection.selectedIndices);
     setLastOutcome(outcome);
     if (outcome.kind === "completed") selection.clear();
@@ -369,18 +379,20 @@ export function TableEditorPanel({
     setIsAddRowOpen(true);
   };
 
-  const handleDiscardEdits = () => {
+  const handleDiscardEdits = async () => {
     if (!mutationEnabled) {
       tableSession.discardEdits();
       return;
     }
     const count = mutationDraft?.changeOrder.length ?? 0;
     if (count === 0 || mutationLocked) return;
-    if (
-      !window.confirm(
-        `Discard ${count} staged change${count === 1 ? "" : "s"}?`,
-      )
-    ) {
+    const confirmed = await requestConfirm({
+      title: "Discard staged changes?",
+      message: `${count} staged change${count === 1 ? "" : "s"} will be lost.`,
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!confirmed) {
       return;
     }
     tableSession.discardEdits();
@@ -687,6 +699,30 @@ export function TableEditorPanel({
     ? pagination.countLabel
     : `${(pagination.totalRows ?? rows.length).toLocaleString()} rows`;
 
+  const openReview = useCallback(() => setReviewOpen(true), []);
+  const tableStagedCount = mutationEnabled
+    ? (mutationDraft?.changeOrder.length ?? 0)
+    : 0;
+  // Cmd+S enters the stage -> preview -> apply flow (§6.4; the full
+  // shortcut registry lands in P7).
+  const tableStagedCountRef = useRef(tableStagedCount);
+  tableStagedCountRef.current = tableStagedCount;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "s"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (tableStagedCountRef.current > 0) setReviewOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   const statusItems = buildStatusItems({
     errorMessage,
     isLoading,
@@ -694,6 +730,8 @@ export function TableEditorPanel({
     rowCountLabel: serverBrowse ? pagination.countLabel : undefined,
     pagination,
     activeConnection: connection,
+    stagedChangeCount: tableStagedCount,
+    onOpenReview: openReview,
   });
 
   useStableStatusItems(statusItems, onStatusItemsChange);
@@ -758,79 +796,76 @@ export function TableEditorPanel({
       ) : null}
 
       {isSeedOpen && structure ? (
-        <SeedTableForm
-          columns={structure.columns}
-          isSeeding={isSeeding}
-          progress={seedProgress}
-          onSubmit={handleSeedTable}
-          onClose={() => setIsSeedOpen(false)}
-        />
+        <FormDialog size="lg" onClose={() => setIsSeedOpen(false)}>
+          <SeedTableForm
+            columns={structure.columns}
+            isSeeding={isSeeding}
+            progress={seedProgress}
+            onSubmit={handleSeedTable}
+            onClose={() => setIsSeedOpen(false)}
+          />
+        </FormDialog>
       ) : null}
 
       {isAddRowOpen && structure ? (
-        <AddRowForm
-          columns={
-            mutationEnabled && mutationAnalysis
-              ? structure.columns.filter((column) =>
-                  insertableMutationColumns.includes(column.name),
-                )
-              : structure.columns
-          }
-          isWriting={caps.isWriting}
-          initialValues={addRowInitialValues}
-          title={addRowSource === "duplicate" ? "Duplicate row" : "Add row"}
-          submitLabel={
-            addRowSource === "duplicate"
-              ? "Stage duplicate"
-              : mutationEnabled
-                ? "Stage row"
-                : "Insert"
-          }
-          onSubmit={handleSubmitAddRow}
+        <FormDialog
+          size="lg"
           onClose={() => {
             setIsAddRowOpen(false);
             setAddRowInitialValues(undefined);
           }}
-        />
-      ) : null}
-
-      {isBulkEditOpen ? (
-        <BulkEditForm
-          columns={editableMutationColumns}
-          selectedCount={selection.selectedCount}
-          isWriting={mutationLocked}
-          onClose={() => setIsBulkEditOpen(false)}
-          onSubmit={async (column, value) => {
-            const count = await tableSession.stageBulkEdit(
-              selection.selectedIndices,
-              column,
-              value,
-            );
-            if (count > 0) setIsBulkEditOpen(false);
-          }}
-        />
+        >
+          <AddRowForm
+            columns={
+              mutationEnabled && mutationAnalysis
+                ? structure.columns.filter((column) =>
+                    insertableMutationColumns.includes(column.name),
+                  )
+                : structure.columns
+            }
+            isWriting={caps.isWriting}
+            initialValues={addRowInitialValues}
+            title={addRowSource === "duplicate" ? "Duplicate row" : "Add row"}
+            submitLabel={
+              addRowSource === "duplicate"
+                ? "Stage duplicate"
+                : mutationEnabled
+                  ? "Stage row"
+                  : "Insert"
+            }
+            onSubmit={handleSubmitAddRow}
+            onClose={() => {
+              setIsAddRowOpen(false);
+              setAddRowInitialValues(undefined);
+            }}
+          />
+        </FormDialog>
       ) : null}
 
       {isImportOpen && structure && connection ? (
-        <DataImportWizard
-          columns={structure.columns}
-          engine={connection.engine}
-          isWriting={caps.isWriting}
-          onClose={() => setIsImportOpen(false)}
-          onImportRows={handleImportRows}
-        />
+        <FormDialog size="xl" onClose={() => setIsImportOpen(false)}>
+          <DataImportWizard
+            columns={structure.columns}
+            engine={connection.engine}
+            isWriting={caps.isWriting}
+            onClose={() => setIsImportOpen(false)}
+            onImportRows={handleImportRows}
+          />
+        </FormDialog>
       ) : null}
 
       {isCopyOpen ? (
-        <CopyTablePanel
-          connections={connections}
-          currentConnectionId={tab.connectionId}
-          defaultSchema={tab.schema}
-          defaultTable={tab.table ?? ""}
-          isWriting={caps.isWriting}
-          onClose={() => setIsCopyOpen(false)}
-          onSubmit={handleCopyTable}
-        />
+        <FormDialog size="lg" onClose={() => setIsCopyOpen(false)}>
+          <CopyTablePanel
+            connections={connections}
+            currentConnectionId={tab.connectionId}
+            defaultSchema={tab.schema}
+            defaultTable={tab.table ?? ""}
+            isWriting={caps.isWriting}
+            onClose={() => setIsCopyOpen(false)}
+            onSubmit={handleCopyTable}
+          />
+        </FormDialog>
       ) : null}
 
       <TableEditorBody
@@ -932,8 +967,25 @@ export function TableEditorPanel({
         onExpandGrid={() => setExpanded((open) => !open)}
         expanded={expanded}
         reviewPanel={
-          mutationEnabled && reviewOpen ? (
-            <div className="h-full w-[min(30rem,42vw)] shrink-0 bg-black max-[820px]:absolute max-[820px]:inset-y-0 max-[820px]:right-0 max-[820px]:z-40 max-[820px]:w-full">
+          isBulkEditOpen ? (
+            <MutationReviewAside>
+              <BulkEditForm
+                columns={editableMutationColumns}
+                selectedCount={selection.selectedCount}
+                isWriting={mutationLocked}
+                onClose={() => setIsBulkEditOpen(false)}
+                onSubmit={async (column, value) => {
+                  const count = await tableSession.stageBulkEdit(
+                    selection.selectedIndices,
+                    column,
+                    value,
+                  );
+                  if (count > 0) setIsBulkEditOpen(false);
+                }}
+              />
+            </MutationReviewAside>
+          ) : mutationEnabled && reviewOpen ? (
+            <MutationReviewAside>
               <MutationReviewPanel
                 scope={mutationScope}
                 onClose={() => setReviewOpen(false)}
@@ -949,7 +1001,7 @@ export function TableEditorPanel({
                 }}
                 onRefresh={tableSession.refreshData}
               />
-            </div>
+            </MutationReviewAside>
           ) : null
         }
       />
@@ -1508,5 +1560,33 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
         </CardContent>
       </Card>
     </>
+  );
+}
+
+/**
+ * D11: Import/Copy/Seed/Add-row are modal dialogs — nothing pushes the
+ * grid down. The wrapped forms keep their own headers and Cancel
+ * affordances; the dialog supplies the overlay and size.
+ */
+function FormDialog({
+  size,
+  onClose,
+  children,
+}: {
+  size: "sm" | "md" | "lg" | "xl";
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent size={size}>
+        <DialogBody className="p-0">{children}</DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -20,7 +20,7 @@ export function ColumnRow({ column, editable, onQueueChange }: ColumnRowProps) {
   return (
     <div
       data-testid={`structure-column-${column.name}`}
-      className="px-3 py-2 text-xs transition hover:bg-white/[0.025]"
+      className="px-3 py-2 text-xs transition hover:bg-surface-panel"
     >
       <div className="grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1fr)_auto] items-center gap-3">
         <NameCell column={column} />
@@ -94,7 +94,7 @@ function TypeCell({
           size="sm"
           className={cn(
             "px-1.5 text-2xs uppercase tracking-wide",
-            column.nullable ? "text-muted-foreground" : "text-rose-400",
+            column.nullable ? "text-muted-foreground" : "text-danger",
           )}
           onClick={onToggleNullable}
         >
@@ -104,7 +104,7 @@ function TypeCell({
         <span
           className={cn(
             "text-2xs uppercase tracking-wide",
-            column.nullable ? "text-muted-foreground" : "text-rose-400",
+            column.nullable ? "text-muted-foreground" : "text-danger",
           )}
         >
           {column.nullable ? "nullable" : "not null"}
@@ -158,7 +158,7 @@ function RowActions({
         data-testid={`structure-drop-column-${column.name}`}
         variant="ghost"
         size="sm"
-        className="px-1.5 text-rose-400 hover:text-rose-300"
+        className="px-1.5 text-danger hover:text-danger/80"
         aria-label={`Drop column ${column.name}`}
         onClick={onDrop}
       >
@@ -186,7 +186,7 @@ function ColumnEditPanel({
   return (
     <div
       data-testid={`structure-edit-row-${column.name}`}
-      className="mt-2 grid gap-2 rounded-sm border border-white/8 bg-[#0b1014] p-2 sm:grid-cols-3"
+      className="mt-2 grid gap-2 rounded-sm border border-border-subtle bg-surface-panel p-2 sm:grid-cols-3"
     >
       <EditField label="Rename">
         <Input

@@ -278,11 +278,7 @@ export function RelationalWorkbench({
         <TableEditorPanel
           tab={activeTab}
           activeSubTab={tableSectionToSubTab(tableSubTab)}
-          onSubTabChange={(next) => {
-            if (next === "data" || next === "schema" || next === "indexes") {
-              setTableSubTab(next);
-            }
-          }}
+          onSubTabChange={setTableSubTab}
           onStatusItemsChange={setStatusItems}
         />
       );

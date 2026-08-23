@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { requestConfirm } from "@/lib/confirm";
 import {
   type ColumnChangeKind,
   classifyDestructive,
@@ -213,9 +214,13 @@ async function runDestructiveCommit<T>(
     const summary = destructive
       .map((change) => describeChange(change))
       .join("\n");
-    const ok = window.confirm(
-      `These changes are destructive and may lose data:\n\n${summary}\n\nProceed?`,
-    );
+    const ok = await requestConfirm({
+      title: "Apply destructive schema changes?",
+      message: "These changes are destructive and may lose data.",
+      detail: summary,
+      confirmLabel: "Apply changes",
+      danger: true,
+    });
     if (!ok) return undefined;
   }
   return commit();

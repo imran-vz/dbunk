@@ -18,6 +18,7 @@ import type {
 } from "@/components/bastion-servers/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { requestConfirm } from "@/lib/confirm";
 import type { BastionServer } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 
@@ -78,11 +79,14 @@ export function BastionServersTab() {
   };
 
   const handleDelete = async (bastion: BastionServer) => {
-    if (
-      window.confirm(
-        `Delete Bastion Server "${bastion.name}"? Connections that reference it must be changed first.`,
-      )
-    ) {
+    const confirmed = await requestConfirm({
+      title: "Delete bastion server?",
+      message: "Connections that reference it must be changed first.",
+      detail: bastion.name,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (confirmed) {
       const ok = await deleteBastionServer(bastion.id);
       if (ok && editingId === bastion.id) {
         startNew();
