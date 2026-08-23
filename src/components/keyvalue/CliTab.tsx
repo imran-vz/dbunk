@@ -308,7 +308,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
               {savedCommands.map((cmd) => (
                 <li
                   key={cmd.id}
-                  className="flex items-center gap-2 px-3 py-1 hover:bg-white/5"
+                  className="flex items-center gap-2 px-3 py-1 hover:bg-surface-row-hover"
                 >
                   <button
                     type="button"
@@ -364,7 +364,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
             ) : entry.kind === "rejected" ? (
               <div className="text-danger">(error) {entry.reason}</div>
             ) : entry.kind === "needs-confirmation" ? (
-              <div className="text-amber-400">
+              <div className="text-warning">
                 {entry.command} requires confirmation ({entry.severity})
               </div>
             ) : (
@@ -485,7 +485,7 @@ export function CliTab({ connectionId, tabId }: CliTabProps) {
         </div>
       </div>
       {pendingConfirm ? (
-        <div className="border-t border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs">
+        <div className="border-t border-warning/30 bg-warning/10 px-4 py-3 text-xs">
           <p className="mb-2">
             <strong>
               {pendingConfirm.severity === "soft"
@@ -594,7 +594,7 @@ function renderBody(value: SerializedValue): React.ReactNode {
       );
     case "status":
       return (
-        <span className="inline-block rounded bg-emerald-400/20 px-1.5 py-0.5 text-emerald-400">
+        <span className="inline-block rounded bg-success/20 px-1.5 py-0.5 text-success">
           {value.value}
         </span>
       );

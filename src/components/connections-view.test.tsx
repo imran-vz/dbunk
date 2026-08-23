@@ -453,3 +453,24 @@ describe("ConnectionsView search", () => {
     expect(screen.queryByText("Delta")).toBeNull();
   });
 });
+
+describe("ConnectionsView rail variant (P9)", () => {
+  it("renders dense list rows instead of cards", () => {
+    useAppStore.setState({
+      connections: [baseConnection, { ...baseConnection, id: "c2", name: "B" }],
+    });
+    render(<ConnectionsView variant="rail" />);
+
+    expect(screen.getAllByTestId("connection-list-row")).toHaveLength(2);
+    expect(screen.queryAllByTestId("connection-card")).toHaveLength(0);
+  });
+
+  it("keeps the form panel closed until New Connection", () => {
+    useAppStore.setState({ connections: [baseConnection] });
+    render(<ConnectionsView variant="rail" />);
+    expect(
+      screen.getAllByRole("button", { name: /new connection/i }).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /hide form/i })).toBeNull();
+  });
+});

@@ -34,7 +34,7 @@ export function TableStructureView({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]",
+        "flex h-full min-h-0 flex-col overflow-hidden bg-surface-app",
         className,
       )}
     >
@@ -155,7 +155,7 @@ function Header({
   primaryKeyBadge: string;
 }) {
   return (
-    <header className="flex items-center justify-between gap-3 rounded-sm border border-white/8 bg-white/2.5 px-3 py-2">
+    <header className="flex items-center justify-between gap-3 rounded-sm border border-border-subtle bg-surface-panel px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-primary/25 bg-primary/10">
           <IconColumns3 className="size-3.5 text-primary" />

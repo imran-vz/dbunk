@@ -189,7 +189,7 @@ function GeneralTab() {
         title="General"
         subtitle="Appearance preferences for the dbunk workspace."
       />
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           <section className="rounded-lg border border-border-subtle bg-surface-window p-5">
             <h2 className="text-sm font-semibold text-foreground">Mode</h2>
@@ -385,7 +385,7 @@ function SecurityTab() {
         title="Security"
         subtitle="Where dbunk stores the passwords for your saved database connections."
       />
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-4">
         <section className="mx-auto max-w-3xl rounded-lg border border-border-subtle bg-surface-window p-5">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-4">
             <div>
@@ -509,7 +509,7 @@ function AboutTab() {
         title="About"
         subtitle="Build details and project links."
       />
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-4">
         <section className="mx-auto max-w-3xl rounded-lg border border-border-subtle bg-surface-window p-5 text-xs">
           <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-text-secondary">
             <dt className="font-medium text-text-muted">Application</dt>
