@@ -1239,7 +1239,7 @@ function QueryVirtualKeyEditor({
   return (
     <div
       data-testid="query-virtual-key-editor"
-      className="shrink-0 border-b border-border-subtle bg-black px-3 py-2 text-xs"
+      className="shrink-0 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs"
     >
       <div className="flex items-center gap-2">
         <span className="text-text-secondary">

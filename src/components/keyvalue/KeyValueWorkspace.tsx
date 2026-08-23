@@ -31,6 +31,7 @@ import { KeyspaceBrowser } from "@/components/keyvalue/KeyspaceBrowser";
 import { NewKeyDialog } from "@/components/keyvalue/NewKeyDialog";
 import { PubsubTab } from "@/components/keyvalue/PubsubTab";
 import { ServerTab } from "@/components/keyvalue/ServerTab";
+import { Panel, usePanelState } from "@/components/ui/panel";
 import { type RedisConnection, useAppStore } from "@/lib/store";
 
 type Section = "keys" | "cli" | "server" | "pubsub";
@@ -55,6 +56,14 @@ export function KeyValueWorkspace({
     type: string;
   } | null>(null);
   const [newKeyOpen, setNewKeyOpen] = useState(false);
+  /** Key inspector panel metrics (§3.3) — replaces the fixed w-110. */
+  const inspectorPanel = usePanelState({
+    storageKey: "dbunk.panel.key-inspector",
+    defaultSize: 440,
+    min: 320,
+    max: () => Math.round(window.innerWidth * 0.6),
+    snapThreshold: 160,
+  });
   const [browserRefreshTick, setBrowserRefreshTick] = useState(0);
 
   // Stable tab ID for CLI session — one per connection mount
@@ -215,36 +224,42 @@ export function KeyValueWorkspace({
               />
             </div>
 
-            {/* Right slide-over inspector */}
+            {/* Right inspector — a standard Panel instance (§3.2). */}
             {selectedKey && (
-              <div className="flex h-full w-110 shrink-0 flex-col border-l border-border-subtle bg-surface-panel">
-                <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-2xs font-medium text-text-muted">
-                      {selectedKey.type}
-                    </span>
-                    <span className="truncate font-mono text-xs text-foreground">
-                      {selectedKey.name}
-                    </span>
+              <Panel
+                side="right"
+                state={inspectorPanel}
+                ariaLabel="Resize key inspector"
+              >
+                <div className="flex h-full min-h-0 flex-col border-l border-border-subtle bg-surface-panel">
+                  <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-2xs font-medium text-text-muted">
+                        {selectedKey.type}
+                      </span>
+                      <span className="truncate font-mono text-xs text-foreground">
+                        {selectedKey.name}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedKey(null)}
+                      className="rounded p-1 text-text-muted hover:bg-surface-row-hover hover:text-foreground"
+                      aria-label="Close inspector"
+                    >
+                      <IconX className="size-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedKey(null)}
-                    className="rounded p-1 text-text-muted hover:bg-white/5 hover:text-foreground"
-                    aria-label="Close inspector"
-                  >
-                    <IconX className="size-4" />
-                  </button>
+                  <div className="flex min-h-0 flex-1">
+                    <KeyInspectorTab
+                      connectionId={activeConnection.id}
+                      keyName={selectedKey.name}
+                      onKeyDeleted={handleKeyDeleted}
+                      onKeyRenamed={handleKeyRenamed}
+                    />
+                  </div>
                 </div>
-                <div className="flex min-h-0 flex-1">
-                  <KeyInspectorTab
-                    connectionId={activeConnection.id}
-                    keyName={selectedKey.name}
-                    onKeyDeleted={handleKeyDeleted}
-                    onKeyRenamed={handleKeyRenamed}
-                  />
-                </div>
-              </div>
+              </Panel>
             )}
           </div>
         )}

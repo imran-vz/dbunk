@@ -248,7 +248,7 @@ export function StreamValueView({
               return (
                 <tr
                   key={entry.id}
-                  className={`hover:bg-white/5 ${isDeleted ? "opacity-40 line-through" : ""}`}
+                  className={`hover:bg-surface-row-hover ${isDeleted ? "opacity-40 line-through" : ""}`}
                 >
                   <td className="whitespace-nowrap px-3 py-1 text-text-secondary">
                     {entry.id}

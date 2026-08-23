@@ -59,14 +59,24 @@ function deriveStatusLabel(
   return "Idle";
 }
 
-export function ConnectionsView() {
+export function ConnectionsView({
+  variant = "settings",
+}: {
+  /**
+   * "rail" renders the first-class rail view (P9, D4): dense list rows
+   * instead of the settings-tab card grid, compact chrome, and the
+   * form panel closed until requested.
+   */
+  variant?: "settings" | "rail";
+}) {
+  const isRail = variant === "rail";
   const [editingConnection, setEditingConnection] = useState<Connection | null>(
     null,
   );
   const [deletingConnection, setDeletingConnection] =
     useState<Connection | null>(null);
   const [search, setSearch] = useState("");
-  const [showPanel, setShowPanel] = useState(true);
+  const [showPanel, setShowPanel] = useState(!isRail);
   const [rootRef, rootWidth] = useContainerWidth<HTMLDivElement>();
   const isNarrow = rootWidth > 0 && rootWidth < STACK_BELOW_PX;
   // Cards-area width = whatever's left after the form panel takes its
@@ -75,7 +85,8 @@ export function ConnectionsView() {
   // card-grid column bucket.
   const cardsAreaWidth =
     showPanel && !isNarrow ? rootWidth - FORM_PANEL_WIDTH_PX : rootWidth;
-  const useListView = cardsAreaWidth > 0 && cardsAreaWidth < LIST_BELOW_PX;
+  const useListView =
+    isRail || (cardsAreaWidth > 0 && cardsAreaWidth < LIST_BELOW_PX);
   const cardGridCols =
     cardsAreaWidth >= CARDS_THREE_COL_PX
       ? "grid-cols-3"
@@ -98,14 +109,26 @@ export function ConnectionsView() {
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-end justify-between gap-3 border-b border-border-subtle bg-surface-window px-6 py-4">
+      <header
+        className={cn(
+          "flex shrink-0 items-end justify-between gap-3 border-b border-border-subtle bg-surface-window",
+          isRail ? "px-3 py-2" : "px-6 py-4",
+        )}
+      >
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+          <h1
+            className={cn(
+              "font-semibold tracking-tight text-foreground",
+              isRail ? "text-sm" : "text-lg",
+            )}
+          >
             Connections
           </h1>
-          <p className="mt-1 text-xs text-text-muted">
-            Manage your database connections and credentials.
-          </p>
+          {!isRail ? (
+            <p className="mt-1 text-xs text-text-muted">
+              Manage your database connections and credentials.
+            </p>
+          ) : null}
         </div>
         <Button
           type="button"
@@ -128,7 +151,12 @@ export function ConnectionsView() {
       >
         <section className="flex min-h-0 flex-col">
           {/* Search */}
-          <div className="border-b border-border-subtle bg-surface-window px-6 py-3">
+          <div
+            className={cn(
+              "border-b border-border-subtle bg-surface-window",
+              isRail ? "px-3 py-2" : "px-6 py-3",
+            )}
+          >
             <div className="relative">
               <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
               <Input
@@ -146,7 +174,7 @@ export function ConnectionsView() {
               panel. */}
           <div
             className={cn(
-              "p-6",
+              isRail ? "p-3" : "p-6",
               isNarrow ? "shrink-0" : "min-h-0 flex-1 overflow-auto",
             )}
           >
@@ -297,6 +325,7 @@ function ConnectionCard({
 
   return (
     <div
+      data-testid="connection-card"
       className={cn(
         "group flex min-h-32 flex-col gap-3 rounded-lg border bg-surface-panel p-4 transition-colors",
         isActive
@@ -385,6 +414,7 @@ function ConnectionListRow({
 
   return (
     <div
+      data-testid="connection-list-row"
       className={cn(
         "group flex flex-col gap-1.5 rounded-lg border bg-surface-panel px-3 py-2.5 transition-colors",
         isActive
