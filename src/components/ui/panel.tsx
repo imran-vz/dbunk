@@ -11,13 +11,14 @@
  * panels auto-collapsed by pressure restore themselves when space
  * returns.
  *
- * Sizes and the user-collapsed flag persist to localStorage until the
- * P8 SQLite UI-state store lands.
+ * Sizes and the user-collapsed flag persist through the P8 UI-state
+ * store (SQLite in the app; localStorage in a plain browser).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Sash } from "@/components/ui/resizer-handle";
+import { uiGet, uiSet } from "@/lib/ui-state";
 import { cn } from "@/lib/utils";
 
 export type PanelSide = "left" | "right" | "bottom";
@@ -54,36 +55,20 @@ export interface PanelState {
 }
 
 const readStoredNumber = (key: string, fallback: number): number => {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return fallback;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
+  const raw = uiGet(key);
+  if (raw === null) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 const readStoredBool = (key: string, fallback: boolean): boolean => {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return fallback;
-    return raw === "1";
-  } catch {
-    return fallback;
-  }
+  const raw = uiGet(key);
+  if (raw === null) return fallback;
+  return raw === "1";
 };
 
 const writeStored = (key: string, value: string) => {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Best-effort persistence; layout still works for the session.
-  }
+  uiSet(key, value);
 };
 
 export function usePanelState({

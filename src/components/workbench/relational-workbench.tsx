@@ -29,6 +29,7 @@ import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { storageClassFor } from "@/lib/engine-policy";
 import { useShortcutHandler } from "@/lib/shortcuts";
 import { type Connection, useAppStore } from "@/lib/store";
+import { uiGet, uiSet } from "@/lib/ui-state";
 
 /** Navigator metrics per DESIGN-SYSTEM §3.3. */
 const NAVIGATOR_DEFAULT = 260;
@@ -61,7 +62,15 @@ export function RelationalWorkbench({
   onDoubleClick,
   settingsView,
 }: RelationalWorkbenchProps) {
-  const [rail, setRail] = useState<WorkbenchRailId>("tables");
+  // P8: last rail view persists across relaunch.
+  const [rail, setRail] = useState<WorkbenchRailId>(() => {
+    const stored = uiGet("dbunk.workbench.rail");
+    const match = RELATIONAL_RAIL_ITEMS.find((item) => item.id === stored);
+    return match ? match.id : "tables";
+  });
+  useEffect(() => {
+    uiSet("dbunk.workbench.rail", rail);
+  }, [rail]);
   const [tableSections, setTableSections] = useState<
     Record<string, TableSection>
   >({});
