@@ -84,7 +84,7 @@ export function InlineDrilldown({
   }, [connection, connectionId, engine, target, value]);
 
   return (
-    <div className="border-x border-border-subtle/60 px-3 py-2 text-[0.7rem]">
+    <div className="border-x border-border-subtle/60 px-3 py-2 text-2xs">
       <div className="flex items-center gap-2 text-text-muted">
         <IconArrowRight className="size-3 text-primary" />
         <span className="font-mono">
@@ -99,7 +99,7 @@ export function InlineDrilldown({
         <Button
           size="sm"
           variant="ghost"
-          className="ml-auto h-6 px-2 text-[0.65rem]"
+          className="ml-auto h-6 px-2 text-2xs"
           onClick={onClose}
           aria-label="Close drill-down"
           title="Close (Esc)"
@@ -111,7 +111,7 @@ export function InlineDrilldown({
         {state.kind === "loading" ? (
           <div className="text-text-muted">Loading…</div>
         ) : state.kind === "error" ? (
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive">
+          <div className="rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-danger">
             {state.message}
           </div>
         ) : state.rows.length === 0 ? (
@@ -134,7 +134,7 @@ function DrilldownRows({
   return (
     <div className="space-y-1.5">
       <div className="overflow-auto rounded-md border border-border-subtle bg-surface-app">
-        <table className="min-w-full divide-y divide-border-subtle font-mono text-[0.65rem]">
+        <table className="min-w-full divide-y divide-border-subtle font-mono text-2xs">
           <thead className="bg-surface-panel-elevated/60 text-text-muted">
             <tr>
               {columns.map((col) => (
@@ -173,7 +173,7 @@ function DrilldownRows({
         </table>
       </div>
       {rows.length === ROW_LIMIT ? (
-        <div className="text-[0.6rem] text-text-muted">
+        <div className="text-2xs text-text-muted">
           Showing first {ROW_LIMIT} matching rows.
         </div>
       ) : null}

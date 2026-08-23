@@ -70,7 +70,7 @@ export function NewLocalDatabaseDialog({
           <IconDatabasePlus />
         </AlertDialogTrigger>
       )}
-      <AlertDialogContent className="flex max-h-[88vh] w-[26rem] max-w-[26rem] flex-col gap-0 overflow-hidden rounded-xl border border-border-subtle bg-surface-window p-0 sm:max-w-[26rem]">
+      <AlertDialogContent className="flex max-h-[88vh] w-[26rem] max-w-[26rem] flex-col gap-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-window p-0 sm:max-w-[26rem]">
         <AlertDialogHeader className="flex-row items-center justify-between border-b border-border-subtle px-4 py-3">
           <AlertDialogTitle className="text-sm font-semibold">
             New local database
@@ -190,7 +190,7 @@ function NewLocalDatabaseBody({ onClose }: { onClose: () => void }) {
           dbunk provisions local databases as Docker containers. Install and
           start Docker Desktop (or another Docker engine), then try again.
         </p>
-        <p className="break-all rounded-sm border border-border-subtle bg-surface-panel px-2 py-1 font-mono text-[0.625rem]">
+        <p className="break-all rounded-sm border border-border-subtle bg-surface-panel px-2 py-1 font-mono text-2xs">
           {docker.error}
         </p>
       </div>
@@ -274,7 +274,7 @@ function NewLocalDatabaseBody({ onClose }: { onClose: () => void }) {
       {provisionError ? (
         <p
           data-testid="provision-error"
-          className="break-words rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive"
+          className="break-words rounded-sm border border-danger/40 bg-danger/10 px-2 py-1.5 text-xs text-danger"
         >
           {provisionError}
         </p>
@@ -308,7 +308,7 @@ function NewLocalDatabaseBody({ onClose }: { onClose: () => void }) {
         </Button>
       </div>
       {docker.state === "ready" && docker.version ? (
-        <p className="text-[0.625rem] text-text-muted">
+        <p className="text-2xs text-text-muted">
           Docker {docker.version} detected
         </p>
       ) : null}
@@ -349,7 +349,7 @@ function ProvisionSuccess({
       <div className="flex flex-col gap-1 text-text-muted">
         Connection string for your project
         <div className="flex items-center gap-1.5">
-          <code className="min-w-0 flex-1 break-all rounded-sm border border-border-subtle bg-surface-panel px-2 py-1.5 font-mono text-[0.625rem]">
+          <code className="min-w-0 flex-1 break-all rounded-sm border border-border-subtle bg-surface-panel px-2 py-1.5 font-mono text-2xs">
             {result.connectionString}
           </code>
           <Button

@@ -71,7 +71,7 @@ export function HealthPill({
     <span
       data-slot="health-pill"
       className={cn(
-        "inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-[0.625rem] font-medium",
+        "inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-2xs font-medium",
         toneBg[tone],
         toneText[tone],
         className,

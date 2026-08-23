@@ -186,7 +186,7 @@ function ObjectTab({
         }
       }}
       className={cn(
-        "flex cursor-pointer items-center gap-2 border-r border-border-subtle px-3 text-[12px] font-medium transition-colors",
+        "flex cursor-pointer items-center gap-2 border-r border-border-subtle px-3 text-xs font-medium transition-colors",
         isActive
           ? "border-b-2 border-b-accent bg-surface-panel text-foreground"
           : "border-b-2 border-b-transparent text-text-muted hover:text-foreground",

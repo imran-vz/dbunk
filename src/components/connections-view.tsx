@@ -100,7 +100,7 @@ export function ConnectionsView() {
     <div ref={rootRef} className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-end justify-between gap-3 border-b border-border-subtle bg-surface-window px-6 py-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">
             Connections
           </h1>
           <p className="mt-1 text-xs text-text-muted">
@@ -177,7 +177,7 @@ export function ConnectionsView() {
                   </span>
                   <span className="flex flex-col items-start">
                     <span className="font-medium">New Connection</span>
-                    <span className="text-[0.6875rem]">
+                    <span className="text-2xs">
                       Add a new database connection
                     </span>
                   </span>
@@ -209,7 +209,7 @@ export function ConnectionsView() {
                     <IconPlus className="size-4" />
                   </span>
                   <span className="font-medium">New Connection</span>
-                  <span className="text-[0.6875rem]">
+                  <span className="text-2xs">
                     Add a new database connection
                   </span>
                 </button>
@@ -232,7 +232,7 @@ export function ConnectionsView() {
                 <div className="text-sm font-semibold text-foreground">
                   New Connection
                 </div>
-                <div className="mt-0.5 text-[0.6875rem] text-text-muted">
+                <div className="mt-0.5 text-2xs text-text-muted">
                   Connect to a Postgres, MySQL, ClickHouse, or SQLite database.
                 </div>
               </div>
@@ -327,7 +327,7 @@ function ConnectionCard({
               </span>
               <HealthPill tone={pillTone} label={pillLabel} />
             </span>
-            <span className="mt-0.5 block truncate text-[0.6875rem] text-text-muted">
+            <span className="mt-0.5 block truncate text-2xs text-text-muted">
               {connection.engine}
             </span>
           </span>
@@ -341,12 +341,12 @@ function ConnectionCard({
         />
       </div>
 
-      <div className="font-mono text-[0.6875rem] text-text-muted">
+      <div className="font-mono text-2xs text-text-muted">
         {connection.host || "localhost"}:{connection.port || "—"} /{" "}
         {connection.database || "—"}
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-2 text-[0.625rem] text-text-muted">
+      <div className="mt-auto flex items-center justify-between gap-2 text-2xs text-text-muted">
         <span className="flex items-center gap-1.5">
           <IconClockHour3 className="size-3" />
           Last activity {formatLastActivity(connection.lastActivityAt)}
@@ -412,7 +412,7 @@ function ConnectionListRow({
             <span className="block truncate text-sm font-semibold text-foreground">
               {connection.name}
             </span>
-            <span className="mt-0.5 block truncate font-mono text-[0.6875rem] text-text-muted">
+            <span className="mt-0.5 block truncate font-mono text-2xs text-text-muted">
               {connection.engine} · {connection.host || "localhost"}:
               {connection.port || "—"} / {connection.database || "—"}
             </span>
@@ -427,7 +427,7 @@ function ConnectionListRow({
           onDelete={onDelete}
         />
       </div>
-      <div className="flex items-center justify-between gap-2 pl-9 text-[0.625rem] text-text-muted">
+      <div className="flex items-center justify-between gap-2 pl-9 text-2xs text-text-muted">
         <span className="flex items-center gap-1.5">
           <IconClockHour3 className="size-3" />
           Last activity {formatLastActivity(connection.lastActivityAt)}

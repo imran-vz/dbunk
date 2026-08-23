@@ -132,7 +132,7 @@ export function CommandPalette() {
 
           <Command.Group
             heading="Actions"
-            className="px-1 py-1 text-[0.65rem] uppercase tracking-wide text-text-muted"
+            className="px-1 py-1 text-2xs uppercase tracking-wide text-text-muted"
           >
             <PaletteItem
               icon={<IconPlus className="size-3.5" />}
@@ -163,7 +163,7 @@ export function CommandPalette() {
           {connections.length > 0 ? (
             <Command.Group
               heading="Connections"
-              className="mt-1 px-1 py-1 text-[0.65rem] uppercase tracking-wide text-text-muted"
+              className="mt-1 px-1 py-1 text-2xs uppercase tracking-wide text-text-muted"
             >
               {connections.map((connection) => (
                 <PaletteItem
@@ -185,7 +185,7 @@ export function CommandPalette() {
           {tableItems.length > 0 ? (
             <Command.Group
               heading="Tables"
-              className="mt-1 px-1 py-1 text-[0.65rem] uppercase tracking-wide text-text-muted"
+              className="mt-1 px-1 py-1 text-2xs uppercase tracking-wide text-text-muted"
             >
               {tableItems.map((item) => (
                 <PaletteItem
@@ -210,7 +210,7 @@ export function CommandPalette() {
           {savedQueryItems.length > 0 ? (
             <Command.Group
               heading="Saved queries"
-              className="mt-1 px-1 py-1 text-[0.65rem] uppercase tracking-wide text-text-muted"
+              className="mt-1 px-1 py-1 text-2xs uppercase tracking-wide text-text-muted"
             >
               {savedQueryItems.map((saved) => (
                 <PaletteItem
@@ -267,7 +267,7 @@ function PaletteItem({
       <span className="text-text-muted">{icon}</span>
       <span className="truncate">{label}</span>
       {description ? (
-        <span className="ml-auto truncate text-[0.6875rem] text-text-muted">
+        <span className="ml-auto truncate text-2xs text-text-muted">
           {description}
         </span>
       ) : null}

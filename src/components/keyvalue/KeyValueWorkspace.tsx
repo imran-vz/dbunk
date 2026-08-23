@@ -112,12 +112,12 @@ export function KeyValueWorkspace({
             <span className="text-sm font-medium text-foreground">
               {activeConnection.name}
             </span>
-            <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+            <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-2xs text-text-muted">
               {activeConnection.host}:{activeConnection.port}/db
               {activeConnection.dbNumber}
             </span>
             {capabilities?.role && (
-              <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+              <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-2xs text-text-muted">
                 {capabilities.role}
               </span>
             )}
@@ -150,12 +150,12 @@ export function KeyValueWorkspace({
 
           <div className="ml-auto flex items-center gap-3">
             {capabilities?.dbSize != null && (
-              <span className="text-[0.65rem] text-text-muted">
+              <span className="text-2xs text-text-muted">
                 {capabilities.dbSize.toLocaleString()} keys
               </span>
             )}
             {capabilities?.serverVersion && (
-              <span className="text-[0.65rem] text-text-muted">
+              <span className="text-2xs text-text-muted">
                 v{capabilities.serverVersion}
               </span>
             )}
@@ -173,17 +173,17 @@ export function KeyValueWorkspace({
         <div className="flex items-center gap-3 border-b border-border-subtle bg-surface-window px-4 py-2">
           <div className="ml-auto flex items-center gap-3">
             {capabilities?.dbSize != null && (
-              <span className="text-[0.65rem] text-text-muted">
+              <span className="text-2xs text-text-muted">
                 {capabilities.dbSize.toLocaleString()} keys
               </span>
             )}
             {capabilities?.serverVersion && (
-              <span className="text-[0.65rem] text-text-muted">
+              <span className="text-2xs text-text-muted">
                 v{capabilities.serverVersion}
               </span>
             )}
             {capabilities?.role && (
-              <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] text-text-muted">
+              <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-2xs text-text-muted">
                 {capabilities.role}
               </span>
             )}
@@ -220,7 +220,7 @@ export function KeyValueWorkspace({
               <div className="flex h-full w-110 shrink-0 flex-col border-l border-border-subtle bg-surface-panel">
                 <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-[0.6rem] font-medium text-text-muted">
+                    <span className="rounded bg-surface-panel-elevated px-1.5 py-0.5 text-2xs font-medium text-text-muted">
                       {selectedKey.type}
                     </span>
                     <span className="truncate font-mono text-xs text-foreground">

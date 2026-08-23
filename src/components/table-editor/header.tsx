@@ -80,7 +80,7 @@ export function TableEditorHeader({
           aria-label="Table actions"
           title="Table actions"
           className={cn(
-            "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
+            "inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-2xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated",
           )}
         >
           <IconDotsVertical className="size-3.5 text-text-muted" />
@@ -115,7 +115,7 @@ export function TableEditorHeader({
   );
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-border-subtle px-3 py-1.5 text-[11px] text-text-muted">
+    <div className="flex shrink-0 items-center gap-3 border-b border-border-subtle px-3 py-1.5 text-2xs text-text-muted">
       <span className="font-medium text-foreground">
         {schemaBadge}.{title}
       </span>

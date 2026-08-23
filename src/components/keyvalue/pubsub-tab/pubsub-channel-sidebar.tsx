@@ -38,7 +38,7 @@ export function PubsubChannelSidebar({
       style={{ width: `${width}px` }}
       className="flex shrink-0 flex-col border-r border-border-subtle bg-surface-window"
     >
-      <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-[0.65rem] uppercase text-text-muted">
+      <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-2xs uppercase text-text-muted">
         <span className="truncate">Channels</span>
         <button
           type="button"
@@ -49,19 +49,19 @@ export function PubsubChannelSidebar({
           ‹
         </button>
       </div>
-      <div className="flex flex-wrap gap-1 border-b border-border-subtle p-2 text-[0.65rem]">
+      <div className="flex flex-wrap gap-1 border-b border-border-subtle p-2 text-2xs">
         {activePatterns.map((p) => (
           <Badge
             key={p}
             variant="secondary"
-            className="cursor-pointer hover:bg-destructive/30"
+            className="cursor-pointer hover:bg-danger/30"
             onClick={() => onRemovePattern(p)}
           >
             {p} ×
           </Badge>
         ))}
       </div>
-      <ul className="flex-1 overflow-auto text-[0.65rem]">
+      <ul className="flex-1 overflow-auto text-2xs">
         <li>
           <button
             type="button"

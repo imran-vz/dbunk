@@ -38,7 +38,7 @@ export function RelationshipDetailPopover({
       role="dialog"
       data-testid="relationship-detail-popover"
       aria-label={`Relationship details for ${foreignKey.constraintName}`}
-      className="absolute right-2 top-2 z-20 w-72 rounded-md border border-border bg-card p-0 text-[0.65rem] text-card-foreground shadow-lg"
+      className="absolute right-2 top-2 z-20 w-72 rounded-md border border-border bg-card p-0 text-2xs text-card-foreground shadow-lg"
     >
       <div className="flex items-center gap-2 border-b border-border/70 px-2.5 py-1.5">
         <span

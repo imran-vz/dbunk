@@ -255,12 +255,12 @@ export function BrowseFilterBar({
         </div>
       )}
 
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Typed filters and a WHERE fragment AND-combine.
       </p>
 
       {databaseError ? (
-        <p role="alert" className="w-full font-mono text-[11px] text-danger">
+        <p role="alert" className="w-full font-mono text-2xs text-danger">
           {formatTableBrowseError(databaseError)}
           {databaseError.position !== null
             ? ` at position ${databaseError.position}`
@@ -391,7 +391,7 @@ export function BrowseSortEditor({
               )
             }
           >
-            <SelectTrigger className="h-5 w-20 border-none bg-transparent px-1 text-[10px]">
+            <SelectTrigger className="h-5 w-20 border-none bg-transparent px-1 text-2xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -462,7 +462,7 @@ export function BrowseInspectionPanel({
       className="max-w-xl rounded-sm border border-border-subtle bg-surface-panel p-3 text-xs"
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="text-2xs uppercase tracking-wide text-muted-foreground">
           Executed SQL
         </span>
         <Button
@@ -474,11 +474,11 @@ export function BrowseInspectionPanel({
           <IconCopy className="size-3.5" />
         </Button>
       </div>
-      <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+      <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-2xs">
         {inspection.sql}
       </pre>
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="text-2xs uppercase tracking-wide text-muted-foreground">
           Parameters
         </span>
         <Button
@@ -500,7 +500,7 @@ export function BrowseInspectionPanel({
           <IconCopy className="size-3.5" />
         </Button>
       </div>
-      <ol className="mt-1 space-y-0.5 font-mono text-[11px] text-muted-foreground">
+      <ol className="mt-1 space-y-0.5 font-mono text-2xs text-muted-foreground">
         {inspection.params.map((param, index) => (
           <li key={`$${index + 1}:${param.kind}`}>
             ${index + 1}{" "}
@@ -545,7 +545,7 @@ export function BrowsePartialResultNotice({
 }) {
   if (browse.omittedRows === 0 && browse.truncatedCells === 0) return null;
   return (
-    <output className="block border-b border-border-subtle bg-black px-3 py-1 text-[11px] text-warning">
+    <output className="block border-b border-border-subtle bg-black px-3 py-1 text-2xs text-warning">
       Partial result: {browse.omittedRows.toLocaleString()} omitted rows,{" "}
       {browse.truncatedCells.toLocaleString()} truncated cells.
     </output>

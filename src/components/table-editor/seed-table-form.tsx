@@ -90,7 +90,7 @@ export function SeedTableForm({
       <div className="flex flex-wrap items-end gap-3">
         <label
           htmlFor="seed-row-count"
-          className="flex flex-col gap-1 text-[0.625rem] text-text-muted"
+          className="flex flex-col gap-1 text-2xs text-text-muted"
         >
           Rows
           <Input
@@ -103,7 +103,7 @@ export function SeedTableForm({
         </label>
         <label
           htmlFor="seed-random-seed"
-          className="flex flex-col gap-1 text-[0.625rem] text-text-muted"
+          className="flex flex-col gap-1 text-2xs text-text-muted"
         >
           Seed (optional, for reproducible data)
           <Input
@@ -129,7 +129,7 @@ export function SeedTableForm({
       <div className="flex items-center justify-end gap-2">
         {isSeeding && progress ? (
           <div className="mr-auto flex min-w-40 flex-col gap-1">
-            <div className="flex justify-between text-[0.625rem] text-text-muted">
+            <div className="flex justify-between text-2xs text-text-muted">
               <span>Seeding in one transaction</span>
               <span>
                 {progress.rowsCompleted.toLocaleString()} /{" "}
@@ -208,7 +208,7 @@ function SeedColumnField({ column, field, onPatch }: SeedColumnFieldProps) {
     <div className="flex flex-col gap-1 rounded-sm border border-border-subtle bg-surface-app px-2 py-1.5">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium">{column.name}</span>
-        <span className="text-[0.625rem] text-text-muted">
+        <span className="text-2xs text-text-muted">
           {column.dataType}
           {column.nullable ? "" : " · not null"}
         </span>
@@ -236,7 +236,7 @@ function SeedColumnField({ column, field, onPatch }: SeedColumnFieldProps) {
         {column.nullable && field.mode !== "skip" ? (
           <label
             htmlFor={`seed-null-rate-${column.name}`}
-            className="flex items-center gap-1 text-[0.625rem] text-text-muted"
+            className="flex items-center gap-1 text-2xs text-text-muted"
           >
             NULL %
             <Input

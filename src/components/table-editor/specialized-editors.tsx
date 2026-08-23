@@ -719,7 +719,7 @@ export function SpecializedEditors({
               <h3 className="text-xs font-semibold text-foreground">
                 Generated SQL / literal
               </h3>
-              <p className="text-[0.6875rem] text-text-muted">
+              <p className="text-2xs text-text-muted">
                 Review before running in the SQL editor.
               </p>
             </div>
@@ -804,7 +804,7 @@ function Field({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-[0.6875rem] font-medium uppercase tracking-normal text-text-muted">
+      <span className="text-2xs font-medium uppercase tracking-normal text-text-muted">
         {label}
       </span>
       {children}
@@ -897,7 +897,7 @@ function ColumnChecklist({
 }) {
   return (
     <div className="rounded-sm border border-border-subtle bg-surface-panel p-2">
-      <div className="mb-2 text-[0.6875rem] font-medium uppercase tracking-normal text-text-muted">
+      <div className="mb-2 text-2xs font-medium uppercase tracking-normal text-text-muted">
         {title}
       </div>
       <div className="grid max-h-36 gap-1 overflow-auto sm:grid-cols-2">
@@ -915,7 +915,7 @@ function ColumnChecklist({
             )}
           >
             <span className="truncate">{column.name}</span>
-            <span className="truncate text-[0.625rem] text-text-muted">
+            <span className="truncate text-2xs text-text-muted">
               {column.dataType}
             </span>
           </button>
@@ -1017,7 +1017,7 @@ function GeometryPreview({ geometry }: { geometry: GeometryParseResult }) {
           />
         )}
       </svg>
-      <div className="mt-2 text-[0.6875rem] text-text-muted">
+      <div className="mt-2 text-2xs text-text-muted">
         {geometry.kind} · {geometry.points.length} points · bounds{" "}
         {geometry.bounds}
       </div>

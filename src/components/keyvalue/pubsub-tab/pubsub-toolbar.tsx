@@ -195,7 +195,7 @@ export function PubsubToolbar({
       ) : null}
       {discoverOpen ? (
         <div className="absolute left-4 top-full z-10 mt-1 w-80 rounded-md border border-border-subtle bg-surface-window shadow-lg">
-          <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-[0.65rem] text-text-muted">
+          <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-2xs text-text-muted">
             <span>PUBSUB CHANNELS · {channels.length} found</span>
             <button
               type="button"
@@ -207,11 +207,11 @@ export function PubsubToolbar({
           </div>
           <div className="max-h-64 overflow-auto">
             {discoverError ? (
-              <div className="px-3 py-2 text-[0.65rem] text-destructive">
+              <div className="px-3 py-2 text-2xs text-danger">
                 {discoverError}
               </div>
             ) : channels.length === 0 && !discoverLoading ? (
-              <div className="px-3 py-2 text-[0.65rem] text-text-muted">
+              <div className="px-3 py-2 text-2xs text-text-muted">
                 No active channels right now. Channels become visible once they
                 have a subscriber.
               </div>
@@ -221,7 +221,7 @@ export function PubsubToolbar({
                   <li key={entry.channel}>
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1 text-left font-mono text-[0.65rem] hover:bg-white/5"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1 text-left font-mono text-2xs hover:bg-white/5"
                       onClick={() => {
                         onSubscribeChannel(entry.channel);
                         setDiscoverOpen(false);

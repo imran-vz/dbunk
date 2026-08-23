@@ -495,7 +495,7 @@ export function MutationReviewPanel({
             {applied ? "Applied" : "Review"} {displayedCount}{" "}
             {displayedCount === 1 ? "change" : "changes"}
           </h1>
-          <p className="m-0 text-[0.625rem] text-text-muted">
+          <p className="m-0 text-2xs text-text-muted">
             All included changes apply in one transaction
           </p>
         </div>
@@ -512,7 +512,7 @@ export function MutationReviewPanel({
         </Button>
       </header>
 
-      <div className="shrink-0 border-b border-border-subtle px-3 py-2 text-[0.6875rem] text-text-muted">
+      <div className="shrink-0 border-b border-border-subtle px-3 py-2 text-2xs text-text-muted">
         <span>Resolved {targets.length === 1 ? "target" : "targets"} </span>
         {targets.length > 0 ? (
           targets.map((target, index) => (
@@ -546,7 +546,7 @@ export function MutationReviewPanel({
             {readyPreview ? (
               <DmlPreview preview={readyPreview.result} onCopy={handleCopy} />
             ) : draft.preview.state === "error" ? (
-              <div className="m-3 border border-danger/40 p-3 text-[0.6875rem] text-danger">
+              <div className="m-3 border border-danger/40 p-3 text-2xs text-danger">
                 <p className="m-0">
                   {formatMutationError(draft.preview.error)}
                 </p>
@@ -572,7 +572,7 @@ export function MutationReviewPanel({
       <footer className="shrink-0 border-t border-border-subtle px-3 py-2">
         <output
           aria-live="polite"
-          className="mb-2 text-[0.6875rem] text-text-secondary"
+          className="mb-2 text-2xs text-text-secondary"
         >
           {status}
         </output>

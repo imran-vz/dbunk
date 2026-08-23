@@ -113,7 +113,7 @@ function AddColumnForm({ onSubmit, onCancel }: AddColumnFormProps) {
         variant="ghost"
         size="sm"
         className={cn(
-          "px-1.5 text-[0.625rem] uppercase tracking-wide",
+          "px-1.5 text-2xs uppercase tracking-wide",
           nullable ? "text-muted-foreground" : "text-rose-400",
         )}
         onClick={() => setNullable((value) => !value)}

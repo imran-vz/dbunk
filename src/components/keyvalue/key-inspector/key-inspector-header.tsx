@@ -51,7 +51,7 @@ export function KeyInspectorHeader({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-[0.65rem]"
+          className="h-7 px-2 text-2xs"
           onClick={onRefresh}
         >
           <IconRefresh className="size-3" />
@@ -60,7 +60,7 @@ export function KeyInspectorHeader({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-[0.65rem]"
+          className="h-7 px-2 text-2xs"
           onClick={onOpenExpire}
         >
           <IconClock className="size-3" />
@@ -69,7 +69,7 @@ export function KeyInspectorHeader({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-[0.65rem]"
+          className="h-7 px-2 text-2xs"
           onClick={onOpenRename}
         >
           <IconEdit className="size-3" />
@@ -78,7 +78,7 @@ export function KeyInspectorHeader({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-[0.65rem] text-destructive"
+          className="h-7 px-2 text-2xs text-danger"
           onClick={onOpenDelete}
         >
           <IconTrash className="size-3" />
@@ -88,7 +88,7 @@ export function KeyInspectorHeader({
           type="button"
           onClick={onToggleDrawer}
           className={cn(
-            "rounded-md border border-border-subtle px-2 py-1 text-[0.65rem] text-text-muted hover:text-foreground",
+            "rounded-md border border-border-subtle px-2 py-1 text-2xs text-text-muted hover:text-foreground",
             drawerOpen && "bg-surface-panel text-foreground",
           )}
         >
@@ -108,17 +108,17 @@ export function KeyInspectorHeader({
 function HeaderMetadataBadges({ metadata }: { metadata: KeyMetadata }) {
   return (
     <>
-      <Badge variant="secondary" className="text-[0.625rem]">
+      <Badge variant="secondary" className="text-2xs">
         {labelForType(metadata.type)}
       </Badge>
       <TtlBadge ttl={metadata.ttlSeconds} />
       {metadata.encoding ? (
-        <Badge variant="outline" className="text-[0.625rem]">
+        <Badge variant="outline" className="text-2xs">
           {metadata.encoding}
         </Badge>
       ) : null}
       {metadata.elementCount !== undefined ? (
-        <span className="text-[0.65rem] text-text-muted">
+        <span className="text-2xs text-text-muted">
           {metadata.elementCount.toLocaleString()}{" "}
           {metadata.type === "string" ? "bytes" : "elements"}
         </span>
@@ -130,20 +130,20 @@ function HeaderMetadataBadges({ metadata }: { metadata: KeyMetadata }) {
 function TtlBadge({ ttl }: { ttl: number }) {
   if (ttl === -1) {
     return (
-      <Badge variant="outline" className="text-[0.625rem]">
+      <Badge variant="outline" className="text-2xs">
         TTL: never
       </Badge>
     );
   }
   if (ttl === -2) {
     return (
-      <Badge variant="destructive" className="text-[0.625rem]">
+      <Badge variant="destructive" className="text-2xs">
         Missing
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="text-[0.625rem]">
+    <Badge variant="outline" className="text-2xs">
       TTL: {ttl}s
     </Badge>
   );

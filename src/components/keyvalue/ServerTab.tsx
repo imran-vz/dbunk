@@ -82,7 +82,7 @@ export function ServerTab({ connectionId, dbNumber }: ServerTabProps) {
           {stats?.identity.version ? `· v${stats.identity.version}` : ""}
         </span>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-[0.65rem] text-text-muted">
+          <label className="flex items-center gap-1 text-2xs text-text-muted">
             Auto-refresh
             <select
               value={intervalMs ?? ""}
@@ -103,7 +103,7 @@ export function ServerTab({ connectionId, dbNumber }: ServerTabProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-[0.65rem]"
+            className="h-7 px-2 text-2xs"
             onClick={() => {
               setRefreshTick((tick) => tick + 1);
               void load();
@@ -116,7 +116,7 @@ export function ServerTab({ connectionId, dbNumber }: ServerTabProps) {
         </div>
       </header>
       {error ? (
-        <div className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="m-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       ) : null}
@@ -205,8 +205,8 @@ function ClientListCard({
           <CardEmpty>No connected clients.</CardEmpty>
         ) : (
           <div className="max-h-48 overflow-auto">
-            <table className="min-w-full divide-y divide-border-subtle font-mono text-[0.65rem]">
-              <thead className="text-[0.6rem] uppercase text-text-muted">
+            <table className="min-w-full divide-y divide-border-subtle font-mono text-2xs">
+              <thead className="text-2xs uppercase text-text-muted">
                 <tr>
                   <th className="px-2 py-1 text-left">id</th>
                   <th className="px-2 py-1 text-left">addr</th>
@@ -269,7 +269,7 @@ function AclListCard({
             {data?.entries.map((entry: AclListEntry) => (
               <li
                 key={entry.username || entry.rules}
-                className="rounded bg-surface-panel/40 px-2 py-1 font-mono text-[0.65rem]"
+                className="rounded bg-surface-panel/40 px-2 py-1 font-mono text-2xs"
               >
                 <div className="text-foreground">{entry.username || "—"}</div>
                 <div className="break-all text-text-muted">{entry.rules}</div>
@@ -347,13 +347,13 @@ function ConfigCard({
             value={pattern}
             onChange={(event) => setPattern(event.target.value)}
             placeholder="pattern (e.g., *max*)"
-            className="h-6 flex-1 rounded border border-border-subtle bg-surface-panel px-2 font-mono text-[0.65rem]"
+            className="h-6 flex-1 rounded border border-border-subtle bg-surface-panel px-2 font-mono text-2xs"
           />
           <Button
             size="sm"
             variant="outline"
             type="submit"
-            className="h-6 px-2 text-[0.65rem]"
+            className="h-6 px-2 text-2xs"
           >
             Query
           </Button>
@@ -365,7 +365,7 @@ function ConfigCard({
         ) : data && data.entries.length === 0 ? (
           <CardEmpty>No CONFIG keys match.</CardEmpty>
         ) : (
-          <table className="max-h-44 min-w-full divide-y divide-border-subtle overflow-auto font-mono text-[0.65rem]">
+          <table className="max-h-44 min-w-full divide-y divide-border-subtle overflow-auto font-mono text-2xs">
             <tbody className="divide-y divide-border-subtle">
               {data?.entries.map((entry: RedisConfigEntry) => (
                 <tr key={entry.key}>
@@ -375,7 +375,7 @@ function ConfigCard({
                       <input
                         value={editValue}
                         onChange={(event) => setEditValue(event.target.value)}
-                        className="h-6 w-full rounded border border-border-subtle bg-surface-panel px-1 font-mono text-[0.65rem]"
+                        className="h-6 w-full rounded border border-border-subtle bg-surface-panel px-1 font-mono text-2xs"
                         aria-label={`Value for ${entry.key}`}
                       />
                     ) : (
@@ -447,8 +447,8 @@ function LatencyCard({
         ) : data && data.entries.length === 0 ? (
           <CardEmpty>No latency events recorded.</CardEmpty>
         ) : (
-          <table className="min-w-full divide-y divide-border-subtle font-mono text-[0.65rem]">
-            <thead className="text-[0.6rem] uppercase text-text-muted">
+          <table className="min-w-full divide-y divide-border-subtle font-mono text-2xs">
+            <thead className="text-2xs uppercase text-text-muted">
               <tr>
                 <th className="px-2 py-1 text-left">event</th>
                 <th className="px-2 py-1 text-right">latest</th>
@@ -479,7 +479,7 @@ function LatencyCard({
 
 function CardError({ message }: { message: string }) {
   return (
-    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[0.65rem] text-destructive">
+    <div className="rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-2xs text-danger">
       {message}
     </div>
   );
@@ -490,7 +490,7 @@ function CardSkeleton() {
 }
 
 function CardEmpty({ children }: { children: React.ReactNode }) {
-  return <div className="text-[0.65rem] text-text-muted">{children}</div>;
+  return <div className="text-2xs text-text-muted">{children}</div>;
 }
 
 function IdentityCard({ stats }: { stats: KeyValueOverviewStats }) {
@@ -652,7 +652,7 @@ function SlowLogCard({ stats }: { stats: KeyValueOverviewStats }) {
           <p className="text-xs text-text-muted">No entries.</p>
         ) : (
           <table className="w-full font-mono text-xs">
-            <thead className="text-[0.65rem] uppercase text-text-muted">
+            <thead className="text-2xs uppercase text-text-muted">
               <tr>
                 <th className="py-1 text-left">ID</th>
                 <th className="py-1 text-right">Duration (μs)</th>

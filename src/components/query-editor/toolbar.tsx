@@ -92,7 +92,7 @@ export function QueryEditorToolbar({
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Connection selector"
-              className="ml-1 inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
+              className="ml-1 inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-2xs font-medium text-foreground transition-colors hover:bg-surface-panel-elevated"
             >
               <span className="size-1.5 rounded-full bg-accent" />
               <span className="truncate">{dbSelectorLabel}</span>
@@ -100,7 +100,7 @@ export function QueryEditorToolbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               {relationalConnections.length === 0 ? (
-                <div className="px-2 py-1.5 text-[0.6875rem] text-text-muted">
+                <div className="px-2 py-1.5 text-2xs text-text-muted">
                   No relational connections available.
                 </div>
               ) : null}
@@ -142,7 +142,7 @@ export function QueryEditorToolbar({
               {onReviewEdits ? "Review & save" : "Save"}
             </Button>
             {stagedChangeCount !== undefined ? (
-              <span className="text-[0.6875rem] tabular-nums text-warning">
+              <span className="text-2xs tabular-nums text-warning">
                 {stagedChangeCount} staged
               </span>
             ) : null}
@@ -162,7 +162,7 @@ export function QueryEditorToolbar({
           <span className="dbunk-optional-label">Format</span>
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-[0.6875rem] font-medium text-foreground hover:bg-surface-panel-elevated">
+          <DropdownMenuTrigger className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-border-subtle bg-surface-panel px-2 text-2xs font-medium text-foreground hover:bg-surface-panel-elevated">
             Snippets
             <IconChevronDown className="size-3 text-text-muted" />
           </DropdownMenuTrigger>

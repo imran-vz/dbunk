@@ -178,7 +178,7 @@ export function BastionForm({
         ) : null}
 
         {editing ? (
-          <div className="rounded-md border border-border-subtle bg-surface-panel px-3 py-2 text-[0.6875rem] text-text-muted">
+          <div className="rounded-md border border-border-subtle bg-surface-panel px-3 py-2 text-2xs text-text-muted">
             Stored secrets: {secretSummary(editing)}
           </div>
         ) : null}
@@ -248,7 +248,7 @@ function GuidedKeyCapture({
       />
       <div
         className={cn(
-          "rounded-md border px-3 py-2 text-[0.6875rem]",
+          "rounded-md border px-3 py-2 text-2xs",
           analysis.tone === "ready" &&
             "border-accent/30 bg-accent/10 text-accent",
           analysis.tone === "warning" &&

@@ -6,7 +6,7 @@ interface MetadataDrawerProps {
 
 export function MetadataDrawer({ metadata }: MetadataDrawerProps) {
   return (
-    <aside className="w-72 shrink-0 border-l border-border-subtle bg-surface-panel/70 px-4 py-3 text-[0.65rem]">
+    <aside className="w-72 shrink-0 border-l border-border-subtle bg-surface-panel/70 px-4 py-3 text-2xs">
       <h3 className="mb-2 font-semibold uppercase tracking-wide text-text-muted">
         Metadata
       </h3>

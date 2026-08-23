@@ -107,7 +107,7 @@ export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
           )}
           <main className="flex min-w-0 flex-1 flex-col">
             {subscription.error ? (
-              <div className="m-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <div className="m-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
                 {subscription.error}
               </div>
             ) : null}
