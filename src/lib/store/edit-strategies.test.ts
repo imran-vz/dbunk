@@ -300,6 +300,21 @@ describe("edit-strategies.resolveEditContext", () => {
     expect(result.reason).toMatch(/connection not found/i);
   });
 
+  it("returns the connection-scoped read-only refusal before editing", () => {
+    const result = resolveEditContext({
+      tableData: { [dataKey]: makeData() },
+      tableStructure: { [structureKey]: makeStructure() },
+      connections: [{ ...pgConnection, readOnly: true }],
+      tableName,
+      capability: "canUpdateRows",
+      action: "cell edits",
+    });
+    if (result.ok) throw new Error("expected error");
+    expect(result.reason).toBe(
+      "Local is a read-only connection. Edit the connection to unlock writes.",
+    );
+  });
+
   it("returns failed when canUpdateRows is false", () => {
     const result = resolveEditContext({
       tableData: { [dataKey]: makeData() },

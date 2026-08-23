@@ -203,7 +203,7 @@ export function QueryResultsView({
         </div>
       ) : null}
 
-      {errorMessage ? (
+      {errorMessage && !session?.policyRefusal ? (
         <div
           role="alert"
           className="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
@@ -212,6 +212,16 @@ export function QueryResultsView({
           <div className="flex-1 whitespace-pre-wrap wrap-break-word font-mono">
             {errorMessage}
           </div>
+        </div>
+      ) : null}
+
+      {session?.policyRefusal ? (
+        <div
+          role="alert"
+          className="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+        >
+          <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+          <span>{session.policyRefusal}</span>
         </div>
       ) : null}
 

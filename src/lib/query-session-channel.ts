@@ -242,6 +242,7 @@ export async function executeQuerySession(
   tabId: string,
   executionId: string,
   sql: string,
+  confirmed = false,
 ) {
   const binding = bindings.get(tabId);
   if (!binding) throw { kind: "sessionNotFound" } satisfies QuerySessionError;
@@ -250,7 +251,14 @@ export async function executeQuerySession(
   });
   try {
     await tauriInvoke("execute_query_session", {
-      payload: { sessionId: binding.sessionId, executionId, sql },
+      payload: confirmed
+        ? {
+            sessionId: binding.sessionId,
+            executionId,
+            sql,
+            confirmed: true,
+          }
+        : { sessionId: binding.sessionId, executionId, sql },
     });
   } catch (error) {
     binding.pendingRun = null;

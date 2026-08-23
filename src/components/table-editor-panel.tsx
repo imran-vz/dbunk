@@ -65,6 +65,7 @@ import {
   saveExportTask,
 } from "@/lib/export-tasks";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
 import type {
   SeedColumnSpecPayload,
@@ -287,11 +288,17 @@ export function TableEditorPanel({
       setIsImportOpen(false);
       return;
     }
+    if (!connection) {
+      setLastOutcome({ kind: "failed", reason: "Connection not found." });
+      return;
+    }
     try {
-      const result = await tauriInvoke<{
+      const result = await invokeWithSafetyConfirmation<{
         runtimeMs: number;
         rowsAffected: number;
-      }>("import_rows", {
+      }>({
+        command: "import_rows",
+        connection,
         payload: {
           connectionId: tab.connectionId,
           schema: tab.schema,
@@ -484,11 +491,23 @@ export function TableEditorPanel({
       });
       return;
     }
+    const destinationConnection = connections.find(
+      (candidate) => candidate.id === payload.destinationConnectionId,
+    );
+    if (!destinationConnection) {
+      setLastOutcome({
+        kind: "failed",
+        reason: "Destination connection not found.",
+      });
+      return;
+    }
     try {
-      const result = await tauriInvoke<{
+      const result = await invokeWithSafetyConfirmation<{
         runtimeMs: number;
         rowsCopied: number;
-      }>("copy_table_rows", {
+      }>({
+        command: "copy_table_rows",
+        connection: destinationConnection,
         payload: {
           sourceConnectionId: tab.connectionId,
           sourceSchema: tab.schema,
@@ -520,18 +539,21 @@ export function TableEditorPanel({
       });
       return;
     }
+    if (!connection) {
+      setLastOutcome({ kind: "failed", reason: "Connection not found." });
+      return;
+    }
     try {
-      const result = await tauriInvoke<{ runtimeMs: number }>(
-        "run_pg_maintenance",
-        {
-          payload: {
-            connectionId: tab.connectionId,
-            schema: tab.schema,
-            table: tab.table ?? "",
-            action,
-          },
+      const result = await invokeWithSafetyConfirmation<{ runtimeMs: number }>({
+        command: "run_pg_maintenance",
+        connection,
+        payload: {
+          connectionId: tab.connectionId,
+          schema: tab.schema,
+          table: tab.table ?? "",
+          action,
         },
-      );
+      });
       setLastOutcome({
         kind: "completed",
         runtimeMs: result.runtimeMs,
@@ -554,6 +576,10 @@ export function TableEditorPanel({
       });
       return;
     }
+    if (!connection) {
+      setLastOutcome({ kind: "failed", reason: "Connection not found." });
+      return;
+    }
     setIsSeeding(true);
     setSeedProgress({ rowsCompleted: 0, totalRows: params.rowCount });
     const operationId =
@@ -571,7 +597,9 @@ export function TableEditorPanel({
           });
         },
       ).catch(() => undefined);
-      const result = await tauriInvoke<SeedTableResult>("seed_table", {
+      const result = await invokeWithSafetyConfirmation<SeedTableResult>({
+        command: "seed_table",
+        connection,
         payload: {
           operationId,
           connectionId: tab.connectionId,

@@ -12,10 +12,12 @@ import * as z from "zod";
 import type {
   ClickHouseStoredConnection,
   Connection,
+  ConnectionEnvironment,
   MySqlStoredConnection,
   PgDriverOptions,
   PgStoredConnection,
   RedisStoredConnection,
+  SafeMode,
   SqliteStoredConnection,
   SshTunnelConfig,
   StoredConnection,
@@ -30,6 +32,8 @@ export const connectionSchema = z.object({
   user: z.string().optional(),
   password: z.string().optional(),
   role: z.string().optional(),
+  environment: z.enum(["development", "test", "staging", "production"]),
+  safeMode: z.enum(["inherit", "disabled", "protected", "strict"]),
   ssl: z.boolean().optional(),
   useHttps: z.boolean().optional(),
   urlPath: z.string().optional(),
@@ -70,6 +74,8 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   user: "",
   password: "",
   role: "read/write",
+  environment: "development",
+  safeMode: "inherit",
   ssl: true,
   useHttps: false,
   urlPath: "",
@@ -104,6 +110,9 @@ type CommonShape = {
   user: string;
   password: string;
   role: string;
+  environment: ConnectionEnvironment;
+  safeMode: SafeMode;
+  readOnly: boolean;
 };
 
 // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
@@ -117,6 +126,9 @@ function commonFromForm(value: ConnectionFormData, id: string): CommonShape {
     user: value.user ?? "",
     password: value.password ?? "",
     role: value.role || "read/write",
+    environment: value.environment ?? "development",
+    safeMode: value.safeMode ?? "inherit",
+    readOnly: value.readOnly ?? false,
   };
 }
 
@@ -230,7 +242,6 @@ function buildRedis(
     dbNumber: value.dbNumber ?? 0,
     useTls: value.useTls ?? false,
     verifyTlsCert: value.verifyTlsCert ?? true,
-    readOnly: value.readOnly ?? false,
     ...(sshTunnel ? { sshTunnel } : null),
   };
 }
@@ -317,6 +328,8 @@ export function defaultValuesFromConnection(
     user: connection.user,
     password: "",
     role: connection.role,
+    environment: connection.environment ?? "development",
+    safeMode: connection.safeMode ?? "inherit",
   };
   const tunnel =
     connection.engine === "SQLite" ? undefined : connection.sshTunnel;
@@ -347,7 +360,7 @@ export function defaultValuesFromConnection(
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
-        readOnly: false,
+        readOnly: connection.readOnly ?? false,
       };
     case "SQLite":
       return {
@@ -360,7 +373,7 @@ export function defaultValuesFromConnection(
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
-        readOnly: false,
+        readOnly: connection.readOnly ?? false,
       };
     case "ClickHouse":
       return {
@@ -373,7 +386,7 @@ export function defaultValuesFromConnection(
         dbNumber: 0,
         useTls: false,
         verifyTlsCert: true,
-        readOnly: false,
+        readOnly: connection.readOnly ?? false,
       };
     case "Redis":
       return {

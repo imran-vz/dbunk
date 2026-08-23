@@ -152,6 +152,10 @@ export const formatMutationError = (error: ResultMutationError): string => {
       return "The connection is closing.";
     case "connectionLost":
       return "The database connection was lost.";
+    case "policyBlocked":
+      return `${error.reason} Edit the connection to unlock writes.`;
+    case "policyNeedsConfirmation":
+      return "The connection safety policy requires confirmation.";
     case "timeout":
       return `Timed out during ${error.operation}.`;
     case "database":

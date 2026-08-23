@@ -1,5 +1,6 @@
 import type { StatusBarItem } from "@/components/status-bar";
 import type { StatusTone } from "@/components/ui/status-dot";
+import { ENVIRONMENT_META, resolveSafetyPolicy } from "@/lib/safety-policy";
 import type { Connection } from "@/lib/store";
 
 export function connectionStatusTone(status: Connection["status"]): StatusTone {
@@ -19,10 +20,14 @@ export function connectionStatusItem(
       value: "No connection",
     };
   }
+  const environment = resolveSafetyPolicy(connection).environment;
   return {
     id: "connection",
     label: "Connection",
-    tone: connectionStatusTone(connection.status),
-    value: `${connection.name} · ${connection.status}`,
+    tone:
+      environment === "production"
+        ? "danger"
+        : connectionStatusTone(connection.status),
+    value: `${connection.name} · ${ENVIRONMENT_META[environment].label} · ${connection.status}`,
   };
 }

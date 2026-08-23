@@ -31,6 +31,7 @@
 import type { PendingMutation } from "@/lib/pending-mutations";
 import { type MutationOutcome, trackMutations } from "@/lib/pending-mutations";
 import { pickRowIdentity } from "@/lib/row-identity";
+import { readOnlyPolicyReason } from "@/lib/safety-policy";
 import {
   type BrowseIdentityKind,
   browseIdentityReadOnlyCopy,
@@ -170,6 +171,14 @@ export const resolveEditContext = (params: {
     data.table,
   );
   const structure = tableStructure[structureKey];
+  const connection = connections.find(
+    (candidate) => candidate.id === data.connectionId,
+  );
+  if (!connection) {
+    return { ok: false, reason: "Connection not found for this table." };
+  }
+  const policyRefusal = readOnlyPolicyReason(connection);
+  if (policyRefusal) return { ok: false, reason: policyRefusal };
   if (dataSource && !identityIsEditable(dataSource.identityKind)) {
     return {
       ok: false,
@@ -187,10 +196,6 @@ export const resolveEditContext = (params: {
     };
   }
 
-  const connection = connections.find((c) => c.id === data.connectionId);
-  if (!connection) {
-    return { ok: false, reason: "Connection not found for this table." };
-  }
   // Legacy engines keep their structure capability gates exactly. Browse
   // mutations instead trust the backend-authoritative primary/unique
   // identity; PostgreSQL's structure DTO still models the older PK-only gate.

@@ -13,15 +13,58 @@ const QUERY_SESSION_ERROR_KINDS: ReadonlySet<string> = new Set([
   "transactionStateUnknown",
   "transactionObserverUnavailable",
   "connectionLost",
+  "policyBlocked",
+  "policyNeedsConfirmation",
   "timeout",
   "database",
 ]);
 
+const STATEMENT_CLASSES: ReadonlySet<string> = new Set([
+  "read",
+  "dml",
+  "ddl",
+  "transaction",
+  "session",
+  "unknown",
+]);
+
+const isObject = (value: unknown): value is object =>
+  value !== null && typeof value === "object";
+
+const hasValidStatementSummaries = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.every(
+    (statement) =>
+      isObject(statement) &&
+      "index" in statement &&
+      typeof statement.index === "number" &&
+      "class" in statement &&
+      typeof statement.class === "string" &&
+      STATEMENT_CLASSES.has(statement.class) &&
+      "unbounded" in statement &&
+      typeof statement.unbounded === "boolean" &&
+      "destructive" in statement &&
+      typeof statement.destructive === "boolean",
+  );
+
 export function isQuerySessionError(
   error: unknown,
 ): error is QuerySessionError {
-  if (error === null || typeof error !== "object") return false;
-  if (!("kind" in error) || typeof error.kind !== "string") return false;
+  if (
+    !isObject(error) ||
+    !("kind" in error) ||
+    typeof error.kind !== "string"
+  ) {
+    return false;
+  }
+  if (error.kind === "policyBlocked") {
+    return "reason" in error && typeof error.reason === "string";
+  }
+  if (error.kind === "policyNeedsConfirmation") {
+    return (
+      "statements" in error && hasValidStatementSummaries(error.statements)
+    );
+  }
   return QUERY_SESSION_ERROR_KINDS.has(error.kind);
 }
 
@@ -51,6 +94,10 @@ export function formatQuerySessionError(error: QuerySessionError): string {
       return "Transaction observer is unavailable.";
     case "connectionLost":
       return "The database connection was lost.";
+    case "policyBlocked":
+      return `${error.reason} Edit the connection to unlock writes.`;
+    case "policyNeedsConfirmation":
+      return "The connection safety policy requires confirmation.";
     case "timeout":
       return `Timed out during ${error.operation}.`;
     case "database":
