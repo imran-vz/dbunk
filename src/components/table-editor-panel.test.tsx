@@ -1240,7 +1240,9 @@ describe("TableEditorPanel server browse", () => {
     seedStructure(readOnlyStructure);
     render(<TableEditorPanel tab={tableTab} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "ada@example.com" }));
+    fireEvent.doubleClick(
+      screen.getByRole("button", { name: "ada@example.com" }),
+    );
     expect(screen.getByDisplayValue("ada@example.com")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox")[1] as HTMLInputElement);
     expect(
@@ -1340,7 +1342,7 @@ describe("TableEditorPanel server browse", () => {
       seedMutationDraftAnalysis(mutationAnalysis());
       render(<TableEditorPanel tab={tableTab} />);
 
-      fireEvent.click(screen.getByRole("button", { name: "NULL" }));
+      fireEvent.doubleClick(screen.getByRole("button", { name: "NULL" }));
       const input = screen.getByDisplayValue("NULL") as HTMLInputElement;
       fireEvent.change(input, { target: { value: "ada@new.com" } });
       fireEvent.blur(input);
@@ -1604,7 +1606,7 @@ describe("TableEditorPanel server browse", () => {
       expect(generated.getAttribute("title")).toBe(
         "Generated columns are read-only.",
       );
-      fireEvent.click(screen.getByRole("button", { name: "1" }));
+      fireEvent.doubleClick(screen.getByRole("button", { name: "1" }));
       const input = screen.getByDisplayValue("1");
       fireEvent.change(input, { target: { value: "7" } });
       fireEvent.blur(input);

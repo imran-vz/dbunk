@@ -1,6 +1,8 @@
 /**
- * Toolbar and filter bar for the DataGrid. Extracted to keep the
- * parent component under the 1000-line threshold.
+ * Toolbar and filter bar for the DataGrid (DESIGN-SYSTEM §4.5). One
+ * `--h-toolbar` row that never wraps: when the left cluster overflows,
+ * the secondary controls collapse into a `⋯` menu. The filter bar is
+ * the sanctioned transient second row, dismissed with `Esc`.
  */
 
 import {
@@ -8,6 +10,7 @@ import {
   IconArrowsSort,
   IconColumns,
   IconDeviceFloppy,
+  IconDots,
   IconDownload,
   IconFilter,
   IconRefresh,
@@ -15,7 +18,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import type { Table } from "@tanstack/react-table";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -154,6 +157,37 @@ export function DataGridToolbar({
   const [showSort, setShowSort] = useState(false);
   const [showInspection, setShowInspection] = useState(false);
   const [columnSearch, setColumnSearch] = useState("");
+  // §4.5: the toolbar never wraps. When the left cluster overflows,
+  // secondary controls fold into the `⋯` menu; they come back once the
+  // full set fits again (with slack to avoid flapping).
+  const leftClusterRef = useRef<HTMLDivElement>(null);
+  const [overflowCollapsed, setOverflowCollapsed] = useState(false);
+  const overflowCollapsedRef = useRef(false);
+  overflowCollapsedRef.current = overflowCollapsed;
+  const fullClusterWidthRef = useRef(0);
+  useEffect(() => {
+    const el = leftClusterRef.current;
+    if (!el) return;
+    const evaluate = () => {
+      if (!overflowCollapsedRef.current) {
+        if (el.scrollWidth > el.clientWidth + 1) {
+          fullClusterWidthRef.current = el.scrollWidth;
+          setOverflowCollapsed(true);
+        }
+      } else if (el.clientWidth > fullClusterWidthRef.current + 48) {
+        setOverflowCollapsed(false);
+      }
+    };
+    evaluate();
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- ResizeObserver is an optional runtime capability (absent in jsdom).
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", evaluate);
+      return () => window.removeEventListener("resize", evaluate);
+    }
+    const observer = new ResizeObserver(evaluate);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const [draftColumn, setDraftColumn] = useState<string>(columnNames[0] ?? "");
   const [draftOperator, setDraftOperator] = useState("equals");
   const [draftValue, setDraftValue] = useState("");
@@ -217,9 +251,12 @@ export function DataGridToolbar({
     <>
       <div
         data-slot="data-grid-toolbar"
-        className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 overflow-x-auto border-b border-border-subtle bg-surface-window px-3 py-1.5"
+        className="flex h-(--h-toolbar) shrink-0 flex-nowrap items-center justify-between gap-2 border-b border-border-subtle bg-surface-window px-2"
       >
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div
+          ref={leftClusterRef}
+          className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap"
+        >
           {hasEdits ? (
             <div className="flex items-center gap-2">
               <Button
@@ -256,17 +293,19 @@ export function DataGridToolbar({
             <span className="dbunk-optional-label">Filter</span>
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 border-border-subtle bg-surface-panel"
-            aria-label="Sort"
-            title="Sort"
-            onClick={() => setShowSort((open) => !open)}
-          >
-            <IconArrowsSort />
-            <span className="dbunk-optional-label">Sort</span>
-          </Button>
+          {!overflowCollapsed ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-border-subtle bg-surface-panel"
+              aria-label="Sort"
+              title="Sort"
+              onClick={() => setShowSort((open) => !open)}
+            >
+              <IconArrowsSort />
+              <span className="dbunk-optional-label">Sort</span>
+            </Button>
+          ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -336,18 +375,20 @@ export function DataGridToolbar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 border-border-subtle bg-surface-panel"
-            onClick={onRefresh}
-            disabled={!onRefresh}
-            aria-label="Refresh"
-            title="Refresh"
-          >
-            <IconRefresh />
-            <span className="dbunk-optional-label">Refresh</span>
-          </Button>
+          {!overflowCollapsed ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-border-subtle bg-surface-panel"
+              onClick={onRefresh}
+              disabled={!onRefresh}
+              aria-label="Refresh"
+              title="Refresh"
+            >
+              <IconRefresh />
+              <span className="dbunk-optional-label">Refresh</span>
+            </Button>
+          ) : null}
 
           {serverBrowse?.loadStatus.state === "loading" ? (
             <Button
@@ -527,7 +568,7 @@ export function DataGridToolbar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {serverBrowse ? (
+          {serverBrowse && !overflowCollapsed ? (
             <Button
               variant={showInspection ? "secondary" : "outline"}
               size="sm"
@@ -546,9 +587,48 @@ export function DataGridToolbar({
               {toolbarLeading}
             </>
           ) : null}
+
+          {overflowCollapsed ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="More grid actions"
+                title="More grid actions"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "icon-sm" }),
+                  "border-border-subtle bg-surface-panel",
+                )}
+              >
+                <IconDots />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => setShowSort((open) => !open)}>
+                  <IconArrowsSort className="mr-2 size-3.5" />
+                  Sort
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!onRefresh} onClick={onRefresh}>
+                  <IconRefresh className="mr-2 size-3.5" />
+                  Refresh
+                </DropdownMenuItem>
+                {serverBrowse ? (
+                  <DropdownMenuItem
+                    onClick={() => setShowInspection((open) => !open)}
+                  >
+                    Inspect query
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem
+                  disabled={!onExpandGrid}
+                  onClick={onExpandGrid}
+                >
+                  <IconArrowsMaximize className="mr-2 size-3.5" />
+                  {expanded ? "Restore grid" : "Expand grid"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
           {serverBrowse ? (
             <Select
               value={String(serverBrowse.pageSize)}
@@ -572,33 +652,19 @@ export function DataGridToolbar({
                 ))}
               </SelectContent>
             </Select>
-          ) : (
-            <Select defaultValue={String(table.getState().pagination.pageSize)}>
-              <SelectTrigger
-                className="h-6 w-24 border-border-subtle bg-surface-panel text-xs"
-                aria-label="Page size"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[10, 25, 50, 100].map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} rows
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={expanded ? "Restore grid" : "Expand grid"}
-            className="rounded-sm border border-border-subtle bg-surface-panel"
-            onClick={onExpandGrid}
-            disabled={!onExpandGrid}
-          >
-            <IconArrowsMaximize />
-          </Button>
+          ) : null}
+          {!overflowCollapsed ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={expanded ? "Restore grid" : "Expand grid"}
+              className="rounded-sm border border-border-subtle bg-surface-panel"
+              onClick={onExpandGrid}
+              disabled={!onExpandGrid}
+            >
+              <IconArrowsMaximize />
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -608,21 +674,37 @@ export function DataGridToolbar({
       ) : null}
 
       {showFilters && serverBrowse ? (
-        <BrowseFilterBar columnNames={columnNames} browse={serverBrowse} />
+        <DismissOnEscape onDismiss={() => setShowFilters(false)}>
+          <BrowseFilterBar columnNames={columnNames} browse={serverBrowse} />
+        </DismissOnEscape>
       ) : null}
 
       {showSort && serverBrowse ? (
-        <BrowseSortEditor columnNames={columnNames} browse={serverBrowse} />
+        <DismissOnEscape onDismiss={() => setShowSort(false)}>
+          <BrowseSortEditor columnNames={columnNames} browse={serverBrowse} />
+        </DismissOnEscape>
       ) : null}
 
       {showInspection && serverBrowse ? (
-        <div className="border-b border-border-subtle bg-surface-window px-3 py-2">
-          <BrowseInspectionPanel browse={serverBrowse} />
-        </div>
+        <DismissOnEscape onDismiss={() => setShowInspection(false)}>
+          <div className="border-b border-border-subtle bg-surface-window px-3 py-2">
+            <BrowseInspectionPanel browse={serverBrowse} />
+          </div>
+        </DismissOnEscape>
       ) : null}
 
       {showFilters && !serverBrowse && (
-        <div className="flex min-h-10 flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface-window px-3 py-1.5">
+        <div
+          role="toolbar"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              setShowFilters(false);
+            }
+          }}
+          className="flex min-h-10 flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface-window px-3 py-1.5"
+        >
           <Button
             variant="ghost"
             size="icon"
@@ -750,5 +832,32 @@ export function DataGridToolbar({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * §4.5: transient toolbar rows (filter bar, sort editor, SQL
+ * inspection) are dismissed with `Esc` from anywhere inside them.
+ */
+function DismissOnEscape({
+  onDismiss,
+  children,
+}: {
+  onDismiss: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      role="toolbar"
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onDismiss();
+        }
+      }}
+    >
+      {children}
+    </div>
   );
 }
