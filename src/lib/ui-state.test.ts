@@ -225,6 +225,76 @@ describe("ui-state store (P8)", () => {
     });
   });
 
+  it("drops oversized values instead of wedging the flush queue", async () => {
+    await initUiState();
+    await flushUiState();
+    mockedInvoke.mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // The backend rejects any batch containing a >512 KiB entry, so an
+    // enqueued oversized value would deterministically fail every retry.
+    uiSet("dbunk.session", "x".repeat(600 * 1024));
+    uiSet("dbunk.panel.a.size", "100");
+    await flushUiState();
+
+    const entries = savedEntries();
+    expect(entries).toContainEqual({ key: "ui.v1.panel.a.size", value: "100" });
+    expect(entries.some((entry) => entry.key === "ui.v1.session")).toBe(false);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("serializes overlapping flushes so batches commit in order", async () => {
+    await initUiState();
+    await flushUiState();
+    mockedInvoke.mockClear();
+
+    let releaseFirst = () => {};
+    const firstSaveGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let flushB: Promise<void> = Promise.resolve();
+    mockedInvoke.mockImplementationOnce(async () => {
+      // A newer value lands — and flushes — while save A is in flight.
+      uiSet("dbunk.panel.a.size", "200");
+      flushB = flushUiState();
+      await firstSaveGate;
+      return [];
+    });
+
+    uiSet("dbunk.panel.a.size", "100");
+    const flushA = flushUiState();
+
+    await vi.waitFor(() =>
+      expect(
+        mockedInvoke.mock.calls.filter(
+          ([command]) => command === "save_ui_state",
+        ),
+      ).toHaveLength(1),
+    );
+    // Flush B must not issue its save while A's is still pending —
+    // concurrent batches can commit out of order and persist the stale
+    // value.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(
+      mockedInvoke.mock.calls.filter(
+        ([command]) => command === "save_ui_state",
+      ),
+    ).toHaveLength(1);
+    releaseFirst();
+    await Promise.all([flushA, flushB]);
+
+    const saves = mockedInvoke.mock.calls.filter(
+      ([command]) => command === "save_ui_state",
+    );
+    expect(saves).toHaveLength(2);
+    expect(savedEntries()).toEqual([
+      { key: "ui.v1.panel.a.size", value: "100" },
+      { key: "ui.v1.panel.a.size", value: "200" },
+    ]);
+  });
+
   it("never blocks launch on a storage failure", async () => {
     mockedInvoke.mockRejectedValueOnce(new Error("db locked"));
     await initUiState();
