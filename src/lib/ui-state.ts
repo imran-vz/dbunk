@@ -37,6 +37,7 @@ const DEAD_KEY_PATTERNS = [
 
 const MIGRATED_KEY = "ui.v1.migrated";
 const FLUSH_DELAY_MS = 300;
+const RETRY_DELAY_MS = 2000;
 
 const toStoreKey = (key: string): string =>
   `ui.v1.${key.startsWith("dbunk.") ? key.slice("dbunk.".length) : key}`;
@@ -48,6 +49,13 @@ let initPromise: Promise<void> | null = null;
 const dirtyKeys = new Map<string, string>();
 const deletedKeys = new Set<string>();
 const deletedPrefixes = new Set<string>();
+/**
+ * Legacy `dbunk.*` localStorage keys awaiting removal — they are only
+ * deleted after the SQLite batch holding their migrated values commits,
+ * so an exit or write failure during the debounce window can't leave
+ * the values in neither storage.
+ */
+let pendingLegacyRemovals: string[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 const usesSqlite = (): boolean => isTauri();
@@ -113,12 +121,14 @@ function migrateLocalStorage(): void {
         dirtyKeys.set(storeKey, value);
       }
     }
-    for (const key of toRemove) {
-      window.localStorage.removeItem(key);
-    }
+    // Removal is deferred until the migrated values are durably in
+    // SQLite (see flushUiState) — never delete the only copy first.
+    pendingLegacyRemovals.push(...toRemove);
     if (!alreadyMigrated) {
       cache.set(MIGRATED_KEY, "1");
       dirtyKeys.set(MIGRATED_KEY, "1");
+    }
+    if (!alreadyMigrated || toRemove.length > 0) {
       scheduleFlush();
     }
   } catch (error) {
@@ -126,22 +136,28 @@ function migrateLocalStorage(): void {
   }
 }
 
-function scheduleFlush(): void {
+function scheduleFlush(delayMs: number = FLUSH_DELAY_MS): void {
   if (flushTimer !== null) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
     void flushUiState();
-  }, FLUSH_DELAY_MS);
+  }, delayMs);
 }
 
-/** Persist pending writes/deletes now (also used by tests + shutdown). */
+/**
+ * Persist pending writes/deletes now (also used by tests + shutdown).
+ * On failure the snapshot is merged back into the pending sets (without
+ * clobbering anything queued while the flush was in flight) and a retry
+ * is scheduled — a transiently locked SQLite must not silently drop the
+ * latest hot-exit SQL or layout changes.
+ */
 export async function flushUiState(): Promise<void> {
   if (!usesSqlite()) return;
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
-  const writes = [...dirtyKeys].map(([key, value]) => ({ key, value }));
+  const writes = [...dirtyKeys];
   dirtyKeys.clear();
   const keys = [...deletedKeys];
   const prefixes = [...deletedPrefixes];
@@ -152,10 +168,48 @@ export async function flushUiState(): Promise<void> {
       await tauriInvoke("delete_ui_state", { payload: { keys, prefixes } });
     }
     if (writes.length > 0) {
-      await tauriInvoke("save_ui_state", { payload: { entries: writes } });
+      await tauriInvoke("save_ui_state", {
+        payload: { entries: writes.map(([key, value]) => ({ key, value })) },
+      });
     }
+    commitLegacyRemovals();
   } catch (error) {
-    console.error("Failed to persist UI state", error);
+    console.error("Failed to persist UI state; retry scheduled", error);
+    for (const prefix of prefixes) {
+      deletedPrefixes.add(prefix);
+    }
+    for (const key of keys) {
+      if (!dirtyKeys.has(key)) deletedKeys.add(key);
+    }
+    for (const [key, value] of writes) {
+      // Keep newer values / deletes queued during the failed flush.
+      if (dirtyKeys.has(key) || deletedKeys.has(key)) continue;
+      let coveredByPrefix = false;
+      for (const prefix of deletedPrefixes) {
+        if (key.startsWith(prefix)) {
+          coveredByPrefix = true;
+          break;
+        }
+      }
+      if (!coveredByPrefix) dirtyKeys.set(key, value);
+    }
+    scheduleFlush(RETRY_DELAY_MS);
+  }
+}
+
+/** The migrated values are durable — drop the legacy localStorage copies. */
+function commitLegacyRemovals(): void {
+  if (pendingLegacyRemovals.length === 0 || typeof window === "undefined") {
+    return;
+  }
+  const doomed = pendingLegacyRemovals;
+  pendingLegacyRemovals = [];
+  try {
+    for (const key of doomed) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Best-effort cleanup; stale legacy keys are re-collected next boot.
   }
 }
 
@@ -244,6 +298,7 @@ export function resetUiStateForTests(): void {
   dirtyKeys.clear();
   deletedKeys.clear();
   deletedPrefixes.clear();
+  pendingLegacyRemovals = [];
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
     flushTimer = null;
