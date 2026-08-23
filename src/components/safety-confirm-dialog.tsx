@@ -61,7 +61,7 @@ export function SafetyConfirmDialog() {
         }
       }}
     >
-      <AlertDialogContent className="max-w-md! border border-danger/40 bg-black">
+      <AlertDialogContent size="md" className="border border-danger/40">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             Confirm safety override

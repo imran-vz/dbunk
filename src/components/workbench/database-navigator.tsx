@@ -7,6 +7,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/state-panel";
 import { type SchemaExplorer, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -68,11 +69,14 @@ export function DatabaseNavigator({
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-1.5">
         {filteredSchemas.length === 0 ? (
-          <div className="px-2 py-4 text-center text-2xs text-text-muted">
-            {schemas.length === 0
-              ? "Connect to load schemas"
-              : "No tables match"}
-          </div>
+          <EmptyState
+            title={
+              schemas.length === 0
+                ? "Connect to load schemas"
+                : "No tables match"
+            }
+            className="h-auto px-2 py-4"
+          />
         ) : null}
         {filteredSchemas.map((schema) => {
           const schemaId = `${connectionId}:${schema.name}`;

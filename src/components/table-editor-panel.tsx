@@ -1173,7 +1173,7 @@ function CopyTablePanel({
           </div>
         </div>
         <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
-          <IconX className="size-3.5" />
+          <IconX />
         </Button>
       </div>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem]">
@@ -1219,7 +1219,7 @@ function CopyTablePanel({
             })
           }
         >
-          <IconCopy className="size-3.5" />
+          <IconCopy />
           Copy rows
         </Button>
       </div>
@@ -1417,7 +1417,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
               aria-label="Open schema map fullscreen"
               onClick={() => setIsSchemaMapFullscreen(true)}
             >
-              <IconMaximize className="size-3.5" />
+              <IconMaximize />
             </Button>
           </CardAction>
         </CardHeader>
@@ -1454,7 +1454,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
               variant="outline"
               onClick={() => setIsSchemaMapFullscreen(false)}
             >
-              <IconX className="size-3.5" />
+              <IconX />
               Close
             </Button>
           </div>

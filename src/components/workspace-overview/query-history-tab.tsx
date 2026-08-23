@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/state-panel";
 import type { Connection, QueryHistoryEntry } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -123,7 +124,14 @@ export function QueryHistoryTab({
         </div>
 
         {filtered.length === 0 ? (
-          <EmptyState hasAny={queryHistory.length > 0} />
+          queryHistory.length > 0 ? (
+            <EmptyState title="No queries match the current filters." />
+          ) : (
+            <EmptyState
+              title="No queries yet"
+              description="open the editor and run one."
+            />
+          )
         ) : (
           <ul className="flex flex-col gap-1.5">
             {filtered.map((entry) => (
@@ -168,19 +176,6 @@ function StatusFilterChip({
     >
       {label}
     </button>
-  );
-}
-
-function EmptyState({ hasAny }: { hasAny: boolean }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border-subtle px-3 py-8 text-text-muted">
-      <IconTerminal2 className="size-5 opacity-60" />
-      <span>
-        {hasAny
-          ? "No queries match the current filters."
-          : "No queries yet — open the editor and run one."}
-      </span>
-    </div>
   );
 }
 
@@ -238,9 +233,9 @@ function HistoryRow({
           aria-label="Copy SQL"
         >
           {isCopied ? (
-            <IconCheck className="size-3.5 text-accent-hover" />
+            <IconCheck className="text-accent-hover" />
           ) : (
-            <IconCopy className="size-3.5" />
+            <IconCopy />
           )}
         </Button>
         <Button
@@ -250,7 +245,7 @@ function HistoryRow({
           title="Open in editor"
           aria-label="Open in editor"
         >
-          <IconExternalLink className="size-3.5" />
+          <IconExternalLink />
         </Button>
       </div>
     </div>

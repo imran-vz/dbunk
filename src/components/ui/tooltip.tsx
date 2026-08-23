@@ -2,15 +2,17 @@
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 
+import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
 /**
- * A single app-wide `TooltipProvider` with a fast 200 ms open delay
- * (vs the ~700 ms browser default for `title`). Mount this once at
- * the workspace root.
+ * A single app-wide `TooltipProvider` with a ~400 ms open delay and
+ * instant reshow while any tooltip is live (DESIGN-SYSTEM §4.7).
+ * Mount this once at the workspace root. Tooltips are the only
+ * `title=`-replacement — the raw `title` attribute is banned.
  */
 function TooltipProvider({
-  delay = 200,
+  delay = 400,
   closeDelay = 0,
   ...props
 }: TooltipPrimitive.Provider.Props) {
@@ -36,10 +38,14 @@ function TooltipContent({
   className,
   side = "top",
   sideOffset = 4,
+  kbd,
   children,
   ...props
 }: TooltipPrimitive.Popup.Props &
-  Pick<TooltipPrimitive.Positioner.Props, "side" | "sideOffset">) {
+  Pick<TooltipPrimitive.Positioner.Props, "side" | "sideOffset"> & {
+    /** Shortcut tokens (e.g. ["mod", "k"]) shown after the label. */
+    kbd?: ReadonlyArray<string>;
+  }) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Positioner
@@ -58,7 +64,14 @@ function TooltipContent({
           )}
           {...props}
         >
-          {children}
+          {kbd ? (
+            <span className="inline-flex items-center gap-1.5">
+              {children}
+              <Kbd keys={kbd} />
+            </span>
+          ) : (
+            children
+          )}
         </TooltipPrimitive.Popup>
       </TooltipPrimitive.Positioner>
     </TooltipPrimitive.Portal>

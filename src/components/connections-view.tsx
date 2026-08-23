@@ -113,7 +113,7 @@ export function ConnectionsView() {
           variant={showPanel ? "secondary" : "default"}
           onClick={() => setShowPanel((prev) => !prev)}
         >
-          <IconPlus className="size-3.5" />
+          <IconPlus />
           {showPanel ? "Hide form" : "New Connection"}
         </Button>
       </header>
@@ -244,7 +244,7 @@ export function ConnectionsView() {
                 onClick={() => setShowPanel(false)}
                 className="size-7"
               >
-                <IconX className="size-3.5" />
+                <IconX />
               </Button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">

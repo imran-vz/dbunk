@@ -1,8 +1,8 @@
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import { Toaster } from "sonner";
 
+import { ThemedToaster } from "@/components/themed-toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import appCss from "../styles.css?url";
@@ -45,33 +45,19 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <TooltipProvider>{children}</TooltipProvider>
-        {/* Toaster reads `theme="system"` so it follows OS prefers-
-            color-scheme. If the user manually picks an explicit Light /
-            Dark mode that differs from OS, toasts can briefly mismatch
-            the app surface; the custom class names below pull from CSS
-            variables, so this drift is limited to sonner's built-in
-            chrome (icons / outline). */}
-        <Toaster
-          theme="system"
-          position="bottom-right"
-          richColors
-          closeButton
-          toastOptions={{
-            classNames: {
-              toast:
-                "font-sans text-xs border-border-subtle bg-surface-window text-foreground",
-            },
-          }}
-        />
-        <TanStackDevtools
-          config={{ position: "bottom-right" }}
-          plugins={[
-            {
-              name: "Tanstack Router",
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
+        <ThemedToaster />
+        {/* Dev-only, and kept out of the bottom-right toast corner. */}
+        {import.meta.env.DEV ? (
+          <TanStackDevtools
+            config={{ position: "bottom-left" }}
+            plugins={[
+              {
+                name: "Tanstack Router",
+                render: <TanStackRouterDevtoolsPanel />,
+              },
+            ]}
+          />
+        ) : null}
         <Scripts />
       </body>
     </html>

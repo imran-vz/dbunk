@@ -37,7 +37,6 @@ export function EdgeTarget({
         type="button"
         aria-label={label}
         aria-controls={panelId}
-        title={label}
         onMouseEnter={onHover}
         onClick={onActivate}
         className={cn(

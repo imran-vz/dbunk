@@ -360,8 +360,7 @@ function DataToolbar({
         aria-label="Add row"
         title="Add row"
       >
-        <IconPlus className="size-3.5" />{" "}
-        <span className="dbunk-primary-label">Add row</span>
+        <IconPlus /> <span className="dbunk-primary-label">Add row</span>
       </Button>
       {onDuplicateSelected ? (
         <Button
@@ -372,7 +371,7 @@ function DataToolbar({
           aria-label="Duplicate selected row"
           title="Duplicate selected row"
         >
-          <IconCopy className="size-3.5" />
+          <IconCopy />
           <span className="dbunk-primary-label">Duplicate</span>
         </Button>
       ) : null}
@@ -385,7 +384,7 @@ function DataToolbar({
           aria-label="Bulk edit selected rows"
           title="Bulk edit selected rows"
         >
-          <IconPencil className="size-3.5" />
+          <IconPencil />
           <span className="dbunk-primary-label">Bulk edit</span>
         </Button>
       ) : null}
@@ -397,8 +396,7 @@ function DataToolbar({
         aria-label="Import data"
         title="Import data"
       >
-        <IconPlus className="size-3.5" />{" "}
-        <span className="dbunk-primary-label">Import</span>
+        <IconPlus /> <span className="dbunk-primary-label">Import</span>
       </Button>
       {stagedChangeCount > 0 && onOpenReview ? (
         <Button
@@ -419,7 +417,7 @@ function DataToolbar({
         title="Delete selected"
         onClick={onDeleteSelected}
       >
-        <IconTrash className="size-3.5" />{" "}
+        <IconTrash />{" "}
         <span className="dbunk-primary-label">Delete selected</span>
       </Button>
     </div>

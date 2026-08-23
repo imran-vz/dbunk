@@ -139,7 +139,7 @@ export function BastionServersTab() {
                   </p>
                 </div>
                 <Button type="button" variant="outline" onClick={startNew}>
-                  <IconPlus className="size-3.5" />
+                  <IconPlus />
                   New
                 </Button>
               </div>

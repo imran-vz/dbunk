@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState, ErrorState } from "@/components/ui/state-panel";
 import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import type { Connection } from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
@@ -106,9 +107,7 @@ export function AdminTab({ connection }: { connection: Connection }) {
         <CardHeader>
           <CardTitle>Admin dashboard</CardTitle>
           <Button size="sm" variant="ghost" onClick={() => void load()}>
-            <IconRefresh
-              className={loading ? "size-3.5 animate-spin" : "size-3.5"}
-            />
+            <IconRefresh className={loading ? "animate-spin" : undefined} />
             Refresh
           </Button>
         </CardHeader>
@@ -141,20 +140,12 @@ export function AdminTab({ connection }: { connection: Connection }) {
       </Card>
 
       {error ? (
-        <div className="rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
-          <div className="flex items-start justify-between gap-2">
-            <span className="whitespace-pre-wrap font-mono">{error}</span>
-            <button
-              type="button"
-              className="shrink-0 underline underline-offset-2 hover:text-foreground"
-              onClick={() => {
-                void load();
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        </div>
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            void load();
+          }}
+        />
       ) : null}
 
       <SessionCard
@@ -210,7 +201,7 @@ function SessionCard({
                   variant="outline"
                   onClick={() => onCancel(session.pid)}
                 >
-                  <IconX className="size-3.5" />
+                  <IconX />
                   Cancel
                 </Button>
                 <Button
@@ -219,7 +210,7 @@ function SessionCard({
                   className="border-danger/40 text-danger"
                   onClick={() => onTerminate(session.pid)}
                 >
-                  <IconShieldX className="size-3.5" />
+                  <IconShieldX />
                   Terminate
                 </Button>
               </div>,
@@ -294,11 +285,7 @@ function AdminTable({
   rows: Array<{ key: string; cells: ReactNode[] }>;
 }) {
   if (rows.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-border-subtle px-3 py-6 text-center text-xs text-text-muted">
-        No rows.
-      </div>
-    );
+    return <EmptyState title="No rows." />;
   }
   return (
     <div className="overflow-auto rounded-md border border-border-subtle">

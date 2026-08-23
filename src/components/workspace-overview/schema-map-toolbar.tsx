@@ -199,7 +199,7 @@ export function SchemaMapToolbar({
           disabled={isBusy || !selectedSchema}
           onClick={onResetLayout}
         >
-          <IconGitBranch className="size-3" />
+          <IconGitBranch />
           Reset
         </Button>
         <Button
@@ -209,7 +209,7 @@ export function SchemaMapToolbar({
           disabled={isBusy || !selectedSchema}
           onClick={() => onExport("png")}
         >
-          <IconDownload className="size-3" />
+          <IconDownload />
           PNG
         </Button>
         <Button
@@ -219,7 +219,7 @@ export function SchemaMapToolbar({
           disabled={isBusy || !selectedSchema}
           onClick={() => onExport("svg")}
         >
-          <IconDownload className="size-3" />
+          <IconDownload />
           SVG
         </Button>
         <SchemaMapGlossaryButton />

@@ -731,7 +731,7 @@ export function SpecializedEditors({
                 onClick={copySql}
                 aria-label="Copy generated SQL"
               >
-                <IconCopy className="size-3.5" />
+                <IconCopy />
                 {copyState === "copied"
                   ? "Copied"
                   : copyState === "failed"
@@ -744,7 +744,7 @@ export function SpecializedEditors({
                 onClick={openInSqlEditor}
                 aria-label="Open generated SQL in editor"
               >
-                <IconTerminal2 className="size-3.5" />
+                <IconTerminal2 />
                 Open in SQL editor
               </Button>
             </div>

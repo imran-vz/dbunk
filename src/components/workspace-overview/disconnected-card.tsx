@@ -45,11 +45,11 @@ export function DisconnectedConnectionCard({
           ) : null}
           <div className="flex items-center justify-end gap-2">
             <Button size="sm" variant="outline" onClick={onNewQuery}>
-              <IconTerminal2 className="size-3.5" />
+              <IconTerminal2 />
               New Query
             </Button>
             <Button size="sm" onClick={onConnect}>
-              <IconDatabase className="size-3.5" />
+              <IconDatabase />
               Connect
             </Button>
           </div>

@@ -79,7 +79,7 @@ export function RowDetailsPanel({
             aria-label="Close row details"
             onClick={onClose}
           >
-            <IconX className="size-3.5" />
+            <IconX />
           </Button>
         </div>
 

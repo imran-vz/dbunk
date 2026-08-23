@@ -228,11 +228,11 @@ export function DataGridToolbar({
                 onClick={onDiscard}
                 disabled={isSaving}
               >
-                <IconX className="mr-1 size-3.5" />{" "}
+                <IconX className="mr-1" />{" "}
                 <span className="dbunk-optional-label">Discard</span>
               </Button>
               <Button size="sm" onClick={onSave} disabled={isSaving}>
-                <IconDeviceFloppy className="mr-1 size-3.5" />{" "}
+                <IconDeviceFloppy className="mr-1" />{" "}
                 <span className="dbunk-primary-label">
                   {isSaving ? "Saving…" : "Save changes"}
                 </span>
@@ -252,7 +252,7 @@ export function DataGridToolbar({
             aria-label="Filter"
             title="Filter"
           >
-            <IconFilter className="size-3.5" />
+            <IconFilter />
             <span className="dbunk-optional-label">Filter</span>
           </Button>
 
@@ -264,7 +264,7 @@ export function DataGridToolbar({
             title="Sort"
             onClick={() => setShowSort((open) => !open)}
           >
-            <IconArrowsSort className="size-3.5" />
+            <IconArrowsSort />
             <span className="dbunk-optional-label">Sort</span>
           </Button>
 
@@ -277,7 +277,7 @@ export function DataGridToolbar({
                 "gap-1.5 border-border-subtle bg-surface-panel",
               )}
             >
-              <IconColumns className="size-3.5" />
+              <IconColumns />
               <span className="dbunk-optional-label">Columns</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
@@ -345,7 +345,7 @@ export function DataGridToolbar({
             aria-label="Refresh"
             title="Refresh"
           >
-            <IconRefresh className="size-3.5" />
+            <IconRefresh />
             <span className="dbunk-optional-label">Refresh</span>
           </Button>
 
@@ -358,7 +358,7 @@ export function DataGridToolbar({
               aria-label="Cancel browse"
               title="Cancel browse"
             >
-              <IconX className="size-3.5" />
+              <IconX />
               <span className="dbunk-optional-label">Cancel</span>
             </Button>
           ) : null}
@@ -372,7 +372,7 @@ export function DataGridToolbar({
                 "gap-1.5 border-border-subtle bg-surface-panel",
               )}
             >
-              <IconDownload className="size-3.5" />
+              <IconDownload />
               <span className="dbunk-optional-label">Export</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
@@ -597,7 +597,7 @@ export function DataGridToolbar({
             onClick={onExpandGrid}
             disabled={!onExpandGrid}
           >
-            <IconArrowsMaximize className="size-3.5" />
+            <IconArrowsMaximize />
           </Button>
         </div>
       </div>
@@ -629,7 +629,7 @@ export function DataGridToolbar({
             className="shrink-0 text-muted-foreground"
             onClick={() => setShowFilters(false)}
           >
-            <IconX className="size-3.5" />
+            <IconX />
           </Button>
 
           {appliedFilters.length > 0 && (

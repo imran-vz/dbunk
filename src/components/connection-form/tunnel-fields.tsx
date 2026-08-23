@@ -278,7 +278,7 @@ export function JumpChainField({
           disabled={bastions.length === 0}
           onClick={addHop}
         >
-          <IconPlus className="size-3" />
+          <IconPlus />
           Add hop
         </Button>
       </div>
@@ -321,7 +321,7 @@ export function JumpChainField({
                 aria-label={`Remove jump hop ${index + 1}`}
                 onClick={() => removeHop(index)}
               >
-                <IconTrash className="size-3" />
+                <IconTrash />
               </Button>
             </div>
           ))}
