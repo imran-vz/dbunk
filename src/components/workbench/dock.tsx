@@ -2,10 +2,12 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconColumns3,
-  IconX,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { usePanelState } from "@/components/ui/panel";
+import { Sash } from "@/components/ui/resizer-handle";
 import { cn } from "@/lib/utils";
 
 interface WorkbenchDockProps {
@@ -21,7 +23,14 @@ interface WorkbenchDockProps {
 }
 
 const DOCK_STORAGE_PREFIX = "dbunk.workbench.dock.";
+/** §3.3: dock max = 60% of content height. */
+const DOCK_MAX = () => Math.round(window.innerHeight * 0.6);
 
+/**
+ * Output dock — interim surface until P4 replaces it with the global
+ * console + editor/results split. Height is resizable on the shared
+ * sash spec and persisted (§3.3: min 100 / default 200 / snap 60).
+ */
 export function WorkbenchDock({
   content,
   revealKey,
@@ -33,6 +42,14 @@ export function WorkbenchDock({
     // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(`${storageId}.open`) !== "false";
+  });
+
+  const height = usePanelState({
+    storageKey: `${storageId}.panel`,
+    defaultSize: 200,
+    min: 100,
+    max: DOCK_MAX,
+    snapThreshold: 60,
   });
 
   useEffect(() => {
@@ -57,62 +74,49 @@ export function WorkbenchDock({
       )}
     >
       <div className="flex items-center gap-1 px-2 py-1">
-        <button
+        <Button
           type="button"
+          size="xs"
+          variant="ghost"
           onClick={() => setDockOpen(true)}
           className={cn(
-            "flex items-center gap-1.5 rounded px-2.5 py-1 text-2xs font-medium transition-colors",
-            dockOpen
-              ? "bg-accent-subdued text-accent"
-              : "text-text-muted hover:text-foreground",
+            dockOpen && "bg-accent-subdued text-accent hover:bg-accent-subdued",
           )}
         >
-          <IconColumns3 className="size-3.5" />
+          <IconColumns3 />
           Output
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          size="icon-xs"
+          variant="ghost"
           aria-label={dockOpen ? "Collapse dock" : "Expand dock"}
           onClick={() => setDockOpen((open) => !open)}
-          className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-muted hover:text-foreground"
+          className="ml-auto"
         >
-          {dockOpen ? (
-            <IconChevronDown className="size-3.5" />
-          ) : (
-            <IconChevronUp className="size-3.5" />
-          )}
-        </button>
+          {dockOpen ? <IconChevronDown /> : <IconChevronUp />}
+        </Button>
       </div>
       {dockOpen ? (
         <div
-          className="h-40 overflow-auto border-t border-border-subtle"
+          className="relative flex flex-col overflow-hidden border-t border-border-subtle"
+          style={{ height: height.size }}
           data-testid="workbench-dock-body"
         >
+          <Sash
+            orientation="horizontal"
+            side="top"
+            value={height.size}
+            min={height.min}
+            max={height.max}
+            snapThreshold={height.snapThreshold}
+            onResize={height.setSize}
+            onCollapse={() => setDockOpen(false)}
+            ariaLabel="Resize output dock"
+          />
           <div className="min-h-0 flex-1 overflow-auto p-2">{content}</div>
         </div>
       ) : null}
     </div>
-  );
-}
-
-export function ObjectTabCloseButton({
-  label,
-  onClose,
-}: {
-  label: string;
-  onClose: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={`Close ${label}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClose();
-      }}
-      className="rounded p-0.5 text-text-muted hover:text-foreground"
-    >
-      <IconX className="size-3" />
-    </button>
   );
 }

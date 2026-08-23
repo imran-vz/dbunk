@@ -920,6 +920,9 @@ export type WorkspaceTab = {
   query?: string;
   lastRun?: string;
   isDirty?: boolean;
+  /** Pinned tabs sit leftmost at icon width and are excluded from
+   *  Close Others / Close All (DESIGN-SYSTEM §4.4). */
+  pinned?: boolean;
   /** Redis `key` tab: the inspected key name (under `dbNumber`). */
   redisKey?: string;
   /** Redis `key` tab: scoped DB number at open time. */

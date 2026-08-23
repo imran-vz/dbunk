@@ -1,4 +1,5 @@
 import MonacoEditor from "@monaco-editor/react";
+import { IconX } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -15,19 +16,14 @@ import { buildQueryStatusItems } from "@/components/query-editor/status-items";
 import { QueryEditorToolbar } from "@/components/query-editor/toolbar";
 import { useMonacoQueryEditor } from "@/components/query-editor/use-monaco-query-editor";
 import { useQueryOutcome } from "@/components/query-editor/use-query-outcome";
-import {
-  PROTECTED_WORKSPACE_WIDTH,
-  QUERY_SIDEBAR_COMPACT_BELOW,
-  QUERY_SIDEBAR_WIDTH,
-  useQuerySidebarVisibility,
-} from "@/components/query-editor/use-query-sidebar-visibility";
+import { useQuerySidebarVisibility } from "@/components/query-editor/use-query-sidebar-visibility";
 import { QuerySidebar } from "@/components/query-sidebar";
 import {
   type StatusBarItem,
   useStableStatusItems,
 } from "@/components/status-bar";
 import { Button } from "@/components/ui/button";
-import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
+import { Panel, usePanelState } from "@/components/ui/panel";
 import { WorkbenchDock } from "@/components/workbench/dock";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import { MONO_FONT_FAMILY } from "@/lib/fonts";
@@ -61,7 +57,6 @@ import {
   type WorkspaceTab,
 } from "@/lib/store";
 import { GRID_NULL_SENTINEL, gridCellToEditValue } from "@/lib/table-browse";
-import { useContainerWidth } from "@/lib/use-resizable-width";
 
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
@@ -98,8 +93,14 @@ export function QueryEditorPanel({
   const [explainPlan, setExplainPlan] = useState<ExplainPlanData | null>(null);
   const activeTabIdRef = useRef(tab.id);
   activeTabIdRef.current = tab.id;
-  const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
-  const sidebar = useQuerySidebarVisibility(containerWidth);
+  const sidebar = useQuerySidebarVisibility();
+  const sidebarPanel = usePanelState({
+    storageKey: "dbunk.panel.query-details",
+    defaultSize: 340,
+    min: 280,
+    max: () => Math.round(window.innerWidth * 0.5),
+    snapThreshold: 140,
+  });
   const [resultIndex, setResultIndex] = useState(0);
   const [reviewScope, setReviewScope] =
     useState<QueryMutationDraftScope | null>(null);
@@ -665,7 +666,6 @@ export function QueryEditorPanel({
   const handleReviewEdits = () => {
     if (!mutationScope || stagedChangeCount === 0 || mutationLocked) return;
     setReviewScope(mutationScope);
-    sidebar.setOverlayOpen(false);
   };
 
   const handleMutationApplySuccess = (_result: ApplyResult) => {
@@ -870,10 +870,7 @@ export function QueryEditorPanel({
   );
 
   return (
-    <div
-      ref={containerRef}
-      className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col"
-    >
+    <div className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <QueryEditorToolbar
           tabId={tab.id}
@@ -950,24 +947,29 @@ export function QueryEditorPanel({
           revealKey={resultsView}
           content={resultsPane}
         />
-        {!reviewScope ? (
-          <ResponsiveEdgePanel
-            side="right"
-            storageKey="dbunk.sidebar.query"
-            title="Query"
-            width={QUERY_SIDEBAR_WIDTH}
-            containerWidth={containerWidth}
-            compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
-            protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-            wideVisible={sidebar.wideVisible}
-            open={sidebar.overlayOpen}
-            onOpenChange={sidebar.setOverlayOpen}
-            contentClassName="overflow-auto p-4"
-          >
-            <QuerySidebar tab={tab} />
-          </ResponsiveEdgePanel>
-        ) : null}
       </div>
+      {!reviewScope && sidebar.isOpen ? (
+        <Panel side="right" state={sidebarPanel} ariaLabel="Resize query panel">
+          <div className="flex h-full min-h-0 flex-col bg-surface-window text-xs">
+            <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-2">
+              <span className="truncate text-2xs font-semibold uppercase tracking-[0.12em] text-text-muted">
+                Query
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close query panel"
+                onClick={sidebar.onClose}
+              >
+                <IconX />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              <QuerySidebar tab={tab} />
+            </div>
+          </div>
+        </Panel>
+      ) : null}
       {reviewPanel}
     </div>
   );
