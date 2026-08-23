@@ -164,10 +164,21 @@ export function AppShell() {
     // P8 session restore: connections and the UI-state cache must both
     // be in place before rebuilding tabs; persistence starts only after
     // restore so an empty boot state can't clobber the stored session.
+    // A failed connection load must not start restore/persistence either:
+    // restoring against an empty list would drop every saved tab and then
+    // persist that empty session over the stored one. Retry a couple of
+    // times for transient startup errors, otherwise leave the stored
+    // session untouched for the next launch.
     void (async () => {
-      await loadConnections();
+      let connectionsLoaded = false;
+      for (let attempt = 0; attempt < 3 && !connectionsLoaded; attempt += 1) {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
+        connectionsLoaded = await loadConnections();
+      }
       await initUiState();
-      if (!sessionRestoredRef.current) {
+      if (connectionsLoaded && !sessionRestoredRef.current) {
         sessionRestoredRef.current = true;
         useAppStore.getState().restoreSession();
         startSessionPersistence();
