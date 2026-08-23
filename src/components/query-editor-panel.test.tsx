@@ -11,6 +11,32 @@ import {
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/ui-state", () => {
+  const memory = new Map<string, string>();
+  return {
+    initUiState: () => Promise.resolve(),
+    isUiStateReady: () => true,
+    flushUiState: () => Promise.resolve(),
+    uiGet: (key: string) => memory.get(key) ?? null,
+    uiSet: (key: string, value: string) => {
+      memory.set(key, value);
+    },
+    uiRemove: (key: string) => {
+      memory.delete(key);
+    },
+    uiRemovePrefix: (prefix: string) => {
+      const doomed: string[] = [];
+      for (const key of memory.keys()) {
+        if (key.startsWith(prefix)) doomed.push(key);
+      }
+      for (const key of doomed) memory.delete(key);
+    },
+    resetUiStateForTests: () => {
+      memory.clear();
+    },
+  };
+});
+
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(),

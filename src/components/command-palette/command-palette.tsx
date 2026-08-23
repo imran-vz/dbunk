@@ -7,7 +7,7 @@
  * Commands come from the central shortcut registry (§6.1): every
  * binding appears with its kbd hint, and rows invoke the handler the
  * owning surface registered. Selection frecency persists per item
- * (localStorage until P8's UI-state store).
+ * through the P8 UI-state store.
  */
 
 import {
@@ -35,6 +35,7 @@ import {
   subscribeShortcutRegistry,
 } from "@/lib/shortcuts";
 import { useAppStore } from "@/lib/store";
+import { uiGet, uiSet } from "@/lib/ui-state";
 import { cn } from "@/lib/utils";
 
 const MAX_TABLES = 300;
@@ -46,7 +47,7 @@ type FrecencyMap = Record<string, { count: number; last: number }>;
 
 const readFrecency = (): FrecencyMap => {
   try {
-    const raw = window.localStorage.getItem(FRECENCY_KEY);
+    const raw = uiGet(FRECENCY_KEY);
     if (!raw) return {};
     // SAFETY: scores are advisory ordering hints; malformed entries fall out below.
     const parsed = JSON.parse(raw) as FrecencyMap;
@@ -66,10 +67,7 @@ const recordUse = (key: string) => {
     const entries = Object.entries(map)
       .sort((a, b) => b[1].last - a[1].last)
       .slice(0, 200);
-    window.localStorage.setItem(
-      FRECENCY_KEY,
-      JSON.stringify(Object.fromEntries(entries)),
-    );
+    uiSet(FRECENCY_KEY, JSON.stringify(Object.fromEntries(entries)));
   } catch {
     // Best-effort ranking only.
   }

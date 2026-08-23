@@ -72,6 +72,7 @@ import {
   type WorkspaceTab,
 } from "@/lib/store";
 import { GRID_NULL_SENTINEL, gridCellToEditValue } from "@/lib/table-browse";
+import { uiGet, uiSet } from "@/lib/ui-state";
 
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
@@ -79,19 +80,12 @@ interface QueryEditorPanelProps {
   onStatusItemsChange?: (items: StatusBarItem[]) => void;
 }
 
-/** Editor/results split + collapse persist globally (P8 migrates to SQLite). */
+/** Editor/results split + collapse persist globally via the UI-state store. */
 const QUERY_SPLIT_STORAGE_KEY = "dbunk.workbench.query-split";
 const RESULTS_COLLAPSED_KEY = "dbunk.workbench.query-results.collapsed";
 
-const readResultsCollapsed = (): boolean => {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(RESULTS_COLLAPSED_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
+const readResultsCollapsed = (): boolean =>
+  uiGet(RESULTS_COLLAPSED_KEY) === "1";
 
 type MutationGridStatus = {
   copy: string;
@@ -136,14 +130,7 @@ export function QueryEditorPanel({
   const [resultsCollapsed, setResultsCollapsed] =
     useState(readResultsCollapsed);
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        RESULTS_COLLAPSED_KEY,
-        resultsCollapsed ? "1" : "0",
-      );
-    } catch {
-      // Best-effort persistence.
-    }
+    uiSet(RESULTS_COLLAPSED_KEY, resultsCollapsed ? "1" : "0");
   }, [resultsCollapsed]);
   const [bindValues, setBindValues] = useState<Record<string, string>>({});
   const [explainPlan, setExplainPlan] = useState<ExplainPlanData | null>(null);

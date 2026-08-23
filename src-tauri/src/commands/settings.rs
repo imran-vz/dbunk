@@ -138,3 +138,59 @@ pub async fn reset_credential_storage(
     .await?;
     load_app_settings(state).await
 }
+
+// ---------------------------------------------------------------------------
+// UI state (P8) — the frontend's namespaced `ui.v1.*` layout/session store
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiStateEntry {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveUiStatePayload {
+    pub entries: Vec<UiStateEntry>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteUiStatePayload {
+    #[serde(default)]
+    pub keys: Vec<String>,
+    #[serde(default)]
+    pub prefixes: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn load_ui_state(state: State<'_, AppState>) -> Result<Vec<UiStateEntry>, String> {
+    let entries = storage::read_ui_state(&state.inner().pool).await?;
+    Ok(entries
+        .into_iter()
+        .map(|(key, value)| UiStateEntry { key, value })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn save_ui_state(
+    state: State<'_, AppState>,
+    payload: SaveUiStatePayload,
+) -> Result<(), String> {
+    let entries: Vec<(String, String)> = payload
+        .entries
+        .into_iter()
+        .map(|entry| (entry.key, entry.value))
+        .collect();
+    storage::upsert_ui_state(&state.inner().pool, &entries).await
+}
+
+#[tauri::command]
+pub async fn delete_ui_state(
+    state: State<'_, AppState>,
+    payload: DeleteUiStatePayload,
+) -> Result<(), String> {
+    storage::delete_ui_state(&state.inner().pool, &payload.keys, &payload.prefixes).await
+}

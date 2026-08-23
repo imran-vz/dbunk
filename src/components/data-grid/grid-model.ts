@@ -15,6 +15,7 @@ import {
   toSqlInserts,
 } from "@/lib/export";
 import { GRID_NULL_SENTINEL } from "@/lib/table-browse";
+import { uiGet, uiSet } from "@/lib/ui-state";
 
 // ---------------------------------------------------------------------------
 // Virtual ranges (fixed row height; variable column widths)
@@ -171,7 +172,7 @@ export function detectAlignment(
 }
 
 // ---------------------------------------------------------------------------
-// Per-table layout persistence (localStorage until P8's SQLite store)
+// Per-table layout persistence (P8 UI-state store)
 // ---------------------------------------------------------------------------
 
 export type GridLayoutState = {
@@ -183,10 +184,9 @@ const LAYOUT_STORAGE_PREFIX = "dbunk.grid.layout.";
 
 export function loadGridLayout(key: string | undefined): GridLayoutState {
   const empty: GridLayoutState = { widths: {}, pinned: [] };
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
-  if (!key || typeof window === "undefined") return empty;
+  if (!key) return empty;
   try {
-    const raw = window.localStorage.getItem(`${LAYOUT_STORAGE_PREFIX}${key}`);
+    const raw = uiGet(`${LAYOUT_STORAGE_PREFIX}${key}`);
     if (!raw) return empty;
     // SAFETY: persisted layout is validated field-by-field below.
     const parsed = JSON.parse(raw) as Partial<GridLayoutState>;
@@ -213,16 +213,8 @@ export function saveGridLayout(
   key: string | undefined,
   state: GridLayoutState,
 ): void {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
-  if (!key || typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      `${LAYOUT_STORAGE_PREFIX}${key}`,
-      JSON.stringify(state),
-    );
-  } catch {
-    // Best-effort persistence.
-  }
+  if (!key) return;
+  uiSet(`${LAYOUT_STORAGE_PREFIX}${key}`, JSON.stringify(state));
 }
 
 // ---------------------------------------------------------------------------
