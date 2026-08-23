@@ -312,22 +312,37 @@ fn matching_close(tokens: &[SqlToken], open_index: usize) -> Option<usize> {
 }
 
 fn classify_copy(tokens: &[SqlToken]) -> StatementClass {
-    if contains_write_keyword(tokens) {
-        return StatementClass::Dml {
-            unbounded: contains_unbounded_update_delete(tokens),
-            destructive: false,
-        };
-    }
     let depths = token_depths(tokens);
-    if token_at_depth(tokens, &depths, "from", 0) {
-        StatementClass::Dml {
-            unbounded: false,
-            destructive: false,
+    if let Some(direction_index) = token_index_at_depth(tokens, &depths, "from", 0) {
+        let destructive = tokens
+            .get(direction_index + 1)
+            .is_some_and(|token| is_keyword(token, "program"));
+        return copy_write_class(tokens, destructive);
+    }
+
+    let Some(direction_index) = token_index_at_depth(tokens, &depths, "to", 0) else {
+        return StatementClass::Unknown;
+    };
+    match tokens.get(direction_index + 1) {
+        Some(token) if is_keyword(token, "stdout") => {
+            if contains_write_keyword(tokens) {
+                copy_write_class(tokens, false)
+            } else {
+                classified_read(tokens)
+            }
         }
-    } else if token_at_depth(tokens, &depths, "to", 0) {
-        classified_read(tokens)
-    } else {
-        StatementClass::Unknown
+        // A string literal is a server file path. PROGRAM and server file
+        // destinations have effects beyond returning rows to the client.
+        Some(token) if is_keyword(token, "program") => copy_write_class(tokens, true),
+        Some(SqlToken::Opaque) => copy_write_class(tokens, true),
+        _ => StatementClass::Unknown,
+    }
+}
+
+fn copy_write_class(tokens: &[SqlToken], destructive: bool) -> StatementClass {
+    StatementClass::Dml {
+        unbounded: contains_unbounded_update_delete(tokens),
+        destructive,
     }
 }
 
@@ -407,11 +422,16 @@ fn token_depths(tokens: &[SqlToken]) -> Vec<usize> {
         .collect()
 }
 
-fn token_at_depth(tokens: &[SqlToken], depths: &[usize], keyword: &str, depth: usize) -> bool {
+fn token_index_at_depth(
+    tokens: &[SqlToken],
+    depths: &[usize],
+    keyword: &str,
+    depth: usize,
+) -> Option<usize> {
     tokens
         .iter()
         .zip(depths)
-        .any(|(token, token_depth)| *token_depth == depth && is_keyword(token, keyword))
+        .position(|(token, token_depth)| *token_depth == depth && is_keyword(token, keyword))
 }
 
 fn identifier(token: &SqlToken) -> Option<&SqlIdentifier> {
@@ -594,6 +614,11 @@ mod tests {
     #[test]
     fn copy_combines_direction_and_embedded_write_scanning() {
         assert_eq!(one("COPY t TO STDOUT"), StatementClass::Read);
+        assert_eq!(one("COPY program TO STDOUT"), StatementClass::Read);
+        assert_eq!(
+            one("COPY (SELECT program FROM t) TO STDOUT"),
+            StatementClass::Read
+        );
         assert_eq!(
             one("COPY t FROM STDIN"),
             StatementClass::Dml {
@@ -601,11 +626,32 @@ mod tests {
                 destructive: false
             }
         );
+        for sql in [
+            "COPY t TO '/var/tmp/export.csv'",
+            "COPY t TO PROGRAM 'gzip > /var/tmp/export.csv.gz'",
+            "COPY t FROM PROGRAM 'generate_rows'",
+        ] {
+            assert_eq!(
+                one(sql),
+                StatementClass::Dml {
+                    unbounded: false,
+                    destructive: true
+                },
+                "{sql}"
+            );
+        }
         assert_eq!(
             one("COPY (WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d) TO STDOUT"),
             StatementClass::Dml {
                 unbounded: true,
                 destructive: false
+            }
+        );
+        assert_eq!(
+            one("COPY (INSERT INTO t VALUES (1) RETURNING *) TO PROGRAM 'consume_rows'"),
+            StatementClass::Dml {
+                unbounded: false,
+                destructive: true
             }
         );
     }
@@ -738,6 +784,19 @@ mod tests {
         ));
         assert!(
             assert_permitted(&policy(SafetyLevel::Disabled, true), &select_into, true).is_err()
+        );
+
+        let copy_to_program = intent("COPY t TO PROGRAM 'consume_rows'");
+        assert!(requires_confirmation(
+            &policy(SafetyLevel::Protected, false),
+            &copy_to_program
+        ));
+        assert!(requires_confirmation(
+            &policy(SafetyLevel::Strict, false),
+            &copy_to_program
+        ));
+        assert!(
+            assert_permitted(&policy(SafetyLevel::Disabled, true), &copy_to_program, true).is_err()
         );
     }
 
