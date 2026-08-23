@@ -893,4 +893,128 @@ describe("production query retargeting", () => {
       expect.objectContaining({ id: "conn-prod", environment: "production" }),
     );
   });
+
+  it("blocks the retarget when an async confirm resolves false", async () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "tab-1",
+          kind: "query",
+          label: "query.sql",
+          connectionId: "conn-dev",
+          schema: "public",
+          query: "select 1",
+        },
+      ],
+      activeConnectionId: "conn-dev",
+      connections: [
+        {
+          id: "conn-dev",
+          name: "Dev",
+          database: "app",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+          environment: "development",
+        },
+        {
+          id: "conn-prod",
+          name: "Primary",
+          database: "app",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "prod.internal",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+          environment: "production",
+        },
+      ],
+    });
+
+    // Promise-returning callbacks are the shipped caller shape
+    // (requestConfirm); a truthy pending Promise must not pass the gate.
+    const confirmProductionTarget = vi.fn(async () => false);
+    await expect(
+      useAppStore.getState().retargetQueryTab("tab-1", "conn-prod", {
+        confirmProductionTarget,
+      }),
+    ).resolves.toBe(false);
+    expect(confirmProductionTarget).toHaveBeenCalledTimes(1);
+
+    const state = useAppStore.getState();
+    expect(state.workspaceTabs[0]?.connectionId).toBe("conn-dev");
+    expect(state.activeConnectionId).toBe("conn-dev");
+  });
+
+  it("blocks the retarget when discarding staged changes is declined asynchronously", async () => {
+    const tabId = "tab-1";
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: tabId,
+          kind: "query",
+          label: "query_1.sql",
+          connectionId: "conn-1",
+          schema: "public",
+          query: "select id from users",
+        },
+      ],
+      querySessions: {
+        [tabId]: makeSession(tabId, { execution: completedExecution() }),
+      },
+      connections: [
+        {
+          id: "conn-2",
+          name: "Other",
+          database: "app",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "other.internal",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+          environment: "development",
+        },
+      ],
+    });
+    const handle = useAppStore.getState().openMutationDraft({
+      owner: {
+        kind: "query",
+        tabId,
+        executionId: "exec-1",
+        resultSetIndex: 0,
+      },
+      connectionId: "conn-1",
+      source: { kind: "statement", sql: "select id from users" },
+    });
+    if (!handle) throw new Error("Expected mutation draft handle");
+    useAppStore.getState().stageMutationDraftInsert(handle.scope, {
+      table: { schema: "public", table: "users" },
+      values: [{ column: "id", value: "2" }],
+    });
+    const draftsBefore = useAppStore.getState().mutationDrafts;
+    expect(Object.keys(draftsBefore)).not.toEqual([]);
+
+    const confirmDiscardStagedChanges = vi.fn(async () => false);
+    await expect(
+      useAppStore.getState().retargetQueryTab(tabId, "conn-2", {
+        confirmDiscardStagedChanges,
+      }),
+    ).resolves.toBe(false);
+    expect(confirmDiscardStagedChanges).toHaveBeenCalledWith(1);
+    expect(useAppStore.getState().mutationDrafts).toEqual(draftsBefore);
+  });
 });
