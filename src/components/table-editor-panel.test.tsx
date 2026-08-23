@@ -398,6 +398,35 @@ const seedMutationDraftAnalysis = (analysis: AnalyzeResultSetResult) => {
 };
 
 describe("TableEditorPanel read-only handling", () => {
+  it("disables edit affordances for a read-only connection", () => {
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id", "email"],
+      rows: [["1", "ada@example.com"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+    useAppStore.setState({
+      connections: [{ ...postgresConnection, readOnly: true }],
+    });
+    seedStructure(editableStructure);
+
+    render(<TableEditorPanel tab={tableTab} />);
+    settleStatus("users");
+
+    expect(screen.getByTestId("table-readonly-banner").textContent).toContain(
+      "Local is a read-only connection",
+    );
+    expect(
+      (screen.getByRole("button", { name: /add row/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
   it("shows a read-only banner when the structure has no PK or unique non-null index", () => {
     seed({
       connectionId: "conn-1",

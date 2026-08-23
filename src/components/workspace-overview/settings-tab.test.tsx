@@ -1,7 +1,13 @@
 /* oxlint-disable anti-slop/no-module-mocking anti-slop/no-unknown-parameters -- Test fixtures use controlled mocks and assertions to exercise otherwise inaccessible boundaries. */
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => false),
@@ -12,6 +18,10 @@ vi.mock("@/lib/tauri", () => ({
 
 import { SettingsTab } from "@/components/workspace-overview/settings-tab";
 import type { Connection } from "@/lib/store";
+import { isTauri, tauriInvoke } from "@/lib/tauri";
+
+const mockedIsTauri = vi.mocked(isTauri);
+const mockedInvoke = vi.mocked(tauriInvoke);
 
 const pgConnection: Connection = {
   id: "conn-pg",
@@ -58,6 +68,11 @@ const sqliteConnection: Connection = {
   latency: "1 ms",
 };
 
+beforeEach(() => {
+  mockedIsTauri.mockReturnValue(false);
+  mockedInvoke.mockReset();
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -76,7 +91,84 @@ describe("SettingsTab", () => {
     expect(screen.getByText("postgres")).toBeTruthy();
     expect(screen.getByText("readonly")).toBeTruthy();
     expect(screen.getByText("SSL")).toBeTruthy();
-    expect(screen.getByText("Enabled")).toBeTruthy();
+    expect(screen.getAllByText("Enabled").length).toBeGreaterThan(0);
+  });
+
+  it("mirrors the resolved environment, safe mode, and read-only fields", () => {
+    render(
+      <SettingsTab
+        connection={{
+          ...pgConnection,
+          environment: "production",
+          safeMode: "inherit",
+          readOnly: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Environment")).toBeTruthy();
+    expect(screen.getByText("Production")).toBeTruthy();
+    expect(screen.getByText("Safe Mode")).toBeTruthy();
+    expect(screen.getByText("Inherit (Strict)")).toBeTruthy();
+    expect(screen.getByText("Read-only")).toBeTruthy();
+  });
+
+  it("loads and renders recent safety overrides", async () => {
+    mockedIsTauri.mockReturnValue(true);
+    mockedInvoke.mockResolvedValueOnce([
+      {
+        command: "execute_ddl",
+        classes: ["ddl"],
+        occurredAt: new Date().toISOString(),
+      },
+    ]);
+
+    render(<SettingsTab connection={pgConnection} />);
+
+    expect(await screen.findByText("execute_ddl")).toBeTruthy();
+    expect(screen.getByText("ddl")).toBeTruthy();
+    expect(mockedInvoke).toHaveBeenCalledWith("load_safety_overrides", {
+      connectionId: pgConnection.id,
+    });
+  });
+
+  it("refreshes safety overrides after a successful restore", async () => {
+    mockedIsTauri.mockReturnValue(true);
+    mockedInvoke
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ runtimeMs: 12 })
+      .mockResolvedValueOnce([
+        {
+          command: "run_pg_restore",
+          classes: [],
+          occurredAt: new Date().toISOString(),
+        },
+      ]);
+
+    const { container } = render(<SettingsTab connection={pgConnection} />);
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("load_safety_overrides", {
+        connectionId: pgConnection.id,
+      }),
+    );
+
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error("restore input not found");
+    const file = new File(["SELECT 1;"], "backup.sql");
+    Object.defineProperty(file, "arrayBuffer", {
+      value: vi.fn(async () => new TextEncoder().encode("SELECT 1;").buffer),
+    });
+    fireEvent.change(input, {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText("run_pg_restore")).toBeTruthy();
+    expect(
+      mockedInvoke.mock.calls.filter(
+        ([command]) => command === "load_safety_overrides",
+      ),
+    ).toHaveLength(2);
   });
 
   it("renders ClickHouse-specific HTTPS and URL-path rows", () => {

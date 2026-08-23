@@ -255,9 +255,21 @@ type ConnectionCommon = {
   user: string;
   password: string;
   role: string;
+  /** Operator-selected deployment identity. Missing legacy values resolve to development. */
+  environment?: ConnectionEnvironment;
+  /** Per-connection policy override. Missing legacy values resolve to inherit. */
+  safeMode?: SafeMode;
   /** ISO-8601 timestamp of the most recent successful query/connect. */
   lastActivityAt?: string;
 };
+
+export type ConnectionEnvironment =
+  | "development"
+  | "test"
+  | "staging"
+  | "production";
+
+export type SafeMode = "inherit" | "disabled" | "protected" | "strict";
 
 /**
  * Per-connection driver/session knobs, persisted as a JSON blob on
@@ -279,6 +291,7 @@ export type PgDriverOptions = {
 
 export type PgStoredConnection = ConnectionCommon & {
   engine: "PostgreSQL";
+  readOnly?: boolean;
   /** TLS upgrade on the wire protocol. PG/MySQL only — distinct from
    *  ClickHouse `useHttps` and Redis `useTls`. */
   ssl: boolean;
@@ -289,14 +302,17 @@ export type PgStoredConnection = ConnectionCommon & {
 };
 export type MySqlStoredConnection = ConnectionCommon & {
   engine: "MySQL";
+  readOnly?: boolean;
   ssl: boolean;
   sshTunnel?: SshTunnelConfig;
 };
 export type SqliteStoredConnection = ConnectionCommon & {
   engine: "SQLite";
+  readOnly?: boolean;
 };
 export type ClickHouseStoredConnection = ConnectionCommon & {
   engine: "ClickHouse";
+  readOnly?: boolean;
   /** Connect over HTTPS instead of HTTP. */
   useHttps: boolean;
   /** URL path prefix for proxied deployments (e.g. `/clickhouse`). */
@@ -387,6 +403,8 @@ export type QueryDatabaseError = {
   severity: string | null;
   position: number | null;
 };
+export type StatementClassSummary =
+  import("@/lib/safety-policy").StatementClassSummary;
 export type QuerySessionError =
   | { kind: "unsupportedEngine" }
   | { kind: "connectionClosing" }
@@ -404,6 +422,8 @@ export type QuerySessionError =
   | { kind: "transactionStateUnknown"; canRecheck: boolean }
   | { kind: "transactionObserverUnavailable" }
   | { kind: "connectionLost" }
+  | { kind: "policyBlocked"; reason: string }
+  | { kind: "policyNeedsConfirmation"; statements: StatementClassSummary[] }
   | { kind: "timeout"; operation: string }
   | ({ kind: "database" } & QueryDatabaseError);
 export type QueryNotice = { severity: string; message: string };
@@ -454,6 +474,7 @@ export type QuerySessionState = {
   lastViewedAt: number;
   budgetOwners: Array<{ tabId: string; label: string; retainedBytes: number }>;
   state: "opening" | "open" | "lost" | "closed";
+  policyRefusal?: string | null;
 };
 
 /**

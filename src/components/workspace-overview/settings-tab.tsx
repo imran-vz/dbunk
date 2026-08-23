@@ -3,7 +3,13 @@ import {
   IconDatabaseImport,
   IconEdit,
 } from "@tabler/icons-react";
-import { type ReactNode, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
@@ -17,6 +23,8 @@ import {
 } from "@/components/ui/card";
 import { base64ToBytes, fileToBase64 } from "@/lib/backup";
 import { downloadBlob, downloadFile } from "@/lib/download";
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
+import { ENVIRONMENT_META, resolveSafetyPolicy } from "@/lib/safety-policy";
 import type { Connection, PgDriverOptions } from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
@@ -40,8 +48,39 @@ export function SettingsTab({ connection }: { connection: Connection }) {
   const [backupBusy, setBackupBusy] = useState<string | null>(null);
   const [restoreClean, setRestoreClean] = useState(false);
   const restoreInputRef = useRef<HTMLInputElement | null>(null);
+  const [overrides, setOverrides] = useState<SafetyOverrideRecord[] | null>(
+    null,
+  );
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const overrideRequestRef = useRef(0);
 
   const rows = buildSettingsRows(connection);
+
+  const refreshOverrides = useCallback(async () => {
+    const requestId = ++overrideRequestRef.current;
+    setOverrides(null);
+    setOverrideError(null);
+    if (!isTauri()) {
+      setOverrides([]);
+      return;
+    }
+    try {
+      const records = await tauriInvoke<SafetyOverrideRecord[]>(
+        "load_safety_overrides",
+        { connectionId: connection.id },
+      );
+      if (requestId === overrideRequestRef.current) setOverrides(records);
+    } catch (error) {
+      if (requestId === overrideRequestRef.current) {
+        setOverrideError(errorToMessage(error));
+        setOverrides([]);
+      }
+    }
+  }, [connection.id]);
+
+  useEffect(() => {
+    void refreshOverrides();
+  }, [refreshOverrides]);
 
   return (
     <>
@@ -63,6 +102,45 @@ export function SettingsTab({ connection }: { connection: Connection }) {
           {rows.map(([label, value]) => (
             <KeyValue key={label} label={label} value={value} />
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent safety overrides</CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs">
+          {overrides === null ? (
+            <span className="text-text-muted">Loading overrides…</span>
+          ) : overrides.length === 0 ? (
+            <span className={overrideError ? "text-danger" : "text-text-muted"}>
+              {overrideError ?? "No confirmed safety overrides yet."}
+            </span>
+          ) : (
+            <ol className="m-0 grid list-none gap-2 p-0">
+              {overrides.map((override) => (
+                <li
+                  key={`${override.occurredAt}-${override.command}-${override.classes.join(".")}`}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-border-subtle pb-2 last:border-b-0 last:pb-0"
+                >
+                  <span className="min-w-0 truncate font-medium text-foreground">
+                    {override.command}
+                  </span>
+                  <time
+                    dateTime={override.occurredAt}
+                    className="text-text-muted"
+                  >
+                    {relativeTime(override.occurredAt)}
+                  </time>
+                  <span className="col-span-2 text-[0.6875rem] text-text-muted">
+                    {override.classes.length > 0
+                      ? override.classes.join(", ")
+                      : "command override"}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
         </CardContent>
       </Card>
 
@@ -143,11 +221,12 @@ export function SettingsTab({ connection }: { connection: Connection }) {
                 event.currentTarget.value = "";
                 if (file) {
                   void runRestore(
-                    connection.id,
+                    connection,
                     file,
                     restoreClean,
                     setBackupBusy,
                     setBackupError,
+                    refreshOverrides,
                   );
                 }
               }}
@@ -243,11 +322,12 @@ async function runDump(
 }
 
 async function runRestore(
-  connectionId: string,
+  connection: Connection,
   file: File,
   clean: boolean,
   setBusy: (value: string | null) => void,
   setError: (value: string | null) => void,
+  onRestored: () => Promise<void>,
 ) {
   if (!isTauri()) {
     setError("pg_restore requires the desktop runtime.");
@@ -257,15 +337,18 @@ async function runRestore(
   setBusy("Restoring dump");
   setError(null);
   try {
-    await tauriInvoke("run_pg_restore", {
+    await invokeWithSafetyConfirmation({
+      command: "run_pg_restore",
+      connection,
       payload: {
-        connectionId,
+        connectionId: connection.id,
         dataBase64: await fileToBase64(file),
         format,
         clean,
       },
     });
     toast.success(`Restored ${file.name}`);
+    await onRestored();
   } catch (error) {
     const message = errorToMessage(error);
     setError(message);
@@ -285,9 +368,18 @@ const placeholderValue = <span className="text-text-muted">—</span>;
  * symmetric across engines.
  */
 function buildSettingsRows(connection: Connection): Array<[string, ReactNode]> {
+  const safety = resolveSafetyPolicy(connection);
   const rows: Array<[string, ReactNode]> = [
     ["Name", connection.name],
     ["Engine", connection.engine],
+    ["Environment", ENVIRONMENT_META[safety.environment].label],
+    [
+      "Safe Mode",
+      connection.safeMode === "inherit" || connection.safeMode === undefined
+        ? `Inherit (${titleCase(safety.level)})`
+        : titleCase(safety.level),
+    ],
+    ["Read-only", safety.readOnly ? "Enabled" : "Disabled"],
     ["Host", connection.host || placeholderValue],
     ["Port", connection.port ? String(connection.port) : placeholderValue],
     ["Database", connection.database || placeholderValue],
@@ -309,6 +401,35 @@ function buildSettingsRows(connection: Connection): Array<[string, ReactNode]> {
   }
 
   return rows;
+}
+
+type SafetyOverrideRecord = {
+  command: string;
+  classes: string[];
+  occurredAt: string;
+};
+
+function titleCase(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function relativeTime(occurredAt: string): string {
+  const timestamp = Date.parse(occurredAt);
+  if (!Number.isFinite(timestamp)) return occurredAt;
+  const elapsedSeconds = Math.round((timestamp - Date.now()) / 1000);
+  const absoluteSeconds = Math.abs(elapsedSeconds);
+  const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
+    absoluteSeconds < 60
+      ? [elapsedSeconds, "second"]
+      : absoluteSeconds < 3_600
+        ? [Math.round(elapsedSeconds / 60), "minute"]
+        : absoluteSeconds < 86_400
+          ? [Math.round(elapsedSeconds / 3_600), "hour"]
+          : [Math.round(elapsedSeconds / 86_400), "day"];
+  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+    amount,
+    unit,
+  );
 }
 
 /**

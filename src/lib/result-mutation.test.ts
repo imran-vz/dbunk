@@ -127,6 +127,38 @@ describe("result mutation protocol", () => {
     });
   });
 
+  it("decodes typed policy refusals without SQL text", () => {
+    expect(
+      decodeResultMutationError({
+        kind: "policyBlocked",
+        reason: "Read-only connection",
+      }),
+    ).toEqual({ kind: "policyBlocked", reason: "Read-only connection" });
+    expect(
+      decodeResultMutationError({
+        kind: "policyNeedsConfirmation",
+        statements: [
+          {
+            index: 0,
+            class: "dml",
+            unbounded: true,
+            destructive: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: "policyNeedsConfirmation",
+      statements: [
+        {
+          index: 0,
+          class: "dml",
+          unbounded: true,
+          destructive: true,
+        },
+      ],
+    });
+  });
+
   it("fails closed for malformed and unknown rejection shapes", () => {
     for (const malformed of [
       new Error("socket reset"),

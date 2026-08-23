@@ -18,9 +18,9 @@ and update its status here when work finishes.
 | [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | DONE: 202f756                                  |
 | [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
 | [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | DONE: d98f8a1                                  |
-| [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | READY FOR REVIEW (selected mock: A) |
-| [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | READY FOR REVIEW                               |
-| [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | TODO                                           |
+| [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | DONE: 4e52c8a (selected mock: A)               |
+| [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | DONE: bd9f7ef                                  |
+| [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | READY FOR REVIEW (selected mock: C)            |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -36,9 +36,8 @@ useful without authorizing commits implicitly.
   foundation of `PAR-001` through commit `26268ca`. Plans 003 and 004
   delivered and activated PostgreSQL Table Browse for `PAR-002` through
   commit `ecefce8` on 2026-08-21.
-- **Completed (pending stamp):** Plans 005 and 006 delivered the `PAR-003`
-  staged mutation review core; Plan 006 is `READY FOR REVIEW` with
-  hardening commits through `4e52c8a` awaiting the operator's `DONE` stamp.
+- **Completed:** Plans 005 and 006 delivered the `PAR-003`
+  staged mutation review core through `4e52c8a`.
   Batch paste, deep value editors, Quick Look, and configurable copy
   formats are the `PAR-003` register items deliberately left for a
   follow-on plan.
@@ -63,6 +62,8 @@ useful without authorizing commits implicitly.
 - **Selected mock (006):** A — persistent right-side mutation review
   inspector that keeps the result grid primary while showing grouped changes
   and exact generated DML.
+- **Selected mock (008):** C — restrained production banner with persistent
+  target identity in the status bar and confirmation-forward safety flows.
 - **Delivered boundary:** PostgreSQL table tabs now use typed server-side
   filters and sorting, bounded pagination/count behavior, cancellation,
   stale-response rejection, query inspection, durable grid preferences, and

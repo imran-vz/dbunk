@@ -1,8 +1,9 @@
 import { IconDatabaseOff } from "@tabler/icons-react";
 
+import { EnvironmentBadge } from "@/components/environment-badge";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
-import type { OverviewTabId } from "@/lib/store";
+import type { ConnectionEnvironment, OverviewTabId } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type OverviewTab = { id: OverviewTabId; label: string };
@@ -21,11 +22,13 @@ export const OVERVIEW_TABS: readonly OverviewTab[] = [
 
 export function OverviewHeader({
   name,
+  environment,
   activeTab,
   onTabChange,
   onDisconnect,
 }: {
   name: string;
+  environment: ConnectionEnvironment | undefined;
   activeTab: OverviewTabId;
   onTabChange: (tab: OverviewTabId) => void;
   onDisconnect: () => void;
@@ -37,6 +40,7 @@ export function OverviewHeader({
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             {name}
           </h1>
+          <EnvironmentBadge environment={environment} />
           <span className="flex items-center gap-1.5 text-xs font-medium text-accent-hover">
             <StatusDot tone="healthy" className="size-2" />
             Connected

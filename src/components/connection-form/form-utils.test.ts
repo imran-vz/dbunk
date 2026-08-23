@@ -39,6 +39,9 @@ describe("buildStoredConnectionFromForm", () => {
       user: "alice",
       password: "secret",
       role: "read/write",
+      environment: "development",
+      safeMode: "inherit",
+      readOnly: false,
       engine: "PostgreSQL",
       ssl: true,
     });
@@ -87,6 +90,9 @@ describe("buildStoredConnectionFromForm", () => {
       user: "",
       password: "",
       role: "read/write",
+      environment: "development",
+      safeMode: "inherit",
+      readOnly: false,
       engine: "SQLite",
     });
     // No engine-specific fields on SQLite — should never include ssl etc.
@@ -313,6 +319,52 @@ describe("buildConnectionFromForm", () => {
 });
 
 describe("defaultValuesFromConnection", () => {
+  it.each(["PostgreSQL", "MySQL", "ClickHouse", "SQLite", "Redis"] as const)(
+    "round-trips safety fields for %s",
+    (engine) => {
+      const connection = buildConnectionFromForm(
+        {
+          ...baseForm,
+          engine,
+          environment: "production",
+          safeMode: "strict",
+          readOnly: true,
+        },
+        `safety-${engine}`,
+        { status: "Disconnected", latency: "--" },
+      );
+
+      expect(defaultValuesFromConnection(connection)).toMatchObject({
+        environment: "production",
+        safeMode: "strict",
+        readOnly: true,
+      });
+    },
+  );
+
+  it("defaults missing legacy safety fields", () => {
+    const values = defaultValuesFromConnection({
+      id: "legacy",
+      name: "legacy pg",
+      engine: "PostgreSQL",
+      host: "localhost",
+      database: "postgres",
+      port: 5432,
+      user: "postgres",
+      password: "",
+      role: "read/write",
+      ssl: false,
+      status: "Disconnected",
+      latency: "--",
+    });
+
+    expect(values).toMatchObject({
+      environment: "development",
+      safeMode: "inherit",
+      readOnly: false,
+    });
+  });
+
   it("hydrates Redis fields and blanks the password", () => {
     const values = defaultValuesFromConnection({
       id: "x",
