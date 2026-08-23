@@ -487,7 +487,7 @@ export function MutationReviewPanel({
   return (
     <aside
       aria-label="Mutation review"
-      className="flex h-full min-h-0 w-full max-w-[30rem] flex-col border-l border-border-subtle bg-black text-xs text-foreground"
+      className="flex h-full min-h-0 w-full flex-col text-xs text-foreground"
     >
       <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
         <div className="min-w-0 flex-1">
@@ -667,6 +667,24 @@ export function MutationReviewPanel({
           </Button>
         </div>
       </footer>
+    </aside>
+  );
+}
+
+/**
+ * The one right-panel chrome for mutation review (P6, D16): both the
+ * query surface and the table editor render the review inside this
+ * aside so panel width and surface are identical everywhere. On
+ * narrow windows it overlays the grid instead of squeezing it.
+ */
+export function MutationReviewAside({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <aside className="flex h-full w-[min(420px,42vw)] shrink-0 border-l border-border-subtle bg-surface-window max-[820px]:absolute max-[820px]:inset-y-0 max-[820px]:right-0 max-[820px]:z-40 max-[820px]:w-full">
+      {children}
     </aside>
   );
 }

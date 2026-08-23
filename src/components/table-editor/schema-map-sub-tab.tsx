@@ -31,7 +31,7 @@ export function SchemaMapSubTab({
   return (
     <div
       data-testid="table-schema-map-subtab"
-      className="flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]"
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-app"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2">
         <span className="text-2xs font-medium text-text-muted">

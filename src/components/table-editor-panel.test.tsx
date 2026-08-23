@@ -10,6 +10,14 @@ import {
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockedRequestConfirm } = vi.hoisted(() => ({
+  mockedRequestConfirm: vi.fn(() => Promise.resolve(true)),
+}));
+vi.mock("@/lib/confirm", () => ({
+  requestConfirm: mockedRequestConfirm,
+  requestPrompt: vi.fn(() => Promise.resolve(null)),
+}));
+
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
   tauriInvoke: vi.fn(),
@@ -749,9 +757,8 @@ describe("TableEditorPanel delete selected", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[1] as HTMLInputElement);
 
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockImplementation(() => true);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(true);
 
     mockedInvoke.mockReset();
     mockedInvoke
@@ -771,7 +778,7 @@ describe("TableEditorPanel delete selected", () => {
       await Promise.resolve();
     });
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockedRequestConfirm).toHaveBeenCalled();
     expect(mockedInvoke).toHaveBeenCalledWith("delete_rows", {
       payload: {
         connectionId: "conn-1",
@@ -780,10 +787,9 @@ describe("TableEditorPanel delete selected", () => {
         rows: [[{ column: "id", value: "1" }]],
       },
     });
-    confirmSpy.mockRestore();
   });
 
-  it("does not invoke delete_rows when the confirmation is cancelled", () => {
+  it("does not invoke delete_rows when the confirmation is cancelled", async () => {
     seed({
       connectionId: "conn-1",
       schema: "public",
@@ -803,16 +809,16 @@ describe("TableEditorPanel delete selected", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[1] as HTMLInputElement);
 
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockImplementation(() => false);
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(false);
     mockedInvoke.mockReset();
 
-    fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
+    });
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockedRequestConfirm).toHaveBeenCalled();
     expect(mockedInvoke).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 });
 
@@ -1469,7 +1475,7 @@ describe("TableEditorPanel server browse", () => {
         },
       });
       seedMutationDraftAnalysis(mutationAnalysis());
-      const confirmSpy = vi.spyOn(window, "confirm");
+      mockedRequestConfirm.mockClear();
       render(<TableEditorPanel tab={tableTab} />);
       fireEvent.click(screen.getAllByRole("checkbox")[0] as HTMLInputElement);
       mockedInvoke.mockClear();
@@ -1482,7 +1488,7 @@ describe("TableEditorPanel server browse", () => {
           ]?.changeOrder,
         ).toHaveLength(2),
       );
-      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(mockedRequestConfirm).not.toHaveBeenCalled();
       expect(mockedInvoke).not.toHaveBeenCalledWith(
         "delete_rows",
         expect.anything(),
@@ -1490,11 +1496,10 @@ describe("TableEditorPanel server browse", () => {
 
       fireEvent.click(screen.getByLabelText("Next page"));
       expect(screen.queryByText("Discard pending edits?")).toBeNull();
-      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(mockedRequestConfirm).not.toHaveBeenCalled();
       expect(useAppStore.getState().tableBrowses["tab-1"]?.loadStatus).toEqual({
         state: "loading",
       });
-      confirmSpy.mockRestore();
     });
 
     it("stages new rows, duplicate provenance, and a bulk edit without immediate commands", async () => {

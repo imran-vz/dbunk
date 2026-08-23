@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import "@/lib/monaco-local";
-import { MutationReviewPanel } from "@/components/mutation-review";
+import {
+  MutationReviewAside,
+  MutationReviewPanel,
+} from "@/components/mutation-review";
 import { ResultsStatusStrip } from "@/components/query-editor/results-status-strip";
 import {
   type ExplainPlanData,
@@ -35,6 +38,7 @@ import {
 import { Panel, usePanelState } from "@/components/ui/panel";
 import { SplitPane } from "@/components/ui/split-pane";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
+import { requestConfirm } from "@/lib/confirm";
 import { MONO_FONT_FAMILY } from "@/lib/fonts";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
 import {
@@ -224,6 +228,7 @@ export function QueryEditorPanel({
   // stopPropagation so Monaco never sees these while focused.
   const isBusyRef = useRef(isBusy);
   isBusyRef.current = isBusy;
+  const handleReviewEditsRef = useRef<() => void>(() => {});
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
@@ -231,6 +236,11 @@ export function QueryEditorPanel({
         event.preventDefault();
         event.stopPropagation();
         setResultsCollapsed((current) => !current);
+      } else if (event.key.toLowerCase() === "s" && !event.shiftKey) {
+        // Cmd+S enters the stage -> preview -> apply flow (§6.4).
+        event.preventDefault();
+        event.stopPropagation();
+        handleReviewEditsRef.current();
       } else if (event.key === "." && isBusyRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -381,10 +391,13 @@ export function QueryEditorPanel({
       }
       return runQuery(tabId, {
         ...options,
-        confirmDiscardStagedChanges: (changeCount) => {
-          const confirmed = window.confirm(
-            `Re-running will discard ${changeCount} staged ${pluralize("change", changeCount)}. Continue?`,
-          );
+        confirmDiscardStagedChanges: async (changeCount) => {
+          const confirmed = await requestConfirm({
+            title: "Discard staged changes?",
+            message: `Re-running will discard ${changeCount} staged ${pluralize("change", changeCount)}.`,
+            confirmLabel: "Re-run",
+            danger: true,
+          });
           if (confirmed) setReviewScope(null);
           return confirmed;
         },
@@ -728,24 +741,28 @@ export function QueryEditorPanel({
     editor.runSql(applyBindVariables(editor.currentStatement(), bindValues));
   };
 
-  const handleDiscardEdits = () => {
+  const handleDiscardEdits = async () => {
     if (!usesMutationDraftToolbar || !mutationScope) {
       discardQueryEdits(tab.id);
       return;
     }
     if (stagedChangeCount === 0 || mutationLocked) return;
-    const ok = window.confirm(
-      `Discard ${stagedChangeCount} staged ${pluralize("change", stagedChangeCount)}?`,
-    );
+    const ok = await requestConfirm({
+      title: "Discard staged changes?",
+      message: `${stagedChangeCount} staged ${pluralize("change", stagedChangeCount)} will be lost.`,
+      confirmLabel: "Discard",
+      danger: true,
+    });
     if (!ok) return;
     discardMutationDraft(mutationScope);
     setReviewScope(null);
   };
 
-  const handleReviewEdits = () => {
+  const handleReviewEdits = useCallback(() => {
     if (!mutationScope || stagedChangeCount === 0 || mutationLocked) return;
     setReviewScope(mutationScope);
-  };
+  }, [mutationScope, stagedChangeCount, mutationLocked]);
+  handleReviewEditsRef.current = handleReviewEdits;
 
   const handleMutationApplySuccess = (_result: ApplyResult) => {
     if (executionId) setStaleExecutionId(executionId);
@@ -759,24 +776,35 @@ export function QueryEditorPanel({
     if (outcome.kind !== "noop") handleQueryOutcome(outcome, exactExecutionSql);
   };
 
-  const handleRetargetConnection = (newConnectionId: string) => {
+  const handleRetargetConnection = async (newConnectionId: string) => {
     if (newConnectionId === tab.connectionId) return;
     if (isBusy) return;
     if (!usesMutationDraftToolbar && hasEdits) {
-      const ok = window.confirm(
-        "Switching connections will discard pending edits in the results grid. Continue?",
-      );
+      const ok = await requestConfirm({
+        title: "Switch connection?",
+        message:
+          "Switching connections will discard pending edits in the results grid.",
+        confirmLabel: "Switch",
+        danger: true,
+      });
       if (!ok) return;
     }
     void retargetQueryTab(tab.id, newConnectionId, {
       confirmProductionTarget: (connection) =>
-        window.confirm(
-          `Switch this query to production connection ${connection.name}?`,
-        ),
-      confirmDiscardStagedChanges: (changeCount) => {
-        const confirmed = window.confirm(
-          `Switching connections will discard ${changeCount} staged ${pluralize("change", changeCount)}. Continue?`,
-        );
+        requestConfirm({
+          title: "Switch to a production connection?",
+          message: "This query will run against production.",
+          detail: connection.name,
+          confirmLabel: "Switch to production",
+          danger: true,
+        }),
+      confirmDiscardStagedChanges: async (changeCount) => {
+        const confirmed = await requestConfirm({
+          title: "Discard staged changes?",
+          message: `Switching connections will discard ${changeCount} staged ${pluralize("change", changeCount)}.`,
+          confirmLabel: "Switch",
+          danger: true,
+        });
         if (confirmed) setReviewScope(null);
         return confirmed;
       },
@@ -868,6 +896,8 @@ export function QueryEditorPanel({
     errorMessage,
     activeConnection,
     session,
+    stagedChangeCount: usesMutationDraftToolbar ? stagedChangeCount : 0,
+    onOpenReview: handleReviewEdits,
   });
 
   useStableStatusItems(statusItems, onStatusItemsChange);
@@ -912,14 +942,14 @@ export function QueryEditorPanel({
     ) : null;
 
   const reviewPanel = reviewScope ? (
-    <aside className="flex h-full w-[min(410px,42vw)] shrink-0 border-l border-border-subtle bg-black max-[820px]:h-[48%] max-[820px]:w-full max-[820px]:border-l-0 max-[820px]:border-t">
+    <MutationReviewAside>
       <MutationReviewPanel
         scope={reviewScope}
         onClose={() => setReviewScope(null)}
         onApplySuccess={handleMutationApplySuccess}
         onRerunQuery={handleRerunResult}
       />
-    </aside>
+    </MutationReviewAside>
   ) : null;
 
   const pinnedResults = pinnedByTab[tab.id] ?? [];
