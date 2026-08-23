@@ -282,6 +282,9 @@ pub fn run() {
             commands::settings::unlock_credentials,
             commands::settings::change_credential_storage,
             commands::settings::reset_credential_storage,
+            commands::settings::load_ui_state,
+            commands::settings::save_ui_state,
+            commands::settings::delete_ui_state,
             // Bastion servers
             commands::bastions::load_bastion_servers,
             commands::bastions::save_bastion_server,
