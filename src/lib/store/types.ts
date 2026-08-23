@@ -990,6 +990,7 @@ export type OverviewTabId =
 
 import type { BastionsSlice } from "./bastions";
 import type { ConnectionsSlice } from "./connections";
+import type { ConsoleSlice } from "./console";
 import type { CredentialsSlice } from "./credentials";
 import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
 import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
@@ -1022,4 +1023,5 @@ export type AppStoreState = ConnectionsSlice &
   TableBrowseSlice &
   RelationalQueriesSlice &
   KeyValueWorkspaceSlice &
-  KeyValuePubSubSlice;
+  KeyValuePubSubSlice &
+  ConsoleSlice;

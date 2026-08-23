@@ -5,9 +5,11 @@ import { toast } from "sonner";
 
 import "@/lib/monaco-local";
 import { MutationReviewPanel } from "@/components/mutation-review";
+import { ResultsStatusStrip } from "@/components/query-editor/results-status-strip";
 import {
   type ExplainPlanData,
   type ExplainPlanNode,
+  type PinnedResult,
   type QueryMutationGridProps,
   QueryResultsView,
   type ResultsView,
@@ -23,8 +25,15 @@ import {
   useStableStatusItems,
 } from "@/components/status-bar";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Panel, usePanelState } from "@/components/ui/panel";
-import { WorkbenchDock } from "@/components/workbench/dock";
+import { SplitPane } from "@/components/ui/split-pane";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import { MONO_FONT_FAMILY } from "@/lib/fonts";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
@@ -45,6 +54,7 @@ import {
   saveVirtualKey,
 } from "@/lib/result-mutation-client";
 import { readOnlyPolicyReason } from "@/lib/safety-policy";
+import type { SqlStatementRange } from "@/lib/sql";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import { formatSql } from "@/lib/sql-format";
 import {
@@ -61,10 +71,22 @@ import { GRID_NULL_SENTINEL, gridCellToEditValue } from "@/lib/table-browse";
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
   isClient: boolean;
-  resultsView?: ResultsView;
-  onResultsViewChange?: (view: ResultsView) => void;
   onStatusItemsChange?: (items: StatusBarItem[]) => void;
 }
+
+/** Editor/results split + collapse persist globally (P8 migrates to SQLite). */
+const QUERY_SPLIT_STORAGE_KEY = "dbunk.workbench.query-split";
+const RESULTS_COLLAPSED_KEY = "dbunk.workbench.query-results.collapsed";
+
+const readResultsCollapsed = (): boolean => {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- SSR boundary.
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(RESULTS_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 
 type MutationGridStatus = {
   copy: string;
@@ -84,14 +106,40 @@ const EMPTY_SCHEMAS: SqlCompletionContext["schemas"] = [];
 export function QueryEditorPanel({
   tab,
   isClient,
-  resultsView: controlledResultsView,
-  onResultsViewChange,
   onStatusItemsChange,
 }: QueryEditorPanelProps) {
-  const [internalResultsView, setInternalResultsView] =
-    useState<ResultsView>("results");
-  const resultsView = controlledResultsView ?? internalResultsView;
-  const setResultsView = onResultsViewChange ?? setInternalResultsView;
+  // Per-tab view state — the panel instance is reused across query
+  // tabs (the workbench renders no React `key`), so records key by
+  // tab id rather than living as bare useState.
+  const [viewByTab, setViewByTab] = useState<Record<string, ResultsView>>({});
+  const resultsView = viewByTab[tab.id] ?? "results";
+  const setResultsView = useCallback(
+    (view: ResultsView) =>
+      setViewByTab((current) => ({ ...current, [tab.id]: view })),
+    [tab.id],
+  );
+  const [pinnedByTab, setPinnedByTab] = useState<
+    Record<string, PinnedResult[]>
+  >({});
+  const [activePinnedByTab, setActivePinnedByTab] = useState<
+    Record<string, string | null>
+  >({});
+  const [statementPicker, setStatementPicker] = useState<{
+    selectionText: string;
+    statements: SqlStatementRange[];
+  } | null>(null);
+  const [resultsCollapsed, setResultsCollapsed] =
+    useState(readResultsCollapsed);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        RESULTS_COLLAPSED_KEY,
+        resultsCollapsed ? "1" : "0",
+      );
+    } catch {
+      // Best-effort persistence.
+    }
+  }, [resultsCollapsed]);
   const [bindValues, setBindValues] = useState<Record<string, string>>({});
   const [explainPlan, setExplainPlan] = useState<ExplainPlanData | null>(null);
   const activeTabIdRef = useRef(tab.id);
@@ -173,11 +221,38 @@ export function QueryEditorPanel({
     setVirtualKeyState(null);
     setIsVirtualKeyOpen(false);
     setIsVirtualKeyBusy(false);
+    // A fresh execution takes the foreground; pinned snapshots stay in
+    // their chips but stop being the displayed result (§5.2).
+    setActivePinnedByTab((current) =>
+      current[tab.id] ? { ...current, [tab.id]: null } : current,
+    );
   }, [executionId, tab.id]);
   // Terminal outcome lives component-local. We store the full
   // QueryOutcome (not just the failure message) for shape parity
   // with sibling panels. See CONTEXT.md — Query Outcome.
   const { errorMessage, setOutcome } = useQueryOutcome(tab.id);
+
+  // Cmd+J toggles the results pane; Cmd+. cancels the running query
+  // (§6.1; the central shortcut registry lands in P7). Capture phase +
+  // stopPropagation so Monaco never sees these while focused.
+  const isBusyRef = useRef(isBusy);
+  isBusyRef.current = isBusy;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (event.key.toLowerCase() === "j" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        setResultsCollapsed((current) => !current);
+      } else if (event.key === "." && isBusyRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        void useAppStore.getState().cancelQuery(activeTabIdRef.current);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
   // Auto-route EXPLAIN runs to the Explain tab so a user-typed
   // `EXPLAIN ...` shows the plan visualizer, not just text rows.
@@ -302,6 +377,8 @@ export function QueryEditorPanel({
 
   const guardedRunQuery = useCallback(
     async (tabId: string, options?: { overrideSql?: string }) => {
+      // Running always restores a collapsed results pane (§5.2).
+      setResultsCollapsed(false);
       if (executionDraftSummary.changeCount === 0) {
         if (executionId && executionDraftSummary.exists) {
           dropMutationDraftsForExecution(tab.id, executionId);
@@ -339,6 +416,8 @@ export function QueryEditorPanel({
     runQuery: guardedRunQuery,
     onOutcome: handleQueryOutcome,
     onFormat: () => handleFormat(),
+    onMultiStatementSelection: (selectionText, statements) =>
+      setStatementPicker({ selectionText, statements }),
   });
 
   const analyzeMutation = useCallback(
@@ -850,6 +929,52 @@ export function QueryEditorPanel({
     </aside>
   ) : null;
 
+  const pinnedResults = pinnedByTab[tab.id] ?? [];
+  const activePinnedId = activePinnedByTab[tab.id] ?? null;
+  const handlePinResult = useCallback(
+    (pinned: PinnedResult) =>
+      setPinnedByTab((current) => ({
+        ...current,
+        [tab.id]: [...(current[tab.id] ?? []), pinned],
+      })),
+    [tab.id],
+  );
+  const handleSelectPinned = useCallback(
+    (id: string | null) =>
+      setActivePinnedByTab((current) => ({ ...current, [tab.id]: id })),
+    [tab.id],
+  );
+  const handleUnpinResult = useCallback(
+    (id: string) => {
+      setPinnedByTab((current) => ({
+        ...current,
+        [tab.id]: (current[tab.id] ?? []).filter((pinned) => pinned.id !== id),
+      }));
+      setActivePinnedByTab((current) =>
+        current[tab.id] === id ? { ...current, [tab.id]: null } : current,
+      );
+    },
+    [tab.id],
+  );
+
+  // §5.3 collapsed-strip summary: rows · runtime for the retained result.
+  const resultsSummary = useMemo(() => {
+    if (execution?.tombstone) {
+      return `${execution.tombstone.rowCount} rows · released`;
+    }
+    if (execution) {
+      const total = execution.resultSets.reduce(
+        (sum, result) => sum + result.rowCount,
+        0,
+      );
+      return `${total} ${total === 1 ? "row" : "rows"} · ${execution.runtimeMs} ms`;
+    }
+    if (activeQueryPreview && activeQueryPreview.rows.length > 0) {
+      return `${activeQueryPreview.rowCount} rows · ${activeQueryPreview.runtime}`;
+    }
+    return null;
+  }, [activeQueryPreview, execution]);
+
   const resultsPane = (
     <>
       {virtualKeyEditor}
@@ -866,7 +991,12 @@ export function QueryEditorPanel({
         resultIndex={resultIndex}
         onResultIndexChange={setResultIndex}
         mutationGrid={mutationGrid}
-        hideTabs
+        pinnedResults={pinnedResults}
+        activePinnedId={activePinnedId}
+        onSelectPinned={handleSelectPinned}
+        onPinResult={handlePinResult}
+        onUnpinResult={handleUnpinResult}
+        onCollapse={() => setResultsCollapsed(true)}
         onCellEdit={(rowIndex, colIndex, value) =>
           setQueryEdit(tab.id, rowIndex, colIndex, value)
         }
@@ -932,27 +1062,44 @@ export function QueryEditorPanel({
             ))}
           </div>
         ) : null}
-        <div className="relative min-h-0 flex-1 bg-surface-app">
-          {isClient ? (
-            <MonacoEditor
-              height="100%"
-              language="sql"
-              theme={editorTheme}
-              value={tab.query ?? ""}
-              options={editorOptions}
-              onChange={(value) => updateQuery(tab.id, value ?? "")}
-              onMount={editor.onMount}
+        <SplitPane
+          direction="column"
+          storageKey={QUERY_SPLIT_STORAGE_KEY}
+          defaultRatio={0.6}
+          minPrimary={120}
+          minSecondary={100}
+          snapThreshold={60}
+          collapsed={resultsCollapsed}
+          onCollapse={() => setResultsCollapsed(true)}
+          onExpand={() => setResultsCollapsed(false)}
+          collapsedFallback={
+            <ResultsStatusStrip
+              summary={resultsSummary}
+              isRunning={isBusy}
+              onExpand={() => setResultsCollapsed(false)}
             />
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-text-muted">
-              Loading editor…
+          }
+          primary={
+            <div className="relative min-h-0 flex-1 bg-surface-app">
+              {isClient ? (
+                <MonacoEditor
+                  height="100%"
+                  language="sql"
+                  theme={editorTheme}
+                  value={tab.query ?? ""}
+                  options={editorOptions}
+                  onChange={(value) => updateQuery(tab.id, value ?? "")}
+                  onMount={editor.onMount}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-text-muted">
+                  Loading editor…
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <WorkbenchDock
-          storageKey={`query-${tab.id}`}
-          revealKey={resultsView}
-          content={resultsPane}
+          }
+          secondary={resultsPane}
+          ariaLabel="Resize results pane"
         />
       </div>
       {!reviewScope && sidebar.isOpen ? (
@@ -978,6 +1125,58 @@ export function QueryEditorPanel({
         </Panel>
       ) : null}
       {reviewPanel}
+      <Dialog
+        open={Boolean(statementPicker)}
+        onOpenChange={(open) => {
+          if (!open) setStatementPicker(null);
+        }}
+      >
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>Run which statement?</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="flex flex-col gap-1">
+            <p className="mb-1 text-xs text-text-muted">
+              The selection contains {statementPicker?.statements.length}{" "}
+              statements.
+            </p>
+            {statementPicker?.statements.map((statement, index) => (
+              <Button
+                key={`${statement.startOffset}-${statement.endOffset}`}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="justify-start"
+                onClick={() => {
+                  setStatementPicker(null);
+                  editor.runSql(applyBindVariables(statement.sql, bindValues));
+                }}
+              >
+                <span className="w-5 shrink-0 text-right tabular-nums text-text-muted">
+                  {index + 1}
+                </span>
+                <span className="truncate font-mono">
+                  {statement.sql.replace(/\s+/g, " ").trim()}
+                </span>
+              </Button>
+            ))}
+            <Button
+              type="button"
+              size="sm"
+              className="mt-2 self-start"
+              onClick={() => {
+                if (!statementPicker) return;
+                setStatementPicker(null);
+                editor.runSql(
+                  applyBindVariables(statementPicker.selectionText, bindValues),
+                );
+              }}
+            >
+              Run all
+            </Button>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -416,7 +416,8 @@ describe("QueryEditorPanel feedback", () => {
       queryStatus: {},
     });
 
-    render(<QueryEditorPanel tab={queryTab} isClient resultsView="explain" />);
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
 
     expect(screen.getByText(/run explain/i)).toBeTruthy();
     expect(screen.queryByText(/coming soon/i)).toBeNull();
@@ -1705,5 +1706,149 @@ describe("QueryEditorPanel status items", () => {
     // …and rendering settles instead of looping (sentinel throws red
     // long before this when the bug is present).
     expect(renderCount).toBeLessThan(RENDER_SENTINEL);
+  });
+});
+
+describe("QueryEditorPanel results pane collapse", () => {
+  const setupTab = () => {
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("collapses to the status strip with Cmd+J and restores on click (§5.3)", () => {
+    setupTab();
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    expect(screen.queryByTestId("results-status-strip")).toBeNull();
+
+    fireEvent.keyDown(window, { key: "j", metaKey: true });
+    expect(screen.getByTestId("results-status-strip")).toBeTruthy();
+    expect(screen.getByText("No results yet")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("results-status-strip"));
+    expect(screen.queryByTestId("results-status-strip")).toBeNull();
+  });
+
+  it("restores a collapsed results pane when a run starts (§5.2)", async () => {
+    setupTab();
+    mockedInvoke.mockResolvedValue({
+      columns: ["c"],
+      rows: [["1"]],
+      runtimeMs: 5,
+      rowCount: 1,
+    });
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.keyDown(window, { key: "j", metaKey: true });
+    expect(screen.getByTestId("results-status-strip")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await act(async () => {});
+
+    expect(screen.queryByTestId("results-status-strip")).toBeNull();
+  });
+
+  it("marks the query as cancelling on Cmd+. while running (§5.1)", () => {
+    setupTab();
+    useAppStore.setState({
+      queryStatus: { [queryTab.id]: { state: "running" } },
+      querySessions: {
+        [queryTab.id]: {
+          id: "session-1",
+          tabId: queryTab.id,
+          connectionId: "conn-1",
+          generation: 0,
+          transaction: {
+            mode: "autocommit",
+            status: "idle",
+            manualIsolation: "readCommitted",
+          },
+          execution: {
+            id: "exec-1",
+            status: "running",
+            startedAt: new Date().toISOString(),
+            completedAt: null,
+            runtimeMs: 0,
+            resultSets: [],
+            notices: [],
+            error: null,
+            omittedRows: 0,
+            omittedResultSets: 0,
+            omittedNotices: 0,
+            omittedMetadataBytes: 0,
+            truncationReasons: [],
+            retainedBytes: 0,
+            tombstone: null,
+          },
+          lastViewedAt: 0,
+          budgetOwners: [],
+          state: "open",
+          policyRefusal: null,
+        },
+      },
+    });
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.keyDown(window, { key: ".", metaKey: true });
+
+    expect(useAppStore.getState().queryStatus[queryTab.id]).toEqual({
+      state: "cancelling",
+    });
+  });
+});
+
+describe("QueryEditorPanel statement picker", () => {
+  it("opens a picker when Run covers a multi-statement selection (§5.1)", () => {
+    const runQuerySpy = vi.spyOn(useAppStore.getState(), "runQuery");
+    selectionState.value = "select 1;\nselect 2;";
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    // No blind execution — the picker lists both statements + Run all.
+    expect(runQuerySpy).not.toHaveBeenCalled();
+    expect(screen.getByText("Run which statement?")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /select 2/ }));
+    expect(runQuerySpy).toHaveBeenCalledWith("tab-1", {
+      overrideSql: "select 2",
+    });
+  });
+
+  it("runs the whole selection from Run all", () => {
+    const runQuerySpy = vi.spyOn(useAppStore.getState(), "runQuery");
+    selectionState.value = "select 1;\nselect 2;";
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run all" }));
+
+    expect(runQuerySpy).toHaveBeenCalledWith("tab-1", {
+      overrideSql: "select 1;\nselect 2;",
+    });
   });
 });

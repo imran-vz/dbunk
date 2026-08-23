@@ -483,6 +483,12 @@ export const createConnectionsSlice: StateCreator<
       if (result.redisCapabilities) {
         get().setRedisCapabilities(connectionId, result.redisCapabilities);
       }
+      get().appendConsoleEvent({
+        severity: "info",
+        source: "connection",
+        message: `Connected to ${target?.name ?? connectionId}`,
+        connectionId,
+      });
       const acltarget = get().connections.find((c) => c.id === connectionId);
       if (acltarget && storageClassFor(acltarget.engine) === "keyvalue") {
         // ACL self-probe — non-fatal on older servers / restricted
@@ -506,6 +512,16 @@ export const createConnectionsSlice: StateCreator<
           errorMessage: message,
         }),
       }));
+      get().appendConsoleEvent({
+        severity: "error",
+        source: "connection",
+        message: `Failed to connect to ${
+          get().connections.find((c) => c.id === connectionId)?.name ??
+          connectionId
+        }`,
+        detail: message,
+        connectionId,
+      });
     } finally {
       if (managedServer) {
         await get().loadManagedServers();
@@ -565,6 +581,15 @@ export const createConnectionsSlice: StateCreator<
         connectionOverviewTab: remainingTabs,
         connectionSchemaMapSchema: remainingSchemaMapSchemas,
       };
+    });
+    get().appendConsoleEvent({
+      severity: "info",
+      source: "connection",
+      message: `Disconnected from ${
+        state.connections.find((c) => c.id === connectionId)?.name ??
+        connectionId
+      }`,
+      connectionId,
     });
   },
 });
