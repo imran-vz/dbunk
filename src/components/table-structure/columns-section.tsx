@@ -35,7 +35,7 @@ export function ColumnsSection({
             className="gap-1"
             onClick={() => setShowAddForm((value) => !value)}
           >
-            <IconPlus className="size-3.5" />
+            <IconPlus />
             Add column
           </Button>
         ) : null

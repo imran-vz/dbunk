@@ -63,7 +63,7 @@ export function IndexesSubTab({
               onClick={() => onOpenSpecialized("specialized")}
               aria-label="Open the index builder"
             >
-              <IconPlus className="size-3.5" />
+              <IconPlus />
               New index
             </Button>
           </div>

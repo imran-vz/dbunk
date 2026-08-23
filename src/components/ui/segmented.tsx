@@ -8,23 +8,27 @@ export interface SegmentedOption<T extends string> {
   icon?: ReactNode;
 }
 
-interface SegmentedProps<T extends string> {
-  options: SegmentedOption<T>[];
-  value: T;
-  onChange: (id: T) => void;
-  className?: string;
-}
-
+/**
+ * Segmented control for sub-view toggles (DESIGN-SYSTEM §4.4).
+ * Sits at `--control-h` so it aligns with the other controls in a
+ * toolbar/tab row; the active segment reads as a selected surface
+ * step, not an accent fill.
+ */
 export function Segmented<T extends string>({
   options,
   value,
   onChange,
   className,
-}: SegmentedProps<T>) {
+}: {
+  options: SegmentedOption<T>[];
+  value: T;
+  onChange: (id: T) => void;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-md border border-border-subtle bg-surface-panel-elevated p-0.5",
+        "inline-flex h-(--control-h) items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-input p-0.5",
         className,
       )}
     >
@@ -37,9 +41,9 @@ export function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.id)}
             className={cn(
-              "flex items-center gap-1.5 rounded px-2.5 py-1 text-2xs font-medium transition-colors",
+              "flex h-full items-center gap-1.5 rounded-sm px-2 text-xs font-medium transition-colors [&_svg:not([class*='size-'])]:size-3.5",
               active
-                ? "bg-accent text-accent-foreground"
+                ? "bg-surface-panel-elevated text-foreground"
                 : "text-text-muted hover:text-foreground",
             )}
           >

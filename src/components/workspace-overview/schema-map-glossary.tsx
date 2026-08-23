@@ -1,16 +1,15 @@
 import { IconHelp } from "@tabler/icons-react";
 import { useState } from "react";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 /**
  * Canonical Schema Map terms from CONTEXT.md, phrased as UI-facing help
@@ -86,35 +85,31 @@ export function SchemaMapGlossaryButton() {
         variant="outline"
         onClick={() => setOpen(true)}
       >
-        <IconHelp className="size-3" />
+        <IconHelp />
         Glossary
       </Button>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent
-          data-testid="schema-map-glossary"
-          className="flex max-h-[80vh] w-[30rem] max-w-[30rem] flex-col gap-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-window p-0 sm:max-w-[30rem]"
-        >
-          <AlertDialogHeader className="border-b border-border-subtle px-4 py-3">
-            <AlertDialogTitle className="text-sm font-semibold">
-              Schema Map glossary
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-2xs text-text-muted">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent size="lg" data-testid="schema-map-glossary">
+          <DialogHeader>
+            <DialogTitle>Schema Map glossary</DialogTitle>
+            <DialogDescription className="text-xs text-text-muted">
               The terms the Schema Map uses for its graph elements.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <dl className="flex flex-col gap-2.5 overflow-y-auto px-4 py-3">
-            {GLOSSARY_TERMS.map((entry) => (
-              <div key={entry.term}>
-                <dt className="text-xs font-semibold">{entry.term}</dt>
-                <dd className="text-2xs text-text-muted">{entry.definition}</dd>
-              </div>
-            ))}
-          </dl>
-          <AlertDialogFooter className="border-t border-border-subtle px-4 py-2.5">
-            <AlertDialogCancel>Close</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <dl className="flex flex-col gap-2.5">
+              {GLOSSARY_TERMS.map((entry) => (
+                <div key={entry.term}>
+                  <dt className="text-xs font-semibold">{entry.term}</dt>
+                  <dd className="text-2xs text-text-muted">
+                    {entry.definition}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
