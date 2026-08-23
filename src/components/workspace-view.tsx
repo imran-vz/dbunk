@@ -351,6 +351,7 @@ function ConnectedOverview({
         <div className="mx-auto flex w-full max-w-384 flex-col gap-5 p-6">
           <OverviewHeader
             name={activeConnection.name}
+            environment={activeConnection.environment}
             activeTab={overviewTab}
             onTabChange={handleTabChange}
             onDisconnect={() => onDisconnectConnection(activeConnection.id)}

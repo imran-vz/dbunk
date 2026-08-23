@@ -11,6 +11,7 @@
 
 import type { StateCreator } from "zustand";
 
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import { querySessionChannelsAvailable } from "@/lib/query-session-channel";
 import {
   formatQuerySessionError,
@@ -289,7 +290,9 @@ export const createRelationalQueriesSlice: StateCreator<
           preview: null,
         };
       }
-      result = await tauriInvoke<RunQueryResult>("run_query", {
+      result = await invokeWithSafetyConfirmation<RunQueryResult>({
+        command: "run_query",
+        connection: connectionAtRun,
         payload: { connectionId: tab.connectionId, query },
       });
       const entry = buildEntry({

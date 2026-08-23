@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import type { Connection } from "@/lib/store";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
@@ -83,9 +84,16 @@ export function AdminTab({ connection }: { connection: Connection }) {
 
   const backendAction = async (command: string, pid: number) => {
     try {
-      await tauriInvoke(command, {
-        payload: { connectionId: connection.id, pid },
-      });
+      const payload = { connectionId: connection.id, pid };
+      if (command === "terminate_pg_backend") {
+        await invokeWithSafetyConfirmation({
+          command,
+          connection,
+          payload,
+        });
+      } else {
+        await tauriInvoke(command, { payload });
+      }
       await load();
     } catch (error) {
       setError(errorToMessage(error));

@@ -361,6 +361,9 @@ export function connectionFormPolicy(
 export type ConnectionFormValues = {
   name?: string;
   engine: DatabaseEngine;
+  environment?: import("@/lib/store").ConnectionEnvironment;
+  safeMode?: import("@/lib/store").SafeMode;
+  readOnly?: boolean;
   host?: string;
   database?: string;
   port?: number;

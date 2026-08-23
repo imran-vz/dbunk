@@ -16,6 +16,7 @@ import {
   loadVirtualKey,
   saveVirtualKey,
 } from "@/lib/result-mutation-client";
+import { readOnlyPolicyReason } from "@/lib/safety-policy";
 import {
   type EditOutcome,
   type MutationDraft,
@@ -215,11 +216,13 @@ export function useTableSession(tab: WorkspaceTab) {
   const refKey = ref ? tableSessionKey(ref) : "";
   const structureKey = ref ? tableSessionStructureKey(ref) : "";
 
-  const engine = useAppStore(
-    (state) =>
-      state.connections.find((connection) => connection.id === tab.connectionId)
-        ?.engine,
+  const connection = useAppStore((state) =>
+    state.connections.find((candidate) => candidate.id === tab.connectionId),
   );
+  const engine = connection?.engine;
+  const policyReadOnlyCopy = connection
+    ? readOnlyPolicyReason(connection)
+    : null;
   const browseEnabled = Boolean(engine && supportsServerTableBrowse(engine));
   const mutationEnabled = Boolean(
     browseEnabled && engine && supportsResultMutations(engine),
@@ -364,7 +367,7 @@ export function useTableSession(tab: WorkspaceTab) {
       refreshStructure = false,
       force = false,
     ): Promise<AnalyzeResultSetResult | null> => {
-      if (!mutationEnabled || !ref) return null;
+      if (policyReadOnlyCopy || !mutationEnabled || !ref) return null;
       if (!force && mutationDraft?.analysis) {
         return mutationDraft.analysis.snapshot;
       }
@@ -436,6 +439,7 @@ export function useTableSession(tab: WorkspaceTab) {
       mutationEnabled,
       mutationScope,
       openMutationDraft,
+      policyReadOnlyCopy,
       ref,
       setMutationDraftAnalysis,
       tab.id,
@@ -1003,9 +1007,10 @@ export function useTableSession(tab: WorkspaceTab) {
 
   const identityKind = browse?.result?.identity.kind;
   const legacyReadOnlyCopy =
-    browseEnabled && identityKind && !identityIsEditable(identityKind)
+    policyReadOnlyCopy ??
+    (browseEnabled && identityKind && !identityIsEditable(identityKind)
       ? browseIdentityReadOnlyCopy(identityKind)
-      : undefined;
+      : undefined);
   const mutationLocked = mutationDraft?.apply.state === "applying";
   const resolvedMutationEdits = useMemo(
     () => mutationGridEdits(mutationDraft, browseColumns),
@@ -1039,6 +1044,7 @@ export function useTableSession(tab: WorkspaceTab) {
   );
   const mutationStatusCopy = (() => {
     if (!mutationEnabled) return undefined;
+    if (policyReadOnlyCopy) return policyReadOnlyCopy;
     if (mutationAnalysisState.state === "loading") {
       return "Analyzing relation editability…";
     }
@@ -1064,11 +1070,12 @@ export function useTableSession(tab: WorkspaceTab) {
     return "Staged editing ready. Changes apply only after review.";
   })();
   const mutationReadOnly = Boolean(
-    mutationAnalysis &&
-    (!mutationTable ||
-      mutationTable.identity.kind === "none" ||
-      !mutationTable.identityProjected ||
-      editableMutationColumns.length === 0),
+    policyReadOnlyCopy ||
+    (mutationAnalysis &&
+      (!mutationTable ||
+        mutationTable.identity.kind === "none" ||
+        !mutationTable.identityProjected ||
+        editableMutationColumns.length === 0)),
   );
   const mutationCapabilities = mutationEnabled
     ? {
@@ -1077,16 +1084,21 @@ export function useTableSession(tab: WorkspaceTab) {
         isWriting: mutationLocked,
         canAddRow:
           Boolean(structure) &&
+          !policyReadOnlyCopy &&
           !mutationLocked &&
           (mutationTable ? mutationTable.insertable.allowed : true),
         canDeleteRows:
+          !policyReadOnlyCopy &&
           !mutationLocked &&
           (mutationTable
             ? mutationTable.deletable.allowed &&
               mutationTable.identity.kind !== "none" &&
               mutationTable.identityProjected
             : true),
-        canEditCells: !mutationLocked && editableMutationColumns.length > 0,
+        canEditCells:
+          !policyReadOnlyCopy &&
+          !mutationLocked &&
+          editableMutationColumns.length > 0,
       }
     : undefined;
   const getMutationCellReadOnlyReason = (
@@ -1094,6 +1106,7 @@ export function useTableSession(tab: WorkspaceTab) {
     colIndex: number,
   ): string | undefined => {
     if (!mutationEnabled) return undefined;
+    if (policyReadOnlyCopy) return policyReadOnlyCopy;
     if (rowIndex >= rawBrowseRows.length) {
       return "Edit staged inserts from the add-row form.";
     }
@@ -1140,7 +1153,17 @@ export function useTableSession(tab: WorkspaceTab) {
     hasEdits: mutationEnabled
       ? (mutationDraft?.changeOrder.length ?? 0) > 0
       : Object.keys(session?.edits ?? {}).length > 0,
-    capabilities: mutationCapabilities ?? session?.capabilities,
+    capabilities:
+      mutationCapabilities ??
+      (policyReadOnlyCopy && session?.capabilities
+        ? {
+            ...session.capabilities,
+            isReadOnly: true,
+            canAddRow: false,
+            canDeleteRows: false,
+            canEditCells: false,
+          }
+        : session?.capabilities),
     pagination: browseEnabled ? browsePagination : legacyPagination,
     browseEnabled,
     serverBrowse,

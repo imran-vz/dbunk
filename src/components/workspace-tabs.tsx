@@ -5,7 +5,7 @@ import {
   IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { confirmCloseQuerySession } from "@/lib/query-session-close";
@@ -22,6 +22,7 @@ export function WorkspaceTabs() {
     end: false,
   });
   const {
+    connections,
     workspaceTabs,
     activeTabId,
     setActiveTabId,
@@ -30,6 +31,15 @@ export function WorkspaceTabs() {
   } = useAppStore();
   const workspaceTabCount = workspaceTabs.length;
   const hasWorkspaceTabs = workspaceTabCount > 0;
+  const productionConnectionIds = useMemo(
+    () =>
+      new Set(
+        connections
+          .filter((connection) => connection.environment === "production")
+          .map((connection) => connection.id),
+      ),
+    [connections],
+  );
 
   const updateScrollHints = useCallback(() => {
     const scroller = tabsScrollerRef.current;
@@ -129,6 +139,7 @@ export function WorkspaceTabs() {
         >
           {workspaceTabs.map((tab) => {
             const isActive = tab.id === activeTabId;
+            const isProduction = productionConnectionIds.has(tab.connectionId);
             const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
             return (
               <div
@@ -139,6 +150,7 @@ export function WorkspaceTabs() {
                   isActive
                     ? "rounded-t-md border-border-subtle bg-surface-panel text-foreground"
                     : "border-transparent text-text-muted hover:bg-surface-panel/50 hover:text-foreground",
+                  isActive && isProduction && "border-l-danger",
                 )}
               >
                 <Button

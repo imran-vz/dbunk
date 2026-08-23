@@ -190,6 +190,13 @@ describe("query-session-channel", () => {
     });
 
     const settled = executeQuerySession("tab-1", "exec-1", "select 1");
+    expect(mockedInvoke).toHaveBeenCalledWith("execute_query_session", {
+      payload: {
+        sessionId: "session-1",
+        executionId: "exec-1",
+        sql: "select 1",
+      },
+    });
     send(
       baseEnvelope({
         sequence: 1,

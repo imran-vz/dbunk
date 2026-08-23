@@ -43,6 +43,10 @@ import {
   setQuerySessionTransactionIsolation,
   setQuerySessionTransactionMode,
 } from "@/lib/query-session-channel";
+import {
+  getSafetyConfirmation,
+  resolveSafetyConfirmation,
+} from "@/lib/safety-confirmation";
 import type { QueryExecution, QuerySessionState } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
@@ -515,6 +519,105 @@ describe("persistent query session outcomes", () => {
     return id;
   };
 
+  it("retries a typed policy refusal only after shared confirmation", async () => {
+    const tabId = seedQueryTab({ query: "delete from users" });
+    useAppStore.setState({
+      querySessions: { [tabId]: makeSession(tabId) },
+    });
+    mockedExecuteQuerySession.mockReset();
+    mockedExecuteQuerySession
+      .mockRejectedValueOnce({
+        kind: "policyNeedsConfirmation",
+        statements: [
+          {
+            index: 0,
+            class: "dml",
+            unbounded: true,
+            destructive: true,
+          },
+        ],
+      })
+      .mockImplementationOnce(async (_runTabId, executionId) => {
+        const current = useAppStore.getState().querySessions[tabId];
+        if (!current) throw new Error("expected query session");
+        useAppStore.setState({
+          querySessions: {
+            [tabId]: {
+              ...current,
+              execution: completedExecution({ id: executionId }),
+            },
+          },
+        });
+      });
+
+    const outcome = useAppStore
+      .getState()
+      .executePersistentQuery(tabId, "conn-1", "delete from users");
+
+    await vi.waitFor(() => expect(getSafetyConfirmation()).not.toBeNull());
+    expect(mockedExecuteQuerySession.mock.calls[0]).toHaveLength(3);
+    resolveSafetyConfirmation(true);
+
+    await expect(outcome).resolves.toEqual({
+      kind: "completed",
+      runtimeMs: 12,
+      rowCount: 0,
+    });
+    expect(mockedExecuteQuerySession).toHaveBeenNthCalledWith(
+      2,
+      tabId,
+      expect.any(String),
+      "delete from users",
+      true,
+    );
+  });
+
+  it("retains a non-dismissable policy-blocked reason on the session", async () => {
+    const tabId = seedQueryTab({ query: "update users set active = false" });
+    useAppStore.setState({
+      querySessions: { [tabId]: makeSession(tabId) },
+    });
+    mockedExecuteQuerySession.mockReset();
+    mockedExecuteQuerySession.mockRejectedValueOnce({
+      kind: "policyBlocked",
+      reason: "This connection is read-only.",
+    });
+
+    await expect(
+      useAppStore
+        .getState()
+        .executePersistentQuery(
+          tabId,
+          "conn-1",
+          "update users set active = false",
+        ),
+    ).rejects.toThrow("Edit the connection to unlock writes.");
+    expect(useAppStore.getState().querySessions[tabId]?.policyRefusal).toBe(
+      "This connection is read-only. Edit the connection to unlock writes.",
+    );
+  });
+
+  it("does not open confirmation for a malformed policy refusal", async () => {
+    const tabId = seedQueryTab({ query: "delete from users" });
+    useAppStore.setState({
+      querySessions: { [tabId]: makeSession(tabId) },
+    });
+    const malformedRefusal = {
+      kind: "policyNeedsConfirmation",
+      statements: [{ destructive: true }],
+    };
+    mockedExecuteQuerySession.mockReset();
+    mockedExecuteQuerySession.mockRejectedValueOnce(malformedRefusal);
+
+    await expect(
+      useAppStore
+        .getState()
+        .executePersistentQuery(tabId, "conn-1", "delete from users"),
+    ).rejects.toEqual(malformedRefusal);
+    expect(getSafetyConfirmation()).toBeNull();
+    expect(mockedExecuteQuerySession).toHaveBeenCalledOnce();
+  });
+
   it("does not record a cancelled execution as success", async () => {
     const tabId = seedQueryTab();
     useAppStore.setState({
@@ -727,5 +830,67 @@ describe("persistent query session outcomes", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(useAppStore.getState().workspaceTabs).toEqual([]);
     confirmSpy.mockRestore();
+  });
+});
+
+describe("production query retargeting", () => {
+  it("fails closed unless the caller confirms the production target", async () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "tab-1",
+          kind: "query",
+          label: "query.sql",
+          connectionId: "conn-dev",
+          schema: "public",
+          query: "select 1",
+        },
+      ],
+      connections: [
+        {
+          id: "conn-dev",
+          name: "Dev",
+          database: "app",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+          environment: "development",
+        },
+        {
+          id: "conn-prod",
+          name: "Primary",
+          database: "app",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "prod.internal",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+          environment: "production",
+        },
+      ],
+    });
+
+    await expect(
+      useAppStore.getState().retargetQueryTab("tab-1", "conn-prod"),
+    ).resolves.toBe(false);
+    const confirmProductionTarget = vi.fn(() => true);
+    await expect(
+      useAppStore.getState().retargetQueryTab("tab-1", "conn-prod", {
+        confirmProductionTarget,
+      }),
+    ).resolves.toBe(true);
+    expect(confirmProductionTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "conn-prod", environment: "production" }),
+    );
   });
 });

@@ -12,6 +12,7 @@ import { useState } from "react";
 
 import { needsMacTitlebarGutter } from "@/components/app-shell/macos-titlebar";
 import { connectionStatusTone } from "@/components/connection-status";
+import { EnvironmentBadge } from "@/components/environment-badge";
 import { NewConnectionDialog } from "@/components/new-connection-dialog";
 import { StatusDot } from "@/components/ui/status-dot";
 import { type Connection, useAppStore } from "@/lib/store";
@@ -72,6 +73,7 @@ export function WorkbenchHeader({
           <span className="font-semibold text-foreground">
             {activeConnection?.name ?? "Select connection"}
           </span>
+          <EnvironmentBadge environment={activeConnection?.environment} short />
           {activeConnection ? (
             <span className="text-text-muted">· {activeConnection.engine}</span>
           ) : null}
@@ -117,7 +119,13 @@ export function WorkbenchHeader({
                       <StatusDot tone={tone} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium text-foreground">
-                          {connection.name}
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate">{connection.name}</span>
+                            <EnvironmentBadge
+                              environment={connection.environment}
+                              short
+                            />
+                          </span>
                         </span>
                         <span className="block truncate text-[10px] text-text-muted">
                           {connection.engine} · {connection.host}
