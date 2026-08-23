@@ -54,7 +54,11 @@ export function WorkbenchShell<T extends string>({
   }, [activeConnection]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // min-w-0 is load-bearing: as a flex item of AppShell's row, this
+    // root's automatic minimum size would otherwise be its content's
+    // min-content width (a wide data grid), blowing out the layout and
+    // silently disabling the grid's own horizontal scroll.
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
         <ActivityRail
           items={railItems}
