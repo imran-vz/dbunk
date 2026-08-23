@@ -21,6 +21,7 @@ import { formatLatencyMs } from "@/lib/format";
 import { fetchRedisAclSelf } from "@/lib/redis/api";
 import { closeResultMutationForConnection } from "@/lib/result-mutation-client";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
+import { uiRemovePrefix } from "@/lib/ui-state";
 
 import type {
   AppStoreState,
@@ -278,6 +279,10 @@ export const createConnectionsSlice: StateCreator<
   },
 
   deleteConnection: async (connectionId) => {
+    // P8 GC: drop the connection's persisted UI state (grid layouts,
+    // per-table prefs). The session blob self-heals via the tab-close
+    // cascade + session persistence.
+    uiRemovePrefix(`dbunk.grid.layout.${connectionId}.`);
     const finalize = (connections: ReturnType<typeof get>["connections"]) => {
       set((state) => {
         const newActiveId =

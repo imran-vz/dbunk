@@ -18,8 +18,10 @@ import { KeyValueWorkbench } from "@/components/workbench/keyvalue-workbench";
 import { RelationalWorkbench } from "@/components/workbench/relational-workbench";
 import { TabShortcuts } from "@/components/workbench/tab-shortcuts";
 import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
+import { startSessionPersistence } from "@/lib/session-persistence";
 import { useAppStore } from "@/lib/store";
 import { applyTheme, subscribeSystem } from "@/lib/theme";
+import { initUiState, isUiStateReady } from "@/lib/ui-state";
 import { cn } from "@/lib/utils";
 
 /**
@@ -69,6 +71,21 @@ function useForegroundHealthCheck(
 
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
+  // P8: the SQLite-backed UI-state cache must be loaded before the
+  // workbench mounts (panel sizes, grid layouts, and the session
+  // restore all read it synchronously). In a plain browser the store
+  // passes through to localStorage and is ready immediately.
+  const [uiStateReady, setUiStateReady] = useState(() => isUiStateReady());
+  useEffect(() => {
+    if (uiStateReady) return;
+    let cancelled = false;
+    void initUiState().then(() => {
+      if (!cancelled) setUiStateReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [uiStateReady]);
 
   const {
     isWindowFullscreen,
@@ -141,11 +158,23 @@ export function AppShell() {
     void loadAppSettings();
   }, [loadAppSettings]);
 
+  const sessionRestoredRef = useRef(false);
   useEffect(() => {
     if (appSettings?.credentialState !== "ready") {
       return;
     }
-    void loadConnections();
+    // P8 session restore: connections and the UI-state cache must both
+    // be in place before rebuilding tabs; persistence starts only after
+    // restore so an empty boot state can't clobber the stored session.
+    void (async () => {
+      await loadConnections();
+      await initUiState();
+      if (!sessionRestoredRef.current) {
+        sessionRestoredRef.current = true;
+        useAppStore.getState().restoreSession();
+        startSessionPersistence();
+      }
+    })();
     void loadBastionServers();
     void loadManagedServers();
     void loadQueryHistory();
@@ -163,7 +192,8 @@ export function AppShell() {
 
   if (
     appSettingsStatus.state === "loading" ||
-    appSettingsStatus.state === "idle"
+    appSettingsStatus.state === "idle" ||
+    !uiStateReady
   ) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-surface-app text-xs text-text-muted">
