@@ -112,15 +112,11 @@ describe("ui-state store (P8)", () => {
     expect(uiGet("dbunk.panel.navigator.size")).toBe("260");
     // Dead key dropped, not imported.
     expect(uiGet("dbunk.workbench.dock.query-1.open")).toBeNull();
-    // localStorage now holds only the boot-cache mirrors.
-    expect(
-      window.localStorage.getItem("dbunk.panel.navigator.size"),
-    ).toBeNull();
-    expect(
-      window.localStorage.getItem("dbunk.workbench.dock.query-1.open"),
-    ).toBeNull();
-    expect(window.localStorage.getItem("dbunk.theme")).toBe("dark");
-    expect(window.localStorage.getItem("dbunk.density")).toBe("compact");
+    // Legacy values stay in localStorage until the migration batch is
+    // durably in SQLite — they must never exist in neither storage.
+    expect(window.localStorage.getItem("dbunk.panel.navigator.size")).toBe(
+      "260",
+    );
 
     await flushUiState();
     const entries = savedEntries();
@@ -129,6 +125,37 @@ describe("ui-state store (P8)", () => {
       value: "260",
     });
     expect(entries).toContainEqual({ key: "ui.v1.migrated", value: "1" });
+    // Committed — localStorage now holds only the boot-cache mirrors.
+    expect(
+      window.localStorage.getItem("dbunk.panel.navigator.size"),
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem("dbunk.workbench.dock.query-1.open"),
+    ).toBeNull();
+    expect(window.localStorage.getItem("dbunk.theme")).toBe("dark");
+    expect(window.localStorage.getItem("dbunk.density")).toBe("compact");
+  });
+
+  it("keeps legacy localStorage values when the migration write fails", async () => {
+    window.localStorage.setItem("dbunk.panel.navigator.size", "260");
+    await initUiState();
+    mockedInvoke.mockRejectedValueOnce(new Error("db locked"));
+    await flushUiState();
+
+    // The batch never committed, so the legacy copy must survive.
+    expect(window.localStorage.getItem("dbunk.panel.navigator.size")).toBe(
+      "260",
+    );
+
+    // Retry succeeds — now it's safe to remove.
+    await flushUiState();
+    expect(
+      window.localStorage.getItem("dbunk.panel.navigator.size"),
+    ).toBeNull();
+    expect(savedEntries()).toContainEqual({
+      key: "ui.v1.panel.navigator.size",
+      value: "260",
+    });
   });
 
   it("does not re-import after the one-shot migration", async () => {
@@ -136,11 +163,66 @@ describe("ui-state store (P8)", () => {
     // A stale legacy key that reappeared after migration.
     window.localStorage.setItem("dbunk.panel.navigator.size", "999");
     await initUiState();
+    await flushUiState();
     // Removed from localStorage but not imported over the store.
     expect(
       window.localStorage.getItem("dbunk.panel.navigator.size"),
     ).toBeNull();
     expect(uiGet("dbunk.panel.navigator.size")).toBeNull();
+  });
+
+  it("retains failed writes and deletes for the retry flush", async () => {
+    await initUiState();
+    await flushUiState(); // Commit the migration marker first.
+    mockedInvoke.mockClear();
+
+    uiSet("dbunk.panel.a.size", "100");
+    uiRemove("dbunk.panel.b.size");
+    uiRemovePrefix("dbunk.grid.layout.conn-1.");
+    mockedInvoke.mockRejectedValueOnce(new Error("db locked"));
+    await flushUiState();
+
+    // A later identical set must not be swallowed by the cache check.
+    uiSet("dbunk.panel.a.size", "100");
+
+    mockedInvoke.mockClear();
+    await flushUiState();
+    expect(savedEntries()).toContainEqual({
+      key: "ui.v1.panel.a.size",
+      value: "100",
+    });
+    const deleteCall = mockedInvoke.mock.calls.find(
+      ([command]) => command === "delete_ui_state",
+    );
+    expect(deleteCall?.[1]).toEqual({
+      payload: {
+        keys: ["ui.v1.panel.b.size"],
+        prefixes: ["ui.v1.grid.layout.conn-1."],
+      },
+    });
+  });
+
+  it("prefers values written during a failed flush over the snapshot", async () => {
+    await initUiState();
+    await flushUiState();
+    mockedInvoke.mockClear();
+
+    uiSet("dbunk.panel.a.size", "100");
+    mockedInvoke.mockImplementationOnce(async () => {
+      // Simulate a newer write landing while the flush is in flight.
+      uiSet("dbunk.panel.a.size", "200");
+      throw new Error("db locked");
+    });
+    await flushUiState();
+
+    mockedInvoke.mockClear();
+    await flushUiState();
+    const entries = savedEntries();
+    expect(entries).toContainEqual({ key: "ui.v1.panel.a.size", value: "200" });
+    expect(entries).not.toContainEqual({
+      key: "ui.v1.panel.a.size",
+      value: "100",
+    });
   });
 
   it("never blocks launch on a storage failure", async () => {
