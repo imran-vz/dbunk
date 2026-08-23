@@ -22,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { shortcutKeys, useShortcutHandler } from "@/lib/shortcuts";
 import {
   type ConsoleEvent,
   type ConsoleSeverity,
@@ -62,7 +63,9 @@ export function GlobalConsoleDock() {
     snapThreshold: 60,
   });
 
-  // `` Ctrl+` `` toggles the dock (§6.1; central registry lands in P7).
+  useShortcutHandler("toggle-console", toggleDock);
+
+  // `` Ctrl+` `` toggles the dock (§6.1).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && !event.metaKey && event.key === "`") {
@@ -171,7 +174,9 @@ export function GlobalConsoleDock() {
             >
               <IconX />
             </TooltipTrigger>
-            <TooltipContent kbd={["ctrl", "`"]}>Hide console</TooltipContent>
+            <TooltipContent kbd={shortcutKeys("toggle-console")}>
+              Hide console
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>
