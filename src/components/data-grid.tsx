@@ -1064,14 +1064,17 @@ export function DataGrid({
               }}
             >
               {/* Header row */}
+              {/* Flex container: pinned header cells use inline
+                  position:sticky, which puts them back in normal flow — in
+                  block flow they would stack vertically below the gutter. */}
               <div
                 role="row"
                 aria-rowindex={1}
-                className="sticky top-0 z-20"
+                className="sticky top-0 z-20 flex"
                 style={{ height: headerHeight, width: totalWidth }}
               >
                 <div
-                  className="sticky left-0 z-40 flex h-full items-center justify-center border-r border-b border-border-subtle bg-surface-sidebar"
+                  className="sticky left-0 z-40 flex h-full shrink-0 items-center justify-center border-r border-b border-border-subtle bg-surface-sidebar"
                   style={{ width: GUTTER_WIDTH, position: "sticky" }}
                 >
                   <input
