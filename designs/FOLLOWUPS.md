@@ -181,15 +181,14 @@ Items still on the tracker: cross-platform window chrome (Windows/Linux conditio
 
 ### Editor connection switcher (DB selector) ✅
 - **Where**: `query-editor/toolbar.tsx` dropdown + `query-editor-panel.tsx::handleRetargetConnection`.
-- **Done**: filters to relational engines via `storageClassFor`, prompts `window.confirm` when pending grid edits exist, calls `WorkspaceTabsSlice.retargetQueryTab(tabId, connectionId)` which flips `tab.connectionId`, syncs `activeConnectionId`, and cascades through `RelationalQueriesSlice.dropQueryStateForTab` to clear stale queryStatus/edits/previews (2026-05-16).
+- **Done**: filters to relational engines via `storageClassFor`, prompts a themed confirm (the `@/lib/confirm` service, UI refresh P6) when pending grid edits exist, calls `WorkspaceTabsSlice.retargetQueryTab(tabId, connectionId)` which flips `tab.connectionId`, syncs `activeConnectionId`, and cascades through `RelationalQueriesSlice.dropQueryStateForTab` to clear stale queryStatus/edits/previews (2026-05-16).
 
-### Status bar — `Auto-commit ON`
-- **Where**: `query-editor-panel.tsx`.
-- **Faked**: literal text.
-- **Real**: live transaction state per editor tab —
-  `Auto-commit ON / In transaction / Failed transaction`. Toggleable from a
-  future Tx panel. (Connection-status portion of the status bar already
-  reflects the live health-check tick added in Group A3.)
+### Status bar — `Auto-commit ON` ✅
+- **Where**: `query-editor/status-items.ts` (`buildQueryStatusItems`).
+- **Done (UI refresh P4/P6)**: the status bar shows the live session
+  state per tab (`open · autocommit · idle`, etc.) from the persistent
+  query session, plus the clickable staged-mutations badge; transaction
+  controls live in the query toolbar (`transaction-controls.tsx`).
 
 ---
 

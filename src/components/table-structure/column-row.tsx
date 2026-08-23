@@ -84,9 +84,7 @@ function TypeCell({
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="truncate font-mono text-blue-400">
-        {column.dataType}
-      </span>
+      <span className="truncate font-mono text-info">{column.dataType}</span>
       {editable ? (
         <Button
           data-testid={`structure-toggle-nullable-${column.name}`}
@@ -222,7 +220,7 @@ function ColumnEditPanel({
           aria-label={`Change type of ${column.name}`}
           value={typeValue}
           onChange={(event) => setTypeValue(event.target.value)}
-          className="h-6 font-mono text-xs text-blue-400"
+          className="h-6 font-mono text-xs text-info"
         />
         <Button
           data-testid={`structure-type-confirm-${column.name}`}

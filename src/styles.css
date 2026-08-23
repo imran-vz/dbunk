@@ -167,8 +167,10 @@
 
     --text-primary: #f8f8f2;
     --text-secondary: #c5c6d0;
-    --text-muted: #6272a4;
-    --text-disabled: #4d537a;
+    /* Lightened from Dracula's comment blue (#6272a4): muted text carries
+     * real content and must clear 3:1 on the elevated surface (P10). */
+    --text-muted: #8492c4;
+    --text-disabled: #5c6390;
 
     --accent: #ff79c6;
     --accent-hover: #ff92d0;
