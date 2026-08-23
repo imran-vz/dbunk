@@ -101,6 +101,15 @@ impl FromStr for SafeMode {
     }
 }
 
+/// The stored inputs that resolve into an enforced safety policy. Connection
+/// variants remain wire-flat, while backend policy consumers pass one value.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConnectionPolicy {
+    pub(crate) environment: Environment,
+    pub(crate) safe_mode: SafeMode,
+    pub(crate) read_only: bool,
+}
+
 /// Top-level engine class — `Relational` engines share schemas/tables/
 /// rows/SQL; `KeyValue` engines share a keyspace of typed keys. The
 /// class is derived from `DatabaseEngine::storage_class()`; never
@@ -722,33 +731,33 @@ impl StoredConnection {
         }
     }
 
-    pub(crate) fn environment(&self) -> Environment {
+    pub(crate) fn policy(&self) -> ConnectionPolicy {
         match self {
-            Self::PostgreSQL(c) => c.environment,
-            Self::MySQL(c) => c.environment,
-            Self::SQLite(c) => c.environment,
-            Self::ClickHouse(c) => c.environment,
-            Self::Redis(c) => c.environment,
-        }
-    }
-
-    pub(crate) fn safe_mode(&self) -> SafeMode {
-        match self {
-            Self::PostgreSQL(c) => c.safe_mode,
-            Self::MySQL(c) => c.safe_mode,
-            Self::SQLite(c) => c.safe_mode,
-            Self::ClickHouse(c) => c.safe_mode,
-            Self::Redis(c) => c.safe_mode,
-        }
-    }
-
-    pub(crate) fn read_only(&self) -> bool {
-        match self {
-            Self::PostgreSQL(c) => c.read_only,
-            Self::MySQL(c) => c.read_only,
-            Self::SQLite(c) => c.read_only,
-            Self::ClickHouse(c) => c.read_only,
-            Self::Redis(c) => c.read_only,
+            Self::PostgreSQL(c) => ConnectionPolicy {
+                environment: c.environment,
+                safe_mode: c.safe_mode,
+                read_only: c.read_only,
+            },
+            Self::MySQL(c) => ConnectionPolicy {
+                environment: c.environment,
+                safe_mode: c.safe_mode,
+                read_only: c.read_only,
+            },
+            Self::SQLite(c) => ConnectionPolicy {
+                environment: c.environment,
+                safe_mode: c.safe_mode,
+                read_only: c.read_only,
+            },
+            Self::ClickHouse(c) => ConnectionPolicy {
+                environment: c.environment,
+                safe_mode: c.safe_mode,
+                read_only: c.read_only,
+            },
+            Self::Redis(c) => ConnectionPolicy {
+                environment: c.environment,
+                safe_mode: c.safe_mode,
+                read_only: c.read_only,
+            },
         }
     }
 

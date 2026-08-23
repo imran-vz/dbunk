@@ -1,8 +1,6 @@
 use tauri::State;
 
-use crate::safety::policy::{
-    assert_permitted, resolve_policy, SafetyAuthorization, SafetyRefusal, WriteIntent,
-};
+use crate::safety::policy::{assert_permitted, resolve_policy, SafetyAuthorization, WriteIntent};
 use crate::safety::{CONFIRM_TAG, READ_ONLY_TAG};
 use crate::{storage, AppState, SafetyOverrideRecord};
 use crate::{SqlitePool, StoredConnection};
@@ -10,11 +8,7 @@ use crate::{SqlitePool, StoredConnection};
 pub(crate) fn resolved_policy(
     connection: &StoredConnection,
 ) -> crate::safety::policy::ResolvedSafetyPolicy {
-    resolve_policy(
-        connection.environment(),
-        connection.safe_mode(),
-        connection.read_only(),
-    )
+    resolve_policy(connection.policy())
 }
 
 pub(crate) fn assert_legacy_permitted(
@@ -23,11 +17,11 @@ pub(crate) fn assert_legacy_permitted(
     confirmed: bool,
 ) -> Result<SafetyAuthorization, String> {
     let policy = resolved_policy(connection);
-    assert_permitted(&policy, intent, confirmed).map_err(|refusal| match refusal {
-        SafetyRefusal::Blocked { reason, .. } => format!("{READ_ONLY_TAG} {reason}"),
-        SafetyRefusal::NeedsConfirmation { .. } => {
-            format!("{CONFIRM_TAG} This operation requires confirmation")
-        }
+    assert_permitted(&policy, intent, confirmed).map_err(|refusal| {
+        refusal.fold(
+            |reason, _| format!("{READ_ONLY_TAG} {reason}"),
+            |_| format!("{CONFIRM_TAG} This operation requires confirmation"),
+        )
     })
 }
 
