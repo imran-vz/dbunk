@@ -52,8 +52,10 @@ Classification fails closed. Lex failures, `DO`, `CALL`, and unrecognized
 heads are `unknown`, which policy treats as a destructive write. `WITH`
 statements are scanned for write keywords. `COPY` combines its direction with
 the same write-keyword scan, so a data-modifying CTE wrapped by `COPY ... TO`
-is still DML. Top-level parenthesis depth determines whether `UPDATE` or
-`DELETE` has a bounding `WHERE`.
+is still DML. Only `COPY ... TO STDOUT` can retain the read class. Server-file
+output and `COPY ... PROGRAM` are destructive DML because they write outside
+the client connection or execute a server-side command. Top-level parenthesis
+depth determines whether `UPDATE` or `DELETE` has a bounding `WHERE`.
 
 `EXPLAIN` is a read only when execution is provably disabled. Both the
 parenthesized options form and the legacy prefix form are parsed. Consequently,
