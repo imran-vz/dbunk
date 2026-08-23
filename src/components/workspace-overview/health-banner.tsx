@@ -1,6 +1,7 @@
 import { IconActivityHeartbeat } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
+import { ENVIRONMENT_META, resolveSafetyPolicy } from "@/lib/safety-policy";
 import type { Connection } from "@/lib/store";
 
 import { formatConnectionLatency, formatLastChecked } from "./format";
@@ -8,6 +9,17 @@ import { formatConnectionLatency, formatLastChecked } from "./format";
 export function HealthBanner({ connection }: { connection: Connection }) {
   const status = connection.status;
   const isHealthy = status === "Connected" || status === "Read only";
+
+  if (resolveSafetyPolicy(connection).environment === "production") {
+    return (
+      <ProductionBanner
+        isHealthy={isHealthy}
+        latency={formatConnectionLatency(connection.latency)}
+        lastChecked={formatLastChecked(connection.lastActivityAt)}
+        errorMessage={connection.errorMessage}
+      />
+    );
+  }
 
   if (isHealthy) {
     return (
@@ -19,6 +31,39 @@ export function HealthBanner({ connection }: { connection: Connection }) {
   }
 
   return <UnreachableBanner errorMessage={connection.errorMessage} />;
+}
+
+function ProductionBanner({
+  isHealthy,
+  latency,
+  lastChecked,
+  errorMessage,
+}: {
+  isHealthy: boolean;
+  latency: string | null;
+  lastChecked: string;
+  errorMessage: string | undefined;
+}) {
+  const detail = isHealthy
+    ? `${latency ? `Round-trip ${latency}. ` : ""}Last checked ${lastChecked}.`
+    : (errorMessage ?? "Last health check failed.");
+
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-danger bg-danger/8 px-4 py-3">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-danger">
+          {ENVIRONMENT_META.production.label} connection
+        </div>
+        <div className="truncate text-xs text-danger/80">
+          {isHealthy ? "Connected. " : "Connection unreachable. "}
+          {detail}
+        </div>
+      </div>
+      <Button size="sm" variant="outline">
+        View health checks
+      </Button>
+    </section>
+  );
 }
 
 function HealthyBanner({

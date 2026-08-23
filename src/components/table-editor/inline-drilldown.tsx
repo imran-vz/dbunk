@@ -19,8 +19,9 @@ import { useEffect, useState } from "react";
 
 import type { ForeignKeyTarget } from "@/components/data-grid";
 import { Button } from "@/components/ui/button";
-import type { DatabaseEngine } from "@/lib/store";
-import { errorToMessage, tauriInvoke } from "@/lib/tauri";
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
+import { type DatabaseEngine, useAppStore } from "@/lib/store";
+import { errorToMessage } from "@/lib/tauri";
 
 const ROW_LIMIT = 5;
 
@@ -52,12 +53,17 @@ export function InlineDrilldown({
   onClose,
 }: InlineDrilldownProps) {
   const [state, setState] = useState<FetchState>({ kind: "loading" });
+  const connection = useAppStore((store) =>
+    store.connections.find((candidate) => candidate.id === connectionId),
+  );
 
   useEffect(() => {
     let cancelled = false;
     setState({ kind: "loading" });
     const sql = buildFilteredSelectSql(engine, target, value);
-    tauriInvoke<{ columns: string[]; rows: string[][] }>("run_query", {
+    invokeWithSafetyConfirmation<{ columns: string[]; rows: string[][] }>({
+      command: "run_query",
+      connection,
       payload: { connectionId, query: sql },
     })
       .then((result) => {
@@ -75,7 +81,7 @@ export function InlineDrilldown({
     return () => {
       cancelled = true;
     };
-  }, [connectionId, engine, target, value]);
+  }, [connection, connectionId, engine, target, value]);
 
   return (
     <div className="border-x border-border-subtle/60 px-3 py-2 text-[0.7rem]">

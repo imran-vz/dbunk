@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { connectionStatusTone } from "@/components/connection-status";
 import { DeleteConnectionDialog } from "@/components/delete-connection-dialog";
 import { EditConnectionDialog } from "@/components/edit-connection-dialog";
+import { EnvironmentBadge } from "@/components/environment-badge";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { StatusDot } from "@/components/ui/status-dot";
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import {
   type Connection,
   type ManagedServerStatus,
@@ -35,7 +37,7 @@ import {
   type SchemaExplorer,
   useAppStore,
 } from "@/lib/store";
-import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
+import { errorToMessage, isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 type SchemaObjectKey = keyof Pick<
@@ -341,8 +343,14 @@ export function Sidebar({ className }: { className?: string }) {
     if (!isTauri() || !activeConnectionId) {
       return;
     }
+    const connection = connections.find(
+      (candidate) => candidate.id === activeConnectionId,
+    );
+    if (!connection) return;
     try {
-      await tauriInvoke("refresh_materialized_view", {
+      await invokeWithSafetyConfirmation({
+        command: "refresh_materialized_view",
+        connection,
         payload: {
           connectionId: activeConnectionId,
           schema,
@@ -417,6 +425,10 @@ export function Sidebar({ className }: { className?: string }) {
                       <span className="truncate text-[0.8125rem] font-medium leading-tight text-foreground">
                         {connection.name}
                       </span>
+                      <EnvironmentBadge
+                        environment={connection.environment}
+                        short
+                      />
                       {managedServer ? (
                         <span
                           data-testid={`managed-badge-${connection.name}`}

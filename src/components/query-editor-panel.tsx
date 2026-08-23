@@ -45,6 +45,7 @@ import {
   loadVirtualKey,
   saveVirtualKey,
 } from "@/lib/result-mutation-client";
+import { readOnlyPolicyReason } from "@/lib/safety-policy";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import { formatSql } from "@/lib/sql-format";
 import {
@@ -280,6 +281,9 @@ export function QueryEditorPanel({
       activeConnection && supportsResultMutations(activeConnection.engine),
     );
   const mutationCapable = mutationSessionSupported && !execution.tombstone;
+  const policyReadOnlyCopy = activeConnection
+    ? readOnlyPolicyReason(activeConnection)
+    : null;
   const tombstonedDraftScope = useMemo(() => {
     if (!execution?.tombstone || !executionId) return null;
     const draft = Object.values(mutationDrafts).find(
@@ -378,6 +382,7 @@ export function QueryEditorPanel({
       refreshStructure?: boolean;
     }): Promise<AnalyzeResultSetResult | null> => {
       if (
+        policyReadOnlyCopy ||
         !mutationCapable ||
         !mutationScope ||
         !executionId ||
@@ -489,6 +494,7 @@ export function QueryEditorPanel({
       mutationDraft?.analysis,
       mutationScope,
       openMutationDraft,
+      policyReadOnlyCopy,
       resultIndex,
       setMutationDraftAnalysis,
       tab.connectionId,
@@ -602,6 +608,7 @@ export function QueryEditorPanel({
   });
   const getMutationCellReadOnlyReason = useCallback(
     (rowIndex: number, colIndex: number) => {
+      if (policyReadOnlyCopy) return policyReadOnlyCopy;
       if (isResultStale) return "Re-run the query before editing this result.";
       if (resultIndex !== 0) return "Only the first result set can be edited.";
       if (!mutationAnalysis) return mutationStatus.copy;
@@ -613,6 +620,7 @@ export function QueryEditorPanel({
     },
     [
       isResultStale,
+      policyReadOnlyCopy,
       mutationAnalysis,
       mutationStatus.copy,
       resultIndex,
@@ -725,6 +733,10 @@ export function QueryEditorPanel({
       if (!ok) return;
     }
     void retargetQueryTab(tab.id, newConnectionId, {
+      confirmProductionTarget: (connection) =>
+        window.confirm(
+          `Switch this query to production connection ${connection.name}?`,
+        ),
       confirmDiscardStagedChanges: (changeCount) => {
         const confirmed = window.confirm(
           `Switching connections will discard ${changeCount} staged ${pluralize("change", changeCount)}. Continue?`,
@@ -833,6 +845,7 @@ export function QueryEditorPanel({
     ? {
         edits: mutationEdits,
         readOnly:
+          Boolean(policyReadOnlyCopy) ||
           isResultStale ||
           !mutationAnalysis ||
           mutationAnalysis.statement.kind !== "analyzed" ||
@@ -843,8 +856,8 @@ export function QueryEditorPanel({
         onCellEdit: handleMutationCellEdit,
         onEditIntent: () => void ensureMutationAnalysis(),
         getCellReadOnlyReason: getMutationCellReadOnlyReason,
-        statusCopy: mutationStatus.copy,
-        statusTone: mutationStatus.tone,
+        statusCopy: policyReadOnlyCopy ?? mutationStatus.copy,
+        statusTone: policyReadOnlyCopy ? "warning" : mutationStatus.tone,
         stale: isResultStale && !reviewScope,
         onRerun: () => void handleRerunResult(),
       }
@@ -1638,6 +1651,10 @@ function mutationClientErrorCopy(error: ResultMutationError): string {
       return "The connection is closing. Reconnect and re-run the query.";
     case "connectionLost":
       return "The database connection was lost. Reconnect and re-run the query.";
+    case "policyBlocked":
+      return `${error.reason} Edit the connection to unlock writes.`;
+    case "policyNeedsConfirmation":
+      return "The connection safety policy requires confirmation.";
     case "timeout":
       return `Analysis timed out during ${error.operation}.`;
     case "database":

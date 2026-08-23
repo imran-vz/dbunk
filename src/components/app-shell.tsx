@@ -12,6 +12,7 @@ import {
   CredentialOnboarding,
   CredentialUnlock,
 } from "@/components/credential-onboarding";
+import { SafetyConfirmDialog } from "@/components/safety-confirm-dialog";
 import { SettingsView } from "@/components/settings-view";
 import { Sidebar } from "@/components/sidebar";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
@@ -340,6 +341,7 @@ export function AppShell() {
         )}
       </div>
       <CommandPalette />
+      <SafetyConfirmDialog />
     </div>
   );
 }

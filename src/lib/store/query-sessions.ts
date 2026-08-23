@@ -24,6 +24,11 @@ import {
   setQuerySessionTransactionIsolation,
   setQuerySessionTransactionMode,
 } from "@/lib/query-session-channel";
+import {
+  formatQuerySessionError,
+  isQuerySessionError,
+} from "@/lib/query-session-error";
+import { requestSafetyConfirmation } from "@/lib/safety-confirmation";
 
 import type {
   AppStoreState,
@@ -126,6 +131,7 @@ export const createQuerySessionsSlice: StateCreator<
         lastViewedAt: Date.now(),
         budgetOwners: [],
         state: "opening",
+        policyRefusal: null,
       };
       set((state) => ({
         querySessions: { ...state.querySessions, [tabId]: session },
@@ -155,7 +161,29 @@ export const createQuerySessionsSlice: StateCreator<
       patchSession(set, tabId, { transaction, state: "open" });
     }
 
-    await executeQuerySession(tabId, crypto.randomUUID(), sql);
+    patchSession(set, tabId, { policyRefusal: null });
+    const executionId = crypto.randomUUID();
+    try {
+      await executeQuerySession(tabId, executionId, sql);
+    } catch (error) {
+      if (!isQuerySessionError(error)) throw error;
+      if (error.kind === "policyBlocked") {
+        const reason = formatQuerySessionError(error);
+        patchSession(set, tabId, { policyRefusal: reason });
+        throw new Error(reason);
+      }
+      if (error.kind !== "policyNeedsConfirmation") throw error;
+      const connection = get().connections.find(
+        (candidate) => candidate.id === connectionId,
+      );
+      if (!connection) throw new Error("Connection not found.");
+      const confirmed = await requestSafetyConfirmation({
+        connection,
+        subject: { kind: "statements", statements: error.statements },
+      });
+      if (!confirmed) throw new Error("Safety confirmation cancelled.");
+      await executeQuerySession(tabId, executionId, sql, true);
+    }
     const execution = get().querySessions[tabId]?.execution;
     if (!execution) {
       throw new Error("Query session completed without an execution result");

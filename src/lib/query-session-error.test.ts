@@ -71,4 +71,51 @@ describe("formatQuerySessionError", () => {
     expect(isQuerySessionError(new Error("nope"))).toBe(false);
     expect(isQuerySessionError({ kind: "other" })).toBe(false);
   });
+
+  it("rejects malformed safety-policy errors", () => {
+    expect(isQuerySessionError({ kind: "policyBlocked", reason: 42 })).toBe(
+      false,
+    );
+    expect(
+      isQuerySessionError({
+        kind: "policyNeedsConfirmation",
+        statements: [
+          {
+            index: 0,
+            class: "drop-everything",
+            unbounded: true,
+            destructive: true,
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isQuerySessionError({
+        kind: "policyNeedsConfirmation",
+        statements: "delete from users",
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts structurally valid safety-policy errors", () => {
+    expect(
+      isQuerySessionError({
+        kind: "policyBlocked",
+        reason: "This connection is read-only.",
+      }),
+    ).toBe(true);
+    expect(
+      isQuerySessionError({
+        kind: "policyNeedsConfirmation",
+        statements: [
+          {
+            index: 0,
+            class: "ddl",
+            unbounded: false,
+            destructive: true,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
 });

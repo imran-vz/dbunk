@@ -15,6 +15,7 @@
 import type { StateCreator } from "zustand";
 
 import { generateDdlForEngine, type PendingChange } from "@/lib/ddl";
+import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import { pendingMutationsFromResult } from "@/lib/pending-mutations";
 import {
   DEFAULT_SCHEMA_MAP_PREFS,
@@ -563,17 +564,16 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     try {
-      const result = await tauriInvoke<CommitCellEditsResult>(
-        "commit_cell_edits",
-        {
-          payload: {
-            connectionId: ctx.data.connectionId,
-            schema: ctx.data.schema,
-            table: ctx.data.table,
-            edits: editsPayload,
-          },
+      const result = await invokeWithSafetyConfirmation<CommitCellEditsResult>({
+        command: "commit_cell_edits",
+        connection: ctx.connection,
+        payload: {
+          connectionId: ctx.data.connectionId,
+          schema: ctx.data.schema,
+          table: ctx.data.table,
+          edits: editsPayload,
         },
-      );
+      });
       const pendingMutations = pendingMutationsFromResult(result, {
         connectionId: ctx.data.connectionId,
         database: ctx.data.schema,
@@ -696,10 +696,12 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     try {
-      const result = await tauriInvoke<{
+      const result = await invokeWithSafetyConfirmation<{
         rowsAffected: number;
         runtimeMs: number;
-      }>("insert_row", {
+      }>({
+        command: "insert_row",
+        connection,
         payload: {
           connectionId: data.connectionId,
           schema: data.schema,
@@ -784,7 +786,9 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     try {
-      const result = await tauriInvoke<CommitCellEditsResult>("delete_rows", {
+      const result = await invokeWithSafetyConfirmation<CommitCellEditsResult>({
+        command: "delete_rows",
+        connection: ctx.connection,
         payload: {
           connectionId: ctx.data.connectionId,
           schema: ctx.data.schema,
@@ -1567,7 +1571,9 @@ export const createRelationalTablesSlice: StateCreator<
     }
 
     try {
-      const result = await tauriInvoke<{ runtimeMs: number }>("execute_ddl", {
+      const result = await invokeWithSafetyConfirmation<{ runtimeMs: number }>({
+        command: "execute_ddl",
+        connection,
         payload: { connectionId, sql },
       });
       set((s) => {

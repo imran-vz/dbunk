@@ -23,6 +23,7 @@ import type {
   AppStoreState,
   SettingsTab,
   WorkspaceTab,
+  Connection,
 } from "./types";
 
 // Module-local counters survive across the slice's actions but are
@@ -84,6 +85,7 @@ export type WorkspaceTabsSlice = {
     newConnectionId: string,
     options?: {
       confirmDiscardStagedChanges?: (changeCount: number) => boolean;
+      confirmProductionTarget?: (connection: Connection) => boolean;
     },
   ) => Promise<boolean>;
 };
@@ -326,6 +328,15 @@ export const createWorkspaceTabsSlice: StateCreator<
     const tab = state.workspaceTabs.find((item) => item.id === tabId);
     if (!tab || tab.kind !== "query") return false;
     if (tab.connectionId === newConnectionId) return false;
+    const targetConnection = state.connections.find(
+      (connection) => connection.id === newConnectionId,
+    );
+    if (
+      targetConnection?.environment === "production" &&
+      !options?.confirmProductionTarget?.(targetConnection)
+    ) {
+      return false;
+    }
     const stagedChangeCount = Object.values(state.mutationDrafts).reduce(
       (count, draft) =>
         draft?.owner.tabId === tabId ? count + draft.changeOrder.length : count,

@@ -10,6 +10,7 @@ import {
   previewResultMutations,
   type ResultMutationClientResult,
 } from "@/lib/result-mutation-client";
+import { requestSafetyConfirmation } from "@/lib/safety-confirmation";
 import {
   type MutationDraft,
   type MutationDraftApplyRequest,
@@ -68,6 +69,33 @@ const analyzeDraft = (draft: MutationDraft) =>
 
 const hasIncludedChanges = (draft: MutationDraft): boolean =>
   draft.changeOrder.some((changeId) => draft.changes[changeId]?.included);
+
+const applyWithSafetyConfirmation = async (
+  payload: Parameters<typeof applyResultMutations>[0],
+): Promise<ResultMutationClientResult<ApplyResult>> => {
+  const firstAttempt = await applyResultMutations(payload);
+  if (
+    firstAttempt.kind !== "error" ||
+    firstAttempt.error.kind !== "policyNeedsConfirmation"
+  ) {
+    return firstAttempt;
+  }
+  const connection = useAppStore
+    .getState()
+    .connections.find((candidate) => candidate.id === payload.connectionId);
+  if (!connection) {
+    return { kind: "error", error: { kind: "connectionLost" } };
+  }
+  const confirmed = await requestSafetyConfirmation({
+    connection,
+    subject: {
+      kind: "statements",
+      statements: firstAttempt.error.statements,
+    },
+  });
+  if (!confirmed) return { kind: "cancelled" };
+  return applyResultMutations({ ...payload, confirmed: true });
+};
 
 const statusForDraft = (
   draft: MutationDraft | undefined,
@@ -371,7 +399,7 @@ export function MutationReviewPanel({
       }
       const retryRequest = retryApplyAfterRecovery(draftHandle(current));
       if (!retryRequest) return;
-      const retry = await applyResultMutations({
+      const retry = await applyWithSafetyConfirmation({
         connectionId: current.connectionId,
         tabId: current.owner.tabId,
         analysisId: retryRequest.analysisId,
@@ -389,7 +417,7 @@ export function MutationReviewPanel({
     if (!current || current.generation !== request.generation) return;
     setCancelRequested(false);
     setAnnouncement("Applying included changes in one transaction.");
-    const result = await applyResultMutations({
+    const result = await applyWithSafetyConfirmation({
       connectionId: current.connectionId,
       tabId: current.owner.tabId,
       analysisId: request.analysisId,

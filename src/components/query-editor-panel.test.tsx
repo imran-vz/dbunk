@@ -1183,6 +1183,25 @@ describe("QueryEditorPanel onMount branches", () => {
 });
 
 describe("QueryEditorPanel result mutations", () => {
+  it("disables result edits for a read-only connection", () => {
+    seedPersistentQuery();
+    useAppStore.setState({
+      connections: [{ ...pgConnection, readOnly: true }],
+    });
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+      "Local Postgres is a read-only connection",
+    );
+    const cell = screen.getByRole("button", { name: "Ada" });
+    expect(cell.getAttribute("title")).toContain(
+      "Edit the connection to unlock writes",
+    );
+    fireEvent.click(cell);
+    expect(screen.queryByDisplayValue("Ada")).toBeNull();
+  });
+
   it("analyzes lazily from the exact execution SQL, gates columns, and preserves NULLs", async () => {
     seedPersistentQuery();
     mockedInvoke.mockImplementation((command) =>

@@ -5,7 +5,7 @@ import {
   IconTable,
   IconTerminal2,
 } from "@tabler/icons-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Segmented } from "@/components/ui/segmented";
 import { ObjectTabCloseButton } from "@/components/workbench/dock";
@@ -30,6 +30,7 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
     end: false,
   });
   const {
+    connections,
     workspaceTabs,
     activeTabId,
     setActiveTabId,
@@ -38,6 +39,15 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
   } = useAppStore();
   const workspaceTabCount = workspaceTabs.length;
   const hasWorkspaceTabs = workspaceTabCount > 0;
+  const productionConnectionIds = useMemo(
+    () =>
+      new Set(
+        connections
+          .filter((connection) => connection.environment === "production")
+          .map((connection) => connection.id),
+      ),
+    [connections],
+  );
 
   const updateScrollHints = useCallback(() => {
     const scroller = tabsScrollerRef.current;
@@ -107,6 +117,7 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
               key={tab.id}
               tab={tab}
               isActive={tab.id === activeTabId}
+              isProduction={productionConnectionIds.has(tab.connectionId)}
               onActivate={() => setActiveTabId(tab.id)}
               onClose={() => {
                 const status =
@@ -150,11 +161,13 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
 function ObjectTab({
   tab,
   isActive,
+  isProduction,
   onActivate,
   onClose,
 }: {
   tab: WorkspaceTab;
   isActive: boolean;
+  isProduction: boolean;
   onActivate: () => void;
   onClose: () => void;
 }) {
@@ -177,6 +190,7 @@ function ObjectTab({
         isActive
           ? "border-b-2 border-b-accent bg-surface-panel text-foreground"
           : "border-b-2 border-b-transparent text-text-muted hover:text-foreground",
+        isActive && isProduction && "border-l-2 border-l-danger",
       )}
     >
       <TabIcon className="size-3.5 text-text-disabled" />

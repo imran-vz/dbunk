@@ -48,6 +48,10 @@ import {
   RedisAdvancedFields,
   RedisDbNumberField,
 } from "@/components/connection-form/redis-fields";
+import {
+  EnvironmentField,
+  SafetyFields,
+} from "@/components/connection-form/safety-fields";
 import { SqliteFields } from "@/components/connection-form/sqlite-fields";
 import { TunnelFields } from "@/components/connection-form/tunnel-fields";
 import {
@@ -105,7 +109,10 @@ export function ConnectionForm({
       }}
     >
       <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-auto p-4">
-        <NameField form={form} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NameField form={form} />
+          <EnvironmentField form={form} />
+        </div>
         <EnginePickerField
           form={form}
           formMode={formMode}
@@ -133,7 +140,14 @@ export function ConnectionForm({
             policy={policy}
           />
         ) : (
-          <SqliteFields />
+          <>
+            <SqliteFields />
+            <AdvancedToggle
+              open={advancedOpen}
+              onToggle={() => setAdvancedOpen((prev) => !prev)}
+            />
+            {advancedOpen ? <SafetyFields form={form} /> : null}
+          </>
         )}
       </div>
 
@@ -203,6 +217,7 @@ function HostAuthSection({
       <AdvancedToggle open={advancedOpen} onToggle={onToggleAdvanced} />
       {advancedOpen ? (
         <>
+          <SafetyFields form={form} showReadOnly={!isRedis} />
           <RoleField form={form} />
           {isClickHouse ? <ClickHouseFields form={form} /> : null}
           {isRedis ? <RedisAdvancedFields form={form} /> : null}

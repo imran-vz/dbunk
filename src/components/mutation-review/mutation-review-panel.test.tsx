@@ -30,6 +30,10 @@ import {
   cancelResultMutation,
   previewResultMutations,
 } from "@/lib/result-mutation-client";
+import {
+  getSafetyConfirmation,
+  resolveSafetyConfirmation,
+} from "@/lib/safety-confirmation";
 import { type MutationDraftScope, useAppStore } from "@/lib/store";
 
 const mockedAnalyze = vi.mocked(analyzeResultSet);
@@ -211,6 +215,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resolveSafetyConfirmation(false);
   expect(loggedText()).not.toContain(SECRET_SQL);
   expect(loggedText()).not.toContain(SECRET_VALUE);
   cleanup();
@@ -218,6 +223,79 @@ afterEach(() => {
 });
 
 describe("MutationReviewPanel", () => {
+  it("confirms a typed policy refusal before retrying apply", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Primary",
+          database: "app",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "prod.internal",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "10 ms",
+          ssl: true,
+          environment: "production",
+          safeMode: "strict",
+          readOnly: false,
+        },
+      ],
+    });
+    mockedApply
+      .mockResolvedValueOnce({
+        kind: "error",
+        error: {
+          kind: "policyNeedsConfirmation",
+          statements: [
+            {
+              index: 0,
+              class: "dml",
+              unbounded: false,
+              destructive: false,
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ kind: "ok", value: applySuccess() });
+    const scope = openDraft();
+    renderPanel(scope);
+    await screen.findByText(/Generated DML/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply 2 changes" }));
+    await waitFor(() => expect(getSafetyConfirmation()).not.toBeNull());
+    const firstPayload = mockedApply.mock.calls[0]?.[0];
+    expect(firstPayload && "confirmed" in firstPayload).toBe(false);
+    await act(async () => resolveSafetyConfirmation(true));
+
+    await waitFor(() => expect(mockedApply).toHaveBeenCalledTimes(2));
+    expect(mockedApply.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ confirmed: true }),
+    );
+    expect(await screen.findByText(/Rows affected: 1, 1/)).toBeTruthy();
+  });
+
+  it("surfaces typed policy blocks without retrying apply", async () => {
+    mockedApply.mockResolvedValueOnce({
+      kind: "error",
+      error: { kind: "policyBlocked", reason: "Read-only connection." },
+    });
+    const scope = openDraft();
+    renderPanel(scope);
+    await screen.findByText(/Generated DML/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply 2 changes" }));
+
+    expect(
+      await screen.findByText(/Edit the connection to unlock writes/),
+    ).toBeTruthy();
+    expect(mockedApply).toHaveBeenCalledTimes(1);
+    expect(getSafetyConfirmation()).toBeNull();
+  });
+
   it("labels off-page updates and deletes", async () => {
     const scope = openDraft({ offPage: true });
     useAppStore.getState().stageMutationDraftDelete(scope, {
