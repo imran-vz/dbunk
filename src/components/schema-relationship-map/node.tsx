@@ -76,7 +76,7 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
       data-external={data.isExternal ? "true" : "false"}
       data-dimmed={data.isDimmed ? "true" : "false"}
       className={cn(
-        "group/schema-node w-[220px] overflow-hidden rounded-md border bg-card text-[0.625rem] text-card-foreground shadow-sm ring-1 ring-background/80 transition-opacity",
+        "group/schema-node w-[220px] overflow-hidden rounded-md border bg-card text-2xs text-card-foreground shadow-sm ring-1 ring-background/80 transition-opacity",
         data.isActive
           ? "border-primary shadow-primary/20"
           : data.isExternal
@@ -87,7 +87,7 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
     >
       <div
         className={cn(
-          "flex items-center gap-1.5 border-b px-2 py-1 text-[0.68rem] font-medium",
+          "flex items-center gap-1.5 border-b px-2 py-1 text-2xs font-medium",
           data.isExternal
             ? "border-warning/40 bg-warning/10"
             : "border-primary/70 bg-muted/70",
@@ -114,7 +114,7 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
           <span
             data-testid={`junction-table-indicator-${data.tableId}`}
             title="Junction Table Card - this table joins a many-to-many relationship"
-            className="shrink-0 rounded-sm border border-primary/40 bg-primary/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-primary"
+            className="shrink-0 rounded-sm border border-primary/40 bg-primary/15 px-1 py-px text-2xs uppercase tracking-wide text-primary"
           >
             M:N
           </span>
@@ -123,14 +123,14 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
           <span
             data-testid={`trigger-indicator-table-${data.tableId}`}
             title={triggerSummary(data.triggers)}
-            className="flex shrink-0 items-center gap-0.5 rounded-sm border border-warning/40 bg-warning/10 px-1 py-px text-[0.5rem] text-warning"
+            className="flex shrink-0 items-center gap-0.5 rounded-sm border border-warning/40 bg-warning/10 px-1 py-px text-2xs text-warning"
           >
             <IconBolt className="size-2.5" aria-hidden />
             {data.triggers.length}
           </span>
         ) : null}
         {data.isExternal ? (
-          <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/15 px-1 py-px text-[0.5rem] uppercase tracking-wide text-warning">
+          <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/15 px-1 py-px text-2xs uppercase tracking-wide text-warning">
             external
           </span>
         ) : null}
@@ -186,7 +186,7 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
                 ) : null}
                 <span
                   className={cn(
-                    "flex items-center gap-1 text-[0.56rem] leading-none text-primary",
+                    "flex items-center gap-1 text-2xs leading-none text-primary",
                     !glyph && "text-transparent",
                   )}
                 >
@@ -217,7 +217,7 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
                   </span>
                   {data.prefs.showComments && column.comment ? (
                     <span
-                      className="block truncate text-[0.56rem] text-muted-foreground"
+                      className="block truncate text-2xs text-muted-foreground"
                       title={column.comment}
                     >
                       {column.comment}
@@ -225,7 +225,7 @@ export function SchemaTableNode({ data }: NodeProps<Node<SchemaMapNodeData>>) {
                   ) : null}
                 </span>
                 {data.prefs.showNulls ? (
-                  <span className="rounded-sm border border-border/70 px-1 text-[0.52rem] leading-4 text-muted-foreground">
+                  <span className="rounded-sm border border-border/70 px-1 text-2xs leading-4 text-muted-foreground">
                     {column.nullable ? "?" : "NN"}
                   </span>
                 ) : null}

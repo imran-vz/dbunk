@@ -149,7 +149,7 @@ export function JsonValueView({ connectionId, keyName }: JsonValueViewProps) {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 onClick={() => {
                   setDraft(text);
                   setEditing(true);
@@ -161,7 +161,7 @@ export function JsonValueView({ connectionId, keyName }: JsonValueViewProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 text-[0.65rem] text-destructive hover:text-destructive"
+                  className="h-7 px-2 text-2xs text-danger hover:text-danger"
                   onClick={() => {
                     void handleDelete();
                   }}
@@ -176,7 +176,7 @@ export function JsonValueView({ connectionId, keyName }: JsonValueViewProps) {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving}
                 onClick={() => {
                   setEditing(false);
@@ -187,7 +187,7 @@ export function JsonValueView({ connectionId, keyName }: JsonValueViewProps) {
               </Button>
               <Button
                 size="sm"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving || draft === text}
                 onClick={() => {
                   void handleSave();
@@ -200,7 +200,7 @@ export function JsonValueView({ connectionId, keyName }: JsonValueViewProps) {
         </div>
       </form>
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       ) : null}

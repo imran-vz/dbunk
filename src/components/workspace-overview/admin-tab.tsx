@@ -171,7 +171,7 @@ export function AdminTab({ connection }: { connection: Connection }) {
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-md border border-border-subtle bg-surface-panel px-3 py-2">
-      <div className="text-[0.625rem] uppercase text-text-muted">{label}</div>
+      <div className="text-2xs uppercase text-text-muted">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
     </div>
   );
@@ -303,7 +303,7 @@ function AdminTable({
   return (
     <div className="overflow-auto rounded-md border border-border-subtle">
       <table className="w-full text-left text-xs">
-        <thead className="bg-surface-panel text-[0.625rem] uppercase text-text-muted">
+        <thead className="bg-surface-panel text-2xs uppercase text-text-muted">
           <tr>
             {columns.map((column) => (
               <th key={column} className="px-2 py-1">

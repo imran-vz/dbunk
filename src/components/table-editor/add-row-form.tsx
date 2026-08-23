@@ -122,9 +122,7 @@ function AddRowField({
     <div className="flex flex-col gap-1 rounded-sm border border-border-subtle bg-surface-app px-2 py-1.5">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium">{column.name}</span>
-        <span className="text-[0.625rem] text-text-muted">
-          {column.dataType}
-        </span>
+        <span className="text-2xs text-text-muted">{column.dataType}</span>
       </div>
       <Input
         data-testid={`add-row-value-${column.name}`}
@@ -134,7 +132,7 @@ function AddRowField({
         disabled={field.mode !== "value"}
         onChange={(e) => onValueChange(e.target.value)}
       />
-      <div className="flex items-center gap-3 text-[0.625rem] text-text-muted">
+      <div className="flex items-center gap-3 text-2xs text-text-muted">
         <label className="flex items-center gap-1">
           <input
             type="radio"

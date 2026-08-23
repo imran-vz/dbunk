@@ -18,7 +18,7 @@ import appCss from "../styles.css?url";
  * regardless of the stored mode, matching `applyTheme` runtime
  * behaviour.
  */
-const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem("dbunk.theme");var p=localStorage.getItem("dbunk.theme.preset");var presetDark=p==="dracula";var dark=presetDark||t==="dark"||((t===null||t==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;if(dark)r.classList.add("dark");if(p&&p!=="default")r.setAttribute("data-theme",p);}catch(e){}})();`;
+const THEME_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem("dbunk.theme");var p=localStorage.getItem("dbunk.theme.preset");var presetDark=p==="dracula";var dark=presetDark||t==="dark"||((t===null||t==="system")&&window.matchMedia("(prefers-color-scheme: dark)").matches);var r=document.documentElement;if(dark)r.classList.add("dark");if(p&&p!=="default")r.setAttribute("data-theme",p);var d=localStorage.getItem("dbunk.density");if(d==="compact"||d==="comfortable")r.setAttribute("data-density",d);}catch(e){}})();`;
 
 export const Route = createRootRoute({
   head: () => ({

@@ -120,7 +120,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                   data-testid="query-history-entry"
                 >
                   <div className="flex w-full min-w-0 items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] text-foreground">
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
                       {truncateSql(entry.sql, 48)}
                     </span>
                     {isCurrent ? (
@@ -130,7 +130,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                       {entry.status === "success" ? "OK" : "Error"}
                     </span>
                   </div>
-                  <div className="flex w-full min-w-0 items-center gap-2 text-[0.625rem] text-text-muted">
+                  <div className="flex w-full min-w-0 items-center gap-2 text-2xs text-text-muted">
                     <span className="min-w-0 flex-1 truncate">
                       {entry.connectionName || entry.connectionId}
                     </span>
@@ -170,7 +170,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
         <CardContent className="flex flex-col gap-1.5 text-xs">
           {isCreatingNew ? (
             <div className="flex flex-col gap-1.5 rounded-md border border-accent/30 bg-surface-panel-elevated p-2">
-              <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+              <div className="text-2xs font-medium uppercase tracking-[0.12em] text-text-muted">
                 Save current query
               </div>
               <Input
@@ -244,14 +244,14 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
                 className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[0.75rem] font-medium text-foreground">
+                  <span className="truncate text-xs font-medium text-foreground">
                     {saved.name}
                   </span>
-                  <Badge variant="secondary" className="h-4 text-[0.5625rem]">
+                  <Badge variant="secondary" className="h-4 text-2xs">
                     SQL
                   </Badge>
                 </div>
-                <div className="truncate font-mono text-[0.625rem] text-text-muted">
+                <div className="truncate font-mono text-2xs text-text-muted">
                   {truncateSql(saved.body, 56)}
                 </div>
               </button>

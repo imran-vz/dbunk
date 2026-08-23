@@ -63,6 +63,8 @@ P0–P2 are strictly sequential. P4→P5→P6 are sequential. P7/P8/P9 can inter
 
 ## Phase 1 — Foundation tokens
 
+**Status: implemented** (branch `ui-refresh-p1`). Notes: density is localStorage-backed via `src/lib/density.ts` until P8 moves UI prefs into SQLite; in P1 only the data grid consumes `--row-grid` (P2 wires controls); the `destructive` Button variant name stays (component variant, not a color token) while all app-level `*-destructive` color classes migrated to `danger`; `border-subtle`/`border-strong` names kept with new rgba two-tier values (full two-tier re-audit lands with P2 components).
+
 **Why:** every later phase expresses itself in these tokens; landing them first prevents re-touching files twice.
 
 **Changes** (`src/styles.css` `@theme`, `src/lib/theme.ts`, new token structure)

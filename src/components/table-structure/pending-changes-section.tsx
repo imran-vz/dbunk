@@ -146,7 +146,7 @@ function ErrorBanner({ message }: { message: string }) {
     <div
       data-testid="structure-commit-error"
       role="alert"
-      className="flex items-center gap-2 border-t border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+      className="flex items-center gap-2 border-t border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
     >
       <IconAlertTriangle className="size-3.5" />
       <span>Commit failed: {message}</span>

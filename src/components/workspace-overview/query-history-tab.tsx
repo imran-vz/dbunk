@@ -117,7 +117,7 @@ export function QueryHistoryTab({
           />
         </div>
 
-        <div className="text-[0.625rem] text-text-muted">
+        <div className="text-2xs text-text-muted">
           Showing {filtered.length} of {totalForScope}
           {showAll ? " entries across all connections" : " entries"}.
         </div>
@@ -160,7 +160,7 @@ function StatusFilterChip({
       type="button"
       onClick={() => onSelect(value)}
       className={cn(
-        "rounded-md border px-2.5 py-1 text-[0.6875rem] font-medium transition-colors",
+        "rounded-md border px-2.5 py-1 text-2xs font-medium transition-colors",
         isActive
           ? "border-accent/40 bg-accent/10 text-accent-hover"
           : "border-border-subtle text-text-muted hover:bg-surface-panel hover:text-foreground",
@@ -208,10 +208,10 @@ function HistoryRow({
         <IconTerminal2 className="size-3.5" />
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="truncate font-mono text-[0.75rem] text-foreground">
+        <div className="truncate font-mono text-xs text-foreground">
           {entry.sql}
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[0.625rem] text-text-muted">
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-2xs text-text-muted">
           <IconClock className="size-2.5 shrink-0" />
           <span className="shrink-0 whitespace-nowrap">{entry.startedAt}</span>
           <span className="shrink-0">·</span>
@@ -226,7 +226,7 @@ function HistoryRow({
           ) : null}
         </div>
       </div>
-      <span className="shrink-0 rounded-full bg-surface-panel px-2 py-0.5 text-[0.625rem] font-medium tabular-nums text-text-muted">
+      <span className="shrink-0 rounded-full bg-surface-panel px-2 py-0.5 text-2xs font-medium tabular-nums text-text-muted">
         {entry.runtimeMs} ms
       </span>
       <div className="flex shrink-0 items-center gap-1">

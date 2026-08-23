@@ -34,7 +34,7 @@ export function SchemaMapSubTab({
       className="flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2">
-        <span className="text-[0.6875rem] font-medium text-text-muted">
+        <span className="text-2xs font-medium text-text-muted">
           Direct relationships of {schema}.{tableName}
         </span>
         <div className="ml-auto flex items-center gap-2">

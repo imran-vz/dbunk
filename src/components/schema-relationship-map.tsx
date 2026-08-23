@@ -558,7 +558,7 @@ export const SchemaRelationshipMap = forwardRef<
       <div
         data-testid="schema-flow-error"
         role="alert"
-        className="flex h-full items-center justify-center border border-destructive/40 bg-destructive/10 px-2 py-1 text-[0.65rem] text-destructive"
+        className="flex h-full items-center justify-center border border-danger/40 bg-danger/10 px-2 py-1 text-2xs text-danger"
       >
         Failed to load relationships: {errorMessage}
       </div>
@@ -588,7 +588,7 @@ export const SchemaRelationshipMap = forwardRef<
         <div
           data-testid="schema-flow-partial-error"
           role="alert"
-          className="absolute bottom-2 left-2 right-2 z-10 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[0.65rem] text-destructive shadow-sm"
+          className="absolute bottom-2 left-2 right-2 z-10 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-2xs text-danger shadow-sm"
         >
           Some relationships failed to load: {errorMessage}
         </div>
@@ -596,7 +596,7 @@ export const SchemaRelationshipMap = forwardRef<
       {noFkBanner ? (
         <div
           data-testid="schema-flow-clickhouse-banner"
-          className="absolute left-2 right-2 top-2 z-10 rounded-md border border-border/60 bg-background/90 px-3 py-1.5 text-[0.65rem] text-muted-foreground shadow-sm"
+          className="absolute left-2 right-2 top-2 z-10 rounded-md border border-border/60 bg-background/90 px-3 py-1.5 text-2xs text-muted-foreground shadow-sm"
         >
           {noFkBanner}
         </div>

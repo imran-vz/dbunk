@@ -113,7 +113,7 @@ function DefaultCompactHeader({
       : IconLayoutSidebarRightCollapse;
   return (
     <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-2">
-      <span className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-text-muted">
+      <span className="truncate text-2xs font-semibold uppercase tracking-[0.12em] text-text-muted">
         {title}
       </span>
       <div className="flex items-center gap-0.5">

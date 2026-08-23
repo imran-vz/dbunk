@@ -33,7 +33,7 @@ export function ClickHousePhysicalLayout({
 function LayoutRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1 px-3 py-2 text-xs">
-      <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+      <span className="text-2xs uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <span className="font-mono text-foreground">{value}</span>
@@ -69,7 +69,7 @@ export function PrimaryKeySection({
             </span>
           </div>
           {isClickHouse ? (
-            <p className="text-[0.6875rem] text-muted-foreground">
+            <p className="text-2xs text-muted-foreground">
               ClickHouse uses the sorting key as a sparse primary index. It does
               not enforce uniqueness.
             </p>
@@ -150,7 +150,7 @@ function ForeignKeyRow({ fk }: { fk: ForeignKeyInfo }) {
         ({fk.referencedColumns.join(", ")})
       </span>
       {fk.onUpdate || fk.onDelete ? (
-        <span className="ml-auto text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+        <span className="ml-auto text-2xs uppercase tracking-wide text-muted-foreground">
           {fk.onUpdate ? `ON UPDATE ${fk.onUpdate}` : null}
           {fk.onUpdate && fk.onDelete ? " · " : ""}
           {fk.onDelete ? `ON DELETE ${fk.onDelete}` : null}
@@ -193,12 +193,12 @@ function IndexRow({ index }: { index: IndexInfo }) {
   return (
     <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
       {index.isUnique ? (
-        <Badge variant="outline" className="text-[0.625rem] uppercase">
+        <Badge variant="outline" className="text-2xs uppercase">
           unique
         </Badge>
       ) : null}
       {index.isPrimary ? (
-        <Badge variant="secondary" className="text-[0.625rem] uppercase">
+        <Badge variant="secondary" className="text-2xs uppercase">
           primary
         </Badge>
       ) : null}
@@ -207,7 +207,7 @@ function IndexRow({ index }: { index: IndexInfo }) {
         ({index.columns.join(", ")})
       </span>
       {index.method ? (
-        <span className="ml-auto text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+        <span className="ml-auto text-2xs uppercase tracking-wide text-muted-foreground">
           using {index.method}
         </span>
       ) : null}
@@ -245,7 +245,7 @@ function ConstraintRow({ constraint }: { constraint: ConstraintInfo }) {
   return (
     <div className="flex flex-col gap-1 px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
-        <Badge variant="outline" className="text-[0.625rem] uppercase">
+        <Badge variant="outline" className="text-2xs uppercase">
           {constraint.kind}
         </Badge>
         <span className="font-mono text-foreground">{constraint.name}</span>

@@ -129,7 +129,7 @@ export function Pagination({
         <IconChevronsRight className="size-3.5" />
       </Button>
       {countApproximate ? (
-        <span className="pl-1 text-[10px] text-text-muted">approx</span>
+        <span className="pl-1 text-2xs text-text-muted">approx</span>
       ) : null}
     </div>
   );

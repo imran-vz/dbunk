@@ -61,7 +61,7 @@ export function WorkbenchDock({
           type="button"
           onClick={() => setDockOpen(true)}
           className={cn(
-            "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
+            "flex items-center gap-1.5 rounded px-2.5 py-1 text-2xs font-medium transition-colors",
             dockOpen
               ? "bg-accent-subdued text-accent"
               : "text-text-muted hover:text-foreground",
@@ -74,7 +74,7 @@ export function WorkbenchDock({
           type="button"
           aria-label={dockOpen ? "Collapse dock" : "Expand dock"}
           onClick={() => setDockOpen((open) => !open)}
-          className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] text-text-muted hover:text-foreground"
+          className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-2xs text-text-muted hover:text-foreground"
         >
           {dockOpen ? (
             <IconChevronDown className="size-3.5" />

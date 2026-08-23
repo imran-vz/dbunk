@@ -9,7 +9,7 @@ export function KeyValue({
 }) {
   return (
     <div className="min-w-0">
-      <div className="text-[0.625rem] font-medium uppercase tracking-[0.12em] text-text-muted">
+      <div className="text-2xs font-medium uppercase tracking-[0.12em] text-text-muted">
         {label}
       </div>
       <div className="mt-0.5 truncate text-foreground">{value}</div>

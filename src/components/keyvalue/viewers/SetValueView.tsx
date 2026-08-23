@@ -123,7 +123,7 @@ export function SetValueView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
-      <div className="flex items-center gap-2 text-[0.65rem] text-text-muted">
+      <div className="flex items-center gap-2 text-2xs text-text-muted">
         <Input
           placeholder={
             mode === "scan"
@@ -146,7 +146,7 @@ export function SetValueView({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-[0.65rem]"
+              className="h-7 px-2 text-2xs"
               onClick={() => setEditing(true)}
             >
               Edit
@@ -156,7 +156,7 @@ export function SetValueView({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving}
                 onClick={() => {
                   setEditing(false);
@@ -167,7 +167,7 @@ export function SetValueView({
               </Button>
               <Button
                 size="sm"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving || !dirty}
                 onClick={() => {
                   void handleSave();
@@ -180,7 +180,7 @@ export function SetValueView({
         </div>
       </div>
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       ) : null}
@@ -208,7 +208,7 @@ export function SetValueView({
                         return next;
                       })
                     }
-                    className="text-[0.65rem] text-destructive hover:underline"
+                    className="text-2xs text-danger hover:underline"
                   >
                     {isRemoved ? "undo" : "remove"}
                   </button>
@@ -230,7 +230,7 @@ export function SetValueView({
                         prev.filter((item) => item !== value),
                       )
                     }
-                    className="text-[0.65rem] text-destructive hover:underline"
+                    className="text-2xs text-danger hover:underline"
                   >
                     remove
                   </button>
@@ -240,7 +240,7 @@ export function SetValueView({
         </ul>
       </div>
       {editing ? (
-        <div className="flex items-center gap-2 text-[0.65rem]">
+        <div className="flex items-center gap-2 text-2xs">
           <Input
             value={newAdd}
             onChange={(event) => setNewAdd(event.target.value)}
@@ -250,7 +250,7 @@ export function SetValueView({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-[0.65rem]"
+            className="h-7 px-2 text-2xs"
             disabled={!newAdd}
             onClick={() => {
               if (!newAdd) return;
@@ -264,7 +264,7 @@ export function SetValueView({
           </Button>
         </div>
       ) : null}
-      <div className="flex items-center justify-between text-[0.65rem] text-text-muted">
+      <div className="flex items-center justify-between text-2xs text-text-muted">
         <span>
           {mode === "scan"
             ? "Filtering all members (server-side SCAN)"
@@ -274,7 +274,7 @@ export function SetValueView({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[0.65rem]"
+            className="h-6 px-2 text-2xs"
             onClick={() => {
               void loadMore();
             }}

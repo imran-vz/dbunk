@@ -169,11 +169,11 @@ export function StreamValueView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-[0.65rem] text-text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-2xs text-text-muted">
         <Button
           variant={reverse ? "default" : "outline"}
           size="sm"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => setReverse((prev) => !prev)}
         >
           {reverse ? "Newest first" : "Oldest first"}
@@ -190,7 +190,7 @@ export function StreamValueView({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-[0.65rem]"
+              className="h-7 px-2 text-2xs"
               onClick={() => setEditing(true)}
             >
               Edit
@@ -200,7 +200,7 @@ export function StreamValueView({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving}
                 onClick={() => {
                   setEditing(false);
@@ -211,7 +211,7 @@ export function StreamValueView({
               </Button>
               <Button
                 size="sm"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving || !dirty}
                 onClick={() => {
                   void handleSave();
@@ -224,13 +224,13 @@ export function StreamValueView({
         </div>
       </div>
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       ) : null}
       <div className="flex-1 overflow-auto rounded-md border border-border-subtle">
         <table className="min-w-full divide-y divide-border-subtle font-mono text-xs">
-          <thead className="bg-surface-panel-elevated text-[0.65rem] uppercase text-text-muted">
+          <thead className="bg-surface-panel-elevated text-2xs uppercase text-text-muted">
             <tr>
               <th className="px-3 py-1.5 text-left">ID</th>
               <th className="px-3 py-1.5 text-left">Fields</th>
@@ -279,7 +279,7 @@ export function StreamValueView({
                             return next;
                           })
                         }
-                        className="text-[0.65rem] text-destructive hover:underline"
+                        className="text-2xs text-danger hover:underline"
                       >
                         {isDeleted ? "undo" : "delete"}
                       </button>
@@ -292,7 +292,7 @@ export function StreamValueView({
         </table>
       </div>
       {editing ? (
-        <div className="flex flex-col gap-2 rounded-md border border-accent/30 bg-accent/5 p-2 text-[0.65rem]">
+        <div className="flex flex-col gap-2 rounded-md border border-accent/30 bg-accent/5 p-2 text-2xs">
           <div className="font-semibold text-foreground">Append entries</div>
           {pendingAppends.map((entry, index) => (
             <div
@@ -314,7 +314,7 @@ export function StreamValueView({
                 ))}
                 <button
                   type="button"
-                  className="ml-auto text-destructive hover:underline"
+                  className="ml-auto text-danger hover:underline"
                   onClick={() =>
                     setPendingAppends((prev) =>
                       prev.filter((_, i) => i !== index),
@@ -348,7 +348,7 @@ export function StreamValueView({
           </div>
         </div>
       ) : null}
-      <div className="flex items-center justify-between text-[0.65rem]">
+      <div className="flex items-center justify-between text-2xs">
         <button
           type="button"
           className="text-text-muted hover:underline"
@@ -359,7 +359,7 @@ export function StreamValueView({
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           disabled={loading || entries.length === 0 || editing}
           onClick={() => {
             void loadMore();
@@ -405,7 +405,7 @@ function DraftEditor({
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto h-6 px-2 text-[0.65rem]"
+          className="ml-auto h-6 px-2 text-2xs"
           onClick={onAdd}
         >
           Stage append
@@ -444,7 +444,7 @@ function DraftEditor({
             {draft.fields.length > 1 ? (
               <button
                 type="button"
-                className="text-[0.65rem] text-destructive hover:underline"
+                className="text-2xs text-danger hover:underline"
                 onClick={() =>
                   onChange({
                     ...draft,
@@ -459,7 +459,7 @@ function DraftEditor({
         ))}
         <button
           type="button"
-          className="self-start text-[0.65rem] text-primary hover:underline"
+          className="self-start text-2xs text-primary hover:underline"
           onClick={() =>
             onChange({ ...draft, fields: [...draft.fields, ["", ""]] })
           }
@@ -532,7 +532,7 @@ function ConsumerGroupsPanel({
   };
 
   return (
-    <div className="rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2 text-[0.65rem]">
+    <div className="rounded-md border border-border-subtle bg-surface-panel-elevated/40 p-2 text-2xs">
       <div className="flex items-center gap-2">
         <span className="font-semibold text-foreground">Consumer groups</span>
         {loading ? <span className="text-text-muted">loading…</span> : null}
@@ -564,7 +564,7 @@ function ConsumerGroupsPanel({
         <Button
           size="sm"
           variant="outline"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           disabled={creating || !newGroupName.trim() || !newGroupStartId.trim()}
           onClick={() => {
             void handleCreate();
@@ -574,7 +574,7 @@ function ConsumerGroupsPanel({
         </Button>
       </div>
       {error ? (
-        <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive">
+        <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-danger">
           {error}
         </div>
       ) : groups.length === 0 ? (
@@ -584,7 +584,7 @@ function ConsumerGroupsPanel({
       ) : (
         <>
           <table className="mt-2 min-w-full divide-y divide-border-subtle font-mono">
-            <thead className="text-[0.6rem] uppercase text-text-muted">
+            <thead className="text-2xs uppercase text-text-muted">
               <tr>
                 <th className="px-2 py-1 text-left">Group</th>
                 <th className="px-2 py-1 text-right">Consumers</th>
@@ -608,7 +608,7 @@ function ConsumerGroupsPanel({
                       onClick={() => {
                         void handleDestroy(group.name);
                       }}
-                      className="text-destructive hover:underline"
+                      className="text-danger hover:underline"
                     >
                       destroy
                     </button>
@@ -619,7 +619,7 @@ function ConsumerGroupsPanel({
           </table>
           {consumers.length > 0 ? (
             <table className="mt-2 min-w-full divide-y divide-border-subtle font-mono">
-              <thead className="text-[0.6rem] uppercase text-text-muted">
+              <thead className="text-2xs uppercase text-text-muted">
                 <tr>
                   <th className="px-2 py-1 text-left">Group</th>
                   <th className="px-2 py-1 text-left">Consumer</th>

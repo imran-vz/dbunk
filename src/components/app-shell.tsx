@@ -18,7 +18,6 @@ import { RelationalWorkbench } from "@/components/workbench/relational-workbench
 import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
 import { useAppStore } from "@/lib/store";
 import { applyTheme, subscribeSystem } from "@/lib/theme";
-import { useContainerWidth } from "@/lib/use-resizable-width";
 import { cn } from "@/lib/utils";
 
 /**
@@ -68,7 +67,6 @@ function useForegroundHealthCheck(
 
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
-  const [shellBodyRef, shellBodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const {
     isWindowFullscreen,
@@ -94,9 +92,6 @@ export function AppShell() {
   } = useAppStore();
   const themeMode = appSettings?.theme ?? "system";
   const themePreset = appSettings?.themePreset ?? "default";
-
-  const density =
-    shellBodyWidth > 0 && shellBodyWidth < 900 ? "compact" : "cozy";
 
   const activeConnection = connections.find(
     (connection) => connection.id === activeConnectionId,
@@ -217,7 +212,6 @@ export function AppShell() {
 
   return (
     <div
-      data-density={density}
       data-testid="app-shell"
       data-window-viewport-zoom={
         windowViewportZoom
@@ -232,10 +226,7 @@ export function AppShell() {
         windowViewportZoom ? "top-0 left-0" : "inset-0",
       )}
     >
-      <div
-        ref={shellBodyRef}
-        className="relative flex min-h-0 flex-1 overflow-hidden"
-      >
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {activeView === "settings" ||
         !isKeyValueConnection(activeConnection) ? (
           <RelationalWorkbench

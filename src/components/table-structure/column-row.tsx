@@ -65,10 +65,7 @@ function NameCell({ column }: { column: ColumnInfo }) {
       </span>
       <span className="truncate font-mono text-foreground">{column.name}</span>
       {column.isPrimaryKey ? (
-        <Badge
-          variant="secondary"
-          className="gap-1 px-1.5 text-[0.625rem] uppercase"
-        >
+        <Badge variant="secondary" className="gap-1 px-1.5 text-2xs uppercase">
           <IconKey className="size-3" /> PK
         </Badge>
       ) : null}
@@ -96,7 +93,7 @@ function TypeCell({
           variant="ghost"
           size="sm"
           className={cn(
-            "px-1.5 text-[0.625rem] uppercase tracking-wide",
+            "px-1.5 text-2xs uppercase tracking-wide",
             column.nullable ? "text-muted-foreground" : "text-rose-400",
           )}
           onClick={onToggleNullable}
@@ -106,7 +103,7 @@ function TypeCell({
       ) : (
         <span
           className={cn(
-            "text-[0.625rem] uppercase tracking-wide",
+            "text-2xs uppercase tracking-wide",
             column.nullable ? "text-muted-foreground" : "text-rose-400",
           )}
         >
@@ -289,7 +286,7 @@ function EditField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[0.625rem] uppercase tracking-wide text-muted-foreground">
+      <span className="text-2xs uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <div className="flex items-center gap-1">{children}</div>

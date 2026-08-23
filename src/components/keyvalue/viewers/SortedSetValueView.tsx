@@ -116,7 +116,7 @@ export function SortedSetValueView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-[0.65rem] text-text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-2xs text-text-muted">
         <div className="inline-flex rounded-md border border-border-subtle">
           <button
             type="button"
@@ -124,7 +124,7 @@ export function SortedSetValueView({
               setMode("rank");
               setPage(0);
             }}
-            className={`px-2 py-0.5 text-[0.65rem] ${
+            className={`px-2 py-0.5 text-2xs ${
               mode === "rank"
                 ? "bg-primary/15 text-primary"
                 : "text-text-muted hover:text-foreground"
@@ -138,7 +138,7 @@ export function SortedSetValueView({
               setMode("byscore");
               setPage(0);
             }}
-            className={`border-l border-border-subtle px-2 py-0.5 text-[0.65rem] ${
+            className={`border-l border-border-subtle px-2 py-0.5 text-2xs ${
               mode === "byscore"
                 ? "bg-primary/15 text-primary"
                 : "text-text-muted hover:text-foreground"
@@ -150,7 +150,7 @@ export function SortedSetValueView({
         <Button
           variant={reverse ? "default" : "outline"}
           size="sm"
-          className="h-6 px-2 text-[0.65rem]"
+          className="h-6 px-2 text-2xs"
           onClick={() => setReverse((prev) => !prev)}
         >
           {reverse ? "Desc" : "Asc"}
@@ -200,7 +200,7 @@ export function SortedSetValueView({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-[0.65rem]"
+              className="h-7 px-2 text-2xs"
               onClick={() => setEditing(true)}
             >
               Edit
@@ -210,7 +210,7 @@ export function SortedSetValueView({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving}
                 onClick={() => {
                   setEditing(false);
@@ -221,7 +221,7 @@ export function SortedSetValueView({
               </Button>
               <Button
                 size="sm"
-                className="h-7 px-2 text-[0.65rem]"
+                className="h-7 px-2 text-2xs"
                 disabled={saving || !dirty}
                 onClick={() => {
                   void handleSave();
@@ -234,13 +234,13 @@ export function SortedSetValueView({
         </div>
       </div>
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
         </div>
       ) : null}
       <div className="flex-1 overflow-auto rounded-md border border-border-subtle">
         <table className="min-w-full divide-y divide-border-subtle font-mono text-xs">
-          <thead className="bg-surface-panel-elevated text-[0.65rem] uppercase text-text-muted">
+          <thead className="bg-surface-panel-elevated text-2xs uppercase text-text-muted">
             <tr>
               <th className="w-32 px-3 py-1.5 text-right">Score</th>
               <th className="px-3 py-1.5 text-left">Member</th>
@@ -293,7 +293,7 @@ export function SortedSetValueView({
                             return next;
                           })
                         }
-                        className="text-[0.65rem] text-destructive hover:underline"
+                        className="text-2xs text-danger hover:underline"
                       >
                         {isRemoved ? "undo" : "remove"}
                       </button>
@@ -323,7 +323,7 @@ export function SortedSetValueView({
                             prev.filter((_, i) => i !== index),
                           )
                         }
-                        className="text-[0.65rem] text-destructive hover:underline"
+                        className="text-2xs text-danger hover:underline"
                       >
                         remove
                       </button>
@@ -335,7 +335,7 @@ export function SortedSetValueView({
         </table>
       </div>
       {editing ? (
-        <div className="flex flex-wrap items-center gap-2 text-[0.65rem]">
+        <div className="flex flex-wrap items-center gap-2 text-2xs">
           <Input
             value={newMember}
             onChange={(event) => setNewMember(event.target.value)}
@@ -353,7 +353,7 @@ export function SortedSetValueView({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-[0.65rem]"
+            className="h-7 px-2 text-2xs"
             disabled={!newMember}
             onClick={() => {
               if (!newMember) return;
@@ -370,11 +370,11 @@ export function SortedSetValueView({
         </div>
       ) : null}
       {mode === "rank" ? (
-        <div className="flex items-center justify-between gap-2 text-[0.65rem]">
+        <div className="flex items-center justify-between gap-2 text-2xs">
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[0.65rem]"
+            className="h-6 px-2 text-2xs"
             disabled={page === 0 || loading || editing}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
@@ -383,7 +383,7 @@ export function SortedSetValueView({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[0.65rem]"
+            className="h-6 px-2 text-2xs"
             disabled={entries.length < pageSize || loading || editing}
             onClick={() => setPage((p) => p + 1)}
           >

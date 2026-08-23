@@ -26,7 +26,7 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
     <div className="grid gap-3 rounded-md border border-border-subtle bg-surface-panel p-3">
       <div className="grid gap-0.5">
         <Label>Session defaults</Label>
-        <p className="text-[0.6875rem] text-text-muted">
+        <p className="text-2xs text-text-muted">
           Applied with SET after every connect. Leave a field blank to use the
           server default.
         </p>
@@ -50,7 +50,7 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
                 }
                 onBlur={field.handleBlur}
               />
-              <p className="text-[0.6875rem] text-text-muted">
+              <p className="text-2xs text-text-muted">
                 Cancels any statement running longer than this. 0 disables the
                 limit.
               </p>
@@ -76,7 +76,7 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
                 }
                 onBlur={field.handleBlur}
               />
-              <p className="text-[0.6875rem] text-text-muted">
+              <p className="text-2xs text-text-muted">
                 Drops sessions holding an open transaction idle this long. 0
                 disables the limit.
               </p>
@@ -103,7 +103,7 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
               }
               onBlur={field.handleBlur}
             />
-            <p className="text-[0.6875rem] text-text-muted">
+            <p className="text-2xs text-text-muted">
               Gives up on an unresponsive server instead of waiting on the OS
               TCP timeout.
             </p>
@@ -124,7 +124,7 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
             />
-            <p className="text-[0.6875rem] text-text-muted">
+            <p className="text-2xs text-text-muted">
               Comma-separated schemas, in resolution order. Each entry is quoted
               as written.
             </p>
@@ -145,7 +145,7 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
               onChange={(event) => field.handleChange(event.target.value)}
               onBlur={field.handleBlur}
             />
-            <p className="text-[0.6875rem] text-text-muted">
+            <p className="text-2xs text-text-muted">
               Postgres role to SET ROLE into after connecting — separate from
               the read/write access level above.
             </p>

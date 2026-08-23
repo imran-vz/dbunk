@@ -153,14 +153,12 @@ export function TableEditorBody({
     () => buildColumnMetadata(columns, structure),
     [columns, structure],
   );
-  const density = bodyWidth > 0 && bodyWidth < 760 ? "compact" : "cozy";
   const showFooter = activeSubTab === "data" && tableRef !== null;
 
   return (
     <>
       <div
         ref={bodyRef}
-        data-workspace-density={density}
         className="relative flex min-h-0 flex-1 overflow-hidden"
       >
         <div className="min-w-0 flex-1 overflow-hidden">
@@ -275,7 +273,7 @@ export function TableEditorBody({
       {showFooter && !expanded ? (
         <div
           data-testid="table-pagination"
-          className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-[0.6875rem] text-text-muted"
+          className="flex h-8 shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-window px-3 text-2xs text-text-muted"
         >
           <span className="tabular-nums">
             {serverBrowse
@@ -287,7 +285,7 @@ export function TableEditorBody({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-2 text-[0.6875rem]"
+                className="h-6 px-2 text-2xs"
                 onClick={pagination.onCountRows}
                 disabled={pagination.counting || isLoading}
               >
@@ -298,7 +296,7 @@ export function TableEditorBody({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-2 text-[0.6875rem]"
+                  className="h-6 px-2 text-2xs"
                   onClick={serverBrowse.onCancel}
                 >
                   Cancel
