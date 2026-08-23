@@ -15,6 +15,11 @@
  * store (SQLite in the app; localStorage in a plain browser).
  */
 
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronUp,
+} from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Sash } from "@/components/ui/resizer-handle";
@@ -142,6 +147,14 @@ export interface PanelProps {
   ariaLabel: string;
   /** Double-click auto-fit target size (e.g. widest tree label). */
   onAutoFit?: () => void;
+  /**
+   * Visible restore control when collapsed. Panels whose restore path
+   * lives elsewhere (rail item, toolbar toggle, shortcut) omit this;
+   * panels with no other affordance MUST pass it — the collapsed
+   * state persists across sessions and the bare 1px sash strip is
+   * effectively invisible.
+   */
+  restoreLabel?: string;
   className?: string;
   children: React.ReactNode;
 }
@@ -156,6 +169,7 @@ export function Panel({
   state,
   ariaLabel,
   onAutoFit,
+  restoreLabel,
   className,
   children,
 }: PanelProps) {
@@ -182,8 +196,40 @@ export function Panel({
   );
 
   if (state.collapsed) {
-    // 0px cost; the sash hit strip stays as the edge-drag restore path.
-    return sash;
+    // Near-0px cost; the sash hit strip stays as the edge-drag restore
+    // path, plus a visible strip button when the panel has no other
+    // restore affordance.
+    if (!restoreLabel) return sash;
+    const RestoreChevron =
+      side === "left"
+        ? IconChevronRight
+        : side === "right"
+          ? IconChevronLeft
+          : IconChevronUp;
+    return (
+      <div
+        data-slot="panel-collapsed"
+        data-side={side}
+        className={cn("relative flex shrink-0", isBottom && "flex-col")}
+      >
+        {(side === "right" || isBottom) && sash}
+        <button
+          type="button"
+          aria-label={restoreLabel}
+          title={restoreLabel}
+          onClick={() => state.expand()}
+          className={cn(
+            "flex items-center justify-center border-border-subtle bg-surface-panel text-text-muted transition-colors hover:bg-surface-panel-elevated hover:text-foreground",
+            side === "left" && "border-r",
+            side === "right" && "border-l",
+            isBottom ? "h-5 w-full border-t" : "w-5",
+          )}
+        >
+          <RestoreChevron className="size-3.5" />
+        </button>
+        {side === "left" && sash}
+      </div>
+    );
   }
 
   return (

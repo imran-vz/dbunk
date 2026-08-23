@@ -102,4 +102,33 @@ describe("Panel", () => {
     // The sash stays as the edge-drag restore affordance.
     expect(getByRole("separator")).toBeTruthy();
   });
+
+  function RestoreHarness() {
+    const state = usePanelState(OPTIONS);
+    return (
+      <Panel
+        side="left"
+        state={state}
+        ariaLabel="Resize test panel"
+        restoreLabel="Show test panel"
+      >
+        <div data-testid="panel-content">content</div>
+      </Panel>
+    );
+  }
+
+  it("renders a visible restore control when collapsed with restoreLabel", () => {
+    window.localStorage.setItem("test.panel.collapsed", "1");
+    const { getByRole, getByTestId, queryByTestId } = render(
+      <RestoreHarness />,
+    );
+    expect(queryByTestId("panel-content")).toBeNull();
+
+    // The persisted collapse would otherwise leave only the invisible
+    // 1px sash strip as the way back — across app restarts.
+    const restore = getByRole("button", { name: "Show test panel" });
+    act(() => restore.click());
+    expect(getByTestId("panel-content")).toBeTruthy();
+    expect(window.localStorage.getItem("test.panel.collapsed")).toBe("0");
+  });
 });
