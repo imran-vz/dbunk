@@ -22,9 +22,8 @@ import {
   useQuerySidebarVisibility,
 } from "@/components/query-editor/use-query-sidebar-visibility";
 import { QuerySidebar } from "@/components/query-sidebar";
-import { StatusBar, type StatusBarItem } from "@/components/status-bar";
+import type { StatusBarItem } from "@/components/status-bar";
 import { Button } from "@/components/ui/button";
-import { ResizerHandle } from "@/components/ui/resizer-handle";
 import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { WorkbenchDock } from "@/components/workbench/dock";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
@@ -58,15 +57,11 @@ import {
   type WorkspaceTab,
 } from "@/lib/store";
 import { GRID_NULL_SENTINEL, gridCellToEditValue } from "@/lib/table-browse";
-import {
-  useContainerWidth,
-  useResizableWidth,
-} from "@/lib/use-resizable-width";
+import { useContainerWidth } from "@/lib/use-resizable-width";
 
 interface QueryEditorPanelProps {
   tab: WorkspaceTab;
   isClient: boolean;
-  variant?: "default" | "workbench";
   resultsView?: ResultsView;
   onResultsViewChange?: (view: ResultsView) => void;
   onStatusItemsChange?: (items: StatusBarItem[]) => void;
@@ -87,7 +82,6 @@ type QueryVirtualKeyState = {
 export function QueryEditorPanel({
   tab,
   isClient,
-  variant = "default",
   resultsView: controlledResultsView,
   onResultsViewChange,
   onStatusItemsChange,
@@ -116,47 +110,6 @@ export function QueryEditorPanel({
     useState<QueryVirtualKeyState | null>(null);
   const [isVirtualKeyOpen, setIsVirtualKeyOpen] = useState(false);
   const [isVirtualKeyBusy, setIsVirtualKeyBusy] = useState(false);
-
-  // Split-pane resize: editor on top, results below. Storage key is
-  // global so the user's chosen height applies across every query tab.
-  const EDITOR_MIN_PX = 80;
-  const RESULTS_MIN_PX = 140;
-  const splitRef = useRef<HTMLDivElement | null>(null);
-  const [splitHeight, setSplitHeight] = useState(0);
-  const { width: editorHeight, setWidth: setEditorHeight } = useResizableWidth({
-    storageKey: "dbunk.query.editor.height",
-    defaultWidth: 280,
-    min: EDITOR_MIN_PX,
-    max: 1600,
-  });
-
-  useEffect(() => {
-    const el = splitRef.current;
-    if (!el) return;
-    const apply = (h: number) => {
-      setSplitHeight((prev) => (Math.round(prev) === Math.round(h) ? prev : h));
-    };
-    apply(el.getBoundingClientRect().height);
-    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) apply(entry.contentRect.height);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const maxEditorHeight =
-    splitHeight > 0
-      ? Math.max(EDITOR_MIN_PX, splitHeight - RESULTS_MIN_PX)
-      : 1600;
-  const effectiveEditorHeight = Math.min(editorHeight, maxEditorHeight);
-  const handleEditorResize = useCallback(
-    (next: number) => {
-      setEditorHeight(Math.min(next, maxEditorHeight));
-    },
-    [maxEditorHeight, setEditorHeight],
-  );
 
   const {
     queryPreviews,
@@ -838,7 +791,6 @@ export function QueryEditorPanel({
     onStatusItemsChange?.(statusItems);
   }, [onStatusItemsChange, statusItems]);
 
-  const isWorkbench = variant === "workbench";
   const runCurrentHandler =
     bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent;
   const mutationGrid = mutationCapable
@@ -905,7 +857,7 @@ export function QueryEditorPanel({
         resultIndex={resultIndex}
         onResultIndexChange={setResultIndex}
         mutationGrid={mutationGrid}
-        hideTabs={isWorkbench}
+        hideTabs
         onCellEdit={(rowIndex, colIndex, value) =>
           setQueryEdit(tab.id, rowIndex, colIndex, value)
         }
@@ -915,126 +867,13 @@ export function QueryEditorPanel({
     </>
   );
 
-  if (isWorkbench) {
-    return (
-      <div
-        ref={containerRef}
-        data-workspace-density={workspaceDensity}
-        className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col"
-      >
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <QueryEditorToolbar
-            tabId={tab.id}
-            dbSelectorLabel={dbSelectorLabel}
-            connections={connections}
-            currentConnectionId={tab.connectionId}
-            onRetargetConnection={handleRetargetConnection}
-            hasEdits={hasEdits}
-            onDiscardEdits={handleDiscardEdits}
-            onReviewEdits={
-              usesMutationDraftToolbar ? handleReviewEdits : undefined
-            }
-            stagedChangeCount={
-              usesMutationDraftToolbar ? stagedChangeCount : undefined
-            }
-            mutationLocked={mutationLocked}
-            isRunning={isBusy}
-            isCancelling={isCancelling}
-            onStop={() => void cancelQuery(tab.id)}
-            isSidebarOpen={sidebar.isOpen}
-            onToggleSidebar={sidebar.onToggle}
-            onRunCurrent={runCurrentHandler}
-            onRunSelection={editor.handleRunSelection}
-            onRunAll={editor.handleRunAll}
-            onExplain={handleExplain}
-            onFormat={handleFormat}
-            onInsertSnippet={(sql) =>
-              updateQuery(
-                tab.id,
-                [tab.query ?? "", sql].filter(Boolean).join("\n\n"),
-              )
-            }
-            hideConnectionSwitcher
-          />
-          {bindNames.length > 0 ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs">
-              <span className="text-text-muted">Bind variables</span>
-              {bindNames.map((name) => (
-                <label key={name} className="flex items-center gap-1">
-                  <span className="font-mono text-text-muted">:{name}</span>
-                  <input
-                    value={bindValues[name] ?? ""}
-                    onChange={(event) =>
-                      setBindValues((current) => ({
-                        ...current,
-                        [name]: event.target.value,
-                      }))
-                    }
-                    className="h-7 w-28 rounded-sm border border-border-subtle bg-surface-input px-2 font-mono text-xs"
-                  />
-                </label>
-              ))}
-            </div>
-          ) : null}
-          <div className="relative min-h-0 flex-1 bg-surface-app">
-            {isClient ? (
-              <MonacoEditor
-                height="100%"
-                language="sql"
-                theme={editorTheme}
-                value={tab.query ?? ""}
-                options={editorOptions}
-                onChange={(value) => updateQuery(tab.id, value ?? "")}
-                onMount={editor.onMount}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-xs text-text-muted">
-                Loading editor…
-              </div>
-            )}
-          </div>
-          <WorkbenchDock
-            storageKey={`query-${tab.id}`}
-            consoleLabel={tab.label}
-            onRun={runCurrentHandler}
-            runDisabled={isBusy}
-            consoleContent={
-              <pre className="px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground">
-                {tab.query ?? ""}
-              </pre>
-            }
-            outputContent={resultsPane}
-          />
-          {!reviewScope ? (
-            <ResponsiveEdgePanel
-              side="right"
-              storageKey="dbunk.sidebar.query"
-              title="Query"
-              width={QUERY_SIDEBAR_WIDTH}
-              containerWidth={containerWidth}
-              compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
-              protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-              wideVisible={sidebar.wideVisible}
-              open={sidebar.overlayOpen}
-              onOpenChange={sidebar.setOverlayOpen}
-              contentClassName="overflow-auto p-4"
-            >
-              <QuerySidebar tab={tab} />
-            </ResponsiveEdgePanel>
-          ) : null}
-        </div>
-        {reviewPanel}
-      </div>
-    );
-  }
-
   return (
     <div
       ref={containerRef}
       data-workspace-density={workspaceDensity}
       className="relative flex h-full min-h-0 bg-surface-app max-[820px]:flex-col"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <QueryEditorToolbar
           tabId={tab.id}
           dbSelectorLabel={dbSelectorLabel}
@@ -1055,9 +894,7 @@ export function QueryEditorPanel({
           onStop={() => void cancelQuery(tab.id)}
           isSidebarOpen={sidebar.isOpen}
           onToggleSidebar={sidebar.onToggle}
-          onRunCurrent={
-            bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent
-          }
+          onRunCurrent={runCurrentHandler}
           onRunSelection={editor.handleRunSelection}
           onRunAll={editor.handleRunAll}
           onExplain={handleExplain}
@@ -1068,8 +905,8 @@ export function QueryEditorPanel({
               [tab.query ?? "", sql].filter(Boolean).join("\n\n"),
             )
           }
+          hideConnectionSwitcher
         />
-
         {bindNames.length > 0 ? (
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-window px-3 py-2 text-xs">
             <span className="text-text-muted">Bind variables</span>
@@ -1090,80 +927,46 @@ export function QueryEditorPanel({
             ))}
           </div>
         ) : null}
-
-        <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
-          <div
-            style={{ height: effectiveEditorHeight }}
-            className="relative shrink-0 bg-surface-app"
-          >
-            {isClient ? (
-              <MonacoEditor
-                height="100%"
-                language="sql"
-                theme={editorTheme}
-                value={tab.query ?? ""}
-                options={editorOptions}
-                onChange={(value) => updateQuery(tab.id, value ?? "")}
-                onMount={editor.onMount}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-xs text-text-muted">
-                Loading editor…
-              </div>
-            )}
-          </div>
-
-          <ResizerHandle
-            width={effectiveEditorHeight}
-            onResize={handleEditorResize}
-            orientation="horizontal"
-            side="bottom"
-            min={EDITOR_MIN_PX}
-            max={maxEditorHeight}
-            ariaLabel="Resize query editor"
-          />
-
-          {virtualKeyEditor}
-          <QueryResultsView
-            view={resultsView}
-            onViewChange={setResultsView}
-            preview={activeQueryPreview}
-            session={session}
-            explainPlan={explainPlan}
-            currentEdits={currentEdits}
-            exportFilenameBase={exportFilenameBase}
-            isRunning={isBusy}
-            errorMessage={errorMessage}
-            resultIndex={resultIndex}
-            onResultIndexChange={setResultIndex}
-            mutationGrid={mutationGrid}
-            onCellEdit={(rowIndex, colIndex, value) =>
-              setQueryEdit(tab.id, rowIndex, colIndex, value)
-            }
-            onSwitchBudgetOwner={setActiveTabId}
-            onReleaseBudgetOwner={releaseQueryResults}
-          />
+        <div className="relative min-h-0 flex-1 bg-surface-app">
+          {isClient ? (
+            <MonacoEditor
+              height="100%"
+              language="sql"
+              theme={editorTheme}
+              value={tab.query ?? ""}
+              options={editorOptions}
+              onChange={(value) => updateQuery(tab.id, value ?? "")}
+              onMount={editor.onMount}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-text-muted">
+              Loading editor…
+            </div>
+          )}
         </div>
-
-        <StatusBar items={statusItems} />
+        <WorkbenchDock
+          storageKey={`query-${tab.id}`}
+          revealKey={resultsView}
+          content={resultsPane}
+        />
+        {!reviewScope ? (
+          <ResponsiveEdgePanel
+            side="right"
+            storageKey="dbunk.sidebar.query"
+            title="Query"
+            width={QUERY_SIDEBAR_WIDTH}
+            containerWidth={containerWidth}
+            compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
+            protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
+            wideVisible={sidebar.wideVisible}
+            open={sidebar.overlayOpen}
+            onOpenChange={sidebar.setOverlayOpen}
+            contentClassName="overflow-auto p-4"
+          >
+            <QuerySidebar tab={tab} />
+          </ResponsiveEdgePanel>
+        ) : null}
       </div>
-      {!reviewScope ? (
-        <ResponsiveEdgePanel
-          side="right"
-          storageKey="dbunk.sidebar.query"
-          title="Query"
-          width={QUERY_SIDEBAR_WIDTH}
-          containerWidth={containerWidth}
-          compactBelow={QUERY_SIDEBAR_COMPACT_BELOW}
-          protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-          wideVisible={sidebar.wideVisible}
-          open={sidebar.overlayOpen}
-          onOpenChange={sidebar.setOverlayOpen}
-          contentClassName="overflow-auto p-4"
-        >
-          <QuerySidebar tab={tab} />
-        </ResponsiveEdgePanel>
-      ) : null}
       {reviewPanel}
     </div>
   );
