@@ -697,10 +697,7 @@ mod tests {
     use tempfile::TempDir;
 
     async fn fixture() -> (TempDir, SqlitePool) {
-        static MOCK_KEYRING: std::sync::Once = std::sync::Once::new();
-        MOCK_KEYRING.call_once(|| {
-            keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
-        });
+        crate::configure_test_keyring();
 
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = Paths::from_dir(dir.path().to_path_buf());
