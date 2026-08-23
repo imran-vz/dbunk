@@ -117,7 +117,27 @@ export function RelationalWorkbench({
     connectConnection,
     reopenHistoryEntry,
     setActiveView,
+    tabRevealRequest,
   } = useAppStore();
+
+  // Tab shortcuts and palette actions (Cmd+T, Cmd+1..9, open table…)
+  // mutate the store, but rail screens render before the tab panels —
+  // from History/Overview/Admin the opened tab would be invisible.
+  // Follow explicit reveals back to a tab-rendering rail.
+  const lastRevealRef = useRef(tabRevealRequest);
+  useEffect(() => {
+    if (tabRevealRequest === lastRevealRef.current) return;
+    lastRevealRef.current = tabRevealRequest;
+    setRail((current) => {
+      if (current === "tables" || current === "queries") return current;
+      const state = useAppStore.getState();
+      const revealed = state.workspaceTabs.find(
+        (tab) => tab.id === state.activeTabId,
+      );
+      if (!revealed) return current;
+      return revealed.kind === "query" ? "queries" : "tables";
+    });
+  }, [tabRevealRequest]);
 
   const activeConnection = useMemo(() => {
     const selected = connections.find(
