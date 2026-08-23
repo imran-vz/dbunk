@@ -465,6 +465,39 @@ export function DataGrid({
     [rows.length, visibleCols.length],
   );
 
+  // Display coordinates (focused/selection/editing) lose meaning when the
+  // underlying data, the applied filters, or the visible-column composition
+  // change: an open editor would otherwise commit against whichever row or
+  // column takes over the stale position (e.g. a server-browse page landing
+  // mid-edit). Cancel the editor, drop the selection, and clamp focus.
+  const colSignature = visibleCols.map((col) => col.name).join("\u0000");
+  const gridShapeRef = useRef({ data, columnFilters, colSignature });
+  useEffect(() => {
+    const previous = gridShapeRef.current;
+    if (
+      previous.data === data &&
+      previous.columnFilters === columnFilters &&
+      previous.colSignature === colSignature
+    ) {
+      return;
+    }
+    gridShapeRef.current = { data, columnFilters, colSignature };
+    setEditing((current) => {
+      // Refocus the grid only when this actually interrupted an edit.
+      if (current !== null) wantFocusRef.current = true;
+      return current === null ? current : null;
+    });
+    setSelection((current) => (current === null ? current : null));
+    setFocused((current) => {
+      if (current === null) return current;
+      if (rows.length === 0 || visibleCols.length === 0) return null;
+      const clamped = clampPos(current);
+      return clamped.row === current.row && clamped.col === current.col
+        ? current
+        : clamped;
+    });
+  }, [data, columnFilters, colSignature, rows.length, visibleCols, clampPos]);
+
   const ensureVisible = useCallback(
     (pos: CellPos) => {
       const el = scrollRef.current;
