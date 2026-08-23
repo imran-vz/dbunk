@@ -93,7 +93,10 @@ impl QuerySessionManager {
     }
     pub(crate) fn start_monitor(&self) {
         let manager = self.clone();
-        tokio::spawn(async move {
+        // Spawn via Tauri's global runtime: setup() calls this from the
+        // main thread with no ambient Tokio context, where tokio::spawn
+        // would panic.
+        tauri::async_runtime::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(10));
             loop {
                 tick.tick().await;
@@ -1249,5 +1252,21 @@ mod tests {
             assert_statement_policy("SET search_path = public", &policy, true),
             Err(QuerySessionError::PolicyBlocked { .. })
         ));
+    }
+
+    #[test]
+    fn start_monitor_is_callable_outside_a_tokio_runtime() {
+        // Regression: setup() calls this on the main thread with no Tokio
+        // runtime context; a bare tokio::spawn panics with "no reactor
+        // running" and aborts app startup. The pool mirrors the real call
+        // site (created under tauri::async_runtime::block_on), so build it
+        // inside a scratch runtime and drop that context before the call.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("scratch runtime");
+        let manager = runtime.block_on(async { manager() });
+        drop(runtime);
+        manager.start_monitor();
     }
 }
