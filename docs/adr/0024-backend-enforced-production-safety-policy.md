@@ -66,7 +66,18 @@ known write-capable functions such as `setval`, `nextval`, `set_config`, and
 backend-control functions. This deliberately has conservative false positives:
 a column named `nextval` escalates, while an identifier such as `nextval_log`
 does not. It limits common accidental bypasses but does not change the threat
-model for arbitrary volatile functions.
+model for arbitrary volatile functions. Escalations normally become bounded,
+non-destructive DML. `pg_terminate_backend`, `lo_unlink`, and `dblink_exec`
+instead become destructive DML because they terminate a session, delete server
+state, or execute an opaque remote command; protected mode therefore requires
+confirmation for those three read-shaped calls.
+
+Top-level `SELECT ... INTO` is classified as non-destructive DDL because it
+creates a relation. Empty and whitespace-only scripts produce no Statement
+Classes. A read-only Connection refuses such a script because the admission
+rule requires at least one statement proven to be a read. These conservative
+rules are stricter than the initial Plan 007 classifier table and are recorded
+here explicitly because safety correctness takes priority over permissiveness.
 
 Non-PostgreSQL engines have no statement classifier yet. Arbitrary text sent
 through their shared `run_query` path is fully fail closed as one `unknown`

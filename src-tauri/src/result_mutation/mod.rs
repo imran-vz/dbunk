@@ -202,15 +202,13 @@ impl ResultMutationManager {
             &intent,
             payload.confirmed,
         )
-        .map_err(|refusal| match refusal {
-            crate::safety::policy::SafetyRefusal::Blocked { reason, .. } => {
-                ResultMutationError::PolicyBlocked {
+        .map_err(|refusal| {
+            refusal.fold(
+                |reason, _| ResultMutationError::PolicyBlocked {
                     reason: reason.to_string(),
-                }
-            }
-            crate::safety::policy::SafetyRefusal::NeedsConfirmation { statements } => {
-                ResultMutationError::PolicyNeedsConfirmation { statements }
-            }
+                },
+                |statements| ResultMutationError::PolicyNeedsConfirmation { statements },
+            )
         })?;
         // An analysis snapshot can only live on an existing executor. Validate
         // this before opening or consuming admission capacity: stale IDs are a
@@ -1657,11 +1655,12 @@ mod tests {
             .insert("c".into(), executor.clone());
 
         let mut guarded_spec = spec("c");
-        guarded_spec.safety_policy = crate::safety::policy::resolve_policy(
-            crate::Environment::Production,
-            crate::SafeMode::Inherit,
-            false,
-        );
+        guarded_spec.safety_policy =
+            crate::safety::policy::resolve_policy(crate::ConnectionPolicy {
+                environment: crate::Environment::Production,
+                safe_mode: crate::SafeMode::Inherit,
+                read_only: false,
+            });
         let result = manager
             .apply(guarded_spec, apply_payload("tab", analysis_id))
             .await;

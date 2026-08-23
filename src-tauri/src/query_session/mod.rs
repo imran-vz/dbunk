@@ -27,7 +27,6 @@ struct Credit {
     last_ack: Instant,
     last_acked_sequence: u64,
 }
-
 struct Session {
     id: String,
     tab_id: String,
@@ -47,7 +46,6 @@ struct Session {
     focused: Mutex<bool>,
     closed: Mutex<bool>,
 }
-
 #[derive(Default)]
 struct ManagerState {
     owners: HashMap<String, String>,
@@ -73,6 +71,12 @@ pub(crate) type ExecutionSuccessHook = Box<
         + Send
         + 'static,
 >;
+
+struct ExecutionAdmission {
+    on_success: ExecutionSuccessHook,
+    intent: crate::safety::policy::WriteIntent,
+    authorization: crate::safety::policy::SafetyAuthorization,
+}
 
 pub(crate) struct ExecutionSafety<'a> {
     pub policy: &'a crate::safety::policy::ResolvedSafetyPolicy,
@@ -410,9 +414,11 @@ impl QuerySessionManager {
             execution_id,
             sql,
             snapshot,
-            safety
-                .on_success
-                .map(|on_success| (on_success, intent, authorization)),
+            safety.on_success.map(|on_success| ExecutionAdmission {
+                on_success,
+                intent,
+                authorization,
+            }),
         ));
         Ok(AcceptedResult { accepted: true })
     }
@@ -689,15 +695,13 @@ fn assert_statement_policy(
         classes: crate::postgres::sql_class::classify_script(sql),
     };
     let authorization = crate::safety::policy::assert_permitted(policy, &intent, confirmed)
-        .map_err(|refusal| match refusal {
-            crate::safety::policy::SafetyRefusal::Blocked { reason, .. } => {
-                QuerySessionError::PolicyBlocked {
+        .map_err(|refusal| {
+            refusal.fold(
+                |reason, _| QuerySessionError::PolicyBlocked {
                     reason: reason.to_string(),
-                }
-            }
-            crate::safety::policy::SafetyRefusal::NeedsConfirmation { statements } => {
-                QuerySessionError::PolicyNeedsConfirmation { statements }
-            }
+                },
+                |statements| QuerySessionError::PolicyNeedsConfirmation { statements },
+            )
         })?;
     Ok((intent, authorization))
 }
@@ -716,55 +720,13 @@ fn release_opening_locked(state: &mut ManagerState, session_id: &str) {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ExecutionTerminalOutcome {
-    Completed,
-    Failed,
-    Lost,
-}
-
-#[derive(Debug, Default)]
-struct ExecutionLifecycle {
-    frontend_delivery_failed: bool,
-    terminal: Option<ExecutionTerminalOutcome>,
-    success_finalized: bool,
-}
-
-impl ExecutionLifecycle {
-    fn should_attempt_delivery(&self) -> bool {
-        !self.frontend_delivery_failed
-    }
-
-    fn observe_delivery(&mut self, delivered: Result<(), ()>) {
-        self.frontend_delivery_failed |= delivered.is_err();
-    }
-
-    fn observe_terminal(&mut self, outcome: ExecutionTerminalOutcome) {
-        debug_assert!(self.terminal.is_none());
-        self.terminal = Some(outcome);
-    }
-
-    fn begin_success_finalization(&mut self) -> bool {
-        if self.terminal == Some(ExecutionTerminalOutcome::Completed) && !self.success_finalized {
-            self.success_finalized = true;
-            true
-        } else {
-            false
-        }
-    }
-}
-
 async fn run_execution(
     manager: QuerySessionManager,
     session: Arc<Session>,
     execution_id: String,
     sql: String,
     initial: QueryTransactionSnapshot,
-    admission: Option<(
-        ExecutionSuccessHook,
-        crate::safety::policy::WriteIntent,
-        crate::safety::policy::SafetyAuthorization,
-    )>,
+    admission: Option<ExecutionAdmission>,
 ) {
     if send(
         &session,
@@ -801,7 +763,6 @@ async fn run_execution(
             Some(postgres::database_error(error)),
         )
     });
-    let mut lifecycle = ExecutionLifecycle::default();
     if terminal.is_none() {
         let mut events = postgres::execute_stream(
             session.connection.client.clone(),
@@ -809,7 +770,75 @@ async fn run_execution(
             sql,
         );
         while let Some(event) = events.recv().await {
-            match event {
+            let delivered = match event {
+                postgres::DriverEvent::ResultStarted {
+                    result_set_index,
+                    columns,
+                } => send(
+                    &session,
+                    Some(execution_id.clone()),
+                    false,
+                    QueryEvent::ResultSetStarted {
+                        result_set_index,
+                        columns,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                postgres::DriverEvent::RowBatch {
+                    result_set_index,
+                    rows,
+                } => send_with_credit(
+                    &session,
+                    execution_id.clone(),
+                    QueryEvent::RowBatch {
+                        result_set_index,
+                        rows,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                postgres::DriverEvent::ResultCompleted {
+                    result_set_index,
+                    row_count,
+                } => send(
+                    &session,
+                    Some(execution_id.clone()),
+                    false,
+                    QueryEvent::ResultSetCompleted {
+                        result_set_index,
+                        row_count,
+                        partial: false,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                postgres::DriverEvent::ResultAborted {
+                    result_set_index,
+                    row_count,
+                } => send(
+                    &session,
+                    Some(execution_id.clone()),
+                    false,
+                    QueryEvent::ResultSetCompleted {
+                        result_set_index,
+                        row_count,
+                        partial: true,
+                    },
+                )
+                .await
+                .map(|_| ()),
+                postgres::DriverEvent::Notice(notice) => send(
+                    &session,
+                    Some(execution_id.clone()),
+                    false,
+                    QueryEvent::Notice {
+                        severity: notice.severity,
+                        message: notice.message,
+                    },
+                )
+                .await
+                .map(|_| ()),
                 postgres::DriverEvent::Finished(result) => {
                     terminal = Some(match result {
                         Ok(totals) => ("completed", totals, None),
@@ -817,12 +846,10 @@ async fn run_execution(
                     });
                     break;
                 }
-                event if lifecycle.should_attempt_delivery() => {
-                    lifecycle.observe_delivery(
-                        deliver_driver_event(&session, &execution_id, event).await,
-                    );
-                }
-                _ => {}
+            };
+            if delivered.is_err() {
+                manager.remove_and_close(&session.id, false).await;
+                return;
             }
         }
     }
@@ -831,25 +858,16 @@ async fn run_execution(
         postgres::ExecutionTotals::default(),
         Some(QuerySessionError::ConnectionLost),
     ));
-    lifecycle.observe_terminal(if status == "completed" {
-        ExecutionTerminalOutcome::Completed
-    } else if execution_lost_connection(error.as_ref()) {
-        ExecutionTerminalOutcome::Lost
-    } else {
-        ExecutionTerminalOutcome::Failed
-    });
     if execution_lost_connection(error.as_ref()) {
-        if lifecycle.should_attempt_delivery() {
-            let _ = send(
-                &session,
-                None,
-                false,
-                QueryEvent::SessionLost {
-                    reason: "connectionLost".into(),
-                },
-            )
-            .await;
-        }
+        let _ = send(
+            &session,
+            None,
+            false,
+            QueryEvent::SessionLost {
+                reason: "connectionLost".into(),
+            },
+        )
+        .await;
         manager.remove_and_close(&session.id, false).await;
         return;
     }
@@ -863,17 +881,13 @@ async fn run_execution(
     observe_session(&session).await;
     let snapshot = session.transaction.lock().await.clone();
     let display_error = error.as_ref().and_then(postgres::display_error);
-    if lifecycle.begin_success_finalization() {
-        if let Some((on_success, intent, authorization)) = admission {
-            on_success(intent, authorization).await;
+    if status == "completed" {
+        if let Some(admission) = admission {
+            (admission.on_success)(admission.intent, admission.authorization).await;
         }
         crate::storage::touch_connection_activity(&manager.pool, &session.connection_id)
             .await
             .ok();
-    }
-    if !lifecycle.should_attempt_delivery() {
-        manager.remove_and_close(&session.id, false).await;
-        return;
     }
     wait_for_row_credit(&session).await;
     if send_terminal(
@@ -894,84 +908,6 @@ async fn run_execution(
     .is_err()
     {
         manager.remove_and_close(&session.id, false).await;
-    }
-}
-
-async fn deliver_driver_event(
-    session: &Session,
-    execution_id: &str,
-    event: postgres::DriverEvent,
-) -> Result<(), ()> {
-    match event {
-        postgres::DriverEvent::ResultStarted {
-            result_set_index,
-            columns,
-        } => send(
-            session,
-            Some(execution_id.to_owned()),
-            false,
-            QueryEvent::ResultSetStarted {
-                result_set_index,
-                columns,
-            },
-        )
-        .await
-        .map(|_| ()),
-        postgres::DriverEvent::RowBatch {
-            result_set_index,
-            rows,
-        } => send_with_credit(
-            session,
-            execution_id.to_owned(),
-            QueryEvent::RowBatch {
-                result_set_index,
-                rows,
-            },
-        )
-        .await
-        .map(|_| ()),
-        postgres::DriverEvent::ResultCompleted {
-            result_set_index,
-            row_count,
-        } => send(
-            session,
-            Some(execution_id.to_owned()),
-            false,
-            QueryEvent::ResultSetCompleted {
-                result_set_index,
-                row_count,
-                partial: false,
-            },
-        )
-        .await
-        .map(|_| ()),
-        postgres::DriverEvent::ResultAborted {
-            result_set_index,
-            row_count,
-        } => send(
-            session,
-            Some(execution_id.to_owned()),
-            false,
-            QueryEvent::ResultSetCompleted {
-                result_set_index,
-                row_count,
-                partial: true,
-            },
-        )
-        .await
-        .map(|_| ()),
-        postgres::DriverEvent::Notice(notice) => send(
-            session,
-            Some(execution_id.to_owned()),
-            false,
-            QueryEvent::Notice {
-                severity: notice.severity,
-                message: notice.message,
-            },
-        )
-        .await
-        .map(|_| ()),
-        postgres::DriverEvent::Finished(_) => Ok(()),
     }
 }
 
@@ -1256,41 +1192,14 @@ mod tests {
         assert!(!execution_lost_connection(None));
     }
 
-    #[test]
-    fn delivery_failure_waits_for_terminal_success_and_finalizes_once() {
-        let mut lifecycle = ExecutionLifecycle::default();
-
-        lifecycle.observe_delivery(Err(()));
-        assert!(!lifecycle.should_attempt_delivery());
-        assert!(!lifecycle.begin_success_finalization());
-
-        lifecycle.observe_terminal(ExecutionTerminalOutcome::Completed);
-        assert!(lifecycle.begin_success_finalization());
-        assert!(!lifecycle.begin_success_finalization());
-    }
-
-    #[test]
-    fn unsuccessful_terminal_outcomes_never_finalize_success() {
-        for outcome in [
-            ExecutionTerminalOutcome::Failed,
-            ExecutionTerminalOutcome::Lost,
-        ] {
-            let mut lifecycle = ExecutionLifecycle::default();
-            lifecycle.observe_delivery(Err(()));
-            lifecycle.observe_terminal(outcome);
-
-            assert!(!lifecycle.begin_success_finalization());
-        }
-    }
-
     #[tokio::test]
     async fn policy_is_asserted_before_session_lookup() {
         let manager = manager();
-        let policy = crate::safety::policy::resolve_policy(
-            crate::Environment::Production,
-            crate::SafeMode::Inherit,
-            false,
-        );
+        let policy = crate::safety::policy::resolve_policy(crate::ConnectionPolicy {
+            environment: crate::Environment::Production,
+            safe_mode: crate::SafeMode::Inherit,
+            read_only: false,
+        });
 
         assert!(matches!(
             manager
@@ -1330,11 +1239,11 @@ mod tests {
 
     #[test]
     fn read_only_statement_admission_only_accepts_reads() {
-        let policy = crate::safety::policy::resolve_policy(
-            crate::Environment::Development,
-            crate::SafeMode::Inherit,
-            true,
-        );
+        let policy = crate::safety::policy::resolve_policy(crate::ConnectionPolicy {
+            environment: crate::Environment::Development,
+            safe_mode: crate::SafeMode::Inherit,
+            read_only: true,
+        });
         assert!(assert_statement_policy("SELECT 1", &policy, false).is_ok());
         assert!(matches!(
             assert_statement_policy("SET search_path = public", &policy, true),
