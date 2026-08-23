@@ -9,10 +9,21 @@
  */
 
 import { useAppStore, type WorkspaceTab } from "@/lib/store";
-import { uiSet } from "@/lib/ui-state";
+import {
+  exceedsUtf8Length,
+  UI_STATE_MAX_VALUE_BYTES,
+  uiSet,
+} from "@/lib/ui-state";
 
 export const SESSION_STORAGE_KEY = "dbunk.session";
 const PERSIST_DEBOUNCE_MS = 500;
+
+/**
+ * Keep the serialized session comfortably under the backend's per-value
+ * limit — an over-limit value is rejected and would leave the whole
+ * session unpersisted (typical culprit: a huge pasted SQL script).
+ */
+const SESSION_BUDGET_BYTES = UI_STATE_MAX_VALUE_BYTES - 64 * 1024;
 
 /** Only query/table tabs restore cleanly; strip runtime-only fields. */
 const serializeTabs = (tabs: WorkspaceTab[]) =>
@@ -46,14 +57,32 @@ export function startSessionPersistence(): void {
   const persist = () => {
     timer = null;
     const state = useAppStore.getState();
-    uiSet(
-      SESSION_STORAGE_KEY,
-      JSON.stringify({
-        tabs: serializeTabs(state.workspaceTabs),
-        activeTabId: state.activeTabId,
-        expandedSchemas: state.expandedSchemas,
-      }),
-    );
+    const tabs = serializeTabs(state.workspaceTabs);
+    let payload = JSON.stringify({
+      tabs,
+      activeTabId: state.activeTabId,
+      expandedSchemas: state.expandedSchemas,
+    });
+    // Over budget: shed hot-exit SQL from the largest tabs first so the
+    // tab set itself (and every other tab's SQL) still persists.
+    if (exceedsUtf8Length(payload, SESSION_BUDGET_BYTES)) {
+      const byQuerySize = tabs
+        .filter((tab) => tab.query !== undefined)
+        .sort((a, b) => (b.query?.length ?? 0) - (a.query?.length ?? 0));
+      for (const tab of byQuerySize) {
+        console.warn(
+          `Session too large to persist; dropping hot-exit SQL for tab ${tab.id}`,
+        );
+        delete tab.query;
+        payload = JSON.stringify({
+          tabs,
+          activeTabId: state.activeTabId,
+          expandedSchemas: state.expandedSchemas,
+        });
+        if (!exceedsUtf8Length(payload, SESSION_BUDGET_BYTES)) break;
+      }
+    }
+    uiSet(SESSION_STORAGE_KEY, payload);
   };
 
   useAppStore.subscribe((state) => {
