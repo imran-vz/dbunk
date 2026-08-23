@@ -117,7 +117,7 @@ function JsonCellEditor({
       onSave={handleSave}
       footerExtra={
         <Button size="sm" variant="ghost" onClick={handlePretty}>
-          <IconCode className="size-3.5" /> Pretty
+          <IconCode /> Pretty
         </Button>
       }
     >
@@ -178,7 +178,7 @@ function ArrayCellEditor({
           variant="ghost"
           onClick={() => setItems((current) => [...current, ""])}
         >
-          <IconPlus className="size-3.5" /> Add element
+          <IconPlus /> Add element
         </Button>
       }
     >
@@ -213,7 +213,7 @@ function ArrayCellEditor({
                   setItems((current) => current.filter((_, i) => i !== index))
                 }
               >
-                <IconTrash className="size-3.5" />
+                <IconTrash />
               </Button>
             </li>
           ))}
@@ -336,7 +336,7 @@ function EditorShell({
             aria-label="Close"
             onClick={onCancel}
           >
-            <IconX className="size-3.5" />
+            <IconX />
           </Button>
         </div>
         <div className="flex max-h-[60vh] flex-col gap-2 overflow-auto">
@@ -348,7 +348,7 @@ function EditorShell({
             Cancel
           </Button>
           <Button size="sm" onClick={onSave}>
-            <IconCheck className="size-3.5" /> Save
+            <IconCheck /> Save
           </Button>
         </div>
       </div>

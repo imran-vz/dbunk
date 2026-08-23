@@ -135,10 +135,10 @@ export function QueryEditorToolbar({
               onClick={onDiscardEdits}
               disabled={mutationLocked}
             >
-              <IconX className="size-3.5" /> Discard
+              <IconX /> Discard
             </Button>
             <Button size="sm" onClick={onReviewEdits} disabled={mutationLocked}>
-              <IconDeviceFloppy className="size-3.5" />
+              <IconDeviceFloppy />
               {onReviewEdits ? "Review & save" : "Save"}
             </Button>
             {stagedChangeCount !== undefined ? (
@@ -158,7 +158,7 @@ export function QueryEditorToolbar({
           onClick={onFormat}
           disabled={isRunning}
         >
-          <IconSparkles className="size-3.5" />
+          <IconSparkles />
           <span className="dbunk-optional-label">Format</span>
         </Button>
         <DropdownMenu>
@@ -197,7 +197,7 @@ export function QueryEditorToolbar({
           aria-pressed={isSidebarOpen}
           onClick={onToggleSidebar}
         >
-          <SidebarIcon className="size-3.5" />
+          <SidebarIcon />
         </Button>
 
         <div className="flex items-center">
@@ -209,7 +209,7 @@ export function QueryEditorToolbar({
               disabled={isCancelling}
               aria-label={isCancelling ? "Cancelling query" : "Stop query"}
             >
-              <IconPlayerStop className="size-3.5" />
+              <IconPlayerStop />
               {isCancelling ? "Cancelling…" : "Stop"}
             </Button>
           ) : (
@@ -219,7 +219,7 @@ export function QueryEditorToolbar({
               aria-label="Run"
               className="rounded-r-none"
             >
-              <IconPlayerPlay className="size-3.5" />
+              <IconPlayerPlay />
               Run
             </Button>
           )}

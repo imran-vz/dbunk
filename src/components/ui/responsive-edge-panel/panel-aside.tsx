@@ -7,6 +7,11 @@ import {
 import type * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { PanelSide } from "./use-panel";
@@ -117,31 +122,41 @@ function DefaultCompactHeader({
         {title}
       </span>
       <div className="flex items-center gap-0.5">
-        <Button
-          type="button"
-          size="icon-xs"
-          variant={pinned ? "secondary" : "ghost"}
-          aria-pressed={pinned}
-          aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-          title={pinned ? `Unpin ${title}` : `Pin ${title}`}
-          onClick={onTogglePinned}
-        >
-          {pinned ? (
-            <IconPinnedOff className="size-3" />
-          ) : (
-            <IconPin className="size-3" />
-          )}
-        </Button>
-        <Button
-          type="button"
-          size="icon-xs"
-          variant="ghost"
-          aria-label={`Hide ${title}`}
-          title={`Hide ${title}`}
-          onClick={onClose}
-        >
-          <CollapseIcon className="size-3" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant={pinned ? "secondary" : "ghost"}
+                aria-pressed={pinned}
+                aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+                onClick={onTogglePinned}
+              />
+            }
+          >
+            {pinned ? <IconPinnedOff /> : <IconPin />}
+          </TooltipTrigger>
+          <TooltipContent>
+            {pinned ? `Unpin ${title}` : `Pin ${title}`}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`Hide ${title}`}
+                onClick={onClose}
+              />
+            }
+          >
+            <CollapseIcon />
+          </TooltipTrigger>
+          <TooltipContent>{`Hide ${title}`}</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

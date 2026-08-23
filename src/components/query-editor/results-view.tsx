@@ -1,14 +1,13 @@
-import {
-  IconAlertCircle,
-  IconLoader2,
-  IconRoute,
-  IconTerminal2,
-} from "@tabler/icons-react";
 import { useMemo } from "react";
 
 import { DataGrid } from "@/components/data-grid";
 import { ExplainView } from "@/components/query-editor/explain/explain-view";
 import { Button } from "@/components/ui/button";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/ui/state-panel";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
 import type { QueryPreviewData, QuerySessionState } from "@/lib/store";
 import { browseCellsToGrid } from "@/lib/table-browse";
@@ -190,25 +189,11 @@ export function QueryResultsView({
       ) : null}
 
       {errorMessage && !session?.policyRefusal ? (
-        <div
-          role="alert"
-          className="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
-        >
-          <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <div className="flex-1 whitespace-pre-wrap wrap-break-word font-mono">
-            {errorMessage}
-          </div>
-        </div>
+        <ErrorState message={errorMessage} className="shrink-0" />
       ) : null}
 
       {session?.policyRefusal ? (
-        <div
-          role="alert"
-          className="flex shrink-0 items-start gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
-        >
-          <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{session.policyRefusal}</span>
-        </div>
+        <ErrorState message={session.policyRefusal} className="shrink-0" />
       ) : null}
 
       {mutationGrid?.statusCopy ? (
@@ -285,7 +270,7 @@ function ResultsContent({
       />
     );
   }
-  if (isRunning) return <RunningState />;
+  if (isRunning) return <LoadingState label="Running query…" />;
   if (session?.execution?.tombstone) return <ReleasedState />;
   if (preview?.rows.length) {
     return (
@@ -301,8 +286,10 @@ function ResultsContent({
       />
     );
   }
-  if (errorMessage) return <NoResultsAfterError />;
-  return <EmptyState />;
+  if (errorMessage) {
+    return <EmptyState title="Query did not return results" />;
+  }
+  return <EmptyState title="Run the query to see results" />;
 }
 
 function OutputView({
@@ -315,7 +302,7 @@ function OutputView({
   onReleaseBudgetOwner?: (tabId: string) => void;
 }) {
   const execution = session?.execution;
-  if (!execution) return <EmptyState />;
+  if (!execution) return <EmptyState title="Run the query to see results" />;
   return (
     <div className="h-full overflow-auto p-3 font-mono text-xs text-foreground">
       <div
@@ -334,13 +321,14 @@ function OutputView({
         </div>
       ))}
       {execution.error ? (
-        <div
-          role="alert"
-          className="mt-2 border-l-2 border-danger px-2 py-1 text-danger"
-        >
-          {execution.error.code ? `${execution.error.code} · ` : ""}
-          {execution.error.message}
-        </div>
+        <ErrorState
+          className="mt-2"
+          message={
+            execution.error.code
+              ? `${execution.error.code} · ${execution.error.message}`
+              : execution.error.message
+          }
+        />
       ) : null}
       {execution.omittedRows ||
       execution.omittedResultSets ||
@@ -395,12 +383,7 @@ function ReleasedBanner() {
 
 function ReleasedState() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-text-muted">
-      <div className="max-w-md text-center text-xs">
-        This result display was released to stay within the 128 MiB global
-        budget. Summary retained. Rerun the query to view rows again.
-      </div>
-    </div>
+    <EmptyState title="This result display was released to stay within the 128 MiB global budget. Summary retained. Rerun the query to view rows again." />
   );
 }
 
@@ -413,9 +396,18 @@ function ExplainContent({
   isRunning: boolean;
   errorMessage: string | null;
 }) {
-  if (isRunning) return <RunningState label="Running EXPLAIN…" />;
-  if (errorMessage) return <NoResultsAfterError />;
-  if (!explainPlan) return <ExplainEmptyState />;
+  if (isRunning) return <LoadingState label="Running EXPLAIN…" />;
+  if (errorMessage) {
+    return <EmptyState title="Query did not return results" />;
+  }
+  if (!explainPlan) {
+    return (
+      <EmptyState
+        title="Explain plan"
+        description="Run EXPLAIN to render the active statement's plan tree here."
+      />
+    );
+  }
   if (explainPlan.kind === "text") {
     return (
       <div className="h-full overflow-auto p-3">
@@ -426,53 +418,4 @@ function ExplainContent({
     );
   }
   return <ExplainView data={explainPlan} />;
-}
-
-function ExplainEmptyState() {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="max-w-md rounded-lg border border-dashed border-border-subtle bg-surface-panel/40 p-6 text-center">
-        <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-accent/10 text-accent">
-          <IconRoute className="size-5" />
-        </div>
-        <div className="text-sm font-semibold text-foreground">
-          Explain plan
-        </div>
-        <p className="mt-1 text-xs text-text-muted">
-          Run EXPLAIN to render the active statement's plan tree here.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function RunningState({ label = "Running query…" }: { label?: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted">
-      <IconLoader2 className="size-6 animate-spin opacity-70" />
-      <div className="text-xs">{label}</div>
-    </div>
-  );
-}
-
-function NoResultsAfterError() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted">
-      <div className="rounded-full bg-danger/10 p-3">
-        <IconAlertCircle className="size-6 text-danger opacity-70" />
-      </div>
-      <div className="text-xs">Query did not return results</div>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-text-muted">
-      <div className="rounded-full bg-surface-panel-elevated p-3">
-        <IconTerminal2 className="size-6 opacity-50" />
-      </div>
-      <div className="text-xs">Run the query to see results</div>
-    </div>
-  );
 }

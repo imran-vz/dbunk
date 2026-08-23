@@ -3,8 +3,14 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Control heights come from the density variables (`--control-h*`,
+ * see styles.css) so Button, Input and SelectTrigger share one height
+ * at every density (DESIGN-SYSTEM §2.3/§4.1). Icon sizing is owned by
+ * the button size — callsites must not override it.
+ */
 const buttonVariants = cva(
-  "focus-visible:border-ring focus-visible:ring-ring/40 aria-invalid:ring-destructive/30 aria-invalid:border-destructive rounded-sm border border-transparent bg-clip-padding text-xs/relaxed font-medium focus-visible:ring-[1.5px] aria-invalid:ring-[1.5px] [&_svg:not([class*='size-'])]:size-3.5 inline-flex items-center justify-center whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none group/button select-none",
+  "focus-visible:border-ring focus-visible:ring-ring/40 aria-invalid:ring-destructive/30 aria-invalid:border-destructive rounded-sm border border-transparent bg-clip-padding font-medium focus-visible:ring-[1.5px] aria-invalid:ring-[1.5px] inline-flex items-center justify-center whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none group/button select-none",
   {
     variants: {
       variant: {
@@ -21,14 +27,17 @@ const buttonVariants = cva(
       },
       size: {
         default:
-          "h-7 gap-1.5 px-2 text-xs/relaxed has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        xs: "h-5 gap-1 rounded-sm px-1.5 text-2xs has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1 [&_svg:not([class*='size-'])]:size-2.5",
-        sm: "h-6 gap-1.5 px-2 text-2xs/relaxed has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        lg: "h-8 gap-2 px-2.5 text-xs/relaxed has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
-        icon: "size-7 [&_svg:not([class*='size-'])]:size-3.5",
-        "icon-xs": "size-5 rounded-sm [&_svg:not([class*='size-'])]:size-2.5",
-        "icon-sm": "size-6 [&_svg:not([class*='size-'])]:size-3",
-        "icon-lg": "size-8 [&_svg:not([class*='size-'])]:size-3.5",
+          "h-(--control-h) gap-1.5 px-2 text-sm has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-4",
+        xs: "h-(--control-h-sm) gap-1 px-1.5 text-2xs has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-(--control-h-sm) gap-1.5 px-2 text-xs has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-(--control-h-lg) gap-1.5 px-2.5 text-sm has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-4",
+        icon: "size-auto h-(--control-h) w-(--control-h) [&_svg:not([class*='size-'])]:size-4",
+        "icon-xs":
+          "size-auto h-(--control-h-sm) w-(--control-h-sm) [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm":
+          "size-auto h-(--control-h-sm) w-(--control-h-sm) [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-lg":
+          "size-auto h-(--control-h-lg) w-(--control-h-lg) [&_svg:not([class*='size-'])]:size-4",
       },
     },
     defaultVariants: {

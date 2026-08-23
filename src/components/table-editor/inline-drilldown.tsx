@@ -19,6 +19,11 @@ import { useEffect, useState } from "react";
 
 import type { ForeignKeyTarget } from "@/components/data-grid";
 import { Button } from "@/components/ui/button";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "@/components/ui/state-panel";
 import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import { type DatabaseEngine, useAppStore } from "@/lib/store";
 import { errorToMessage } from "@/lib/tauri";
@@ -104,18 +109,16 @@ export function InlineDrilldown({
           aria-label="Close drill-down"
           title="Close (Esc)"
         >
-          <IconX className="size-3.5" />
+          <IconX />
         </Button>
       </div>
       <div className="mt-2">
         {state.kind === "loading" ? (
-          <div className="text-text-muted">Loading…</div>
+          <LoadingState label="Loading referenced rows…" />
         ) : state.kind === "error" ? (
-          <div className="rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-danger">
-            {state.message}
-          </div>
+          <ErrorState message={state.message} />
         ) : state.rows.length === 0 ? (
-          <div className="text-text-muted">No matching rows.</div>
+          <EmptyState title="No matching rows." className="p-2" />
         ) : (
           <DrilldownRows columns={state.columns} rows={state.rows} />
         )}

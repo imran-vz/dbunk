@@ -71,7 +71,7 @@ export function TableEditorHeader({
           title={rowDetailsVisible ? "Hide row details" : "Show row details"}
           onClick={onToggleRowDetails}
         >
-          <IconLayoutSidebarRight className="size-3.5" />
+          <IconLayoutSidebarRight />
           <span className="dbunk-optional-label">Details</span>
         </Button>
       ) : null}

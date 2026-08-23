@@ -1,15 +1,16 @@
-import {
-  IconAlertTriangle,
-  IconArrowsRightLeft,
-  IconLink,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconArrowsRightLeft, IconLink, IconPlus } from "@tabler/icons-react";
 import { useEffect, useMemo } from "react";
 
 import { ForeignKeysSection } from "@/components/table-structure/read-only-sections";
 import { UnsupportedNotice } from "@/components/table-structure/shared";
 import { useStructure } from "@/components/table-structure/use-structure";
 import { Button } from "@/components/ui/button";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingBar,
+  LoadingState,
+} from "@/components/ui/state-panel";
 import type { SchemaForeignKey } from "@/lib/schema-graph";
 import { schemaRelationshipsKey, useAppStore } from "@/lib/store";
 
@@ -67,15 +68,13 @@ export function RelationsSubTab({
     relationshipsStatus?.state === "error" ? relationshipsStatus.error : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]">
-      {view.isLoading || isLoadingRelations ? (
-        <div className="h-0.5 w-full animate-pulse bg-primary" />
-      ) : null}
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#080c10]">
+      {view.isLoading || isLoadingRelations ? <LoadingBar /> : null}
       {view.errorMessage ? (
-        <Banner message={view.errorMessage} onRetry={view.retry} />
+        <ErrorState message={view.errorMessage} onRetry={view.retry} />
       ) : null}
       {relationshipsError ? (
-        <Banner
+        <ErrorState
           message={relationshipsError}
           onRetry={() => {
             void loadSchemaRelationships(connectionId, schema);
@@ -104,7 +103,7 @@ export function RelationsSubTab({
               onClick={() => onOpenSpecialized("specialized")}
               aria-label="Open the foreign-key builder"
             >
-              <IconPlus className="size-3.5" />
+              <IconPlus />
               New foreign key
             </Button>
           </div>
@@ -155,11 +154,9 @@ function InboundSection({
         </p>
       </header>
       {isLoading ? (
-        <div className="px-3 py-2 text-xs text-text-muted">Loading…</div>
+        <LoadingState label="Loading inbound relations…" className="min-h-8" />
       ) : inbound.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-text-muted">
-          No tables reference this one.
-        </div>
+        <EmptyState title="No tables reference this one." className="p-3" />
       ) : (
         <ul className="divide-y divide-white/8">
           {inbound.map((fk) => (
@@ -190,26 +187,5 @@ function InboundSection({
         </ul>
       )}
     </section>
-  );
-}
-
-function Banner({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <div
-      role="alert"
-      className="flex items-start gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
-    >
-      <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-      <div className="flex-1 whitespace-pre-wrap font-mono">{message}</div>
-      <Button size="sm" variant="ghost" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
   );
 }

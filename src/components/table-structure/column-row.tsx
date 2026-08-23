@@ -162,7 +162,7 @@ function RowActions({
         aria-label={`Drop column ${column.name}`}
         onClick={onDrop}
       >
-        <IconTrash className="size-3.5" />
+        <IconTrash />
       </Button>
     </div>
   );
@@ -213,7 +213,7 @@ function ColumnEditPanel({
             onDone();
           }}
         >
-          <IconCheck className="size-3.5" />
+          <IconCheck />
         </Button>
       </EditField>
       <EditField label="Type">
@@ -241,7 +241,7 @@ function ColumnEditPanel({
             onDone();
           }}
         >
-          <IconCheck className="size-3.5" />
+          <IconCheck />
         </Button>
       </EditField>
       <EditField label="Default">
@@ -270,7 +270,7 @@ function ColumnEditPanel({
             onDone();
           }}
         >
-          <IconCheck className="size-3.5" />
+          <IconCheck />
         </Button>
       </EditField>
     </div>

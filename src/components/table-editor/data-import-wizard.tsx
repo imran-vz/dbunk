@@ -112,7 +112,7 @@ export function DataImportWizard({
           </div>
         </div>
         <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
-          <IconX className="size-3.5" />
+          <IconX />
         </Button>
       </div>
 
@@ -216,7 +216,7 @@ export function DataImportWizard({
               {copyEligible ? " · COPY FROM fast path eligible" : ""}
             </span>
             <Button type="button" disabled={isWriting} onClick={submit}>
-              <IconUpload className="size-3.5" />
+              <IconUpload />
               {isWriting ? "Importing..." : "Import rows"}
             </Button>
           </div>

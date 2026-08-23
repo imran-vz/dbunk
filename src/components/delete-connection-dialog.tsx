@@ -47,7 +47,7 @@ export function DeleteConnectionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={handleDelete}>
-            <IconTrash className="size-4" />
+            <IconTrash />
             Delete connection
           </AlertDialogAction>
         </AlertDialogFooter>

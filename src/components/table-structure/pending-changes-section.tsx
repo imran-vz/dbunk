@@ -122,7 +122,7 @@ function PendingList({
             aria-label="Remove pending change"
             onClick={() => onRemove(entry.id)}
           >
-            <IconX className="size-3.5" />
+            <IconX />
           </Button>
         </li>
       ))}
