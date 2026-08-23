@@ -239,6 +239,38 @@ ADR-0009 for the writes-by-default posture.
 
 ## Workspace model
 
+### Shell vocabulary (UI refresh)
+
+The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
+
+- **Activity rail** — the 40px icon column on the far left. Items switch
+  the main pane's rail view (Connections, Tables, Queries, History,
+  Schema Map, Admin, Overview) with Settings pinned at the bottom.
+- **Navigator** — the left tree panel (schemas → tables) with the filter
+  input pinned on top. One tab stop with roving focus; toggled with
+  `Cmd+B`.
+- **Object tab strip** — the row of open `table`/`query` tabs above the
+  main pane. Pinned tabs sit leftmost; a prod/staging connection colors
+  its bottom underline.
+- **Results pane** — the bottom half of the query editor split, holding
+  the Results/Explain toggle, result-set chips, pinned results, and the
+  Export/Copy menus. Collapses to the **status strip** (one
+  `--h-statusbar` row: `N rows · X ms` + expand chevron); `Cmd+J`
+  toggles.
+- **Dock** — the full-width global console above the status bar:
+  connection lifecycle, server notices, task/export progress, and the
+  cross-tab query log. Hidden by default, toggled with `` Ctrl+` `` or
+  the status-bar badge; it never auto-opens.
+- **Status bar** — the 24px bottom strip. Segments are click targets:
+  the pending-mutations badge opens the review panel; the console badge
+  opens the dock; an ambient environment segment marks prod/staging.
+- **Sash** — the shared resize handle on every panel/split edge. Drag
+  resizes (snap-close below threshold), double-click auto-fits,
+  Alt+double-click collapses, Enter/Home/End work from the keyboard.
+- **Panel** — the one primitive behind every sidebar and auxiliary
+  region (`ui/panel.tsx`); pressure-collapse (window too small) is
+  tracked separately from user-collapse so panels restore themselves.
+
 - **Workspace Shell** — the contents of the main area when a connection is
   active. Forks on the active connection's storage class (ADR-0008): the
   **Relational Workspace** renders the schema explorer + `table`/`query`
