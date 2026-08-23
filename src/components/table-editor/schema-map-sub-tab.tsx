@@ -49,7 +49,7 @@ export function SchemaMapSubTab({
               )
             }
           >
-            <IconGitBranch className="size-3" />
+            <IconGitBranch />
             Reset
           </Button>
           <SchemaMapGlossaryButton />

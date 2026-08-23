@@ -471,7 +471,7 @@ export function BrowseInspectionPanel({
           aria-label="Copy SQL"
           onClick={() => void copy(inspection.sql)}
         >
-          <IconCopy className="size-3.5" />
+          <IconCopy />
         </Button>
       </div>
       <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-2xs">
@@ -497,7 +497,7 @@ export function BrowseInspectionPanel({
             )
           }
         >
-          <IconCopy className="size-3.5" />
+          <IconCopy />
         </Button>
       </div>
       <ol className="mt-1 space-y-0.5 font-mono text-2xs text-muted-foreground">

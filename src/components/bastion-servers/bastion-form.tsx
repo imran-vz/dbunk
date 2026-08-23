@@ -49,7 +49,7 @@ export function BastionForm({
             size="sm"
             onClick={() => update("authMethod", "privateKeyContent")}
           >
-            <IconKey className="size-3" />
+            <IconKey />
             Capture key
           </Button>
         </div>

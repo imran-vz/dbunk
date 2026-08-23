@@ -4,12 +4,14 @@ import { cn } from "@/lib/utils";
 
 export type StatusTone = "healthy" | "warning" | "danger" | "neutral" | "info";
 
+// Plain token fills — in-layout glows/shadows are banned
+// (DESIGN-SYSTEM §2.5).
 // oxlint-disable-next-line anti-slop/no-known-value-widening -- The value is handled at a typed library or domain boundary here.
 const toneClass: Record<StatusTone, string> = {
-  healthy: "bg-success shadow-[0_0_10px_rgba(143,221,76,0.55)]",
-  warning: "bg-warning shadow-[0_0_10px_rgba(245,184,75,0.45)]",
-  danger: "bg-danger shadow-[0_0_10px_rgba(239,107,107,0.45)]",
-  info: "bg-info shadow-[0_0_10px_rgba(103,183,255,0.45)]",
+  healthy: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+  info: "bg-info",
   neutral: "bg-text-disabled",
 };
 

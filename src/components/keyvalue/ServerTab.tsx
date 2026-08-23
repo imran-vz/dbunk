@@ -110,7 +110,7 @@ export function ServerTab({ connectionId, dbNumber }: ServerTabProps) {
             }}
             disabled={loading}
           >
-            <IconRefresh className="size-3" />
+            <IconRefresh />
             {loading ? "Refreshing…" : "Refresh"}
           </Button>
         </div>

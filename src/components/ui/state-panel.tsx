@@ -1,28 +1,45 @@
 /**
- * Reusable empty / loading / error state shells. All app panels with
- * a fetch lifecycle should pick one of these instead of hand-rolling
- * a "Loading…" string, so the visual language stays consistent.
- *
- * Each variant lives in its own component so callers spell out the
- * state at the call site rather than juggling a `kind` prop:
+ * Shared empty / loading / error state primitives (DESIGN-SYSTEM
+ * §4.11). All app regions with a fetch lifecycle must use these —
+ * local reimplementations are banned:
  *
  *   if (loading) return <LoadingState label="Loading sessions…" />;
  *   if (error)   return <ErrorState message={error} onRetry={retry} />;
  *   if (rows.length === 0) return <EmptyState title="No sessions" />;
+ *
+ * Loading is a 2px indeterminate accent bar at the region's top edge —
+ * never a centered spinner (spinners are reserved for ≥500ms
+ * button-level operations). Empty is one muted line plus at most one
+ * action. Error is an inline danger banner with expandable mono
+ * details.
  */
 
-import {
-  IconAlertTriangle,
-  IconInbox,
-  IconLoader2,
-  IconRefresh,
-} from "@tabler/icons-react";
+import { IconRefresh } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface BaseShellProps {
   className?: string;
+}
+
+/**
+ * 2px indeterminate accent bar for a region's top edge. Position it
+ * inside a `relative` container when overlaying existing (dimmed)
+ * content.
+ */
+export function LoadingBar({ className }: BaseShellProps) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden",
+        className,
+      )}
+    >
+      <div className="h-full w-1/3 animate-loading-bar bg-primary" />
+    </div>
+  );
 }
 
 export function LoadingState({
@@ -32,40 +49,50 @@ export function LoadingState({
   return (
     <output
       aria-live="polite"
-      className={cn(
-        "flex h-full flex-col items-center justify-center gap-2 p-6 text-xs text-text-muted",
-        className,
-      )}
+      className={cn("relative block h-full min-h-4 w-full", className)}
     >
-      <IconLoader2 className="size-5 animate-spin" />
-      <span>{label}</span>
+      <LoadingBar />
+      <span className="sr-only">{label}</span>
     </output>
   );
 }
 
 export function ErrorState({
   message,
+  details,
   onRetry,
   className,
-}: BaseShellProps & { message: string; onRetry?: () => void }) {
+}: BaseShellProps & {
+  message: string;
+  /** Raw driver/server output, shown behind a disclosure in mono. */
+  details?: string;
+  onRetry?: () => void;
+}) {
   return (
     <div
       role="alert"
       className={cn(
-        "flex h-full flex-col items-center justify-center gap-3 p-6 text-center",
+        "flex flex-col gap-2 border-l-2 border-danger bg-danger/10 px-3 py-2",
         className,
       )}
     >
-      <div className="flex size-9 items-center justify-center rounded-full bg-danger/10 text-danger">
-        <IconAlertTriangle className="size-5" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 text-sm text-foreground">{message}</div>
+        {onRetry ? (
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <IconRefresh /> Retry
+          </Button>
+        ) : null}
       </div>
-      <div className="max-w-md whitespace-pre-wrap font-mono text-xs text-danger">
-        {message}
-      </div>
-      {onRetry ? (
-        <Button size="sm" variant="outline" onClick={onRetry}>
-          <IconRefresh className="size-3.5" /> Retry
-        </Button>
+      {details ? (
+        <details className="min-w-0">
+          <summary className="cursor-default text-xs text-text-muted select-none">
+            Details
+          </summary>
+          <pre className="mt-1 overflow-x-auto font-mono text-xs whitespace-pre-wrap text-text-secondary">
+            {details}
+          </pre>
+        </details>
       ) : null}
     </div>
   );
@@ -74,13 +101,11 @@ export function ErrorState({
 export function EmptyState({
   title,
   description,
-  icon,
   action,
   className,
 }: BaseShellProps & {
   title: string;
   description?: string;
-  icon?: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
@@ -90,13 +115,10 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="flex size-9 items-center justify-center rounded-full bg-surface-panel-elevated text-text-muted">
-        {icon ?? <IconInbox className="size-5" />}
+      <div className="max-w-md text-sm text-text-muted">
+        {title}
+        {description ? <> — {description}</> : null}
       </div>
-      <div className="text-sm font-semibold text-foreground">{title}</div>
-      {description ? (
-        <p className="max-w-md text-xs text-text-muted">{description}</p>
-      ) : null}
       {action}
     </div>
   );
@@ -109,7 +131,7 @@ export function Skeleton({
   return (
     <div
       className={cn(
-        "animate-pulse rounded-md bg-surface-panel-elevated/60",
+        "animate-pulse rounded-sm bg-surface-panel-elevated/60",
         className,
       )}
       {...props}

@@ -150,7 +150,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
         <div className="px-3 pt-1">
           <Button size="sm" variant="ghost" className="px-1 text-text-muted">
             View all history
-            <IconChevronRight className="size-3" />
+            <IconChevronRight />
           </Button>
         </div>
       </Card>
@@ -278,7 +278,7 @@ export function QuerySidebar({ tab }: QuerySidebarProps) {
             onClick={() => setIsCreatingNew(true)}
             disabled={!tab.query?.trim()}
           >
-            <IconPlus className="size-3" />
+            <IconPlus />
             New Saved Query
           </Button>
         </div>

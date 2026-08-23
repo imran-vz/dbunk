@@ -82,7 +82,7 @@ P0–P2 are strictly sequential. P4→P5→P6 are sequential. P7/P8/P9 can inter
 
 ## Phase 2 — Primitive components
 
-**Why:** the shell and screens (P3+) must be rebuilt *from* correct primitives.
+**Status: implemented** (branch `ui-refresh-p2`). Notes: a standard (non-alert) `Dialog` primitive was added (`ui/dialog.tsx`) with the shared sm/md/lg/xl size scale; the three connection dialogs and the schema-map glossary moved onto it. `Kbd` gained a `bare` variant that powers the `DropdownMenuShortcut`/`ContextMenuShortcut` `keys` slots. State primitives now match §4.11 (loading = 2px `LoadingBar`, empty = one muted line, error = left-border banner with expandable details) and were adopted at the divergent sites in the query/table-editor/overview surfaces. The Toaster follows the app theme by observing the root `.dark` class; TanStackDevtools is dev-only and moved out of the toast corner. The `title=` attribute is eliminated from `ui/` (tooltips + aria-labels instead); remaining app-surface `title=` usages are removed as P3–P6/P9 rebuild those surfaces, and the CI grep gate lands with P10.
 
 **Changes** (`src/components/ui/`)
 1. Control alignment: Button default = `--control-h`; Input and SelectTrigger identical height/bg/border — the 32/28/24px mismatch dies. Variants per §4.1; icon sizing owned by the button (callsite `size-3.5` overrides removed).
