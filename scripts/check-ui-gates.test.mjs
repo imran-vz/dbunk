@@ -41,8 +41,9 @@ describe("banned-radius gate", () => {
 
   it("allows the sanctioned radii", () => {
     expect(radius(rel, 'className="rounded-md rounded-t-sm"')).toBe(false);
-    expect(radius(rel, 'className="rounded-[calc(var(--radius-sm)-2px)]"'))
-      .toBe(false);
+    expect(
+      radius(rel, 'className="rounded-[calc(var(--radius-sm)-2px)]"'),
+    ).toBe(false);
   });
 });
 
@@ -50,9 +51,7 @@ describe("native-prompt gate", () => {
   const prompt = GATES["native-prompt"];
 
   it("flags window and globalThis prompts", () => {
-    expect(prompt("src/lib/x.ts", "if (window.confirm('sure?')) {")).toBe(
-      true,
-    );
+    expect(prompt("src/lib/x.ts", "if (window.confirm('sure?')) {")).toBe(true);
     expect(prompt("src/lib/x.ts", "globalThis.alert('hi')")).toBe(true);
   });
 
