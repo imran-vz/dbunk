@@ -80,9 +80,16 @@ export function KeyValueWorkspace({
     (state) => state.redisCapabilitiesByConnection[activeConnection.id],
   );
 
-  const handleOpenKey = useCallback((key: string, type: string) => {
-    setSelectedKey({ name: key, type });
-  }, []);
+  const handleOpenKey = useCallback(
+    (key: string, type: string) => {
+      setSelectedKey({ name: key, type });
+      // Opening a key is an explicit request to inspect it — with the
+      // collapsed flag persisted across sessions, clicking a key would
+      // otherwise appear to do nothing.
+      inspectorPanel.expand();
+    },
+    [inspectorPanel],
+  );
 
   const handleKeyDeleted = useCallback(
     (key: string) => {
@@ -230,6 +237,7 @@ export function KeyValueWorkspace({
                 side="right"
                 state={inspectorPanel}
                 ariaLabel="Resize key inspector"
+                restoreLabel="Show key inspector"
               >
                 <div className="flex h-full min-h-0 flex-col border-l border-border-subtle bg-surface-panel">
                   <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
