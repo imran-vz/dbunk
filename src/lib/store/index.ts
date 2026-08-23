@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { createBastionsSlice } from "./bastions";
 import { createConnectionsSlice } from "./connections";
+import { createConsoleSlice } from "./console";
 import { createCredentialsSlice } from "./credentials";
 import { createKeyValuePubSubSlice } from "./keyvalue-pubsub";
 import { createKeyValueWorkspaceSlice } from "./keyvalue-workspace";
@@ -133,6 +134,8 @@ export type {
 } from "./mutation-drafts";
 export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
 export type { QueryTransactionCommand } from "./query-sessions";
+export { consoleSeverityForNotice } from "./console";
+export type { ConsoleEvent, ConsoleSeverity, ConsoleSource } from "./console";
 
 /**
  * The workspace Zustand store — composed of domain-concept slices
@@ -158,4 +161,5 @@ export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createRelationalQueriesSlice(set, get, store),
   ...createKeyValueWorkspaceSlice(set, get, store),
   ...createKeyValuePubSubSlice(set, get, store),
+  ...createConsoleSlice(set, get, store),
 }));
