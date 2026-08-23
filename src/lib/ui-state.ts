@@ -39,6 +39,43 @@ const MIGRATED_KEY = "ui.v1.migrated";
 const FLUSH_DELAY_MS = 300;
 const RETRY_DELAY_MS = 2000;
 
+/**
+ * Mirrors of the backend limits (storage.rs UI_STATE_MAX_*): the save
+ * command rejects the whole batch when any entry exceeds them, so one
+ * oversized value enqueued without validation would deterministically
+ * fail — and wedge — every future flush.
+ */
+export const UI_STATE_MAX_VALUE_BYTES = 512 * 1024;
+export const UI_STATE_MAX_KEY_BYTES = 512;
+
+const utf8Encoder = new TextEncoder();
+
+/**
+ * True when the UTF-8 encoding of `text` exceeds `limitBytes`, with fast
+ * paths that avoid encoding: bytes are always between `length` (all
+ * ASCII) and `3 * length` (BMP worst case; astral pairs average 2/unit).
+ */
+export function exceedsUtf8Length(text: string, limitBytes: number): boolean {
+  if (text.length * 3 <= limitBytes) return false;
+  if (text.length > limitBytes) return true;
+  return utf8Encoder.encode(text).length > limitBytes;
+}
+
+/** Validation mirror of the backend guards; oversized entries are dropped. */
+function isPersistableEntry(storeKey: string, value: string): boolean {
+  if (exceedsUtf8Length(storeKey, UI_STATE_MAX_KEY_BYTES)) {
+    console.error(`UI-state key too long; not persisted: ${storeKey}`);
+    return false;
+  }
+  if (exceedsUtf8Length(value, UI_STATE_MAX_VALUE_BYTES)) {
+    console.error(
+      `UI-state value for '${storeKey}' exceeds ${UI_STATE_MAX_VALUE_BYTES} bytes; not persisted`,
+    );
+    return false;
+  }
+  return true;
+}
+
 const toStoreKey = (key: string): string =>
   `ui.v1.${key.startsWith("dbunk.") ? key.slice("dbunk.".length) : key}`;
 
@@ -110,16 +147,22 @@ function migrateLocalStorage(): void {
       const key = window.localStorage.key(index);
       if (!key || !key.startsWith("dbunk.")) continue;
       if (BOOT_CACHE_KEYS.has(key)) continue;
-      toRemove.push(key);
-      if (alreadyMigrated) continue;
-      if (DEAD_KEY_PATTERNS.some((pattern) => pattern.test(key))) continue;
-      const value = window.localStorage.getItem(key);
-      if (value === null) continue;
-      const storeKey = toStoreKey(key);
-      if (!cache.has(storeKey)) {
-        cache.set(storeKey, value);
-        dirtyKeys.set(storeKey, value);
+      if (!alreadyMigrated) {
+        const value = DEAD_KEY_PATTERNS.some((pattern) => pattern.test(key))
+          ? null
+          : window.localStorage.getItem(key);
+        if (value !== null) {
+          const storeKey = toStoreKey(key);
+          if (!cache.has(storeKey)) {
+            // An unpersistable value keeps its legacy localStorage copy —
+            // never delete the only copy of something we couldn't import.
+            if (!isPersistableEntry(storeKey, value)) continue;
+            cache.set(storeKey, value);
+            dirtyKeys.set(storeKey, value);
+          }
+        }
       }
+      toRemove.push(key);
     }
     // Removal is deferred until the migrated values are durably in
     // SQLite (see flushUiState) — never delete the only copy first.
@@ -145,13 +188,28 @@ function scheduleFlush(delayMs: number = FLUSH_DELAY_MS): void {
 }
 
 /**
+ * Serializes flushes: Tauri command handlers run concurrently and each
+ * batch commits its own transaction, so two overlapping flushes could
+ * commit out of order and leave a stale value durable while the cache
+ * holds the newer one.
+ */
+let flushChain: Promise<void> = Promise.resolve();
+
+/**
  * Persist pending writes/deletes now (also used by tests + shutdown).
  * On failure the snapshot is merged back into the pending sets (without
  * clobbering anything queued while the flush was in flight) and a retry
  * is scheduled — a transiently locked SQLite must not silently drop the
  * latest hot-exit SQL or layout changes.
  */
-export async function flushUiState(): Promise<void> {
+export function flushUiState(): Promise<void> {
+  const run = flushChain.then(runFlush);
+  // The chain itself must never reject, or one failure would poison it.
+  flushChain = run.catch(() => {});
+  return run;
+}
+
+async function runFlush(): Promise<void> {
   if (!usesSqlite()) return;
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
@@ -184,6 +242,9 @@ export async function flushUiState(): Promise<void> {
     for (const [key, value] of writes) {
       // Keep newer values / deletes queued during the failed flush.
       if (dirtyKeys.has(key) || deletedKeys.has(key)) continue;
+      // Belt-and-braces: never requeue an entry the backend will always
+      // reject, or the retry loop would fail deterministically forever.
+      if (!isPersistableEntry(key, value)) continue;
       let coveredByPrefix = false;
       for (const prefix of deletedPrefixes) {
         if (key.startsWith(prefix)) {
@@ -237,6 +298,9 @@ export function uiSet(key: string, value: string): void {
   }
   const storeKey = toStoreKey(key);
   if (cache?.get(storeKey) === value) return;
+  // Dropped (not truncated): the backend rejects the whole batch on any
+  // oversized entry, so enqueueing it would wedge every future flush.
+  if (!isPersistableEntry(storeKey, value)) return;
   cache?.set(storeKey, value);
   deletedKeys.delete(storeKey);
   dirtyKeys.set(storeKey, value);
@@ -299,6 +363,7 @@ export function resetUiStateForTests(): void {
   deletedKeys.clear();
   deletedPrefixes.clear();
   pendingLegacyRemovals = [];
+  flushChain = Promise.resolve();
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
     flushTimer = null;

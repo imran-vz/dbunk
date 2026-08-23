@@ -178,4 +178,31 @@ describe("session persistence (P8)", () => {
     expect(parsed.tabs).toHaveLength(1);
     expect(parsed.tabs[0].id).toBe("tab-1");
   });
+
+  it("sheds the largest hot-exit SQL when the session exceeds the value budget", () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    startSessionPersistence();
+
+    // One pasted SQL dump larger than the whole per-value limit, plus a
+    // normal tab whose SQL must survive.
+    useAppStore.setState({
+      workspaceTabs: [
+        queryTab("tab-1", "x".repeat(600 * 1024)),
+        queryTab("tab-2", "select 2;"),
+      ],
+      activeTabId: "tab-2",
+    });
+    vi.advanceTimersByTime(600);
+
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw ?? "{}");
+    expect(parsed.tabs).toHaveLength(2);
+    expect(parsed.tabs[0].id).toBe("tab-1");
+    expect(parsed.tabs[0].query).toBeUndefined();
+    expect(parsed.tabs[1].query).toBe("select 2;");
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });
