@@ -1,6 +1,11 @@
 # dbunk — UI Shell Design System ("Workbench Rail")
 
-Status: **adopted**. This is the single source of truth for the app shell and
+> **SUPERSEDED (2026-08-23):** [`DESIGN-SYSTEM.md`](./DESIGN-SYSTEM.md) is now the
+> authoritative design system, with [`UI_REFRESH_PLAN.md`](./UI_REFRESH_PLAN.md)
+> as the migration plan. Where this document conflicts with `DESIGN-SYSTEM.md`,
+> the new document wins. Kept for historical context on the Workbench Rail shell.
+
+Status: ~~adopted~~ superseded. This was the single source of truth for the app shell and
 layout. It replaces the earlier exploratory handoff that used to live in this
 file (persistent sidebar + stacked tab rows). Color/typography tokens live in
 [`../src/styles.css`](../src/styles.css); this doc maps the shell to those
