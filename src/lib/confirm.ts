@@ -79,7 +79,11 @@ export const requestPrompt = (request: PromptRequest): Promise<string | null> =>
     emit();
   });
 
-export const resolveAppDialog = (value: boolean | string | null) => {
+export const resolveAppDialog = (id: string, value: boolean | string | null) => {
+  // Id-addressed on purpose: a Cancel click fires both the button onClick
+  // and the dialog's onOpenChange(false) in the same event, and resolving
+  // by queue position would silently cancel the next queued dialog.
+  if (queue[0]?.id !== id) return;
   const pending = queue.shift();
   if (!pending) return;
   if (pending.kind === "confirm") {
