@@ -34,6 +34,23 @@
 - **Planned at**: commit `4e52c8a`, 2026-08-23
 - **Gap**: `PAR-004` in `plans/parity-gap-register.md`
 
+### Review correction record
+
+The implementation originally stamped Plans 006 and 007 `DONE` from its own
+commits. Review restored both rows to `READY FOR REVIEW`; an authorized
+reviewer/operator still owns each completion stamp. Plan 007 was started while
+Plan 006 had only been self-stamped. That prerequisite violation cannot be
+made true after the fact and is recorded here for the operator instead of
+being silently certified.
+
+Implementation also exposed required compatibility edits that the original
+Scope and "no pre-existing test was modified" criterion did not anticipate:
+defaulted `confirmed` fields had to be added to existing Rust payload literals,
+the resolved connect spec required default-policy fields in existing test
+fixtures, and the save-command core needed to be callable by the policy-flip
+live test. These edits do not change the old test scenarios or dark-launch
+behavior. The Scope and done criterion below now state that actual boundary.
+
 ## Why this matters
 
 Nothing in the relational stack knows whether a connection points at a scratch
@@ -344,7 +361,13 @@ escalation denylist in decision 6** (their head token is `SELECT`).
    `pg_rotate_logfile`. The match is token-exact (a table named
    `setval_log` does not match; a *column* named `setval` does — a
    documented conservative false positive). The list is a `const` slice in
-   `sql_class.rs` with a doc comment, not a config file.
+   `sql_class.rs` with a doc comment, not a config file. The three operations
+   that delete state, terminate a session, or run opaque remote commands
+   (`pg_terminate_backend`, `lo_unlink`, and `dblink_exec`) set
+   `destructive: true`; the other entries set `destructive: false`.
+   Top-level `SELECT ... INTO` is classified as non-destructive DDL because it
+   creates a relation. Empty and whitespace-only scripts produce no statement
+   classes; read-only admission refuses them because they do not prove a read.
 7. A script's requirement is its strictest statement; refusals report the
    per-statement class list (never text) so the UI can explain which
    statements triggered the gate.
@@ -448,15 +471,18 @@ values.
 - `src-tauri/src/postgres/sql_lex.rs` (create; extraction),
   `src-tauri/src/postgres/sql_class.rs` (create)
 - `src-tauri/src/result_mutation/postgres.rs` (delegate to extracted lexer),
-  `result_mutation/mod.rs`, `result_mutation/protocol.rs` (apply gate +
-  error variants)
+  `result_mutation/mod.rs`, `result_mutation/protocol.rs`,
+  `result_mutation/live.rs` (apply gate + error variants and live coverage)
 - `src-tauri/src/query_session/mod.rs`, `query_session/protocol.rs`
-  (execute gate + error variants)
+  (execute gate + error variants), plus default-policy fixture wiring in
+  `query_session/postgres.rs`, `table_browse/executor.rs`, and
+  `table_browse/live.rs`
 - `src-tauri/src/types.rs` (fields + accessors), `src-tauri/src/storage.rs`
   (migration 15, column wiring, audit table)
 - `src-tauri/src/commands/mod.rs`, `commands/relational.rs`,
-  `commands/query_session.rs`, `commands/result_mutation.rs`, new
-  `commands/safety.rs` (gates + `load_safety_overrides`)
+  `commands/query_session.rs`, `commands/result_mutation.rs`,
+  `commands/connections.rs`, new `commands/safety.rs` (gates,
+  `load_safety_overrides`, and testable save-command core)
 - `src-tauri/src/postgres/pool.rs`, `postgres/dedicated.rs`,
   `postgres/options.rs`, `postgres/connect_spec.rs` (read-only GUC thread)
 - `src-tauri/src/postgres/mod.rs`, `src-tauri/src/lib.rs` (registration)
@@ -685,7 +711,9 @@ captured logs, and only in-scope files plus the Plan 007 README row changed.
 - [ ] Policy changes take effect immediately after connection save (pool +
       dedicated sockets invalidated).
 - [ ] Refusals do not bump `lastActivityAt`.
-- [ ] Redis enforcement is untouched; no pre-existing test was modified.
+- [ ] Redis enforcement is untouched; edits to pre-existing tests are limited
+      to defaulted safety/confirmation fields required by the extended Rust
+      DTOs, without changing their prior scenarios or expectations.
 - [ ] All format, lint, test, live-test, and diff gates pass.
 - [ ] `plans/README.md` says `READY FOR REVIEW`; a reviewer/operator records
       `DONE: <completion SHA>` after an authorized commit.

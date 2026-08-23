@@ -2,23 +2,63 @@ use serde::{Deserialize, Serialize};
 
 use super::sql_lex::{lex_sql, SqlIdentifier, SqlToken};
 
-/// State-changing functions stay out of read-only mode without making every
-/// bounded write destructive. This includes cancellation, which stops work.
-const READ_WRITE_DENYLIST: &[&str] = &[
-    "setval",
-    "nextval",
-    "set_config",
-    "pg_cancel_backend",
-    "lo_import",
-    "lo_create",
-    "dblink",
-    "pg_reload_conf",
-    "pg_rotate_logfile",
-];
+struct ReadEscalation {
+    identifier: &'static str,
+    destructive: bool,
+}
 
-/// These read-shaped calls delete server state, terminate a backend, or run
-/// opaque remote commands, so protected mode must require confirmation.
-const READ_DESTRUCTIVE_DENYLIST: &[&str] = &["pg_terminate_backend", "lo_unlink", "dblink_exec"];
+/// Token-exact write-capable functions that must not retain the read class.
+/// Destructive entries also require confirmation in protected mode.
+const READ_ESCALATION_DENYLIST: &[ReadEscalation] = &[
+    ReadEscalation {
+        identifier: "setval",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "nextval",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "set_config",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "pg_cancel_backend",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "lo_import",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "lo_create",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "dblink",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "pg_reload_conf",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "pg_rotate_logfile",
+        destructive: false,
+    },
+    ReadEscalation {
+        identifier: "pg_terminate_backend",
+        destructive: true,
+    },
+    ReadEscalation {
+        identifier: "lo_unlink",
+        destructive: true,
+    },
+    ReadEscalation {
+        identifier: "dblink_exec",
+        destructive: true,
+    },
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StatementClass {
@@ -160,7 +200,8 @@ fn classify_statement(tokens: &[SqlToken]) -> StatementClass {
 }
 
 fn classified_read(tokens: &[SqlToken]) -> StatementClass {
-    if tokens.iter().any(is_destructive_read_identifier) {
+    let escalation = read_escalation(tokens);
+    if escalation == Some(true) {
         return StatementClass::Dml {
             unbounded: false,
             destructive: true,
@@ -169,7 +210,7 @@ fn classified_read(tokens: &[SqlToken]) -> StatementClass {
     if contains_top_level_select_into(tokens) {
         return StatementClass::Ddl { destructive: false };
     }
-    if tokens.iter().any(is_write_read_identifier) {
+    if escalation == Some(false) {
         return StatementClass::Dml {
             unbounded: false,
             destructive: false,
@@ -388,24 +429,25 @@ fn is_keyword(token: &SqlToken, keyword: &str) -> bool {
     )
 }
 
-fn is_write_read_identifier(token: &SqlToken) -> bool {
-    matches!(
-        token,
-        SqlToken::Identifier(SqlIdentifier { value, quoted: false })
-            if READ_WRITE_DENYLIST
-                .iter()
-                .any(|denylisted| value.eq_ignore_ascii_case(denylisted))
-    )
-}
-
-fn is_destructive_read_identifier(token: &SqlToken) -> bool {
-    matches!(
-        token,
-        SqlToken::Identifier(SqlIdentifier { value, quoted: false })
-            if READ_DESTRUCTIVE_DENYLIST
-                .iter()
-                .any(|denylisted| value.eq_ignore_ascii_case(denylisted))
-    )
+fn read_escalation(tokens: &[SqlToken]) -> Option<bool> {
+    let mut matched = false;
+    let mut destructive = false;
+    for token in tokens {
+        let SqlToken::Identifier(SqlIdentifier {
+            value,
+            quoted: false,
+        }) = token
+        else {
+            continue;
+        };
+        for escalation in READ_ESCALATION_DENYLIST {
+            if value.eq_ignore_ascii_case(escalation.identifier) {
+                matched = true;
+                destructive |= escalation.destructive;
+            }
+        }
+    }
+    matched.then_some(destructive)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::postgres::sql_class::{StatementClass, StatementClassSummary};
-use crate::{Environment, SafeMode};
+use crate::{ConnectionPolicy, Environment, SafeMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SafetyLevel {
@@ -17,7 +17,7 @@ pub(crate) struct ResolvedSafetyPolicy {
 
 impl Default for ResolvedSafetyPolicy {
     fn default() -> Self {
-        resolve_policy(Environment::default(), SafeMode::default(), false)
+        resolve_policy(ConnectionPolicy::default())
     }
 }
 
@@ -48,6 +48,19 @@ pub(crate) enum SafetyRefusal {
     },
 }
 
+impl SafetyRefusal {
+    pub(crate) fn fold<T>(
+        self,
+        blocked: impl FnOnce(&'static str, Vec<StatementClassSummary>) -> T,
+        needs_confirmation: impl FnOnce(Vec<StatementClassSummary>) -> T,
+    ) -> T {
+        match self {
+            Self::Blocked { reason, statements } => blocked(reason, statements),
+            Self::NeedsConfirmation { statements } => needs_confirmation(statements),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AuditDisposition {
     NotRequired,
@@ -65,11 +78,12 @@ impl SafetyAuthorization {
     }
 }
 
-pub(crate) fn resolve_policy(
-    environment: Environment,
-    safe_mode: SafeMode,
-    read_only: bool,
-) -> ResolvedSafetyPolicy {
+pub(crate) fn resolve_policy(policy: ConnectionPolicy) -> ResolvedSafetyPolicy {
+    let ConnectionPolicy {
+        environment,
+        safe_mode,
+        read_only,
+    } = policy;
     let level = match safe_mode {
         SafeMode::Disabled => SafetyLevel::Disabled,
         SafeMode::Protected => SafetyLevel::Protected,
@@ -234,21 +248,41 @@ mod tests {
         ];
         for (environment, level) in ENVIRONMENTS.into_iter().zip(expected) {
             assert_eq!(
-                resolve_policy(environment, SafeMode::Inherit, false).level,
+                resolve_policy(ConnectionPolicy {
+                    environment,
+                    safe_mode: SafeMode::Inherit,
+                    read_only: false,
+                })
+                .level,
                 level
             );
         }
         for environment in ENVIRONMENTS {
             assert_eq!(
-                resolve_policy(environment, SafeMode::Disabled, false).level,
+                resolve_policy(ConnectionPolicy {
+                    environment,
+                    safe_mode: SafeMode::Disabled,
+                    read_only: false,
+                })
+                .level,
                 SafetyLevel::Disabled
             );
             assert_eq!(
-                resolve_policy(environment, SafeMode::Protected, false).level,
+                resolve_policy(ConnectionPolicy {
+                    environment,
+                    safe_mode: SafeMode::Protected,
+                    read_only: false,
+                })
+                .level,
                 SafetyLevel::Protected
             );
             assert_eq!(
-                resolve_policy(environment, SafeMode::Strict, false).level,
+                resolve_policy(ConnectionPolicy {
+                    environment,
+                    safe_mode: SafeMode::Strict,
+                    read_only: false,
+                })
+                .level,
                 SafetyLevel::Strict
             );
         }
@@ -376,7 +410,7 @@ mod tests {
 
     #[test]
     fn disabled_is_the_dark_launch_default() {
-        let policy = resolve_policy(Environment::Development, SafeMode::Inherit, false);
+        let policy = resolve_policy(ConnectionPolicy::default());
         for intent in [
             statement(StatementClass::Unknown),
             WriteIntent::Ddl,
