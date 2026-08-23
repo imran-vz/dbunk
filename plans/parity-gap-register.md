@@ -55,7 +55,7 @@ implementation's blast radius, not the severity of the missing capability.
 | PAR-001 | Query sessions, execution, results, and transactions | Partial | P0 | XL | High | High |
 | PAR-002 | Server-backed table browsing | Complete | P0 | L | Medium | High |
 | PAR-003 | Editable query results and staged mutation review | Partial | P0 | L | High | High |
-| PAR-004 | Production safety policy | Missing | P0 | L | High | High |
+| PAR-004 | Production safety policy | Complete | P0 | L | High | High |
 | PAR-005 | Workspace persistence and global navigation | Partial | P0 | L | Medium | High |
 | PAR-006 | Connection security and organization | Partial | P1 | L | High | High |
 | PAR-007 | PostgreSQL object lifecycle management | Partial | P1 | XL | Medium | High |
@@ -219,11 +219,12 @@ transactionally, or discard it without ambiguity.
 
 ### PAR-004: Production safety policy
 
-**Current state:** Missing for relational workflows. Redis has more explicit
-destructive-command guards.
+**Current state:** Complete for the selected relational safety-policy scope.
+Plans 007 and 008 are implemented and merged to `main`.
 
-**Progress (2026-08-23):** Plans 007 and 008 were authored at commit
-`4e52c8a` and are the selected execution path. Plan 007 is a dark backend:
+**Progress (2026-08-23):** Plans 007 and 008 delivered the selected execution
+path. Plan 008's implementation commit `5409d66` landed on `main` as
+`5991dbf`. Plan 007 added a dark backend:
 per-connection `environment` (development/test/staging/production) and
 `safeMode` (inherit/disabled/protected/strict) fields plus a relational
 `readOnly` flag reusing the migration-7 column; a fail-closed PostgreSQL
@@ -237,7 +238,7 @@ the subprocess restore; typed `policyBlocked` / `policyNeedsConfirmation`
 refusals on the actor surfaces and `[policy:…]`-tagged strings on legacy
 `Result<T, String>` commands; a `default_transaction_read_only` session GUC
 as belt-and-braces (documented as not the boundary); and a capped,
-cascade-deleted audit of confirmed overrides. Plan 008 activates it in the
+cascade-deleted audit of confirmed overrides. Plan 008 activated it in the
 UI: form controls, environment badges and production identity across
 sidebar/header/tabs/banner/status bar, one shared confirmation dialog that
 re-sends with `confirmed: true` after deliberate acknowledgment (typed
@@ -264,28 +265,26 @@ synthesized from staged operations; explicit pass-through semantics for
 `managed.rs` production struct literals and five test-literal files that
 would otherwise trip the plan's own STOP condition.
 
-**Evidence:**
+**Implementation evidence:**
 
-- `src/components/connection-form/common-fields.tsx:240-257` captures a role as
-  display metadata.
-- `src/lib/store/edit-strategies.ts:147-168` gates editing by engine capability
-  and row identity, not by environment or enforced read-only policy.
-- The PostgreSQL query path has no shared destructive-statement or Safe Mode
-  policy.
+- `src/components/connection-form/safety-fields.tsx` exposes environment,
+  Safe Mode, and relational read-only controls.
+- `src/components/environment-badge.tsx` and the workspace surfaces keep
+  production identity visible where users act on a connection.
+- `src/components/safety-confirm-dialog.tsx` and
+  `src/lib/invoke-with-safety-confirmation.ts` provide the shared deliberate
+  confirmation and retry boundary.
+- `src/lib/store/edit-strategies.ts` applies read-only policy to edit
+  affordances, while `src-tauri/src/safety/` remains the enforcement boundary.
+- `src/components/workspace-overview/settings-tab.tsx` exposes the persisted
+  confirmed-override audit.
 
-**Missing pieces:**
+**Remaining follow-ons outside the completed Plans 007/008 scope:**
 
-- Enforced relational read-only connections.
-- Environment classification: development, test, staging, and production.
-- Connection colors and always-visible production identity.
-- Configurable Safe Mode levels.
-- Confirmation for destructive DDL and DML.
-- Warnings for unbounded `UPDATE` and `DELETE`.
+- User-picked connection colors.
 - Smart commit or manual transaction defaults for production.
-- Generated SQL review integrated with GUI mutations.
-- Per-connection override auditing and a deliberate unlock flow.
 - Safety behavior for scripts containing mixed safe and destructive statements.
-- Tests proving UI controls cannot bypass backend enforcement.
+- Typed policy errors for legacy command surfaces.
 
 **Target outcome:** One backend-enforced safety policy applies to the SQL
 editor, table grid, object editors, imports, generated scripts, and admin
@@ -712,12 +711,13 @@ Parity work should reuse rather than replace these credible foundations:
 2. `PAR-002`: server-backed table browsing delivered by Plans 003 and 004
    through commit `ecefce8`.
 3. `PAR-003`: editable query results and generated DML review delivered by
-   Plans 005 and 006 (Plan 006 `READY FOR REVIEW` at `4e52c8a`); deep
+   Plans 005 and 006 through `4e52c8a`; deep
    editors, Quick Look, batch paste, and copy formats remain register
    scope.
-4. **Selected next:** `PAR-004`, backend-enforced production safety, via
-   authored Plans 007 and 008.
-5. `PAR-005`: durable workspace restoration and global navigation.
+4. `PAR-004`: backend-enforced production safety delivered by Plans 007 and
+   008; both are implemented and merged to `main`.
+5. **Selected next:** `PAR-005`, durable workspace restoration and global
+   navigation.
 6. `PAR-006` and `PAR-007`: secure connections and full PostgreSQL object
    lifecycle.
 7. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and

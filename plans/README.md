@@ -41,17 +41,18 @@ useful without authorizing commits implicitly.
   Batch paste, deep value editors, Quick Look, and configurable copy
   formats are the `PAR-003` register items deliberately left for a
   follow-on plan.
-- **Selected next:** `PAR-004`, backend-enforced production safety policy.
-  Plans 007 and 008 were authored on 2026-08-23 at commit `4e52c8a` and
-  execute in order after Plan 006 is stamped `DONE`. Plan 007 lands the
-  dark backend: per-connection environment / Safe Mode / relational
-  read-only fields (migration 15), a fail-closed PostgreSQL statement
-  classifier extracted from the Plan 005 lexer, one shared policy gate
+- **Completed:** Plans 007 and 008 delivered the `PAR-004`
+  backend-enforced production safety policy and UI activation. Both plans
+  are implemented and merged to `main`; Plan 008's implementation completed
+  at `5409d66` and landed on `main` as `5991dbf`, with selected mock C. Plan
+  007 landed the dark backend: per-connection environment / Safe Mode /
+  relational read-only fields (migration 15), a fail-closed PostgreSQL
+  statement classifier extracted from the Plan 005 lexer, one shared policy gate
   asserted at all fifteen write-capable surfaces (typed
   `policyBlocked`/`policyNeedsConfirmation` on the query-session and
   result-mutation actors; tagged refusal strings on legacy commands), a
   belt-and-braces `default_transaction_read_only` session GUC, and a
-  persisted confirmed-override audit. Plan 008 activates it: form
+  persisted confirmed-override audit. Plan 008 activated it with form
   controls, environment badges and production identity across sidebar /
   header / tabs / banner / status bar, one shared confirmation dialog that
   re-sends with `confirmed: true`, and the audit view in Settings.
@@ -70,9 +71,9 @@ useful without authorizing commits implicitly.
   backend-authoritative row identity. Query-result mutation remains in
   `PAR-003`.
 
-## Dependency order after Plans 001 through 004
+## Dependency order after Plans 001 through 008
 
-Items 3 and later are candidate plans, not authored plans. Their identifiers
+Items 5 and later are candidate plans, not authored plans. Their identifiers
 refer to the gap register rather than files in this directory.
 
 1. Plans 001 and 002 delivered and activated the PostgreSQL query-session
@@ -85,13 +86,13 @@ refer to the gap register rather than files in this directory.
    shared by browse-mode table tabs and query results with DML review
    before commit. Deep editors, Quick Look, batch paste, and copy formats
    remain follow-on register scope.
-4. Plans 007 and 008 are the authored `PAR-004` execution path: a dark
+4. Plans 007 and 008 delivered the `PAR-004` execution path: a dark
    backend safety policy (environment classification, Safe Mode levels,
    enforced relational read-only, fail-closed statement classification,
    one gate at every write surface, override audit), then UI activation
    (form fields, production identity, confirmation flows). They build on
    `PAR-001` transaction state and the `PAR-003` mutation preview as
-   planned.
+   planned. The next candidate is `PAR-005` workspace restoration.
 5. `PAR-005` workspace restoration should persist descriptors, never live
    database handles or server transaction state.
 6. Professional PostgreSQL features (`PAR-007` through `PAR-011`) should follow
