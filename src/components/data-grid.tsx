@@ -471,9 +471,9 @@ export function DataGrid({
   // column takes over the stale position (e.g. a server-browse page landing
   // mid-edit). Cancel the editor, drop the selection, and clamp focus.
   const colSignature = visibleCols.map((col) => col.name).join("\u0000");
-  const gridShapeRef = useRef({ data, columnFilters, colSignature });
+  const coordinateBasisRef = useRef({ data, columnFilters, colSignature });
   useEffect(() => {
-    const previous = gridShapeRef.current;
+    const previous = coordinateBasisRef.current;
     if (
       previous.data === data &&
       previous.columnFilters === columnFilters &&
@@ -481,7 +481,7 @@ export function DataGrid({
     ) {
       return;
     }
-    gridShapeRef.current = { data, columnFilters, colSignature };
+    coordinateBasisRef.current = { data, columnFilters, colSignature };
     setEditing((current) => {
       // Refocus the grid only when this actually interrupted an edit.
       if (current !== null) wantFocusRef.current = true;
