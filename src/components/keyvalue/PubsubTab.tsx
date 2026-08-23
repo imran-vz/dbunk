@@ -84,6 +84,7 @@ export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
             side="left"
             state={channelsPanel}
             ariaLabel="Resize channels sidebar"
+            restoreLabel="Show channels sidebar"
           >
             <PubsubChannelSidebar
               activePatterns={subscription.activePatterns}
