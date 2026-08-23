@@ -573,6 +573,37 @@ describe("DataGrid keyboard model", () => {
     expect(onEdit).toHaveBeenCalledWith(1, 1, "Hopper");
   });
 
+  it("cancels an open editor when the data prop is swapped", () => {
+    const onEdit = vi.fn();
+    const { rerender } = render(
+      <DataGrid data={sampleRows} columns={sampleColumns} onEdit={onEdit} />,
+    );
+
+    focusCell("Ada");
+    fireEvent.keyDown(grid(), { key: "Enter" });
+    const input = screen.getByDisplayValue("Ada") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Lovelace" } });
+
+    // A server-browse page (or refresh) lands while the editor is open:
+    // the same display slot now holds a different row.
+    const swappedRows = [
+      ["9", "Barbara"],
+      ["10", "Katherine"],
+      ["11", "Annie"],
+    ];
+    rerender(
+      <DataGrid data={swappedRows} columns={sampleColumns} onEdit={onEdit} />,
+    );
+
+    // The editor must be gone; committing against the new row would stage
+    // the typed value onto the wrong record.
+    expect(screen.queryByDisplayValue("Lovelace")).toBeNull();
+    fireEvent.keyDown(grid(), { key: "Enter" });
+    const reopened = screen.getByDisplayValue("Barbara") as HTMLInputElement;
+    fireEvent.keyDown(reopened, { key: "Escape" });
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
   it("copies the selection as TSV with Cmd+C", async () => {
     render(<DataGrid data={sampleRows} columns={sampleColumns} />);
 
