@@ -27,6 +27,7 @@ jobs:
       - run: pnpm test
       - run: pnpm run check:slice-isolation
       - run: pnpm run check:redis-commands
+      - run: pnpm run check:ui-gates
 
   rust:
     name: Rust (fmt + clippy + test)
