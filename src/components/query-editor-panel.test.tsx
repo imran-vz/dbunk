@@ -8,6 +8,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
@@ -158,6 +159,7 @@ vi.mock("@monaco-editor/react", () => ({
 }));
 
 import { QueryEditorPanel } from "@/components/query-editor-panel";
+import type { StatusBarItem } from "@/components/status-bar";
 import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
 import {
   queryMutationDraftScope,
@@ -1649,5 +1651,59 @@ describe("QueryEditorPanel result mutations", () => {
     expect(screen.getByRole("button", { name: /^Save$/i })).toBeTruthy();
     expect(screen.queryByTestId("query-mutation-status")).toBeNull();
     expect(screen.getByRole("button", { name: "Grace" })).toBeTruthy();
+  });
+});
+
+// Sentinel: with the status-items ping-pong the passive-effect loop
+// starves timers, so break the cycle by throwing a clear error instead
+// of relying on React's own "Maximum update depth exceeded".
+const RENDER_SENTINEL = 200;
+let renderCount = 0;
+
+function StatusItemsHarness() {
+  // oxlint-disable-next-line react/globals -- deliberate render-count sentinel: it must increment during render to detect runaway loops
+  renderCount += 1;
+  if (renderCount > RENDER_SENTINEL) {
+    throw new Error(
+      `unbounded render loop: status items ping-pong (${renderCount} renders)`,
+    );
+  }
+  const [items, setItems] = useState<StatusBarItem[]>([]);
+  return (
+    <>
+      <QueryEditorPanel
+        tab={queryTab}
+        isClient
+        onStatusItemsChange={setItems}
+      />
+      <output data-testid="status-count">{items.length}</output>
+    </>
+  );
+}
+
+describe("QueryEditorPanel status items", () => {
+  it("reports status items to a parent state setter without an update loop", async () => {
+    // Regression: the panel rebuilds the items array on every render;
+    // an unguarded effect looped notify → parent setState → re-render →
+    // "Maximum update depth exceeded" when a tab opened in the
+    // workbench.
+    useAppStore.setState({
+      workspaceTabs: [queryTab],
+      activeConnectionId: "conn-1",
+      activeTabId: queryTab.id,
+      queryStatus: {},
+    });
+
+    renderCount = 0;
+    render(<StatusItemsHarness />);
+    await act(async () => {});
+
+    // The callback still delivers items…
+    expect(
+      Number(screen.getByTestId("status-count").textContent),
+    ).toBeGreaterThan(0);
+    // …and rendering settles instead of looping (sentinel throws red
+    // long before this when the bug is present).
+    expect(renderCount).toBeLessThan(RENDER_SENTINEL);
   });
 });

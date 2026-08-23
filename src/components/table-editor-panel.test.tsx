@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/tauri", () => ({
@@ -35,6 +36,7 @@ vi.mock("@/components/workspace-overview/schema-map-toolbar", () => ({
   schemaMapExportFilename: () => "schema-map.png",
 }));
 
+import type { StatusBarItem } from "@/components/status-bar";
 import {
   TableEditorPanel,
   TableSidebar,
@@ -1746,5 +1748,60 @@ describe("TableEditorPanel server browse", () => {
         ).toBe("none"),
       );
     });
+  });
+});
+
+// Sentinel: with the status-items ping-pong the passive-effect loop
+// starves timers, so break the cycle by throwing a clear error instead
+// of relying on React's own "Maximum update depth exceeded".
+const RENDER_SENTINEL = 200;
+let renderCount = 0;
+
+function StatusItemsHarness() {
+  // oxlint-disable-next-line react/globals -- deliberate render-count sentinel: it must increment during render to detect runaway loops
+  renderCount += 1;
+  if (renderCount > RENDER_SENTINEL) {
+    throw new Error(
+      `unbounded render loop: status items ping-pong (${renderCount} renders)`,
+    );
+  }
+  const [items, setItems] = useState<StatusBarItem[]>([]);
+  return (
+    <>
+      <TableEditorPanel tab={tableTab} onStatusItemsChange={setItems} />
+      <output data-testid="status-count">{items.length}</output>
+    </>
+  );
+}
+
+describe("TableEditorPanel status items", () => {
+  it("reports status items to a parent state setter without an update loop", async () => {
+    // Regression: the panel rebuilds the items array on every render;
+    // an unguarded effect looped notify → parent setState → re-render →
+    // "Maximum update depth exceeded" when a table tab opened in the
+    // workbench.
+    seed({
+      connectionId: "conn-1",
+      schema: "public",
+      table: "users",
+      columns: ["id"],
+      rows: [["1"]],
+      page: 1,
+      pageSize: 100,
+      totalRows: 1,
+      runtimeMs: 5,
+    });
+
+    renderCount = 0;
+    render(<StatusItemsHarness />);
+    await act(async () => {});
+
+    // The callback still delivers items…
+    expect(
+      Number(screen.getByTestId("status-count").textContent),
+    ).toBeGreaterThan(0);
+    // …and rendering settles instead of looping (sentinel throws red
+    // long before this when the bug is present).
+    expect(renderCount).toBeLessThan(RENDER_SENTINEL);
   });
 });
