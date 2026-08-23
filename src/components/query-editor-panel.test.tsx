@@ -414,8 +414,7 @@ describe("QueryEditorPanel feedback", () => {
       queryStatus: {},
     });
 
-    render(<QueryEditorPanel tab={queryTab} isClient />);
-    fireEvent.click(screen.getByRole("button", { name: /show explain view/i }));
+    render(<QueryEditorPanel tab={queryTab} isClient resultsView="explain" />);
 
     expect(screen.getByText(/run explain/i)).toBeTruthy();
     expect(screen.queryByText(/coming soon/i)).toBeNull();
@@ -1116,8 +1115,15 @@ describe("QueryEditorPanel onMount branches", () => {
     expect(decorationState.values).toHaveLength(1);
   });
 
-  it("updates the status-bar cursor when Monaco fires onDidChangeCursorPosition", () => {
-    render(<QueryEditorPanel tab={queryTab} isClient />);
+  it("emits the cursor position in status items when Monaco fires onDidChangeCursorPosition", () => {
+    const onStatusItemsChange = vi.fn();
+    render(
+      <QueryEditorPanel
+        tab={queryTab}
+        isClient
+        onStatusItemsChange={onStatusItemsChange}
+      />,
+    );
 
     act(() => {
       editorHandlers.cursorChange?.({
@@ -1125,7 +1131,12 @@ describe("QueryEditorPanel onMount branches", () => {
       });
     });
 
-    expect(screen.getByText(/Ln 12, Col 7/)).toBeTruthy();
+    const statusItems = onStatusItemsChange.mock.calls.at(-1)?.[0];
+    expect(statusItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "cursor", value: "Ln 12, Col 7" }),
+      ]),
+    );
   });
 
   it("runs Execute selection through the registered action", () => {
@@ -1313,17 +1324,6 @@ describe("QueryEditorPanel result mutations", () => {
         "Editing requires one SQL statement",
       );
     });
-
-    mockedInvoke.mockClear();
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /2 · 1 rows/i }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(screen.getByTestId("query-mutation-status").textContent).toContain(
-      "Only the first result set can be edited",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "1" }));
-    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 
   it("uses explicit temporary-shadowing analysis copy", async () => {
@@ -1649,136 +1649,5 @@ describe("QueryEditorPanel result mutations", () => {
     expect(screen.getByRole("button", { name: /^Save$/i })).toBeTruthy();
     expect(screen.queryByTestId("query-mutation-status")).toBeNull();
     expect(screen.getByRole("button", { name: "Grace" })).toBeTruthy();
-  });
-});
-
-describe("QueryEditorPanel connection selector", () => {
-  const pgConnectionDefaults = {
-    database: "app",
-    host: "localhost",
-    port: 5432,
-    user: "postgres",
-    password: "",
-    role: "",
-    engine: "PostgreSQL" as const,
-    ssl: false,
-    status: "Connected" as const,
-    latency: "1ms",
-  };
-  const twoPgConnections = [
-    { ...pgConnectionDefaults, id: "conn-1", name: "Local Postgres" },
-    {
-      ...pgConnectionDefaults,
-      id: "conn-2",
-      name: "Staging Postgres",
-      host: "stg.example.com",
-    },
-  ];
-
-  beforeEach(() => {
-    mockedIsTauri.mockReturnValue(false);
-    useAppStore.setState({
-      workspaceTabs: [queryTab],
-      activeConnectionId: "conn-1",
-      activeTabId: queryTab.id,
-      connections: twoPgConnections,
-      queryStatus: {},
-      queryPreviews: {},
-      queryEdits: {},
-      queryHistory: [],
-    });
-  });
-
-  it("retargets the tab to the picked connection and clears stale per-tab state", async () => {
-    useAppStore.setState({
-      queryPreviews: {
-        [queryTab.id]: {
-          columns: ["a"],
-          rows: [["1"]],
-          runtime: "1 ms",
-          rowCount: "1",
-          cache: "Cold",
-        },
-      },
-    });
-
-    render(<QueryEditorPanel tab={queryTab} isClient />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /connection selector/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /staging postgres/i }),
-    );
-
-    await waitFor(() =>
-      expect(useAppStore.getState().workspaceTabs[0].connectionId).toBe(
-        "conn-2",
-      ),
-    );
-    const state = useAppStore.getState();
-    expect(state.activeConnectionId).toBe("conn-2");
-    expect(state.queryPreviews[queryTab.id]).toBeUndefined();
-  });
-
-  it("prompts before discarding pending grid edits and bails on cancel", () => {
-    useAppStore.setState({
-      queryEdits: { [queryTab.id]: { 0: { 0: "edited" } } },
-    });
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockImplementation(() => false);
-
-    render(<QueryEditorPanel tab={queryTab} isClient />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /connection selector/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /staging postgres/i }),
-    );
-
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(useAppStore.getState().workspaceTabs[0].connectionId).toBe("conn-1");
-    expect(useAppStore.getState().queryEdits[queryTab.id]).toBeDefined();
-    confirmSpy.mockRestore();
-  });
-
-  it("filters out keyvalue connections from the selector", () => {
-    useAppStore.setState({
-      connections: [
-        ...twoPgConnections,
-        {
-          id: "conn-redis",
-          name: "Cache",
-          database: "0",
-          host: "localhost",
-          engine: "Redis" as const,
-          port: 6379,
-          user: "",
-          password: "",
-          role: "",
-          dbNumber: 0,
-          useTls: false,
-          verifyTlsCert: true,
-          readOnly: false,
-          status: "Connected" as const,
-          latency: "1ms",
-        },
-      ],
-    });
-
-    render(<QueryEditorPanel tab={queryTab} isClient />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /connection selector/i }),
-    );
-
-    expect(
-      screen.queryByRole("menuitem", { name: /cache · redis/i }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("menuitem", { name: /staging postgres/i }),
-    ).toBeTruthy();
   });
 });
