@@ -6,7 +6,6 @@ import {
 } from "@/components/app-shell/activity-rail";
 import { ConnectionsView } from "@/components/connections-view";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
-import type { ResultsView } from "@/components/query-editor/results-view";
 import type { StatusBarItem } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import type { SubTab } from "@/components/table-editor/header";
@@ -15,7 +14,6 @@ import { EmptyState } from "@/components/ui/state-panel";
 import { DatabaseNavigator } from "@/components/workbench/database-navigator";
 import {
   ObjectTabRow,
-  QuerySectionToggle,
   type TableSection,
   TableSectionToggle,
 } from "@/components/workbench/object-tab-row";
@@ -65,9 +63,6 @@ export function RelationalWorkbench({
   const [rail, setRail] = useState<WorkbenchRailId>("tables");
   const [tableSections, setTableSections] = useState<
     Record<string, TableSection>
-  >({});
-  const [querySections, setQuerySections] = useState<
-    Record<string, ResultsView>
   >({});
   const [statusItems, setStatusItems] = useState<StatusBarItem[]>([]);
 
@@ -188,18 +183,8 @@ export function RelationalWorkbench({
     [activeTab],
   );
 
-  const querySection = activeTab
-    ? (querySections[activeTab.id] ?? "results")
-    : "results";
-
-  const setQuerySection = useCallback(
-    (next: ResultsView) => {
-      if (!activeTab) return;
-      setQuerySections((current) => ({ ...current, [activeTab.id]: next }));
-    },
-    [activeTab],
-  );
-
+  // Query tabs carry their Results/Explain toggle inside the results
+  // pane itself (§5.2); only table tabs keep a section control here.
   const sectionControl = useMemo(() => {
     if (settingsView || !activeTab) return null;
     if (activeTab.kind === "table") {
@@ -207,20 +192,8 @@ export function RelationalWorkbench({
         <TableSectionToggle value={tableSubTab} onChange={setTableSubTab} />
       );
     }
-    if (activeTab.kind === "query") {
-      return (
-        <QuerySectionToggle value={querySection} onChange={setQuerySection} />
-      );
-    }
     return null;
-  }, [
-    activeTab,
-    querySection,
-    setQuerySection,
-    setTableSubTab,
-    settingsView,
-    tableSubTab,
-  ]);
+  }, [activeTab, setTableSubTab, settingsView, tableSubTab]);
 
   const renderMainPane = () => {
     if (settingsView) {
@@ -297,8 +270,6 @@ export function RelationalWorkbench({
         <QueryEditorPanel
           tab={activeTab}
           isClient={isClient}
-          resultsView={querySection}
-          onResultsViewChange={setQuerySection}
           onStatusItemsChange={setStatusItems}
         />
       );
