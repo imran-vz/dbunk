@@ -55,6 +55,9 @@ vi.mock("@/lib/ui-state", () => {
     resetUiStateForTests: () => {
       memory.clear();
     },
+    registerUiStatePreCloseHook: () => () => {},
+    exceedsUtf8Length: () => false,
+    UI_STATE_MAX_VALUE_BYTES: 512 * 1024,
   };
 });
 
