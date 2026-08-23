@@ -185,6 +185,11 @@ export function TableEditorBody({
               serverBrowse={serverBrowse}
               onExpandGrid={onExpandGrid}
               expanded={expanded}
+              gridLayoutKey={`${connectionId}.${schema}.${tableName}`}
+              onCloneSelectedRow={onDuplicateSelected}
+              onDeleteSelectedRows={
+                caps.canDeleteSelected ? onDeleteSelected : undefined
+              }
               toolbarLeading={
                 <DataToolbar
                   canAddRow={caps.canAddRow}
