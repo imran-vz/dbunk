@@ -91,7 +91,7 @@ export function BastionRow({
             disabled={isTesting}
             onClick={onTest}
           >
-            <IconPlugConnected className="size-3.5" />
+            <IconPlugConnected />
             {isTesting ? "Testing" : "Test"}
           </Button>
           <Button
@@ -99,11 +99,11 @@ export function BastionRow({
             variant="outline"
             onClick={onRequestHostKeyReset}
           >
-            <IconRefresh className="size-3.5" />
+            <IconRefresh />
             Reset trust
           </Button>
           <Button type="button" variant="destructive" onClick={onDelete}>
-            <IconTrash className="size-3.5" />
+            <IconTrash />
             Delete
           </Button>
         </div>

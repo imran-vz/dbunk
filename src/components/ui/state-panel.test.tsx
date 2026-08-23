@@ -33,17 +33,23 @@ describe("ErrorState", () => {
     render(<ErrorState message="boom" />);
     expect(screen.queryByRole("button", { name: /retry/i })).toBeNull();
   });
+
+  it("exposes raw details behind a disclosure", () => {
+    render(<ErrorState message="boom" details="ERROR: relation missing" />);
+    expect(screen.getByText("Details")).toBeTruthy();
+    expect(screen.getByText(/relation missing/)).toBeTruthy();
+  });
 });
 
 describe("EmptyState", () => {
-  it("renders title and description", () => {
+  it("renders title and description as one muted line", () => {
     render(
       <EmptyState
         title="No sessions"
         description="Run a query to see entries here."
       />,
     );
-    expect(screen.getByText("No sessions")).toBeTruthy();
+    expect(screen.getByText(/No sessions/)).toBeTruthy();
     expect(screen.getByText(/Run a query/)).toBeTruthy();
   });
 });

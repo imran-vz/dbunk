@@ -64,7 +64,7 @@ export function Pagination({
         disabled={page <= 1 || isLoading}
         className="size-6"
       >
-        <IconChevronsLeft className="size-3.5" />
+        <IconChevronsLeft />
       </Button>
       <Button
         variant="ghost"
@@ -74,7 +74,7 @@ export function Pagination({
         disabled={page <= 1 || isLoading}
         className="size-6"
       >
-        <IconChevronLeft className="size-3.5" />
+        <IconChevronLeft />
       </Button>
       <div className="flex items-center gap-0.5 px-1">
         {pageButtons.map((entry, idx) =>
@@ -114,7 +114,7 @@ export function Pagination({
         disabled={isLastPage || isLoading}
         className="size-6"
       >
-        <IconChevronRight className="size-3.5" />
+        <IconChevronRight />
       </Button>
       <Button
         variant="ghost"
@@ -126,7 +126,7 @@ export function Pagination({
         }
         className="size-6"
       >
-        <IconChevronsRight className="size-3.5" />
+        <IconChevronsRight />
       </Button>
       {countApproximate ? (
         <span className="pl-1 text-2xs text-text-muted">approx</span>

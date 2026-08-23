@@ -54,7 +54,7 @@ export function KeyInspectorHeader({
           className="h-7 px-2 text-2xs"
           onClick={onRefresh}
         >
-          <IconRefresh className="size-3" />
+          <IconRefresh />
           Refresh
         </Button>
         <Button
@@ -63,7 +63,7 @@ export function KeyInspectorHeader({
           className="h-7 px-2 text-2xs"
           onClick={onOpenExpire}
         >
-          <IconClock className="size-3" />
+          <IconClock />
           TTL
         </Button>
         <Button
@@ -72,7 +72,7 @@ export function KeyInspectorHeader({
           className="h-7 px-2 text-2xs"
           onClick={onOpenRename}
         >
-          <IconEdit className="size-3" />
+          <IconEdit />
           Rename
         </Button>
         <Button
@@ -81,7 +81,7 @@ export function KeyInspectorHeader({
           className="h-7 px-2 text-2xs text-danger"
           onClick={onOpenDelete}
         >
-          <IconTrash className="size-3" />
+          <IconTrash />
           Delete
         </Button>
         <button

@@ -51,7 +51,7 @@ export function ManagedServersTab() {
             void loadManagedServers();
           }}
         >
-          <IconRefresh className="size-3.5" />
+          <IconRefresh />
           Refresh
         </Button>
       </div>

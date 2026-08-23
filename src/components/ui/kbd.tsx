@@ -63,15 +63,23 @@ interface KbdProps {
   /** Tokens like ["mod", "k"]. Mixed case ok; rendered per platform. */
   keys: ReadonlyArray<string>;
   className?: string;
+  /**
+   * Renders the tokens without the boxed chrome (border/bg) — for
+   * right-aligned menu-item hints (DESIGN-SYSTEM §4.6), where the hint
+   * is plain faint mono text rather than a key cap.
+   */
+  bare?: boolean;
 }
 
 /* oxlint-disable react/no-array-index-key -- Repeated shortcut tokens are distinguished by their fixed sequence position. */
-export function Kbd({ keys, className }: KbdProps) {
+export function Kbd({ keys, className, bare = false }: KbdProps) {
   const isMac = isMacPlatform();
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-sm border border-border-subtle bg-surface-app px-1 py-0.5 font-mono text-2xs leading-none text-text-muted",
+        "inline-flex items-center gap-0.5 font-mono text-2xs leading-none text-text-muted",
+        !bare &&
+          "rounded-sm border border-border-subtle bg-surface-input px-1 py-0.5",
         className,
       )}
     >
