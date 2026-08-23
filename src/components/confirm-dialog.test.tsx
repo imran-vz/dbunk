@@ -51,6 +51,22 @@ describe("confirm service + dialog host", () => {
     await expect(second).resolves.toBe(false);
   });
 
+  it("does not cancel a queued dialog when Cancel double-fires", async () => {
+    render(<ConfirmDialogHost />);
+    const first = requestConfirm({ title: "First?", message: "one" });
+    const second = requestConfirm({ title: "Second?", message: "two" });
+
+    // AlertDialogCancel wraps Base UI's Close primitive, so one click fires
+    // both the onClick and the root onOpenChange(false); position-addressed
+    // resolution would let the second call cancel the queued dialog unseen.
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await expect(first).resolves.toBe(false);
+
+    expect(await screen.findByText("Second?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await expect(second).resolves.toBe(true);
+  });
+
   it("prompts for text and resolves the entered value", async () => {
     render(<ConfirmDialogHost />);
     const pending = requestPrompt({
