@@ -430,18 +430,20 @@ export const createWorkspaceTabsSlice: StateCreator<
     );
     if (
       targetConnection?.environment === "production" &&
-      !options?.confirmProductionTarget?.(targetConnection)
+      !(await options?.confirmProductionTarget?.(targetConnection))
     ) {
       return false;
     }
-    const stagedChangeCount = Object.values(state.mutationDrafts).reduce(
+    // Re-read after the confirm await: drafts may have changed while the
+    // dialog was open.
+    const stagedChangeCount = Object.values(get().mutationDrafts).reduce(
       (count, draft) =>
         draft?.owner.tabId === tabId ? count + draft.changeOrder.length : count,
       0,
     );
     if (
       stagedChangeCount > 0 &&
-      !options?.confirmDiscardStagedChanges?.(stagedChangeCount)
+      !(await options?.confirmDiscardStagedChanges?.(stagedChangeCount))
     ) {
       return false;
     }
