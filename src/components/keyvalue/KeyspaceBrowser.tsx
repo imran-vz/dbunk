@@ -921,15 +921,15 @@ function KeyTypeIcon({ type }: { type: string }) {
   const className = "size-3 shrink-0";
   switch (type) {
     case "hash":
-      return <IconHash className={cn(className, "text-blue-400")} />;
+      return <IconHash className={cn(className, "text-info")} />;
     case "list":
       return <IconList className={cn(className, "text-warning")} />;
     case "set":
       return <IconLayoutList className={cn(className, "text-success")} />;
     case "zset":
-      return <IconDatabaseStar className={cn(className, "text-pink-400")} />;
+      return <IconDatabaseStar className={cn(className, "text-danger")} />;
     case "stream":
-      return <IconWaveSine className={cn(className, "text-purple-400")} />;
+      return <IconWaveSine className={cn(className, "text-accent")} />;
     case "ReJSON-RL":
       return <IconBraces className={cn(className, "text-info")} />;
     default:
