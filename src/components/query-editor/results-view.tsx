@@ -1,7 +1,5 @@
 import {
   IconAlertCircle,
-  IconCopy,
-  IconDownload,
   IconLoader2,
   IconRoute,
   IconTerminal2,
@@ -188,18 +186,6 @@ export function QueryResultsView({
               ))}
             </div>
           ) : null}
-          <div className="ml-auto flex items-center gap-1">
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Download results"
-            >
-              <IconDownload className="size-3.5" />
-            </Button>
-            <Button size="icon-sm" variant="ghost" aria-label="Copy results">
-              <IconCopy className="size-3.5" />
-            </Button>
-          </div>
         </div>
       ) : null}
 

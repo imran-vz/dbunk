@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { AppShellHeader } from "@/components/app-shell/app-shell-header";
 import { useTauriWindowControls } from "@/components/app-shell/use-tauri-window-controls";
 import { windowViewportZoomStyle } from "@/components/app-shell/use-window-viewport-zoom";
 import {
@@ -14,28 +13,13 @@ import {
 } from "@/components/credential-onboarding";
 import { SafetyConfirmDialog } from "@/components/safety-confirm-dialog";
 import { SettingsView } from "@/components/settings-view";
-import { Sidebar } from "@/components/sidebar";
-import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
 import { KeyValueWorkbench } from "@/components/workbench/keyvalue-workbench";
 import { RelationalWorkbench } from "@/components/workbench/relational-workbench";
-import {
-  isKeyValueConnection,
-  usesWorkbenchShell,
-} from "@/components/workbench/workbench-policy";
-import { WorkspaceView } from "@/components/workspace-view";
+import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
 import { useAppStore } from "@/lib/store";
 import { applyTheme, subscribeSystem } from "@/lib/theme";
-import {
-  useContainerWidth,
-  useResizableWidth,
-} from "@/lib/use-resizable-width";
+import { useContainerWidth } from "@/lib/use-resizable-width";
 import { cn } from "@/lib/utils";
-
-const GLOBAL_SIDEBAR_WIDTH = 288;
-const GLOBAL_SIDEBAR_MIN_WIDTH = 220;
-const GLOBAL_SIDEBAR_MAX_WIDTH = 420;
-const GLOBAL_SIDEBAR_COMPACT_BELOW = 980;
-const PROTECTED_WORKSPACE_WIDTH = 560;
 
 /**
  * Foreground health-check tick: runs once after the connection list loads,
@@ -84,16 +68,7 @@ function useForegroundHealthCheck(
 
 export function AppShell() {
   const [isClient, setIsClient] = useState(false);
-  const [newConnectionOpen, setNewConnectionOpen] = useState(false);
-  const [leftSidebarOverlayOpen, setLeftSidebarOverlayOpen] = useState(false);
   const [shellBodyRef, shellBodyWidth] = useContainerWidth<HTMLDivElement>();
-  const { width: globalSidebarWidth, setWidth: setGlobalSidebarWidth } =
-    useResizableWidth({
-      storageKey: "dbunk.sidebar.globalWidth",
-      defaultWidth: GLOBAL_SIDEBAR_WIDTH,
-      min: GLOBAL_SIDEBAR_MIN_WIDTH,
-      max: GLOBAL_SIDEBAR_MAX_WIDTH,
-    });
 
   const {
     isWindowFullscreen,
@@ -108,9 +83,7 @@ export function AppShell() {
     connections,
     appSettings,
     appSettingsStatus,
-    isLeftSidebarOpen,
     setEditorTheme,
-    toggleLeftSidebar,
     loadAppSettings,
     loadBastionServers,
     loadConnections,
@@ -118,28 +91,16 @@ export function AppShell() {
     loadQueryHistory,
     loadSavedQueries,
     runHealthChecks,
-    createNewQueryTab,
   } = useAppStore();
   const themeMode = appSettings?.theme ?? "system";
   const themePreset = appSettings?.themePreset ?? "default";
 
-  const isShellCompact =
-    shellBodyWidth > 0 && shellBodyWidth < GLOBAL_SIDEBAR_COMPACT_BELOW;
   const density =
     shellBodyWidth > 0 && shellBodyWidth < 900 ? "compact" : "cozy";
 
   const activeConnection = connections.find(
     (connection) => connection.id === activeConnectionId,
   );
-  const usesWorkbench = usesWorkbenchShell(appSettings?.credentialState);
-
-  const handleLeftSidebarToggle = () => {
-    if (isShellCompact) {
-      setLeftSidebarOverlayOpen((open) => !open);
-      return;
-    }
-    toggleLeftSidebar();
-  };
 
   useEffect(() => {
     setIsClient(true);
@@ -271,73 +232,25 @@ export function AppShell() {
         windowViewportZoom ? "top-0 left-0" : "inset-0",
       )}
     >
-      {!usesWorkbench ? (
-        <AppShellHeader
-          isWindowFullscreen={isWindowFullscreen}
-          isShellCompact={isShellCompact}
-          leftSidebarOverlayOpen={leftSidebarOverlayOpen}
-          isLeftSidebarOpen={isLeftSidebarOpen}
-          newConnectionOpen={newConnectionOpen}
-          setNewConnectionOpen={setNewConnectionOpen}
-          onLeftSidebarToggle={handleLeftSidebarToggle}
-          onCreateNewQueryTab={createNewQueryTab}
-          onPointerDown={onTopBarPointerDown}
-          onDoubleClick={onTopBarDoubleClick}
-        />
-      ) : null}
-
       <div
         ref={shellBodyRef}
         className="relative flex min-h-0 flex-1 overflow-hidden"
       >
-        {usesWorkbench ? (
-          activeView === "settings" ||
-          !isKeyValueConnection(activeConnection) ? (
-            <RelationalWorkbench
-              isClient={isClient}
-              isWindowFullscreen={isWindowFullscreen}
-              onPointerDown={onTopBarPointerDown}
-              onDoubleClick={onTopBarDoubleClick}
-              settingsView={activeView === "settings" ? <SettingsView /> : null}
-            />
-          ) : (
-            <KeyValueWorkbench
-              isWindowFullscreen={isWindowFullscreen}
-              onPointerDown={onTopBarPointerDown}
-              onDoubleClick={onTopBarDoubleClick}
-            />
-          )
+        {activeView === "settings" ||
+        !isKeyValueConnection(activeConnection) ? (
+          <RelationalWorkbench
+            isClient={isClient}
+            isWindowFullscreen={isWindowFullscreen}
+            onPointerDown={onTopBarPointerDown}
+            onDoubleClick={onTopBarDoubleClick}
+            settingsView={activeView === "settings" ? <SettingsView /> : null}
+          />
         ) : (
-          <>
-            <ResponsiveEdgePanel
-              side="left"
-              storageKey="dbunk.sidebar.global"
-              title="Sidebar"
-              width={globalSidebarWidth}
-              containerWidth={shellBodyWidth}
-              compactBelow={GLOBAL_SIDEBAR_COMPACT_BELOW}
-              protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-              wideVisible={isLeftSidebarOpen}
-              open={leftSidebarOverlayOpen}
-              onOpenChange={setLeftSidebarOverlayOpen}
-              resizer={{
-                onResize: setGlobalSidebarWidth,
-                min: GLOBAL_SIDEBAR_MIN_WIDTH,
-                max: GLOBAL_SIDEBAR_MAX_WIDTH,
-                ariaLabel: "Resize connections and tables sidebar",
-              }}
-              className="bg-surface-sidebar"
-            >
-              <Sidebar className="border-r-0" />
-            </ResponsiveEdgePanel>
-            <div className="flex min-w-0 flex-1 flex-col bg-surface-app">
-              {activeView === "workspace" ? (
-                <WorkspaceView isClient={isClient} />
-              ) : (
-                <SettingsView />
-              )}
-            </div>
-          </>
+          <KeyValueWorkbench
+            isWindowFullscreen={isWindowFullscreen}
+            onPointerDown={onTopBarPointerDown}
+            onDoubleClick={onTopBarDoubleClick}
+          />
         )}
       </div>
       <CommandPalette />

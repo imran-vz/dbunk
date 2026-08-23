@@ -2,63 +2,29 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconColumns3,
-  IconPlayerPlayFilled,
-  IconTerminal,
   IconX,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type DockTabId = "console" | "output";
-
 interface WorkbenchDockProps {
-  consoleLabel?: string;
-  consoleContent: React.ReactNode;
-  outputContent: React.ReactNode;
-  onRun?: () => void;
-  runDisabled?: boolean;
+  content: React.ReactNode;
+  /**
+   * When this value changes the dock reveals itself. Wired to the active
+   * results view so switching Results/Explain/Output (or running a query)
+   * always produces a visible change even if the dock was collapsed.
+   */
+  revealKey?: unknown;
   storageKey?: string;
   className?: string;
 }
 
 const DOCK_STORAGE_PREFIX = "dbunk.workbench.dock.";
 
-function DockTabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
-        active
-          ? "bg-accent-subdued text-accent"
-          : "text-text-muted hover:text-foreground",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 export function WorkbenchDock({
-  consoleLabel = "scratch.sql",
-  consoleContent,
-  outputContent,
-  onRun,
-  runDisabled,
+  content,
+  revealKey,
   storageKey = "default",
   className,
 }: WorkbenchDockProps) {
@@ -68,20 +34,19 @@ export function WorkbenchDock({
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(`${storageId}.open`) !== "false";
   });
-  const [dockTab, setDockTab] = useState<DockTabId>(() => {
-    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
-    if (typeof window === "undefined") return "console";
-    const saved = window.localStorage.getItem(`${storageId}.tab`);
-    return saved === "output" ? "output" : "console";
-  });
 
   useEffect(() => {
     window.localStorage.setItem(`${storageId}.open`, String(dockOpen));
   }, [dockOpen, storageId]);
 
+  const isFirstReveal = useRef(true);
   useEffect(() => {
-    window.localStorage.setItem(`${storageId}.tab`, dockTab);
-  }, [dockTab, storageId]);
+    if (isFirstReveal.current) {
+      isFirstReveal.current = false;
+      return;
+    }
+    setDockOpen(true);
+  }, [revealKey]);
 
   return (
     <div
@@ -92,24 +57,19 @@ export function WorkbenchDock({
       )}
     >
       <div className="flex items-center gap-1 px-2 py-1">
-        <DockTabButton
-          active={dockOpen && dockTab === "console"}
-          onClick={() => {
-            setDockTab("console");
-            setDockOpen(true);
-          }}
-          icon={<IconTerminal className="size-3.5" />}
-          label="SQL Console"
-        />
-        <DockTabButton
-          active={dockOpen && dockTab === "output"}
-          onClick={() => {
-            setDockTab("output");
-            setDockOpen(true);
-          }}
-          icon={<IconColumns3 className="size-3.5" />}
-          label="Output"
-        />
+        <button
+          type="button"
+          onClick={() => setDockOpen(true)}
+          className={cn(
+            "flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
+            dockOpen
+              ? "bg-accent-subdued text-accent"
+              : "text-text-muted hover:text-foreground",
+          )}
+        >
+          <IconColumns3 className="size-3.5" />
+          Output
+        </button>
         <button
           type="button"
           aria-label={dockOpen ? "Collapse dock" : "Expand dock"}
@@ -128,34 +88,7 @@ export function WorkbenchDock({
           className="h-40 overflow-auto border-t border-border-subtle"
           data-testid="workbench-dock-body"
         >
-          {dockTab === "console" ? (
-            <div className="flex h-full flex-col">
-              <div className="flex items-center justify-between px-3 py-1.5">
-                <span className="text-[11px] text-text-muted">
-                  {consoleLabel}
-                </span>
-                {onRun ? (
-                  <Button
-                    type="button"
-                    size="xs"
-                    disabled={runDisabled}
-                    onClick={onRun}
-                    className="gap-1.5"
-                  >
-                    <IconPlayerPlayFilled className="size-3" />
-                    Run
-                  </Button>
-                ) : null}
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto">
-                {consoleContent}
-              </div>
-            </div>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-auto p-2">
-              {outputContent}
-            </div>
-          )}
+          <div className="min-h-0 flex-1 overflow-auto p-2">{content}</div>
         </div>
       ) : null}
     </div>

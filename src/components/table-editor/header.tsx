@@ -1,10 +1,5 @@
-import {
-  IconDotsVertical,
-  IconLayoutSidebarRight,
-  IconTable,
-} from "@tabler/icons-react";
+import { IconDotsVertical, IconLayoutSidebarRight } from "@tabler/icons-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,8 +30,6 @@ interface TableEditorHeaderProps {
   title: string;
   schemaBadge: string;
   rowCountLabel: string;
-  activeSubTab: SubTab;
-  onSubTabChange: (next: SubTab) => void;
   showRowDetailsToggle: boolean;
   rowDetailsVisible: boolean;
   onToggleRowDetails: () => void;
@@ -48,16 +41,12 @@ interface TableEditorHeaderProps {
   /** Table Seeding is engine-gated (PostgreSQL-first, ADR-0020). */
   showSeedAction: boolean;
   onOpenSeedTable: () => void;
-  /** Workbench layout: meta strip only — sub-tabs live in the object tab row. */
-  variant?: "default" | "workbench";
 }
 
 export function TableEditorHeader({
   title,
   schemaBadge,
   rowCountLabel,
-  activeSubTab,
-  onSubTabChange,
   showRowDetailsToggle,
   rowDetailsVisible,
   onToggleRowDetails,
@@ -68,7 +57,6 @@ export function TableEditorHeader({
   onRunMaintenance,
   showSeedAction,
   onOpenSeedTable,
-  variant = "default",
 }: TableEditorHeaderProps) {
   const actions = (
     <div className="ml-auto flex items-center gap-1.5">
@@ -126,57 +114,13 @@ export function TableEditorHeader({
     </div>
   );
 
-  if (variant === "workbench") {
-    return (
-      <div className="flex shrink-0 items-center gap-3 border-b border-border-subtle px-3 py-1.5 text-[11px] text-text-muted">
-        <span className="font-medium text-foreground">
-          {schemaBadge}.{title}
-        </span>
-        <span>{rowCountLabel}</span>
-        {actions}
-      </div>
-    );
-  }
-
   return (
-    <div className="shrink-0 border-b border-border-subtle bg-surface-window px-3 pt-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-sm border border-accent/30 bg-accent/10 text-accent">
-            <IconTable className="size-3.5" />
-          </div>
-          <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
-            {title}
-          </h1>
-          <Badge variant="outline">{rowCountLabel}</Badge>
-          <Badge variant="outline">{schemaBadge}</Badge>
-        </div>
-        {actions}
-      </div>
-      <div className="mt-1.5 flex items-end gap-1">
-        {SUB_TABS.map(({ id, label }) => {
-          const isActive = activeSubTab === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-current={isActive ? "page" : undefined}
-              onClick={() => onSubTabChange(id)}
-              className={cn(
-                "relative h-7 px-2.5 text-xs font-medium transition-colors",
-                isActive
-                  ? "text-foreground"
-                  : "text-text-muted hover:text-foreground",
-              )}
-            >
-              {label}
-              {isActive ? (
-                <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent" />
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+    <div className="flex shrink-0 items-center gap-3 border-b border-border-subtle px-3 py-1.5 text-[11px] text-text-muted">
+      <span className="font-medium text-foreground">
+        {schemaBadge}.{title}
+      </span>
+      <span>{rowCountLabel}</span>
+      {actions}
     </div>
   );
 }

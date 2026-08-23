@@ -105,7 +105,7 @@ export function useMonacoQueryEditor({
       const outcome = await runQuery(requestedTabId, { overrideSql: sql });
       // Drop the outcome if the user switched tabs while the query
       // was in flight — the panel instance is reused across query
-      // tabs (workspace-view.tsx renders no React `key`), so without
+      // tabs (the workbench renders no React `key`), so without
       // this guard the closure's `onOutcome` would write tab A's
       // result into tab B's banner.
       if (requestedTabId !== tabId) return;
