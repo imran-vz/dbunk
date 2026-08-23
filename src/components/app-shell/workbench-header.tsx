@@ -67,7 +67,7 @@ export function WorkbenchHeader({
           aria-haspopup="listbox"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
-          className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated px-2.5 py-1.5 text-[12px] transition-colors hover:bg-surface-panel"
+          className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-panel-elevated px-2.5 py-1.5 text-xs transition-colors hover:bg-surface-panel"
         >
           <IconDatabase className="size-3.5 text-accent" />
           <span className="font-semibold text-foreground">
@@ -127,7 +127,7 @@ export function WorkbenchHeader({
                             />
                           </span>
                         </span>
-                        <span className="block truncate text-[10px] text-text-muted">
+                        <span className="block truncate text-2xs text-text-muted">
                           {connection.engine} · {connection.host}
                         </span>
                       </span>
@@ -174,7 +174,7 @@ export function WorkbenchHeader({
         className="h-full flex-1"
       />
 
-      <div className="flex items-center gap-2 text-[11px] text-text-muted">
+      <div className="flex items-center gap-2 text-2xs text-text-muted">
         {activeConnection ? (
           <>
             <StatusDot

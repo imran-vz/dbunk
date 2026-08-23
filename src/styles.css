@@ -72,33 +72,35 @@
 }
 
 .dark {
-    /* Spec palette — §4 of DESIGN.md */
-    --surface-app: #080c10;
-    --surface-window: #0d1117;
-    --surface-sidebar: #0a0f15;
-    --surface-panel: #111820;
-    --surface-panel-elevated: #151c24;
-    --surface-input: #111720;
-    --surface-row: #10161d;
-    --surface-row-hover: #17202a;
-    --accent-overlay: #3a2c10;
+    /* Systematic cool ramp — DESIGN-SYSTEM.md §2.4. One hue (~214),
+     * four lightness steps: app (rail/status) → sidebar/window (chrome)
+     * → panel (content, lightest in-layout) → elevated (overlays). */
+    --surface-app: #0a0d12;
+    --surface-window: #0e1218;
+    --surface-sidebar: #0e1218;
+    --surface-panel: #131820;
+    --surface-panel-elevated: #1a2029;
+    --surface-input: #0f141b;
+    --surface-row: #131820;
+    --surface-row-hover: #1b212b;
+    --accent-overlay: #2b2519;
 
-    --border-subtle: #222b35;
-    --border-strong: #303a46;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.15);
 
-    --text-primary: #e6edf3;
-    --text-secondary: #b4bdc7;
-    --text-muted: #7d8793;
-    --text-disabled: #5f6873;
+    --text-primary: #dde3eb;
+    --text-secondary: #9aa5b1;
+    --text-muted: #7b8595;
+    --text-disabled: #545e6b;
 
     --accent: #f5a623;
-    --accent-hover: #ffb733;
-    --accent-subdued: #3a2c10;
+    --accent-hover: #ffb83d;
+    --accent-subdued: #2b2519;
 
-    --semantic-success: #8fdd4c;
-    --semantic-warning: #f5b84b;
-    --semantic-danger: #ef6b6b;
-    --semantic-info: #67b7ff;
+    --semantic-success: #3fb950;
+    --semantic-warning: #d29922;
+    --semantic-danger: #f85149;
+    --semantic-info: #539bf5;
 
     /* shadcn-compatible tokens, mapped to the spec palette */
     --background: var(--surface-app);
@@ -509,9 +511,25 @@
     --font-sans:
         "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter",
         system-ui, sans-serif;
+    /* JetBrains Mono is bundled and must render identically on every
+     * platform — it stays first in the stack (DESIGN-SYSTEM.md §2.1). */
     --font-mono:
-        "SF Mono", "JetBrains Mono Variable", ui-monospace, Menlo,
-        Consolas, monospace;
+        "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
+        Menlo, Consolas, monospace;
+
+    /* Type ramp — the only text sizes allowed in the app
+     * (DESIGN-SYSTEM.md §2.1). Nothing below 11px, arbitrary
+     * text-[...] sizes are banned. */
+    --text-2xs: 11px;
+    --text-2xs--line-height: 16px;
+    --text-xs: 12px;
+    --text-xs--line-height: 16px;
+    --text-sm: 13px;
+    --text-sm--line-height: 18px;
+    --text-md: 14px;
+    --text-md--line-height: 20px;
+    --text-lg: 16px;
+    --text-lg--line-height: 22px;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -583,7 +601,7 @@
 }
 
 @utility dbunk-section-title {
-    font-size: 0.6875rem;
+    font-size: 11px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--text-muted);
@@ -610,15 +628,19 @@
     }
 }
 
+/* Thin overlay scrollbars on every scroll surface — never fully
+ * suppressed; invisible overflow on a data surface is a correctness
+ * bug (DESIGN-SYSTEM.md §4.13). */
 * {
     overscroll-behavior: none;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent)
+        transparent;
 }
 
 *::-webkit-scrollbar {
-    width: 0;
-    height: 0;
+    width: 8px;
+    height: 8px;
 }
 
 *::-webkit-scrollbar-track {
@@ -626,18 +648,18 @@
 }
 
 *::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background-color: transparent;
+    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--text-primary) 15%, transparent);
+    background-clip: padding-box;
+    border: 1px solid transparent;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--text-primary) 28%, transparent);
 }
 
 *::-webkit-scrollbar-corner {
     background: transparent;
-}
-
-.monaco-scrollable-element > .scrollbar,
-.monaco-scrollable-element > .scrollbar > .slider {
-    opacity: 0 !important;
-    pointer-events: none !important;
 }
 
 [data-window-viewport-zoom] {
@@ -657,139 +679,63 @@
     }
 }
 
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="button"][data-size="default"] {
-    height: 1.625rem;
-    gap: 0.25rem;
-    padding-inline: 0.5rem;
-    font-size: 0.6875rem;
+/* -------------------------------------------------------------------------
+ * Density system — DESIGN-SYSTEM.md §2.3.
+ *
+ * Three explicit user modes (Compact / Default / Comfortable) set on
+ * <html data-density>. Density shifts metrics only — typography never
+ * changes with density. There is NO width-based automatic density
+ * switching; constrained windows are handled by panel-yield rules.
+ * Components consume the variables (Phase 2 wires controls; the data
+ * grid consumes --row-grid below).
+ * ------------------------------------------------------------------------- */
+
+:root {
+    --control-h-sm: 22px;
+    --control-h: 26px;
+    --control-h-lg: 30px;
+    --row-tree: 24px;
+    --row-grid: 26px;
+    --row-menu: 26px;
+    --h-tab: 30px;
+    --h-toolbar: 36px;
+    --h-header: 36px;
+    --h-statusbar: 24px;
+    --pad-panel: 8px;
 }
 
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="button"][data-size="sm"] {
-    height: 1.5rem;
-    gap: 0.25rem;
-    padding-inline: 0.4375rem;
-    font-size: 0.625rem;
+:root[data-density="compact"] {
+    --control-h-sm: 20px;
+    --control-h: 24px;
+    --control-h-lg: 28px;
+    --row-tree: 22px;
+    --row-grid: 22px;
+    --row-menu: 24px;
+    --h-tab: 28px;
+    --h-toolbar: 32px;
+    --h-header: 34px;
+    --h-statusbar: 22px;
+    --pad-panel: 6px;
 }
 
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="button"][data-size="xs"] {
-    height: 1.25rem;
-    padding-inline: 0.3125rem;
+:root[data-density="comfortable"] {
+    --control-h-sm: 24px;
+    --control-h: 30px;
+    --control-h-lg: 34px;
+    --row-tree: 28px;
+    --row-grid: 30px;
+    --row-menu: 28px;
+    --h-tab: 34px;
+    --h-toolbar: 40px;
+    --h-header: 40px;
+    --h-statusbar: 24px;
+    --pad-panel: 12px;
 }
 
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="button"][data-size="icon"],
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="button"][data-size="icon-sm"] {
-    height: 1.375rem;
-    width: 1.375rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="button"][data-size="icon-xs"] {
-    height: 1.125rem;
-    width: 1.125rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="input"] {
-    max-height: 1.75rem;
-    padding-inline: 0.5rem;
-    font-size: 0.6875rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="card"] {
-    gap: 0.625rem;
-    border-radius: 0.375rem;
-    padding-block: 0.625rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="card-header"],
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="card-content"],
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="card-footer"] {
-    padding-inline: 0.75rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="card-title"] {
-    font-size: 0.75rem;
-}
-
-[data-density="compact"] [data-slot="top-bar"] {
-    height: 2.5rem;
-    gap: 0.5rem;
-    padding-right: 0.5rem;
-}
-
-[data-density="compact"] [data-slot="workspace-tabs"] {
-    height: 2rem;
-    padding-inline: 0.5rem;
-}
-
-[data-density="compact"] [data-slot="workspace-tab"] {
-    height: 1.75rem;
-    min-width: 7.75rem;
-    padding-inline: 0.4375rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    .dbunk-optional-label {
-    display: none;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="data-grid-toolbar"] {
-    min-height: 2rem;
-    flex-wrap: nowrap;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="data-grid-toolbar"]
-    > div {
-    flex-wrap: nowrap;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="data-grid-table"]
-    th {
-    height: 1.75rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="data-grid-table"]
-    td {
-    height: 1.75rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="status-bar"] {
-    height: 1.25rem;
-    gap: 0.5rem;
-    overflow: hidden;
-    padding-inline: 0.5rem;
-}
-
-:where([data-density="compact"], [data-workspace-density="compact"])
-    [data-slot="status-bar"]
-    > div {
-    min-width: 0;
-    gap: 0.75rem;
-    overflow: hidden;
-}
-
-@media (max-width: 520px) {
-    :where([data-density="compact"], [data-workspace-density="compact"])
-        .dbunk-primary-label {
-        display: none;
-    }
+/* Data grid rows track the density setting. */
+[data-slot="data-grid-table"] th,
+[data-slot="data-grid-table"] td {
+    height: var(--row-grid);
 }
 
 .dbunk-query-run-glyph {
@@ -803,7 +749,7 @@
     align-items: center;
     justify-content: center;
     color: var(--muted-foreground);
-    font-size: 0.68rem;
+    font-size: 11px;
     line-height: 1;
 }
 

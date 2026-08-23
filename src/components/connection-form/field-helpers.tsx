@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 
 export function FieldError({ text }: { text: string | null }) {
   if (!text) return null;
-  return <p className="text-[0.6875rem] text-danger">{text}</p>;
+  return <p className="text-2xs text-danger">{text}</p>;
 }
 
 interface ToggleSwitchRowProps {
@@ -35,7 +35,7 @@ export function ToggleSwitchRow({
     >
       <span className="flex flex-col gap-0.5">
         <span className="text-xs font-medium">{title}</span>
-        <span className="text-[0.6875rem] text-text-muted">{description}</span>
+        <span className="text-2xs text-text-muted">{description}</span>
       </span>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </label>

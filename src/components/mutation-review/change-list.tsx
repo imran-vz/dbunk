@@ -19,7 +19,7 @@ type MutationChangeListProps = {
 const ChangeValues = ({ change }: { change: MutationDraftChange }) => {
   if (change.kind === "updateRow") {
     return (
-      <dl className="mt-1.5 grid grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 pl-6 text-[0.6875rem]">
+      <dl className="mt-1.5 grid grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 pl-6 text-2xs">
         {change.cellOrder.map((column) => {
           const cell = change.cells[column];
           return cell ? (
@@ -47,7 +47,7 @@ const ChangeValues = ({ change }: { change: MutationDraftChange }) => {
 
   const values = change.kind === "deleteRow" ? change.originals : change.values;
   return (
-    <dl className="mt-1.5 grid grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 pl-6 text-[0.6875rem]">
+    <dl className="mt-1.5 grid grid-cols-[5rem_minmax(0,1fr)] gap-x-2 gap-y-1 pl-6 text-2xs">
       {values.map(({ column, value }) => (
         <div key={column} className="contents">
           <dt className="truncate text-text-muted" title={column}>
@@ -90,7 +90,7 @@ export function MutationChangeList({
 }: MutationChangeListProps) {
   return groups.map((group) => (
     <section key={group.key} className="border-b border-border-subtle">
-      <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-[#0b0b0b] px-3 py-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-text-secondary">
+      <h2 className="sticky top-0 z-10 border-b border-border-subtle bg-[#0b0b0b] px-3 py-1.5 text-2xs font-semibold uppercase tracking-[0.08em] text-text-secondary">
         {group.label} · {group.target}
       </h2>
       {group.changes.map((change) => {
@@ -124,12 +124,12 @@ export function MutationChangeList({
                 <div className="flex flex-wrap items-baseline gap-x-2 text-xs font-medium text-foreground">
                   <span className="wrap-break-word">{title}</span>
                   {change.kind !== "insertRow" && change.rowIndex === null ? (
-                    <span className="text-[0.625rem] font-normal text-warning">
+                    <span className="text-2xs font-normal text-warning">
                       Off page
                     </span>
                   ) : null}
                 </div>
-                <div className="text-[0.625rem] text-text-muted">
+                <div className="text-2xs text-text-muted">
                   {mutationChangeGuardCopy(change)}
                 </div>
               </div>
@@ -137,7 +137,7 @@ export function MutationChangeList({
                 type="button"
                 disabled={disabled}
                 onClick={() => onRevert(change.changeId)}
-                className="text-[0.625rem] text-text-muted hover:text-foreground disabled:opacity-50"
+                className="text-2xs text-text-muted hover:text-foreground disabled:opacity-50"
                 aria-label={`Revert ${title}`}
               >
                 Revert
@@ -148,7 +148,7 @@ export function MutationChangeList({
               <p
                 id={failureId}
                 role="alert"
-                className="mb-0 mt-1.5 pl-6 text-[0.6875rem] text-danger"
+                className="mb-0 mt-1.5 pl-6 text-2xs text-danger"
               >
                 {failure}
               </p>

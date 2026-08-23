@@ -37,7 +37,7 @@ export function NewConnectionDialog({
           <IconPlus />
         </AlertDialogTrigger>
       )}
-      <AlertDialogContent className="flex max-h-[88vh] w-[26rem] max-w-[26rem] flex-col gap-0 overflow-hidden rounded-xl border border-border-subtle bg-surface-window p-0 sm:max-w-[26rem]">
+      <AlertDialogContent className="flex max-h-[88vh] w-[26rem] max-w-[26rem] flex-col gap-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-window p-0 sm:max-w-[26rem]">
         <AlertDialogHeader className="flex-row items-center justify-between border-b border-border-subtle px-4 py-3">
           <AlertDialogTitle className="text-sm font-semibold">
             New Connection

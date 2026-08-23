@@ -93,7 +93,7 @@ export function CredentialOnboarding() {
             <div className="flex size-10 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent">
               <IconLock className="size-5" />
             </div>
-            <h1 className="mt-5 text-2xl font-semibold tracking-tight">
+            <h1 className="mt-5 text-lg font-semibold tracking-tight">
               Set up dbunk
             </h1>
             <p className="mt-2 max-w-sm text-sm leading-6 text-text-muted">
@@ -140,7 +140,7 @@ export function CredentialOnboarding() {
                     <span className="flex items-center gap-2 text-sm font-semibold">
                       {item.title}
                       {item.recommended ? (
-                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[0.625rem] text-accent">
+                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-2xs text-accent">
                           Recommended
                         </span>
                       ) : null}
@@ -233,7 +233,7 @@ export function CredentialUnlock() {
         <div className="flex size-10 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent">
           <IconShieldLock className="size-5" />
         </div>
-        <h1 className="mt-5 text-xl font-semibold">Unlock credentials</h1>
+        <h1 className="mt-5 text-lg font-semibold">Unlock credentials</h1>
         <p className="mt-2 text-sm leading-6 text-text-muted">
           Enter your dbunk credential password to load saved connections and
           start health checks.

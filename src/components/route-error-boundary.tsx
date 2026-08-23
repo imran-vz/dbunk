@@ -50,7 +50,7 @@ export function RouteErrorBoundary({ error, reset }: RouteErrorBoundaryProps) {
 
       <div className="relative z-10 flex min-h-screen w-full flex-col items-center justify-center px-6 py-16">
         <div className="w-full max-w-3xl">
-          <div className="mb-6 flex items-center justify-between text-[0.625rem] uppercase tracking-[0.2em] text-text-muted">
+          <div className="mb-6 flex items-center justify-between text-2xs uppercase tracking-[0.2em] text-text-muted">
             <span>dbunk · query log</span>
             <span className="flex items-center gap-2">
               <span className="size-1.5 animate-pulse rounded-full bg-danger" />
@@ -99,12 +99,12 @@ export function RouteErrorBoundary({ error, reset }: RouteErrorBoundaryProps) {
           </div>
 
           {expanded ? (
-            <pre className="mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-surface-window/80 p-3 font-mono text-[0.6875rem] leading-relaxed text-text-secondary backdrop-blur">
+            <pre className="mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-surface-window/80 p-3 font-mono text-2xs leading-relaxed text-text-secondary backdrop-blur">
               {stack || "(no stack trace available)"}
             </pre>
           ) : null}
 
-          <div className="mt-6 text-[0.625rem] uppercase tracking-[0.2em] text-text-muted">
+          <div className="mt-6 text-2xs uppercase tracking-[0.2em] text-text-muted">
             report at{" "}
             <a
               href="https://github.com/imran-vz/dbunk/issues"
@@ -132,7 +132,7 @@ function ErrorDataGrid({
 }) {
   return (
     <div className="overflow-hidden rounded-md border border-border-subtle bg-surface-window/90 shadow-2xl shadow-black/20 backdrop-blur">
-      <div className="grid grid-cols-[2.5rem_5rem_minmax(0,1fr)_6rem] border-b border-border-subtle bg-surface-panel text-[0.6rem] uppercase tracking-[0.2em] text-text-muted">
+      <div className="grid grid-cols-[2.5rem_5rem_minmax(0,1fr)_6rem] border-b border-border-subtle bg-surface-panel text-2xs uppercase tracking-[0.2em] text-text-muted">
         <Cell header>#</Cell>
         <Cell header>level</Cell>
         <Cell header>event</Cell>
@@ -156,7 +156,7 @@ function ErrorDataGrid({
           <span className="font-mono text-danger">{errorId}</span>
         </Cell>
         <Cell>
-          <span className="inline-flex items-center rounded-sm border border-danger/40 bg-danger/15 px-1.5 py-0.5 font-mono text-[0.6rem] font-semibold uppercase tracking-[0.15em] text-danger">
+          <span className="inline-flex items-center rounded-sm border border-danger/40 bg-danger/15 px-1.5 py-0.5 font-mono text-2xs font-semibold uppercase tracking-[0.15em] text-danger">
             error
           </span>
         </Cell>
@@ -168,12 +168,12 @@ function ErrorDataGrid({
             <button
               type="button"
               onClick={reset}
-              className="rounded-sm border border-accent/40 bg-accent/10 px-2 py-1 text-[0.6875rem] font-medium text-accent transition-colors hover:bg-accent/20 hover:text-accent-hover"
+              className="rounded-sm border border-accent/40 bg-accent/10 px-2 py-1 text-2xs font-medium text-accent transition-colors hover:bg-accent/20 hover:text-accent-hover"
             >
               retry
             </button>
           ) : (
-            <span className="text-[0.6875rem] text-text-muted">—</span>
+            <span className="text-2xs text-text-muted">—</span>
           )}
         </Cell>
       </div>
@@ -206,18 +206,18 @@ function FillerRow({
       )}
     >
       <Cell>
-        <span className="font-mono text-[0.6875rem]">{id}</span>
+        <span className="font-mono text-2xs">{id}</span>
       </Cell>
       <Cell>
-        <span className="font-mono text-[0.6875rem] uppercase tracking-wide">
+        <span className="font-mono text-2xs uppercase tracking-wide">
           {level}
         </span>
       </Cell>
       <Cell>
-        <span className="font-mono text-[0.6875rem]">{event}</span>
+        <span className="font-mono text-2xs">{event}</span>
       </Cell>
       <Cell className="text-right">
-        <span className="font-mono text-[0.6875rem]">{status}</span>
+        <span className="font-mono text-2xs">{status}</span>
       </Cell>
     </div>
   );

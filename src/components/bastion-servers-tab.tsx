@@ -218,7 +218,7 @@ function SectionHeader({
 }) {
   return (
     <header className="shrink-0 border-b border-border-subtle bg-surface-window px-6 py-4">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">
+      <h1 className="text-lg font-semibold tracking-tight text-foreground">
         {title}
       </h1>
       <p className="mt-1 text-xs text-text-muted">{subtitle}</p>

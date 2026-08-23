@@ -140,7 +140,7 @@ function JsonCellEditor({
       <div
         id={helperId}
         className={cn(
-          "min-h-4 text-[0.6875rem]",
+          "min-h-4 text-2xs",
           error ? "text-danger" : "text-text-muted",
         )}
       >
@@ -191,7 +191,7 @@ function ArrayCellEditor({
           {items.map((item, index) => (
             // oxlint-disable-next-line react/no-array-index-key -- order is the identity
             <li key={index} className="flex items-center gap-1.5">
-              <span className="w-6 text-right font-mono text-[0.6875rem] text-text-muted">
+              <span className="w-6 text-right font-mono text-2xs text-text-muted">
                 {index}
               </span>
               <Input
@@ -219,7 +219,7 @@ function ArrayCellEditor({
           ))}
         </ul>
       )}
-      <div className="font-mono text-[0.6875rem] text-text-muted">
+      <div className="font-mono text-2xs text-text-muted">
         Postgres literal: {formatPgArrayLiteral(items) || "{}"}
       </div>
     </EditorShell>
@@ -277,7 +277,7 @@ function GeometryCellEditor({
       />
       <div
         className={cn(
-          "min-h-4 text-[0.6875rem]",
+          "min-h-4 text-2xs",
           error ? "text-danger" : "text-text-muted",
         )}
       >

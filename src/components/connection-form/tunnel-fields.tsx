@@ -73,7 +73,7 @@ export function TunnelFields({ form }: { form: ConnectionFormApi }) {
                   </SelectContent>
                 </Select>
                 {bastions.length === 0 ? (
-                  <p className="text-[0.6875rem] text-text-muted">
+                  <p className="text-2xs text-text-muted">
                     Add a Bastion Server in Settings before enabling a tunnel.
                   </p>
                 ) : null}
@@ -169,7 +169,7 @@ export function TunnelFields({ form }: { form: ConnectionFormApi }) {
                 >
                   <span className="grid gap-0.5">
                     <span className="text-xs font-medium">Require reply</span>
-                    <span className="text-[0.6875rem] text-text-muted">
+                    <span className="text-2xs text-text-muted">
                       Treat missing keepalive replies as SSH failure.
                     </span>
                   </span>
@@ -211,7 +211,7 @@ export function TunnelFields({ form }: { form: ConnectionFormApi }) {
                   onChange={(event) => field.handleChange(event.target.value)}
                   onBlur={field.handleBlur}
                 />
-                <p className="text-[0.6875rem] text-text-muted">
+                <p className="text-2xs text-text-muted">
                   Applied to the first SSH hop. Use %h and %p for the host and
                   port.
                 </p>
@@ -267,7 +267,7 @@ export function JumpChainField({
       <div className="flex items-center justify-between gap-3">
         <div>
           <Label>Jump chain</Label>
-          <p className="mt-0.5 text-[0.6875rem] text-text-muted">
+          <p className="mt-0.5 text-2xs text-text-muted">
             Optional intermediate Bastion Servers before the selected one.
           </p>
         </div>
@@ -283,7 +283,7 @@ export function JumpChainField({
         </Button>
       </div>
       {chain.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border-subtle px-3 py-2 text-[0.6875rem] text-text-muted">
+        <div className="rounded-sm border border-dashed border-border-subtle px-3 py-2 text-2xs text-text-muted">
           No jump hops configured.
         </div>
       ) : (
@@ -294,7 +294,7 @@ export function JumpChainField({
               key={`${index}-${bastionId || "empty"}`}
               className="grid gap-2 sm:grid-cols-[1.5rem_1fr_auto]"
             >
-              <div className="flex items-center text-[0.6875rem] text-text-muted">
+              <div className="flex items-center text-2xs text-text-muted">
                 {index + 1}
               </div>
               <Select

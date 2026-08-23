@@ -92,23 +92,21 @@ export function SchemaMapGlossaryButton() {
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent
           data-testid="schema-map-glossary"
-          className="flex max-h-[80vh] w-[30rem] max-w-[30rem] flex-col gap-0 overflow-hidden rounded-xl border border-border-subtle bg-surface-window p-0 sm:max-w-[30rem]"
+          className="flex max-h-[80vh] w-[30rem] max-w-[30rem] flex-col gap-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-window p-0 sm:max-w-[30rem]"
         >
           <AlertDialogHeader className="border-b border-border-subtle px-4 py-3">
             <AlertDialogTitle className="text-sm font-semibold">
               Schema Map glossary
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-[0.6875rem] text-text-muted">
+            <AlertDialogDescription className="text-2xs text-text-muted">
               The terms the Schema Map uses for its graph elements.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <dl className="flex flex-col gap-2.5 overflow-y-auto px-4 py-3">
             {GLOSSARY_TERMS.map((entry) => (
               <div key={entry.term}>
-                <dt className="text-[0.75rem] font-semibold">{entry.term}</dt>
-                <dd className="text-[0.6875rem] text-text-muted">
-                  {entry.definition}
-                </dd>
+                <dt className="text-xs font-semibold">{entry.term}</dt>
+                <dd className="text-2xs text-text-muted">{entry.definition}</dd>
               </div>
             ))}
           </dl>

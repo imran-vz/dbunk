@@ -736,7 +736,7 @@ export function TableEditorPanel({
       {mutationEnabled && mutationStatusCopy ? (
         <output
           data-testid="table-mutation-status"
-          className="border-b border-border-subtle bg-black px-3 py-1.5 text-[0.6875rem] text-text-secondary"
+          className="border-b border-border-subtle bg-black px-3 py-1.5 text-2xs text-text-secondary"
         >
           {mutationStatusCopy}
         </output>
@@ -1390,7 +1390,7 @@ export function TableSidebar({ tab, isClient }: TableSidebarProps) {
               className="flex items-center justify-between rounded-md border border-border-subtle bg-surface-app px-2 py-1"
             >
               <span className="text-text-muted">{column}</span>
-              <Badge variant="secondary" className="text-[0.625rem]">
+              <Badge variant="secondary" className="text-2xs">
                 text
               </Badge>
             </div>

@@ -57,7 +57,7 @@ export function ManagedServersTab() {
       </div>
 
       {status.state === "error" ? (
-        <p className="rounded-sm border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+        <p className="rounded-sm border border-danger/40 bg-danger/10 px-2 py-1.5 text-xs text-danger">
           {status.error}
         </p>
       ) : null}
@@ -83,7 +83,7 @@ const STATUS_TONE: Record<string, string> = {
   running: "text-accent",
   starting: "text-warning",
   stopped: "text-text-muted",
-  orphaned: "text-destructive",
+  orphaned: "text-danger",
 };
 
 function ManagedServerRow({ server }: { server: ManagedServerWithStatus }) {
@@ -126,7 +126,7 @@ function ManagedServerRow({ server }: { server: ManagedServerWithStatus }) {
           </Badge>
           <Badge variant="outline">port {server.port}</Badge>
           <span
-            className={`text-[0.625rem] font-medium uppercase tracking-wide ${
+            className={`text-2xs font-medium uppercase tracking-wide ${
               STATUS_TONE[server.status] ?? "text-text-muted"
             }`}
           >
@@ -202,7 +202,7 @@ function ManagedServerRow({ server }: { server: ManagedServerWithStatus }) {
               size="sm"
               variant="ghost"
               disabled={busy}
-              className="text-destructive"
+              className="text-danger"
               onClick={() => setConfirmingDestroy(true)}
             >
               Destroy
@@ -211,18 +211,18 @@ function ManagedServerRow({ server }: { server: ManagedServerWithStatus }) {
         </div>
       </div>
       {confirmingDestroy ? (
-        <p className="text-[0.625rem] text-destructive">
+        <p className="text-2xs text-danger">
           Destroy deletes the container and its data volume permanently. The
           saved connection stays in your sidebar until you delete it.
         </p>
       ) : null}
       {server.status === "orphaned" && !server.volumeExists ? (
-        <p className="text-[0.625rem] text-text-muted">
+        <p className="text-2xs text-text-muted">
           Both the container and its data volume were removed outside dbunk.
           Destroy removes this record.
         </p>
       ) : null}
-      <p className="text-[0.625rem] text-text-muted">
+      <p className="text-2xs text-text-muted">
         {server.database}@127.0.0.1:{server.port} · container{" "}
         {server.containerName}
       </p>

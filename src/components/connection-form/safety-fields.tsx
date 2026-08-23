@@ -79,9 +79,7 @@ export function EnvironmentField({ form }: { form: ConnectionFormApi }) {
                 ))}
               </SelectContent>
             </Select>
-            <p className="m-0 text-[0.6875rem] text-text-muted">
-              {meta.description}
-            </p>
+            <p className="m-0 text-2xs text-text-muted">{meta.description}</p>
           </div>
         );
       }}
@@ -134,7 +132,7 @@ export function SafetyFields({
                       <SelectItem value="strict">Strict</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="m-0 text-[0.6875rem] text-text-muted">
+                  <p className="m-0 text-2xs text-text-muted">
                     Resolves to {titleCase(resolved.level)} for{" "}
                     {ENVIRONMENT_META[environment].label}.
                   </p>

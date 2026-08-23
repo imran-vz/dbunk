@@ -93,7 +93,7 @@ export function RelationsSubTab({
                 <h2 className="text-sm font-semibold text-foreground">
                   Relations
                 </h2>
-                <p className="text-[0.6875rem] text-text-muted">
+                <p className="text-2xs text-text-muted">
                   {schema}.{tableName}
                 </p>
               </div>
@@ -150,7 +150,7 @@ function InboundSection({
     >
       <header className="border-b border-border-subtle px-3 py-2">
         <h3 className="text-xs font-semibold text-foreground">Referenced by</h3>
-        <p className="text-[0.6875rem] text-text-muted">
+        <p className="text-2xs text-text-muted">
           Tables whose foreign keys point at this one.
         </p>
       </header>
@@ -182,7 +182,7 @@ function InboundSection({
               <span className="font-mono text-foreground">
                 ({fk.toColumns.join(", ")})
               </span>
-              <span className="ml-auto font-mono text-[0.625rem] text-text-muted">
+              <span className="ml-auto font-mono text-2xs text-text-muted">
                 {fk.constraintName}
               </span>
             </li>
