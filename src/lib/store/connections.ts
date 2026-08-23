@@ -287,10 +287,6 @@ export const createConnectionsSlice: StateCreator<
   },
 
   deleteConnection: async (connectionId) => {
-    // P8 GC: drop the connection's persisted UI state (grid layouts,
-    // per-table prefs). The session blob self-heals via the tab-close
-    // cascade + session persistence.
-    uiRemovePrefix(`dbunk.grid.layout.${connectionId}.`);
     const finalize = (connections: ReturnType<typeof get>["connections"]) => {
       set((state) => {
         const newActiveId =
@@ -326,6 +322,12 @@ export const createConnectionsSlice: StateCreator<
           }
         : undefined;
       await teardownConnectionWorkspace(get(), connectionId, teardownBackend);
+      // P8 GC: drop the connection's persisted UI state (grid layouts,
+      // per-table prefs) only after the backend delete succeeded — a
+      // failed delete keeps the connection, so its layouts must survive.
+      // The session blob self-heals via the tab-close cascade + session
+      // persistence.
+      uiRemovePrefix(`dbunk.grid.layout.${connectionId}.`);
       finalize(connections);
     } catch (error) {
       console.error("Failed to delete connection", error);
