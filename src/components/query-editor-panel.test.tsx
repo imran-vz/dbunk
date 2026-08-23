@@ -32,6 +32,14 @@ vi.mock("@/lib/result-mutation", async (importOriginal) => {
 // the real monaco-editor package.
 vi.mock("@/lib/monaco-local", () => ({}));
 
+const { mockedRequestConfirm } = vi.hoisted(() => ({
+  mockedRequestConfirm: vi.fn(() => Promise.resolve(true)),
+}));
+vi.mock("@/lib/confirm", () => ({
+  requestConfirm: mockedRequestConfirm,
+  requestPrompt: vi.fn(() => Promise.resolve(null)),
+}));
+
 // Controllable selection that the mocked Monaco editor will return.
 const selectionState = { value: null as string | null };
 const cursorState = { lineNumber: 1, column: 1 };
@@ -398,6 +406,8 @@ beforeEach(() => {
   editorOverrides.skipDecorationsCollection = false;
   mockedIsTauri.mockReturnValue(true);
   mockedInvoke.mockReset();
+  mockedRequestConfirm.mockReset();
+  mockedRequestConfirm.mockResolvedValue(true);
   useAppStore.setState(initialStoreState, true);
 });
 
@@ -602,8 +612,8 @@ describe("QueryEditorPanel feedback", () => {
     expect(screen.queryByRole("button", { name: /run options/i })).toBeNull();
   });
 
-  it("confirms before closing a session with unknown transaction state", () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("confirms before closing a session with unknown transaction state", async () => {
+    mockedRequestConfirm.mockResolvedValue(false);
     const closeSpy = vi
       .spyOn(useAppStore.getState(), "closeQuerySessionForTab")
       .mockResolvedValue(undefined);
@@ -633,14 +643,14 @@ describe("QueryEditorPanel feedback", () => {
 
     render(<QueryEditorPanel tab={queryTab} isClient />);
     fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await act(async () => {});
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      "Close this query session? Its active or unresolved transaction will be rolled back.",
-    );
+    expect(mockedRequestConfirm).toHaveBeenCalled();
     expect(closeSpy).not.toHaveBeenCalled();
 
-    confirmSpy.mockReturnValue(true);
+    mockedRequestConfirm.mockResolvedValue(true);
     fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await act(async () => {});
     expect(closeSpy).toHaveBeenCalledWith(queryTab.id);
   });
 
@@ -1594,13 +1604,12 @@ describe("QueryEditorPanel result mutations", () => {
           : seedUsersUpdateDraft();
       if (draftState === "apply-success") resolveUsersDraftApply(scope);
       mockedIsTauri.mockReturnValue(false);
-      const confirmSpy = vi.spyOn(window, "confirm");
-      confirmSpy.mockClear();
+      mockedRequestConfirm.mockClear();
 
       render(<QueryEditorPanel tab={queryTab} isClient />);
       fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
 
-      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(mockedRequestConfirm).not.toHaveBeenCalled();
       expect(useAppStore.getState().mutationDrafts[scope]).toBeUndefined();
     },
   );
@@ -1608,19 +1617,19 @@ describe("QueryEditorPanel result mutations", () => {
   it("confirms before discarding or re-running staged query changes", async () => {
     seedPersistentQuery();
     const scope = seedUsersUpdateDraft();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mockedRequestConfirm.mockResolvedValue(false);
 
     render(<QueryEditorPanel tab={queryTab} isClient />);
     fireEvent.click(screen.getByRole("button", { name: /^Discard$/i }));
-    expect(confirmSpy).toHaveBeenCalledWith("Discard 1 staged change?");
+    await act(async () => {});
+    expect(mockedRequestConfirm).toHaveBeenCalledTimes(1);
     expect(
       useAppStore.getState().mutationDrafts[scope]?.changeOrder,
     ).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: /^Run$/i }));
-    expect(confirmSpy).toHaveBeenLastCalledWith(
-      "Re-running will discard 1 staged change. Continue?",
-    );
+    await act(async () => {});
+    expect(mockedRequestConfirm).toHaveBeenCalledTimes(2);
     expect(mockedInvoke).not.toHaveBeenCalled();
     expect(
       useAppStore.getState().mutationDrafts[scope]?.changeOrder,

@@ -15,6 +15,7 @@
 
 import type { StateCreator } from "zustand";
 
+import { requestConfirm } from "@/lib/confirm";
 import { storageClassFor } from "@/lib/engine-policy";
 import { formatLatencyMs } from "@/lib/format";
 import { fetchRedisAclSelf } from "@/lib/redis/api";
@@ -545,9 +546,13 @@ export const createConnectionsSlice: StateCreator<
     );
     if (
       hasStagedChanges &&
-      !window.confirm(
-        "Disconnecting clears staged result changes for this connection. Continue?",
-      )
+      !(await requestConfirm({
+        title: "Disconnect?",
+        message:
+          "Disconnecting clears staged result changes for this connection.",
+        confirmLabel: "Disconnect",
+        danger: true,
+      }))
     ) {
       return;
     }

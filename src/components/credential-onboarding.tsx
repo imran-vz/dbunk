@@ -8,6 +8,7 @@ import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { requestConfirm } from "@/lib/confirm";
 import type { CredentialStorageMode } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -262,13 +263,16 @@ export function CredentialUnlock() {
             variant="ghost"
             className="text-text-muted"
             onClick={() => {
-              if (
-                window.confirm(
-                  "Reset credential storage? All query sessions will close, active transactions will roll back, and saved database passwords will be deleted permanently. Connection profiles and other app data remain.",
-                )
-              ) {
-                void resetCredentialStorage();
-              }
+              void (async () => {
+                const confirmed = await requestConfirm({
+                  title: "Reset credential storage?",
+                  message:
+                    "All query sessions will close, active transactions will roll back, and saved database passwords will be deleted permanently. Connection profiles and other app data remain.",
+                  confirmLabel: "Reset storage",
+                  danger: true,
+                });
+                if (confirmed) void resetCredentialStorage();
+              })();
             }}
           >
             Forgot password?

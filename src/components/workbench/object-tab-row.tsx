@@ -38,7 +38,13 @@ import { cn } from "@/lib/utils";
 
 const SCROLL_HINT_THRESHOLD_PX = 2;
 
-export type TableSection = "data" | "schema" | "indexes";
+export type TableSection =
+  | "data"
+  | "schema"
+  | "indexes"
+  | "relations"
+  | "schema-map"
+  | "specialized";
 
 interface ObjectTabRowProps {
   sectionControl?: React.ReactNode;
@@ -127,20 +133,20 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
   }, [activeTabId]);
 
   const requestClose = useCallback(
-    (tab: WorkspaceTab) => {
+    async (tab: WorkspaceTab) => {
       const status =
         useAppStore.getState().querySessions[tab.id]?.transaction.status;
-      if (!confirmCloseQuerySession(status)) return;
+      if (!(await confirmCloseQuerySession(status))) return;
       void closeTab(tab.id);
     },
     [closeTab],
   );
 
   const closeMany = useCallback(
-    (targets: WorkspaceTab[]) => {
+    async (targets: WorkspaceTab[]) => {
       for (const tab of targets) {
         if (tab.pinned) continue;
-        requestClose(tab);
+        await requestClose(tab);
       }
     },
     [requestClose],
@@ -477,6 +483,9 @@ export function TableSectionToggle({
         { id: "data", label: "Data", icon: <IconTable /> },
         { id: "schema", label: "Columns", icon: <IconColumns3 /> },
         { id: "indexes", label: "Keys", icon: <IconKey /> },
+        { id: "relations", label: "Relations" },
+        { id: "schema-map", label: "Schema Map" },
+        { id: "specialized", label: "Specialized" },
       ]}
     />
   );

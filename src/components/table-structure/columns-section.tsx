@@ -53,7 +53,7 @@ export function ColumnsSection({
       {columns.length === 0 ? (
         <EmptyRow>No columns reported by the database.</EmptyRow>
       ) : (
-        <div className="divide-y divide-white/8">
+        <div className="divide-y divide-border-subtle">
           {columns.map((column) => (
             <ColumnRow
               key={column.name}
@@ -92,7 +92,7 @@ function AddColumnForm({ onSubmit, onCancel }: AddColumnFormProps) {
   return (
     <div
       data-testid="structure-add-column-form"
-      className="flex flex-wrap items-center gap-1.5 border-b border-white/8 bg-[#0b1014] px-3 py-2 text-xs"
+      className="flex flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface-panel px-3 py-2 text-xs"
     >
       <Input
         data-testid="structure-add-column-name"
@@ -114,7 +114,7 @@ function AddColumnForm({ onSubmit, onCancel }: AddColumnFormProps) {
         size="sm"
         className={cn(
           "px-1.5 text-2xs uppercase tracking-wide",
-          nullable ? "text-muted-foreground" : "text-rose-400",
+          nullable ? "text-muted-foreground" : "text-danger",
         )}
         onClick={() => setNullable((value) => !value)}
       >

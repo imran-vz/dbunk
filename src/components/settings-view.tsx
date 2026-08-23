@@ -19,6 +19,7 @@ import { ConnectionsView } from "@/components/connections-view";
 import { ManagedServersTab } from "@/components/managed-servers-tab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { requestConfirm } from "@/lib/confirm";
 import { type Density, setDensity, useDensity } from "@/lib/density";
 import type { CredentialStorageMode, SettingsTab } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
@@ -362,11 +363,13 @@ function SecurityTab() {
         : selected === "encrypted-sqlite"
           ? "If you forget this credential password, saved database passwords cannot be recovered."
           : "The OS keychain may ask for permission when dbunk reads saved credentials.";
-    if (
-      !window.confirm(
-        `Change credential storage to ${selectedOption?.label ?? selected}?\n\n${warning}`,
-      )
-    ) {
+    const confirmed = await requestConfirm({
+      title: "Change credential storage?",
+      message: warning,
+      detail: selectedOption?.label ?? selected,
+      confirmLabel: "Change storage",
+    });
+    if (!confirmed) {
       return;
     }
     await changeCredentialStorage({
@@ -464,13 +467,16 @@ function SecurityTab() {
               type="button"
               variant="outline"
               onClick={() => {
-                if (
-                  window.confirm(
-                    "Reset credential storage? All query sessions will close, active transactions will roll back, and saved database passwords will be deleted permanently.",
-                  )
-                ) {
-                  void resetCredentialStorage();
-                }
+                void (async () => {
+                  const confirmed = await requestConfirm({
+                    title: "Reset credential storage?",
+                    message:
+                      "All query sessions will close, active transactions will roll back, and saved database passwords will be deleted permanently.",
+                    confirmLabel: "Reset storage",
+                    danger: true,
+                  });
+                  if (confirmed) void resetCredentialStorage();
+                })();
               }}
             >
               Reset credential storage

@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requestConfirm } from "@/lib/confirm";
 import {
   type AclListEntry,
   type ClientListEntry,
@@ -309,9 +310,13 @@ function ConfigCard({
   };
   const saveEdit = async () => {
     if (!editKey) return;
-    const confirmed = window.confirm(
-      `Run CONFIG SET ${editKey} ${editValue}? This changes server-wide configuration.`,
-    );
+    const confirmed = await requestConfirm({
+      title: "Change server configuration?",
+      message: "This changes server-wide configuration.",
+      detail: `CONFIG SET ${editKey} ${editValue}`,
+      confirmLabel: "Run CONFIG SET",
+      danger: true,
+    });
     if (!confirmed) return;
     setSaving(true);
     try {

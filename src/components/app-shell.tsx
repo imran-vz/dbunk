@@ -7,6 +7,7 @@ import {
   WindowDragSurface,
 } from "@/components/app-shell/window-drag";
 import { CommandPalette } from "@/components/command-palette/command-palette";
+import { ConfirmDialogHost } from "@/components/confirm-dialog";
 import {
   CredentialOnboarding,
   CredentialUnlock,
@@ -246,6 +247,7 @@ export function AppShell() {
       </div>
       <CommandPalette />
       <SafetyConfirmDialog />
+      <ConfirmDialogHost />
     </div>
   );
 }
