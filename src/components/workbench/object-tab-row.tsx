@@ -167,10 +167,22 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
     (sourceId: string, targetId: string) => {
       if (sourceId === targetId) return;
       setWorkspaceTabs((prev) => {
-        const sourceIndex = prev.findIndex((tab) => tab.id === sourceId);
-        const targetIndex = prev.findIndex((tab) => tab.id === targetId);
+        // Reorder in display space (pinned-first): splicing the raw
+        // stored array by raw indices would reorder it with no visible
+        // change when the drag crosses the pinned boundary — flipping
+        // the persisted order (and close-neighbor selection) on every
+        // dragover event.
+        const display = orderTabs(prev);
+        const sourceIndex = display.findIndex((tab) => tab.id === sourceId);
+        const targetIndex = display.findIndex((tab) => tab.id === targetId);
         if (sourceIndex === -1 || targetIndex === -1) return prev;
-        const next = [...prev];
+        if (
+          Boolean(display[sourceIndex].pinned) !==
+          Boolean(display[targetIndex].pinned)
+        ) {
+          return prev;
+        }
+        const next = [...display];
         const [moved] = next.splice(sourceIndex, 1);
         next.splice(targetIndex, 0, moved);
         return next;
@@ -259,8 +271,21 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
             onDragStartTab={() => {
               dragTabId.current = tab.id;
             }}
-            onDragOverTab={() => {
-              if (dragTabId.current) reorderTab(dragTabId.current, tab.id);
+            onDragOverTab={(event) => {
+              const sourceId = dragTabId.current;
+              if (!sourceId || sourceId === tab.id) return;
+              const sourceIndex = tabs.findIndex((t) => t.id === sourceId);
+              const targetIndex = tabs.findIndex((t) => t.id === tab.id);
+              if (sourceIndex === -1 || targetIndex === -1) return;
+              // Only reorder once the pointer crosses the target's
+              // midpoint in the drag direction — dragover fires
+              // continuously, and with unequal tab widths an
+              // unconditional swap oscillates under the pointer.
+              const rect = event.currentTarget.getBoundingClientRect();
+              const beforeMidpoint = event.clientX < rect.left + rect.width / 2;
+              if (sourceIndex < targetIndex && beforeMidpoint) return;
+              if (sourceIndex > targetIndex && !beforeMidpoint) return;
+              reorderTab(sourceId, tab.id);
             }}
             onDragEndTab={() => {
               dragTabId.current = null;
@@ -360,7 +385,7 @@ function ObjectTab({
   onCloseAll: () => void;
   onTogglePinned: () => void;
   onDragStartTab: () => void;
-  onDragOverTab: () => void;
+  onDragOverTab: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEndTab: () => void;
 }) {
   const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
@@ -378,7 +403,7 @@ function ObjectTab({
             onDragStart={onDragStartTab}
             onDragOver={(event) => {
               event.preventDefault();
-              onDragOverTab();
+              onDragOverTab(event);
             }}
             onDragEnd={onDragEndTab}
             onClick={onActivate}
