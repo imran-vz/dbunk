@@ -2,13 +2,7 @@ import { IconX } from "@tabler/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ResponsiveEdgePanel } from "@/components/ui/responsive-edge-panel";
-
-import {
-  PROTECTED_WORKSPACE_WIDTH,
-  ROW_DETAILS_COMPACT_BELOW,
-  ROW_DETAILS_WIDTH,
-} from "./use-row-details-visibility";
+import { Panel, usePanelState } from "@/components/ui/panel";
 
 interface RowDetailsPanelProps {
   columns: string[];
@@ -17,10 +11,8 @@ interface RowDetailsPanelProps {
   selectedRowCount: number;
   totalRows: number;
   indexes: number;
-  bodyWidth: number;
-  wideVisible: boolean;
-  overlayOpen: boolean;
-  onOverlayOpenChange: (open: boolean) => void;
+  /** Parent-controlled presence: false unmounts the panel entirely. */
+  visible: boolean;
   onClose: () => void;
 }
 
@@ -31,12 +23,19 @@ export function RowDetailsPanel({
   selectedRowCount,
   totalRows,
   indexes,
-  bodyWidth,
-  wideVisible,
-  overlayOpen,
-  onOverlayOpenChange,
+  visible,
   onClose,
 }: RowDetailsPanelProps) {
+  const panel = usePanelState({
+    storageKey: "dbunk.panel.row-details",
+    defaultSize: 340,
+    min: 280,
+    max: () => Math.round(window.innerWidth * 0.5),
+    snapThreshold: 140,
+  });
+
+  if (!visible) return null;
+
   const hasMultiple = selectedRowCount > 1;
   const subtitle = hasMultiple
     ? `${selectedRowCount} rows selected`
@@ -45,23 +44,26 @@ export function RowDetailsPanel({
       : "First visible row";
 
   return (
-    <ResponsiveEdgePanel
-      side="right"
-      storageKey="dbunk.sidebar.rowDetails"
-      title="Row Details"
-      width={ROW_DETAILS_WIDTH}
-      containerWidth={bodyWidth}
-      compactBelow={ROW_DETAILS_COMPACT_BELOW}
-      protectedWorkspaceWidth={PROTECTED_WORKSPACE_WIDTH}
-      wideVisible={wideVisible}
-      open={overlayOpen}
-      onOpenChange={onOverlayOpenChange}
-    >
+    <Panel side="right" state={panel} ariaLabel="Resize row details panel">
       <div
         data-testid="row-details-panel"
-        className="flex h-full min-h-0 flex-col gap-3 p-4 text-xs"
+        className="flex h-full min-h-0 flex-col bg-surface-window text-xs"
       >
-        <div className="flex items-start justify-between">
+        <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border-subtle px-2">
+          <span className="truncate text-2xs font-semibold uppercase tracking-[0.12em] text-text-muted">
+            Row Details
+          </span>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Close row details"
+            onClick={onClose}
+          >
+            <IconX />
+          </Button>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">
@@ -73,37 +75,29 @@ export function RowDetailsPanel({
             </div>
             <div className="mt-0.5 text-text-muted">{subtitle}</div>
           </div>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Close row details"
-            onClick={onClose}
-          >
-            <IconX />
-          </Button>
-        </div>
 
-        <div className="flex flex-1 flex-col gap-2 overflow-auto">
-          {hasMultiple ? (
-            <MultiSelectMessage />
-          ) : selectedRow ? (
-            columns.map((column, index) => (
-              <RowDetailCell
-                key={column}
-                column={column}
-                value={selectedRow[index]}
-              />
-            ))
-          ) : (
-            <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3 text-text-muted">
-              No row selected
-            </div>
-          )}
-        </div>
+          <div className="flex flex-1 flex-col gap-2 overflow-auto">
+            {hasMultiple ? (
+              <MultiSelectMessage />
+            ) : selectedRow ? (
+              columns.map((column, index) => (
+                <RowDetailCell
+                  key={column}
+                  column={column}
+                  value={selectedRow[index]}
+                />
+              ))
+            ) : (
+              <div className="rounded-md border border-border-subtle bg-surface-panel-elevated p-3 text-text-muted">
+                No row selected
+              </div>
+            )}
+          </div>
 
-        <SummaryCard totalRows={totalRows} indexes={indexes} />
+          <SummaryCard totalRows={totalRows} indexes={indexes} />
+        </div>
       </div>
-    </ResponsiveEdgePanel>
+    </Panel>
   );
 }
 

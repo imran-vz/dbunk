@@ -7,7 +7,10 @@ import {
   ActivityRail,
   RELATIONAL_RAIL_ITEMS,
 } from "@/components/app-shell/activity-rail";
-import { MACOS_TRAFFIC_LIGHT_GUTTER_PX } from "@/components/app-shell/macos-titlebar";
+import {
+  MACOS_TRAFFIC_LIGHT_GUTTER_PX,
+  MACOS_TRAFFIC_LIGHT_HEADER_INSET_PX,
+} from "@/components/app-shell/macos-titlebar";
 import { WorkbenchHeader } from "@/components/app-shell/workbench-header";
 
 vi.mock("@/lib/store", () => ({
@@ -44,7 +47,7 @@ describe("macOS titlebar gutter", () => {
     );
   });
 
-  it("uses pl-22 and h-12 on the workbench header", () => {
+  it("insets the workbench header past the traffic-light overhang", () => {
     Object.defineProperty(window.navigator, "platform", {
       value: "MacIntel",
       configurable: true,
@@ -60,7 +63,9 @@ describe("macOS titlebar gutter", () => {
     );
 
     const header = screen.getByTestId("workbench-header");
-    expect(header.className).toContain("pl-22");
-    expect(header.className).toContain("h-12");
+    expect(header.style.paddingLeft).toBe(
+      `${MACOS_TRAFFIC_LIGHT_HEADER_INSET_PX}px`,
+    );
+    expect(header.className).toContain("h-(--h-header)");
   });
 });
