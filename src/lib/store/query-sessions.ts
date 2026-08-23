@@ -30,6 +30,7 @@ import {
 } from "@/lib/query-session-error";
 import { requestSafetyConfirmation } from "@/lib/safety-confirmation";
 
+import { consoleSeverityForNotice } from "./console";
 import type {
   AppStoreState,
   QuerySessionState,
@@ -147,6 +148,24 @@ export const createQuerySessionsSlice: StateCreator<
           ) {
             return { retainMoreRows: false };
           }
+          // Server notices and session loss stream into the global
+          // console (§5.6) — the dock badges instead of auto-opening.
+          if (envelope.event.kind === "notice") {
+            get().appendConsoleEvent({
+              severity: consoleSeverityForNotice(envelope.event.severity),
+              source: "notice",
+              message: `${envelope.event.severity}: ${envelope.event.message}`,
+              connectionId,
+            });
+          } else if (envelope.event.kind === "sessionLost") {
+            get().appendConsoleEvent({
+              severity: "warning",
+              source: "connection",
+              message: "Query session lost",
+              detail: envelope.event.reason,
+              connectionId,
+            });
+          }
           let retainMoreRows = false;
           set((state) => {
             const budgeted = applyEventBudget(state, tabId, envelope);
@@ -207,7 +226,13 @@ export const createQuerySessionsSlice: StateCreator<
     const execution = get().querySessions[tabId]?.execution;
     if (!execution || execution.status !== "running") return;
     get().markQueryCancelling(tabId);
-    await cancelQueryExecution(tabId, execution.id);
+    try {
+      await cancelQueryExecution(tabId, execution.id);
+    } catch (error) {
+      // Cancelling a session that is already gone is a no-op, not a
+      // crash — the session's terminal event settles the status.
+      console.error("Failed to cancel query execution", error);
+    }
   },
 
   applyQueryTransactionCommand: async (tabId, command) => {

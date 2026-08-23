@@ -1,19 +1,57 @@
+/**
+ * Results pane (DESIGN-SYSTEM §5.2) — the bottom half of the editor
+ * split. Owns the Results/Explain toggle, result-set chips, pinned
+ * results, and the wired Export/Copy format menus. Server notices and
+ * the query log stream to the global console dock (§5.6), not here.
+ */
+
+import {
+  IconChevronDown,
+  IconCopy,
+  IconDownload,
+  IconPin,
+  IconX,
+} from "@tabler/icons-react";
 import { useMemo } from "react";
+import { toast } from "sonner";
 
 import { DataGrid } from "@/components/data-grid";
 import { ExplainView } from "@/components/query-editor/explain/explain-view";
+import { ElapsedTime } from "@/components/query-editor/results-status-strip";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Segmented } from "@/components/ui/segmented";
 import {
   EmptyState,
   ErrorState,
   LoadingState,
 } from "@/components/ui/state-panel";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { downloadFile } from "@/lib/download";
+import {
+  type ExportTable,
+  toCsv,
+  toJson,
+  toMarkdown,
+  toSqlInserts,
+  toTxt,
+} from "@/lib/export";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
 import type { QueryPreviewData, QuerySessionState } from "@/lib/store";
+import { useAppStore } from "@/lib/store";
 import { browseCellsToGrid } from "@/lib/table-browse";
 import { cn } from "@/lib/utils";
 
-export type ResultsView = "results" | "explain" | "output";
+export type ResultsView = "results" | "explain";
 
 export type ExplainPlanData =
   | {
@@ -44,6 +82,16 @@ export type ExplainPlanNode = {
   children: ExplainPlanNode[];
 };
 
+/** A pinned snapshot of one result set — not overwritten by later runs. */
+export type PinnedResult = {
+  id: string;
+  label: string;
+  columns: string[];
+  rows: Array<Array<string | null>>;
+  runtime: string;
+  rowCount: string;
+};
+
 interface QueryResultsViewProps {
   view: ResultsView;
   onViewChange: (view: ResultsView) => void;
@@ -60,7 +108,13 @@ interface QueryResultsViewProps {
   mutationGrid?: QueryMutationGridProps;
   onSwitchBudgetOwner?: (tabId: string) => void;
   onReleaseBudgetOwner?: (tabId: string) => void;
-  hideTabs?: boolean;
+  pinnedResults?: PinnedResult[];
+  activePinnedId?: string | null;
+  onSelectPinned?: (id: string | null) => void;
+  onPinResult?: (pinned: PinnedResult) => void;
+  onUnpinResult?: (id: string) => void;
+  /** Collapse the pane to the status strip (§5.3). */
+  onCollapse?: () => void;
 }
 
 export interface QueryMutationGridProps {
@@ -78,11 +132,35 @@ export interface QueryMutationGridProps {
   onRerun: () => void;
 }
 
-const TABS: ReadonlyArray<{ id: ResultsView; label: string }> = [
-  { id: "results", label: "Results" },
-  { id: "explain", label: "Explain" },
-  { id: "output", label: "Output" },
-];
+/** §5.2 Export/Copy format menu: CSV / JSON / TSV / INSERT / Markdown. */
+const RESULT_FORMATS = [
+  { id: "csv", label: "CSV", ext: "csv", mime: "text/csv" },
+  { id: "json", label: "JSON", ext: "json", mime: "application/json" },
+  { id: "tsv", label: "TSV", ext: "tsv", mime: "text/tab-separated-values" },
+  { id: "insert", label: "INSERT", ext: "sql", mime: "application/sql" },
+  { id: "markdown", label: "Markdown", ext: "md", mime: "text/markdown" },
+] as const;
+
+type ResultFormat = (typeof RESULT_FORMATS)[number];
+
+function renderResultText(
+  format: ResultFormat["id"],
+  table: ExportTable,
+  tableName: string,
+): string {
+  switch (format) {
+    case "csv":
+      return toCsv(table, { nullAs: "NULL" });
+    case "json":
+      return toJson(table, { pretty: true });
+    case "tsv":
+      return toTxt(table, "NULL");
+    case "insert":
+      return toSqlInserts(table, { tableName: tableName || "query_result" });
+    case "markdown":
+      return toMarkdown(table, "NULL");
+  }
+}
 
 export function QueryResultsView({
   view,
@@ -100,25 +178,109 @@ export function QueryResultsView({
   mutationGrid,
   onSwitchBudgetOwner,
   onReleaseBudgetOwner,
-  hideTabs = false,
+  pinnedResults = [],
+  activePinnedId = null,
+  onSelectPinned,
+  onPinResult,
+  onUnpinResult,
+  onCollapse,
 }: QueryResultsViewProps) {
+  const appendConsoleEvent = useAppStore((state) => state.appendConsoleEvent);
   const execution = session?.execution;
   const selectedResult = execution?.resultSets[resultIndex];
-  const selectedPreview = useMemo(
-    () =>
-      session && execution && selectedResult && !execution.tombstone
-        ? {
-            columns: selectedResult.columns.map((column) => column ?? ""),
-            rows: browseCellsToGrid(flattenResultSetRows(selectedResult)),
-            runtime: `${execution.runtimeMs} ms`,
-            rowCount: String(selectedResult.rowCount),
-            cache: "Cold",
-          }
-        : session
-          ? null
-          : preview,
-    [execution, preview, selectedResult, session],
+  const activePinned =
+    pinnedResults.find((pinned) => pinned.id === activePinnedId) ?? null;
+
+  const selectedPreview = useMemo(() => {
+    if (activePinned) {
+      return {
+        columns: activePinned.columns,
+        rows: browseCellsToGrid(activePinned.rows),
+        runtime: activePinned.runtime,
+        rowCount: activePinned.rowCount,
+        cache: "Cold",
+      };
+    }
+    return session && execution && selectedResult && !execution.tombstone
+      ? {
+          columns: selectedResult.columns.map((column) => column ?? ""),
+          rows: browseCellsToGrid(flattenResultSetRows(selectedResult)),
+          runtime: `${execution.runtimeMs} ms`,
+          rowCount: String(selectedResult.rowCount),
+          cache: "Cold",
+        }
+      : session
+        ? null
+        : preview;
+  }, [activePinned, execution, preview, selectedResult, session]);
+
+  const buildExportTable = (): ExportTable | null => {
+    if (activePinned) {
+      return { columns: activePinned.columns, rows: activePinned.rows };
+    }
+    if (session && execution && selectedResult && !execution.tombstone) {
+      return {
+        columns: selectedResult.columns.map((column) => column ?? ""),
+        rows: flattenResultSetRows(selectedResult),
+      };
+    }
+    if (preview) return { columns: preview.columns, rows: preview.rows };
+    return null;
+  };
+
+  const handleCopy = async (format: ResultFormat) => {
+    const table = buildExportTable();
+    if (!table) return;
+    const text = renderResultText(format.id, table, exportFilenameBase);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(
+        `Copied ${table.rows.length} ${pluralRows(table.rows.length)} as ${format.label}`,
+      );
+    } catch {
+      toast.error("Copy failed.");
+    }
+  };
+
+  const handleExport = (format: ResultFormat) => {
+    const table = buildExportTable();
+    if (!table) return;
+    const text = renderResultText(format.id, table, exportFilenameBase);
+    const filename = `${exportFilenameBase || "query-results"}.${format.ext}`;
+    downloadFile(filename, `${format.mime};charset=utf-8`, text);
+    appendConsoleEvent({
+      severity: "info",
+      source: "task",
+      message: `Exported ${table.rows.length} ${pluralRows(table.rows.length)} as ${format.label} — ${filename}`,
+    });
+    toast.success(`Exported ${filename}`);
+  };
+
+  const handlePin = () => {
+    if (!onPinResult) return;
+    const table = buildExportTable();
+    if (!table || activePinned) return;
+    const rowCount = selectedResult
+      ? String(selectedResult.rowCount)
+      : String(table.rows.length);
+    onPinResult({
+      id: crypto.randomUUID(),
+      label: `Pinned · ${rowCount} ${pluralRows(table.rows.length)}`,
+      columns: table.columns,
+      rows: table.rows,
+      runtime: execution
+        ? `${execution.runtimeMs} ms`
+        : (preview?.runtime ?? "—"),
+      rowCount,
+    });
+  };
+
+  const hasExportableResult = Boolean(
+    activePinned ||
+    (session && execution && selectedResult && !execution.tombstone) ||
+    (!session && preview?.rows.length),
   );
+
   const returnedRowCount = session
     ? (execution?.tombstone?.rowCount ??
       execution?.resultSets.reduce(
@@ -132,61 +294,188 @@ export function QueryResultsView({
       ? `${execution.runtimeMs} ms`
       : "—"
     : (preview?.runtime ?? "—");
+  const omittedRows = execution?.omittedRows ?? 0;
+
+  const showChips =
+    (execution?.resultSets.length ?? 0) > 1 || pinnedResults.length > 0;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface-app">
-      {!hideTabs ? (
-        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface-window px-3">
-          <div className="flex items-end gap-1">
-            {TABS.map(({ id, label }) => {
-              const isActive = view === id;
-              return (
+      <div className="flex h-(--h-tab) shrink-0 items-center gap-2 border-b border-border-subtle bg-surface-window px-2">
+        <Segmented<ResultsView>
+          value={view}
+          onChange={onViewChange}
+          options={[
+            { id: "results", label: "Results" },
+            { id: "explain", label: "Explain" },
+          ]}
+        />
+        {showChips ? (
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            {pinnedResults.map((pinned) => (
+              <span
+                key={pinned.id}
+                className={cn(
+                  "flex shrink-0 items-center gap-1 rounded-sm border border-border-subtle pl-2 text-2xs text-text-muted",
+                  pinned.id === activePinnedId &&
+                    "border-accent text-foreground",
+                )}
+              >
                 <button
-                  key={id}
                   type="button"
-                  aria-label={`Show ${label} view`}
-                  onClick={() => onViewChange(id)}
-                  aria-current={isActive ? "page" : undefined}
-                  className={cn(
-                    "relative h-7 px-2 text-xs font-medium transition-colors",
-                    isActive
-                      ? "text-foreground"
-                      : "text-text-muted hover:text-foreground",
-                  )}
+                  onClick={() => onSelectPinned?.(pinned.id)}
+                  aria-current={
+                    pinned.id === activePinnedId ? "true" : undefined
+                  }
+                  className="whitespace-nowrap py-1"
                 >
-                  {label}
-                  {isActive ? (
-                    <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />
-                  ) : null}
+                  <IconPin className="mr-1 inline size-3" />
+                  {pinned.label}
                 </button>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-2 text-2xs text-text-muted">
-            <span className="dbunk-optional-label">
-              Returned {returnedRowCount} rows in {returnedRuntime}
-            </span>
-          </div>
-          {execution && execution.resultSets.length > 1 ? (
-            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-              {execution.resultSets.map((result, index) => (
-                <button
-                  key={result.index}
-                  type="button"
-                  onClick={() => onResultIndexChange(index)}
-                  aria-current={index === resultIndex ? "true" : undefined}
-                  className="whitespace-nowrap border border-border-subtle px-2 py-1 text-2xs text-text-muted aria-[current=true]:border-accent aria-[current=true]:text-foreground"
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Unpin ${pinned.label}`}
+                  onClick={() => onUnpinResult?.(pinned.id)}
+                  className="size-5"
                 >
-                  {index + 1} ·{" "}
-                  {result.columns.length
-                    ? `${result.rowCount} rows`
-                    : "command"}
-                  {result.partial ? " · partial" : ""}
-                </button>
+                  <IconX />
+                </Button>
+              </span>
+            ))}
+            {execution && execution.resultSets.length > 1
+              ? execution.resultSets.map((result, index) => (
+                  <button
+                    key={result.index}
+                    type="button"
+                    onClick={() => {
+                      onSelectPinned?.(null);
+                      onResultIndexChange(index);
+                    }}
+                    aria-current={
+                      !activePinned && index === resultIndex
+                        ? "true"
+                        : undefined
+                    }
+                    className="shrink-0 whitespace-nowrap rounded-sm border border-border-subtle px-2 py-1 text-2xs text-text-muted aria-[current=true]:border-accent aria-[current=true]:text-foreground"
+                  >
+                    {index + 1} ·{" "}
+                    {result.columns.length
+                      ? `${result.rowCount} ${pluralRows(result.rowCount)}`
+                      : "command"}
+                    {result.partial ? " · partial" : ""}
+                  </button>
+                ))
+              : null}
+          </div>
+        ) : null}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <span className="px-1 text-2xs tabular-nums text-text-muted">
+            {isRunning ? (
+              <>
+                Running · <ElapsedTime />
+              </>
+            ) : (
+              <>
+                {returnedRowCount} {pluralRows(Number(returnedRowCount) || 0)} ·{" "}
+                {returnedRuntime}
+                {omittedRows > 0 ? ` · ${omittedRows} omitted` : ""}
+              </>
+            )}
+          </span>
+          {onPinResult ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="Pin this result"
+                    disabled={!hasExportableResult || Boolean(activePinned)}
+                    onClick={handlePin}
+                  />
+                }
+              >
+                <IconPin />
+              </TooltipTrigger>
+              <TooltipContent>
+                Pin this result — the next run won't overwrite it
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger
+                    aria-label="Export results"
+                    disabled={!hasExportableResult}
+                    className="inline-flex size-6 items-center justify-center rounded-sm text-text-muted hover:bg-surface-panel-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  />
+                }
+              >
+                <IconDownload className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Export results</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end">
+              {RESULT_FORMATS.map((format) => (
+                <DropdownMenuItem
+                  key={format.id}
+                  onClick={() => handleExport(format)}
+                >
+                  {format.label}
+                </DropdownMenuItem>
               ))}
-            </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger
+                    aria-label="Copy results"
+                    disabled={!hasExportableResult}
+                    className="inline-flex size-6 items-center justify-center rounded-sm text-text-muted hover:bg-surface-panel-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  />
+                }
+              >
+                <IconCopy className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent>Copy results</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end">
+              {RESULT_FORMATS.map((format) => (
+                <DropdownMenuItem
+                  key={format.id}
+                  onClick={() => void handleCopy(format)}
+                >
+                  {format.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {onCollapse ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label="Collapse results pane"
+                    onClick={onCollapse}
+                  />
+                }
+              >
+                <IconChevronDown />
+              </TooltipTrigger>
+              <TooltipContent kbd={["mod", "J"]}>
+                Collapse results pane
+              </TooltipContent>
+            </Tooltip>
           ) : null}
         </div>
-      ) : null}
+      </div>
 
       {errorMessage && !session?.policyRefusal ? (
         <ErrorState message={errorMessage} className="shrink-0" />
@@ -196,7 +485,7 @@ export function QueryResultsView({
         <ErrorState message={session.policyRefusal} className="shrink-0" />
       ) : null}
 
-      {mutationGrid?.statusCopy ? (
+      {mutationGrid?.statusCopy && !activePinned ? (
         <div
           data-testid="query-mutation-status"
           className={cn(
@@ -215,6 +504,14 @@ export function QueryResultsView({
         </div>
       ) : null}
 
+      {session && session.budgetOwners.length > 0 && !activePinned ? (
+        <BudgetOwnersBanner
+          owners={session.budgetOwners}
+          onSwitchBudgetOwner={onSwitchBudgetOwner}
+          onReleaseBudgetOwner={onReleaseBudgetOwner}
+        />
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-hidden">
         <ResultsContent
           view={view}
@@ -226,13 +523,16 @@ export function QueryResultsView({
           isRunning={isRunning}
           errorMessage={errorMessage}
           onCellEdit={onCellEdit}
-          mutationGrid={mutationGrid}
-          onSwitchBudgetOwner={onSwitchBudgetOwner}
-          onReleaseBudgetOwner={onReleaseBudgetOwner}
+          mutationGrid={activePinned ? undefined : mutationGrid}
+          readOnly={Boolean(activePinned)}
         />
       </div>
     </div>
   );
+}
+
+function pluralRows(count: number): string {
+  return count === 1 ? "row" : "rows";
 }
 
 function ResultsContent({
@@ -245,22 +545,21 @@ function ResultsContent({
   isRunning,
   errorMessage,
   onCellEdit,
-  onSwitchBudgetOwner,
-  onReleaseBudgetOwner,
   mutationGrid,
-}: Omit<
-  QueryResultsViewProps,
-  "onViewChange" | "onResultIndexChange" | "resultIndex"
->) {
-  if (view === "output") {
-    return (
-      <OutputView
-        session={session}
-        onSwitchBudgetOwner={onSwitchBudgetOwner}
-        onReleaseBudgetOwner={onReleaseBudgetOwner}
-      />
-    );
-  }
+  readOnly,
+}: {
+  view: ResultsView;
+  preview: QueryPreviewData | null;
+  session?: QuerySessionState;
+  explainPlan: ExplainPlanData | null;
+  currentEdits: Record<number, Record<number, string>>;
+  exportFilenameBase: string;
+  isRunning: boolean;
+  errorMessage: string | null;
+  onCellEdit: (rowIndex: number, colIndex: number, value: string) => void;
+  mutationGrid?: QueryMutationGridProps;
+  readOnly: boolean;
+}) {
   if (view === "explain") {
     return (
       <ExplainContent
@@ -270,18 +569,20 @@ function ResultsContent({
       />
     );
   }
-  if (isRunning) return <LoadingState label="Running query…" />;
-  if (session?.execution?.tombstone) return <ReleasedState />;
+  if (isRunning && !preview?.rows.length) {
+    return <LoadingState label="Running query…" />;
+  }
+  if (!readOnly && session?.execution?.tombstone) return <ReleasedState />;
   if (preview?.rows.length) {
     return (
       <DataGrid
         data={preview.rows}
         columns={preview.columns}
-        edits={mutationGrid?.edits ?? currentEdits}
-        onEdit={mutationGrid?.onCellEdit ?? onCellEdit}
+        edits={readOnly ? {} : (mutationGrid?.edits ?? currentEdits)}
+        onEdit={readOnly ? undefined : (mutationGrid?.onCellEdit ?? onCellEdit)}
         onEditIntent={mutationGrid?.onEditIntent}
         getCellReadOnlyReason={mutationGrid?.getCellReadOnlyReason}
-        readOnly={mutationGrid?.readOnly}
+        readOnly={readOnly || mutationGrid?.readOnly}
         exportFilenameBase={exportFilenameBase}
       />
     );
@@ -292,91 +593,42 @@ function ResultsContent({
   return <EmptyState title="Run the query to see results" />;
 }
 
-function OutputView({
-  session,
+function BudgetOwnersBanner({
+  owners,
   onSwitchBudgetOwner,
   onReleaseBudgetOwner,
 }: {
-  session?: QuerySessionState;
+  owners: NonNullable<QuerySessionState["budgetOwners"]>;
   onSwitchBudgetOwner?: (tabId: string) => void;
   onReleaseBudgetOwner?: (tabId: string) => void;
 }) {
-  const execution = session?.execution;
-  if (!execution) return <EmptyState title="Run the query to see results" />;
   return (
-    <div className="h-full overflow-auto p-3 font-mono text-xs text-foreground">
-      <div
-        aria-live="polite"
-        className="mb-3 border-b border-border-subtle pb-2"
-      >
-        {execution.status} · {execution.runtimeMs} ms ·{" "}
-        {execution.resultSets.length} result sets
+    <div className="shrink-0 border-b border-warning/40 px-3 py-2 text-xs">
+      <div className="text-warning">
+        Result memory is full. Release another tab's results to continue
+        retaining rows.
       </div>
-      {execution.notices.map((notice) => (
-        <div
-          key={`${notice.severity}-${notice.message}`}
-          className="border-l-2 border-warning px-2 py-1"
-        >
-          <b>{notice.severity}</b> {notice.message}
+      {owners.map((owner) => (
+        <div key={owner.tabId} className="mt-1 flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-text-secondary">
+            {owner.label} · {Math.ceil(owner.retainedBytes / 1048576)} MiB
+          </span>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => onSwitchBudgetOwner?.(owner.tabId)}
+          >
+            Switch
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => onReleaseBudgetOwner?.(owner.tabId)}
+          >
+            Release results
+          </Button>
         </div>
       ))}
-      {execution.error ? (
-        <ErrorState
-          className="mt-2"
-          message={
-            execution.error.code
-              ? `${execution.error.code} · ${execution.error.message}`
-              : execution.error.message
-          }
-        />
-      ) : null}
-      {execution.omittedRows ||
-      execution.omittedResultSets ||
-      execution.omittedNotices ? (
-        <div className="mt-3 text-text-muted">
-          Omitted: {execution.omittedRows} rows · {execution.omittedResultSets}{" "}
-          result sets · {execution.omittedNotices} notices
-        </div>
-      ) : null}
-      {execution.tombstone ? <ReleasedBanner /> : null}
-      {session?.budgetOwners.length ? (
-        <div className="mt-3 border border-warning/40 p-3">
-          <div>
-            Result memory is full. Release another tab's results to continue
-            retaining rows.
-          </div>
-          {session.budgetOwners.map((owner) => (
-            <div key={owner.tabId} className="mt-2 flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">
-                {owner.label} · {Math.ceil(owner.retainedBytes / 1048576)} MiB
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onSwitchBudgetOwner?.(owner.tabId)}
-              >
-                Switch
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onReleaseBudgetOwner?.(owner.tabId)}
-              >
-                Release results
-              </Button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ReleasedBanner() {
-  return (
-    <div className="mt-3 border border-border-subtle p-3">
-      This result display was released to stay within the 128 MiB global budget.
-      Summary retained. Rerun the query to view rows again.
     </div>
   );
 }

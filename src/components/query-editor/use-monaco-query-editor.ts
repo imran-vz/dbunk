@@ -1,7 +1,11 @@
 import type { OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getSqlStatementAtPosition, getSqlStatements } from "@/lib/sql";
+import {
+  getSqlStatementAtPosition,
+  getSqlStatements,
+  type SqlStatementRange,
+} from "@/lib/sql";
 import {
   getSqlCompletions,
   getSqlPredicateTableReference,
@@ -33,6 +37,15 @@ interface UseMonacoQueryEditorArgs {
   ) => Promise<QueryOutcome>;
   onOutcome: (outcome: QueryOutcome, sql: string) => void;
   onFormat: () => void;
+  /**
+   * §5.1: a Run invocation over a multi-statement selection opens a
+   * statement picker instead of executing blindly. Receives the raw
+   * selection text (for "Run all") and its parsed statements.
+   */
+  onMultiStatementSelection?: (
+    selectionText: string,
+    statements: SqlStatementRange[],
+  ) => void;
 }
 
 export interface MonacoQueryEditor {
@@ -55,9 +68,12 @@ export function useMonacoQueryEditor({
   runQuery,
   onOutcome,
   onFormat,
+  onMultiStatementSelection,
 }: UseMonacoQueryEditorArgs): MonacoQueryEditor {
   const onFormatRef = useRef(onFormat);
   onFormatRef.current = onFormat;
+  const onMultiStatementSelectionRef = useRef(onMultiStatementSelection);
+  onMultiStatementSelectionRef.current = onMultiStatementSelection;
   const [cursor, setCursor] = useState<MonacoPosition>({
     lineNumber: 1,
     column: 1,
@@ -117,9 +133,24 @@ export function useMonacoQueryEditor({
     [isRunning, onOutcome, runQuery, tabId],
   );
 
+  /**
+   * When the selection spans multiple statements, Run opens the
+   * statement picker (§5.1) instead of executing the statement at the
+   * caret. Returns true when the picker was invoked.
+   */
+  const interceptMultiStatementSelection = useCallback((): boolean => {
+    const selection = getEditorSelectionText();
+    if (!selection.trim()) return false;
+    const statements = getSqlStatements(selection);
+    if (statements.length < 2) return false;
+    onMultiStatementSelectionRef.current?.(selection, statements);
+    return true;
+  }, [getEditorSelectionText]);
+
   const handleRunCurrent = useCallback(() => {
+    if (interceptMultiStatementSelection()) return;
     void runSql(getCurrentStatementText());
-  }, [getCurrentStatementText, runSql]);
+  }, [getCurrentStatementText, interceptMultiStatementSelection, runSql]);
 
   const handleRunSelection = useCallback(() => {
     void runSql(getEditorSelectionText());
@@ -205,6 +236,7 @@ export function useMonacoQueryEditor({
       }
 
       const runCurrent = () => {
+        if (interceptMultiStatementSelection()) return;
         const latestEditor = editorRef.current;
         const latestModel = latestEditor?.getModel();
         const latestPosition = latestEditor?.getPosition();
@@ -241,6 +273,9 @@ export function useMonacoQueryEditor({
       const allAction = editor.addAction?.({
         id: "dbunk.executeAll",
         label: "Execute all",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+        ],
         contextMenuGroupId: "navigation",
         contextMenuOrder: 3,
         run: () => {
@@ -358,6 +393,7 @@ export function useMonacoQueryEditor({
     [
       connectionId,
       getEditorSelectionText,
+      interceptMultiStatementSelection,
       loadTableStructure,
       query,
       runSql,
