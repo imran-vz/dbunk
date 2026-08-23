@@ -10,7 +10,6 @@ import type { StatusBarItem } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import type { SubTab } from "@/components/table-editor/header";
 import { Panel, useLayoutPressure, usePanelState } from "@/components/ui/panel";
-import { EmptyState } from "@/components/ui/state-panel";
 import { DatabaseNavigator } from "@/components/workbench/database-navigator";
 import {
   ObjectTabRow,
@@ -24,6 +23,7 @@ import {
   DisconnectedConnectionCard,
   NoConnectionCard,
 } from "@/components/workspace-overview/disconnected-card";
+import { OverviewRailView } from "@/components/workspace-overview/overview-rail-view";
 import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { storageClassFor } from "@/lib/engine-policy";
@@ -229,16 +229,19 @@ export function RelationalWorkbench({
     if (rail === "connections") {
       return (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <ConnectionsView />
+          <ConnectionsView variant="rail" />
         </div>
       );
     }
 
     if (rail === "overview") {
       return (
-        <EmptyState
-          title="Overview is on its way"
-          description="Connection health, stats, and the table catalog land here in a later phase."
+        <OverviewRailView
+          activeConnection={activeConnection}
+          schemas={schemas}
+          isConnected={isConnected(activeConnection)}
+          onOpenTable={handleOpenTable}
+          onReopenQuery={reopenHistoryEntry}
         />
       );
     }

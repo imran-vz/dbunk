@@ -808,7 +808,7 @@ export function KeyspaceBrowser({
                       type="button"
                       onClick={() => onOpenKey(name, type)}
                       className={cn(
-                        "flex flex-1 items-center gap-2 px-2 py-1 text-left hover:bg-white/5",
+                        "flex flex-1 items-center gap-2 px-2 py-1 text-left hover:bg-surface-row-hover",
                         activeKey === name && "bg-primary/10 text-primary",
                       )}
                     >
@@ -845,7 +845,7 @@ export function KeyspaceBrowser({
                     type="button"
                     onClick={() => onOpenKey(key.name, key.type)}
                     className={cn(
-                      "flex flex-1 items-center gap-2 px-2 py-1 text-left hover:bg-white/5",
+                      "flex flex-1 items-center gap-2 px-2 py-1 text-left hover:bg-surface-row-hover",
                       activeKey === key.name && "bg-primary/10 text-primary",
                     )}
                   >
@@ -923,15 +923,15 @@ function KeyTypeIcon({ type }: { type: string }) {
     case "hash":
       return <IconHash className={cn(className, "text-blue-400")} />;
     case "list":
-      return <IconList className={cn(className, "text-amber-400")} />;
+      return <IconList className={cn(className, "text-warning")} />;
     case "set":
-      return <IconLayoutList className={cn(className, "text-emerald-400")} />;
+      return <IconLayoutList className={cn(className, "text-success")} />;
     case "zset":
       return <IconDatabaseStar className={cn(className, "text-pink-400")} />;
     case "stream":
       return <IconWaveSine className={cn(className, "text-purple-400")} />;
     case "ReJSON-RL":
-      return <IconBraces className={cn(className, "text-indigo-400")} />;
+      return <IconBraces className={cn(className, "text-info")} />;
     default:
       return <span className="size-2 shrink-0 rounded-full bg-text-muted/50" />;
   }

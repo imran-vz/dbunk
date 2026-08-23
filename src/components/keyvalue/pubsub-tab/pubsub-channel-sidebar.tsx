@@ -38,7 +38,7 @@ export function PubsubChannelSidebar({
         <button
           type="button"
           onClick={onCollapse}
-          className="rounded p-0.5 hover:bg-white/5 hover:text-foreground"
+          className="rounded p-0.5 hover:bg-surface-row-hover hover:text-foreground"
           aria-label="Hide channels sidebar"
         >
           ‹
@@ -61,7 +61,7 @@ export function PubsubChannelSidebar({
           <button
             type="button"
             onClick={() => onSelectChannel(null)}
-            className={`flex w-full justify-between px-2 py-1 hover:bg-white/5 ${
+            className={`flex w-full justify-between px-2 py-1 hover:bg-surface-row-hover ${
               selectedChannel === null
                 ? "bg-primary/10 text-primary"
                 : "text-text-muted"
@@ -76,7 +76,7 @@ export function PubsubChannelSidebar({
             <button
               type="button"
               onClick={() => onSelectChannel(c.channel)}
-              className={`flex w-full justify-between gap-2 px-2 py-1 font-mono hover:bg-white/5 ${
+              className={`flex w-full justify-between gap-2 px-2 py-1 font-mono hover:bg-surface-row-hover ${
                 selectedChannel === c.channel
                   ? "bg-primary/10 text-primary"
                   : ""

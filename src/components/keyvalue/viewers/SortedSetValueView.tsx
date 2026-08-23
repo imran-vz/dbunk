@@ -260,7 +260,7 @@ export function SortedSetValueView({
               return (
                 <tr
                   key={name}
-                  className={`hover:bg-white/5 ${isRemoved ? "opacity-40 line-through" : ""}`}
+                  className={`hover:bg-surface-row-hover ${isRemoved ? "opacity-40 line-through" : ""}`}
                 >
                   <td className="px-3 py-1 text-right text-text-secondary">
                     {editing && !isRemoved ? (

@@ -668,7 +668,7 @@ function SlowLogCard({ stats }: { stats: KeyValueOverviewStats }) {
               {entries.slice(0, 25).map((entry) => (
                 <tr
                   key={entry.id}
-                  className="border-t border-border-subtle hover:bg-white/5"
+                  className="border-t border-border-subtle hover:bg-surface-row-hover"
                 >
                   <td className="py-1 text-text-muted">{entry.id}</td>
                   <td className="py-1 text-right">
