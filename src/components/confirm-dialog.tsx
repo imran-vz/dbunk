@@ -49,7 +49,7 @@ export function ConfirmDialogHost() {
       <AlertDialog
         open
         onOpenChange={(open) => {
-          if (!open) resolveAppDialog(null);
+          if (!open) resolveAppDialog(request.id, null);
         }}
       >
         <AlertDialogContent size="sm">
@@ -62,7 +62,7 @@ export function ConfirmDialogHost() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              resolveAppDialog(promptValue);
+              resolveAppDialog(request.id, promptValue);
             }}
           >
             <Input
@@ -73,7 +73,9 @@ export function ConfirmDialogHost() {
               onChange={(event) => setPromptValue(event.target.value)}
             />
             <AlertDialogFooter className="mt-4">
-              <AlertDialogCancel onClick={() => resolveAppDialog(null)}>
+              <AlertDialogCancel
+                onClick={() => resolveAppDialog(request.id, null)}
+              >
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction type="submit">
@@ -90,7 +92,7 @@ export function ConfirmDialogHost() {
     <AlertDialog
       open
       onOpenChange={(open) => {
-        if (!open) resolveAppDialog(false);
+        if (!open) resolveAppDialog(request.id, false);
       }}
     >
       <AlertDialogContent size="sm">
@@ -107,13 +109,13 @@ export function ConfirmDialogHost() {
           <AlertDialogCancel
             // oxlint-disable-next-line jsx-a11y/no-autofocus -- §6.4: Cancel is the default control so Enter never destroys.
             autoFocus
-            onClick={() => resolveAppDialog(false)}
+            onClick={() => resolveAppDialog(request.id, false)}
           >
             {request.cancelLabel ?? "Cancel"}
           </AlertDialogCancel>
           <AlertDialogAction
             variant={request.danger ? "destructive" : "default"}
-            onClick={() => resolveAppDialog(true)}
+            onClick={() => resolveAppDialog(request.id, true)}
           >
             {request.confirmLabel ?? "Confirm"}
           </AlertDialogAction>
