@@ -1,482 +1,95 @@
-import {
-  IconArrowRight,
-  IconCircleDot,
-  IconExclamationCircle,
-  IconKey,
-  IconLink,
-  IconMath,
-  IconStar,
-  IconTerminal2,
-} from "@tabler/icons-react";
+/**
+ * Data grid (DESIGN-SYSTEM §5.4) — the one grid behind query results
+ * and the table browser. Rebuilt in the P5 UI refresh:
+ *
+ * - Row + column virtualization with fixed `--row-grid` heights (only
+ *   visible cells reach the DOM; 100k rows scroll flat).
+ * - Content-derived initial column widths, drag-resize, double-click
+ *   auto-fit, hide/pin-left, per-table width persistence
+ *   (`gridLayoutKey`), and a header context menu.
+ * - Focused-cell keyboard model: arrows/Shift-ranges, page/home/end,
+ *   `Cmd+G` go-to-row, `Cmd+C` TSV + copy-as formats, `Space` value
+ *   inspector, Enter/F2/double-click editing with staged commits.
+ *
+ * The measurement fallback matters: when ResizeObserver or a real
+ * layout is unavailable (jsdom, first paint), the grid renders against
+ * a default viewport instead of rendering nothing.
+ */
+
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- virtualized ARIA grid: rows/cells are absolutely positioned divs; table tags cannot be virtualized. */
+
+import type {
+  Row,
+  RowSelectionState,
+  VisibilityState,
+} from "@tanstack/react-table";
 import {
   type ColumnDef,
   type ColumnFiltersState,
-  flexRender,
   getCoreRowModel,
   getFilteredRowModel,
-  getPaginationRowModel,
-  type RowSelectionState,
   useReactTable,
-  type VisibilityState,
 } from "@tanstack/react-table";
-import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import type { ServerBrowseGridModel } from "@/components/data-grid/browse-model";
 import {
-  CELL_EDITORS,
-  specializedCellKind,
-} from "@/components/data-grid/cell-editors";
+  type ColumnHeaderMeta,
+  ColumnHeaderLabel,
+  type ForeignKeyTarget,
+  GridBodyCell,
+} from "@/components/data-grid/grid-cells";
+import {
+  autoFitWidth,
+  buildCopyText,
+  COPY_FORMATS,
+  type CopyFormat,
+  columnOffsets,
+  detectAlignment,
+  estimateInitialWidths,
+  loadGridLayout,
+  MAX_AUTO_FIT_WIDTH,
+  MIN_COLUMN_WIDTH,
+  saveGridLayout,
+  virtualColumnRange,
+  virtualRowRange,
+} from "@/components/data-grid/grid-model";
 import {
   type AppliedFilter,
   DataGridToolbar,
   type ExportSettings,
 } from "@/components/data-grid/toolbar";
-import { Input } from "@/components/ui/input";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  type InspectedValue,
+  ValueInspector,
+} from "@/components/data-grid/value-inspector";
+import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/state-panel";
+import { useDensity } from "@/lib/density";
 import type { ExportTable } from "@/lib/export";
 import { cn } from "@/lib/utils";
 
-/**
- * Per-column structural metadata for the data-grid header. Aligned
- * 1:1 with `columns`. Each flag drives a small icon next to the
- * column name; `dataType` and `derivationKind` flow into the
- * tooltip and a separate icon when relevant.
- */
-export type ForeignKeyTarget = {
-  schema: string;
-  table: string;
-  column: string;
-};
-
-export type ColumnHeaderMeta = {
-  isPrimaryKey?: boolean;
-  isForeignKey?: boolean;
-  isIndexed?: boolean;
-  isUnique?: boolean;
-  notNull?: boolean;
-  hasDefault?: boolean;
-  dataType?: string;
-  /** `"MATERIALIZED"` / `"ALIAS"` / `"EPHEMERAL"` for ClickHouse
-   *  derived columns; `undefined` otherwise. */
-  derivationKind?: string | null;
-  /** Free-form description appended to the tooltip — e.g. the
-   *  referenced FK target or the default expression. */
-  description?: string;
-  /** When present, FK cells render a hover arrow that calls
-   *  `onFollowForeignKey` with this target + the cell value. */
-  foreignKeyTarget?: ForeignKeyTarget;
-};
-
-const CELL_DISPLAY_CHARACTER_LIMIT = 50;
-
-function formatCellDisplayValue(value: string) {
-  return value.length > CELL_DISPLAY_CHARACTER_LIMIT
-    ? value.slice(0, CELL_DISPLAY_CHARACTER_LIMIT)
-    : value;
-}
-
-interface EditableCellProps {
-  initialValue: string;
-  rowIndex: number;
-  columnIndex: number;
-  columnName: string;
-  columnType?: string;
-  editValue?: string;
-  onEdit?: (rowIndex: number, columnIndex: number, value: string) => void;
-  onEditIntent?: (rowIndex: number, columnIndex: number) => void;
-  readOnlyReason?: string;
-  /** When set, the cell renders a hover arrow that opens a
-   *  drill-down to the referenced row(s). Caller wires the click
-   *  through `onFollowForeignKey`. */
-  foreignKeyTarget?: ForeignKeyTarget;
-  onFollowForeignKey?: (
-    rowIndex: number,
-    target: ForeignKeyTarget,
-    value: string,
-  ) => void;
-}
-
-/**
- * Header cell rendering for a data column: name + a small strip of
- * icons keyed off `ColumnHeaderMeta`. The whole label carries a
- * `title` attribute so users get the full data-type + role
- * description on hover.
- *
- * Icon order is stable — left-to-right matches DBeaver-ish
- * convention: PK first, then FK, then indexed/unique, then
- * not-null, then default, then derivation. Absent flags simply
- * skip their slot.
- */
-type MetaRow = {
-  key: string;
-  Icon: typeof IconKey;
-  iconClass: string;
-  label: string;
-  /** Optional inline text rendered after the label in muted color. */
-  detail?: string;
-};
-
-function buildMetaRows(meta: ColumnHeaderMeta): MetaRow[] {
-  const rows: MetaRow[] = [];
-  if (meta.isPrimaryKey) {
-    rows.push({
-      key: "pk",
-      Icon: IconKey,
-      iconClass: "text-warning",
-      label: "Primary key",
-    });
-  }
-  if (meta.isForeignKey) {
-    rows.push({
-      key: "fk",
-      Icon: IconLink,
-      iconClass: "text-primary",
-      label: "Foreign key",
-      detail: meta.description,
-    });
-  }
-  if (meta.isUnique) {
-    rows.push({
-      key: "unique",
-      Icon: IconStar,
-      iconClass: "text-accent",
-      label: "Unique index",
-    });
-  } else if (meta.isIndexed) {
-    rows.push({
-      key: "indexed",
-      Icon: IconTerminal2,
-      iconClass: "text-text-muted",
-      label: "Indexed",
-    });
-  }
-  if (meta.notNull) {
-    rows.push({
-      key: "notnull",
-      Icon: IconExclamationCircle,
-      iconClass: "text-rose-400",
-      label: "NOT NULL",
-    });
-  }
-  if (meta.hasDefault) {
-    rows.push({
-      key: "default",
-      Icon: IconCircleDot,
-      iconClass: "text-amber-400",
-      label: "Has default",
-    });
-  }
-  if (meta.derivationKind) {
-    rows.push({
-      key: "derived",
-      Icon: IconMath,
-      iconClass: "text-indigo-400",
-      label: "Derived",
-      detail: meta.derivationKind,
-    });
-  }
-  return rows;
-}
-
-function ColumnHeaderLabel({
-  name,
-  meta,
-  onSortClick,
-}: {
-  name: string;
-  meta: ColumnHeaderMeta | undefined;
-  onSortClick?: (event: React.MouseEvent<HTMLElement>) => void;
-}) {
-  if (!meta) {
-    if (!onSortClick) return <span>{name}</span>;
-    return (
-      <button
-        type="button"
-        className="flex h-full w-full items-center px-2 text-left"
-        onClick={onSortClick}
-      >
-        {name}
-      </button>
-    );
-  }
-  const rows = buildMetaRows(meta);
-
-  const headerIcons = (
-    <>
-      {meta.isPrimaryKey ? (
-        <IconKey
-          className="size-3 shrink-0 text-warning"
-          aria-label="primary key"
-        />
-      ) : null}
-      {meta.isForeignKey ? (
-        <IconLink
-          className="size-3 shrink-0 text-primary"
-          aria-label="foreign key"
-        />
-      ) : null}
-      {meta.isUnique ? (
-        <IconStar
-          className="size-3 shrink-0 text-accent"
-          aria-label="unique index"
-        />
-      ) : meta.isIndexed ? (
-        <IconTerminal2
-          className="size-3 shrink-0 text-text-muted"
-          aria-label="indexed"
-        />
-      ) : null}
-      {meta.notNull ? (
-        <IconExclamationCircle
-          className="size-3 shrink-0 text-rose-400"
-          aria-label="NOT NULL"
-        />
-      ) : null}
-      {meta.derivationKind ? (
-        <IconMath
-          className="size-3 shrink-0 text-indigo-400"
-          aria-label={`${meta.derivationKind.toLowerCase()} column`}
-        />
-      ) : null}
-    </>
-  );
-
-  const trigger = (
-    <span className="flex items-center gap-1">
-      {headerIcons}
-      <span className="truncate">{name}</span>
-    </span>
-  );
-
-  if (rows.length === 0 && !meta.dataType) return trigger;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={(props) => (
-          <button
-            type="button"
-            {...props}
-            className={cn(
-              "bg-transparent p-0 text-left outline-none",
-              onSortClick ? "h-full w-full cursor-pointer px-2" : "cursor-help",
-            )}
-            onClick={(event) => {
-              props.onClick?.(event);
-              onSortClick?.(event);
-            }}
-          >
-            {trigger}
-          </button>
-        )}
-      />
-      <TooltipContent className="w-64 p-0">
-        <div className="flex items-baseline gap-2 border-b border-border-subtle/60 px-3 py-2">
-          <span className="truncate font-mono text-xs font-semibold text-foreground">
-            {name}
-          </span>
-          {meta.dataType ? (
-            <span className="ml-auto shrink-0 rounded-sm bg-primary/15 px-1.5 py-0.5 font-mono text-2xs text-primary">
-              {meta.dataType}
-            </span>
-          ) : null}
-        </div>
-        {rows.length > 0 ? (
-          <ul className="space-y-1 px-3 py-2">
-            {rows.map(({ key, Icon, iconClass, label, detail }) => (
-              <li key={key} className="flex items-baseline gap-2 text-2xs">
-                <Icon
-                  className={cn("size-3 shrink-0 self-center", iconClass)}
-                  aria-hidden
-                />
-                <span className="text-foreground">{label}</span>
-                {detail ? (
-                  <span className="truncate font-mono text-text-muted">
-                    {detail}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function EditableCell({
-  initialValue,
-  rowIndex,
-  columnIndex,
-  columnName,
-  columnType,
-  editValue,
-  onEdit,
-  onEditIntent,
-  readOnlyReason,
-  foreignKeyTarget,
-  onFollowForeignKey,
-}: EditableCellProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [overlayOpen, setOverlayOpen] = useState(false);
-  const displayValue = editValue ?? initialValue;
-  const previewValue = formatCellDisplayValue(displayValue);
-  const isDirty = editValue !== undefined;
-  const dirtyValueDescriptionId = useId();
-  const dirtyValueTitle = isDirty
-    ? `Edited: ${displayValue}\nOriginal: ${initialValue}`
-    : null;
-  const dirtyValueDescription = isDirty ? (
-    <span id={dirtyValueDescriptionId} className="sr-only">
-      Original value: {initialValue}
-    </span>
-  ) : null;
-  const cellTitle = isDirty
-    ? [readOnlyReason, dirtyValueTitle].filter(Boolean).join("\n")
-    : (readOnlyReason ?? displayValue);
-  const specializedKind = specializedCellKind(columnType);
-  const SpecializedEditor = specializedKind
-    ? CELL_EDITORS[specializedKind]
-    : null;
-
-  const onBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    setIsEditing(false);
-    if (e.target.value !== initialValue) {
-      onEdit?.(rowIndex, columnIndex, e.target.value);
-    } else if (isDirty) {
-      // Allow clearing edit if value matches original
-      onEdit?.(rowIndex, columnIndex, e.target.value);
-    }
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.currentTarget.blur();
-    }
-    if (e.key === "Escape") {
-      setIsEditing(false);
-    }
-  };
-
-  const openEditor = () => {
-    if (!onEdit) {
-      onEditIntent?.(rowIndex, columnIndex);
-      return;
-    }
-    if (SpecializedEditor) {
-      setOverlayOpen(true);
-      return;
-    }
-    setIsEditing(true);
-  };
-
-  if (overlayOpen && SpecializedEditor) {
-    return (
-      <>
-        <button
-          type="button"
-          className={cn(
-            "h-full w-full truncate px-2 py-1 text-left text-muted-foreground",
-            isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-          )}
-          tabIndex={-1}
-          title={cellTitle}
-          aria-describedby={
-            dirtyValueDescription ? dirtyValueDescriptionId : undefined
-          }
-        >
-          {previewValue}
-        </button>
-        {dirtyValueDescription}
-        <SpecializedEditor
-          initialValue={displayValue}
-          columnName={columnName}
-          onSave={(literal) => {
-            setOverlayOpen(false);
-            if (literal !== initialValue || isDirty) {
-              onEdit?.(rowIndex, columnIndex, literal);
-            }
-          }}
-          onCancel={() => setOverlayOpen(false)}
-        />
-      </>
-    );
-  }
-
-  if (isEditing && onEdit) {
-    return (
-      <>
-        <Input
-          className="h-full w-full rounded-none border-0 bg-background px-2 py-0 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
-          defaultValue={displayValue}
-          onBlur={onBlur}
-          onKeyDown={onKeyDown}
-          aria-describedby={
-            dirtyValueDescription ? dirtyValueDescriptionId : undefined
-          }
-        />
-        {dirtyValueDescription}
-      </>
-    );
-  }
-
-  const canFollowFk =
-    foreignKeyTarget !== undefined &&
-    onFollowForeignKey !== undefined &&
-    displayValue !== "" &&
-    displayValue !== "NULL";
-
-  return (
-    <div className="group/cell relative flex h-full w-full items-center">
-      <button
-        type="button"
-        className={cn(
-          "h-full w-full truncate px-2 py-1 text-left text-muted-foreground group-hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
-          isDirty && "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-          !isEditing && (onEdit || onEditIntent) && "cursor-pointer",
-          !onEdit && !onEditIntent && "cursor-default",
-          readOnlyReason && "text-text-muted/70",
-          canFollowFk && "pr-6",
-        )}
-        onClick={openEditor}
-        onKeyDown={(e) => {
-          if (
-            (onEdit || onEditIntent) &&
-            (e.key === "Enter" || e.key === " ")
-          ) {
-            openEditor();
-          }
-        }}
-        tabIndex={onEdit || onEditIntent ? 0 : -1}
-        title={cellTitle}
-        aria-describedby={
-          dirtyValueDescription ? dirtyValueDescriptionId : undefined
-        }
-      >
-        {previewValue}
-      </button>
-      {dirtyValueDescription}
-      {canFollowFk ? (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onFollowForeignKey?.(rowIndex, foreignKeyTarget, displayValue);
-          }}
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm border border-border-subtle bg-surface-panel-elevated px-1 py-0.5 text-text-muted opacity-0 transition-opacity hover:text-foreground group-hover/cell:opacity-100 focus:opacity-100 focus:outline-none"
-          aria-label={`Follow foreign key to ${foreignKeyTarget.schema}.${foreignKeyTarget.table}`}
-          title={`Follow → ${foreignKeyTarget.schema}.${foreignKeyTarget.table}.${foreignKeyTarget.column}`}
-        >
-          <IconArrowRight className="size-3" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
+export type { ColumnHeaderMeta, ForeignKeyTarget };
 
 export type TableViewMode = "data" | "structure";
 
@@ -489,28 +102,10 @@ export type DataGridRowState =
 export interface DataGridProps {
   data: string[][];
   columns: string[];
-  /**
-   * Optional per-column Postgres data types, aligned to `columns`.
-   * When a column's type matches a specialized cell editor
-   * (`json`/`jsonb`, `*[]`, `geometry`/`geography`), the grid opens
-   * the registry editor instead of the inline single-line editor.
-   * See ADR-0014.
-   */
+  /** Optional per-column Postgres data types, aligned to `columns`. */
   columnTypes?: Array<string | undefined>;
-  /**
-   * Per-column structural metadata, aligned to `columns`. When
-   * present, the grid renders icons in each header indicating the
-   * column's role in the table (primary key, foreign key, indexed,
-   * not-null, has-default, derived). Tooltips include the data
-   * type. Absent metadata falls back to the bare column name.
-   */
+  /** Per-column structural metadata, aligned to `columns`. */
   columnMetadata?: Array<ColumnHeaderMeta | undefined>;
-  /**
-   * When provided, FK-marked cells render a hover arrow that calls
-   * this callback with the row index, FK target, and cell value.
-   * The row index lets the owning component anchor an inline
-   * drill-down expansion at the right row.
-   */
   onFollowForeignKey?: (
     rowIndex: number,
     target: ForeignKeyTarget,
@@ -536,47 +131,21 @@ export interface DataGridProps {
   onOpenSQL?: () => void;
   onRefresh?: () => void;
   hasEdits?: boolean;
-  /**
-   * When true, the grid suppresses cell editing entirely. Used when the
-   * underlying table has no usable row identity (no PK, no non-null unique
-   * index) — see `pickRowIdentity`.
-   */
+  /** Suppresses cell editing entirely. */
   readOnly?: boolean;
-  /** Whether a commit is in flight; disables the Save button. */
   isSaving?: boolean;
   viewMode?: TableViewMode;
   onViewModeChange?: (mode: TableViewMode) => void;
   onToggleSidebar?: () => void;
-  /**
-   * Stem used for export filenames, e.g. "myconn-public-users-2026-05-09".
-   * The grid appends `.csv` / `.json` and a "-selected" suffix as needed.
-   * Defaults to "export" if omitted.
-   */
   exportFilenameBase?: string;
-  /**
-   * Optional toolbar slot rendered between the Save/Discard cluster and
-   * the filter/columns controls. Used by callers that want to extend the
-   * grid's left toolbar with table-specific actions (e.g. Add row,
-   * Delete selected) without forking the grid.
-   */
   toolbarLeading?: React.ReactNode;
-  /**
-   * Controlled row-selection state. When provided, the parent owns the
-   * selection map and is responsible for clearing it (e.g. after a
-   * delete). Falls back to uncontrolled local state when omitted.
-   */
   rowSelection?: RowSelectionState;
   onRowSelectionChange?: (selection: RowSelectionState) => void;
   onExportWholeTable?: (options: ExportSettings) => Promise<void>;
   onSaveExportTask?: (options: ExportSettings) => void;
   onRunSavedExportTask?: () => Promise<void>;
   hasSavedExportTask?: boolean;
-  /**
-   * Inline row expansion — when set, the grid renders an extra
-   * `<tr>` directly under the row at `rowIndex` with `content`
-   * spanning all data columns. Drives the Drizzle-style FK
-   * drill-down preview without leaving the current view.
-   */
+  /** Inline row expansion (FK drill-down) under the given data row. */
   rowExpansion?: {
     rowIndex: number;
     content: React.ReactNode;
@@ -584,7 +153,59 @@ export interface DataGridProps {
   serverBrowse?: ServerBrowseGridModel;
   onExpandGrid?: () => void;
   expanded?: boolean;
+  /**
+   * Identity for persisted grid layout (column widths, pinned columns)
+   * — pass `${connectionId}.${schema}.${table}` so widths persist per
+   * table per connection (§5.4). Omit for ad-hoc results.
+   */
+  gridLayoutKey?: string;
+  /** `Cmd+D` / context menu: clone the single checkbox-selected row (staged). */
+  onCloneSelectedRow?: () => void;
+  /** `Delete` / context menu: stage deletion of checkbox-selected rows. */
+  onDeleteSelectedRows?: () => void;
 }
+
+const GUTTER_WIDTH = 40;
+/** Fixed slot for the FK drill-down expansion; content scrolls inside. */
+const EXPANSION_HEIGHT = 280;
+const ROW_HEIGHTS = {
+  compact: 22,
+  default: 26,
+  comfortable: 30,
+} as const;
+
+type CellPos = { row: number; col: number };
+
+type GridSelection =
+  | { kind: "cells"; anchor: CellPos; focus: CellPos }
+  | { kind: "columns"; cols: number[] }
+  | { kind: "rows"; rows: number[] }
+  | { kind: "all" }
+  | null;
+
+type ContextTarget = { kind: "cell" } | { kind: "header"; col: number };
+
+function isCellSelected(sel: GridSelection, row: number, col: number): boolean {
+  if (!sel) return false;
+  switch (sel.kind) {
+    case "all":
+      return true;
+    case "columns":
+      return sel.cols.includes(col);
+    case "rows":
+      return sel.rows.includes(row);
+    case "cells": {
+      const rowLow = Math.min(sel.anchor.row, sel.focus.row);
+      const rowHigh = Math.max(sel.anchor.row, sel.focus.row);
+      const colLow = Math.min(sel.anchor.col, sel.focus.col);
+      const colHigh = Math.max(sel.anchor.col, sel.focus.col);
+      return row >= rowLow && row <= rowHigh && col >= colLow && col <= colHigh;
+    }
+  }
+}
+
+const isPrintableKey = (event: React.KeyboardEvent): boolean =>
+  event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
 
 export function DataGrid({
   data,
@@ -617,16 +238,20 @@ export function DataGrid({
   serverBrowse,
   onExpandGrid,
   expanded,
+  gridLayoutKey,
+  onCloneSelectedRow,
+  onDeleteSelectedRows,
 }: DataGridProps) {
-  // When the grid is read-only we do not propagate the editor wiring to
-  // cells. This both prevents `onEdit` from being called and makes the
-  // visual affordance plain (no edit cursor, no focus ring on click).
   const effectiveOnEdit = readOnly ? undefined : onEdit;
+  const density = useDensity();
+  const rowHeight = ROW_HEIGHTS[density];
+  const headerHeight = rowHeight + 2;
+
+  // ------------------------------------------------------------------
+  // Table model (filtering, visibility, checkbox row selection)
+  // ------------------------------------------------------------------
   const [appliedFilters, setAppliedFilters] = useState<AppliedFilter[]>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  // Selection: when the parent passes `rowSelection` it owns the state; we
-  // mirror it for tanstack-table. When uncontrolled, we keep the previous
-  // local-state behavior for callers that don't care about lifting it.
   const [internalRowSelection, setInternalRowSelection] =
     useState<RowSelectionState>({});
   const rowSelection = rowSelectionProp ?? internalRowSelection;
@@ -637,14 +262,8 @@ export function DataGrid({
         | ((old: RowSelectionState) => RowSelectionState),
     ) => {
       const next =
-        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
-        typeof updater === "function"
-          ? // SAFETY: The value is constrained by the typed component or library contract at this boundary.
-            // oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- The value is handled at a typed library or domain boundary here.
-            (updater as (old: RowSelectionState) => RowSelectionState)(
-              rowSelection,
-            )
-          : updater;
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- tanstack updater union.
+        typeof updater === "function" ? updater(rowSelection) : updater;
       if (rowSelectionProp !== undefined) {
         onRowSelectionChange?.(next);
       } else {
@@ -667,166 +286,708 @@ export function DataGrid({
     [appliedFilters],
   );
 
-  const onApplyFilter = useCallback((filter: AppliedFilter) => {
-    setAppliedFilters((prev) => {
-      const idx = prev.findIndex((f) => f.column === filter.column);
-      if (idx >= 0) {
-        const copy = prev.slice();
-        copy[idx] = filter;
-        return copy;
-      }
-      return [...prev, filter];
-    });
-  }, []);
-
-  const onRemoveFilter = useCallback((column: string) => {
-    setAppliedFilters((prev) => prev.filter((f) => f.column !== column));
-  }, []);
-
-  const onClearFilters = useCallback(() => {
-    setAppliedFilters([]);
-  }, []);
-
-  const columns = useMemo<ColumnDef<string[]>[]>(() => {
-    const cols: ColumnDef<string[]>[] = [
-      {
-        id: "select",
-        header: ({ table }) => (
-          <div className="flex h-full items-center justify-center px-2 w-full">
-            <input
-              type="checkbox"
-              className="size-3.5 rounded border-muted-foreground/40 bg-transparent accent-primary"
-              checked={table.getIsAllPageRowsSelected()}
-              onChange={table.getToggleAllPageRowsSelectedHandler()}
-            />
-          </div>
-        ),
-        cell: ({ row }) => (
-          <div className="flex h-full items-center justify-center px-2">
-            <input
-              type="checkbox"
-              className="size-3.5 rounded border-muted-foreground/40 bg-transparent accent-primary"
-              checked={row.getIsSelected()}
-              onChange={row.getToggleSelectedHandler()}
-            />
-          </div>
-        ),
-        enableSorting: false,
-        enableHiding: false,
-        size: 40,
-      },
-    ];
-
-    columnNames.forEach((colName, index) => {
-      const meta = columnMetadata?.[index];
-      cols.push({
-        accessorFn: (row) => row[index],
-        id: colName,
-        header: () => (
-          <ColumnHeaderLabel
-            name={colName}
-            meta={meta}
-            onSortClick={
-              serverBrowse
-                ? (event) => {
-                    serverBrowse.onHeaderSort(colName, event.shiftKey);
-                  }
-                : undefined
-            }
-          />
-        ),
-        meta: { index },
-        cell: (props) => {
-          const readOnlyReason = getCellReadOnlyReason?.(
-            props.row.index,
-            index,
-          );
-          return (
-            <EditableCell
-              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
-              initialValue={props.getValue() as string}
-              rowIndex={props.row.index}
-              columnIndex={index}
-              columnName={colName}
-              columnType={columnTypes?.[index]}
-              editValue={edits?.[props.row.index]?.[index]}
-              onEdit={readOnlyReason ? undefined : effectiveOnEdit}
-              onEditIntent={effectiveOnEdit ? undefined : onEditIntent}
-              readOnlyReason={readOnlyReason}
-              foreignKeyTarget={meta?.foreignKeyTarget}
-              onFollowForeignKey={onFollowForeignKey}
-            />
-          );
-        },
-      });
-    });
-
-    return cols;
-  }, [
-    columnNames,
-    columnTypes,
-    columnMetadata,
-    edits,
-    effectiveOnEdit,
-    getCellReadOnlyReason,
-    onEditIntent,
-    onFollowForeignKey,
-    serverBrowse,
-  ]);
+  const columnDefs = useMemo<ColumnDef<string[]>[]>(
+    () =>
+      columnNames.map((name, index) => ({
+        id: name,
+        accessorFn: (row: string[]) => row[index],
+      })),
+    [columnNames],
+  );
 
   const table = useReactTable({
     data,
-    columns,
+    columns: columnDefs,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: serverBrowse ? undefined : getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    getPaginationRowModel: serverBrowse ? undefined : getPaginationRowModel(),
     state: {
       columnFilters: serverBrowse ? [] : columnFilters,
       columnVisibility,
       rowSelection,
     },
-    initialState: {
-      pagination: {
-        pageSize: 50,
-      },
-    },
     manualFiltering: Boolean(serverBrowse),
-    manualPagination: Boolean(serverBrowse),
   });
 
-  const hasSelection = Object.keys(rowSelection).length > 0;
+  const rows = table.getRowModel().rows;
 
-  // "All visible" = the rows currently in the filtered model. Column filters
-  // applied via the Filters panel should be honored — that's what the user
-  // sees in the grid. Pagination is not honored: exporting only the current
-  // page of a multi-page result would be surprising.
+  // ------------------------------------------------------------------
+  // Column layout: order (pinned first), widths, alignment
+  // ------------------------------------------------------------------
+  const [layout, setLayout] = useState(() => loadGridLayout(gridLayoutKey));
+  useEffect(() => {
+    setLayout(loadGridLayout(gridLayoutKey));
+  }, [gridLayoutKey]);
+  useEffect(() => {
+    saveGridLayout(gridLayoutKey, layout);
+  }, [gridLayoutKey, layout]);
+
+  const dataIndexByName = useMemo(() => {
+    const map = new Map<string, number>();
+    columnNames.forEach((name, index) => map.set(name, index));
+    return map;
+  }, [columnNames]);
+
+  const visibleCols = useMemo(() => {
+    const visibleNames = columnNames.filter(
+      (name) => columnVisibility[name] !== false,
+    );
+    const pinned = layout.pinned.filter((name) => visibleNames.includes(name));
+    const unpinned = visibleNames.filter((name) => !pinned.includes(name));
+    return [...pinned, ...unpinned].map((name) => ({
+      name,
+      dataIndex: dataIndexByName.get(name) ?? 0,
+    }));
+  }, [columnNames, columnVisibility, layout.pinned, dataIndexByName]);
+  const pinnedCount = useMemo(
+    () =>
+      layout.pinned.filter((name) =>
+        visibleCols.some((col) => col.name === name),
+      ).length,
+    [layout.pinned, visibleCols],
+  );
+
+  const initialWidths = useMemo(
+    () => estimateInitialWidths(columnNames, data),
+    [columnNames, data],
+  );
+  const colWidths = useMemo(
+    () =>
+      visibleCols.map(
+        (col) => layout.widths[col.name] ?? initialWidths[col.dataIndex] ?? 150,
+      ),
+    [visibleCols, layout.widths, initialWidths],
+  );
+  const offsets = useMemo(() => columnOffsets(colWidths), [colWidths]);
+  const totalColumnWidth = offsets[offsets.length - 1] ?? 0;
+  const pinnedWidth = offsets[pinnedCount] ?? 0;
+
+  const alignments = useMemo(
+    () =>
+      visibleCols.map((col) =>
+        detectAlignment(columnTypes?.[col.dataIndex], col.dataIndex, data),
+      ),
+    [visibleCols, columnTypes, data],
+  );
+
+  // ------------------------------------------------------------------
+  // Viewport + virtualization (with a no-measurement fallback)
+  // ------------------------------------------------------------------
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 800, height: 600 });
+  const [scroll, setScroll] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () =>
+      setViewport({
+        width: el.clientWidth || 800,
+        height: el.clientHeight || 600,
+      });
+    measure();
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- ResizeObserver is an optional runtime capability (absent in jsdom).
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const expansionDisplayIndex = useMemo(() => {
+    if (!rowExpansion || rowExpansion.content === null) return -1;
+    return rows.findIndex((row) => row.index === rowExpansion.rowIndex);
+  }, [rowExpansion, rows]);
+  const expansionActive = expansionDisplayIndex !== -1;
+
+  const bodyHeight = Math.max(0, viewport.height - headerHeight);
+  const rowRange = virtualRowRange(
+    scroll.top,
+    bodyHeight,
+    rows.length,
+    rowHeight,
+  );
+  const colRange = virtualColumnRange(scroll.left, viewport.width, offsets);
+
+  const rowTop = useCallback(
+    (displayIndex: number) =>
+      headerHeight +
+      displayIndex * rowHeight +
+      (expansionActive && displayIndex > expansionDisplayIndex
+        ? EXPANSION_HEIGHT
+        : 0),
+    [headerHeight, rowHeight, expansionActive, expansionDisplayIndex],
+  );
+  const totalHeight =
+    headerHeight +
+    rows.length * rowHeight +
+    (expansionActive ? EXPANSION_HEIGHT : 0);
+  const totalWidth = GUTTER_WIDTH + totalColumnWidth;
+
+  // ------------------------------------------------------------------
+  // Focus, selection, editing
+  // ------------------------------------------------------------------
+  const [focused, setFocused] = useState<CellPos | null>(null);
+  const [selection, setSelection] = useState<GridSelection>(null);
+  const [expandStage, setExpandStage] = useState(0);
+  const [editing, setEditing] = useState<{
+    pos: CellPos;
+    seed?: string;
+  } | null>(null);
+  const [inspected, setInspected] = useState<InspectedValue | null>(null);
+  const [goToOpen, setGoToOpen] = useState(false);
+  const [contextTarget, setContextTarget] = useState<ContextTarget>({
+    kind: "cell",
+  });
+  const wantFocusRef = useRef(false);
+
+  const cellValue = useCallback(
+    (displayRow: number, visibleCol: number): string => {
+      const row = rows[displayRow];
+      const col = visibleCols[visibleCol];
+      if (!row || !col) return "";
+      return (
+        edits?.[row.index]?.[col.dataIndex] ?? row.original[col.dataIndex] ?? ""
+      );
+    },
+    [rows, visibleCols, edits],
+  );
+
+  const clampPos = useCallback(
+    (pos: CellPos): CellPos => ({
+      row: Math.max(0, Math.min(rows.length - 1, pos.row)),
+      col: Math.max(0, Math.min(visibleCols.length - 1, pos.col)),
+    }),
+    [rows.length, visibleCols.length],
+  );
+
+  const ensureVisible = useCallback(
+    (pos: CellPos) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = rowTop(pos.row) - headerHeight;
+      const bottom = top + rowHeight;
+      if (top < el.scrollTop) el.scrollTop = top;
+      else if (bottom > el.scrollTop + bodyHeight) {
+        el.scrollTop = bottom - bodyHeight;
+      }
+      if (pos.col >= pinnedCount) {
+        const left = GUTTER_WIDTH + (offsets[pos.col] ?? 0);
+        const right = left + (colWidths[pos.col] ?? 0);
+        const frozen = GUTTER_WIDTH + pinnedWidth;
+        if (left - frozen < el.scrollLeft) {
+          el.scrollLeft = Math.max(0, left - frozen);
+        } else if (right > el.scrollLeft + viewport.width) {
+          el.scrollLeft = right - viewport.width;
+        }
+      }
+    },
+    [
+      rowTop,
+      headerHeight,
+      rowHeight,
+      bodyHeight,
+      offsets,
+      colWidths,
+      pinnedCount,
+      pinnedWidth,
+      viewport.width,
+    ],
+  );
+
+  // Focus follows the focused-cell state after keyboard moves.
+  useEffect(() => {
+    if (!wantFocusRef.current || !focused || editing) return;
+    wantFocusRef.current = false;
+    const el = scrollRef.current;
+    if (!el) return;
+    const cell = el.querySelector<HTMLElement>(
+      `[data-grid-cell="${focused.row}-${focused.col}"]`,
+    );
+    (cell ?? el).focus({ preventScroll: true });
+  });
+
+  const activateCell = useCallback(
+    (pos: CellPos, extend: boolean) => {
+      wantFocusRef.current = true;
+      setExpandStage(0);
+      setFocused(pos);
+      setSelection((current) =>
+        extend && current?.kind === "cells"
+          ? { kind: "cells", anchor: current.anchor, focus: pos }
+          : { kind: "cells", anchor: pos, focus: pos },
+      );
+      const row = rows[pos.row];
+      const col = visibleCols[pos.col];
+      if (!effectiveOnEdit && onEditIntent && row && col) {
+        onEditIntent(row.index, col.dataIndex);
+      }
+    },
+    [rows, visibleCols, effectiveOnEdit, onEditIntent],
+  );
+
+  const moveFocus = useCallback(
+    (deltaRow: number, deltaCol: number, extend: boolean) => {
+      if (rows.length === 0 || visibleCols.length === 0) return;
+      const from = focused ?? { row: 0, col: 0 };
+      const next = clampPos({
+        row: from.row + deltaRow,
+        col: from.col + deltaCol,
+      });
+      wantFocusRef.current = true;
+      setExpandStage(0);
+      setFocused(next);
+      setSelection((current) =>
+        extend
+          ? {
+              kind: "cells",
+              anchor: current?.kind === "cells" ? current.anchor : from,
+              focus: next,
+            }
+          : { kind: "cells", anchor: next, focus: next },
+      );
+      ensureVisible(next);
+    },
+    [rows.length, visibleCols.length, focused, clampPos, ensureVisible],
+  );
+
+  const jumpFocus = useCallback(
+    (pos: CellPos) => {
+      if (rows.length === 0 || visibleCols.length === 0) return;
+      const next = clampPos(pos);
+      wantFocusRef.current = true;
+      setFocused(next);
+      setSelection({ kind: "cells", anchor: next, focus: next });
+      ensureVisible(next);
+    },
+    [rows.length, visibleCols.length, clampPos, ensureVisible],
+  );
+
+  const startEdit = useCallback(
+    (pos: CellPos, seed?: string) => {
+      const row = rows[pos.row];
+      const col = visibleCols[pos.col];
+      if (!row || !col) return;
+      if (!effectiveOnEdit) {
+        onEditIntent?.(row.index, col.dataIndex);
+        return;
+      }
+      if (getCellReadOnlyReason?.(row.index, col.dataIndex)) return;
+      setFocused(pos);
+      setEditing({ pos, seed });
+    },
+    [rows, visibleCols, effectiveOnEdit, onEditIntent, getCellReadOnlyReason],
+  );
+
+  const commitEdit = useCallback(
+    (value: string, moveRight: boolean) => {
+      const current = editing;
+      setEditing(null);
+      wantFocusRef.current = true;
+      if (!current) return;
+      const row = rows[current.pos.row];
+      const col = visibleCols[current.pos.col];
+      if (row && col && effectiveOnEdit) {
+        const original = row.original[col.dataIndex] ?? "";
+        const isDirty = edits?.[row.index]?.[col.dataIndex] !== undefined;
+        if (value !== original || isDirty) {
+          effectiveOnEdit(row.index, col.dataIndex, value);
+        }
+      }
+      if (moveRight) moveFocus(0, 1, false);
+    },
+    [editing, rows, visibleCols, effectiveOnEdit, edits, moveFocus],
+  );
+
+  const openInspector = useCallback(
+    (pos: CellPos) => {
+      const col = visibleCols[pos.col];
+      if (!col) return;
+      setInspected({ column: col.name, value: cellValue(pos.row, pos.col) });
+    },
+    [visibleCols, cellValue],
+  );
+
+  // ------------------------------------------------------------------
+  // Copy
+  // ------------------------------------------------------------------
+  const buildSelectionTable = useCallback((): ExportTable | null => {
+    if (rows.length === 0 || visibleCols.length === 0) return null;
+    const sel: GridSelection =
+      selection ??
+      (focused ? { kind: "cells", anchor: focused, focus: focused } : null);
+    if (!sel) return null;
+    let rowIndexes: number[] = [];
+    let colIndexes: number[] = [];
+    const allRows = rows.map((_row, index) => index);
+    const allCols = visibleCols.map((_col, index) => index);
+    switch (sel.kind) {
+      case "all":
+        rowIndexes = allRows;
+        colIndexes = allCols;
+        break;
+      case "columns":
+        rowIndexes = allRows;
+        colIndexes = sel.cols;
+        break;
+      case "rows":
+        rowIndexes = sel.rows;
+        colIndexes = allCols;
+        break;
+      case "cells": {
+        const rowLow = Math.min(sel.anchor.row, sel.focus.row);
+        const rowHigh = Math.max(sel.anchor.row, sel.focus.row);
+        const colLow = Math.min(sel.anchor.col, sel.focus.col);
+        const colHigh = Math.max(sel.anchor.col, sel.focus.col);
+        for (let r = rowLow; r <= rowHigh; r += 1) rowIndexes.push(r);
+        for (let c = colLow; c <= colHigh; c += 1) colIndexes.push(c);
+        break;
+      }
+    }
+    return {
+      columns: colIndexes.map((c) => visibleCols[c]?.name ?? ""),
+      rows: rowIndexes.map((r) =>
+        colIndexes.map((c) => {
+          const value = cellValue(r, c);
+          return value === "NULL" ? null : value;
+        }),
+      ),
+    };
+  }, [rows, visibleCols, selection, focused, cellValue]);
+
+  const copySelection = useCallback(
+    async (format: CopyFormat) => {
+      const selectionTable = buildSelectionTable();
+      if (!selectionTable) return;
+      const text = buildCopyText(format, selectionTable, exportFilenameBase);
+      try {
+        await navigator.clipboard.writeText(text);
+        const cellCount =
+          selectionTable.rows.length * selectionTable.columns.length;
+        toast.success(
+          `Copied ${cellCount} ${cellCount === 1 ? "cell" : "cells"}`,
+        );
+      } catch {
+        toast.error("Copy failed.");
+      }
+    },
+    [buildSelectionTable, exportFilenameBase],
+  );
+
+  // ------------------------------------------------------------------
+  // Column layout actions
+  // ------------------------------------------------------------------
+  const setColumnWidth = useCallback((name: string, width: number) => {
+    setLayout((current) => ({
+      ...current,
+      widths: {
+        ...current.widths,
+        [name]: Math.max(
+          MIN_COLUMN_WIDTH,
+          Math.min(MAX_AUTO_FIT_WIDTH, Math.round(width)),
+        ),
+      },
+    }));
+  }, []);
+
+  const autoFitColumn = useCallback(
+    (visibleIndex: number) => {
+      const col = visibleCols[visibleIndex];
+      if (!col) return;
+      setColumnWidth(col.name, autoFitWidth(col.name, col.dataIndex, data));
+    },
+    [visibleCols, data, setColumnWidth],
+  );
+
+  const autoFitAllColumns = useCallback(() => {
+    setLayout((current) => {
+      const widths = { ...current.widths };
+      for (const col of visibleCols) {
+        widths[col.name] = autoFitWidth(col.name, col.dataIndex, data);
+      }
+      return { ...current, widths };
+    });
+  }, [visibleCols, data]);
+
+  const togglePinned = useCallback((name: string) => {
+    setLayout((current) => ({
+      ...current,
+      pinned: current.pinned.includes(name)
+        ? current.pinned.filter((pin) => pin !== name)
+        : [...current.pinned, name],
+    }));
+  }, []);
+
+  const startResize = useCallback(
+    (event: React.PointerEvent, visibleIndex: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const col = visibleCols[visibleIndex];
+      if (!col) return;
+      const startX = event.clientX;
+      const startWidth = colWidths[visibleIndex] ?? 150;
+      const onMove = (move: PointerEvent) => {
+        setColumnWidth(col.name, startWidth + (move.clientX - startX));
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [visibleCols, colWidths, setColumnWidth],
+  );
+
+  // ------------------------------------------------------------------
+  // Keyboard
+  // ------------------------------------------------------------------
+  const pageRows = Math.max(1, Math.floor(bodyHeight / rowHeight) - 1);
+  const selectedRowCount = Object.keys(rowSelection).length;
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, [data-grid-editing]")
+      ) {
+        return;
+      }
+      const mod = event.metaKey || event.ctrlKey;
+      const pos = focused ?? { row: 0, col: 0 };
+      switch (event.key) {
+        case "ArrowDown":
+          event.preventDefault();
+          if (event.altKey) return;
+          moveFocus(1, 0, event.shiftKey);
+          return;
+        case "ArrowUp":
+          if (event.altKey) {
+            // Expanding selection (§5.4): cell → column → row → grid.
+            event.preventDefault();
+            if (!focused) return;
+            const stage = expandStage + 1;
+            setExpandStage(stage);
+            if (stage === 1) {
+              setSelection({ kind: "columns", cols: [focused.col] });
+            } else if (stage === 2) {
+              setSelection({ kind: "rows", rows: [focused.row] });
+            } else {
+              setSelection({ kind: "all" });
+            }
+            return;
+          }
+          event.preventDefault();
+          moveFocus(-1, 0, event.shiftKey);
+          return;
+        case "ArrowLeft":
+          event.preventDefault();
+          moveFocus(0, -1, event.shiftKey);
+          return;
+        case "ArrowRight":
+          event.preventDefault();
+          moveFocus(0, 1, event.shiftKey);
+          return;
+        case "PageDown":
+          event.preventDefault();
+          moveFocus(pageRows, 0, event.shiftKey);
+          return;
+        case "PageUp":
+          event.preventDefault();
+          moveFocus(-pageRows, 0, event.shiftKey);
+          return;
+        case "Home":
+          event.preventDefault();
+          jumpFocus(mod ? { row: 0, col: 0 } : { row: pos.row, col: 0 });
+          return;
+        case "End":
+          event.preventDefault();
+          jumpFocus(
+            mod
+              ? { row: rows.length - 1, col: visibleCols.length - 1 }
+              : { row: pos.row, col: visibleCols.length - 1 },
+          );
+          return;
+        case "Enter":
+          event.preventDefault();
+          if (event.shiftKey) {
+            if (focused) openInspector(focused);
+            return;
+          }
+          startEdit(pos);
+          return;
+        case "F2":
+          event.preventDefault();
+          startEdit(pos);
+          return;
+        case " ":
+          event.preventDefault();
+          if (focused) openInspector(focused);
+          return;
+        case "Escape":
+          setSelection(null);
+          return;
+        case "Delete":
+        case "Backspace":
+          if (selectedRowCount > 0 && onDeleteSelectedRows) {
+            event.preventDefault();
+            onDeleteSelectedRows();
+          }
+          return;
+        default:
+          break;
+      }
+      if (mod) {
+        const key = event.key.toLowerCase();
+        if (key === "c") {
+          event.preventDefault();
+          void copySelection("tsv");
+        } else if (key === "a") {
+          event.preventDefault();
+          setSelection({ kind: "all" });
+        } else if (key === "g") {
+          event.preventDefault();
+          setGoToOpen(true);
+        } else if (key === "d") {
+          if (selectedRowCount === 1 && onCloneSelectedRow) {
+            event.preventDefault();
+            onCloneSelectedRow();
+          }
+        }
+        return;
+      }
+      if (isPrintableKey(event) && focused && effectiveOnEdit) {
+        event.preventDefault();
+        startEdit(focused, event.key);
+      }
+    },
+    [
+      focused,
+      expandStage,
+      moveFocus,
+      jumpFocus,
+      pageRows,
+      rows.length,
+      visibleCols.length,
+      startEdit,
+      openInspector,
+      copySelection,
+      selectedRowCount,
+      onDeleteSelectedRows,
+      onCloneSelectedRow,
+      effectiveOnEdit,
+    ],
+  );
+
+  // ------------------------------------------------------------------
+  // Export (toolbar contract)
+  // ------------------------------------------------------------------
   const buildExportTable = useCallback(
     (mode: "all" | "selected"): ExportTable => {
       const rowsModel =
         mode === "selected"
           ? table.getSelectedRowModel().rows
-          : table.getFilteredRowModel().rows;
+          : serverBrowse
+            ? table.getRowModel().rows
+            : table.getFilteredRowModel().rows;
       const exportRows = rowsModel.map((row) =>
         columnNames.map((_col, colIndex) => row.original[colIndex] ?? null),
       );
       return { columns: columnNames, rows: exportRows };
     },
-    [table, columnNames],
+    [table, columnNames, serverBrowse],
   );
 
-  const visibleDataColumnCount = Math.max(
-    1,
-    table.getVisibleLeafColumns().filter((column) => column.id !== "select")
-      .length,
-  );
-  const dataColumnWidth = `${100 / visibleDataColumnCount}%`;
+  const hasSelection = selectedRowCount > 0;
+  const focusedFkTarget =
+    focused !== null
+      ? columnMetadata?.[visibleCols[focused.col]?.dataIndex ?? -1]
+          ?.foreignKeyTarget
+      : undefined;
+
+  // ------------------------------------------------------------------
+  // Rendering
+  // ------------------------------------------------------------------
+  const renderColIndexes = useMemo(() => {
+    const indexes: number[] = [];
+    for (let index = 0; index < pinnedCount; index += 1) indexes.push(index);
+    for (
+      let index = Math.max(pinnedCount, colRange.start);
+      index < colRange.end;
+      index += 1
+    ) {
+      indexes.push(index);
+    }
+    return indexes;
+  }, [pinnedCount, colRange.start, colRange.end]);
+
+  const virtualRows = rows.slice(rowRange.start, rowRange.end);
+
+  const headerCells = renderColIndexes.map((visibleIndex) => {
+    const col = visibleCols[visibleIndex];
+    if (!col) return null;
+    const meta = columnMetadata?.[col.dataIndex];
+    const isPinned = visibleIndex < pinnedCount;
+    return (
+      <div
+        key={col.name}
+        role="columnheader"
+        aria-colindex={visibleIndex + 2}
+        tabIndex={-1}
+        data-grid-header={visibleIndex}
+        onContextMenu={() =>
+          setContextTarget({ kind: "header", col: visibleIndex })
+        }
+        className={cn(
+          "absolute top-0 flex h-full items-center border-r border-b border-border-subtle bg-surface-sidebar",
+          isPinned && "sticky z-30",
+        )}
+        style={
+          isPinned
+            ? {
+                position: "sticky",
+                left: GUTTER_WIDTH + (offsets[visibleIndex] ?? 0),
+                width: colWidths[visibleIndex],
+                flex: "none",
+              }
+            : {
+                left: GUTTER_WIDTH + (offsets[visibleIndex] ?? 0),
+                width: colWidths[visibleIndex],
+              }
+        }
+      >
+        <ColumnHeaderLabel
+          name={col.name}
+          meta={meta}
+          onSortClick={
+            serverBrowse
+              ? (event) => serverBrowse.onHeaderSort(col.name, event.shiftKey)
+              : undefined
+          }
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={`Resize column ${col.name}`}
+          className="absolute top-0 -right-[3px] z-10 h-full w-[7px] cursor-col-resize bg-transparent hover:bg-accent/40"
+          onPointerDown={(event) => startResize(event, visibleIndex)}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            autoFitColumn(visibleIndex);
+          }}
+        />
+      </div>
+    );
+  });
 
   return (
     <div
       data-slot="data-grid"
-      className={cn("flex h-full flex-col bg-surface-app", className)}
+      className={cn("flex h-full min-h-0 flex-col bg-surface-app", className)}
       aria-busy={serverBrowse?.loadStatus.state === "loading"}
     >
       <DataGridToolbar
@@ -847,129 +1008,561 @@ export function DataGrid({
         hasSavedExportTask={hasSavedExportTask}
         buildExportTable={buildExportTable}
         appliedFilters={appliedFilters}
-        onApplyFilter={onApplyFilter}
-        onRemoveFilter={onRemoveFilter}
-        onClearFilters={onClearFilters}
+        onApplyFilter={(filter) =>
+          setAppliedFilters((prev) => {
+            const index = prev.findIndex((f) => f.column === filter.column);
+            if (index >= 0) {
+              const copy = prev.slice();
+              copy[index] = filter;
+              return copy;
+            }
+            return [...prev, filter];
+          })
+        }
+        onRemoveFilter={(column) =>
+          setAppliedFilters((prev) => prev.filter((f) => f.column !== column))
+        }
+        onClearFilters={() => setAppliedFilters([])}
         serverBrowse={serverBrowse}
         onExpandGrid={onExpandGrid}
         expanded={expanded}
       />
 
-      <div
-        data-slot="data-grid-scroll"
-        className="flex-1 overflow-auto bg-surface-app"
-      >
-        {table.getRowModel().rows?.length ? (
-          <table
-            data-slot="data-grid-table"
-            className={cn(
-              "min-w-full border-separate border-spacing-0 text-left text-xs font-mono",
-              serverBrowse?.loadStatus.state === "loading" && "opacity-60",
-            )}
+      {rows.length === 0 ? (
+        <EmptyState title="No data available" />
+      ) : (
+        <ContextMenu>
+          <ContextMenuTrigger
+            render={
+              <div
+                ref={scrollRef}
+                data-slot="data-grid-scroll"
+                role="grid"
+                aria-rowcount={rows.length + 1}
+                aria-colcount={visibleCols.length + 1}
+                tabIndex={0}
+                onKeyDown={handleKeyDown}
+                onScroll={(event) =>
+                  setScroll({
+                    top: event.currentTarget.scrollTop,
+                    left: event.currentTarget.scrollLeft,
+                  })
+                }
+                className={cn(
+                  "relative min-h-0 flex-1 overflow-auto bg-surface-app outline-none",
+                  serverBrowse?.loadStatus.state === "loading" && "opacity-60",
+                )}
+              />
+            }
           >
-            <thead className="sticky top-0 z-20">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className={cn(
-                        "sticky top-0 z-20 h-8 border-b border-r border-border-subtle bg-surface-panel-elevated px-0 align-middle font-medium text-text-muted last:border-r-0",
-                        header.id === "select" && "sticky left-0 z-30 w-10",
-                      )}
-                      style={{
-                        minWidth: header.id === "select" ? "40px" : "150px",
-                        width:
-                          header.id === "select" ? "40px" : dataColumnWidth,
-                      }}
-                    >
-                      {header.isPlaceholder ? null : (
-                        <div
-                          className={cn(
-                            "flex items-center gap-2",
-                            header.id !== "select" && "px-2",
-                          )}
-                        >
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                        </div>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="bg-surface-app">
-              {table.getRowModel().rows.map((row) => {
-                const visibleCells = row.getVisibleCells();
+            <div
+              style={{
+                height: totalHeight,
+                width: totalWidth,
+                position: "relative",
+              }}
+            >
+              {/* Header row */}
+              <div
+                role="row"
+                aria-rowindex={1}
+                className="sticky top-0 z-20"
+                style={{ height: headerHeight, width: totalWidth }}
+              >
+                <div
+                  className="sticky left-0 z-40 flex h-full items-center justify-center border-r border-b border-border-subtle bg-surface-sidebar"
+                  style={{ width: GUTTER_WIDTH, position: "sticky" }}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="Select all rows"
+                    className="size-3.5 rounded-sm border-border-strong bg-transparent accent-accent"
+                    checked={table.getIsAllRowsSelected()}
+                    onChange={table.getToggleAllRowsSelectedHandler()}
+                  />
+                </div>
+                {headerCells}
+              </div>
+
+              {/* Virtual rows */}
+              {virtualRows.map((row, sliceIndex) => {
+                const displayIndex = rowRange.start + sliceIndex;
                 const rowState = getRowState?.(row.index);
-                const hasExpansion =
-                  rowExpansion?.rowIndex === row.index &&
-                  rowExpansion.content !== null;
                 return (
-                  <React.Fragment key={row.id}>
-                    <tr
-                      className={cn(
-                        "group hover:bg-surface-row-hover",
-                        row.getIsSelected() &&
-                          "bg-accent-overlay text-foreground",
-                        rowState === "deleted" &&
-                          "bg-danger/5 text-text-muted line-through",
-                        rowState === "inserted" && "bg-success/5",
-                        rowState === "duplicate" && "bg-warning/5",
-                        rowState === "excluded" && "opacity-50",
-                      )}
-                    >
-                      {visibleCells.map((cell) => (
-                        <td
-                          key={cell.id}
-                          className={cn(
-                            "h-8 border-b border-r border-border-subtle p-0 align-middle last:border-r-0",
-                            cell.column.id === "select" &&
-                              "sticky left-0 z-10 w-10 bg-surface-app group-hover:bg-surface-row-hover",
-                            cell.column.id === "select" &&
-                              row.getIsSelected() &&
-                              "bg-primary/10",
-                          )}
-                          style={{
-                            minWidth:
-                              cell.column.id === "select" ? "40px" : "150px",
-                            width:
-                              cell.column.id === "select"
-                                ? "40px"
-                                : dataColumnWidth,
-                          }}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                    {hasExpansion ? (
-                      <tr key={`${row.id}-expansion`}>
-                        <td
-                          colSpan={visibleCells.length}
-                          className="border-b border-border-subtle bg-surface-panel/40 p-0"
-                        >
-                          {rowExpansion?.content}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </React.Fragment>
+                  <GridRow
+                    key={row.id}
+                    row={row}
+                    displayIndex={displayIndex}
+                    top={rowTop(displayIndex)}
+                    height={rowHeight}
+                    width={totalWidth}
+                    rowState={rowState}
+                    renderColIndexes={renderColIndexes}
+                    visibleCols={visibleCols}
+                    pinnedCount={pinnedCount}
+                    offsets={offsets}
+                    colWidths={colWidths}
+                    alignments={alignments}
+                    edits={edits}
+                    focused={focused}
+                    selection={selection}
+                    editing={editing}
+                    effectiveOnEdit={effectiveOnEdit}
+                    getCellReadOnlyReason={getCellReadOnlyReason}
+                    columnTypes={columnTypes}
+                    columnMetadata={columnMetadata}
+                    onFollowForeignKey={onFollowForeignKey}
+                    activateCell={activateCell}
+                    startEdit={startEdit}
+                    commitEdit={commitEdit}
+                    cancelEdit={() => {
+                      wantFocusRef.current = true;
+                      setEditing(null);
+                    }}
+                  />
                 );
               })}
-            </tbody>
-          </table>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <div className="text-xs">No data available</div>
-          </div>
-        )}
-      </div>
+
+              {/* FK drill-down expansion slot */}
+              {expansionActive ? (
+                <div
+                  className="absolute right-0 left-0 z-10 overflow-auto border-b border-border-subtle bg-surface-panel/60"
+                  style={{
+                    top: rowTop(expansionDisplayIndex) + rowHeight,
+                    height: EXPANSION_HEIGHT,
+                    width: totalWidth,
+                  }}
+                >
+                  <div
+                    className="sticky left-0"
+                    style={{ width: viewport.width }}
+                  >
+                    {rowExpansion?.content}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-56">
+            {contextTarget.kind === "header" ? (
+              <HeaderMenuItems
+                columnName={visibleCols[contextTarget.col]?.name ?? ""}
+                isPinned={contextTarget.col < pinnedCount}
+                serverBrowse={serverBrowse}
+                onHide={() => {
+                  const name = visibleCols[contextTarget.col]?.name;
+                  if (name) table.getColumn(name)?.toggleVisibility(false);
+                }}
+                onAutoFit={() => autoFitColumn(contextTarget.col)}
+                onAutoFitAll={autoFitAllColumns}
+                onTogglePin={() => {
+                  const name = visibleCols[contextTarget.col]?.name;
+                  if (name) togglePinned(name);
+                }}
+              />
+            ) : (
+              <>
+                <ContextMenuItem onClick={() => void copySelection("tsv")}>
+                  Copy
+                  <ContextMenuShortcut keys={["mod", "C"]} />
+                </ContextMenuItem>
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>Copy as</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {COPY_FORMATS.map((format) => (
+                      <ContextMenuItem
+                        key={format.id}
+                        onClick={() => void copySelection(format.id)}
+                      >
+                        {format.label}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+                <ContextMenuItem
+                  disabled={!focused}
+                  onClick={() => {
+                    if (focused) openInspector(focused);
+                  }}
+                >
+                  Inspect value
+                  <ContextMenuShortcut keys={["Space"]} />
+                </ContextMenuItem>
+                {focused && focusedFkTarget && onFollowForeignKey ? (
+                  <ContextMenuItem
+                    onClick={() => {
+                      const row = rows[focused.row];
+                      if (!row) return;
+                      onFollowForeignKey(
+                        row.index,
+                        focusedFkTarget,
+                        cellValue(focused.row, focused.col),
+                      );
+                    }}
+                  >
+                    Follow foreign key
+                  </ContextMenuItem>
+                ) : null}
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  disabled={!focused}
+                  onClick={() => {
+                    if (focused) {
+                      setSelection({ kind: "rows", rows: [focused.row] });
+                    }
+                  }}
+                >
+                  Select row
+                </ContextMenuItem>
+                <ContextMenuItem
+                  disabled={!focused}
+                  onClick={() => {
+                    if (focused) {
+                      setSelection({ kind: "columns", cols: [focused.col] });
+                    }
+                  }}
+                >
+                  Select column
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => setSelection({ kind: "all" })}>
+                  Select all
+                  <ContextMenuShortcut keys={["mod", "A"]} />
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => setGoToOpen(true)}>
+                  Go to row…
+                  <ContextMenuShortcut keys={["mod", "G"]} />
+                </ContextMenuItem>
+                {onCloneSelectedRow || onDeleteSelectedRows ? (
+                  <>
+                    <ContextMenuSeparator />
+                    {onCloneSelectedRow ? (
+                      <ContextMenuItem
+                        disabled={selectedRowCount !== 1}
+                        onClick={onCloneSelectedRow}
+                      >
+                        Clone selected row
+                        <ContextMenuShortcut keys={["mod", "D"]} />
+                      </ContextMenuItem>
+                    ) : null}
+                    {onDeleteSelectedRows ? (
+                      <ContextMenuItem
+                        variant="destructive"
+                        disabled={selectedRowCount === 0}
+                        onClick={onDeleteSelectedRows}
+                      >
+                        Delete selected rows
+                        <ContextMenuShortcut keys={["Del"]} />
+                      </ContextMenuItem>
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            )}
+          </ContextMenuContent>
+        </ContextMenu>
+      )}
+
+      <ValueInspector
+        inspected={inspected}
+        onClose={() => setInspected(null)}
+      />
+      <GoToRowDialog
+        open={goToOpen}
+        rowCount={rows.length}
+        onClose={() => setGoToOpen(false)}
+        onGo={(rowNumber) => {
+          setGoToOpen(false);
+          jumpFocus({ row: rowNumber - 1, col: focused?.col ?? 0 });
+        }}
+      />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Row
+// ---------------------------------------------------------------------------
+
+function GridRow({
+  row,
+  displayIndex,
+  top,
+  height,
+  width,
+  rowState,
+  renderColIndexes,
+  visibleCols,
+  pinnedCount,
+  offsets,
+  colWidths,
+  alignments,
+  edits,
+  focused,
+  selection,
+  editing,
+  effectiveOnEdit,
+  getCellReadOnlyReason,
+  columnTypes,
+  columnMetadata,
+  onFollowForeignKey,
+  activateCell,
+  startEdit,
+  commitEdit,
+  cancelEdit,
+}: {
+  row: Row<string[]>;
+  displayIndex: number;
+  top: number;
+  height: number;
+  width: number;
+  rowState: DataGridRowState | undefined;
+  renderColIndexes: number[];
+  visibleCols: Array<{ name: string; dataIndex: number }>;
+  pinnedCount: number;
+  offsets: number[];
+  colWidths: number[];
+  alignments: Array<"left" | "right" | "center">;
+  edits?: Record<number, Record<number, string>>;
+  focused: CellPos | null;
+  selection: GridSelection;
+  editing: { pos: CellPos; seed?: string } | null;
+  effectiveOnEdit?: (rowIndex: number, colIndex: number, value: string) => void;
+  getCellReadOnlyReason?: (
+    rowIndex: number,
+    colIndex: number,
+  ) => string | undefined;
+  columnTypes?: Array<string | undefined>;
+  columnMetadata?: Array<ColumnHeaderMeta | undefined>;
+  onFollowForeignKey?: (
+    rowIndex: number,
+    target: ForeignKeyTarget,
+    value: string,
+  ) => void;
+  activateCell: (pos: CellPos, extend: boolean) => void;
+  startEdit: (pos: CellPos, seed?: string) => void;
+  commitEdit: (value: string, moveRight: boolean) => void;
+  cancelEdit: () => void;
+}) {
+  return (
+    <div
+      role="row"
+      aria-rowindex={displayIndex + 2}
+      data-row-state={rowState}
+      className={cn(
+        "group/row absolute flex bg-surface-app",
+        "hover:bg-surface-row-hover",
+        row.getIsSelected() && "bg-accent-overlay",
+        rowState === "deleted" && "bg-danger/10 text-text-muted",
+        rowState === "inserted" && "bg-success/10",
+        rowState === "duplicate" && "bg-warning/10",
+        rowState === "excluded" && "opacity-50",
+      )}
+      style={{ top, height, width, position: "absolute" }}
+    >
+      {/* Row gutter: checkbox selection (§5.4 "click gutter = row"). */}
+      <div
+        className="sticky left-0 z-[2] flex h-full shrink-0 items-center justify-center border-r border-b border-border-subtle bg-inherit"
+        style={{ width: GUTTER_WIDTH }}
+      >
+        <input
+          type="checkbox"
+          aria-label={`Select row ${displayIndex + 1}`}
+          className="size-3.5 rounded-sm border-border-strong bg-transparent accent-accent"
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+        />
+      </div>
+      {renderColIndexes.map((visibleIndex) => {
+        const col = visibleCols[visibleIndex];
+        if (!col) return null;
+        const isPinned = visibleIndex < pinnedCount;
+        const editValue = edits?.[row.index]?.[col.dataIndex];
+        const original = row.original[col.dataIndex] ?? "";
+        const value = editValue ?? original;
+        const pos = { row: displayIndex, col: visibleIndex };
+        const isFocused =
+          focused?.row === displayIndex && focused.col === visibleIndex;
+        const isEditingCell =
+          editing?.pos.row === displayIndex && editing.pos.col === visibleIndex;
+        const readOnlyReason = getCellReadOnlyReason?.(
+          row.index,
+          col.dataIndex,
+        );
+        const fkTarget = columnMetadata?.[col.dataIndex]?.foreignKeyTarget;
+        return (
+          <GridBodyCell
+            key={col.name}
+            value={value}
+            originalValue={original}
+            isDirty={editValue !== undefined}
+            alignment={alignments[visibleIndex] ?? "left"}
+            isFocused={isFocused}
+            isSelected={isCellSelected(selection, displayIndex, visibleIndex)}
+            isEditing={isEditingCell}
+            editSeed={isEditingCell ? editing.seed : undefined}
+            editable={Boolean(effectiveOnEdit) && !readOnlyReason}
+            lineThrough={rowState === "deleted"}
+            readOnlyReason={readOnlyReason}
+            columnName={col.name}
+            columnType={columnTypes?.[col.dataIndex]}
+            cellKey={`${displayIndex}-${visibleIndex}`}
+            ariaColIndex={visibleIndex + 2}
+            className={cn(isPinned && "z-[1] bg-inherit")}
+            style={
+              isPinned
+                ? {
+                    position: "sticky",
+                    left: GUTTER_WIDTH + (offsets[visibleIndex] ?? 0),
+                    width: colWidths[visibleIndex],
+                    height: "100%",
+                    flex: "none",
+                  }
+                : {
+                    left: GUTTER_WIDTH + (offsets[visibleIndex] ?? 0),
+                    width: colWidths[visibleIndex],
+                    height: "100%",
+                  }
+            }
+            onActivate={(extend) => activateCell(pos, extend)}
+            onStartEdit={() => startEdit(pos)}
+            onCommit={commitEdit}
+            onCancelEdit={cancelEdit}
+            foreignKeyTarget={fkTarget}
+            onFollowForeignKey={
+              fkTarget && onFollowForeignKey
+                ? () => onFollowForeignKey(row.index, fkTarget, value)
+                : undefined
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Header context menu items
+// ---------------------------------------------------------------------------
+
+function HeaderMenuItems({
+  columnName,
+  isPinned,
+  serverBrowse,
+  onHide,
+  onAutoFit,
+  onAutoFitAll,
+  onTogglePin,
+}: {
+  columnName: string;
+  isPinned: boolean;
+  serverBrowse?: ServerBrowseGridModel;
+  onHide: () => void;
+  onAutoFit: () => void;
+  onAutoFitAll: () => void;
+  onTogglePin: () => void;
+}) {
+  return (
+    <>
+      {serverBrowse ? (
+        <>
+          <ContextMenuItem
+            onClick={() =>
+              serverBrowse.onSortChange([
+                { column: columnName, direction: "asc", nulls: "default" },
+              ])
+            }
+          >
+            Sort ascending
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={() =>
+              serverBrowse.onSortChange([
+                { column: columnName, direction: "desc", nulls: "default" },
+              ])
+            }
+          >
+            Sort descending
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => serverBrowse.onSortChange([])}>
+            Clear sort
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      ) : null}
+      <ContextMenuItem onClick={onAutoFit}>Auto-fit column</ContextMenuItem>
+      <ContextMenuItem onClick={onAutoFitAll}>
+        Auto-fit all columns
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onTogglePin}>
+        {isPinned ? "Unpin column" : "Pin column left"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onHide}>Hide column</ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onClick={() => void navigator.clipboard.writeText(columnName)}
+      >
+        Copy column name
+      </ContextMenuItem>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Go-to-row dialog (Cmd+G)
+// ---------------------------------------------------------------------------
+
+function GoToRowDialog({
+  open,
+  rowCount,
+  onClose,
+  onGo,
+}: {
+  open: boolean;
+  rowCount: number;
+  onClose: () => void;
+  onGo: (rowNumber: number) => void;
+}) {
+  const [value, setValue] = useState("");
+  const submit = () => {
+    const rowNumber = Number.parseInt(value, 10);
+    if (Number.isFinite(rowNumber) && rowNumber >= 1) {
+      onGo(Math.min(rowCount, rowNumber));
+      setValue("");
+    }
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Go to row</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="flex items-center gap-2">
+          <Input
+            // oxlint-disable-next-line jsx-a11y/no-autofocus -- single-field dialog; focus belongs in the row input.
+            autoFocus
+            type="number"
+            min={1}
+            max={rowCount}
+            placeholder={`1–${rowCount}`}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <Button size="sm" onClick={submit}>
+            Go
+          </Button>
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }

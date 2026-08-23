@@ -271,15 +271,16 @@ describe("DataGrid read-only mode", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: "Ada" }).closest("tr")?.className,
-    ).toContain("line-through");
-    expect(
-      screen.getByRole("button", { name: "Grace" }).closest("tr")?.className,
-    ).toContain("bg-success/5");
-    expect(
-      screen.getByRole("button", { name: "Edsger" }).closest("tr")?.className,
-    ).toContain("opacity-50");
+    const rowOf = (name: string) =>
+      screen.getByRole("button", { name }).closest('[role="row"]');
+    expect(rowOf("Ada")?.getAttribute("data-row-state")).toBe("deleted");
+    expect(screen.getByRole("button", { name: "Ada" }).className).toContain(
+      "line-through",
+    );
+    expect(rowOf("Grace")?.getAttribute("data-row-state")).toBe("inserted");
+    expect(rowOf("Grace")?.className).toContain("bg-success/10");
+    expect(rowOf("Edsger")?.getAttribute("data-row-state")).toBe("excluded");
+    expect(rowOf("Edsger")?.className).toContain("opacity-50");
   });
 });
 
@@ -295,20 +296,14 @@ describe("DataGrid cell display", () => {
     );
 
     const cell = screen.getByRole("button", { name: "new@example.test" });
-    expect(cell.getAttribute("title")).toBe(
-      "Edited: new@example.test\nOriginal: old@example.test",
-    );
-    const descriptionId = cell.getAttribute("aria-describedby") ?? "";
-    expect(document.getElementById(descriptionId)?.textContent).toBe(
-      "Original value: old@example.test",
-    );
+    expect(cell.getAttribute("title")).toBe("Original: old@example.test");
+    expect(cell.className).toContain("bg-warning/10");
     expect(cell.textContent).toBe("new@example.test");
   });
 
   it("limits long text previews while editing the full value", () => {
-    const longValue =
-      "This address is intentionally longer than fifty characters for display testing.";
-    const preview = longValue.slice(0, 50);
+    const longValue = `${"x".repeat(120)}END`;
+    const preview = longValue.slice(0, 100);
 
     render(
       <DataGrid
@@ -321,12 +316,33 @@ describe("DataGrid cell display", () => {
     const cell = screen.getByRole("button", { name: preview });
     expect(cell.textContent).toBe(preview);
     expect(screen.queryByText(longValue)).toBeNull();
-    expect(cell.getAttribute("title")).toBe(longValue);
 
-    fireEvent.click(cell);
-
+    // §5.4: double-click (not single click) opens the editor with the
+    // full, untruncated value.
+    fireEvent.doubleClick(cell);
     const input = screen.getByDisplayValue(longValue) as HTMLInputElement;
     expect(input.value).toBe(longValue);
+  });
+
+  it("renders NULL as a faint italic keyword and marks multi-line values", () => {
+    render(
+      <DataGrid
+        data={[
+          ["NULL", "line one\nline two"],
+          ["7", "plain"],
+        ]}
+        columns={sampleColumns}
+      />,
+    );
+
+    const nullCell = screen.getByText("NULL");
+    expect(nullCell.className).toContain("italic");
+    expect(nullCell.className).toContain("text-text-disabled");
+
+    // The multi-line value collapses to its first line + ↵ indicator.
+    const multiline = screen.getByText("line one");
+    expect(multiline.querySelector("svg")).not.toBeNull();
+    expect(screen.queryByText(/line two/)).toBeNull();
   });
 });
 
@@ -487,5 +503,172 @@ describe("DataGrid server browse mode", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel browse" }));
     expect(browse.onCancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DataGrid virtualization", () => {
+  it("renders a bounded subset of a huge result set", () => {
+    const bigRows = Array.from({ length: 10_000 }, (_row, index) => [
+      String(index + 1),
+      `name-${index + 1}`,
+    ]);
+    render(<DataGrid data={bigRows} columns={sampleColumns} />);
+
+    const renderedRows = document.querySelectorAll(
+      '[data-slot="data-grid-scroll"] [role="row"]',
+    );
+    // Header + visible rows + overscan — never the full 10k.
+    expect(renderedRows.length).toBeGreaterThan(10);
+    expect(renderedRows.length).toBeLessThan(100);
+    // Row heights are fixed so total scroll height covers every row.
+    const sizer = document.querySelector(
+      '[data-slot="data-grid-scroll"] > div',
+    ) as HTMLElement;
+    expect(Number.parseInt(sizer.style.height, 10)).toBeGreaterThan(
+      10_000 * 22,
+    );
+  });
+});
+
+describe("DataGrid keyboard model", () => {
+  const clipboardText = { value: "" };
+
+  beforeEach(() => {
+    clipboardText.value = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          clipboardText.value = text;
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+
+  const focusCell = (name: string) => {
+    const cell = screen.getByRole("button", { name });
+    fireEvent.click(cell);
+    return cell;
+  };
+
+  const grid = () =>
+    document.querySelector('[data-slot="data-grid-scroll"]') as HTMLElement;
+
+  it("moves the focused cell with arrows and edits with Enter", () => {
+    const onEdit = vi.fn();
+    render(
+      <DataGrid data={sampleRows} columns={sampleColumns} onEdit={onEdit} />,
+    );
+
+    focusCell("Ada");
+    fireEvent.keyDown(grid(), { key: "ArrowDown" });
+    const below = document.querySelector('[data-grid-cell="1-1"]');
+    expect(below?.getAttribute("tabindex")).toBe("0");
+
+    fireEvent.keyDown(grid(), { key: "Enter" });
+    const input = screen.getByDisplayValue("Grace") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Hopper" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onEdit).toHaveBeenCalledWith(1, 1, "Hopper");
+  });
+
+  it("copies the selection as TSV with Cmd+C", async () => {
+    render(<DataGrid data={sampleRows} columns={sampleColumns} />);
+
+    focusCell("Ada");
+    fireEvent.keyDown(grid(), { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(grid(), { key: "c", metaKey: true });
+    await vi.waitFor(() => expect(clipboardText.value).toBe("Ada\nGrace"));
+  });
+
+  it("opens the value inspector with Space", () => {
+    render(<DataGrid data={sampleRows} columns={sampleColumns} />);
+    focusCell("Ada");
+    fireEvent.keyDown(grid(), { key: " " });
+    expect(screen.getByText("Copy value")).toBeTruthy();
+  });
+
+  it("jumps with Cmd+G via the go-to-row dialog", () => {
+    render(<DataGrid data={sampleRows} columns={sampleColumns} />);
+    focusCell("Ada");
+    fireEvent.keyDown(grid(), { key: "g", metaKey: true });
+    const input = screen.getByPlaceholderText("1–3");
+    fireEvent.change(input, { target: { value: "3" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const jumped = document.querySelector('[data-grid-cell="2-1"]');
+    expect(jumped?.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("stages deletion with Delete when rows are checkbox-selected", () => {
+    const onDeleteSelectedRows = vi.fn();
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        onDeleteSelectedRows={onDeleteSelectedRows}
+      />,
+    );
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1] as HTMLInputElement);
+    fireEvent.keyDown(grid(), { key: "Delete" });
+    expect(onDeleteSelectedRows).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DataGrid column layout", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("persists pin-left from the header context menu per gridLayoutKey", async () => {
+    render(
+      <DataGrid
+        data={sampleRows}
+        columns={sampleColumns}
+        gridLayoutKey="conn.public.users"
+      />,
+    );
+
+    const header = document.querySelector('[data-grid-header="1"]');
+    expect(header).not.toBeNull();
+    fireEvent.contextMenu(header as HTMLElement);
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Pin column left" }),
+    );
+
+    await vi.waitFor(() => {
+      const stored = JSON.parse(
+        window.localStorage.getItem("dbunk.grid.layout.conn.public.users") ??
+          "{}",
+      );
+      expect(stored.pinned).toEqual(["name"]);
+    });
+    // The pinned column moves to the front of the column order.
+    const firstHeader = document.querySelector('[data-grid-header="0"]');
+    expect(firstHeader?.textContent).toContain("name");
+  });
+
+  it("auto-fits every column from the header context menu", async () => {
+    render(
+      <DataGrid
+        data={[["1", "a".repeat(80)]]}
+        columns={sampleColumns}
+        gridLayoutKey="conn.public.fit"
+      />,
+    );
+    const header = document.querySelector('[data-grid-header="0"]');
+    fireEvent.contextMenu(header as HTMLElement);
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Auto-fit all columns" }),
+    );
+    await vi.waitFor(() => {
+      const stored = JSON.parse(
+        window.localStorage.getItem("dbunk.grid.layout.conn.public.fit") ??
+          "{}",
+      );
+      expect(stored.widths.name).toBeGreaterThan(400);
+      expect(stored.widths.name).toBeLessThanOrEqual(500);
+    });
   });
 });
