@@ -1,13 +1,16 @@
 COMPOSE := docker compose -f compose.yml
 RUN_ARGS := --force-recreate --renew-anon-volumes
 
-.PHONY: postgres postgres-tls mysql clickhouse redis postgres-redis all down ps logs
+.PHONY: postgres postgres-tls certs mysql clickhouse redis postgres-redis all down ps logs
 
 postgres:
 	$(COMPOSE) --profile postgres up $(RUN_ARGS) postgres
 
-postgres-tls:
-	$(COMPOSE) --profile postgres-tls up $(RUN_ARGS) postgres-tls
+certs:
+	sh postgres-tls/gen-certs.sh
+
+postgres-tls: certs
+	$(COMPOSE) --profile postgres-tls up $(RUN_ARGS) --build postgres-tls
 
 mysql:
 	$(COMPOSE) --profile mysql up $(RUN_ARGS) mysql
