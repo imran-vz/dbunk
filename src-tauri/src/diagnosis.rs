@@ -407,7 +407,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
             return;
         }
     };
-    let Some(&first) = addresses.first() else {
+    if addresses.is_empty() {
         report.fail(
             DiagnosisStageKind::Dns,
             started,
@@ -415,7 +415,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
             format!("\"{}\" resolved to no addresses", spec.host),
         );
         return;
-    };
+    }
     report.pass(
         DiagnosisStageKind::Dns,
         started,
@@ -427,9 +427,35 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
     // tcp ------------------------------------------------------------------
     let overall = Instant::now();
     let started = Instant::now();
-    let stream = match tokio::time::timeout(connect_timeout, TcpStream::connect(first)).await {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(error)) => {
+    let deadline = tokio::time::Instant::now() + connect_timeout;
+    let mut connected = None;
+    let mut last_error = None;
+    for address in &addresses {
+        match tokio::time::timeout_at(deadline, TcpStream::connect(address)).await {
+            Ok(Ok(stream)) => {
+                connected = Some(stream);
+                break;
+            }
+            Ok(Err(error)) => last_error = Some((*address, error)),
+            Err(_) => break,
+        }
+    }
+    let stream = match connected {
+        Some(stream) => stream,
+        None if tokio::time::Instant::now() >= deadline => {
+            report.fail(
+                DiagnosisStageKind::Tcp,
+                started,
+                FailureKind::TimedOut,
+                format!(
+                    "Connecting to the resolved addresses timed out after {} ms",
+                    connect_timeout.as_millis()
+                ),
+            );
+            return;
+        }
+        None => {
+            let (address, error) = last_error.expect("non-empty address list was attempted");
             let kind = match error.kind() {
                 io::ErrorKind::ConnectionRefused => FailureKind::ConnectionRefused,
                 io::ErrorKind::TimedOut => FailureKind::TimedOut,
@@ -442,18 +468,8 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                 DiagnosisStageKind::Tcp,
                 started,
                 kind,
-                format!("Could not connect to {first}: {error}"),
-            );
-            return;
-        }
-        Err(_) => {
-            report.fail(
-                DiagnosisStageKind::Tcp,
-                started,
-                FailureKind::TimedOut,
                 format!(
-                    "Connection to {first} timed out after {} ms",
-                    connect_timeout.as_millis()
+                    "Could not connect to any resolved address; last attempt {address}: {error}"
                 ),
             );
             return;
