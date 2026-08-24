@@ -9,6 +9,7 @@
 //! PostgreSQL only gets the full ladder. Other engines get the tunnel
 //! stage and one `database` stage wrapping today's ping.
 
+use std::borrow::Cow;
 use std::io;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -305,7 +306,7 @@ pub(crate) async fn run(
     let route_key = format!("diag-{}", uuid::Uuid::new_v4());
 
     let tunnel_enabled = connection.ssh_tunnel().is_some_and(|config| config.enabled);
-    let resolved = if tunnel_enabled {
+    let resolved: Cow<'_, StoredConnection> = if tunnel_enabled {
         let started = Instant::now();
         match tunnel::resolve_connection(pool, mode, &route_key, connection).await {
             Ok(resolved) => {
@@ -315,7 +316,7 @@ pub(crate) async fn run(
                     started,
                     Some(StageDetail::Tunnel { local_endpoint }),
                 );
-                resolved
+                Cow::Owned(resolved)
             }
             Err(message) => {
                 report.fail(
@@ -330,10 +331,10 @@ pub(crate) async fn run(
         }
     } else {
         report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
-        connection.clone()
+        Cow::Borrowed(connection)
     };
 
-    match &resolved {
+    match resolved.as_ref() {
         StoredConnection::PostgreSQL(pg) => {
             diagnose_postgres(pg, &mut report).await;
         }
@@ -455,7 +456,15 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
             return;
         }
         None => {
-            let (address, error) = last_error.expect("non-empty address list was attempted");
+            let Some((address, error)) = last_error else {
+                report.fail(
+                    DiagnosisStageKind::Tcp,
+                    started,
+                    FailureKind::Other,
+                    "Could not connect to any resolved address".into(),
+                );
+                return;
+            };
             let kind = match error.kind() {
                 io::ErrorKind::ConnectionRefused => FailureKind::ConnectionRefused,
                 io::ErrorKind::TimedOut => FailureKind::TimedOut,

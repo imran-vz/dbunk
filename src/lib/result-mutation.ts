@@ -1,9 +1,16 @@
 import {
+  decodeDatabaseError,
+  decodeTimeout,
+  decodeTlsFailed,
+  isNullableNumber,
+  isNullableString,
+  isRecord,
+} from "@/lib/decode-transport-error";
+import {
   decodeStatementSummaries,
   type StatementClassSummary,
 } from "@/lib/safety-policy";
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Tauri errors cross this boundary as unstructured values. */
-import { isTlsFailureKind } from "@/lib/store/types";
 import type { DatabaseEngine, TlsFailureKind } from "@/lib/store/types";
 
 export type AnalyzeSource =
@@ -225,15 +232,6 @@ export type ResultMutationError =
       opIndex?: number;
     };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object";
-
-const isNullableString = (value: unknown): value is string | null =>
-  value === null || typeof value === "string";
-
-const isNullableNumber = (value: unknown): value is number | null =>
-  value === null || typeof value === "number";
-
 const decodeInvalidPlanReason = (value: unknown): InvalidPlanReason | null => {
   switch (value) {
     case "emptySet":
@@ -332,34 +330,20 @@ export function decodeResultMutationError(error: unknown): ResultMutationError {
         ? { kind: error.kind, opIndex: error.opIndex }
         : { kind: "connectionLost" };
     case "tlsFailed":
-      return typeof error.tlsKind === "string" &&
-        isTlsFailureKind(error.tlsKind) &&
-        typeof error.message === "string"
-        ? { kind: "tlsFailed", tlsKind: error.tlsKind, message: error.message }
-        : { kind: "connectionLost" };
+      return decodeTlsFailed(error) ?? { kind: "connectionLost" };
     case "timeout":
-      return typeof error.operation === "string"
-        ? { kind: "timeout", operation: error.operation }
-        : { kind: "connectionLost" };
+      return decodeTimeout(error) ?? { kind: "connectionLost" };
     case "database": {
+      const decoded = decodeDatabaseError(error);
       if (
-        !isNullableString(error.code) ||
-        typeof error.message !== "string" ||
-        !isNullableString(error.severity) ||
-        !isNullableNumber(error.position) ||
+        !decoded ||
         (error.opIndex !== undefined && typeof error.opIndex !== "number")
       ) {
         return { kind: "connectionLost" };
       }
-      const decoded: Extract<ResultMutationError, { kind: "database" }> = {
-        kind: "database",
-        code: error.code,
-        message: error.message,
-        severity: error.severity,
-        position: error.position,
-      };
-      if (typeof error.opIndex === "number") decoded.opIndex = error.opIndex;
-      return decoded;
+      return typeof error.opIndex === "number"
+        ? { ...decoded, opIndex: error.opIndex }
+        : decoded;
     }
     default:
       return { kind: "connectionLost" };

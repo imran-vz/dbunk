@@ -3,6 +3,7 @@ import type {
   ConnectionEnvironment,
   SafeMode,
   StoredConnection,
+  TlsFailureKind,
 } from "@/lib/store/types";
 
 export type ResolvedSafetyLevel = Exclude<SafeMode, "inherit">;
@@ -151,7 +152,7 @@ export function decodeStatementSummaries(
 export type SharedTransportError =
   | { kind: "connectionClosing" }
   | { kind: "connectionLost" }
-  | { kind: "tlsFailed"; message: string }
+  | { kind: "tlsFailed"; tlsKind: TlsFailureKind; message: string }
   | { kind: "timeout"; operation: string }
   | { kind: "database"; code: string | null; message: string }
   | { kind: "policyBlocked"; reason: string }

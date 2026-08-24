@@ -10,6 +10,7 @@ use sqlx::{
     Postgres,
 };
 
+use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::StoredConnection;
 
 /// Per-connection pool cache. Keyed by `connection_id`. Each pool allows
@@ -25,29 +26,22 @@ const MAX_POOL_SIZE: u32 = 5;
 /// Idle timeout before a pooled connection is closed.
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-/// Build `PgConnectOptions` from a stored connection record.
+/// Build `PgConnectOptions` from the shared connect spec (ADR-0025).
 ///
-/// TLS comes from the shared resolver (ADR-0025). Two knobs the dedicated
-/// driver honours are *not* applied here because SQLx 0.8 has no setter
-/// for them: TCP keepalive (`keepalive_seconds`) and a TLS server name
-/// distinct from the socket host (so `verify-full` over an SSH tunnel
-/// verifies the chain only on this path — disclosed by the diagnosis).
-fn build_connect_options(connection: &crate::PgStoredConnection) -> PgConnectOptions {
-    let port = if connection.port == 0 {
-        5432
-    } else {
-        connection.port
-    };
+/// Two knobs the dedicated driver honours are *not* applied here because
+/// SQLx 0.8 has no setter for them: TCP keepalive (`keepalive_seconds`)
+/// and a TLS server name distinct from the socket host (so `verify-full`
+/// over an SSH tunnel verifies the chain only on this path — disclosed
+/// by the diagnosis).
+fn build_connect_options(spec: &ResolvedPostgresConnectSpec) -> PgConnectOptions {
     let mut options = PgConnectOptions::new()
-        .host(&connection.host)
-        .username(&connection.user)
-        .database(&connection.database)
-        .port(port);
-    let tls = super::tls::ResolvedTls::from_postgres(connection);
-    options = super::tls::apply_to_pg_options(&tls, &connection.host, &connection.id, options);
-
-    if !connection.password.is_empty() {
-        options = options.password(&connection.password);
+        .host(&spec.host)
+        .username(&spec.user)
+        .database(&spec.database)
+        .port(spec.port);
+    options = super::tls::apply_to_pg_options(&spec.tls, &spec.host, &spec.connection_id, options);
+    if !spec.password.is_empty() {
+        options = options.password(&spec.password);
     }
     options
 }
@@ -74,15 +68,13 @@ async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
     }
 
     // Slow path: build a new pool.
-    let options = build_connect_options(pg);
-    let driver_options = pg.driver_options.clone();
-    let read_only = pg.read_only;
-    let connect_timeout = driver_options
-        .as_ref()
-        .and_then(|opts| opts.connect_timeout_ms)
-        .map(|ms| std::time::Duration::from_millis(u64::from(ms)));
-    let host_for_err = pg.host.clone();
-    let port = if pg.port == 0 { 5432 } else { pg.port };
+    let spec = ResolvedPostgresConnectSpec::from_postgres(pg);
+    let options = build_connect_options(&spec);
+    let driver_options = spec.driver_options.clone();
+    let read_only = spec.safety_policy.read_only;
+    let connect_timeout = spec.connect_timeout;
+    let host_for_err = spec.host.clone();
+    let port = spec.port;
 
     let build = PgPoolOptions::new()
         .max_connections(MAX_POOL_SIZE)
@@ -92,8 +84,7 @@ async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
             Box::pin(async move {
                 // Driver options remain best-effort as a batch. A requested
                 // read-only GUC must apply before this socket enters the pool.
-                let options = driver_options.clone().unwrap_or_default();
-                apply_driver_options_raw(conn, &options, read_only).await?;
+                apply_driver_options_raw(conn, &driver_options, read_only).await?;
                 Ok(())
             })
         })
