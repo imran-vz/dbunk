@@ -5,20 +5,19 @@
  * sample flow is deferred.
  *
  * This file is intentionally a thin composition: the subscription
- * lifecycle, sidebar geometry, toolbar, channel list, and message
- * log each live in `./pubsub-tab/` siblings so the shell stays below
- * fallow's cognitive-complexity threshold.
+ * lifecycle, toolbar, channel list, and message log each live in
+ * `./pubsub-tab/` siblings so the shell stays below fallow's
+ * cognitive-complexity threshold. Sidebar geometry (width, resize,
+ * collapse) is the `Panel` primitive's job.
  */
 
 import { useMemo, useState } from "react";
 
-import { ResizerHandle } from "@/components/ui/resizer-handle";
+import { Panel, usePanelState } from "@/components/ui/panel";
 
-import { PUBSUB_SIDEBAR_MAX, PUBSUB_SIDEBAR_MIN } from "./pubsub-tab/constants";
 import { PubsubChannelSidebar } from "./pubsub-tab/pubsub-channel-sidebar";
 import { PubsubMessageLog } from "./pubsub-tab/pubsub-message-log";
 import { PubsubToolbar } from "./pubsub-tab/pubsub-toolbar";
-import { usePubsubSidebar } from "./pubsub-tab/use-pubsub-sidebar";
 import { usePubsubSubscription } from "./pubsub-tab/use-pubsub-subscription";
 
 interface PubsubTabProps {
@@ -28,7 +27,13 @@ interface PubsubTabProps {
 
 export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
   const subscription = usePubsubSubscription(connectionId, tabId);
-  const sidebar = usePubsubSidebar();
+  const channelsPanel = usePanelState({
+    storageKey: "dbunk.panel.pubsub-channels",
+    defaultSize: 340,
+    min: 280,
+    max: () => Math.round(window.innerWidth * 0.5),
+    snapThreshold: 140,
+  });
   const [patternInput, setPatternInput] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
 
@@ -74,37 +79,22 @@ export function PubsubTab({ connectionId, tabId }: PubsubTabProps) {
           Add a channel pattern above to start watching messages.
         </div>
       ) : (
-        <div ref={sidebar.containerRef} className="flex min-h-0 flex-1">
-          {sidebar.collapsed ? (
-            <button
-              type="button"
-              onClick={sidebar.expand}
-              aria-label="Show channels sidebar"
-              className="flex w-6 shrink-0 items-center justify-center border-r border-border-subtle bg-surface-window text-text-muted hover:bg-white/5 hover:text-foreground"
-            >
-              ›
-            </button>
-          ) : (
-            <>
-              <PubsubChannelSidebar
-                width={sidebar.effectiveWidth}
-                activePatterns={subscription.activePatterns}
-                channelCounts={subscription.channelCounts}
-                totalMessageCount={subscription.messages.length}
-                selectedChannel={selectedChannel}
-                onSelectChannel={setSelectedChannel}
-                onRemovePattern={handleRemovePattern}
-                onCollapse={sidebar.collapse}
-              />
-              <ResizerHandle
-                width={sidebar.effectiveWidth}
-                onResize={sidebar.setWidth}
-                min={PUBSUB_SIDEBAR_MIN}
-                max={PUBSUB_SIDEBAR_MAX}
-                ariaLabel="Resize channels sidebar"
-              />
-            </>
-          )}
+        <div className="flex min-h-0 flex-1">
+          <Panel
+            side="left"
+            state={channelsPanel}
+            ariaLabel="Resize channels sidebar"
+          >
+            <PubsubChannelSidebar
+              activePatterns={subscription.activePatterns}
+              channelCounts={subscription.channelCounts}
+              totalMessageCount={subscription.messages.length}
+              selectedChannel={selectedChannel}
+              onSelectChannel={setSelectedChannel}
+              onRemovePattern={handleRemovePattern}
+              onCollapse={channelsPanel.collapse}
+            />
+          </Panel>
           <main className="flex min-w-0 flex-1 flex-col">
             {subscription.error ? (
               <div className="m-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">

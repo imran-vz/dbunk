@@ -99,6 +99,8 @@ P0–P2 are strictly sequential. P4→P5→P6 are sequential. P7/P8/P9 can inter
 
 ## Phase 3 — Panel system & application shell
 
+**Status: implemented** (branch `ui-refresh-p2`). Notes: `Panel`/`usePanelState` (ui/panel.tsx) + `SplitPane` (ui/split-pane.tsx) landed on the full sash spec (`Sash` in resizer-handle.tsx; the old `ResizerHandle` export is gone), with pointer/keyboard tests covering snap-close, same-drag reopen, auto-fit, Alt+double-click, and Enter/Home/End. Navigator, row-details, query-details, and pub/sub panels are `Panel` instances (`dbunk.panel.*`/`dbunk.workbench.navigator` localStorage keys until P8); `ResponsiveEdgePanel`, `use-resizable-width` (`useContainerWidth` moved to `src/lib/use-container-width.ts`), and `use-pubsub-sidebar` are deleted. Pressure-yield is wired for the navigator via `useLayoutPressure`; right-panel pressure wiring extends in P4–P6 as those surfaces restructure. The dock got a resizable persisted height on the sash spec but keeps its P0 output-only content (P4 replaces it). The rail includes Connections (renders the existing ConnectionsView; P9 rebuilds it) and Overview (placeholder empty state until P9). Results-pane-as-SplitPane ships in P4 per that phase's scope. Tab strip: Cmd+W/Cmd+T/Ctrl+Tab/Cmd+1..9 bindings arrive with P7's registry; `Cmd+B` navigator toggle is wired now. `use-window-viewport-zoom` was evaluated and kept — it animates double-click maximize, which `tauri-plugin-window-state` (added, with 900×560 minimums) does not replace. The header connection switcher now single-click selects and auto-connects disconnected targets (menus have no double-click affordance).
+
 **Why:** the panel primitive is the redesign's behavioral core; the shell is its first consumer.
 
 **Changes**

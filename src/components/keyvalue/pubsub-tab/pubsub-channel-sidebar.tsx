@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import type { PubsubChannelCount } from "./use-pubsub-subscription";
 
 interface PubsubChannelSidebarProps {
-  width: number;
   activePatterns: string[];
   channelCounts: PubsubChannelCount[];
   totalMessageCount: number;
@@ -24,7 +23,6 @@ interface PubsubChannelSidebarProps {
 }
 
 export function PubsubChannelSidebar({
-  width,
   activePatterns,
   channelCounts,
   totalMessageCount,
@@ -34,10 +32,7 @@ export function PubsubChannelSidebar({
   onCollapse,
 }: PubsubChannelSidebarProps) {
   return (
-    <aside
-      style={{ width: `${width}px` }}
-      className="flex shrink-0 flex-col border-r border-border-subtle bg-surface-window"
-    >
+    <aside className="flex h-full min-h-0 w-full flex-col bg-surface-window">
       <div className="flex items-center justify-between border-b border-border-subtle px-2 py-1 text-2xs uppercase text-text-muted">
         <span className="truncate">Channels</span>
         <button

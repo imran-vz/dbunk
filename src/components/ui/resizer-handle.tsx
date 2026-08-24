@@ -1,8 +1,10 @@
 /**
- * Drag handle for resizing a split-pane. Reports proposed sizes (in px)
- * while the user drags; the caller clamps and applies. Uses pointer
- * capture so the drag survives the cursor leaving the handle's 1 px
- * visual region.
+ * Sash — the one resize handle for every panel and split in the app
+ * (DESIGN-SYSTEM §3.4). 1px visual line, 8px hit target, pointer-
+ * captured live drag with snap-close below a threshold, double-click
+ * auto-fit, Alt+double-click collapse, and full keyboard access
+ * (arrows resize 8px / 32px with Shift, Enter toggles collapse,
+ * Home/End jump to min/max).
  *
  * Orientation describes the handle itself (matches the ARIA spec):
  *   "vertical"   — a vertical line splitting left/right panes; drags on
@@ -11,13 +13,13 @@
  *                  on the Y axis. Used with `side: "bottom" | "top"`.
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-interface ResizerHandleProps {
-  /** Current size of the pane being resized; used as the drag origin. */
-  width: number;
+export interface SashProps {
+  /** Current size (px) of the controlled pane; the drag origin. */
+  value: number;
   onResize: (next: number) => void;
   /**
    * For vertical orientation:
@@ -33,26 +35,52 @@ interface ResizerHandleProps {
    */
   side?: "right" | "left" | "bottom" | "top";
   orientation?: "vertical" | "horizontal";
-  /** Min/max for `aria-valuemin` / `aria-valuemax`; matches the caller's
-   *  clamp range so AT users get accurate range info. */
-  min?: number;
-  max?: number;
+  min: number;
+  max: number;
+  /**
+   * Whether the controlled pane is currently collapsed. A collapsed
+   * pane's sash stays rendered at the edge so dragging outward
+   * re-opens it (the "edge-drag" restore path, §3.2).
+   */
+  collapsed?: boolean;
+  /**
+   * Dragging below this size snaps the pane closed (calls
+   * `onCollapse`); continuing the same drag back past it re-opens
+   * (calls `onExpand`). Omit to disable snap-close.
+   */
+  snapThreshold?: number;
+  /** Snap-close, Alt+double-click, and Enter-on-open collapse. */
+  onCollapse?: () => void;
+  /** Edge-drag reopen and Enter-on-collapsed expand. */
+  onExpand?: (size: number) => void;
+  /** Double-click. Auto-fit to content, or equalize for splits. */
+  onAutoFit?: () => void;
   className?: string;
-  ariaLabel?: string;
+  ariaLabel: string;
 }
 
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- interactive split-pane separator; hr cannot carry handlers */
-export function ResizerHandle({
-  width,
+export function Sash({
+  value,
   onResize,
   side = "right",
   orientation = "vertical",
   min,
   max,
+  collapsed = false,
+  snapThreshold,
+  onCollapse,
+  onExpand,
+  onAutoFit,
   className,
   ariaLabel,
-}: ResizerHandleProps) {
-  const startRef = useRef<{ pos: number; size: number } | null>(null);
+}: SashProps) {
+  const dragRef = useRef<{
+    pos: number;
+    size: number;
+    collapsed: boolean;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const isVertical = orientation === "vertical";
 
   const direction = isVertical
@@ -63,39 +91,92 @@ export function ResizerHandle({
       ? 1
       : -1;
 
+  const clamp = (next: number) => Math.max(min, Math.min(max, next));
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    startRef.current = {
+    dragRef.current = {
       pos: isVertical ? event.clientX : event.clientY,
-      size: width,
+      size: collapsed ? 0 : value,
+      collapsed,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- jsdom lacks pointer capture.
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!startRef.current) return;
+    const drag = dragRef.current;
+    if (!drag) return;
     const current = isVertical ? event.clientX : event.clientY;
-    const delta = current - startRef.current.pos;
-    onResize(startRef.current.size + delta * direction);
+    const proposed = drag.size + (current - drag.pos) * direction;
+
+    if (snapThreshold !== undefined) {
+      if (!drag.collapsed && proposed < snapThreshold) {
+        // Snap closed — collapse, not 0-width limbo (§3.4).
+        drag.collapsed = true;
+        onCollapse?.();
+        return;
+      }
+      if (drag.collapsed && proposed >= snapThreshold) {
+        drag.collapsed = false;
+        onExpand?.(clamp(proposed));
+        return;
+      }
+      if (drag.collapsed) return;
+    }
+    onResize(clamp(proposed));
   };
 
   const stop = (event: React.PointerEvent<HTMLDivElement>) => {
-    startRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    dragRef.current = null;
+    setDragging(false);
+    if (
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- jsdom lacks pointer capture.
+      typeof event.currentTarget.hasPointerCapture === "function" &&
+      event.currentTarget.hasPointerCapture(event.pointerId)
+    ) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
 
+  const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.altKey) {
+      onCollapse?.();
+      return;
+    }
+    onAutoFit?.();
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (collapsed) onExpand?.(clamp(value));
+      else onCollapse?.();
+      return;
+    }
+    if (collapsed) return;
+    if (event.key === "Home") {
+      event.preventDefault();
+      onResize(min);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      onResize(max);
+      return;
+    }
     const step = event.shiftKey ? 32 : 8;
     const decKey = isVertical ? "ArrowLeft" : "ArrowUp";
     const incKey = isVertical ? "ArrowRight" : "ArrowDown";
     if (event.key === decKey) {
       event.preventDefault();
-      onResize(width - step * direction);
+      onResize(clamp(value - step * direction));
     } else if (event.key === incKey) {
       event.preventDefault();
-      onResize(width + step * direction);
+      onResize(clamp(value + step * direction));
     }
   };
 
@@ -103,30 +184,34 @@ export function ResizerHandle({
     <div
       role="separator"
       tabIndex={0}
+      data-dragging={dragging || undefined}
       aria-orientation={orientation}
-      aria-label={ariaLabel ?? "Resize pane"}
-      aria-valuenow={Math.round(width)}
+      aria-label={ariaLabel}
+      aria-valuenow={collapsed ? 0 : Math.round(value)}
       aria-valuemin={min}
       aria-valuemax={max}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={stop}
       onPointerCancel={stop}
+      onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group/resizer relative z-10 shrink-0 touch-none select-none bg-border-subtle transition-colors hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none active:bg-accent",
+        // ~250ms hover-highlight delay (anti-flicker); instant while
+        // dragging or keyboard-focused (§3.4).
+        "group/sash relative z-10 shrink-0 touch-none select-none bg-border-subtle transition-colors delay-0 duration-0 hover:bg-accent hover:transition-none hover:delay-[250ms] focus-visible:bg-accent focus-visible:delay-0 focus-visible:outline-none data-dragging:bg-accent data-dragging:delay-0",
         isVertical ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
         className,
       )}
     >
-      {/* Wider hit area so users don't need pixel-perfect aim. */}
+      {/* 8px hit target extended via pseudo-content, never layout width. */}
       <span
         aria-hidden
         className={cn(
           "absolute",
           isVertical
-            ? "inset-y-0 -left-1.5 -right-1.5"
-            : "inset-x-0 -top-1.5 -bottom-1.5",
+            ? "inset-y-0 -right-1 -left-1 cursor-col-resize"
+            : "inset-x-0 -top-1 -bottom-1 cursor-row-resize",
         )}
       />
     </div>

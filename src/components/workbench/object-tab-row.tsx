@@ -1,4 +1,5 @@
 import {
+  IconChevronDown,
   IconColumns3,
   IconKey,
   IconPlus,
@@ -7,10 +8,32 @@ import {
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Segmented } from "@/components/ui/segmented";
-import { ObjectTabCloseButton } from "@/components/workbench/dock";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { confirmCloseQuerySession } from "@/lib/query-session-close";
-import { useAppStore, type WorkspaceTab } from "@/lib/store";
+import {
+  type ConnectionEnvironment,
+  useAppStore,
+  type WorkspaceTab,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const SCROLL_HINT_THRESHOLD_PX = 2;
@@ -22,185 +45,418 @@ interface ObjectTabRowProps {
   className?: string;
 }
 
+/** Env color for the strip's bottom underline (§4.4). */
+const ENV_UNDERLINE = {
+  production: "bg-danger",
+  staging: "bg-warning",
+  test: "bg-info",
+} satisfies Partial<Record<ConnectionEnvironment, string>>;
+
+function orderTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
+  // Pinned tabs are leftmost; otherwise stable order.
+  const pinned = tabs.filter((tab) => tab.pinned);
+  const rest = tabs.filter((tab) => !tab.pinned);
+  return [...pinned, ...rest];
+}
+
+/**
+ * Object tab strip (DESIGN-SYSTEM §4.4): `--h-tab` height, natural
+ * tab widths with horizontal scroll + trailing chevron on overflow,
+ * middle-click close, drag reorder, dirty dot that yields to the
+ * close × on hover, per-tab context menu, roving tabindex.
+ */
 export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
   const tabsScrollerRef = useRef<HTMLDivElement>(null);
-  const maxScrollLeftRef = useRef(0);
-  const [scrollHints, setScrollHints] = useState({
-    start: false,
-    end: false,
-  });
+  const [overflowing, setOverflowing] = useState(false);
+  const dragTabId = useRef<string | null>(null);
   const connections = useAppStore((state) => state.connections);
   const workspaceTabs = useAppStore((state) => state.workspaceTabs);
   const activeTabId = useAppStore((state) => state.activeTabId);
   const setActiveTabId = useAppStore((state) => state.setActiveTabId);
+  const setWorkspaceTabs = useAppStore((state) => state.setWorkspaceTabs);
   const closeTab = useAppStore((state) => state.closeTab);
   const createNewQueryTab = useAppStore((state) => state.createNewQueryTab);
-  const workspaceTabCount = workspaceTabs.length;
-  const hasWorkspaceTabs = workspaceTabCount > 0;
-  const productionConnectionIds = useMemo(
-    () =>
-      new Set(
-        connections
-          .filter((connection) => connection.environment === "production")
-          .map((connection) => connection.id),
-      ),
-    [connections],
-  );
 
-  const updateScrollHints = useCallback(() => {
+  const tabs = useMemo(() => orderTabs(workspaceTabs), [workspaceTabs]);
+  const hasWorkspaceTabs = tabs.length > 0;
+
+  const environmentById = useMemo(() => {
+    const map = new Map<string, ConnectionEnvironment | undefined>();
+    for (const connection of connections) {
+      map.set(connection.id, connection.environment);
+    }
+    return map;
+  }, [connections]);
+
+  const recomputeOverflow = useCallback(() => {
     const scroller = tabsScrollerRef.current;
     if (!scroller) return;
-    const maxScrollLeft = maxScrollLeftRef.current;
-    const nextHints = {
-      start: scroller.scrollLeft > SCROLL_HINT_THRESHOLD_PX,
-      end: maxScrollLeft - scroller.scrollLeft > SCROLL_HINT_THRESHOLD_PX,
-    };
-    setScrollHints((currentHints) =>
-      currentHints.start === nextHints.start &&
-      currentHints.end === nextHints.end
-        ? currentHints
-        : nextHints,
+    setOverflowing(
+      scroller.scrollWidth - scroller.clientWidth > SCROLL_HINT_THRESHOLD_PX,
     );
   }, []);
 
-  const recomputeMaxScroll = useCallback(() => {
-    const scroller = tabsScrollerRef.current;
-    if (!scroller) return;
-    maxScrollLeftRef.current = Math.max(
-      0,
-      scroller.scrollWidth - scroller.clientWidth,
-    );
-    updateScrollHints();
-  }, [updateScrollHints]);
-
   useEffect(() => {
     if (!hasWorkspaceTabs) return;
-    recomputeMaxScroll();
+    recomputeOverflow();
     const scroller = tabsScrollerRef.current;
     if (!scroller) return;
     const resizeObserver =
       // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The value is handled at a typed library or domain boundary here.
       typeof ResizeObserver === "undefined"
         ? null
-        : new ResizeObserver(recomputeMaxScroll);
+        : new ResizeObserver(recomputeOverflow);
     resizeObserver?.observe(scroller);
-    window.addEventListener("resize", recomputeMaxScroll);
+    window.addEventListener("resize", recomputeOverflow);
     return () => {
       resizeObserver?.disconnect();
-      window.removeEventListener("resize", recomputeMaxScroll);
+      window.removeEventListener("resize", recomputeOverflow);
     };
-  }, [hasWorkspaceTabs, recomputeMaxScroll]);
+  }, [hasWorkspaceTabs, recomputeOverflow, tabs.length]);
+
+  // Keep the active tab scrolled into view.
+  useEffect(() => {
+    const scroller = tabsScrollerRef.current;
+    if (!scroller) return;
+    const active = scroller.querySelector<HTMLElement>(
+      '[data-slot="workspace-tab"][aria-selected="true"]',
+    );
+    active?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [activeTabId]);
+
+  const requestClose = useCallback(
+    (tab: WorkspaceTab) => {
+      const status =
+        useAppStore.getState().querySessions[tab.id]?.transaction.status;
+      if (!confirmCloseQuerySession(status)) return;
+      void closeTab(tab.id);
+    },
+    [closeTab],
+  );
+
+  const closeMany = useCallback(
+    (targets: WorkspaceTab[]) => {
+      for (const tab of targets) {
+        if (tab.pinned) continue;
+        requestClose(tab);
+      }
+    },
+    [requestClose],
+  );
+
+  const togglePinned = useCallback(
+    (tabId: string) => {
+      setWorkspaceTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === tabId ? { ...tab, pinned: !tab.pinned } : tab,
+        ),
+      );
+    },
+    [setWorkspaceTabs],
+  );
+
+  const reorderTab = useCallback(
+    (sourceId: string, targetId: string) => {
+      if (sourceId === targetId) return;
+      setWorkspaceTabs((prev) => {
+        const sourceIndex = prev.findIndex((tab) => tab.id === sourceId);
+        const targetIndex = prev.findIndex((tab) => tab.id === targetId);
+        if (sourceIndex === -1 || targetIndex === -1) return prev;
+        const next = [...prev];
+        const [moved] = next.splice(sourceIndex, 1);
+        next.splice(targetIndex, 0, moved);
+        return next;
+      });
+    },
+    [setWorkspaceTabs],
+  );
+
+  // Roving tabindex: arrows move focus between tabs; Enter/Space
+  // activates. Only the active tab is in the page tab order.
+  const handleStripKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const strip = tabsScrollerRef.current;
+      if (!strip) return;
+      const tabEls = [
+        ...strip.querySelectorAll<HTMLElement>('[data-slot="workspace-tab"]'),
+      ];
+      const currentIndex = tabEls.findIndex(
+        (el) => el === document.activeElement,
+      );
+      if (currentIndex === -1) return;
+      event.preventDefault();
+      const delta = event.key === "ArrowLeft" ? -1 : 1;
+      const next =
+        tabEls[(currentIndex + delta + tabEls.length) % tabEls.length];
+      next?.focus();
+    },
+    [],
+  );
 
   if (!hasWorkspaceTabs) {
     return null;
   }
 
+  const activeEnvironment = (() => {
+    const active = tabs.find((tab) => tab.id === activeTabId);
+    if (!active) return undefined;
+    return environmentById.get(active.connectionId);
+  })();
+  const envUnderline =
+    activeEnvironment && activeEnvironment in ENV_UNDERLINE
+      ? // SAFETY: the `in` check above proves the key is one of ENV_UNDERLINE's own keys.
+        ENV_UNDERLINE[activeEnvironment as keyof typeof ENV_UNDERLINE]
+      : undefined;
+
   return (
     <div
       data-slot="workspace-tabs"
       className={cn(
-        "flex h-9 shrink-0 items-stretch border-b border-border-subtle bg-surface-app",
+        "relative flex h-(--h-tab) shrink-0 items-stretch border-b border-border-subtle bg-surface-app",
         className,
       )}
     >
-      <div className="relative min-w-0 flex-1">
-        <div
-          ref={tabsScrollerRef}
-          data-testid="workspace-tabs-scroll"
-          className="flex min-w-0 items-stretch overflow-x-auto"
-          onScroll={updateScrollHints}
-        >
-          {workspaceTabs.map((tab) => (
-            <ObjectTab
-              key={tab.id}
-              tab={tab}
-              isActive={tab.id === activeTabId}
-              isProduction={productionConnectionIds.has(tab.connectionId)}
-              onActivate={() => setActiveTabId(tab.id)}
-              onClose={() => {
-                const status =
-                  useAppStore.getState().querySessions[tab.id]?.transaction
-                    .status;
-                if (!confirmCloseQuerySession(status)) return;
-                void closeTab(tab.id);
-              }}
-            />
-          ))}
-        </div>
-        {scrollHints.start ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-linear-to-r from-surface-app to-transparent"
+      <div
+        ref={tabsScrollerRef}
+        role="tablist"
+        tabIndex={-1}
+        aria-label="Open objects"
+        data-testid="workspace-tabs-scroll"
+        className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none]"
+        onScroll={recomputeOverflow}
+        onKeyDown={handleStripKeyDown}
+        onWheel={(event) => {
+          // Mouse wheel scrolls the strip horizontally (§4.4).
+          const scroller = tabsScrollerRef.current;
+          if (!scroller || event.deltaY === 0 || event.deltaX !== 0) return;
+          scroller.scrollLeft += event.deltaY;
+        }}
+      >
+        {tabs.map((tab) => (
+          <ObjectTab
+            key={tab.id}
+            tab={tab}
+            isActive={tab.id === activeTabId}
+            onActivate={() => setActiveTabId(tab.id)}
+            onClose={() => requestClose(tab)}
+            onCloseOthers={() =>
+              closeMany(tabs.filter((other) => other.id !== tab.id))
+            }
+            onCloseToRight={() =>
+              closeMany(tabs.slice(tabs.findIndex((t) => t.id === tab.id) + 1))
+            }
+            onCloseAll={() => closeMany(tabs)}
+            onTogglePinned={() => togglePinned(tab.id)}
+            onDragStartTab={() => {
+              dragTabId.current = tab.id;
+            }}
+            onDragOverTab={() => {
+              if (dragTabId.current) reorderTab(dragTabId.current, tab.id);
+            }}
+            onDragEndTab={() => {
+              dragTabId.current = null;
+            }}
           />
-        ) : null}
-        {scrollHints.end ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-linear-to-l from-surface-app to-transparent"
-          />
-        ) : null}
+        ))}
       </div>
+      {envUnderline ? (
+        <div
+          aria-hidden="true"
+          data-testid="workspace-tabs-env-underline"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 h-0.5",
+            envUnderline,
+          )}
+        />
+      ) : null}
       <div className="flex items-center gap-2 px-2">
+        {overflowing ? <TabOverflowMenu tabs={tabs} /> : null}
         {sectionControl}
-        <button
-          type="button"
-          aria-label="New query tab"
-          title="New query tab"
-          onClick={createNewQueryTab}
-          className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-surface-panel hover:text-foreground"
-        >
-          <IconPlus className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="New query tab"
+                onClick={createNewQueryTab}
+              />
+            }
+          >
+            <IconPlus />
+          </TooltipTrigger>
+          <TooltipContent>New query tab</TooltipContent>
+        </Tooltip>
       </div>
     </div>
+  );
+}
+
+/** Trailing chevron listing every open tab when the strip overflows. */
+function TabOverflowMenu({ tabs }: { tabs: WorkspaceTab[] }) {
+  const { activeTabId, setActiveTabId } = useAppStore();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="All tabs"
+          />
+        }
+      >
+        <IconChevronDown />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        {tabs.map((tab) => {
+          const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
+          return (
+            <DropdownMenuItem
+              key={tab.id}
+              className={cn(tab.id === activeTabId && "bg-accent-subdued")}
+              onClick={() => setActiveTabId(tab.id)}
+            >
+              <TabIcon className="text-text-disabled" />
+              <span className="truncate">{tab.label}</span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 function ObjectTab({
   tab,
   isActive,
-  isProduction,
   onActivate,
   onClose,
+  onCloseOthers,
+  onCloseToRight,
+  onCloseAll,
+  onTogglePinned,
+  onDragStartTab,
+  onDragOverTab,
+  onDragEndTab,
 }: {
   tab: WorkspaceTab;
   isActive: boolean;
-  isProduction: boolean;
   onActivate: () => void;
   onClose: () => void;
+  onCloseOthers: () => void;
+  onCloseToRight: () => void;
+  onCloseAll: () => void;
+  onTogglePinned: () => void;
+  onDragStartTab: () => void;
+  onDragOverTab: () => void;
+  onDragEndTab: () => void;
 }) {
   const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
   return (
-    <div
-      data-slot="workspace-tab"
-      role="tab"
-      aria-selected={isActive}
-      tabIndex={0}
-      onClick={onActivate}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onActivate();
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <div
+            data-slot="workspace-tab"
+            role="tab"
+            aria-label={tab.label}
+            aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
+            draggable
+            onDragStart={onDragStartTab}
+            onDragOver={(event) => {
+              event.preventDefault();
+              onDragOverTab();
+            }}
+            onDragEnd={onDragEndTab}
+            onClick={onActivate}
+            onAuxClick={(event) => {
+              // Middle-click closes (§4.4); pinned tabs are exempt.
+              if (event.button === 1 && !tab.pinned) onClose();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onActivate();
+              }
+            }}
+            className={cn(
+              "group/tab relative flex cursor-pointer items-center gap-1.5 border-r border-border-subtle text-sm transition-colors",
+              tab.pinned ? "px-2" : "px-3",
+              isActive
+                ? "bg-surface-panel text-foreground"
+                : "text-text-muted hover:bg-surface-panel/50 hover:text-foreground",
+            )}
+          />
         }
-      }}
-      className={cn(
-        "flex cursor-pointer items-center gap-2 border-r border-border-subtle px-3 text-xs font-medium transition-colors",
-        isActive
-          ? "border-b-2 border-b-accent bg-surface-panel text-foreground"
-          : "border-b-2 border-b-transparent text-text-muted hover:text-foreground",
-        isActive && isProduction && "border-l-2 border-l-danger",
-      )}
-    >
-      <TabIcon className="size-3.5 text-text-disabled" />
-      <span className="max-w-40 truncate">{tab.label}</span>
-      {tab.isDirty ? (
-        <span
-          data-testid={`workspace-tab-dirty-${tab.id}`}
-          className="size-1.5 shrink-0 rounded-full bg-accent"
-        />
-      ) : null}
-      <ObjectTabCloseButton label={tab.label} onClose={onClose} />
-    </div>
+      >
+        {isActive ? (
+          // 2px accent top indicator (§4.4).
+          <span
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 h-0.5 bg-accent"
+          />
+        ) : null}
+        <TabIcon className="size-4 shrink-0 text-text-disabled" />
+        {tab.pinned ? null : (
+          <span className="max-w-40 truncate">{tab.label}</span>
+        )}
+        {tab.pinned ? null : (
+          <span className="relative flex size-4 shrink-0 items-center justify-center">
+            {/* Dirty dot yields to the close × on hover (§4.4). */}
+            {tab.isDirty ? (
+              <span
+                data-testid={`workspace-tab-dirty-${tab.id}`}
+                className="size-1.5 rounded-full bg-accent group-hover/tab:hidden"
+              />
+            ) : null}
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost"
+              aria-label={`Close ${tab.label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose();
+              }}
+              className={cn(
+                "absolute inset-0 size-4 rounded-sm",
+                tab.isDirty
+                  ? "hidden group-hover/tab:inline-flex"
+                  : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
+              )}
+            >
+              <span aria-hidden="true">×</span>
+            </Button>
+          </span>
+        )}
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem disabled={tab.pinned} onClick={onClose}>
+          Close
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onCloseOthers}>Close Others</ContextMenuItem>
+        <ContextMenuItem onClick={onCloseToRight}>
+          Close to the Right
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onCloseAll}>Close All</ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onTogglePinned}>
+          {tab.pinned ? "Unpin" : "Pin"}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => {
+            void navigator.clipboard.writeText(tab.label);
+          }}
+        >
+          Copy Name
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -216,21 +472,9 @@ export function TableSectionToggle({
       value={value}
       onChange={onChange}
       options={[
-        {
-          id: "data",
-          label: "Data",
-          icon: <IconTable className="size-3.5" />,
-        },
-        {
-          id: "schema",
-          label: "Columns",
-          icon: <IconColumns3 className="size-3.5" />,
-        },
-        {
-          id: "indexes",
-          label: "Keys",
-          icon: <IconKey className="size-3.5" />,
-        },
+        { id: "data", label: "Data", icon: <IconTable /> },
+        { id: "schema", label: "Columns", icon: <IconColumns3 /> },
+        { id: "indexes", label: "Keys", icon: <IconKey /> },
       ]}
     />
   );

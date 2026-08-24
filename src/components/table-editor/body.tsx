@@ -31,8 +31,6 @@ import type { RowSelection } from "./use-row-selection";
 import type { TablePagination } from "./use-table-pagination";
 
 interface TableEditorBodyProps {
-  bodyRef: React.Ref<HTMLDivElement>;
-  bodyWidth: number;
   activeSubTab: SubTab;
   tableRef: TableRef | null;
   schema: string;
@@ -98,8 +96,6 @@ interface TableEditorBodyProps {
 }
 
 export function TableEditorBody({
-  bodyRef,
-  bodyWidth,
   activeSubTab,
   tableRef,
   schema,
@@ -157,10 +153,7 @@ export function TableEditorBody({
 
   return (
     <>
-      <div
-        ref={bodyRef}
-        className="relative flex min-h-0 flex-1 overflow-hidden"
-      >
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="min-w-0 flex-1 overflow-hidden">
           {activeSubTab === "data" ? (
             <DataGrid
@@ -261,10 +254,7 @@ export function TableEditorBody({
             selectedRowCount={selection.selectedCount}
             totalRows={pagination.totalRows ?? rows.length}
             indexes={structure?.indexes.length ?? 0}
-            bodyWidth={bodyWidth}
-            wideVisible={rowDetails.isOpen}
-            overlayOpen={rowDetails.overlayOpen}
-            onOverlayOpenChange={rowDetails.setOverlayOpen}
+            visible={rowDetails.visible}
             onClose={rowDetails.onClose}
           />
         ) : null}
