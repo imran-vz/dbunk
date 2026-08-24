@@ -1,18 +1,23 @@
 import {
   IconAlertCircle,
+  IconCopy,
   IconDatabaseOff,
   IconDotsVertical,
+  IconLink,
   IconPencil,
   IconTrash,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Connection } from "@/lib/store";
+import { buildConnectionUri } from "@/lib/connection-uri";
+import { type Connection, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export type ConnectionActionsProps = {
@@ -24,7 +29,33 @@ export type ConnectionActionsProps = {
 };
 
 export function ConnectionActionsDropdown(props: ConnectionActionsProps) {
+  const duplicateConnection = useAppStore(
+    (state) => state.duplicateConnection,
+  );
   const isDisconnected = props.connection.status === "Disconnected";
+  // Secret-free by contract; SQLite/ClickHouse have no canonical URI
+  // and hide the action instead of failing it (Plan 010).
+  const uri = buildConnectionUri(props.connection);
+
+  const handleDuplicate = async () => {
+    const copy = await duplicateConnection(props.connection.id);
+    if (copy) {
+      toast.success(`Duplicated as “${copy.name}”`);
+    } else {
+      toast.error("Failed to duplicate the connection.");
+    }
+  };
+
+  const handleCopyUri = async () => {
+    if (!uri.ok) return;
+    try {
+      await navigator.clipboard.writeText(uri.uri);
+      toast.success("Connection URI copied — password not included.");
+    } catch {
+      toast.error("Couldn't write to the clipboard.");
+    }
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -46,6 +77,18 @@ export function ConnectionActionsDropdown(props: ConnectionActionsProps) {
           <IconPencil className="size-3.5" />
           Edit…
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => void handleDuplicate()}>
+          <IconCopy className="size-3.5" />
+          Duplicate
+        </DropdownMenuItem>
+        {uri.ok ? (
+          <DropdownMenuItem onClick={() => void handleCopyUri()}>
+            <IconLink className="size-3.5" />
+            Copy URI
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={props.onDelete} className="text-danger">
           <IconTrash className="size-3.5" />
           Delete…

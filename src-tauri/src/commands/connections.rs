@@ -153,6 +153,47 @@ pub(crate) async fn duplicate_connection_inner(
     public_connections(state).await
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionOrganizationPayload {
+    pub connection_id: String,
+    #[serde(default)]
+    pub folder: String,
+    #[serde(default)]
+    pub is_favorite: bool,
+    #[serde(default)]
+    pub color: String,
+}
+
+/// Organization-only update (Plan 009 amendment): folder / favorite /
+/// color, never credentials — safe for one-click toggles from list
+/// rows where the frontend holds no password to re-send.
+#[tauri::command]
+pub async fn update_connection_organization(
+    state: State<'_, AppState>,
+    payload: ConnectionOrganizationPayload,
+) -> Result<Vec<StoredConnection>, String> {
+    update_connection_organization_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn update_connection_organization_inner(
+    state: &AppState,
+    payload: ConnectionOrganizationPayload,
+) -> Result<Vec<StoredConnection>, String> {
+    let updated = storage::update_connection_organization(
+        &state.pool,
+        &payload.connection_id,
+        payload.folder.trim(),
+        payload.is_favorite,
+        payload.color.trim(),
+    )
+    .await?;
+    if !updated {
+        return Err(format!("Connection '{}' not found", payload.connection_id));
+    }
+    public_connections(state).await
+}
+
 #[tauri::command]
 pub async fn disconnect_connection(
     state: State<'_, AppState>,
@@ -400,6 +441,53 @@ mod tests {
             .await
             .expect("sqlite duplicate under locked store");
         assert!(connections.iter().any(|c| c.name() == "Local file copy"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn organization_update_changes_columns_and_never_touches_credentials() {
+        let (_directory, state) = crate::test_app_state().await;
+        save_connection_inner(&state, pg_connection("source", "Primary", "s3cret"))
+            .await
+            .expect("save source");
+
+        let connections = update_connection_organization_inner(
+            &state,
+            ConnectionOrganizationPayload {
+                connection_id: "source".into(),
+                folder: "  Ops  ".into(),
+                is_favorite: false,
+                color: "blue".into(),
+            },
+        )
+        .await
+        .expect("organization update");
+        let updated = connections
+            .iter()
+            .find(|connection| connection.id() == "source")
+            .expect("source present");
+        assert_eq!(updated.folder(), "Ops");
+        assert!(!updated.is_favorite());
+        assert_eq!(updated.color(), "blue");
+
+        // The credential is untouched — this path must be safe for a
+        // one-click toggle with no password in frontend memory.
+        let secrets = crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
+            .await
+            .expect("read credentials");
+        assert_eq!(secrets.get("source").map(String::as_str), Some("s3cret"));
+
+        let missing = update_connection_organization_inner(
+            &state,
+            ConnectionOrganizationPayload {
+                connection_id: "ghost".into(),
+                folder: String::new(),
+                is_favorite: true,
+                color: String::new(),
+            },
+        )
+        .await;
+        assert!(missing.is_err());
     }
 
     #[tokio::test]

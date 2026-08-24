@@ -44,6 +44,28 @@ const hydrateConnection = (connection: StoredConnection): Connection => ({
 });
 
 /**
+ * Replace the list from a backend response while keeping each existing
+ * connection's runtime fields (status/latency/error) — full-list
+ * returns (`update_connection_organization`, `duplicate_connection`)
+ * must not knock live connections back to "Disconnected".
+ */
+const mergeStoredConnections = (
+  stored: StoredConnection[],
+  current: Connection[],
+): Connection[] =>
+  stored.map((entry) => {
+    const existing = current.find((connection) => connection.id === entry.id);
+    return existing
+      ? {
+          ...hydrateConnection(entry),
+          status: existing.status,
+          latency: existing.latency,
+          errorMessage: existing.errorMessage,
+        }
+      : hydrateConnection(entry);
+  });
+
+/**
  * Strip the runtime fields (`status`, `latency`, `errorMessage`) from a
  * `Connection` to recover the `StoredConnection` wire shape. The
  * variant-specific fields (`ssl`, `useHttps`, etc.) pass through
@@ -135,6 +157,25 @@ export type ConnectionsSlice = {
   loadConnections: () => Promise<boolean>;
   addConnection: (connection: Connection) => Promise<void>;
   updateConnection: (connection: Connection) => Promise<void>;
+  /**
+   * Organization-only update (folder / favorite / color) through the
+   * credential-free backend path — safe for one-click toggles where
+   * the frontend holds no password to re-send (Plan 010).
+   */
+  setConnectionOrganization: (
+    connectionId: string,
+    organization: {
+      folder: string;
+      isFavorite: boolean;
+      color?: import("@/lib/connection-colors").ConnectionColor;
+    },
+  ) => Promise<void>;
+  /**
+   * Duplicate through the backend command (record + credential copied
+   * server-side; the secret never crosses IPC). Resolves the new copy
+   * so callers can toast its name, or `undefined` on failure.
+   */
+  duplicateConnection: (connectionId: string) => Promise<Connection | undefined>;
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
   disconnectConnection: (connectionId: string) => Promise<void>;
@@ -283,6 +324,80 @@ export const createConnectionsSlice: StateCreator<
       }
     } catch (error) {
       console.error("Failed to update connection", error);
+    }
+  },
+
+  setConnectionOrganization: async (connectionId, organization) => {
+    const applyLocally = () =>
+      set((state) => ({
+        connections: state.connections.map((connection) =>
+          connection.id === connectionId
+            ? {
+                ...connection,
+                folder: organization.folder,
+                isFavorite: organization.isFavorite,
+                color: organization.color,
+              }
+            : connection,
+        ),
+      }));
+    if (!isTauri()) {
+      applyLocally();
+      return;
+    }
+    try {
+      const stored = await tauriInvoke<StoredConnection[]>(
+        "update_connection_organization",
+        {
+          payload: {
+            connectionId,
+            folder: organization.folder,
+            isFavorite: organization.isFavorite,
+            color: organization.color ?? "",
+          },
+        },
+      );
+      set((state) => ({
+        connections: mergeStoredConnections(stored, state.connections),
+      }));
+    } catch (error) {
+      console.error("Failed to update connection organization", error);
+    }
+  },
+
+  duplicateConnection: async (connectionId) => {
+    if (!isTauri()) {
+      const source = get().connections.find(
+        (connection) => connection.id === connectionId,
+      );
+      if (!source) return undefined;
+      const copy: Connection = {
+        ...source,
+        id: crypto.randomUUID(),
+        name: `${source.name} copy`,
+        isFavorite: false,
+        lastActivityAt: undefined,
+        status: "Disconnected",
+        latency: "--",
+        errorMessage: undefined,
+      };
+      set((state) => ({ connections: [...state.connections, copy] }));
+      return copy;
+    }
+    try {
+      const previousIds = new Set(
+        get().connections.map((connection) => connection.id),
+      );
+      const stored = await tauriInvoke<StoredConnection[]>(
+        "duplicate_connection",
+        { payload: { connectionId } },
+      );
+      const merged = mergeStoredConnections(stored, get().connections);
+      set({ connections: merged });
+      return merged.find((connection) => !previousIds.has(connection.id));
+    } catch (error) {
+      console.error("Failed to duplicate connection", error);
+      return undefined;
     }
   },
 

@@ -11,14 +11,23 @@ import {
   getSqlPredicateTableReference,
   type SqlCompletionContext,
 } from "@/lib/sql-completions";
-import { type QueryOutcome, tableStructureKey, useAppStore } from "@/lib/store";
+import {
+  type QueryOutcome,
+  type TabCaret,
+  tableStructureKey,
+  useAppStore,
+} from "@/lib/store";
 
 import type {
   MonacoCompletionDisposable,
   MonacoEditorInstance,
   MonacoPosition,
+  MonacoSelectionRange,
   MonacoTextModel,
 } from "./monaco-types";
+
+/** Caret writes ride the same order of debounce as hot-exit SQL. */
+const CARET_PERSIST_DEBOUNCE_MS = 500;
 
 interface UseMonacoQueryEditorArgs {
   tabId: string;
@@ -80,6 +89,12 @@ export function useMonacoQueryEditor({
   });
 
   const editorRef = useRef<MonacoEditorInstance | null>(null);
+  const caretPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  /** Restore is once per tab — `onMount` re-fires must not re-place a
+   *  caret the user has since moved. */
+  const caretRestoredForTabRef = useRef<string | null>(null);
   const completionDisposableRef = useRef<MonacoCompletionDisposable | null>(
     null,
   );
@@ -229,10 +244,76 @@ export function useMonacoQueryEditor({
         (editor as MonacoEditorInstance).onDidChangeCursorPosition?.(
           ({ position }) => {
             setCursor(position);
+            // Caret persistence (Plan 010): debounced into the session
+            // blob so relaunch restores it; moving the caret is not an
+            // edit, so `updateQueryCaret` never touches `isDirty`.
+            if (caretPersistTimerRef.current !== null) {
+              clearTimeout(caretPersistTimerRef.current);
+            }
+            caretPersistTimerRef.current = setTimeout(() => {
+              caretPersistTimerRef.current = null;
+              const latest = editorRef.current;
+              if (!latest) return;
+              const caret: TabCaret = {
+                line: position.lineNumber,
+                column: position.column,
+              };
+              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+              const selection = latest.getSelection() as
+                | MonacoSelectionRange
+                | null
+                | undefined;
+              if (
+                selection &&
+                (selection.selectionStartLineNumber !==
+                  selection.positionLineNumber ||
+                  selection.selectionStartColumn !== selection.positionColumn)
+              ) {
+                caret.anchorLine = selection.selectionStartLineNumber;
+                caret.anchorColumn = selection.selectionStartColumn;
+              }
+              useAppStore.getState().updateQueryCaret(tabId, caret);
+            }, CARET_PERSIST_DEBOUNCE_MS);
           },
         );
       if (cursorDisposable) {
         editorDisposablesRef.current.push(cursorDisposable);
+      }
+
+      // Restore the session-persisted caret, clamped to the current
+      // model so a stale position degrades instead of erroring.
+      const storedCaret =
+        caretRestoredForTabRef.current === tabId
+          ? undefined
+          : useAppStore
+              .getState()
+              .workspaceTabs.find((candidate) => candidate.id === tabId)
+              ?.caret;
+      caretRestoredForTabRef.current = tabId;
+      if (storedCaret && model) {
+        const lineCount = model.getLineCount?.() ?? 1;
+        const clamp = (line: number, column: number): MonacoPosition => {
+          const safeLine = Math.min(Math.max(line, 1), lineCount);
+          const maxColumn = model.getLineMaxColumn?.(safeLine) ?? column;
+          return {
+            lineNumber: safeLine,
+            column: Math.min(Math.max(column, 1), maxColumn),
+          };
+        };
+        const head = clamp(storedCaret.line, storedCaret.column);
+        const anchor =
+          storedCaret.anchorLine !== undefined &&
+          storedCaret.anchorColumn !== undefined
+            ? clamp(storedCaret.anchorLine, storedCaret.anchorColumn)
+            : head;
+        editor.setSelection?.({
+          startLineNumber: anchor.lineNumber,
+          startColumn: anchor.column,
+          endLineNumber: head.lineNumber,
+          endColumn: head.column,
+        });
+        editor.revealPositionInCenterIfOutsideViewport?.(head);
+        setCursor(head);
       }
 
       const runCurrent = () => {
@@ -397,12 +478,16 @@ export function useMonacoQueryEditor({
       loadTableStructure,
       query,
       runSql,
+      tabId,
       updateQueryRunDecorations,
     ],
   );
 
   useEffect(
     () => () => {
+      if (caretPersistTimerRef.current !== null) {
+        clearTimeout(caretPersistTimerRef.current);
+      }
       completionDisposableRef.current?.dispose();
       decorationsCollectionRef.current?.clear();
       editorDisposablesRef.current.forEach((disposable) => {
