@@ -55,6 +55,26 @@ pub(super) fn rewrite_connection_endpoint(
             return Ok(routed);
         }
     }
+    // ADR-0025: the tunnel replaces `host` with the loopback endpoint, so
+    // carry the real host name forward as the TLS server name on this
+    // resolved copy (never persisted). A user-supplied name wins, and a
+    // legacy row keeps its `ssl`-derived mode.
+    if let StoredConnection::PostgreSQL(pg) = &mut routed {
+        let original = pg.host.trim().to_string();
+        let mode = pg.resolved_tls_mode();
+        let options = pg.tls_options.get_or_insert_with(|| crate::PgTlsOptions {
+            mode,
+            ..Default::default()
+        });
+        let user_supplied = options
+            .server_name
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|name| !name.is_empty());
+        if !user_supplied && !original.is_empty() {
+            options.server_name = Some(original);
+        }
+    }
     routed.set_network_endpoint(endpoint.host.clone(), endpoint.port)?;
     Ok(routed)
 }
@@ -99,6 +119,7 @@ mod tests {
             read_only: false,
             last_activity_at: None,
             ssl: true,
+            tls_options: None,
             driver_options: None,
             ssh_tunnel: tunnel(),
         });
@@ -107,6 +128,69 @@ mod tests {
             remote_endpoint(&connection).expect("endpoint"),
             ("db.internal".to_string(), 5432)
         );
+    }
+
+    fn pg_with_tls(tls_options: Option<crate::PgTlsOptions>) -> StoredConnection {
+        StoredConnection::PostgreSQL(PgStoredConnection {
+            organization: Default::default(),
+            id: "conn-1".into(),
+            name: "pg".into(),
+            database: "postgres".into(),
+            host: " db.internal ".into(),
+            port: 5432,
+            user: "postgres".into(),
+            password: String::new(),
+            role: "read/write".into(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
+            last_activity_at: None,
+            ssl: false,
+            tls_options,
+            driver_options: None,
+            ssh_tunnel: tunnel(),
+        })
+    }
+
+    fn loopback() -> LocalEndpoint {
+        LocalEndpoint {
+            host: "127.0.0.1".into(),
+            port: 49152,
+        }
+    }
+
+    #[test]
+    fn rewrite_carries_the_original_host_as_tls_server_name() {
+        let StoredConnection::PostgreSQL(routed) =
+            rewrite_connection_endpoint(&pg_with_tls(None), &loopback()).expect("rewrite")
+        else {
+            panic!("expected postgres");
+        };
+        assert_eq!(routed.host, "127.0.0.1");
+        assert_eq!(routed.port, 49152);
+        // A legacy `ssl: false` row keeps its disabled mode.
+        assert_eq!(routed.resolved_tls_mode(), crate::PgTlsMode::Disable);
+        let options = routed.tls_options.expect("server name recorded");
+        assert_eq!(options.server_name.as_deref(), Some("db.internal"));
+        assert_eq!(options.mode, crate::PgTlsMode::Disable);
+    }
+
+    #[test]
+    fn rewrite_preserves_a_user_supplied_server_name() {
+        let StoredConnection::PostgreSQL(routed) = rewrite_connection_endpoint(
+            &pg_with_tls(Some(crate::PgTlsOptions {
+                mode: crate::PgTlsMode::VerifyFull,
+                server_name: Some("cert.example".into()),
+                ..Default::default()
+            })),
+            &loopback(),
+        )
+        .expect("rewrite") else {
+            panic!("expected postgres");
+        };
+        let options = routed.tls_options.expect("options kept");
+        assert_eq!(options.server_name.as_deref(), Some("cert.example"));
+        assert_eq!(options.mode, crate::PgTlsMode::VerifyFull);
     }
 
     #[test]

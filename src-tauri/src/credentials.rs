@@ -760,6 +760,7 @@ mod tests {
                 read_only: false,
                 last_activity_at: None,
                 ssl: true,
+                tls_options: None,
                 driver_options: None,
                 ssh_tunnel: crate::SshTunnelConfig::default(),
             });

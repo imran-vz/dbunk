@@ -1342,6 +1342,10 @@ fn map_dedicated(error: DedicatedError) -> ResultMutationError {
     match error {
         DedicatedError::ConnectionLost => ResultMutationError::ConnectionLost,
         DedicatedError::Timeout { operation } => ResultMutationError::Timeout { operation },
+        DedicatedError::Tls { kind, message } => ResultMutationError::TlsFailed {
+            tls_kind: kind,
+            message,
+        },
         DedicatedError::Database {
             code,
             message,

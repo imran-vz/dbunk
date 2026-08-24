@@ -92,6 +92,7 @@ mod tests {
             read_only,
             last_activity_at: None,
             ssl: false,
+            tls_options: None,
             driver_options: None,
             ssh_tunnel: SshTunnelConfig::default(),
         })

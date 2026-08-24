@@ -7,6 +7,7 @@
 
 pub(crate) mod bastions;
 pub(crate) mod connections;
+pub(crate) mod diagnosis;
 pub(crate) mod keyvalue;
 pub(crate) mod managed;
 pub(crate) mod query_session;

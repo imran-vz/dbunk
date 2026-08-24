@@ -682,7 +682,7 @@ fn cancel_tab_state(state: &mut ExecutorState, tab_id: &str) -> (bool, Option<Ca
 
 struct CancelRequest {
     token: tokio_postgres::CancelToken,
-    tls: bool,
+    tls: crate::postgres::dedicated::TlsConfig,
     request_id: u64,
 }
 
@@ -695,7 +695,7 @@ fn queue_cancel(state: &mut ExecutorState) -> Option<CancelRequest> {
     let request_id = active.request_id;
     let cancel = CancelRequest {
         token: connection.inner.cancel.clone(),
-        tls: connection.inner.tls,
+        tls: connection.inner.tls.clone(),
         request_id,
     };
     state.cancel_pending = Some(request_id);
@@ -1115,7 +1115,10 @@ async fn finish_executor_close(executor: &Executor, preparation: ClosePreparatio
 }
 
 type QueuedClose = Vec<(AnalysisJob, ResultMutationError)>;
-type CloseCancel = Option<(tokio_postgres::CancelToken, bool)>;
+type CloseCancel = Option<(
+    tokio_postgres::CancelToken,
+    crate::postgres::dedicated::TlsConfig,
+)>;
 
 fn prepare_close(state: &mut ExecutorState, fence: bool) -> (QueuedClose, CloseCancel, bool) {
     state.closed = true;
@@ -1146,7 +1149,12 @@ fn prepare_close(state: &mut ExecutorState, fence: bool) -> (QueuedClose, CloseC
         .as_ref()
         .filter(|active| !active.commit_admitted())
         .and(state.connection.as_ref())
-        .map(|connection| (connection.inner.cancel.clone(), connection.inner.tls));
+        .map(|connection| {
+            (
+                connection.inner.cancel.clone(),
+                connection.inner.tls.clone(),
+            )
+        });
     (queued, cancel, state.active.is_some())
 }
 
@@ -1231,8 +1239,9 @@ mod tests {
             database: "dbunk".into(),
             user: "dbunk".into(),
             password: "dbunk".into(),
-            tls_prefer: false,
+            tls: crate::postgres::tls::ResolvedTls::plain("127.0.0.1"),
             connect_timeout: None,
+            keepalive: None,
             driver_options: crate::PgDriverOptions::default(),
             safety_policy: Default::default(),
         }

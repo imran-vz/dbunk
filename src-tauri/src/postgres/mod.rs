@@ -10,6 +10,7 @@
 //! - `admin` — server details, overview stats, session/lock snapshots, maintenance
 
 mod admin;
+pub(crate) mod connect_error;
 pub(crate) mod connect_spec;
 mod ddl;
 pub(crate) mod dedicated;
@@ -25,6 +26,7 @@ mod seed;
 pub(crate) mod sql_class;
 pub(crate) mod sql_lex;
 mod table_relationships;
+pub(crate) mod tls;
 
 use sqlx::postgres::PgRow;
 use sqlx::Row;
