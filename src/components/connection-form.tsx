@@ -52,6 +52,8 @@ import {
   EnvironmentField,
   SafetyFields,
 } from "@/components/connection-form/safety-fields";
+import { OrganizationFields } from "@/components/connection-form/organization-fields";
+import { UriImportField } from "@/components/connection-form/uri-import-field";
 import { SqliteFields } from "@/components/connection-form/sqlite-fields";
 import { TunnelFields } from "@/components/connection-form/tunnel-fields";
 import {
@@ -109,6 +111,9 @@ export function ConnectionForm({
       }}
     >
       <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-auto p-4">
+        {formMode === "new" ? (
+          <UriImportField form={form} onEngineChange={handleEngineChange} />
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <NameField form={form} />
           <EnvironmentField form={form} />
@@ -118,6 +123,8 @@ export function ConnectionForm({
           formMode={formMode}
           onEngineChange={handleEngineChange}
         />
+
+        <OrganizationFields form={form} />
 
         {!isSqlite ? <HostPortRow form={form} policy={policy} /> : null}
 

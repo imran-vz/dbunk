@@ -1838,3 +1838,42 @@ describe("TableEditorPanel status items", () => {
     expect(renderCount).toBeLessThan(RENDER_SENTINEL);
   });
 });
+
+describe("Restored tab against a disconnected connection (Plan 010)", () => {
+  it("renders the connect shell, fires no loads, and loads on connect", async () => {
+    const loadTableData = vi.fn(async () => {});
+    const loadTableStructure = vi.fn(async () => {});
+    const openTableBrowse = vi.fn(async () => {});
+    const openTableSession = vi.fn(async () => {});
+    useAppStore.setState({
+      connections: [
+        { ...postgresConnection, status: "Disconnected", latency: "--" },
+      ],
+      activeConnectionId: "conn-1",
+      loadTableData,
+      loadTableStructure,
+      openTableBrowse,
+      openTableSession,
+    });
+
+    render(<TableEditorPanel tab={tableTab} />);
+
+    expect(screen.getByTestId("table-awaiting-connection")).toBeTruthy();
+    expect(loadTableData).not.toHaveBeenCalled();
+    expect(loadTableStructure).not.toHaveBeenCalled();
+    expect(openTableBrowse).not.toHaveBeenCalled();
+    expect(openTableSession).not.toHaveBeenCalled();
+
+    // Connecting flips the gate: the panel leaves the shell and the
+    // mount effect fires exactly one load pass.
+    act(() => {
+      useAppStore.setState({
+        connections: [{ ...postgresConnection }],
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("table-awaiting-connection")).toBeNull();
+    });
+    expect(openTableBrowse.mock.calls.length + openTableSession.mock.calls.length).toBeGreaterThan(0);
+  });
+});

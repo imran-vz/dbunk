@@ -303,6 +303,7 @@ pub fn run() {
             commands::connections::load_connections,
             commands::connections::save_connection,
             commands::connections::duplicate_connection,
+            commands::connections::update_connection_organization,
             commands::connections::delete_connection,
             commands::connections::connect_connection,
             commands::connections::disconnect_connection,

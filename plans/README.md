@@ -21,8 +21,8 @@ and update its status here when work finishes.
 | [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | DONE: 4e52c8a (selected mock: A)               |
 | [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | DONE: bd9f7ef                                  |
 | [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | DONE: 5409d66 (selected mock: C)               |
-| [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | READY FOR REVIEW                               |
-| [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | TODO                                           |
+| [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | DONE: f66abaa                                  |
+| [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | READY FOR REVIEW (selected mock: A)            |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -94,6 +94,23 @@ useful without authorizing commits implicitly.
   editors, multiple windows, OS deep links, encrypted profile exchange,
   offline metadata/data search, keyvalue tab restore, per-tab
   browse-state persistence, and non-table object viewers (`PAR-007`).
+- **Selected mock (010):** A — folder section headers in the connections
+  list, compact single-line palette rows with leading kind badges, and
+  URI import as the first field of the connection form.
+- **Plan 010 delivery note (2026-08-24):** Steps 2–6 implemented in the
+  working tree on top of Plan 009 (`DONE: f66abaa`): flat-ranked Open
+  Anything palette with controlled selection and disclosed truncation;
+  folder/favorite/color organization (one Plan 009 amendment landed
+  alongside: `update_connection_organization`, a credential-free
+  column-only backend update, because `save_connection` treats an empty
+  password as credential deletion); Duplicate / Copy URI /
+  Import-from-URI; reconnect-gated table tabs with a connect-to-load
+  shell; caret capture/restore with clamping. All automated gates green
+  (frontend suite, Rust suite, `check:ui-gates`, `check:slice-isolation`,
+  `check:redis-commands`). Step 6's **interactive dev-app pass has not
+  been run in the implementing session** (no display available) — the
+  reviewer/operator should walk the Step 6 checklist in `pnpm tauri dev`
+  before recording DONE.
 - **Selected mock (008):** C — restrained production banner with persistent
   target identity in the status bar and confirmation-forward safety flows.
 - **Delivered boundary:** PostgreSQL table tabs now use typed server-side

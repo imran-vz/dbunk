@@ -11,6 +11,18 @@ export type MonacoTextModel = {
   };
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The value is handled at a typed library or domain boundary here.
   getValueInRange: (range: unknown) => string;
+  /** Caret clamping (Plan 010) — present on real models; optional so
+   *  test doubles stay minimal. */
+  getLineCount?: () => number;
+  getLineMaxColumn?: (lineNumber: number) => number;
+};
+
+/** Monaco `Selection` members the caret persistence reads/writes. */
+export type MonacoSelectionRange = {
+  selectionStartLineNumber: number;
+  selectionStartColumn: number;
+  positionLineNumber: number;
+  positionColumn: number;
 };
 
 export type MonacoCompletionDisposable = {
@@ -53,4 +65,13 @@ export type MonacoEditorInstance = {
   onDidChangeCursorPosition?: (
     listener: (event: { position: MonacoPosition }) => void,
   ) => MonacoCompletionDisposable;
+  setSelection?: (range: {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  }) => void;
+  revealPositionInCenterIfOutsideViewport?: (
+    position: MonacoPosition,
+  ) => void;
 };

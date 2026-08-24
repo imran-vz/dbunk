@@ -67,6 +67,20 @@
   already existed at the stamped commit, so Step 6 correctly added
   nothing for them.
 
+- **Post-commit amendment (2026-08-24, during Plan 010 Step 3):** the
+  organization fields need a write path that cannot touch credentials.
+  `save_connection` deliberately treats an empty password as "delete
+  the stored credential" (`credentials::upsert`), and the frontend
+  store only ever holds blanked passwords — so a favorites/color/folder
+  toggle routed through `save_connection` would wipe the connection's
+  secret on a star click. Added
+  `update_connection_organization(connectionId, folder, isFavorite,
+  color) -> Vec<StoredConnection>`: a column-only UPDATE that never
+  reads or writes credentials, registered alongside the other
+  connection commands, with storage tests. Plan 010 consumes it for
+  list-row toggles; the full form path continues through
+  `save_connection` unchanged.
+
 ## Why this matters
 
 `PAR-005` asks for two things: durable workspace restoration and global

@@ -220,6 +220,11 @@ export function useTableSession(tab: WorkspaceTab) {
     state.connections.find((candidate) => candidate.id === tab.connectionId),
   );
   const engine = connection?.engine;
+  const isConnected =
+    connection?.status === "Connected" || connection?.status === "Read only";
+  /** Restored tab whose connection hasn't been connected yet (Plan 010):
+   *  no session/browse opens until the user connects. */
+  const awaitingConnection = connection !== undefined && !isConnected;
   const policyReadOnlyCopy = connection
     ? readOnlyPolicyReason(connection)
     : null;
@@ -341,6 +346,9 @@ export function useTableSession(tab: WorkspaceTab) {
 
   useEffect(() => {
     if (!ref) return;
+    // Session-restored tabs mount disconnected; opening a browse or
+    // legacy session would only error. Re-fires on connect.
+    if (!isConnected) return;
     if (browseEnabled) {
       void openTableBrowse(tab.id, ref.connectionId, ref.schema, ref.table);
       void loadTableStructure(ref.connectionId, ref.schema, ref.table);
@@ -349,6 +357,7 @@ export function useTableSession(tab: WorkspaceTab) {
     void openTableSession(ref);
   }, [
     browseEnabled,
+    isConnected,
     loadTableStructure,
     openTableBrowse,
     openTableSession,
@@ -1148,6 +1157,7 @@ export function useTableSession(tab: WorkspaceTab) {
     ref,
     key: refKey,
     tableName: ref?.table ?? "",
+    awaitingConnection,
     data: session?.data,
     structure: session?.structure,
     status: session?.loadStatus,

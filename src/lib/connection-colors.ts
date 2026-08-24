@@ -26,3 +26,12 @@ export function isConnectionColor(
 ): value is ConnectionColor {
   return CONNECTION_COLORS.some((color) => color === value);
 }
+
+/**
+ * Token → CSS variable. The variables are defined once in
+ * `styles.css` `:root` (theme-invariant identity colors); components
+ * consume them via inline `style` so no raw hex ever lands in TSX.
+ */
+export function connectionColorVar(color: ConnectionColor): string {
+  return `var(--connection-color-${color})`;
+}

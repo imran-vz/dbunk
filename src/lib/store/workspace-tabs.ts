@@ -72,6 +72,13 @@ export type WorkspaceTabsSlice = {
    * intentionally does not bump it: the persisted rail wins at boot.
    */
   tabRevealRequest: number;
+  /**
+   * Monotonic counter bumped when a surface (the Open Anything palette)
+   * asks the workbench to show the tables rail — the rail is local
+   * state in `relational-workbench.tsx`, so this is the store-side
+   * signal it subscribes to, mirroring `tabRevealRequest`. Plan 010.
+   */
+  railRevealRequest: number;
 
   setActiveView: (view: ActiveView) => void;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -113,6 +120,13 @@ export type WorkspaceTabsSlice = {
    * not an edit. Plan 009 (caret wiring lands with Plan 010).
    */
   updateQueryCaret: (tabId: string, caret: TabCaret) => void;
+
+  /**
+   * Open Anything `reveal-schema` target: switch to the connection,
+   * expand the schema node, and signal the workbench to show the
+   * tables rail. Never touches the navigator's local text filter.
+   */
+  revealSchemaInNavigator: (connectionId: string, schema: string) => void;
 
   /**
    * Cascade cleanup — drops every Workspace Tab whose
@@ -157,6 +171,7 @@ export const createWorkspaceTabsSlice: StateCreator<
   selectedRowIndex: 0,
   settingsTab: "general",
   tabRevealRequest: 0,
+  railRevealRequest: 0,
 
   setActiveView: (view) => set({ activeView: view }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
@@ -412,6 +427,18 @@ export const createWorkspaceTabsSlice: StateCreator<
       if (active) next.activeConnectionId = active.connectionId;
       return next;
     });
+  },
+
+  revealSchemaInNavigator: (connectionId, schema) => {
+    const schemaId = `${connectionId}:${schema}`;
+    get().setExpandedSchemas((prev) =>
+      prev.includes(schemaId) ? prev : [...prev, schemaId],
+    );
+    set((state) => ({
+      activeView: "workspace",
+      activeConnectionId: connectionId,
+      railRevealRequest: state.railRevealRequest + 1,
+    }));
   },
 
   updateQueryCaret: (tabId, caret) =>

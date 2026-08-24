@@ -35,6 +35,20 @@
     --semantic-danger: #d23535;
     --semantic-info: #0969da;
 
+    /* User-picked connection identity colors (Plan 010). Deliberately
+       theme-invariant: they are identity markers, not chrome, so they
+       must read the same across every theme preset. Mid-lightness
+       values legible on both light and dark surfaces. */
+    --connection-color-red: #e5534b;
+    --connection-color-orange: #e8804a;
+    --connection-color-amber: #d4a72c;
+    --connection-color-green: #4ca154;
+    --connection-color-teal: #39b0ba;
+    --connection-color-blue: #539bf5;
+    --connection-color-violet: #986ee2;
+    --connection-color-pink: #e5699e;
+    --connection-color-gray: #768390;
+
     /* shadcn-compatible tokens, mapped to the light palette */
     --background: var(--surface-app);
     --foreground: var(--text-primary);

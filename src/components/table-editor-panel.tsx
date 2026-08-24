@@ -736,6 +736,38 @@ export function TableEditorPanel({
 
   useStableStatusItems(statusItems, onStatusItemsChange);
 
+  // Session-restored tab whose connection is still disconnected: no
+  // fetch has fired (the hooks gate on connection status); offer the
+  // connect affordance instead of an error (Plan 010).
+  if (tableSession.awaitingConnection && connection) {
+    return (
+      <div
+        data-testid="table-awaiting-connection"
+        className="flex h-full flex-col items-center justify-center gap-3 bg-surface-app p-6 text-center"
+      >
+        <div className="text-sm font-semibold text-foreground">
+          “{connection.name}” is disconnected
+        </div>
+        <p className="max-w-sm text-xs text-text-muted">
+          This tab was restored from your last session. Connect to load{" "}
+          <span className="font-mono">
+            {tab.schema}.{tab.table ?? tab.label}
+          </span>{" "}
+          — nothing is fetched until you do.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            void useAppStore.getState().connectConnection(connection.id);
+          }}
+        >
+          Connect &amp; load
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col bg-surface-app">
       {isLoading ? (

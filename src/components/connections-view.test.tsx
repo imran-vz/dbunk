@@ -474,3 +474,128 @@ describe("ConnectionsView rail variant (P9)", () => {
     expect(screen.queryByRole("button", { name: /hide form/i })).toBeNull();
   });
 });
+
+describe("Connection organization (Plan 010, mock A)", () => {
+  it("renders folder headers with favorites-first ordering and ungrouped last", () => {
+    useAppStore.setState({
+      connections: [
+        { ...baseConnection, id: "loose", name: "Loose" },
+        {
+          ...baseConnection,
+          id: "fleet-b",
+          name: "Fleet B",
+          folder: "Fleet",
+          lastActivityAt: "2026-08-01T00:00:00Z",
+        },
+        {
+          ...baseConnection,
+          id: "fleet-a",
+          name: "Fleet A favorite",
+          folder: "Fleet",
+          isFavorite: true,
+        },
+        { ...baseConnection, id: "arch", name: "Archived one", folder: "Archive" },
+      ],
+    });
+    render(<ConnectionsView variant="rail" />);
+
+    const headers = screen
+      .getAllByTestId("connection-folder-header")
+      .map((node) => node.textContent ?? "");
+    expect(headers[0]).toContain("Archive");
+    expect(headers[1]).toContain("Fleet");
+    expect(headers[2]).toContain("Ungrouped");
+
+    const rows = screen
+      .getAllByTestId("connection-list-row")
+      .map((node) => node.textContent ?? "");
+    // Inside Fleet: the favorite pins above the more-recent sibling.
+    expect(rows[1]).toContain("Fleet A favorite");
+    expect(rows[2]).toContain("Fleet B");
+  });
+
+  it("omits folder headers entirely when no connection has a folder", () => {
+    useAppStore.setState({ connections: [baseConnection] });
+    render(<ConnectionsView variant="rail" />);
+    expect(screen.queryByTestId("connection-folder-header")).toBeNull();
+  });
+
+  it("toggles the favorite flag from the row star", () => {
+    useAppStore.setState({ connections: [baseConnection] });
+    render(<ConnectionsView variant="rail" />);
+
+    fireEvent.click(screen.getByLabelText("Add to favorites"));
+    expect(useAppStore.getState().connections[0].isFavorite).toBe(true);
+    fireEvent.click(screen.getByLabelText("Remove from favorites"));
+    expect(useAppStore.getState().connections[0].isFavorite).toBe(false);
+  });
+
+  it("renders the identity color dot only for a valid color token", () => {
+    useAppStore.setState({
+      connections: [
+        { ...baseConnection, id: "c1", name: "Teal", color: "teal" },
+        { ...baseConnection, id: "c2", name: "Plain" },
+      ],
+    });
+    render(<ConnectionsView variant="rail" />);
+    expect(screen.getAllByTestId("connection-color-dot")).toHaveLength(1);
+  });
+});
+
+describe("Connection actions: Duplicate and Copy URI (Plan 010)", () => {
+  it("duplicates from the actions menu and lists the copy", async () => {
+    useAppStore.setState({ connections: [baseConnection] });
+    render(<ConnectionsView variant="rail" />);
+
+    fireEvent.click(screen.getByLabelText("Connection actions"));
+    fireEvent.click(await screen.findByText("Duplicate"));
+
+    const names = useAppStore
+      .getState()
+      .connections.map((connection) => connection.name);
+    expect(names).toContain("Local Postgres copy");
+    // The copy never inherits the favorite flag.
+    const copy = useAppStore
+      .getState()
+      .connections.find((c) => c.name === "Local Postgres copy");
+    expect(copy?.isFavorite ?? false).toBe(false);
+  });
+
+  it("copies a secret-free URI to the clipboard", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    useAppStore.setState({
+      connections: [{ ...baseConnection, password: "" }],
+    });
+    render(<ConnectionsView variant="rail" />);
+
+    fireEvent.click(screen.getByLabelText("Connection actions"));
+    fireEvent.click(await screen.findByText("Copy URI"));
+
+    // The exact-argument assertion doubles as the secret-free check:
+    // no password segment can appear in this literal.
+    expect(writeText).toHaveBeenCalledWith(
+      "postgres://postgres@localhost:5432/postgres",
+    );
+  });
+
+  it("hides Copy URI for engines without a canonical URI", async () => {
+    useAppStore.setState({
+      connections: [
+        {
+          ...baseConnection,
+          engine: "SQLite",
+          database: "/tmp/db.sqlite",
+        },
+      ],
+    });
+    render(<ConnectionsView variant="rail" />);
+
+    fireEvent.click(screen.getByLabelText("Connection actions"));
+    expect(await screen.findByText("Duplicate")).toBeTruthy();
+    expect(screen.queryByText("Copy URI")).toBeNull();
+  });
+});

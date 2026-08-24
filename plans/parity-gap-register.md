@@ -307,18 +307,36 @@ pins, active tab, hot-exit SQL, and expanded navigator nodes — dropping
 tabs of deleted connections and never restoring live sessions or
 auto-connecting. The workbench consolidation also deleted
 `src/components/sidebar.tsx` and several `workspace-overview/*` tabs, so
-the evidence lines below are stale in path terms. Plans 009 and 010 were
-authored at `9570f11` as the selected execution path for the remaining
-scope: the Open Anything index and palette activation, connection
-folders/favorites/colors/recency, duplicate / secret-free copy-URI /
-URI import, reconnect-safe restored tabs, and caret restore. Both
-plans passed an independent adversarial review on 2026-08-24 and were
-amended for its findings (Plan 009's Review correction record lists
-the code fixes folded in before commit). Deferred
-with rationale (see Plan 009's Reconciliation section): SQL files and
-recent files, split editors/results, multiple windows, OS deep links,
-encrypted profile exchange, offline metadata search and data search,
-keyvalue tab restore, per-tab browse-state persistence.
+the evidence lines below are stale in path terms.
+
+Plans 009 and 010 then delivered the navigation half (Plan 009 DONE at
+`f66abaa`; Plan 010 implemented at the same working state, selected
+mock A; both passed an independent adversarial review on 2026-08-24 and
+were amended for its findings — Plan 009's Review correction record has
+the list). Shipped: the ⌘K palette is a flat-ranked Open Anything over
+connections (including disconnected → connect), schemas
+(reveal-in-navigator), tables/views/matviews/foreign tables (views open
+as SELECT query tabs), saved queries, query history, open tabs, and
+commands, with caps applied after ranking and disclosed truncation
+(`src/lib/open-anything.ts`,
+`src/components/command-palette/command-palette.tsx`); connections have
+folder grouping, favorites, identity colors, and recency ordering
+(migration 17, `src/lib/connection-organization.ts`,
+`connections-view.tsx`), plus Duplicate (backend credential copy, no
+secret over IPC), secret-free Copy URI, and Import-from-URI with
+ignored-parameter disclosure (`src/lib/connection-uri.ts`);
+session-restored table tabs no longer fire loads against disconnected
+connections (connect-to-load shell, auto-load on connect); and the
+editor caret/selection persists in the session blob and restores
+clamped.
+
+Still open from the original list, deferred with rationale (see Plan
+009's Reconciliation section): SQL files and recent files, split
+editors/results, multiple windows, OS deep links, encrypted profile
+exchange, offline metadata search of disconnected connections and data
+search, keyvalue tab restore, per-tab browse-state persistence, and
+palette reach into non-relation object kinds (blocked on `PAR-007`
+object viewers).
 
 **Evidence:**
 

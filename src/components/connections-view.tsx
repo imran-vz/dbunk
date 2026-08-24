@@ -3,9 +3,17 @@ import {
   IconDatabase,
   IconPlus,
   IconSearch,
+  IconStar,
+  IconStarFilled,
   IconX,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+
+import {
+  connectionColorVar,
+  isConnectionColor,
+} from "@/lib/connection-colors";
+import { organizeConnections } from "@/lib/connection-organization";
 
 import {
   ConnectionActionsDropdown,
@@ -100,12 +108,30 @@ export function ConnectionsView({
     setActiveConnectionId,
     connectConnection,
     disconnectConnection,
+    setConnectionOrganization,
   } = useAppStore();
 
-  const filteredConnections = useMemo(() => {
+  const groups = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return connections.filter((c) => matchesSearch(c, needle));
+    return organizeConnections(
+      connections.filter((c) => matchesSearch(c, needle)),
+    );
   }, [connections, search]);
+  // Headers only earn their space once folders exist at all.
+  const showFolderHeaders = groups.some((group) => group.folder !== "");
+  const flatConnections = useMemo(
+    () => groups.flatMap((group) => group.connections),
+    [groups],
+  );
+
+  const toggleFavorite = (connection: Connection) =>
+    void setConnectionOrganization(connection.id, {
+      folder: connection.folder ?? "",
+      isFavorite: !(connection.isFavorite ?? false),
+      color: isConnectionColor(connection.color)
+        ? connection.color
+        : undefined,
+    });
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-1 flex-col">
@@ -180,20 +206,39 @@ export function ConnectionsView({
           >
             {useListView ? (
               <div className="flex flex-col gap-2">
-                {filteredConnections.map((connection) => (
-                  <ConnectionListRow
-                    key={connection.id}
-                    connection={connection}
-                    isActive={connection.id === activeConnectionId}
-                    onSelect={() => setActiveConnectionId(connection.id)}
-                    onConnect={() => {
-                      setActiveConnectionId(connection.id);
-                      void connectConnection(connection.id);
-                    }}
-                    onDisconnect={() => disconnectConnection(connection.id)}
-                    onEdit={() => setEditingConnection(connection)}
-                    onDelete={() => setDeletingConnection(connection)}
-                  />
+                {groups.map((group) => (
+                  <div
+                    key={group.folder || "__ungrouped"}
+                    className="flex flex-col gap-2"
+                  >
+                    {showFolderHeaders ? (
+                      <div
+                        data-testid="connection-folder-header"
+                        className="mt-1 flex items-baseline gap-2 px-1 text-2xs font-semibold uppercase tracking-wide text-text-secondary"
+                      >
+                        {group.folder || "Ungrouped"}
+                        <span className="font-normal text-text-disabled">
+                          {group.connections.length}
+                        </span>
+                      </div>
+                    ) : null}
+                    {group.connections.map((connection) => (
+                      <ConnectionListRow
+                        key={connection.id}
+                        connection={connection}
+                        isActive={connection.id === activeConnectionId}
+                        onSelect={() => setActiveConnectionId(connection.id)}
+                        onConnect={() => {
+                          setActiveConnectionId(connection.id);
+                          void connectConnection(connection.id);
+                        }}
+                        onDisconnect={() => disconnectConnection(connection.id)}
+                        onEdit={() => setEditingConnection(connection)}
+                        onDelete={() => setDeletingConnection(connection)}
+                        onToggleFavorite={() => toggleFavorite(connection)}
+                      />
+                    ))}
+                  </div>
                 ))}
                 <button
                   type="button"
@@ -213,7 +258,7 @@ export function ConnectionsView({
               </div>
             ) : (
               <div className={cn("grid gap-4", cardGridCols)}>
-                {filteredConnections.map((connection) => (
+                {flatConnections.map((connection) => (
                   <ConnectionCard
                     key={connection.id}
                     connection={connection}
@@ -226,6 +271,7 @@ export function ConnectionsView({
                     onDisconnect={() => disconnectConnection(connection.id)}
                     onEdit={() => setEditingConnection(connection)}
                     onDelete={() => setDeletingConnection(connection)}
+                    onToggleFavorite={() => toggleFavorite(connection)}
                   />
                 ))}
                 <button
@@ -300,6 +346,52 @@ export function ConnectionsView({
   );
 }
 
+/** Small colored identity dot; renders nothing without a valid color. */
+function ConnectionColorDot({ connection }: { connection: Connection }) {
+  if (!isConnectionColor(connection.color)) return null;
+  return (
+    <span
+      data-testid="connection-color-dot"
+      aria-hidden
+      className="size-2 shrink-0 rounded-full"
+      style={{ backgroundColor: connectionColorVar(connection.color) }}
+    />
+  );
+}
+
+function FavoriteToggle({
+  connection,
+  onToggle,
+}: {
+  connection: Connection;
+  onToggle: () => void;
+}) {
+  const isFavorite = connection.isFavorite ?? false;
+  return (
+    <button
+      type="button"
+      aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      aria-pressed={isFavorite}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "shrink-0 rounded p-0.5 transition-colors",
+        isFavorite
+          ? "text-accent hover:text-accent-hover"
+          : "text-text-disabled hover:text-text-secondary",
+      )}
+    >
+      {isFavorite ? (
+        <IconStarFilled className="size-3.5" />
+      ) : (
+        <IconStar className="size-3.5" />
+      )}
+    </button>
+  );
+}
+
 function ConnectionCard({
   connection,
   isActive,
@@ -308,6 +400,7 @@ function ConnectionCard({
   onDisconnect,
   onEdit,
   onDelete,
+  onToggleFavorite,
 }: {
   connection: Connection;
   isActive: boolean;
@@ -316,6 +409,7 @@ function ConnectionCard({
   onDisconnect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleFavorite: () => void;
 }) {
   const pillTone = derivePillTone(connection.status, connection.errorMessage);
   const pillLabel = deriveStatusLabel(
@@ -351,6 +445,7 @@ function ConnectionCard({
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
+              <ConnectionColorDot connection={connection} />
               <span className="truncate text-sm font-semibold text-foreground">
                 {connection.name}
               </span>
@@ -358,9 +453,11 @@ function ConnectionCard({
             </span>
             <span className="mt-0.5 block truncate text-2xs text-text-muted">
               {connection.engine}
+              {connection.folder?.trim() ? ` · ${connection.folder}` : ""}
             </span>
           </span>
         </button>
+        <FavoriteToggle connection={connection} onToggle={onToggleFavorite} />
         <ConnectionActionsDropdown
           connection={connection}
           onConnect={onConnect}
@@ -397,6 +494,7 @@ function ConnectionListRow({
   onDisconnect,
   onEdit,
   onDelete,
+  onToggleFavorite,
 }: {
   connection: Connection;
   isActive: boolean;
@@ -405,6 +503,7 @@ function ConnectionListRow({
   onDisconnect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleFavorite: () => void;
 }) {
   const pillTone = derivePillTone(connection.status, connection.errorMessage);
   const pillLabel = deriveStatusLabel(
@@ -439,8 +538,11 @@ function ConnectionListRow({
             <IconDatabase className="size-3.5" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-foreground">
-              {connection.name}
+            <span className="flex items-center gap-2">
+              <ConnectionColorDot connection={connection} />
+              <span className="truncate text-sm font-semibold text-foreground">
+                {connection.name}
+              </span>
             </span>
             <span className="mt-0.5 block truncate font-mono text-2xs text-text-muted">
               {connection.engine} · {connection.host || "localhost"}:
@@ -448,6 +550,7 @@ function ConnectionListRow({
             </span>
           </span>
         </button>
+        <FavoriteToggle connection={connection} onToggle={onToggleFavorite} />
         <HealthPill tone={pillTone} label={pillLabel} />
         <ConnectionActionsDropdown
           connection={connection}
