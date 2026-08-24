@@ -58,6 +58,7 @@ import {
   saveVirtualKey,
 } from "@/lib/result-mutation-client";
 import { readOnlyPolicyReason } from "@/lib/safety-policy";
+import { useShortcutHandler } from "@/lib/shortcuts";
 import type { SqlStatementRange } from "@/lib/sql";
 import type { SqlCompletionContext } from "@/lib/sql-completions";
 import { formatSql } from "@/lib/sql-format";
@@ -242,6 +243,7 @@ export function QueryEditorPanel({
   const isBusyRef = useRef(isBusy);
   isBusyRef.current = isBusy;
   const handleReviewEditsRef = useRef<() => void>(() => {});
+  const handleFormatRef = useRef<() => void>(() => {});
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
@@ -832,6 +834,7 @@ export function QueryEditorPanel({
     }
     updateQuery(tab.id, result.sql);
   };
+  handleFormatRef.current = handleFormat;
 
   const handleExplain = async () => {
     if (isBusy) return;
@@ -908,6 +911,29 @@ export function QueryEditorPanel({
   });
 
   useStableStatusItems(statusItems, onStatusItemsChange);
+
+  // Palette-invokable query commands (§4.10) — the physical bindings
+  // stay in Monaco / the capture keydown above; the registry gives the
+  // palette rows and kbd hints one source of truth.
+  useShortcutHandler(
+    "toggle-results",
+    useCallback(() => setResultsCollapsed((current) => !current), []),
+  );
+  useShortcutHandler("run-statement", editor.handleRunCurrent);
+  useShortcutHandler("run-all", editor.handleRunAll);
+  useShortcutHandler(
+    "format-sql",
+    useCallback(() => handleFormatRef.current(), []),
+  );
+  useShortcutHandler("commit-staged", handleReviewEdits);
+  useShortcutHandler(
+    "cancel-query",
+    useCallback(() => {
+      if (isBusyRef.current) {
+        void useAppStore.getState().cancelQuery(activeTabIdRef.current);
+      }
+    }, []),
+  );
 
   const runCurrentHandler =
     bindNames.length > 0 ? runCurrentWithBinds : editor.handleRunCurrent;
