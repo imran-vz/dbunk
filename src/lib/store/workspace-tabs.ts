@@ -41,6 +41,14 @@ export type WorkspaceTabsSlice = {
   editorTheme: string;
   selectedRowIndex: number;
   settingsTab: SettingsTab;
+  /**
+   * Monotonic counter bumped by every explicit tab open/activate (new
+   * tab, palette open, Cmd+1..9, MRU switch). The workbench listens to
+   * it to leave rails that don't render tabs (history, overview, …) —
+   * otherwise those actions mutate the store invisibly. Session restore
+   * intentionally does not bump it: the persisted rail wins at boot.
+   */
+  tabRevealRequest: number;
 
   setActiveView: (view: ActiveView) => void;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -117,6 +125,7 @@ export const createWorkspaceTabsSlice: StateCreator<
   editorTheme: "vs",
   selectedRowIndex: 0,
   settingsTab: "general",
+  tabRevealRequest: 0,
 
   setActiveView: (view) => set({ activeView: view }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
@@ -127,7 +136,11 @@ export const createWorkspaceTabsSlice: StateCreator<
     })),
   setActiveTabId: (id) => {
     get().markQuerySessionViewed(id);
-    set({ activeTabId: id, activeView: "workspace" });
+    set((state) => ({
+      activeTabId: id,
+      activeView: "workspace",
+      tabRevealRequest: state.tabRevealRequest + 1,
+    }));
   },
   setWorkspaceTabs: (tabs) =>
     set((state) => ({
@@ -181,7 +194,11 @@ export const createWorkspaceTabsSlice: StateCreator<
 
   openWorkspaceTab: (tab) => {
     const state = get();
-    set({ activeView: "workspace", activeConnectionId: tab.connectionId });
+    set((current) => ({
+      activeView: "workspace",
+      activeConnectionId: tab.connectionId,
+      tabRevealRequest: current.tabRevealRequest + 1,
+    }));
 
     const existing = state.workspaceTabs.find((item) => {
       if (item.kind !== tab.kind || item.connectionId !== tab.connectionId) {
@@ -364,10 +381,11 @@ export const createWorkspaceTabsSlice: StateCreator<
 
   reopenHistoryEntry: (entry) => {
     const state = get();
-    set({
+    set((current) => ({
       activeView: "workspace",
       activeConnectionId: entry.connectionId,
-    });
+      tabRevealRequest: current.tabRevealRequest + 1,
+    }));
     const existing = state.workspaceTabs.find(
       (item) =>
         item.kind === "query" &&
