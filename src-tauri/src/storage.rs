@@ -418,6 +418,16 @@ ALTER TABLE connections ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE connections ADD COLUMN color TEXT NOT NULL DEFAULT '';
 "#,
     ),
+    (
+        18,
+        // ADR-0025 (Plan 011, PAR-006): PostgreSQL TLS mode and
+        // certificate paths as one JSON blob, mirroring migration 5.
+        // NULL on legacy rows and on every non-PostgreSQL engine; legacy
+        // rows keep resolving through `ssl`.
+        r#"
+ALTER TABLE connections ADD COLUMN tls_options TEXT;
+"#,
+    ),
 ];
 
 pub struct Paths {
@@ -708,7 +718,7 @@ pub async fn delete_ui_state(
 /// `read_connection_by_id`.
 const CONNECTION_COLUMNS: &str = "id, name, database_name, engine, host, port, user_name, role,
      last_activity_at, use_https, url_path,
-     db_number, use_tls, verify_tls_cert, ssl, driver_options,
+     db_number, use_tls, verify_tls_cert, ssl, driver_options, tls_options,
      read_only, environment, safe_mode,
      folder, is_favorite, color,
      ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
@@ -812,6 +822,19 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             }
         }
     });
+    let tls_options_json: Option<String> = row.get("tls_options");
+    let tls_options = tls_options_json.and_then(|raw| {
+        if raw.is_empty() {
+            return None;
+        }
+        match serde_json::from_str::<crate::types::PgTlsOptions>(&raw) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                log::warn!("ignoring malformed tls_options for connection {id}: {error}");
+                None
+            }
+        }
+    });
 
     Ok(match engine {
         DatabaseEngine::PostgreSQL => StoredConnection::PostgreSQL(PgStoredConnection {
@@ -829,6 +852,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             last_activity_at,
             organization,
             ssl: row.get::<i64, _>("ssl") != 0,
+            tls_options,
             driver_options,
             ssh_tunnel,
         }),
@@ -970,10 +994,25 @@ pub async fn upsert_connection(
     let folder = connection.folder().to_string();
     let is_favorite = bool_to_i64(connection.is_favorite());
     let color = connection.color().to_string();
+    // ADR-0025: `tls_options.mode` is authoritative; the legacy `ssl`
+    // flag is normalized to match it on every save so they can never
+    // disagree on disk. Legacy rows (no blob) keep the flag as given.
     let ssl = match connection {
-        StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl),
+        StoredConnection::PostgreSQL(c) => bool_to_i64(match &c.tls_options {
+            Some(options) => options.mode != crate::types::PgTlsMode::Disable,
+            None => c.ssl,
+        }),
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
         _ => 1,
+    };
+    let tls_options: Option<String> = match connection {
+        StoredConnection::PostgreSQL(c) => match &c.tls_options {
+            Some(options) => {
+                Some(serde_json::to_string(options).map_err(|error| error.to_string())?)
+            }
+            None => None,
+        },
+        _ => None,
     };
     let tunnel = connection
         .ssh_tunnel()
@@ -1009,7 +1048,7 @@ pub async fn upsert_connection(
         "INSERT INTO connections (
             id, name, database_name, engine, host, port, user_name, role,
             last_activity_at, use_https, url_path,
-            db_number, use_tls, verify_tls_cert, ssl, driver_options,
+            db_number, use_tls, verify_tls_cert, ssl, driver_options, tls_options,
             read_only, environment, safe_mode,
             folder, is_favorite, color,
             ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
@@ -1018,7 +1057,7 @@ pub async fn upsert_connection(
             ssh_tunnel_keepalive_want_reply, ssh_tunnel_jump_chain,
             ssh_tunnel_proxy_command
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -1035,6 +1074,7 @@ pub async fn upsert_connection(
             verify_tls_cert = excluded.verify_tls_cert,
             ssl = excluded.ssl,
             driver_options = excluded.driver_options,
+            tls_options = excluded.tls_options,
             read_only = excluded.read_only,
             environment = excluded.environment,
             safe_mode = excluded.safe_mode,
@@ -1067,6 +1107,7 @@ pub async fn upsert_connection(
     .bind(verify_tls_cert)
     .bind(ssl)
     .bind(driver_options)
+    .bind(tls_options)
     .bind(read_only)
     .bind(environment)
     .bind(safe_mode)
@@ -2061,7 +2102,28 @@ mod tests {
             read_only: false,
             last_activity_at: None,
             ssl: true,
+            tls_options: None,
             driver_options: None,
+            ssh_tunnel: SshTunnelConfig::default(),
+        })
+    }
+
+    fn mysql_connection(id: &str) -> StoredConnection {
+        StoredConnection::MySQL(MySqlStoredConnection {
+            organization: Default::default(),
+            id: id.to_string(),
+            name: "MySQL".to_string(),
+            database: "mysql".to_string(),
+            host: "localhost".to_string(),
+            port: 3306,
+            user: "mysql".to_string(),
+            password: String::new(),
+            role: "read/write".to_string(),
+            environment: Environment::default(),
+            safe_mode: SafeMode::default(),
+            read_only: false,
+            last_activity_at: None,
+            ssl: true,
             ssh_tunnel: SshTunnelConfig::default(),
         })
     }
@@ -2083,6 +2145,7 @@ mod tests {
                 read_only: true,
                 last_activity_at: None,
                 ssl: true,
+                tls_options: None,
                 driver_options: None,
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
@@ -2303,6 +2366,138 @@ mod tests {
         assert_eq!(stored.folder(), "");
         assert!(!stored.is_favorite());
         assert_eq!(stored.color(), "");
+    }
+
+    #[tokio::test]
+    async fn migration_18_leaves_legacy_rows_resolving_through_ssl() {
+        let pool = test_pool_through(17).await;
+        sqlx::query(
+            "INSERT INTO connections (
+                id, name, database_name, engine, host, port, user_name, role, ssl
+             ) VALUES
+             ('legacy-on', 'On', 'postgres', 'PostgreSQL', 'localhost', 5432, 'postgres', 'read/write', 1),
+             ('legacy-off', 'Off', 'postgres', 'PostgreSQL', 'localhost', 5432, 'postgres', 'read/write', 0)",
+        )
+        .execute(&pool)
+        .await
+        .expect("legacy connections");
+
+        run_migrations(&pool).await.expect("migration 18");
+        let columns: Vec<String> = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await
+            .expect("connection columns")
+            .into_iter()
+            .map(|row| row.get("name"))
+            .collect();
+        assert!(columns.iter().any(|name| name == "tls_options"));
+
+        for (id, expected) in [
+            ("legacy-on", crate::types::PgTlsMode::Prefer),
+            ("legacy-off", crate::types::PgTlsMode::Disable),
+        ] {
+            let StoredConnection::PostgreSQL(pg) = read_connection_by_id(&pool, id)
+                .await
+                .expect("read")
+                .expect("row")
+            else {
+                panic!("expected postgres");
+            };
+            assert_eq!(pg.tls_options, None);
+            assert_eq!(pg.resolved_tls_mode(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn tls_options_round_trip_and_normalize_ssl() {
+        let pool = test_pool().await;
+        let options = crate::types::PgTlsOptions {
+            mode: crate::types::PgTlsMode::VerifyFull,
+            root_cert_path: Some("/etc/ssl/ca.pem".into()),
+            client_cert_path: Some("/home/me/client.pem".into()),
+            client_key_path: Some("/home/me/client.key".into()),
+            server_name: Some("db.example".into()),
+        };
+        let StoredConnection::PostgreSQL(mut pg) = connection("tls-1") else {
+            panic!("expected postgres");
+        };
+        pg.ssl = false; // stale mirror; the blob wins
+        pg.tls_options = Some(options.clone());
+        upsert_connection(&pool, &StoredConnection::PostgreSQL(pg))
+            .await
+            .expect("save");
+        let StoredConnection::PostgreSQL(stored) = read_connection_by_id(&pool, "tls-1")
+            .await
+            .expect("read")
+            .expect("row")
+        else {
+            panic!("expected postgres");
+        };
+        assert_eq!(stored.tls_options, Some(options));
+        assert!(stored.ssl, "ssl mirrors mode != disable");
+        assert_eq!(
+            stored.resolved_tls_mode(),
+            crate::types::PgTlsMode::VerifyFull
+        );
+
+        // mode: disable with a stale ssl=true reads back as disabled.
+        let StoredConnection::PostgreSQL(mut pg) = connection("tls-2") else {
+            panic!("expected postgres");
+        };
+        pg.ssl = true;
+        pg.tls_options = Some(crate::types::PgTlsOptions {
+            mode: crate::types::PgTlsMode::Disable,
+            ..Default::default()
+        });
+        upsert_connection(&pool, &StoredConnection::PostgreSQL(pg))
+            .await
+            .expect("save");
+        let StoredConnection::PostgreSQL(stored) = read_connection_by_id(&pool, "tls-2")
+            .await
+            .expect("read")
+            .expect("row")
+        else {
+            panic!("expected postgres");
+        };
+        assert!(!stored.ssl);
+        assert_eq!(stored.resolved_tls_mode(), crate::types::PgTlsMode::Disable);
+        let raw: Option<String> =
+            sqlx::query_scalar("SELECT tls_options FROM connections WHERE id = 'tls-2'")
+                .fetch_one(&pool)
+                .await
+                .expect("raw blob");
+        assert_eq!(raw.as_deref(), Some(r#"{"mode":"disable"}"#));
+    }
+
+    #[tokio::test]
+    async fn malformed_tls_options_degrade_to_none_and_other_engines_stay_null() {
+        let pool = test_pool().await;
+        upsert_connection(&pool, &connection("tls-3"))
+            .await
+            .expect("save");
+        sqlx::query("UPDATE connections SET tls_options = '{not json' WHERE id = 'tls-3'")
+            .execute(&pool)
+            .await
+            .expect("corrupt");
+        let StoredConnection::PostgreSQL(stored) = read_connection_by_id(&pool, "tls-3")
+            .await
+            .expect("read")
+            .expect("row")
+        else {
+            panic!("expected postgres");
+        };
+        assert_eq!(stored.tls_options, None);
+        assert_eq!(stored.resolved_tls_mode(), crate::types::PgTlsMode::Prefer);
+
+        upsert_connection(&pool, &mysql_connection("my-1"))
+            .await
+            .expect("save mysql");
+        let raw: Option<String> =
+            sqlx::query_scalar("SELECT tls_options FROM connections WHERE id = 'my-1'")
+                .fetch_one(&pool)
+                .await
+                .expect("raw");
+        assert_eq!(raw, None);
     }
 
     #[tokio::test]

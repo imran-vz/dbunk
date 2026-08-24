@@ -32,6 +32,10 @@ fn map_dedicated(error: DedicatedError) -> TableBrowseError {
     match error {
         DedicatedError::ConnectionLost => TableBrowseError::ConnectionLost,
         DedicatedError::Timeout { operation } => TableBrowseError::Timeout { operation },
+        DedicatedError::Tls { kind, message } => TableBrowseError::TlsFailed {
+            tls_kind: kind,
+            message,
+        },
         DedicatedError::Database {
             code,
             message,

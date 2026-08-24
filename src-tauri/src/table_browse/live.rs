@@ -9,6 +9,11 @@ use super::protocol::*;
 use super::TableBrowseManager;
 
 fn live_spec(port: u16, tls_prefer: bool, connection_id: &str) -> ResolvedPostgresConnectSpec {
+    let tls = if tls_prefer {
+        crate::postgres::tls::ResolvedTls::prefer("127.0.0.1")
+    } else {
+        crate::postgres::tls::ResolvedTls::plain("127.0.0.1")
+    };
     ResolvedPostgresConnectSpec {
         connection_id: connection_id.into(),
         host: "127.0.0.1".into(),
@@ -16,8 +21,9 @@ fn live_spec(port: u16, tls_prefer: bool, connection_id: &str) -> ResolvedPostgr
         database: "dbunk_demo".into(),
         user: "dbunk".into(),
         password: "dbunk".into(),
-        tls_prefer,
+        tls,
         connect_timeout: Some(Duration::from_secs(5)),
+        keepalive: None,
         driver_options: PgDriverOptions::default(),
         safety_policy: Default::default(),
     }

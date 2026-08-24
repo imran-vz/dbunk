@@ -29,10 +29,14 @@ pub async fn save_connection(
 
 pub(crate) async fn save_connection_inner(
     state: &AppState,
-    connection: StoredConnection,
+    mut connection: StoredConnection,
 ) -> Result<Vec<StoredConnection>, String> {
     let mode = current_credential_mode(state).await?;
     tunnel::validate_connection_tunnel(&connection)?;
+    // ADR-0025: the legacy `ssl` mirror follows `tls_options.mode`.
+    if let StoredConnection::PostgreSQL(pg) = &mut connection {
+        pg.normalize_tls();
+    }
     let engine = connection.engine();
     let connection_id = connection.id().to_string();
     let save_result = socket_lifecycle::with_connection_fence(state, &connection_id, async {
@@ -285,6 +289,7 @@ mod tests {
                 color: "teal".into(),
             },
             ssl: true,
+            tls_options: None,
             driver_options: Some(PgDriverOptions {
                 statement_timeout_ms: Some(30_000),
                 ..PgDriverOptions::default()

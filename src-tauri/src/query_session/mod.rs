@@ -34,7 +34,7 @@ struct Session {
     generation: u64,
     owner_id: String,
     window_label: String,
-    tls: bool,
+    tls: crate::postgres::dedicated::TlsConfig,
     channel: Channel<QueryEventEnvelope>,
     connection: Arc<postgres::SessionConnection>,
     observer: Arc<Mutex<Arc<Observer>>>,
@@ -223,7 +223,7 @@ impl QuerySessionManager {
                 generation,
                 owner_id: payload.owner_id,
                 window_label: window.into(),
-                tls: spec.tls_prefer,
+                tls: connection.tls.clone(),
                 channel,
                 connection: Arc::new(connection),
                 observer,
@@ -500,7 +500,8 @@ impl QuerySessionManager {
         if session.credit.lock().await.execution_id.as_deref() != Some(&payload.execution_id) {
             return Ok(CancelResult { requested: false });
         }
-        let requested = postgres::cancel(session.connection.cancel.clone(), session.tls).await;
+        let requested =
+            postgres::cancel(session.connection.cancel.clone(), session.tls.clone()).await;
         Ok(CancelResult { requested })
     }
     pub(crate) async fn refresh(
@@ -1072,7 +1073,7 @@ async fn close_session(session: Arc<Session>, emit: bool) {
     }
     session.credit_changed.notify_waiters();
     if session.credit.lock().await.execution_id.is_some() {
-        let _ = postgres::cancel(session.connection.cancel.clone(), session.tls).await;
+        let _ = postgres::cancel(session.connection.cancel.clone(), session.tls.clone()).await;
     }
     if session.transaction.lock().await.status != QueryTransactionStatus::Idle {
         let _ = tokio::time::timeout(
