@@ -526,10 +526,27 @@ impl PgStoredConnection {
         }
     }
 
+    pub(crate) fn effective_port(&self) -> u16 {
+        if self.port == 0 {
+            5432
+        } else {
+            self.port
+        }
+    }
+
+    /// Legacy `ssl` mirror of `tls_options.mode`. Legacy rows (no blob)
+    /// keep the stored flag as given.
+    pub(crate) fn ssl_mirror(&self) -> bool {
+        match &self.tls_options {
+            Some(options) => options.mode != PgTlsMode::Disable,
+            None => self.ssl,
+        }
+    }
+
     /// Bring `ssl` in line with `tls_options.mode` (no-op on legacy rows).
     pub(crate) fn normalize_tls(&mut self) {
-        if let Some(options) = &self.tls_options {
-            self.ssl = options.mode != PgTlsMode::Disable;
+        if self.tls_options.is_some() {
+            self.ssl = self.ssl_mirror();
         }
     }
 }
@@ -837,6 +854,38 @@ impl StoredConnection {
             Self::SQLite(c) => c.port,
             Self::ClickHouse(c) => c.port,
             Self::Redis(c) => c.port,
+        }
+    }
+
+    pub(crate) fn effective_port(&self) -> u16 {
+        match self {
+            Self::PostgreSQL(c) => c.effective_port(),
+            Self::MySQL(c) => {
+                if c.port == 0 {
+                    3306
+                } else {
+                    c.port
+                }
+            }
+            Self::ClickHouse(c) => {
+                if c.port == 0 {
+                    if c.use_https {
+                        8443
+                    } else {
+                        8123
+                    }
+                } else {
+                    c.port
+                }
+            }
+            Self::Redis(c) => {
+                if c.port == 0 {
+                    6379
+                } else {
+                    c.port
+                }
+            }
+            Self::SQLite(c) => c.port,
         }
     }
 

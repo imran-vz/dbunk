@@ -3,39 +3,29 @@ use crate::StoredConnection;
 use super::LocalEndpoint;
 
 pub(super) fn remote_endpoint(connection: &StoredConnection) -> Result<(String, u16), String> {
-    let port = match connection {
-        StoredConnection::PostgreSQL(c) => defaulted_port(c.port, 5432),
-        StoredConnection::MySQL(c) => defaulted_port(c.port, 3306),
-        StoredConnection::ClickHouse(c) => {
-            if c.host.starts_with("http://") || c.host.starts_with("https://") {
-                let url = reqwest::Url::parse(&c.host).map_err(|error| error.to_string())?;
-                let host = url
-                    .host_str()
-                    .ok_or_else(|| "ClickHouse URL host is required".to_string())?
-                    .to_string();
-                let port = url.port_or_known_default().ok_or_else(|| {
-                    "ClickHouse URL must include a port or use http/https".to_string()
-                })?;
-                return Ok((host, port));
-            }
-            if c.use_https {
-                defaulted_port(c.port, 8443)
-            } else {
-                defaulted_port(c.port, 8123)
-            }
+    if matches!(connection, StoredConnection::SQLite(_)) {
+        return Err("SQLite connections do not support SSH tunnels".to_string());
+    }
+    if let StoredConnection::ClickHouse(c) = connection {
+        if c.host.starts_with("http://") || c.host.starts_with("https://") {
+            let url = reqwest::Url::parse(&c.host).map_err(|error| error.to_string())?;
+            let host = url
+                .host_str()
+                .ok_or_else(|| "ClickHouse URL host is required".to_string())?
+                .to_string();
+            let port = url.port_or_known_default().ok_or_else(|| {
+                "ClickHouse URL must include a port or use http/https".to_string()
+            })?;
+            return Ok((host, port));
         }
-        StoredConnection::Redis(c) => defaulted_port(c.port, 6379),
-        StoredConnection::SQLite(_) => {
-            return Err("SQLite connections do not support SSH tunnels".to_string());
-        }
-    };
+    }
     if connection.host().trim().is_empty() {
         return Err(format!(
             "{} host is required before an SSH tunnel can be established",
             crate::dispatch::relational::engine_name(&connection.engine())
         ));
     }
-    Ok((connection.host().to_string(), port))
+    Ok((connection.host().to_string(), connection.effective_port()))
 }
 
 pub(super) fn rewrite_connection_endpoint(
@@ -77,14 +67,6 @@ pub(super) fn rewrite_connection_endpoint(
     }
     routed.set_network_endpoint(endpoint.host.clone(), endpoint.port)?;
     Ok(routed)
-}
-
-fn defaulted_port(port: u16, default_port: u16) -> u16 {
-    if port == 0 {
-        default_port
-    } else {
-        port
-    }
 }
 
 #[cfg(test)]

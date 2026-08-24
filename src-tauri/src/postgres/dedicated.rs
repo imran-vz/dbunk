@@ -107,9 +107,10 @@ pub(crate) async fn connect(
             (client, driver)
         }
     };
-    for statement in driver_option_sql(&spec.driver_options, spec.safety_policy.read_only) {
+    let statements = driver_option_sql(&spec.driver_options, spec.safety_policy.read_only);
+    if !statements.is_empty() {
         client
-            .batch_execute(&statement)
+            .batch_execute(&statements.join("; "))
             .await
             .map_err(database_error)?;
     }

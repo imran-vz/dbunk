@@ -17,11 +17,7 @@ use super::{connect, pg_connection};
 fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Command, String> {
     let connection = pg_connection(connection)?;
     let mut command = Command::new(binary);
-    let port = if connection.port == 0 {
-        5432
-    } else {
-        connection.port
-    };
+    let port = connection.effective_port();
     // `--host` and the `PGSSL*` / `PGHOSTADDR` environment come from the
     // shared TLS resolver (ADR-0025) so libpq verifies exactly what the
     // in-process drivers verify.

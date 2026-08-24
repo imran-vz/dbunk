@@ -32,7 +32,7 @@ impl ResolvedPostgresConnectSpec {
         Self {
             connection_id: pg.id.clone(),
             host: pg.host.clone(),
-            port: if pg.port == 0 { 5432 } else { pg.port },
+            port: pg.effective_port(),
             database: pg.database.clone(),
             user: pg.user.clone(),
             password: pg.password.clone(),
@@ -157,5 +157,12 @@ mod tests {
         assert!(spec.tls.server_name_differs_from(&spec.host));
         let hosts = spec.tokio_config().get_hosts().to_vec();
         assert!(matches!(&hosts[..], [tokio_postgres::config::Host::Tcp(h)] if h == "db.example"));
+    }
+
+    #[test]
+    fn zero_port_defaults_to_5432() {
+        let mut pg = connection(None);
+        pg.port = 0;
+        assert_eq!(ResolvedPostgresConnectSpec::from_postgres(&pg).port, 5432);
     }
 }
