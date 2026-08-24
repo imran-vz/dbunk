@@ -35,7 +35,10 @@ services:
     tmpfs:
       - /var/lib/postgresql/data
     volumes:
-      - ./postgres:/docker-entrypoint-initdb.d:ro
+      # The image's sourced init script enables TLS, then runs the shared
+      # SQL fixture from this side mount (ADR-0025).
+      - ./postgres:/fixture-sql:ro
+      - ./postgres-tls/certs:/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dbunk -d dbunk_demo"]
       interval: 3s
