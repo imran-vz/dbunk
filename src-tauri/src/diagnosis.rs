@@ -264,6 +264,38 @@ impl Report {
         }
     }
 
+    /// Replace an optimistic pass when a protocol error for that stage is
+    /// delivered during the following startup exchange. PostgreSQL can
+    /// surface TLS alerts after the handshake future itself has completed.
+    fn fail_existing(
+        &mut self,
+        stage: DiagnosisStageKind,
+        started: Instant,
+        kind: FailureKind,
+        message: String,
+    ) {
+        let existing = self
+            .stages
+            .iter_mut()
+            .find(|candidate| candidate.stage == stage)
+            .expect("failed stage was already reported");
+        existing.result = StageResult::Failed {
+            elapsed_ms: elapsed_ms(started),
+            kind,
+            message,
+        };
+        self.failed = Some(stage);
+        while self.stages.len() < STAGE_ORDER.len() {
+            let next = STAGE_ORDER[self.stages.len()];
+            self.push(
+                next,
+                StageResult::Skipped {
+                    reason: SkipReason::BlockedByEarlierFailure,
+                },
+            );
+        }
+    }
+
     fn warn(&mut self, warning: DiagnosisWarning) {
         if !self.warnings.contains(&warning) {
             self.warnings.push(warning);
@@ -303,12 +335,12 @@ pub(crate) async fn run(
     connection: &StoredConnection,
 ) -> Result<ConnectionDiagnosis, String> {
     let mut report = Report::new(connection.engine());
-    let route_key = format!("diag-{}", uuid::Uuid::new_v4());
+    let route = tunnel::EphemeralRoute::new("diag");
 
     let tunnel_enabled = connection.ssh_tunnel().is_some_and(|config| config.enabled);
     let resolved: Cow<'_, StoredConnection> = if tunnel_enabled {
         let started = Instant::now();
-        match tunnel::resolve_connection(pool, mode, &route_key, connection).await {
+        match tunnel::resolve_connection(pool, mode, route.key(), connection).await {
             Ok(resolved) => {
                 let local_endpoint = format!("{}:{}", resolved.host(), resolved.port());
                 report.pass(
@@ -325,7 +357,6 @@ pub(crate) async fn run(
                     FailureKind::TunnelFailed,
                     message,
                 );
-                tunnel::drop_connection(&route_key);
                 return Ok(report.finish());
             }
         }
@@ -340,7 +371,6 @@ pub(crate) async fn run(
         }
         other => diagnose_generic(other, &mut report).await,
     }
-    tunnel::drop_connection(&route_key);
     Ok(report.finish())
 }
 
@@ -372,6 +402,8 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
     let spec = ResolvedPostgresConnectSpec::from_postgres(pg);
     let connect_timeout = spec.connect_timeout.unwrap_or(DEFAULT_CONNECT_TIMEOUT);
     let mode = spec.tls.mode;
+    let pool_hostname_verification = tls::pool_hostname_verification(&spec.tls, &spec.host);
+    record_known_transport_warnings(report, mode, pool_hostname_verification);
     if pg.environment == Environment::Production && !mode.verifies_chain() {
         report.warn(DiagnosisWarning::ProductionWithoutVerification);
     }
@@ -487,13 +519,13 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
     report.pass(DiagnosisStageKind::Tcp, started, None);
 
     // tls ------------------------------------------------------------------
-    let started = Instant::now();
+    let tls_started = Instant::now();
     let tls_config = match tls::client_config(&spec.tls) {
         Ok(config) => config,
         Err(error) => {
             report.fail(
                 DiagnosisStageKind::Tls,
-                started,
+                tls_started,
                 FailureKind::InvalidLocalMaterial,
                 error.to_string(),
             );
@@ -501,14 +533,12 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
         }
     };
     let client_cert_configured = spec.tls.client_auth_configured();
-    let pool_hostname_verification = tls::pool_hostname_verification(&spec.tls, &spec.host);
     let mut config = spec.tokio_config();
     // TLS is negotiated here, by hand, so the handshake is attributable;
     // tokio-postgres then speaks the plain protocol over whatever stream
     // it is handed.
     config.ssl_mode(tokio_postgres::config::SslMode::Disable);
 
-    let mut encrypted = false;
     let startup = match tls_config {
         None => {
             report.skip(DiagnosisStageKind::Tls, SkipReason::TlsDisabled);
@@ -522,7 +552,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     Ok(Err(error)) => {
                         report.fail(
                             DiagnosisStageKind::Tls,
-                            started,
+                            tls_started,
                             FailureKind::HandshakeFailed,
                             format!("SSLRequest failed: {error}"),
                         );
@@ -531,7 +561,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     Err(_) => {
                         report.fail(
                             DiagnosisStageKind::Tls,
-                            started,
+                            tls_started,
                             FailureKind::TimedOut,
                             "SSLRequest timed out".into(),
                         );
@@ -541,9 +571,10 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
             if !server_accepts {
                 if mode == PgTlsMode::Prefer {
                     // libpq semantics: fall back to plaintext on the same socket.
+                    report.warn(DiagnosisWarning::NotEncrypted);
                     report.pass(
                         DiagnosisStageKind::Tls,
-                        started,
+                        tls_started,
                         Some(tls_detail(
                             false,
                             None,
@@ -557,7 +588,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                 } else {
                     report.fail(
                         DiagnosisStageKind::Tls,
-                        started,
+                        tls_started,
                         FailureKind::ServerRefusedTls,
                         connect_error::tls_failure_message(TlsFailureKind::ServerRefusedTls, ""),
                     );
@@ -574,7 +605,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                         Err(error) => {
                             report.fail(
                                 DiagnosisStageKind::Tls,
-                                started,
+                                tls_started,
                                 FailureKind::InvalidLocalMaterial,
                                 format!(
                                     "Invalid TLS server name \"{}\": {error}",
@@ -586,10 +617,9 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     };
                 match tokio::time::timeout(connect_timeout, connector.connect(stream)).await {
                     Ok(Ok(tls_stream)) => {
-                        encrypted = true;
                         report.pass(
                             DiagnosisStageKind::Tls,
-                            started,
+                            tls_started,
                             Some(tls_detail(
                                 true,
                                 None,
@@ -609,7 +639,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                         };
                         report.fail(
                             DiagnosisStageKind::Tls,
-                            started,
+                            tls_started,
                             kind.into(),
                             connect_error::tls_failure_message(kind, &view.message),
                         );
@@ -618,7 +648,7 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     Err(_) => {
                         report.fail(
                             DiagnosisStageKind::Tls,
-                            started,
+                            tls_started,
                             FailureKind::TimedOut,
                             "TLS handshake timed out".into(),
                         );
@@ -675,9 +705,9 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     );
                 }
                 ConnectFailure::Tls(kind) => {
-                    report.fail(
-                        DiagnosisStageKind::Authentication,
-                        started,
+                    report.fail_existing(
+                        DiagnosisStageKind::Tls,
+                        tls_started,
                         kind.into(),
                         connect_error::tls_failure_message(kind, &view.message),
                     );
@@ -728,7 +758,6 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
         let protocol: Option<String> = row.get(1);
         let cipher: Option<String> = row.get(2);
         let client_cert: bool = row.get(3);
-        encrypted = ssl;
         if let Some(DiagnosisStage {
             result: StageResult::Passed { detail, .. },
             ..
@@ -746,7 +775,16 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
         started,
         Some(StageDetail::Database { server_version }),
     );
-    if !encrypted {
+}
+
+/// Record transport facts known from configuration before DNS or startup so
+/// a later authentication/database failure cannot hide them.
+fn record_known_transport_warnings(
+    report: &mut Report,
+    mode: PgTlsMode,
+    pool_hostname_verification: PoolHostnameVerification,
+) {
+    if mode == PgTlsMode::Disable {
         report.warn(DiagnosisWarning::NotEncrypted);
     }
     if pool_hostname_verification == PoolHostnameVerification::CaOnly {
@@ -871,6 +909,90 @@ mod tests {
             DiagnosisOutcome::Reachable { latency_ms: 42 }
         );
         assert_eq!(diagnosis.warnings, vec![DiagnosisWarning::NotEncrypted]);
+    }
+
+    #[test]
+    fn known_transport_warnings_survive_a_later_authentication_failure() {
+        for (mode, pool_verification, expected) in [
+            (
+                PgTlsMode::Disable,
+                PoolHostnameVerification::NotApplicable,
+                DiagnosisWarning::NotEncrypted,
+            ),
+            (
+                PgTlsMode::VerifyFull,
+                PoolHostnameVerification::CaOnly,
+                DiagnosisWarning::PoolHostnameVerificationCaOnly,
+            ),
+        ] {
+            let mut report = Report::new(DatabaseEngine::PostgreSQL);
+            record_known_transport_warnings(&mut report, mode, pool_verification);
+            report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
+            report.pass(DiagnosisStageKind::Dns, Instant::now(), None);
+            report.pass(DiagnosisStageKind::Tcp, Instant::now(), None);
+            if mode == PgTlsMode::Disable {
+                report.skip(DiagnosisStageKind::Tls, SkipReason::TlsDisabled);
+            } else {
+                report.pass(DiagnosisStageKind::Tls, Instant::now(), None);
+            }
+            report.fail(
+                DiagnosisStageKind::Authentication,
+                Instant::now(),
+                FailureKind::AuthenticationFailed,
+                "wrong password".into(),
+            );
+
+            let diagnosis = report.finish();
+            assert_eq!(diagnosis.warnings, vec![expected]);
+            assert_eq!(
+                diagnosis.outcome,
+                DiagnosisOutcome::Failed {
+                    stage: DiagnosisStageKind::Authentication,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_late_tls_error_replaces_the_tls_pass_and_blocks_startup_stages() {
+        let mut report = Report::new(DatabaseEngine::PostgreSQL);
+        report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
+        report.pass(DiagnosisStageKind::Dns, Instant::now(), None);
+        report.pass(DiagnosisStageKind::Tcp, Instant::now(), None);
+        report.pass(DiagnosisStageKind::Tls, Instant::now(), None);
+
+        report.fail_existing(
+            DiagnosisStageKind::Tls,
+            Instant::now(),
+            FailureKind::HandshakeFailed,
+            "late TLS alert".into(),
+        );
+        let diagnosis = report.finish();
+
+        assert_eq!(
+            diagnosis.outcome,
+            DiagnosisOutcome::Failed {
+                stage: DiagnosisStageKind::Tls
+            }
+        );
+        assert!(matches!(
+            result_of(&diagnosis, DiagnosisStageKind::Tls),
+            StageResult::Failed {
+                kind: FailureKind::HandshakeFailed,
+                ..
+            }
+        ));
+        for stage in [
+            DiagnosisStageKind::Authentication,
+            DiagnosisStageKind::Database,
+        ] {
+            assert_eq!(
+                result_of(&diagnosis, stage),
+                &StageResult::Skipped {
+                    reason: SkipReason::BlockedByEarlierFailure
+                }
+            );
+        }
     }
 
     #[test]
@@ -1022,6 +1144,7 @@ mod tests {
                 ..
             }
         ));
+        assert!(d.warnings.contains(&DiagnosisWarning::NotEncrypted));
     }
 
     #[tokio::test]
@@ -1043,6 +1166,7 @@ mod tests {
                 ..
             }
         ));
+        assert!(d.warnings.contains(&DiagnosisWarning::NotEncrypted));
     }
 
     #[tokio::test]

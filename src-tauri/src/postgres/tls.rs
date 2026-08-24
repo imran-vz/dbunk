@@ -9,8 +9,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Once, OnceLock};
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::pem::PemObject;
@@ -22,6 +24,29 @@ use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use tokio_postgres::config::SslMode;
 
 use crate::{PgStoredConnection, PgTlsMode};
+
+/// SQLx 0.8 seeds every PostgreSQL options value from libpq-style process
+/// variables, including credentials and certificate paths that have no public
+/// "clear" setter. dbunk owns those values in `StoredConnection`, so discard
+/// the inherited inputs once, before the application starts any worker threads.
+pub(crate) const SQLX_INHERITED_OVERRIDES: &[&str] = &[
+    "PGPASSWORD",
+    "PGPASSFILE",
+    "PGOPTIONS",
+    "PGSSLCERT",
+    "PGSSLKEY",
+    "PGSSLROOTCERT",
+];
+
+pub(crate) fn prepare_sqlx_environment() {
+    static PREPARE: Once = Once::new();
+
+    PREPARE.call_once(|| {
+        for key in SQLX_INHERITED_OVERRIDES {
+            std::env::remove_var(key);
+        }
+    });
+}
 
 /// TLS decision for one connect, independent of which driver performs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +125,7 @@ pub(crate) enum TlsMaterialError {
     /// Exactly one of client certificate / client key was configured.
     ClientPairIncomplete {
         present: &'static str,
+        path: String,
     },
     ClientKeyEncrypted {
         path: String,
@@ -117,9 +143,9 @@ pub(crate) enum TlsMaterialError {
 impl std::fmt::Display for TlsMaterialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ClientPairIncomplete { present } => write!(
+            Self::ClientPairIncomplete { present, path } => write!(
                 f,
-                "Client certificate authentication needs both a certificate and a key; only the {present} was provided."
+                "Client certificate authentication needs both a certificate and a key; only the {present} was provided at {path}."
             ),
             Self::ClientKeyEncrypted { path } => write!(
                 f,
@@ -233,10 +259,14 @@ type ClientAuth = (Vec<CertificateDer<'static>>, PrivateKeyDer<'static>);
 fn load_client_auth(tls: &ResolvedTls) -> Result<Option<ClientAuth>, TlsMaterialError> {
     match (&tls.client_cert_path, &tls.client_key_path) {
         (None, None) => Ok(None),
-        (Some(_), None) => Err(TlsMaterialError::ClientPairIncomplete {
+        (Some(cert_path), None) => Err(TlsMaterialError::ClientPairIncomplete {
             present: "certificate",
+            path: display_path(cert_path),
         }),
-        (None, Some(_)) => Err(TlsMaterialError::ClientPairIncomplete { present: "key" }),
+        (None, Some(key_path)) => Err(TlsMaterialError::ClientPairIncomplete {
+            present: "key",
+            path: display_path(key_path),
+        }),
         (Some(cert_path), Some(key_path)) => {
             let chain = load_certs(cert_path)?;
             let key = load_private_key(key_path)?;
@@ -294,21 +324,36 @@ fn display_path(path: &Path) -> String {
 /// Platform trust store, loaded once per process. Failures log and
 /// yield an empty set — verification then rests on the user CA file,
 /// which is exactly SQLx's behaviour on the pool path.
-fn native_roots() -> &'static Arc<RootCertStore> {
-    static ROOTS: OnceLock<Arc<RootCertStore>> = OnceLock::new();
+struct NativeRoots {
+    certificates: Vec<CertificateDer<'static>>,
+    store: RootCertStore,
+}
+
+fn native_roots() -> &'static Arc<NativeRoots> {
+    static ROOTS: OnceLock<Arc<NativeRoots>> = OnceLock::new();
     ROOTS.get_or_init(|| {
         let mut store = RootCertStore::empty();
-        match rustls_native_certs::load_native_certs() {
+        let certificates = match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
+                let mut accepted = Vec::with_capacity(certs.len());
                 for cert in certs {
-                    if let Err(error) = store.add(cert) {
+                    if let Err(error) = store.add(cert.clone()) {
                         log::warn!("skipping unparsable native root certificate: {error}");
+                    } else {
+                        accepted.push(cert);
                     }
                 }
+                accepted
             }
-            Err(error) => log::warn!("could not load platform root certificates: {error}"),
-        }
-        Arc::new(store)
+            Err(error) => {
+                log::warn!("could not load platform root certificates: {error}");
+                Vec::new()
+            }
+        };
+        Arc::new(NativeRoots {
+            certificates,
+            store,
+        })
     })
 }
 
@@ -316,9 +361,9 @@ fn native_roots() -> &'static Arc<RootCertStore> {
 /// cannot replace, and both paths must trust the same set).
 fn root_store(root_cert_path: Option<&Path>) -> Result<Arc<RootCertStore>, TlsMaterialError> {
     let Some(path) = root_cert_path else {
-        return Ok(Arc::clone(native_roots()));
+        return Ok(Arc::new(native_roots().store.clone()));
     };
-    let mut store = RootCertStore::clone(native_roots().as_ref());
+    let mut store = native_roots().store.clone();
     for cert in load_certs(path)? {
         store
             .add(cert)
@@ -477,8 +522,12 @@ pub(crate) fn apply_to_pg_options(
 /// `sslmode=…` plus the certificate parameters SQLx's URL parser accepts.
 /// Percent-encoding is the caller's helper so this module stays free of
 /// the dispatch layer.
-pub(crate) fn dsn_query(tls: &ResolvedTls, encode: impl Fn(&str) -> String) -> String {
-    let mut query = format!("sslmode={}", tls.mode.as_str());
+pub(crate) fn dsn_query(tls: &ResolvedTls, host: &str, encode: impl Fn(&str) -> String) -> String {
+    let mode = match tls.mode {
+        PgTlsMode::VerifyFull if tls.server_name_differs_from(host) => PgTlsMode::VerifyCa,
+        mode => mode,
+    };
+    let mut query = format!("sslmode={}", mode.as_str());
     for (key, path) in [
         ("sslrootcert", &tls.root_cert_path),
         ("sslcert", &tls.client_cert_path),
@@ -502,34 +551,177 @@ pub(crate) fn dsn_query(tls: &ResolvedTls, encode: impl Fn(&str) -> String) -> S
 /// `pg_restore`. Over a tunnel `--host` is the certificate name and
 /// `PGHOSTADDR` the loopback address, so libpq verifies the real host
 /// name while connecting to the forwarded port.
-const LIBPQ_INHERITED_OVERRIDES: &[&str] =
-    &["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"];
+const LIBPQ_INHERITED_OVERRIDES: &[&str] = &[
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGDATABASE",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGPASSFILE",
+    "PGOPTIONS",
+    "PGCONNECT_TIMEOUT",
+    "PGSSLMODE",
+    "PGREQUIRESSL",
+    "PGSSLCOMPRESSION",
+    "PGSSLCERT",
+    "PGSSLCERTMODE",
+    "PGSSLKEY",
+    "PGSSLROOTCERT",
+    "PGSSLCRL",
+    "PGSSLCRLDIR",
+    "PGSSLNEGOTIATION",
+    "PGSSLMINPROTOCOLVERSION",
+    "PGSSLMAXPROTOCOLVERSION",
+    "PGSSLSNI",
+    "PGCHANNELBINDING",
+    "PGREQUIREAUTH",
+    "PGTARGETSESSIONATTRS",
+    "PGLOADBALANCE",
+    "PGGSSENCMODE",
+];
 
-pub(crate) fn apply_to_command(tls: &ResolvedTls, host: &str, command: &mut Command) {
+/// Keeps generated libpq TLS material alive until its child exits.
+pub(crate) struct LibpqTlsMaterial {
+    _root_bundle: Option<tempfile::NamedTempFile>,
+    _isolated_home: tempfile::TempDir,
+}
+
+pub(crate) fn apply_to_command(
+    tls: &ResolvedTls,
+    host: &str,
+    command: &mut Command,
+) -> Result<LibpqTlsMaterial, TlsMaterialError> {
+    // Validate the same client certificate/key pair the in-process driver
+    // consumes. In particular, reject incomplete or encrypted keys before
+    // libpq can open a terminal prompt and wait indefinitely. Disabled TLS
+    // ignores stale certificate settings, matching the in-process driver.
+    if tls.mode != PgTlsMode::Disable {
+        let _ = load_client_auth(tls)?;
+    }
+
     // A GUI app may inherit libpq variables when launched from a shell.
     // Make the resolved connection authoritative: in particular, a stale
     // PGHOSTADDR must never redirect a subprocess carrying PGPASSWORD.
     for key in LIBPQ_INHERITED_OVERRIDES {
         command.env_remove(key);
     }
+    // GSS encryption is a separate transport from TLS. Leave it disabled so
+    // libpq cannot prefer GSS and bypass the resolved sslmode policy.
+    command.env("PGGSSENCMODE", "disable");
+    // Keep an empty, private directory alive for explicit "not configured"
+    // paths. On Unix libpq may locate ~/.postgresql through the passwd
+    // database rather than HOME, so changing HOME alone cannot suppress its
+    // ambient certificate defaults.
+    let isolated_home = tempfile::tempdir().map_err(|error| TlsMaterialError::Unreadable {
+        path: "temporary libpq home".into(),
+        detail: error.to_string(),
+    })?;
+    for key in ["HOME", "USERPROFILE", "APPDATA"] {
+        command.env(key, isolated_home.path());
+    }
     command.arg("--host").arg(&tls.server_name);
     if tls.server_name_differs_from(host) {
         command.env("PGHOSTADDR", host);
     }
     command.env("PGSSLMODE", tls.mode.as_str());
-    if tls.mode.verifies_chain() {
-        if let Some(path) = &tls.root_cert_path {
-            command.env("PGSSLROOTCERT", path);
+    let missing_client_cert = isolated_home.path().join("client-cert-not-configured.pem");
+    let missing_client_key = isolated_home.path().join("client-key-not-configured.pem");
+    let missing_root_cert = isolated_home.path().join("root-cert-not-configured.pem");
+    let missing_crl = isolated_home.path().join("crl-not-configured.pem");
+    let root_bundle = if tls.mode.verifies_chain() {
+        let bundle = libpq_root_bundle(tls.root_cert_path.as_deref())?;
+        command.env("PGSSLROOTCERT", bundle.path());
+        // libpq can discover ~/.postgresql/root.crl through the passwd
+        // database even after HOME is isolated. Explicitly disable both CRL
+        // sources so only the resolved trust inputs affect verification.
+        command.env("PGSSLCRL", &missing_crl);
+        command.env("PGSSLCRLDIR", isolated_home.path());
+        Some(bundle)
+    } else {
+        if tls.mode != PgTlsMode::Disable {
+            // `require` silently becomes verify-ca when libpq discovers its
+            // default root.crt. An explicit missing path preserves dbunk's
+            // non-verifying semantics; libpq treats it as "no root cert".
+            command.env("PGSSLROOTCERT", &missing_root_cert);
+        }
+        None
+    };
+    if tls.mode != PgTlsMode::Disable {
+        for (key, configured, missing) in [
+            (
+                "PGSSLCERT",
+                tls.client_cert_path.as_deref(),
+                missing_client_cert.as_path(),
+            ),
+            (
+                "PGSSLKEY",
+                tls.client_key_path.as_deref(),
+                missing_client_key.as_path(),
+            ),
+        ] {
+            // Explicitly point at a guaranteed-missing file instead of
+            // allowing libpq to consult ~/.postgresql/postgresql.{crt,key}.
+            command.env(key, configured.unwrap_or(missing));
         }
     }
-    for (key, path) in [
-        ("PGSSLCERT", &tls.client_cert_path),
-        ("PGSSLKEY", &tls.client_key_path),
-    ] {
-        if let Some(path) = path {
-            command.env(key, path);
+    Ok(LibpqTlsMaterial {
+        _root_bundle: root_bundle,
+        _isolated_home: isolated_home,
+    })
+}
+
+/// libpq accepts one root file, while the in-process drivers use native
+/// roots plus the optional user CA. Materialize that same union as a
+/// short-lived PEM bundle rather than replacing either trust source.
+fn libpq_root_bundle(
+    root_cert_path: Option<&Path>,
+) -> Result<tempfile::NamedTempFile, TlsMaterialError> {
+    use std::io::Write as _;
+
+    let mut bundle =
+        tempfile::NamedTempFile::new().map_err(|error| TlsMaterialError::Unreadable {
+            path: "temporary libpq CA bundle".into(),
+            detail: error.to_string(),
+        })?;
+    for cert in &native_roots().certificates {
+        write_cert_pem(&mut bundle, cert.as_ref())?;
+    }
+    if let Some(path) = root_cert_path {
+        for cert in load_certs(path)? {
+            write_cert_pem(&mut bundle, cert.as_ref())?;
         }
     }
+    bundle
+        .flush()
+        .map_err(|error| TlsMaterialError::Unreadable {
+            path: "temporary libpq CA bundle".into(),
+            detail: error.to_string(),
+        })?;
+    Ok(bundle)
+}
+
+fn write_cert_pem(
+    output: &mut impl std::io::Write,
+    certificate: &[u8],
+) -> Result<(), TlsMaterialError> {
+    let encoded = BASE64.encode(certificate);
+    output
+        .write_all(b"-----BEGIN CERTIFICATE-----\n")
+        .and_then(|()| {
+            for chunk in encoded.as_bytes().chunks(64) {
+                output.write_all(chunk)?;
+                output.write_all(b"\n")?;
+            }
+            Ok(())
+        })
+        .and_then(|()| output.write_all(b"-----END CERTIFICATE-----\n"))
+        .map_err(|error| TlsMaterialError::Unreadable {
+            path: "temporary libpq CA bundle".into(),
+            detail: error.to_string(),
+        })
 }
 
 #[cfg(test)]
@@ -668,22 +860,35 @@ mod tests {
     #[test]
     fn dsn_query_renders_mode_and_encoded_paths() {
         let mut tls = ResolvedTls::with_mode("h", PgTlsMode::VerifyCa);
-        assert_eq!(dsn_query(&tls, |s| s.to_string()), "sslmode=verify-ca");
+        assert_eq!(dsn_query(&tls, "h", |s| s.to_string()), "sslmode=verify-ca");
         tls.root_cert_path = Some("/a b/ca.pem".into());
         tls.client_cert_path = Some("/c.pem".into());
         tls.client_key_path = Some("/k.pem".into());
         assert_eq!(
-            dsn_query(&tls, |s| s.replace(' ', "%20")),
+            dsn_query(&tls, "h", |s| s.replace(' ', "%20")),
             "sslmode=verify-ca&sslrootcert=/a%20b/ca.pem&sslcert=/c.pem&sslkey=/k.pem"
+        );
+    }
+
+    #[test]
+    fn dsn_downgrades_tunneled_verify_full_like_pg_options() {
+        let tls = ResolvedTls::with_mode("db.internal", PgTlsMode::VerifyFull);
+        assert_eq!(
+            dsn_query(&tls, "127.0.0.1", |s| s.to_string()),
+            "sslmode=verify-ca"
+        );
+        assert_eq!(
+            dsn_query(&tls, "db.internal", |s| s.to_string()),
+            "sslmode=verify-full"
         );
     }
 
     #[test]
     fn command_gets_host_hostaddr_and_pgssl_env() {
         let mut tls = ResolvedTls::with_mode("db.internal", PgTlsMode::VerifyFull);
-        tls.root_cert_path = Some("/ca.pem".into());
+        tls.root_cert_path = Some(testdata("ca.pem"));
         let mut command = Command::new("pg_dump");
-        apply_to_command(&tls, "127.0.0.1", &mut command);
+        let material = apply_to_command(&tls, "127.0.0.1", &mut command).unwrap();
         let args: Vec<String> = command
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -700,13 +905,41 @@ mod tests {
             .collect();
         assert!(env.contains(&("PGHOSTADDR".into(), Some("127.0.0.1".into()))));
         assert!(env.contains(&("PGSSLMODE".into(), Some("verify-full".into()))));
-        assert!(env.contains(&("PGSSLROOTCERT".into(), Some("/ca.pem".into()))));
-        assert!(!env
+        let root_bundle = PathBuf::from(
+            env.iter()
+                .find_map(|(key, value)| (key == "PGSSLROOTCERT").then_some(value.as_ref()))
+                .flatten()
+                .expect("generated root bundle"),
+        );
+        let certificates = CertificateDer::pem_file_iter(&root_bundle)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(certificates.len(), native_roots().certificates.len() + 1);
+        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLCRL"] {
+            let path = env
+                .iter()
+                .find_map(|(candidate, value)| (candidate == key).then_some(value.as_ref()))
+                .flatten()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| panic!("{key} must be explicit"));
+            assert!(!path.exists(), "{key} must point to a missing file");
+        }
+        let crl_dir = env
             .iter()
-            .any(|(key, value)| key == "PGSSLCERT" && value.is_some()));
+            .find_map(|(key, value)| (key == "PGSSLCRLDIR").then_some(value.as_ref()))
+            .flatten()
+            .map(PathBuf::from)
+            .expect("isolated CRL directory");
+        assert!(crl_dir.is_dir());
+        assert!(crl_dir.read_dir().unwrap().next().is_none());
+        assert!(root_bundle.exists());
+        drop(material);
+        assert!(!root_bundle.exists());
+        assert!(!crl_dir.exists());
 
         let mut plain = Command::new("pg_dump");
-        apply_to_command(&ResolvedTls::plain("h"), "h", &mut plain);
+        let _material = apply_to_command(&ResolvedTls::plain("h"), "h", &mut plain).unwrap();
         assert!(!plain
             .get_envs()
             .any(|(k, value)| k == "PGHOSTADDR" && value.is_some()));
@@ -719,34 +952,223 @@ mod tests {
             command.env(key, "/ambient/value");
         }
 
-        apply_to_command(
+        let _material = apply_to_command(
             &ResolvedTls::prefer("db.internal"),
             "db.internal",
             &mut command,
-        );
+        )
+        .unwrap();
 
         for key in LIBPQ_INHERITED_OVERRIDES {
             assert!(command
                 .get_envs()
-                .any(|(candidate, value)| candidate == *key && value.is_none()));
+                .filter(|(candidate, _)| *candidate == *key)
+                .all(|(_, value)| value.is_none_or(|value| value != "/ambient/value")));
+        }
+        for key in [
+            "PGSERVICE",
+            "PGSERVICEFILE",
+            "PGPASSFILE",
+            "PGSSLCERTMODE",
+            "PGSSLCRL",
+            "PGSSLCRLDIR",
+            "PGSSLNEGOTIATION",
+            "PGSSLMINPROTOCOLVERSION",
+            "PGSSLMAXPROTOCOLVERSION",
+        ] {
+            assert!(command
+                .get_envs()
+                .any(|(candidate, value)| candidate == key && value.is_none()));
+        }
+        assert!(command
+            .get_envs()
+            .any(|(candidate, value)| candidate == "PGGSSENCMODE"
+                && value == Some("disable".as_ref())));
+    }
+
+    #[test]
+    fn command_isolates_libpq_default_files_and_keeps_home_alive() {
+        let ambient_home = tempfile::tempdir().unwrap();
+        let ambient_postgresql = ambient_home.path().join(".postgresql");
+        std::fs::create_dir(&ambient_postgresql).unwrap();
+        for name in ["postgresql.crt", "postgresql.key", "root.crt", "root.crl"] {
+            std::fs::write(ambient_postgresql.join(name), "ambient material").unwrap();
+        }
+        let mut command = Command::new("pg_dump");
+        command.env("HOME", ambient_home.path());
+
+        let material = apply_to_command(
+            &ResolvedTls::with_mode("db.internal", PgTlsMode::Require),
+            "db.internal",
+            &mut command,
+        )
+        .unwrap();
+
+        let isolated_home = command
+            .get_envs()
+            .find_map(|(key, value)| (key == "HOME").then(|| value.unwrap()))
+            .map(PathBuf::from)
+            .expect("isolated libpq home");
+        assert_ne!(isolated_home, ambient_home.path());
+        assert!(isolated_home.is_dir());
+        assert!(!isolated_home.join(".postgresql/postgresql.crt").exists());
+        assert!(!isolated_home.join(".postgresql/postgresql.key").exists());
+        assert!(!isolated_home.join(".postgresql/root.crt").exists());
+        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT"] {
+            let path = command
+                .get_envs()
+                .find_map(|(candidate, value)| (candidate == key).then(|| value.unwrap()))
+                .map(PathBuf::from)
+                .unwrap_or_else(|| panic!("{key} must be explicit"));
+            assert!(path.starts_with(&isolated_home));
+            assert!(!path.exists());
+        }
+
+        drop(material);
+        assert!(
+            !isolated_home.exists(),
+            "temporary home must live exactly as long as the command material"
+        );
+    }
+
+    #[test]
+    fn command_blocks_libpq_default_tls_material_with_explicit_missing_paths() {
+        for mode in [PgTlsMode::Prefer, PgTlsMode::Require] {
+            let mut tls = ResolvedTls::with_mode("h", mode);
+            tls.root_cert_path = Some("/ambient/root.crt".into());
+            let mut command = Command::new("pg_dump");
+
+            let _material = apply_to_command(&tls, "h", &mut command).unwrap();
+
+            for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT"] {
+                let path = command
+                    .get_envs()
+                    .find_map(|(candidate, value)| (candidate == key).then(|| value.unwrap()))
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| panic!("{mode:?} must set {key}"));
+                assert!(path.is_absolute(), "{key} must be an absolute path");
+                assert!(!path.exists(), "{key} must point to a missing file");
+            }
         }
     }
 
     #[test]
-    fn command_omits_root_cert_for_non_verifying_modes() {
+    fn command_only_enables_explicit_crl_isolation_for_verifying_modes() {
         for mode in [PgTlsMode::Disable, PgTlsMode::Prefer, PgTlsMode::Require] {
-            let mut tls = ResolvedTls::with_mode("h", mode);
-            tls.root_cert_path = Some("/ca.pem".into());
             let mut command = Command::new("pg_dump");
+            command.env("PGSSLCRL", "/ambient/root.crl");
+            command.env("PGSSLCRLDIR", "/ambient/crls");
 
-            apply_to_command(&tls, "h", &mut command);
+            let _material =
+                apply_to_command(&ResolvedTls::with_mode("h", mode), "h", &mut command).unwrap();
 
-            assert!(
-                !command
+            for key in ["PGSSLCRL", "PGSSLCRLDIR"] {
+                assert!(command
                     .get_envs()
-                    .any(|(key, value)| key == "PGSSLROOTCERT" && value.is_some()),
-                "{mode:?} must not implicitly enable libpq certificate verification"
-            );
+                    .any(|(candidate, value)| candidate == key && value.is_none()));
+            }
+        }
+
+        for mode in [PgTlsMode::VerifyCa, PgTlsMode::VerifyFull] {
+            let mut command = Command::new("pg_dump");
+            let material =
+                apply_to_command(&ResolvedTls::with_mode("h", mode), "h", &mut command).unwrap();
+            let crl = command
+                .get_envs()
+                .find_map(|(key, value)| (key == "PGSSLCRL").then(|| value.unwrap()))
+                .map(PathBuf::from)
+                .expect("explicit missing CRL path");
+            let crl_dir = command
+                .get_envs()
+                .find_map(|(key, value)| (key == "PGSSLCRLDIR").then(|| value.unwrap()))
+                .map(PathBuf::from)
+                .expect("explicit empty CRL directory");
+
+            assert!(crl.starts_with(&crl_dir));
+            assert!(!crl.exists());
+            assert!(crl_dir.is_dir());
+            assert!(crl_dir.read_dir().unwrap().next().is_none());
+
+            drop(material);
+            assert!(!crl_dir.exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_keeps_missing_tls_material_directory_alive_through_child() {
+        let mut command = Command::new("sh");
+        command.arg("-c").arg(
+            r#"test -d "${PGSSLCERT%/*}" &&
+               test ! -e "$PGSSLCERT" &&
+               test ! -e "$PGSSLKEY" &&
+               test -s "$PGSSLROOTCERT" &&
+               test -n "$PGSSLCRL" &&
+               test ! -e "$PGSSLCRL" &&
+               test -d "$PGSSLCRLDIR" &&
+               test "$PGSSLCRLDIR" = "${PGSSLCRL%/*}""#,
+        );
+        let material = apply_to_command(
+            &ResolvedTls::with_mode("h", PgTlsMode::VerifyCa),
+            "h",
+            &mut command,
+        )
+        .unwrap();
+        let material_dir = command
+            .get_envs()
+            .find_map(|(key, value)| (key == "PGSSLCERT").then(|| value.unwrap()))
+            .map(PathBuf::from)
+            .and_then(|path| path.parent().map(PathBuf::from))
+            .expect("material directory");
+
+        let output = command.output().unwrap();
+
+        assert!(
+            output.status.success(),
+            "child could not read live TLS material paths: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(material_dir.is_dir());
+        drop(material);
+        assert!(!material_dir.exists());
+    }
+
+    #[test]
+    fn command_preserves_configured_client_material() {
+        let mut tls = ResolvedTls::prefer("h");
+        tls.client_cert_path = Some(testdata("client.pem"));
+        tls.client_key_path = Some(testdata("client-key.pem"));
+        let mut command = Command::new("pg_dump");
+
+        let _material = apply_to_command(&tls, "h", &mut command).unwrap();
+
+        for (key, expected) in [
+            ("PGSSLCERT", tls.client_cert_path.as_ref().unwrap()),
+            ("PGSSLKEY", tls.client_key_path.as_ref().unwrap()),
+        ] {
+            let actual = command
+                .get_envs()
+                .find_map(|(candidate, value)| (candidate == key).then(|| value.unwrap()));
+            assert_eq!(actual, Some(expected.as_os_str()));
+        }
+    }
+
+    #[test]
+    fn command_disable_does_not_enable_tls_material() {
+        let mut command = Command::new("pg_dump");
+        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT"] {
+            command.env(key, "/ambient/material");
+        }
+
+        let _material = apply_to_command(&ResolvedTls::plain("h"), "h", &mut command).unwrap();
+
+        assert!(command
+            .get_envs()
+            .any(|(key, value)| key == "PGSSLMODE" && value == Some("disable".as_ref())));
+        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT"] {
+            assert!(command
+                .get_envs()
+                .any(|(candidate, value)| candidate == key && value.is_none()));
         }
     }
 
@@ -767,18 +1189,28 @@ mod tests {
     fn client_pair_must_be_complete() {
         let mut tls = ResolvedTls::prefer("h");
         tls.client_cert_path = Some(testdata("client.pem"));
-        assert_eq!(
-            client_config(&tls).unwrap_err(),
+        let error = client_config(&tls).unwrap_err();
+        assert!(matches!(
+            error,
             TlsMaterialError::ClientPairIncomplete {
-                present: "certificate"
+                present: "certificate",
+                ref path,
             }
-        );
+            if path.ends_with("client.pem")
+        ));
+        assert!(error.to_string().contains("client.pem"));
         tls.client_cert_path = None;
         tls.client_key_path = Some(testdata("client-key.pem"));
-        assert_eq!(
-            client_config(&tls).unwrap_err(),
-            TlsMaterialError::ClientPairIncomplete { present: "key" }
-        );
+        let error = client_config(&tls).unwrap_err();
+        assert!(matches!(
+            error,
+            TlsMaterialError::ClientPairIncomplete {
+                present: "key",
+                ref path,
+            }
+            if path.ends_with("client-key.pem")
+        ));
+        assert!(error.to_string().contains("client-key.pem"));
     }
 
     #[test]
@@ -791,6 +1223,54 @@ mod tests {
             matches!(error, TlsMaterialError::ClientKeyEncrypted { ref path } if path.ends_with("client-key-encrypted.pem"))
         );
         assert!(error.to_string().contains("passphrase"));
+    }
+
+    #[test]
+    fn command_validates_client_material_before_spawn() {
+        let mut incomplete = ResolvedTls::prefer("h");
+        incomplete.client_cert_path = Some(testdata("client.pem"));
+        let error = apply_to_command(&incomplete, "h", &mut Command::new("pg_dump"))
+            .err()
+            .expect("incomplete pair must fail");
+        assert!(matches!(
+            error,
+            TlsMaterialError::ClientPairIncomplete {
+                present: "certificate",
+                ..
+            }
+        ));
+
+        let mut encrypted = ResolvedTls::prefer("h");
+        encrypted.client_cert_path = Some(testdata("client.pem"));
+        encrypted.client_key_path = Some(testdata("client-key-encrypted.pem"));
+        let error = apply_to_command(&encrypted, "h", &mut Command::new("pg_dump"))
+            .err()
+            .expect("encrypted key must fail");
+        assert!(matches!(error, TlsMaterialError::ClientKeyEncrypted { .. }));
+    }
+
+    #[test]
+    fn command_disabled_tls_ignores_stale_client_material() {
+        let mut incomplete = ResolvedTls::plain("h");
+        incomplete.client_cert_path = Some(testdata("does-not-exist.pem"));
+
+        let mut encrypted = ResolvedTls::plain("h");
+        encrypted.client_cert_path = Some(testdata("client.pem"));
+        encrypted.client_key_path = Some(testdata("client-key-encrypted.pem"));
+
+        for tls in [incomplete, encrypted] {
+            let mut command = Command::new("pg_dump");
+            command.env("PGSSLCERT", "/ambient/client.pem");
+            command.env("PGSSLKEY", "/ambient/client-key.pem");
+
+            let _material = apply_to_command(&tls, "h", &mut command).unwrap();
+
+            for key in ["PGSSLCERT", "PGSSLKEY"] {
+                assert!(command
+                    .get_envs()
+                    .any(|(candidate, value)| candidate == key && value.is_none()));
+            }
+        }
     }
 
     #[test]

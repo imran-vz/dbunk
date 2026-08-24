@@ -10,7 +10,18 @@ cd "$(dirname "$0")"
 mkdir -p certs
 cd certs
 
-if [ -f ca.crt ] && [ -f server.crt ] && [ -f client.crt ] && [ -f client-encrypted.key ]; then
+complete=true
+for artifact in \
+  ca.crt ca.key \
+  server.crt server.key \
+  client.crt client.key client-encrypted.key
+do
+  if [ ! -f "$artifact" ]; then
+    complete=false
+  fi
+done
+
+if [ "$complete" = true ]; then
   echo "fixture certs already present in $(pwd)"
   exit 0
 fi

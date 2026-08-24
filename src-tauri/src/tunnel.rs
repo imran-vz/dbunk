@@ -63,6 +63,31 @@ static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
     })
 });
 
+/// Cancellation-safe owner for a short-lived forwarding route. Creating
+/// the guard before awaiting route setup ensures a cancelled command cannot
+/// leave a listener or tunnel session behind.
+pub(crate) struct EphemeralRoute {
+    key: String,
+}
+
+impl EphemeralRoute {
+    pub(crate) fn new(prefix: &str) -> Self {
+        Self {
+            key: format!("{prefix}-{}", uuid::Uuid::new_v4()),
+        }
+    }
+
+    pub(crate) fn key(&self) -> &str {
+        &self.key
+    }
+}
+
+impl Drop for EphemeralRoute {
+    fn drop(&mut self) {
+        drop_connection(&self.key);
+    }
+}
+
 pub async fn resolve_connection(
     pool: &SqlitePool,
     mode: CredentialStorageMode,
@@ -286,4 +311,41 @@ fn drop_unused_sessions_locked(runtime: &mut Runtime) {
         }
         keep
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[serial_test::serial]
+    fn ephemeral_route_drop_removes_forward_and_stops_listener() {
+        let route = EphemeralRoute::new("diag");
+        assert!(route.key().starts_with("diag-"));
+        let route_key = route.key().to_string();
+        let ssh_route = SshRoute::from_config(&crate::SshTunnelConfig {
+            enabled: true,
+            bastion_server_id: Some("bastion".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        RUNTIME.lock().unwrap().forwards.insert(
+            route.key().to_string(),
+            ForwardState {
+                bastion_ids: ssh_route.bastion_ids,
+                session_key: ssh_route.session_key,
+                endpoint: LocalEndpoint {
+                    host: "127.0.0.1".into(),
+                    port: 1,
+                },
+                stop: Arc::clone(&stop),
+            },
+        );
+
+        drop(route);
+
+        assert!(stop.load(Ordering::SeqCst));
+        assert!(!RUNTIME.lock().unwrap().forwards.contains_key(&route_key));
+    }
 }

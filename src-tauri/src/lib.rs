@@ -226,6 +226,10 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // SQLx 0.8 has no public way to clear inherited PostgreSQL certificate
+    // paths or PGOPTIONS after constructing `PgConnectOptions`. Do this before
+    // Tauri starts worker threads so StoredConnection remains authoritative.
+    postgres::tls::prepare_sqlx_environment();
     dispatch::ensure_sqlx_drivers();
     let app = tauri::Builder::default()
         .plugin(build_log_plugin())
