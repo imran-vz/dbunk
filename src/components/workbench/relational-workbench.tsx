@@ -137,6 +137,16 @@ export function RelationalWorkbench({
     });
   }, [tabRevealRequest]);
 
+  // Open Anything `reveal-schema`: the palette expanded a schema node
+  // and asks for the tables rail so the navigator is actually visible.
+  const railRevealRequest = useAppStore((state) => state.railRevealRequest);
+  const lastRailRevealRef = useRef(railRevealRequest);
+  useEffect(() => {
+    if (railRevealRequest === lastRailRevealRef.current) return;
+    lastRailRevealRef.current = railRevealRequest;
+    setRail("tables");
+  }, [railRevealRequest]);
+
   const activeConnection = useMemo(() => {
     const selected = connections.find(
       (connection) => connection.id === activeConnectionId,

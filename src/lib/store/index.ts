@@ -92,6 +92,7 @@ export type {
   TableLoadStatus,
   TablePreviewData,
   TableRef,
+  TabCaret,
   TableBrowseLoadStatus,
   TableBrowseTabState,
   TableSessionSnapshot,

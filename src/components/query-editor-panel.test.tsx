@@ -96,6 +96,16 @@ const editorHandlers: {
 const editorOverrides: { skipDecorationsCollection: boolean } = {
   skipDecorationsCollection: false,
 };
+// Records `setSelection` calls so caret-restore tests can assert the
+// clamped range (Plan 010).
+const caretState: {
+  setSelectionCalls: Array<{
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  }>;
+} = { setSelectionCalls: [] };
 
 vi.mock("@monaco-editor/react", () => ({
   __esModule: true,
@@ -115,6 +125,9 @@ vi.mock("@monaco-editor/react", () => ({
         endColumn: cursorState.column,
       }),
       getValueInRange: () => selectionState.value ?? "",
+      getLineCount: () => value.split("\n").length,
+      getLineMaxColumn: (line: number) =>
+        (value.split("\n")[line - 1]?.length ?? 0) + 1,
     };
     const fakeEditor = {
       getPosition: () => cursorState,
@@ -146,6 +159,15 @@ vi.mock("@monaco-editor/react", () => ({
         editorHandlers.cursorChange = handler;
         return { dispose: vi.fn() };
       },
+      setSelection: (range: {
+        startLineNumber: number;
+        startColumn: number;
+        endLineNumber: number;
+        endColumn: number;
+      }) => {
+        caretState.setSelectionCalls.push(range);
+      },
+      revealPositionInCenterIfOutsideViewport: () => {},
     };
     const fakeMonaco = {
       KeyCode: {
@@ -1061,6 +1083,7 @@ describe("QueryEditorPanel IntelliSense", () => {
 describe("QueryEditorPanel onMount branches", () => {
   beforeEach(() => {
     mockedIsTauri.mockReturnValue(false);
+    caretState.setSelectionCalls = [];
     useAppStore.setState({
       workspaceTabs: [queryTab],
       activeConnectionId: "conn-1",
@@ -1069,6 +1092,86 @@ describe("QueryEditorPanel onMount branches", () => {
       queryPreviews: {},
       queryHistory: [],
     });
+  });
+
+  it("restores the persisted caret clamped to the model (Plan 010)", () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          ...queryTab,
+          query: "select 1;\nselect 2;",
+          // Line/column far past the model — must clamp, not error.
+          caret: { line: 99, column: 99 },
+        },
+      ],
+    });
+
+    render(
+      <QueryEditorPanel
+        tab={{ ...queryTab, query: "select 1;\nselect 2;" }}
+        isClient
+      />,
+    );
+
+    expect(caretState.setSelectionCalls).toHaveLength(1);
+    expect(caretState.setSelectionCalls[0]).toEqual({
+      startLineNumber: 2,
+      startColumn: 10,
+      endLineNumber: 2,
+      endColumn: 10,
+    });
+  });
+
+  it("restores a caret with a valid anchor as a selection", () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          ...queryTab,
+          query: "select 1;\nselect 2;",
+          caret: { line: 2, column: 4, anchorLine: 1, anchorColumn: 1 },
+        },
+      ],
+    });
+
+    render(
+      <QueryEditorPanel
+        tab={{ ...queryTab, query: "select 1;\nselect 2;" }}
+        isClient
+      />,
+    );
+
+    expect(caretState.setSelectionCalls[0]).toEqual({
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: 2,
+      endColumn: 4,
+    });
+  });
+
+  it("persists the caret debounced without marking the tab dirty (Plan 010)", () => {
+    vi.useFakeTimers();
+    try {
+      render(<QueryEditorPanel tab={queryTab} isClient />);
+
+      act(() => {
+        editorHandlers.cursorChange?.({
+          position: { lineNumber: 1, column: 5 },
+        });
+      });
+      // Not yet written — the debounce window is still open.
+      expect(
+        useAppStore.getState().workspaceTabs[0]?.caret,
+      ).toBeUndefined();
+
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      const tab = useAppStore.getState().workspaceTabs[0];
+      expect(tab?.caret).toEqual({ line: 1, column: 5 });
+      expect(tab?.isDirty).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs the statement at the glyph margin on mouse down", () => {

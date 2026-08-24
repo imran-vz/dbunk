@@ -1105,6 +1105,29 @@ pub async fn delete_connection(pool: &SqlitePool, connection_id: &str) -> Result
     Ok(result.rows_affected() > 0)
 }
 
+/// Column-only organization update (Plan 009 amendment). Deliberately
+/// separate from `upsert_connection`: this path must never interact
+/// with credentials, so a favorites/color/folder toggle can't clobber
+/// a stored secret the frontend doesn't hold.
+pub async fn update_connection_organization(
+    pool: &SqlitePool,
+    connection_id: &str,
+    folder: &str,
+    is_favorite: bool,
+    color: &str,
+) -> Result<bool, String> {
+    let result =
+        sqlx::query("UPDATE connections SET folder = ?, is_favorite = ?, color = ? WHERE id = ?")
+            .bind(folder)
+            .bind(bool_to_i64(is_favorite))
+            .bind(color)
+            .bind(connection_id)
+            .execute(pool)
+            .await
+            .map_err(|error| error.to_string())?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn touch_connection_activity(
     pool: &SqlitePool,
     connection_id: &str,
