@@ -517,8 +517,8 @@ mod tests {
         ));
     }
 
-    fn live_spec(port: u16, tls_prefer: bool) -> ResolvedPostgresConnectSpec {
-        let tls = if tls_prefer {
+    fn live_spec(port: u16, prefer_tls: bool) -> ResolvedPostgresConnectSpec {
+        let tls = if prefer_tls {
             crate::postgres::tls::ResolvedTls::prefer("127.0.0.1")
         } else {
             crate::postgres::tls::ResolvedTls::plain("127.0.0.1")

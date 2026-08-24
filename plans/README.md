@@ -112,8 +112,10 @@ useful without authorizing commits implicitly.
   `pnpm format/lint/typecheck`, vitest (1078 passed), and the live
   suites against both fixtures (15 TLS/diagnosis tests plus the
   pre-existing query-session / table-browse / result-mutation / safety
-  live suites) all green. `test_connection` is untouched; Plan 012
-  removes it.
+  live suites) all green. Final review changed the legacy PostgreSQL
+  `test_connection` implementation to a one-shot connect so unsaved values
+  and ephemeral tunnel endpoints cannot reuse a cached socket; its wire
+  contract is unchanged, and Plan 012 removes it.
 - **Selected mock (010):** A — folder section headers in the connections
   list, compact single-line palette rows with leading kind badges, and
   URI import as the first field of the connection form.

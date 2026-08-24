@@ -233,12 +233,20 @@ pub async fn test_connection(
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
     tunnel::validate_connection_tunnel(&payload.connection)?;
-    let route_key = format!("test-{}", uuid::Uuid::new_v4());
+    let route = tunnel::EphemeralRoute::new("test");
     let connection =
-        tunnel::resolve_connection(&state.pool, mode, &route_key, &payload.connection).await?;
-    let result = dispatch::ping_connection(&connection).await;
-    tunnel::drop_connection(&route_key);
-    result
+        tunnel::resolve_connection(&state.pool, mode, route.key(), &payload.connection).await?;
+    match &connection {
+        StoredConnection::PostgreSQL(_) => {
+            crate::postgres::ping_once(&connection)
+                .await
+                .map(|latency_ms| ConnectResult {
+                    latency_ms,
+                    redis_capabilities: None,
+                })
+        }
+        _ => dispatch::ping_connection(&connection).await,
+    }
 }
 
 /// Periodic poll: returns "healthy" + latency or "error" + message. Designed
