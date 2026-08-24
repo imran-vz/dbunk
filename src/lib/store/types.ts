@@ -468,7 +468,7 @@ export type QuerySessionState = {
   id: string;
   tabId: string;
   connectionId: string;
-  generation: number;
+  generation: number | null;
   transaction: QueryTransactionSnapshot;
   execution: QueryExecution | null;
   lastViewedAt: number;

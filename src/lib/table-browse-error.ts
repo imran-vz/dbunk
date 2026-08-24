@@ -1,29 +1,66 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- Browse errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Browse errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
+import { formatSharedTransportError } from "@/lib/safety-policy";
 import type { TableBrowseError } from "@/lib/table-browse";
 
-const TABLE_BROWSE_ERROR_KINDS: ReadonlySet<string> = new Set([
-  "unsupportedEngine",
-  "unknownColumn",
-  "invalidFilter",
-  "invalidSort",
-  "invalidCursor",
-  "superseded",
-  "cancelled",
-  "connectionClosing",
-  "connectionLost",
-  "timeout",
-  "database",
-]);
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object";
 
-export function isTableBrowseError(error: unknown): error is TableBrowseError {
-  if (error === null || typeof error !== "object") return false;
-  if (!("kind" in error) || typeof error.kind !== "string") return false;
-  return TABLE_BROWSE_ERROR_KINDS.has(error.kind);
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === "string";
+
+const isNullableNumber = (value: unknown): value is number | null =>
+  value === null || typeof value === "number";
+
+/** Decode, and structurally validate, an untrusted Tauri command rejection. */
+export function decodeTableBrowseError(error: unknown): TableBrowseError {
+  if (!isRecord(error) || typeof error.kind !== "string") {
+    return { kind: "connectionLost" };
+  }
+  switch (error.kind) {
+    case "unsupportedEngine":
+    case "invalidCursor":
+    case "superseded":
+    case "cancelled":
+    case "connectionClosing":
+    case "connectionLost":
+      return { kind: error.kind };
+    case "unknownColumn":
+      return typeof error.column === "string"
+        ? { kind: "unknownColumn", column: error.column }
+        : { kind: "connectionLost" };
+    case "invalidFilter":
+      return typeof error.reason === "string"
+        ? { kind: "invalidFilter", reason: error.reason }
+        : { kind: "connectionLost" };
+    case "invalidSort":
+      return typeof error.column === "string"
+        ? { kind: "invalidSort", column: error.column }
+        : { kind: "connectionLost" };
+    case "timeout":
+      return typeof error.operation === "string"
+        ? { kind: "timeout", operation: error.operation }
+        : { kind: "connectionLost" };
+    case "database":
+      return isNullableString(error.code) &&
+        typeof error.message === "string" &&
+        isNullableString(error.severity) &&
+        isNullableNumber(error.position)
+        ? {
+            kind: "database",
+            code: error.code,
+            message: error.message,
+            severity: error.severity,
+            position: error.position,
+          }
+        : { kind: "connectionLost" };
+    default:
+      return { kind: "connectionLost" };
+  }
 }
 
-export function decodeTableBrowseError(error: unknown): TableBrowseError {
-  if (isTableBrowseError(error)) return error;
-  return { kind: "connectionLost" };
+export function isTableBrowseError(error: unknown): error is TableBrowseError {
+  if (!isRecord(error) || typeof error.kind !== "string") return false;
+  return decodeTableBrowseError(error).kind === error.kind;
 }
 
 export function formatTableBrowseError(error: TableBrowseError): string {
@@ -43,12 +80,9 @@ export function formatTableBrowseError(error: TableBrowseError): string {
     case "cancelled":
       return "Browse cancelled.";
     case "connectionClosing":
-      return "The connection is closing.";
     case "connectionLost":
-      return "The database connection was lost.";
     case "timeout":
-      return `Timed out during ${error.operation}.`;
     case "database":
-      return error.code ? `${error.code}: ${error.message}` : error.message;
+      return formatSharedTransportError(error);
   }
 }

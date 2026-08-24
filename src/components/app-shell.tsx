@@ -75,21 +75,19 @@ export function AppShell() {
     onTopBarDoubleClick,
   } = useTauriWindowControls();
 
-  const {
-    activeView,
-    activeConnectionId,
-    connections,
-    appSettings,
-    appSettingsStatus,
-    setEditorTheme,
-    loadAppSettings,
-    loadBastionServers,
-    loadConnections,
-    loadManagedServers,
-    loadQueryHistory,
-    loadSavedQueries,
-    runHealthChecks,
-  } = useAppStore();
+  const activeView = useAppStore((state) => state.activeView);
+  const activeConnectionId = useAppStore((state) => state.activeConnectionId);
+  const connections = useAppStore((state) => state.connections);
+  const appSettings = useAppStore((state) => state.appSettings);
+  const appSettingsStatus = useAppStore((state) => state.appSettingsStatus);
+  const setEditorTheme = useAppStore((state) => state.setEditorTheme);
+  const loadAppSettings = useAppStore((state) => state.loadAppSettings);
+  const loadBastionServers = useAppStore((state) => state.loadBastionServers);
+  const loadConnections = useAppStore((state) => state.loadConnections);
+  const loadManagedServers = useAppStore((state) => state.loadManagedServers);
+  const loadQueryHistory = useAppStore((state) => state.loadQueryHistory);
+  const loadSavedQueries = useAppStore((state) => state.loadSavedQueries);
+  const runHealthChecks = useAppStore((state) => state.runHealthChecks);
   const themeMode = appSettings?.theme ?? "system";
   const themePreset = appSettings?.themePreset ?? "default";
 

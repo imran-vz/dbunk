@@ -147,3 +147,30 @@ export function decodeStatementSummaries(
   }
   return summaries;
 }
+
+export type SharedTransportError =
+  | { kind: "connectionClosing" }
+  | { kind: "connectionLost" }
+  | { kind: "timeout"; operation: string }
+  | { kind: "database"; code: string | null; message: string }
+  | { kind: "policyBlocked"; reason: string }
+  | { kind: "policyNeedsConfirmation" };
+
+export function formatSharedTransportError(
+  error: SharedTransportError,
+): string {
+  switch (error.kind) {
+    case "connectionClosing":
+      return "The connection is closing.";
+    case "connectionLost":
+      return "The database connection was lost.";
+    case "timeout":
+      return `Timed out during ${error.operation}.`;
+    case "database":
+      return error.code ? `${error.code}: ${error.message}` : error.message;
+    case "policyBlocked":
+      return `${error.reason} Edit the connection to unlock writes.`;
+    case "policyNeedsConfirmation":
+      return "The connection safety policy requires confirmation.";
+  }
+}

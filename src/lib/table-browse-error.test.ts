@@ -44,6 +44,12 @@ describe("decodeTableBrowseError", () => {
       kind: "connectionLost",
     });
     expect(decodeTableBrowseError("boom")).toEqual({ kind: "connectionLost" });
+    expect(decodeTableBrowseError({ kind: "unknownColumn" })).toEqual({
+      kind: "connectionLost",
+    });
+    expect(decodeTableBrowseError({ kind: "timeout" })).toEqual({
+      kind: "connectionLost",
+    });
   });
 });
 

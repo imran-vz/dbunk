@@ -36,6 +36,15 @@ export const subscribeSafetyConfirmation = (listener: () => void) => {
 
 export const getSafetyConfirmation = () => current;
 
+export const confirmWriteStatements = (
+  connection: SafetyConfirmationConnection,
+  statements: StatementClassSummary[],
+): Promise<boolean> =>
+  requestSafetyConfirmation({
+    connection,
+    subject: { kind: "statements", statements },
+  });
+
 export const requestSafetyConfirmation = (
   request: SafetyConfirmationRequest,
 ): Promise<boolean> =>

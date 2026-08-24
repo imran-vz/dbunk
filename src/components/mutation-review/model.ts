@@ -1,4 +1,8 @@
-import type { ResultMutationError } from "@/lib/result-mutation";
+import {
+  type ResultMutationError,
+  usesProjectedRowGuards,
+} from "@/lib/result-mutation";
+import { formatSharedTransportError } from "@/lib/safety-policy";
 import type { MutationDraft, MutationDraftChange } from "@/lib/store";
 
 export type MutationChangeGroup = {
@@ -79,10 +83,7 @@ export const mutationChangeGuardCopy = (
 ): string => {
   if (change.kind === "insertRow") return "Values included in this insert";
   if (change.kind === "deleteRow") return "All projected values guarded";
-  if (
-    change.identityKind === "virtualKey" ||
-    change.identityKind === "ctidFallback"
-  ) {
+  if (usesProjectedRowGuards(change.identityKind)) {
     return "Full projected row guarded";
   }
   return "Edited columns guarded";
@@ -96,8 +97,7 @@ export const mutationFailureMessage = (
   switch (error.kind) {
     case "conflict":
       return change.kind === "updateRow" &&
-        change.identityKind !== "virtualKey" &&
-        change.identityKind !== "ctidFallback"
+        !usesProjectedRowGuards(change.identityKind)
         ? "Conflict on this change. An edited-column guard no longer matched. Nothing was applied."
         : "Conflict on this change. A projected-row guard no longer matched. Nothing was applied.";
     case "identityNotUnique":
@@ -149,16 +149,11 @@ export const formatMutationError = (error: ResultMutationError): string => {
     case "cancelled":
       return "The mutation was cancelled. Nothing was applied.";
     case "connectionClosing":
-      return "The connection is closing.";
     case "connectionLost":
-      return "The database connection was lost.";
     case "policyBlocked":
-      return `${error.reason} Edit the connection to unlock writes.`;
     case "policyNeedsConfirmation":
-      return "The connection safety policy requires confirmation.";
     case "timeout":
-      return `Timed out during ${error.operation}.`;
     case "database":
-      return error.code ? `${error.code}: ${error.message}` : error.message;
+      return formatSharedTransportError(error);
   }
 };

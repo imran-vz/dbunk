@@ -205,7 +205,7 @@ export const reduceSessionEvent = (
   }
   return {
     ...session,
-    generation: session.generation || envelope.generation,
+    generation: session.generation ?? envelope.generation,
     transaction:
       event.kind === "sessionState" || event.kind === "executionCompleted"
         ? event.transaction
@@ -341,7 +341,7 @@ export const applyEventBudget = (
   const currentSession = state.querySessions[tabId];
   if (
     !currentSession ||
-    (currentSession.generation &&
+    (currentSession.generation !== null &&
       currentSession.generation !== envelope.generation)
   ) {
     return { querySessions: state.querySessions, retainMoreRows: false };

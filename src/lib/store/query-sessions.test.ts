@@ -613,7 +613,7 @@ describe("persistent query session outcomes", () => {
       useAppStore
         .getState()
         .executePersistentQuery(tabId, "conn-1", "delete from users"),
-    ).rejects.toEqual(malformedRefusal);
+    ).rejects.toEqual({ kind: "connectionLost" });
     expect(getSafetyConfirmation()).toBeNull();
     expect(mockedExecuteQuerySession).toHaveBeenCalledOnce();
   });
