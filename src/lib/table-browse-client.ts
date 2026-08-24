@@ -52,13 +52,11 @@ const toResult = <T extends { requestId: number }>(
 
 const fromError = (error: unknown): TableBrowseClientResult<never> => {
   const decoded = decodeTableBrowseError(error);
-  if (decoded.kind === "superseded") return { kind: "superseded" };
-  if (decoded.kind === "cancelled") return { kind: "cancelled" };
+  if (decoded.kind === "superseded" || decoded.kind === "cancelled") {
+    return { kind: decoded.kind };
+  }
   return { kind: "error", error: decoded };
 };
-
-export const nextTableBrowseRequestId = (tabId: string): number =>
-  issueRequestId(tabId);
 
 export const resetTableBrowseClientForTab = (tabId: string): void => {
   tabs.delete(tabId);
@@ -136,13 +134,9 @@ export async function loadTableGridPrefs(
   table: string,
 ): Promise<TableGridPrefs | null> {
   if (!isTauri()) return null;
-  const loaded = await tauriInvoke<TableGridPrefs | null>(
-    "load_table_grid_prefs",
-    {
-      payload: { connectionId, schema, table },
-    },
-  );
-  return loaded;
+  return tauriInvoke<TableGridPrefs | null>("load_table_grid_prefs", {
+    payload: { connectionId, schema, table },
+  });
 }
 
 export async function saveTableGridPrefs(

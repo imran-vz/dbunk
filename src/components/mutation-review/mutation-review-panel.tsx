@@ -43,16 +43,8 @@ type FailedClientResult = Exclude<
   }
 >;
 
-const clientResultError = (result: FailedClientResult): ResultMutationError => {
-  switch (result.kind) {
-    case "superseded":
-      return { kind: "superseded" };
-    case "cancelled":
-      return { kind: "cancelled" };
-    case "error":
-      return result.error;
-  }
-};
+const clientResultError = (result: FailedClientResult): ResultMutationError =>
+  result.kind === "error" ? result.error : { kind: result.kind };
 
 const draftHandle = (draft: MutationDraft): MutationDraftHandle => ({
   scope: draft.scope,

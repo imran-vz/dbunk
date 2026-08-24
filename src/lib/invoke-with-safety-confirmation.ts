@@ -18,7 +18,7 @@ const NON_DESTRUCTIVE_LEGACY_COMMANDS = new Set([
  * additive commands here and fail closed for SQL, DDL, restore, delete, and
  * future commands whose destructive intent cannot be ruled out.
  */
-export function isDestructiveLegacySafetyCommand(command: string): boolean {
+function isDestructiveLegacySafetyCommand(command: string): boolean {
   return !NON_DESTRUCTIVE_LEGACY_COMMANDS.has(command);
 }
 

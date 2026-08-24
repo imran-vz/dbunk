@@ -83,6 +83,9 @@ type QueryVirtualKeyState = {
   savedColumns: string[];
 };
 
+const EMPTY_QUERY_EDITS: Record<number, Record<number, string>> = {};
+const EMPTY_SCHEMAS: SqlCompletionContext["schemas"] = [];
+
 export function QueryEditorPanel({
   tab,
   isClient,
@@ -115,39 +118,49 @@ export function QueryEditorPanel({
   const [isVirtualKeyOpen, setIsVirtualKeyOpen] = useState(false);
   const [isVirtualKeyBusy, setIsVirtualKeyBusy] = useState(false);
 
-  const {
-    queryPreviews,
-    querySessions,
-    queryExecutionSql,
-    queryStatus,
-    queryEdits,
-    mutationDrafts,
-    schemaExplorer,
-    tableStructure,
-    editorTheme,
-    connections,
-    activeConnectionId,
-    updateQuery,
-    runQuery,
-    cancelQuery,
-    loadTableStructure,
-    setQueryEdit,
-    discardQueryEdits,
-    openMutationDraft,
-    setMutationDraftAnalysis,
-    stageMutationDraftUpdate,
-    discardMutationDraft,
-    dropMutationDraftsForExecution,
-    retargetQueryTab,
-    setActiveTabId,
-    releaseQueryResults,
-  } = useAppStore();
+  const queryPreview = useAppStore((state) => state.queryPreviews[tab.id]);
+  const session = useAppStore((state) => state.querySessions[tab.id]);
+  const exactExecutionSql = useAppStore(
+    (state) => state.queryExecutionSql[tab.id] ?? null,
+  );
+  const status = useAppStore((state) => state.queryStatus[tab.id]);
+  const currentEdits = useAppStore(
+    (state) => state.queryEdits[tab.id] ?? EMPTY_QUERY_EDITS,
+  );
+  const mutationDrafts = useAppStore((state) => state.mutationDrafts);
+  const schemas = useAppStore(
+    (state) => state.schemaExplorer[tab.connectionId] ?? EMPTY_SCHEMAS,
+  );
+  const tableStructure = useAppStore((state) => state.tableStructure);
+  const editorTheme = useAppStore((state) => state.editorTheme);
+  const connections = useAppStore((state) => state.connections);
+  const activeConnectionId = useAppStore((state) => state.activeConnectionId);
+  const updateQuery = useAppStore((state) => state.updateQuery);
+  const runQuery = useAppStore((state) => state.runQuery);
+  const cancelQuery = useAppStore((state) => state.cancelQuery);
+  const loadTableStructure = useAppStore((state) => state.loadTableStructure);
+  const setQueryEdit = useAppStore((state) => state.setQueryEdit);
+  const discardQueryEdits = useAppStore((state) => state.discardQueryEdits);
+  const openMutationDraft = useAppStore((state) => state.openMutationDraft);
+  const setMutationDraftAnalysis = useAppStore(
+    (state) => state.setMutationDraftAnalysis,
+  );
+  const stageMutationDraftUpdate = useAppStore(
+    (state) => state.stageMutationDraftUpdate,
+  );
+  const discardMutationDraft = useAppStore(
+    (state) => state.discardMutationDraft,
+  );
+  const dropMutationDraftsForExecution = useAppStore(
+    (state) => state.dropMutationDraftsForExecution,
+  );
+  const retargetQueryTab = useAppStore((state) => state.retargetQueryTab);
+  const setActiveTabId = useAppStore((state) => state.setActiveTabId);
+  const releaseQueryResults = useAppStore((state) => state.releaseQueryResults);
 
-  const status = queryStatus[tab.id];
   const isCancelling = status?.state === "cancelling";
   const isRunning = status?.state === "running";
   const isBusy = isRunning || isCancelling;
-  const session = querySessions[tab.id];
   const execution = session?.execution;
   const executionId = execution?.id ?? null;
   useEffect(() => {
@@ -194,7 +207,7 @@ export function QueryEditorPanel({
   const activeQueryPreview: QueryPreviewData | null = useMemo(() => {
     if (tab.kind !== "query") return null;
     return (
-      queryPreviews[tab.id] ?? {
+      queryPreview ?? {
         columns: ["column"],
         rows: [],
         runtime: "--",
@@ -202,12 +215,7 @@ export function QueryEditorPanel({
         cache: "Cold",
       }
     );
-  }, [tab, queryPreviews]);
-
-  const currentEdits = useMemo(
-    () => queryEdits[tab.id] ?? {},
-    [queryEdits, tab.id],
-  );
+  }, [tab.kind, queryPreview]);
 
   const exportFilenameBase = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -218,11 +226,11 @@ export function QueryEditorPanel({
   const completionContext = useMemo<SqlCompletionContext>(
     () => ({
       connectionId: tab.connectionId,
-      schemas: schemaExplorer[tab.connectionId] ?? [],
+      schemas,
       currentSchema: tab.schema,
       tableStructure,
     }),
-    [schemaExplorer, tab.connectionId, tab.schema, tableStructure],
+    [schemas, tab.connectionId, tab.schema, tableStructure],
   );
 
   const activeConnection = useMemo(
@@ -268,7 +276,6 @@ export function QueryEditorPanel({
   const mutationDraft = mutationScope ? mutationDrafts[mutationScope] : null;
   const stagedChangeCount = mutationDraft?.changeOrder.length ?? 0;
   const mutationLocked = mutationDraft?.apply.state === "applying";
-  const exactExecutionSql = queryExecutionSql[tab.id] ?? null;
   const executionDraftSummary = useMemo(
     () =>
       Object.values(mutationDrafts).reduce(

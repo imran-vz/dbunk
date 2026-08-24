@@ -267,11 +267,8 @@ export async function executeQuerySession(
   return settled;
 }
 
-const querySessionIdForTab = (tabId: string) =>
-  bindings.get(tabId)?.sessionId ?? null;
-
 const sessionIdForTab = (tabId: string): string => {
-  const sessionId = querySessionIdForTab(tabId);
+  const sessionId = bindings.get(tabId)?.sessionId;
   if (!sessionId) throw { kind: "sessionNotFound" } satisfies QuerySessionError;
   return sessionId;
 };
