@@ -515,8 +515,12 @@ pub(crate) fn apply_to_command(tls: &ResolvedTls, host: &str, command: &mut Comm
         command.env("PGHOSTADDR", host);
     }
     command.env("PGSSLMODE", tls.mode.as_str());
+    if tls.mode.verifies_chain() {
+        if let Some(path) = &tls.root_cert_path {
+            command.env("PGSSLROOTCERT", path);
+        }
+    }
     for (key, path) in [
-        ("PGSSLROOTCERT", &tls.root_cert_path),
         ("PGSSLCERT", &tls.client_cert_path),
         ("PGSSLKEY", &tls.client_key_path),
     ] {
@@ -701,6 +705,22 @@ mod tests {
         let mut plain = Command::new("pg_dump");
         apply_to_command(&ResolvedTls::plain("h"), "h", &mut plain);
         assert!(!plain.get_envs().any(|(k, _)| k == "PGHOSTADDR"));
+    }
+
+    #[test]
+    fn command_omits_root_cert_for_non_verifying_modes() {
+        for mode in [PgTlsMode::Disable, PgTlsMode::Prefer, PgTlsMode::Require] {
+            let mut tls = ResolvedTls::with_mode("h", mode);
+            tls.root_cert_path = Some("/ca.pem".into());
+            let mut command = Command::new("pg_dump");
+
+            apply_to_command(&tls, "h", &mut command);
+
+            assert!(
+                !command.get_envs().any(|(key, _)| key == "PGSSLROOTCERT"),
+                "{mode:?} must not implicitly enable libpq certificate verification"
+            );
+        }
     }
 
     #[test]
