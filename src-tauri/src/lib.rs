@@ -1,6 +1,7 @@
 mod clickhouse;
 mod commands;
 mod credentials;
+mod diagnosis;
 mod dispatch;
 mod docker;
 mod keychain;
@@ -308,6 +309,7 @@ pub fn run() {
             commands::connections::connect_connection,
             commands::connections::disconnect_connection,
             commands::connections::test_connection,
+            commands::diagnosis::diagnose_connection,
             commands::connections::health_check_connection,
             // Relational: schema
             commands::relational::load_schema_explorer,

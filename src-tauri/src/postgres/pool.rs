@@ -26,23 +26,25 @@ const MAX_POOL_SIZE: u32 = 5;
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Build `PgConnectOptions` from a stored connection record.
+///
+/// TLS comes from the shared resolver (ADR-0025). Two knobs the dedicated
+/// driver honours are *not* applied here because SQLx 0.8 has no setter
+/// for them: TCP keepalive (`keepalive_seconds`) and a TLS server name
+/// distinct from the socket host (so `verify-full` over an SSH tunnel
+/// verifies the chain only on this path — disclosed by the diagnosis).
 fn build_connect_options(connection: &crate::PgStoredConnection) -> PgConnectOptions {
     let port = if connection.port == 0 {
         5432
     } else {
         connection.port
     };
-    let ssl_mode = if connection.ssl {
-        sqlx::postgres::PgSslMode::Prefer
-    } else {
-        sqlx::postgres::PgSslMode::Disable
-    };
     let mut options = PgConnectOptions::new()
         .host(&connection.host)
         .username(&connection.user)
         .database(&connection.database)
-        .port(port)
-        .ssl_mode(ssl_mode);
+        .port(port);
+    let tls = super::tls::ResolvedTls::from_postgres(connection);
+    options = super::tls::apply_to_pg_options(&tls, &connection.host, &connection.id, options);
 
     if !connection.password.is_empty() {
         options = options.password(&connection.password);

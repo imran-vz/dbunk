@@ -45,7 +45,10 @@ pub(crate) struct ExecutorInner {
     pub(crate) last_used: Instant,
     pub(crate) closed: bool,
     pub(crate) busy: bool,
-    pub(crate) pending_cancel: Option<(tokio_postgres::CancelToken, bool)>,
+    pub(crate) pending_cancel: Option<(
+        tokio_postgres::CancelToken,
+        crate::postgres::dedicated::TlsConfig,
+    )>,
 }
 
 pub(crate) struct Executor {
@@ -57,7 +60,10 @@ pub(crate) struct Executor {
 pub(crate) fn enqueue_job(
     inner: &mut ExecutorInner,
     job: Job,
-) -> Option<(tokio_postgres::CancelToken, bool)> {
+) -> Option<(
+    tokio_postgres::CancelToken,
+    crate::postgres::dedicated::TlsConfig,
+)> {
     let in_flight = {
         let tab = inner.tabs.entry(job.tab_id.clone()).or_default();
         if job.request_id < tab.latest_request_id {
@@ -111,7 +117,10 @@ fn queue_protocol_cancel(inner: &mut ExecutorInner) {
         return;
     }
     if let Some(connection) = inner.connection.as_ref() {
-        inner.pending_cancel = Some((connection.inner.cancel.clone(), connection.inner.tls));
+        inner.pending_cancel = Some((
+            connection.inner.cancel.clone(),
+            connection.inner.tls.clone(),
+        ));
     }
 }
 
@@ -280,10 +289,12 @@ pub(crate) async fn close_executor(executor: &Executor, fence: bool) {
                 queued.push(job);
             }
         }
-        let cancel = inner
-            .connection
-            .as_ref()
-            .map(|connection| (connection.inner.cancel.clone(), connection.inner.tls));
+        let cancel = inner.connection.as_ref().map(|connection| {
+            (
+                connection.inner.cancel.clone(),
+                connection.inner.tls.clone(),
+            )
+        });
         inner.pending_cancel = None;
         inner.connection = None;
         inner.cache.clear();
@@ -311,8 +322,9 @@ pub(crate) fn dummy_spec(id: &str) -> ResolvedPostgresConnectSpec {
         database: "dbunk_demo".into(),
         user: "dbunk".into(),
         password: "dbunk".into(),
-        tls_prefer: false,
+        tls: crate::postgres::tls::ResolvedTls::plain("127.0.0.1"),
         connect_timeout: Some(std::time::Duration::from_millis(1)),
+        keepalive: None,
         driver_options: crate::PgDriverOptions::default(),
         safety_policy: Default::default(),
     }

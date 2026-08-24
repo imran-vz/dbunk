@@ -311,6 +311,11 @@ pub(crate) enum TableBrowseError {
     Cancelled,
     ConnectionClosing,
     ConnectionLost,
+    /// TLS material or handshake failure while opening the socket (ADR-0025).
+    TlsFailed {
+        tls_kind: crate::TlsFailureKind,
+        message: String,
+    },
     Timeout {
         operation: String,
     },

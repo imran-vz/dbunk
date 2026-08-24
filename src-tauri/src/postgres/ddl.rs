@@ -22,9 +22,12 @@ fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Comman
     } else {
         connection.port
     };
+    // `--host` and the `PGSSL*` / `PGHOSTADDR` environment come from the
+    // shared TLS resolver (ADR-0025) so libpq verifies exactly what the
+    // in-process drivers verify.
+    let tls = super::tls::ResolvedTls::from_postgres(connection);
+    super::tls::apply_to_command(&tls, &connection.host, &mut command);
     command
-        .arg("--host")
-        .arg(&connection.host)
         .arg("--port")
         .arg(port.to_string())
         .arg("--username")
@@ -32,10 +35,6 @@ fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Comman
         .arg("--dbname")
         .arg(&connection.database)
         .env("PGPASSWORD", &connection.password)
-        .env(
-            "PGSSLMODE",
-            if connection.ssl { "prefer" } else { "disable" },
-        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     Ok(command)
