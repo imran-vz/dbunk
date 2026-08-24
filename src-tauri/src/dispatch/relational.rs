@@ -172,21 +172,20 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
                 return Err("PostgreSQL host and user are required".to_string());
             }
             let port = if c.port == 0 { 5432 } else { c.port };
-            // ADR-0010 threads `ssl` into the PG DSN as
-            // `sslmode=prefer` (default) or `sslmode=disable`. The
-            // canonical PG sqlx path is `postgres.rs::connect` which
-            // builds `PgConnectOptions` directly; this DSN string is
-            // only used for the sqlx-Any fallback below and stays in
-            // sync via the same toggle.
-            let sslmode = if c.ssl { "prefer" } else { "disable" };
+            // ADR-0025: the DSN carries the same resolved TLS mode and
+            // certificate paths as every other PG connect site. The
+            // canonical PG sqlx path is `postgres::pool` which builds
+            // `PgConnectOptions` directly; this string only serves the
+            // sqlx-Any fallback below.
+            let tls = crate::postgres::tls::ResolvedTls::from_postgres(c);
             Ok(format!(
-                "postgres://{}:{}@{}:{}/{}?sslmode={}",
+                "postgres://{}:{}@{}:{}/{}?{}",
                 percent_encode_url_component(&c.user),
                 percent_encode_url_component(&c.password),
                 c.host,
                 port,
                 percent_encode_url_component(&c.database),
-                sslmode
+                crate::postgres::tls::dsn_query(&tls, percent_encode_url_component)
             ))
         }
         StoredConnection::MySQL(c) => {
@@ -784,9 +783,10 @@ async fn fetch_table_structure_columns_only(
 // ---------------------------------------------------------------------------
 
 /// Connect + `SELECT 1` to verify the connection is live and measure
-/// latency. Routes ClickHouse through HTTP; everything else through
-/// sqlx-Any connect (PostgreSQL doesn't need its native driver for a
-/// liveness check).
+/// latency. Routes ClickHouse through HTTP, PostgreSQL through its
+/// pooled native driver (so the probe exercises the same TLS decision
+/// as every metadata query — ADR-0025), and MySQL / SQLite through
+/// sqlx-Any.
 pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectResult, String> {
     match connection.engine() {
         DatabaseEngine::ClickHouse => {
@@ -796,7 +796,21 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
                 redis_capabilities: None,
             })
         }
-        DatabaseEngine::PostgreSQL | DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
+        DatabaseEngine::PostgreSQL => {
+            let start = Instant::now();
+            let mut conn = crate::postgres::connect(connection).await?;
+            sqlx::query("SELECT 1")
+                .execute(&mut *conn)
+                .await
+                .map_err(|error| {
+                    friendly_sqlx_error(error, connection.host(), connection.port())
+                })?;
+            Ok(ConnectResult {
+                latency_ms: start.elapsed().as_millis() as u64,
+                redis_capabilities: None,
+            })
+        }
+        DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
             ensure_sqlx_drivers();
             let dsn = sqlx_dsn(connection)?;
             let start = Instant::now();
@@ -1398,6 +1412,7 @@ mod tests {
             read_only: false,
             last_activity_at: None,
             ssl: false,
+            tls_options: None,
             driver_options: None,
             ssh_tunnel: crate::SshTunnelConfig::default(),
         })

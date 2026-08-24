@@ -34,6 +34,7 @@ fn connection(
         read_only,
         last_activity_at: None,
         ssl: true,
+        tls_options: None,
         driver_options: None,
         ssh_tunnel: SshTunnelConfig::default(),
     })

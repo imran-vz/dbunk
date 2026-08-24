@@ -214,6 +214,7 @@ fn build_connection(
             last_activity_at: None,
             organization: Default::default(),
             ssl: false,
+            tls_options: None,
             driver_options: None,
             ssh_tunnel: SshTunnelConfig::default(),
         }),

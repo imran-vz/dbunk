@@ -23,8 +23,9 @@ fn live_spec(connection_id: &str) -> ResolvedPostgresConnectSpec {
         database: "dbunk_demo".into(),
         user: "dbunk".into(),
         password: "dbunk".into(),
-        tls_prefer: true,
+        tls: crate::postgres::tls::ResolvedTls::prefer("127.0.0.1"),
         connect_timeout: Some(Duration::from_secs(5)),
+        keepalive: None,
         driver_options: PgDriverOptions::default(),
         safety_policy: Default::default(),
     }
@@ -1962,6 +1963,7 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
         read_only: false,
         last_activity_at: None,
         ssl: true,
+        tls_options: None,
         driver_options: None,
         ssh_tunnel: crate::SshTunnelConfig::default(),
     });

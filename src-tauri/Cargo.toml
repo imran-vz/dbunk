@@ -28,7 +28,7 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-sqlx = { version = "0.8", features = ["any", "mysql", "postgres", "runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
+sqlx = { version = "0.8", features = ["any", "mysql", "postgres", "runtime-tokio", "tls-rustls-ring-native-roots", "sqlite", "chrono", "uuid"] }
 chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
@@ -45,6 +45,8 @@ futures-util = "0.3"
 tokio-postgres = { version = "=0.7.18", features = ["with-serde_json-1"] }
 tokio-postgres-rustls = "=0.14.0"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.7"
+rustls-pki-types = "1"
 tempfile = "3"
 calamine = "0.26"
 rust_xlsxwriter = "0.84"

@@ -62,6 +62,10 @@ fn map_dedicated(error: DedicatedError) -> QuerySessionError {
     match error {
         DedicatedError::ConnectionLost => QuerySessionError::ConnectionLost,
         DedicatedError::Timeout { operation } => QuerySessionError::Timeout { operation },
+        DedicatedError::Tls { kind, message } => QuerySessionError::TlsFailed {
+            tls_kind: kind,
+            message,
+        },
         DedicatedError::Database {
             code,
             message,
@@ -402,7 +406,7 @@ fn bound_metadata(columns: &mut [Option<String>], result: &mut ExecutionTotals) 
     }
 }
 
-pub(crate) async fn cancel(cancel: tokio_postgres::CancelToken, tls: bool) -> bool {
+pub(crate) async fn cancel(cancel: tokio_postgres::CancelToken, tls: dedicated::TlsConfig) -> bool {
     crate::postgres::dedicated::cancel(cancel, tls).await
 }
 pub(crate) fn database_error(error: tokio_postgres::Error) -> QuerySessionError {
@@ -514,6 +518,11 @@ mod tests {
     }
 
     fn live_spec(port: u16, tls_prefer: bool) -> ResolvedPostgresConnectSpec {
+        let tls = if tls_prefer {
+            crate::postgres::tls::ResolvedTls::prefer("127.0.0.1")
+        } else {
+            crate::postgres::tls::ResolvedTls::plain("127.0.0.1")
+        };
         ResolvedPostgresConnectSpec {
             connection_id: format!("live-{port}"),
             host: "127.0.0.1".into(),
@@ -521,8 +530,9 @@ mod tests {
             database: "dbunk_demo".into(),
             user: "dbunk".into(),
             password: "dbunk".into(),
-            tls_prefer,
+            tls,
             connect_timeout: Some(Duration::from_secs(5)),
+            keepalive: None,
             driver_options: PgDriverOptions::default(),
             safety_policy: Default::default(),
         }
@@ -558,7 +568,7 @@ mod tests {
         assert_eq!(starts[1].len(), 1);
         let cancel = connection.cancel.clone();
         let query = connection.client.simple_query("SELECT pg_sleep(30)");
-        let (result, requested) = tokio::join!(query, cancel_query_for_test(cancel, false));
+        let (result, requested) = tokio::join!(query, cancel_query_for_test(cancel, None));
         assert!(requested);
         assert!(result.is_err());
     }
@@ -571,12 +581,16 @@ mod tests {
             .expect("self-signed TLS");
         let cancel = connection.cancel.clone();
         let query = connection.client.simple_query("SELECT pg_sleep(30)");
-        let (result, requested) = tokio::join!(query, cancel_query_for_test(cancel, true));
+        let (result, requested) =
+            tokio::join!(query, cancel_query_for_test(cancel, connection.tls.clone()));
         assert!(requested);
         assert!(result.is_err());
     }
 
-    async fn cancel_query_for_test(token: tokio_postgres::CancelToken, tls: bool) -> bool {
+    async fn cancel_query_for_test(
+        token: tokio_postgres::CancelToken,
+        tls: dedicated::TlsConfig,
+    ) -> bool {
         tokio::time::sleep(Duration::from_millis(100)).await;
         cancel(token, tls).await
     }
