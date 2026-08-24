@@ -10,18 +10,24 @@ import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { parseConnectionUri } from "@/lib/connection-uri";
+import {
+  type ParsedConnectionUri,
+  parseConnectionUri,
+} from "@/lib/connection-uri";
+import type { DatabaseEngine } from "@/lib/store";
 
 import type { ConnectionFormApi } from "./use-connection-form";
 
 export function UriImportField({
   form,
+  engine,
   onEngineChange,
 }: {
   form: ConnectionFormApi;
-  onEngineChange: (
-    engine: "PostgreSQL" | "MySQL" | "Redis",
-  ) => void;
+  /** Currently selected engine — the URI's engine is applied only when
+   *  it differs, so re-parsing never resets engine-specific fields. */
+  engine: DatabaseEngine;
+  onEngineChange: (engine: ParsedConnectionUri["engine"]) => void;
 }) {
   const [value, setValue] = useState("");
   const [notice, setNotice] = useState<
@@ -40,9 +46,15 @@ export function UriImportField({
       return;
     }
     const { values } = parsed;
+    // A scheme with no host yet (`postgres://`) parses, but applying it
+    // would blank the form while the user is still typing.
+    if (!values.host) {
+      setNotice({ tone: "info", text: "Add a host to apply the URI." });
+      return;
+    }
     // Engine first so engine-specific defaults reset, then the carried
-    // fields on top.
-    onEngineChange(values.engine);
+    // fields on top — but only on an actual engine change.
+    if (values.engine !== engine) onEngineChange(values.engine);
     form.setFieldValue("host", values.host);
     form.setFieldValue("port", values.port);
     form.setFieldValue("user", values.user);
@@ -56,12 +68,17 @@ export function UriImportField({
         form.setFieldValue("dbNumber", values.dbNumber);
       }
     }
+    const disclosures = [
+      ...values.warnings,
+      ...(values.ignoredParams.length > 0
+        ? [
+            `Ignored parameters: ${values.ignoredParams.join(", ")} — set the matching options below.`,
+          ]
+        : []),
+    ];
     setNotice(
-      values.ignoredParams.length > 0
-        ? {
-            tone: "warning",
-            text: `Applied. Ignored parameters: ${values.ignoredParams.join(", ")} — set the matching options below.`,
-          }
+      disclosures.length > 0
+        ? { tone: "warning", text: `Applied. ${disclosures.join(" ")}` }
         : { tone: "info", text: `Applied ${values.engine} URI.` },
     );
   };

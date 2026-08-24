@@ -20,7 +20,8 @@ const activityMs = (connection: Connection): number => {
 };
 
 const compareWithinGroup = (a: Connection, b: Connection): number => {
-  const favorite = Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false);
+  const favorite =
+    Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false);
   if (favorite !== 0) return favorite;
   const recency = activityMs(b) - activityMs(a);
   if (recency !== 0) return recency;

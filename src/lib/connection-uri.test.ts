@@ -96,6 +96,7 @@ describe("parseConnectionUri", () => {
         user: "app user",
         database: "orders db",
         ignoredParams: [],
+        warnings: [],
       },
     });
   });
@@ -114,6 +115,7 @@ describe("parseConnectionUri", () => {
         password: "s@cret",
         database: "app",
         ignoredParams: [],
+        warnings: [],
       },
     });
   });
@@ -138,8 +140,19 @@ describe("parseConnectionUri", () => {
         useTls: true,
         dbNumber: 2,
         ignoredParams: [],
+        warnings: [],
       },
     });
+  });
+
+  it("discloses a Redis db number outside the form range instead of dropping it", () => {
+    const parsed = parseConnectionUri("redis://cache.internal/20");
+    expect(parsed.ok && parsed.values.dbNumber).toBeUndefined();
+    expect(parsed.ok && parsed.values.warnings).toEqual([
+      'Database "20" was not applied — the DB number must be 0–15.',
+    ]);
+    const junk = parseConnectionUri("redis://cache.internal/abc");
+    expect(junk.ok && junk.values.warnings).toHaveLength(1);
   });
 
   it("reports ignored query parameters without applying them", () => {

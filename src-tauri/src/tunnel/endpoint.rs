@@ -85,9 +85,7 @@ mod tests {
     #[test]
     fn remote_endpoint_uses_database_endpoint_seen_from_bastion() {
         let connection = StoredConnection::PostgreSQL(PgStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "conn-1".into(),
             name: "pg".into(),
             database: "postgres".into(),
@@ -114,9 +112,7 @@ mod tests {
     #[test]
     fn rewrite_connection_endpoint_keeps_redis_tunnel_metadata() {
         let connection = StoredConnection::Redis(RedisStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "redis-1".into(),
             name: "redis".into(),
             database: String::new(),
@@ -156,9 +152,7 @@ mod tests {
     #[test]
     fn sqlite_endpoint_rewrite_is_rejected() {
         let connection = StoredConnection::SQLite(crate::SqliteStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "sqlite".into(),
             name: "sqlite".into(),
             database: "/tmp/db.sqlite".into(),

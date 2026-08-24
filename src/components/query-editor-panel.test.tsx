@@ -1148,6 +1148,56 @@ describe("QueryEditorPanel onMount branches", () => {
     });
   });
 
+  it("tracks the active tab across a switch on the reused editor instance", () => {
+    vi.useFakeTimers();
+    try {
+      const tabB: WorkspaceTab = {
+        ...queryTab,
+        id: "tab-2",
+        label: "query_2.sql",
+        query: "select 2;\nselect 3;",
+        caret: { line: 2, column: 3 },
+      };
+      useAppStore.setState({ workspaceTabs: [queryTab, tabB] });
+      const { rerender } = render(<QueryEditorPanel tab={queryTab} isClient />);
+
+      // Move in tab A, then switch to B inside the debounce window —
+      // the workbench reuses this panel (no React `key`).
+      act(() => {
+        editorHandlers.cursorChange?.({
+          position: { lineNumber: 1, column: 4 },
+        });
+      });
+      rerender(<QueryEditorPanel tab={tabB} isClient />);
+
+      // A's pending caret was committed on the switch…
+      expect(useAppStore.getState().workspaceTabs[0]?.caret).toEqual({
+        line: 1,
+        column: 4,
+      });
+      // …and B's own stored caret was restored onto the shared editor.
+      expect(caretState.setSelectionCalls.at(-1)).toEqual({
+        startLineNumber: 2,
+        startColumn: 3,
+        endLineNumber: 2,
+        endColumn: 3,
+      });
+
+      // Later moves belong to B, not to the tab that mounted the editor.
+      act(() => {
+        editorHandlers.cursorChange?.({
+          position: { lineNumber: 1, column: 2 },
+        });
+        vi.advanceTimersByTime(600);
+      });
+      const [tabA, tabBAfter] = useAppStore.getState().workspaceTabs;
+      expect(tabA?.caret).toEqual({ line: 1, column: 4 });
+      expect(tabBAfter?.caret).toEqual({ line: 1, column: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("persists the caret debounced without marking the tab dirty (Plan 010)", () => {
     vi.useFakeTimers();
     try {
@@ -1159,9 +1209,7 @@ describe("QueryEditorPanel onMount branches", () => {
         });
       });
       // Not yet written — the debounce window is still open.
-      expect(
-        useAppStore.getState().workspaceTabs[0]?.caret,
-      ).toBeUndefined();
+      expect(useAppStore.getState().workspaceTabs[0]?.caret).toBeUndefined();
 
       act(() => {
         vi.advanceTimersByTime(600);

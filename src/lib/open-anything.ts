@@ -16,12 +16,13 @@
  *   releases (`saved:<id>` keys predate this module).
  */
 
-import type {
-  Connection,
-  QueryHistoryEntry,
-  SavedQuery,
-  SchemaExplorer,
-  WorkspaceTab,
+import {
+  type Connection,
+  isConnectedStatus,
+  type QueryHistoryEntry,
+  type SavedQuery,
+  type SchemaExplorer,
+  type WorkspaceTab,
 } from "@/lib/store";
 
 export type RelationKind =
@@ -135,10 +136,6 @@ const RELATION_SOURCES: ReadonlyArray<{
   },
 ];
 
-function isConnected(connection: Connection): boolean {
-  return connection.status === "Connected" || connection.status === "Read only";
-}
-
 function firstLine(sql: string, max: number): string {
   const line = sql.trim().split("\n", 1)[0].trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
@@ -171,7 +168,8 @@ export function buildOpenAnythingIndex(
       kind: "tab",
       label: tab.label,
       description: connectionName ? `Open tab · ${connectionName}` : "Open tab",
-      keywords: `${tab.label} ${tab.table ?? ""} ${connectionName}`.toLowerCase(),
+      keywords:
+        `${tab.label} ${tab.table ?? ""} ${connectionName}`.toLowerCase(),
       target: { type: "activate-tab", tabId: tab.id },
     });
   }
@@ -181,7 +179,7 @@ export function buildOpenAnythingIndex(
       key: `connection:${connection.id}`,
       kind: "connection",
       label: connection.name,
-      description: isConnected(connection)
+      description: isConnectedStatus(connection.status)
         ? `${connection.engine} · connected`
         : `${connection.engine} · connect`,
       keywords:
@@ -189,7 +187,7 @@ export function buildOpenAnythingIndex(
       target: { type: "connect", connectionId: connection.id },
     });
 
-    if (!isConnected(connection)) continue;
+    if (!isConnectedStatus(connection.status)) continue;
     const schemas = snapshot.schemaExplorer[connection.id] ?? [];
     for (const schema of schemas) {
       items.push({
@@ -237,7 +235,8 @@ export function buildOpenAnythingIndex(
       description: connectionName
         ? `Saved query · ${connectionName}`
         : "Saved query",
-      keywords: `${saved.name} ${firstLine(saved.body, 120)} ${connectionName}`.toLowerCase(),
+      keywords:
+        `${saved.name} ${firstLine(saved.body, 120)} ${connectionName}`.toLowerCase(),
       target: { type: "open-saved-query", savedQueryId: saved.id },
     });
   }
@@ -248,7 +247,8 @@ export function buildOpenAnythingIndex(
       kind: "history",
       label: firstLine(entry.sql, 80),
       description: `History · ${entry.connectionName} · ${entry.status}`,
-      keywords: `${entry.sql.slice(0, 400)} ${entry.connectionName}`.toLowerCase(),
+      keywords:
+        `${entry.sql.slice(0, 400)} ${entry.connectionName}`.toLowerCase(),
       target: { type: "open-history-entry", historyId: entry.id },
     });
   }
@@ -305,9 +305,7 @@ export function rankOpenAnythingItems(
   if (tokens.length === 0) {
     const recents = items
       .filter((item) => (frecency.get(item.key) ?? 0) > 0)
-      .sort(
-        (a, b) => (frecency.get(b.key) ?? 0) - (frecency.get(a.key) ?? 0),
-      )
+      .sort((a, b) => (frecency.get(b.key) ?? 0) - (frecency.get(a.key) ?? 0))
       .slice(0, RECENT_LIMIT);
     const recentKeys = new Set(recents.map((item) => item.key));
     const ambient = items.filter(
@@ -364,21 +362,35 @@ export type SavedQueryOpenTarget =
  * produced a tab with an empty connection id and a hardcoded schema:
  * the pinned connection wins only while it still exists, the active
  * connection is the fallback, and anything else is a typed refusal the
- * UI can surface instead of fabricating a broken tab.
+ * UI can surface instead of fabricating a broken tab. The tab's schema
+ * is the target connection's first explored schema (the same rule
+ * `createNewQueryTab` uses), falling back to `public` only when
+ * nothing has been explored yet.
  */
 export function resolveSavedQueryTarget(
   saved: SavedQuery,
   connections: Connection[],
   activeConnectionId: string,
+  schemaExplorer: OpenAnythingSnapshot["schemaExplorer"] = {},
 ): SavedQueryOpenTarget {
   const exists = (id: string | null): id is string =>
     id !== null && connections.some((connection) => connection.id === id);
+  const schemaFor = (connectionId: string): string =>
+    schemaExplorer[connectionId]?.[0]?.name ?? "public";
 
   if (exists(saved.connectionId)) {
-    return { ok: true, connectionId: saved.connectionId, schema: "public" };
+    return {
+      ok: true,
+      connectionId: saved.connectionId,
+      schema: schemaFor(saved.connectionId),
+    };
   }
   if (activeConnectionId && exists(activeConnectionId)) {
-    return { ok: true, connectionId: activeConnectionId, schema: "public" };
+    return {
+      ok: true,
+      connectionId: activeConnectionId,
+      schema: schemaFor(activeConnectionId),
+    };
   }
   return {
     ok: false,
