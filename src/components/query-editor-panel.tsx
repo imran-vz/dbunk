@@ -1706,6 +1706,8 @@ function mutationClientErrorCopy(error: ResultMutationError): string {
       return "The connection is closing. Reconnect and re-run the query.";
     case "connectionLost":
       return "The database connection was lost. Reconnect and re-run the query.";
+    case "tlsFailed":
+      return `${error.message} Check the connection's TLS settings and re-run the query.`;
     case "policyBlocked":
       return `${error.reason} Edit the connection to unlock writes.`;
     case "policyNeedsConfirmation":

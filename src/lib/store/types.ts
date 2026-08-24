@@ -276,14 +276,139 @@ export type ConnectionEnvironment =
 
 export type SafeMode = "inherit" | "disabled" | "protected" | "strict";
 
+/** libpq `sslmode` vocabulary; persisted and sent in this spelling (ADR-0025). */
+export type PgTlsMode =
+  | "disable"
+  | "prefer"
+  | "require"
+  | "verify-ca"
+  | "verify-full";
+
+/**
+ * PostgreSQL TLS mode and certificate *paths* (never contents), persisted
+ * as one JSON blob on the connection record (migration 18, ADR-0025).
+ * Absent on legacy records, which resolve through `ssl`.
+ */
+export type PgTlsOptions = {
+  mode: PgTlsMode;
+  rootCertPath?: string;
+  clientCertPath?: string;
+  clientKeyPath?: string;
+  /** Host name the certificate must match when it differs from `host`. */
+  serverName?: string;
+};
+
+/** Why a TLS-protected connect failed (ADR-0025). */
+export const TLS_FAILURE_KINDS = [
+  "serverRefusedTls",
+  "certificateUntrusted",
+  "hostnameMismatch",
+  "clientCertificateRejected",
+  "invalidLocalMaterial",
+  "handshakeFailed",
+] as const;
+export type TlsFailureKind = (typeof TLS_FAILURE_KINDS)[number];
+/** Narrow a decoded wire string; unknown values are not a TLS failure kind. */
+export function isTlsFailureKind(
+  value: string | undefined,
+): value is TlsFailureKind {
+  return TLS_FAILURE_KINDS.some((kind) => kind === value);
+}
+
+// ---------------------------------------------------------------------------
+// Staged connection diagnosis (ADR-0025) — wire mirrors of
+// `src-tauri/src/diagnosis.rs`. Rendered by Plan 012.
+// ---------------------------------------------------------------------------
+
+export type DiagnosisStageKind =
+  | "tunnel"
+  | "dns"
+  | "tcp"
+  | "tls"
+  | "authentication"
+  | "database";
+
+export type DiagnosisFailureKind =
+  | "tunnelFailed"
+  | "dnsUnresolvable"
+  | "connectionRefused"
+  | "timedOut"
+  | "unreachable"
+  | "serverRefusedTls"
+  | "certificateUntrusted"
+  | "hostnameMismatch"
+  | "clientCertificateRejected"
+  | "invalidLocalMaterial"
+  | "handshakeFailed"
+  | "authenticationFailed"
+  | "databaseMissing"
+  | "other";
+
+export type DiagnosisSkipReason =
+  | "noTunnel"
+  | "tlsDisabled"
+  | "blockedByEarlierFailure"
+  | "notApplicable";
+
+export type PoolHostnameVerification = "full" | "caOnly" | "notApplicable";
+
+export type DiagnosisStageDetail =
+  | { kind: "tunnel"; localEndpoint: string }
+  | { kind: "dns"; addresses: string[] }
+  | {
+      kind: "tls";
+      /** From `pg_stat_ssl` when reachable — the only honest source for `prefer`. */
+      encrypted: boolean;
+      protocol: string | null;
+      cipher: string | null;
+      certificateVerified: boolean;
+      hostnameVerified: boolean;
+      clientCertificatePresented: boolean;
+      poolHostnameVerification: PoolHostnameVerification;
+    }
+  | { kind: "database"; serverVersion: string };
+
+export type DiagnosisStageResult =
+  | { status: "passed"; elapsedMs: number; detail?: DiagnosisStageDetail }
+  | {
+      status: "failed";
+      elapsedMs: number;
+      kind: DiagnosisFailureKind;
+      message: string;
+    }
+  | { status: "skipped"; reason: DiagnosisSkipReason };
+
+export type DiagnosisStage = {
+  stage: DiagnosisStageKind;
+  result: DiagnosisStageResult;
+};
+
+export type DiagnosisOutcome =
+  | { kind: "reachable"; latencyMs: number }
+  | { kind: "failed"; stage: DiagnosisStageKind };
+
+export type DiagnosisWarning =
+  | "notEncrypted"
+  | "poolHostnameVerificationCaOnly"
+  | "productionWithoutVerification";
+
+export type ConnectionDiagnosis = {
+  engine: DatabaseEngine;
+  /** Fixed order: tunnel, dns, tcp, tls, authentication, database. */
+  stages: DiagnosisStage[];
+  outcome: DiagnosisOutcome;
+  warnings: DiagnosisWarning[];
+};
+
 /**
  * Per-connection driver/session knobs, persisted as a JSON blob on
  * the Postgres connection record. See ADR-0013. Each field is
  * optional — `undefined` means "use the server default".
  *
- * `connectTimeoutMs` and `keepaliveSeconds` are reserved on the
- * struct but not yet applied at connect time (sqlx 0.8 doesn't
- * expose those setters directly).
+ * `connectTimeoutMs` bounds the initial handshake on every driver.
+ * `keepaliveSeconds` is applied on the dedicated driver (query sessions,
+ * table browse, result mutation); the pooled metadata driver cannot set
+ * it (sqlx 0.8 exposes no socket setter).
  */
 export type PgDriverOptions = {
   statementTimeoutMs?: number;
@@ -297,9 +422,12 @@ export type PgDriverOptions = {
 export type PgStoredConnection = ConnectionCommon & {
   engine: "PostgreSQL";
   readOnly?: boolean;
-  /** TLS upgrade on the wire protocol. PG/MySQL only — distinct from
-   *  ClickHouse `useHttps` and Redis `useTls`. */
+  /** Legacy TLS on/off mirror; `tlsOptions.mode` is authoritative when
+   *  present and the backend keeps this equal to `mode !== "disable"`.
+   *  Distinct from ClickHouse `useHttps` and Redis `useTls`. */
   ssl: boolean;
+  /** TLS verification mode and certificate paths (ADR-0025). */
+  tlsOptions?: PgTlsOptions;
   /** Optional driver/session knobs applied after every connect.
    *  See ADR-0013. Missing or empty fields fall back to PG defaults. */
   driverOptions?: PgDriverOptions;
@@ -436,6 +564,7 @@ export type QuerySessionError =
   | { kind: "transactionStateUnknown"; canRecheck: boolean }
   | { kind: "transactionObserverUnavailable" }
   | { kind: "connectionLost" }
+  | { kind: "tlsFailed"; tlsKind: TlsFailureKind; message: string }
   | { kind: "policyBlocked"; reason: string }
   | { kind: "policyNeedsConfirmation"; statements: StatementClassSummary[] }
   | { kind: "timeout"; operation: string }

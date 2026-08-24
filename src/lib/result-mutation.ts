@@ -1,9 +1,10 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Tauri errors cross this boundary as unstructured values. */
 import {
   decodeStatementSummaries,
   type StatementClassSummary,
 } from "@/lib/safety-policy";
-import type { DatabaseEngine } from "@/lib/store/types";
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Tauri errors cross this boundary as unstructured values. */
+import { isTlsFailureKind } from "@/lib/store/types";
+import type { DatabaseEngine, TlsFailureKind } from "@/lib/store/types";
 
 export type AnalyzeSource =
   | { kind: "statement"; sql: string }
@@ -211,6 +212,7 @@ export type ResultMutationError =
   | { kind: "cancelled" }
   | { kind: "connectionClosing" }
   | { kind: "connectionLost" }
+  | { kind: "tlsFailed"; tlsKind: TlsFailureKind; message: string }
   | { kind: "policyBlocked"; reason: string }
   | { kind: "policyNeedsConfirmation"; statements: StatementClassSummary[] }
   | { kind: "timeout"; operation: string }
@@ -328,6 +330,12 @@ export function decodeResultMutationError(error: unknown): ResultMutationError {
     case "lockTimeout":
       return typeof error.opIndex === "number"
         ? { kind: error.kind, opIndex: error.opIndex }
+        : { kind: "connectionLost" };
+    case "tlsFailed":
+      return typeof error.tlsKind === "string" &&
+        isTlsFailureKind(error.tlsKind) &&
+        typeof error.message === "string"
+        ? { kind: "tlsFailed", tlsKind: error.tlsKind, message: error.message }
         : { kind: "connectionLost" };
     case "timeout":
       return typeof error.operation === "string"

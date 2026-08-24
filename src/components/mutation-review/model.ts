@@ -150,6 +150,7 @@ export const formatMutationError = (error: ResultMutationError): string => {
       return "The mutation was cancelled. Nothing was applied.";
     case "connectionClosing":
     case "connectionLost":
+    case "tlsFailed":
     case "policyBlocked":
     case "policyNeedsConfirmation":
     case "timeout":
