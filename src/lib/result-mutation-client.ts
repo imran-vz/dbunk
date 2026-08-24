@@ -26,7 +26,6 @@ export type ResultMutationClientResult<T> =
 
 type TabRequestState = {
   connectionId: string;
-  nextAnalysisId: number;
   latestAnalysisId: number;
   nextApplyId: number;
 };
@@ -38,7 +37,6 @@ const tabState = (tabId: string, connectionId: string): TabRequestState => {
   if (existing?.connectionId === connectionId) return existing;
   const created = {
     connectionId,
-    nextAnalysisId: 0,
     latestAnalysisId: 0,
     nextApplyId: 0,
   };
@@ -51,9 +49,8 @@ const issueAnalysisRequestId = (
   connectionId: string,
 ): number => {
   const state = tabState(tabId, connectionId);
-  state.nextAnalysisId += 1;
-  state.latestAnalysisId = state.nextAnalysisId;
-  return state.nextAnalysisId;
+  state.latestAnalysisId += 1;
+  return state.latestAnalysisId;
 };
 
 const issueApplyRequestId = (tabId: string, connectionId: string): number => {

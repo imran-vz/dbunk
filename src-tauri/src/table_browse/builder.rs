@@ -1,8 +1,7 @@
 use crate::postgres::identity::{
     resolve_identity, RelationIdentityKind, UniqueIndexCandidate, CTID_COLUMN, TABLEOID_COLUMN,
 };
-use crate::quote_double;
-use crate::MAX_TABLE_PAGE_SIZE;
+use crate::{qualified_table_name, quote_double, DatabaseEngine, MAX_TABLE_PAGE_SIZE};
 
 use super::protocol::*;
 
@@ -158,7 +157,11 @@ pub(crate) fn build_browse_query(
         }
     }
 
-    let qualified = qualified_relation(&descriptor.schema, &descriptor.table);
+    let qualified = qualified_table_name(
+        &DatabaseEngine::PostgreSQL,
+        &descriptor.schema,
+        &descriptor.table,
+    );
     let order_sql = render_order(descriptor, payload, &identity, &qualified)?;
     let mut select_list = descriptor
         .columns
@@ -443,14 +446,6 @@ pub(crate) fn escape_like(value: &str) -> String {
         }
     }
     escaped
-}
-
-fn qualified_relation(schema: &str, table: &str) -> String {
-    if schema.is_empty() {
-        quote_double(table)
-    } else {
-        format!("{}.{}", quote_double(schema), quote_double(table))
-    }
 }
 
 #[cfg(test)]

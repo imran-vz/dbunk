@@ -239,7 +239,13 @@ async fn reduce_stream(
                     || retained_bytes >= 32 * 1024 * 1024
                 {
                     totals.omitted_rows += 1;
-                    totals.truncation_reasons.push("rowCount".into());
+                    if !totals
+                        .truncation_reasons
+                        .iter()
+                        .any(|reason| reason == "rowCount")
+                    {
+                        totals.truncation_reasons.push("rowCount".into());
+                    }
                     continue;
                 }
                 let mut values = (0..row.len())
@@ -255,7 +261,13 @@ async fn reduce_stream(
                     .unwrap_or(usize::MAX);
                 if bytes > 2 * 1024 * 1024 || retained_bytes + bytes > 32 * 1024 * 1024 {
                     totals.omitted_rows += 1;
-                    totals.truncation_reasons.push("rowBytes".into());
+                    if !totals
+                        .truncation_reasons
+                        .iter()
+                        .any(|reason| reason == "rowBytes")
+                    {
+                        totals.truncation_reasons.push("rowBytes".into());
+                    }
                 } else {
                     if !batch.is_empty() && (batch.len() >= 200 || batch_bytes + bytes > 256 * 1024)
                     {

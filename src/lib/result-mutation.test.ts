@@ -4,6 +4,7 @@ import {
   decodeResultMutationError,
   type MutationPlan,
   supportsResultMutations,
+  usesProjectedRowGuards,
 } from "@/lib/result-mutation";
 import type { DatabaseEngine } from "@/lib/store/types";
 
@@ -190,5 +191,7 @@ describe("result mutation protocol", () => {
       "Redis",
     ];
     expect(engines.filter(supportsResultMutations)).toEqual(["PostgreSQL"]);
+    expect(usesProjectedRowGuards("virtualKey")).toBe(true);
+    expect(usesProjectedRowGuards("primaryKey")).toBe(false);
   });
 });

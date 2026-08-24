@@ -277,10 +277,7 @@ const runBrowse = async (
           current.prefs.filterHistory,
           historySnapshot(current),
         ),
-        sortHistory: pushHistory(
-          current.prefs.sortHistory,
-          historySnapshot(current),
-        ),
+        sortHistory: current.prefs.sortHistory,
         pageSize: current.pageSize,
         sort: current.sort,
         typedFilters: current.typedFilters,

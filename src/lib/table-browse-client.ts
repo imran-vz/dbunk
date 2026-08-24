@@ -18,7 +18,6 @@ export type TableBrowseClientResult<T> =
   | { kind: "error"; error: TableBrowseError };
 
 type TabRequestState = {
-  nextId: number;
   latestIssued: number;
 };
 
@@ -27,16 +26,15 @@ const tabs = new Map<string, TabRequestState>();
 const tabState = (tabId: string): TabRequestState => {
   const existing = tabs.get(tabId);
   if (existing) return existing;
-  const created = { nextId: 0, latestIssued: 0 };
+  const created = { latestIssued: 0 };
   tabs.set(tabId, created);
   return created;
 };
 
 const issueRequestId = (tabId: string): number => {
   const state = tabState(tabId);
-  state.nextId += 1;
-  state.latestIssued = state.nextId;
-  return state.nextId;
+  state.latestIssued += 1;
+  return state.latestIssued;
 };
 
 const isStale = (tabId: string, requestId: number): boolean =>

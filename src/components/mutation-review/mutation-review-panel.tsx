@@ -10,7 +10,7 @@ import {
   previewResultMutations,
   type ResultMutationClientResult,
 } from "@/lib/result-mutation-client";
-import { requestSafetyConfirmation } from "@/lib/safety-confirmation";
+import { confirmWriteStatements } from "@/lib/safety-confirmation";
 import {
   type MutationDraft,
   type MutationDraftApplyRequest,
@@ -78,13 +78,10 @@ const applyWithSafetyConfirmation = async (
   if (!connection) {
     return { kind: "error", error: { kind: "connectionLost" } };
   }
-  const confirmed = await requestSafetyConfirmation({
+  const confirmed = await confirmWriteStatements(
     connection,
-    subject: {
-      kind: "statements",
-      statements: firstAttempt.error.statements,
-    },
-  });
+    firstAttempt.error.statements,
+  );
   if (!confirmed) return { kind: "cancelled" };
   return applyResultMutations({ ...payload, confirmed: true });
 };

@@ -29,14 +29,12 @@ export function ObjectTabRow({ sectionControl, className }: ObjectTabRowProps) {
     start: false,
     end: false,
   });
-  const {
-    connections,
-    workspaceTabs,
-    activeTabId,
-    setActiveTabId,
-    closeTab,
-    createNewQueryTab,
-  } = useAppStore();
+  const connections = useAppStore((state) => state.connections);
+  const workspaceTabs = useAppStore((state) => state.workspaceTabs);
+  const activeTabId = useAppStore((state) => state.activeTabId);
+  const setActiveTabId = useAppStore((state) => state.setActiveTabId);
+  const closeTab = useAppStore((state) => state.closeTab);
+  const createNewQueryTab = useAppStore((state) => state.createNewQueryTab);
   const workspaceTabCount = workspaceTabs.length;
   const hasWorkspaceTabs = workspaceTabCount > 0;
   const productionConnectionIds = useMemo(
