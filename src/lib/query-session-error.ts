@@ -1,8 +1,9 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Session errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
 import {
   decodeStatementSummaries,
   formatSharedTransportError,
 } from "@/lib/safety-policy";
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Session errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
+import { isTlsFailureKind } from "@/lib/store/types";
 import type {
   QuerySessionError,
   QueryTransactionStatus,
@@ -68,6 +69,12 @@ export function decodeQuerySessionError(error: unknown): QuerySessionError {
         ? { kind: "policyNeedsConfirmation", statements }
         : { kind: "connectionLost" };
     }
+    case "tlsFailed":
+      return typeof error.tlsKind === "string" &&
+        isTlsFailureKind(error.tlsKind) &&
+        typeof error.message === "string"
+        ? { kind: "tlsFailed", tlsKind: error.tlsKind, message: error.message }
+        : { kind: "connectionLost" };
     case "timeout":
       return typeof error.operation === "string"
         ? { kind: "timeout", operation: error.operation }
@@ -121,6 +128,7 @@ export function formatQuerySessionError(error: QuerySessionError): string {
       return "Transaction observer is unavailable.";
     case "connectionClosing":
     case "connectionLost":
+    case "tlsFailed":
     case "policyBlocked":
     case "policyNeedsConfirmation":
     case "timeout":
