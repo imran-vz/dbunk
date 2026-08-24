@@ -168,6 +168,7 @@ fn sqlite_dsn(database: &str) -> Result<String, String> {
 fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
     match connection {
         StoredConnection::PostgreSQL(c) => {
+            crate::postgres::tls::prepare_sqlx_environment();
             if c.host.is_empty() || c.user.is_empty() {
                 return Err("PostgreSQL host and user are required".to_string());
             }
@@ -179,13 +180,17 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
             // sqlx-Any fallback below.
             let tls = crate::postgres::tls::ResolvedTls::from_postgres(c);
             Ok(format!(
-                "postgres://{}:{}@{}:{}/{}?{}",
+                "postgres://{}:{}@{}:{}/{}?{}&password={}",
                 percent_encode_url_component(&c.user),
                 percent_encode_url_component(&c.password),
                 c.host,
                 port,
                 percent_encode_url_component(&c.database),
-                crate::postgres::tls::dsn_query(&tls, percent_encode_url_component)
+                crate::postgres::tls::dsn_query(&tls, &c.host, percent_encode_url_component),
+                // SQLx's URL parser treats `user:@host` as no password and
+                // then consults `.pgpass`. The explicit query parameter keeps
+                // an intentionally empty StoredConnection password authoritative.
+                percent_encode_url_component(&c.password)
             ))
         }
         StoredConnection::MySQL(c) => {
@@ -1376,7 +1381,9 @@ pub async fn poll_mutation_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::ConnectOptions as _;
     use std::io;
+    use std::io::Write as _;
 
     fn sqlite_memory_connection() -> StoredConnection {
         StoredConnection::SQLite(crate::SqliteStoredConnection {
@@ -1515,8 +1522,87 @@ mod tests {
 
         assert_eq!(
             dsn,
-            "postgres://user%40name:p%3Aa%2Fs%25@db.example:5432/app%2Fdb?sslmode=disable"
+            "postgres://user%40name:p%3Aa%2Fs%25@db.example:5432/app%2Fdb?sslmode=disable&password=p%3Aa%2Fs%25"
         );
+    }
+
+    #[test]
+    fn postgres_dsn_downgrades_tunneled_verify_full_to_verify_ca() {
+        let mut connection = postgres_connection("user", "password", "database");
+        let StoredConnection::PostgreSQL(pg) = &mut connection else {
+            unreachable!()
+        };
+        pg.host = "127.0.0.1".into();
+        pg.tls_options = Some(crate::PgTlsOptions {
+            mode: crate::PgTlsMode::VerifyFull,
+            server_name: Some("db.internal".into()),
+            ..Default::default()
+        });
+
+        let dsn = sqlx_dsn(&connection).expect("dsn should build");
+
+        assert!(dsn.contains("?sslmode=verify-ca&"), "{dsn}");
+    }
+
+    #[test]
+    fn postgres_dsn_options_do_not_inherit_credentials_tls_or_options() {
+        const CHILD: &str = "DBUNK_TEST_AMBIENT_DSN_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let mut passfile = tempfile::NamedTempFile::new().expect("temporary pgpass");
+            writeln!(
+                passfile,
+                "db.example:5432:database:user:ambient-pgpass-password"
+            )
+            .expect("write pgpass");
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "dispatch::relational::tests::postgres_dsn_options_do_not_inherit_credentials_tls_or_options",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("PGPASSWORD", "ambient-password")
+                .env("PGPASSFILE", passfile.path())
+                .env("PGOPTIONS", "-c role=ambient_role")
+                .env("PGSSLCERT", "/ambient/client.crt")
+                .env("PGSSLKEY", "/ambient/client.key")
+                .env("PGSSLROOTCERT", "/ambient/root.crt")
+                .status()
+                .expect("run isolated ambient-environment regression test");
+            assert!(status.success(), "isolated regression test failed");
+            return;
+        }
+
+        assert_eq!(
+            std::env::var("PGPASSWORD").as_deref(),
+            Ok("ambient-password")
+        );
+        let dsn = sqlx_dsn(&postgres_connection("user", "", "database")).expect("dsn should build");
+        for key in crate::postgres::tls::SQLX_INHERITED_OVERRIDES {
+            assert!(
+                std::env::var_os(key).is_none(),
+                "{key} was not neutralized before option construction"
+            );
+        }
+        let options = sqlx::postgres::PgConnectOptions::from_str(&dsn)
+            .expect("PostgreSQL should parse the SQLx-Any DSN");
+        let url = options.to_url_lossy();
+        let debug = format!("{options:?}");
+
+        assert_ne!(url.password(), Some("ambient-password"));
+        assert!(debug.contains("password: Some(\"\")"), "{debug}");
+        assert_eq!(options.get_options(), None);
+        for ambient in [
+            "ambient-password",
+            "ambient-pgpass-password",
+            "/ambient/pgpass",
+            "ambient_role",
+            "/ambient/client.crt",
+            "/ambient/client.key",
+            "/ambient/root.crt",
+        ] {
+            assert!(!debug.contains(ambient), "inherited {ambient}: {debug}");
+        }
     }
 
     #[test]

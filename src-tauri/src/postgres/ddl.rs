@@ -1,6 +1,7 @@
 //! DDL execution, DDL export, pg_dump, pg_restore, materialized view refresh.
 
 use std::collections::BTreeSet;
+use std::ops::{Deref, DerefMut};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -14,7 +15,26 @@ use crate::{
 
 use super::{connect, pg_connection};
 
-fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Command, String> {
+struct PgToolCommand {
+    command: Command,
+    _tls_material: super::tls::LibpqTlsMaterial,
+}
+
+impl Deref for PgToolCommand {
+    type Target = Command;
+
+    fn deref(&self) -> &Self::Target {
+        &self.command
+    }
+}
+
+impl DerefMut for PgToolCommand {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.command
+    }
+}
+
+fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<PgToolCommand, String> {
     let connection = pg_connection(connection)?;
     let mut command = Command::new(binary);
     let port = connection.effective_port();
@@ -22,7 +42,8 @@ fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Comman
     // shared TLS resolver (ADR-0025) so libpq verifies exactly what the
     // in-process drivers verify.
     let tls = super::tls::ResolvedTls::from_postgres(connection);
-    super::tls::apply_to_command(&tls, &connection.host, &mut command);
+    let tls_material = super::tls::apply_to_command(&tls, &connection.host, &mut command)
+        .map_err(|error| error.to_string())?;
     command
         .arg("--port")
         .arg(port.to_string())
@@ -30,10 +51,16 @@ fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<Comman
         .arg(&connection.user)
         .arg("--dbname")
         .arg(&connection.database)
+        // Stored credentials are authoritative. Never let a libpq tool fall
+        // back to an interactive password prompt in the desktop process.
+        .arg("--no-password")
         .env("PGPASSWORD", &connection.password)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    Ok(command)
+    Ok(PgToolCommand {
+        command,
+        _tls_material: tls_material,
+    })
 }
 
 fn command_error(binary: &str, output: &std::process::Output) -> String {

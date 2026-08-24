@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions},
-    Postgres,
+    Connection as _, Executor as _, Postgres,
 };
 
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
@@ -34,15 +34,16 @@ const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 /// over an SSH tunnel verifies the chain only on this path — disclosed
 /// by the diagnosis).
 fn build_connect_options(spec: &ResolvedPostgresConnectSpec) -> PgConnectOptions {
-    let mut options = PgConnectOptions::new()
+    super::tls::prepare_sqlx_environment();
+    let mut options = PgConnectOptions::new_without_pgpass()
         .host(&spec.host)
         .username(&spec.user)
         .database(&spec.database)
-        .port(spec.port);
+        .port(spec.port)
+        // `Some("")` is intentional: it makes the stored value authoritative
+        // and prevents SQLx from consulting `.pgpass` for passwordless records.
+        .password(&spec.password);
     options = super::tls::apply_to_pg_options(&spec.tls, &spec.host, &spec.connection_id, options);
-    if !spec.password.is_empty() {
-        options = options.password(&spec.password);
-    }
     options
 }
 
@@ -137,6 +138,50 @@ pub(crate) async fn connect(
     pool.acquire().await.map_err(|error| error.to_string())
 }
 
+/// One-shot PostgreSQL probe for the legacy Test Connection command.
+/// It deliberately bypasses `POOL_CACHE`: unsaved form values can reuse a
+/// stored connection id, and neither those credentials nor an ephemeral
+/// tunnel endpoint may survive the probe.
+pub(crate) async fn ping_once(connection: &StoredConnection) -> Result<u64, String> {
+    let StoredConnection::PostgreSQL(pg) = connection else {
+        return Err("PostgreSQL one-shot probe received a different engine".to_string());
+    };
+    let spec = ResolvedPostgresConnectSpec::from_postgres(pg);
+    let options = build_connect_options(&spec);
+    let host_for_error = spec.host.clone();
+    let port = spec.port;
+    let started = std::time::Instant::now();
+    let connect = PgConnection::connect_with(&options);
+    let mut connection = match spec.connect_timeout {
+        Some(limit) => tokio::time::timeout(limit, connect)
+            .await
+            .map_err(|_| {
+                format!(
+                    "Connection to {host_for_error}:{port} timed out after {} ms. \
+                     Raise the connect timeout in the connection's advanced options, \
+                     or check that the host is reachable.",
+                    limit.as_millis()
+                )
+            })?
+            .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_error, port))?,
+        None => connect
+            .await
+            .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_error, port))?,
+    };
+    apply_driver_options_raw(
+        &mut connection,
+        &spec.driver_options,
+        spec.safety_policy.read_only,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    connection
+        .execute("SELECT 1")
+        .await
+        .map_err(|error| crate::dispatch::friendly_sqlx_error(error, &host_for_error, port))?;
+    Ok(started.elapsed().as_millis() as u64)
+}
+
 /// Evict a connection's pool from the cache. Called when the connection
 /// is saved (credentials/config may have changed) or deleted.
 pub fn drop_pool(connection_id: &str) {
@@ -169,4 +214,114 @@ async fn apply_driver_options_raw(
             .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{PgDriverOptions, PgStoredConnection};
+    use sqlx::ConnectOptions as _;
+
+    fn probe(connection_id: &str) -> StoredConnection {
+        StoredConnection::PostgreSQL(PgStoredConnection {
+            id: connection_id.into(),
+            name: "probe".into(),
+            database: "postgres".into(),
+            host: "127.0.0.1".into(),
+            port: 1,
+            user: "postgres".into(),
+            password: String::new(),
+            role: String::new(),
+            environment: Default::default(),
+            safe_mode: Default::default(),
+            read_only: false,
+            last_activity_at: None,
+            organization: Default::default(),
+            ssl: false,
+            tls_options: None,
+            driver_options: Some(PgDriverOptions {
+                connect_timeout_ms: Some(100),
+                ..Default::default()
+            }),
+            ssh_tunnel: Default::default(),
+        })
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn one_shot_probe_ignores_a_cached_pool_with_the_same_id() {
+        let connection_id = "one-shot-does-not-use-cache";
+        let sentinel = PgPoolOptions::new().connect_lazy_with(PgConnectOptions::new());
+        sentinel.close().await;
+        POOL_CACHE
+            .lock()
+            .unwrap()
+            .insert(connection_id.into(), sentinel);
+
+        let error = ping_once(&probe(connection_id))
+            .await
+            .expect_err("port 1 should refuse the one-shot probe");
+
+        assert!(
+            !error.contains("closed pool"),
+            "the one-shot probe consulted the cached sentinel: {error}"
+        );
+        drop_pool(connection_id);
+    }
+
+    #[test]
+    fn pooled_options_do_not_inherit_postgres_credentials_tls_or_options() {
+        const CHILD: &str = "DBUNK_TEST_AMBIENT_POOL_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "postgres::pool::tests::pooled_options_do_not_inherit_postgres_credentials_tls_or_options",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("PGPASSWORD", "ambient-password")
+                .env("PGPASSFILE", "/ambient/pgpass")
+                .env("PGOPTIONS", "-c role=ambient_role")
+                .env("PGSSLCERT", "/ambient/client.crt")
+                .env("PGSSLKEY", "/ambient/client.key")
+                .env("PGSSLROOTCERT", "/ambient/root.crt")
+                .status()
+                .expect("run isolated ambient-environment regression test");
+            assert!(status.success(), "isolated regression test failed");
+            return;
+        }
+
+        assert_eq!(
+            std::env::var("PGPASSWORD").as_deref(),
+            Ok("ambient-password")
+        );
+
+        let StoredConnection::PostgreSQL(pg) = probe("ambient-pool") else {
+            unreachable!()
+        };
+        let options = build_connect_options(&ResolvedPostgresConnectSpec::from_postgres(&pg));
+        for key in super::super::tls::SQLX_INHERITED_OVERRIDES {
+            assert!(
+                std::env::var_os(key).is_none(),
+                "{key} was not neutralized before option construction"
+            );
+        }
+        let url = options.to_url_lossy();
+        let debug = format!("{options:?}");
+
+        assert_ne!(url.password(), Some("ambient-password"));
+        assert!(debug.contains("password: Some(\"\")"), "{debug}");
+        assert_eq!(options.get_options(), None);
+        for ambient in [
+            "ambient-password",
+            "/ambient/pgpass",
+            "ambient_role",
+            "/ambient/client.crt",
+            "/ambient/client.key",
+            "/ambient/root.crt",
+        ] {
+            assert!(!debug.contains(ambient), "inherited {ambient}: {debug}");
+        }
+    }
 }

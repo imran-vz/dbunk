@@ -78,6 +78,11 @@
   `docker_process_init_files /fixture-sql/*` over a side mount of the
   shared SQL, after enabling TLS and prepending the `hostssl … cert`
   rules. `003_tls_roles.sql` creates `dbunk_cert` on both fixtures.
+- **Final review (2026-08-25):** `test_connection` necessarily changed
+  from the cached PostgreSQL pool to a one-shot connect. Unsaved form values
+  can reuse a saved connection id and test tunnels are ephemeral, so a
+  cached socket could test the wrong credentials or endpoint. The command's
+  wire contract is unchanged; Plan 012 still owns its removal.
 
 ## Why this matters
 
