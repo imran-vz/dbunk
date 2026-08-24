@@ -31,6 +31,9 @@ evicted.
 The connector shares resolved routing, connect deadline, ordered driver
 options, and TLS Disable/Prefer semantics with SQLx. Prefer accepts the existing
 permissive certificate policy and falls back to plaintext only on TLS refusal.
+*(Superseded by ADR-0025: TLS now comes from one shared resolver with
+`require` / `verify-ca` / `verify-full`, client certificates, tunnel-aware
+hostname verification, and applied keepalive.)*
 Commands reject through a typed union and never log SQL, row values, notice
 payloads, credentials, or structured database detail.
 

@@ -53,7 +53,9 @@ The connection-pool builder (`postgres::connect`) reads these and:
   sqlx 0.8's `PgConnectOptions` exposes no socket keepalive setter. It
   round-trips through the form so a save can't wipe it, but ships **no
   control**: a knob that silently does nothing is worse than an absent
-  one.
+  one. *(Amended by ADR-0025: the dedicated tokio-postgres driver now
+  applies it as `keepalives_idle`; the SQLx pool path remains unable
+  to.)*
 - Routes through the SSH tunnel when configured (see §SSH below).
 
 **SSH tunnel is its own follow-up ADR.** It introduces a credential
