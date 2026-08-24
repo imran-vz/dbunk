@@ -277,12 +277,14 @@ export type ConnectionEnvironment =
 export type SafeMode = "inherit" | "disabled" | "protected" | "strict";
 
 /** libpq `sslmode` vocabulary; persisted and sent in this spelling (ADR-0025). */
-export type PgTlsMode =
-  | "disable"
-  | "prefer"
-  | "require"
-  | "verify-ca"
-  | "verify-full";
+export const PG_TLS_MODES = [
+  "disable",
+  "prefer",
+  "require",
+  "verify-ca",
+  "verify-full",
+] as const;
+export type PgTlsMode = (typeof PG_TLS_MODES)[number];
 
 /**
  * PostgreSQL TLS mode and certificate *paths* (never contents), persisted
@@ -329,17 +331,12 @@ export type DiagnosisStageKind =
   | "database";
 
 export type DiagnosisFailureKind =
+  | TlsFailureKind
   | "tunnelFailed"
   | "dnsUnresolvable"
   | "connectionRefused"
   | "timedOut"
   | "unreachable"
-  | "serverRefusedTls"
-  | "certificateUntrusted"
-  | "hostnameMismatch"
-  | "clientCertificateRejected"
-  | "invalidLocalMaterial"
-  | "handshakeFailed"
   | "authenticationFailed"
   | "databaseMissing"
   | "other";

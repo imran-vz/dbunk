@@ -65,6 +65,34 @@ fn chained_message(error: &(dyn StdError + 'static)) -> String {
     message
 }
 
+fn extract_rustls(
+    mut source: Option<&(dyn StdError + 'static)>,
+) -> (Option<rustls::Error>, Option<io::ErrorKind>) {
+    let mut rustls_error = None;
+    let mut io_kind = None;
+    while let Some(current) = source {
+        if let Some(error) = current.downcast_ref::<rustls::Error>() {
+            rustls_error = Some(error.clone());
+            break;
+        }
+        if let Some(io_error) = current.downcast_ref::<io::Error>() {
+            if io_kind.is_none() {
+                io_kind = Some(io_error.kind());
+            }
+            // tokio-rustls wraps rustls errors in `io::Error(InvalidData)`;
+            // `get_ref` exposes the inner error without consuming it.
+            if let Some(inner) = io_error.get_ref() {
+                if let Some(error) = inner.downcast_ref::<rustls::Error>() {
+                    rustls_error = Some(error.clone());
+                    break;
+                }
+            }
+        }
+        source = current.source();
+    }
+    (rustls_error, io_kind)
+}
+
 pub(crate) fn view_of(error: &tokio_postgres::Error) -> ConnectErrorView {
     let mut view = ConnectErrorView {
         message: chained_message(error),
@@ -76,27 +104,9 @@ pub(crate) fn view_of(error: &tokio_postgres::Error) -> ConnectErrorView {
         view.db_severity = Some(db.severity().to_string());
         return view;
     }
-    let mut source: Option<&(dyn StdError + 'static)> = error.source();
-    while let Some(current) = source {
-        if let Some(rustls_error) = current.downcast_ref::<rustls::Error>() {
-            view.rustls = Some(rustls_error.clone());
-            break;
-        }
-        if let Some(io_error) = current.downcast_ref::<io::Error>() {
-            if view.io_kind.is_none() {
-                view.io_kind = Some(io_error.kind());
-            }
-            // tokio-rustls wraps rustls errors in `io::Error(InvalidData)`;
-            // `get_ref` exposes the inner error without consuming it.
-            if let Some(inner) = io_error.get_ref() {
-                if let Some(rustls_error) = inner.downcast_ref::<rustls::Error>() {
-                    view.rustls = Some(rustls_error.clone());
-                    break;
-                }
-            }
-        }
-        source = current.source();
-    }
+    let (rustls, io_kind) = extract_rustls(error.source());
+    view.rustls = rustls;
+    view.io_kind = io_kind;
     view
 }
 
@@ -109,14 +119,8 @@ pub(crate) fn view_of_io(error: &io::Error) -> ConnectErrorView {
         message: chained_message(error),
         ..Default::default()
     };
-    let mut source: Option<&(dyn StdError + 'static)> = error.get_ref().map(|e| e as _);
-    while let Some(current) = source {
-        if let Some(rustls_error) = current.downcast_ref::<rustls::Error>() {
-            view.rustls = Some(rustls_error.clone());
-            break;
-        }
-        source = current.source();
-    }
+    let (rustls, _) = extract_rustls(error.get_ref().map(|e| e as _));
+    view.rustls = rustls;
     view
 }
 
@@ -154,17 +158,32 @@ pub(crate) fn classify(view: &ConnectErrorView, client_cert_configured: bool) ->
             _ => TlsFailureKind::HandshakeFailed,
         });
     }
-    let lower = view.message.to_ascii_lowercase();
-    if lower.contains("server does not support tls") {
-        return ConnectFailure::Tls(TlsFailureKind::ServerRefusedTls);
-    }
-    if lower.contains("error performing tls handshake") {
-        return ConnectFailure::Tls(TlsFailureKind::HandshakeFailed);
+    let lower_needles = [
+        (
+            "server does not support tls",
+            TlsFailureKind::ServerRefusedTls,
+        ),
+        (
+            "error performing tls handshake",
+            TlsFailureKind::HandshakeFailed,
+        ),
+    ];
+    for (needle, kind) in lower_needles {
+        if contains_ignore_ascii_case(&view.message, needle) {
+            return ConnectFailure::Tls(kind);
+        }
     }
     if let Some(kind) = view.io_kind {
         return ConnectFailure::Io(kind, view.message.clone());
     }
     ConnectFailure::Other(view.message.clone())
+}
+
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn is_certificate_alert(alert: AlertDescription) -> bool {

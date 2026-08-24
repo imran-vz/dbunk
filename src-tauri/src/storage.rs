@@ -998,10 +998,7 @@ pub async fn upsert_connection(
     // flag is normalized to match it on every save so they can never
     // disagree on disk. Legacy rows (no blob) keep the flag as given.
     let ssl = match connection {
-        StoredConnection::PostgreSQL(c) => bool_to_i64(match &c.tls_options {
-            Some(options) => options.mode != crate::types::PgTlsMode::Disable,
-            None => c.ssl,
-        }),
+        StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl_mirror()),
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
         _ => 1,
     };
