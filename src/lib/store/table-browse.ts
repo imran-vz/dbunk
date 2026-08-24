@@ -29,10 +29,7 @@ import {
   saveTableGridPrefs,
 } from "@/lib/table-browse-client";
 
-import {
-  type AppStoreState,
-  type TableBrowseTabState,
-} from "./types";
+import { type AppStoreState, type TableBrowseTabState } from "./types";
 
 const PREFS_DEBOUNCE_MS = 400;
 
