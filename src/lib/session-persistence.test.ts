@@ -123,6 +123,29 @@ describe("restoreSession (P8)", () => {
     useAppStore.getState().restoreSession();
     expect(useAppStore.getState().workspaceTabs).toEqual([]);
   });
+
+  it("does not emit a tab-reveal signal (the persisted rail wins at boot)", () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        tabs: [queryTab("tab-1", "select 1;")],
+        activeTabId: "tab-1",
+        expandedSchemas: [],
+      }),
+    );
+    useAppStore.setState({ connections: [connection("conn-1")] });
+    const before = useAppStore.getState().tabRevealRequest;
+
+    useAppStore.getState().restoreSession();
+    expect(useAppStore.getState().tabRevealRequest).toBe(before);
+
+    // Explicit opens/activations do emit, so the workbench can leave
+    // rails that don't render tabs.
+    useAppStore.getState().setActiveTabId("tab-1");
+    expect(useAppStore.getState().tabRevealRequest).toBe(before + 1);
+    useAppStore.getState().createNewQueryTab();
+    expect(useAppStore.getState().tabRevealRequest).toBe(before + 2);
+  });
 });
 
 describe("session persistence (P8)", () => {
