@@ -26,3 +26,6 @@ dist-ssr
 .tanstack
 designs/images
 .fallow/
+
+# Generated TLS fixture material (infrastructure/test-db/postgres-tls/gen-certs.sh)
+infrastructure/test-db/postgres-tls/certs/
