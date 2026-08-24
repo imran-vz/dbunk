@@ -1366,6 +1366,9 @@ mod tests {
 
     fn sqlite_memory_connection() -> StoredConnection {
         StoredConnection::SQLite(crate::SqliteStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "sqlite".to_string(),
             name: "SQLite".to_string(),
             database: ":memory:".to_string(),
@@ -1383,6 +1386,9 @@ mod tests {
 
     fn postgres_connection(user: &str, password: &str, database: &str) -> StoredConnection {
         StoredConnection::PostgreSQL(crate::PgStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "pg".to_string(),
             name: "Postgres".to_string(),
             database: database.to_string(),
@@ -1403,6 +1409,9 @@ mod tests {
 
     fn mysql_connection(user: &str, password: &str, database: &str) -> StoredConnection {
         StoredConnection::MySQL(crate::MySqlStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "mysql".to_string(),
             name: "MySQL".to_string(),
             database: database.to_string(),

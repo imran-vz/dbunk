@@ -124,6 +124,9 @@ mod tests {
 
     fn base() -> RedisStoredConnection {
         RedisStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "id".into(),
             name: "n".into(),
             database: String::new(),

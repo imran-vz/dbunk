@@ -261,6 +261,11 @@ type ConnectionCommon = {
   safeMode?: SafeMode;
   /** ISO-8601 timestamp of the most recent successful query/connect. */
   lastActivityAt?: string;
+  /** Single-level organization group; empty/missing = ungrouped. Plan 009. */
+  folder?: string;
+  isFavorite?: boolean;
+  /** User-picked presentation color token; see `connection-colors.ts`. */
+  color?: import("@/lib/connection-colors").ConnectionColor;
 };
 
 export type ConnectionEnvironment =
@@ -910,6 +915,16 @@ export type WorkspaceTabKind =
   | "pubsub"
   | "server";
 
+/** Persisted editor caret/selection for a query tab (Plan 009). All
+ *  members are 1-based Monaco positions; the restore path clamps to
+ *  the model, so stale values degrade instead of erroring. */
+export type TabCaret = {
+  line: number;
+  column: number;
+  anchorLine?: number;
+  anchorColumn?: number;
+};
+
 export type WorkspaceTab = {
   id: string;
   kind: WorkspaceTabKind;
@@ -918,6 +933,8 @@ export type WorkspaceTab = {
   schema: string;
   table?: string;
   query?: string;
+  /** Query tabs only: last known caret/selection, session-persisted. */
+  caret?: TabCaret;
   lastRun?: string;
   isDirty?: boolean;
   /** Pinned tabs sit leftmost at icon width and are excluded from

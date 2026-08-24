@@ -42,6 +42,8 @@ describe("buildStoredConnectionFromForm", () => {
       environment: "development",
       safeMode: "inherit",
       readOnly: false,
+      folder: "",
+      isFavorite: false,
       engine: "PostgreSQL",
       ssl: true,
     });
@@ -93,6 +95,8 @@ describe("buildStoredConnectionFromForm", () => {
       environment: "development",
       safeMode: "inherit",
       readOnly: false,
+      folder: "",
+      isFavorite: false,
       engine: "SQLite",
     });
     // No engine-specific fields on SQLite — should never include ssl etc.

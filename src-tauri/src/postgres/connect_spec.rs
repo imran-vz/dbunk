@@ -77,6 +77,9 @@ mod tests {
     #[test]
     fn query_sessions_leave_keepalive_at_the_driver_default() {
         let connection = PgStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "connection".into(),
             name: "Connection".into(),
             database: "postgres".into(),

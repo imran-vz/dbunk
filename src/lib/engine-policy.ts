@@ -364,6 +364,10 @@ export type ConnectionFormValues = {
   environment?: import("@/lib/store").ConnectionEnvironment;
   safeMode?: import("@/lib/store").SafeMode;
   readOnly?: boolean;
+  // Organization metadata (Plan 009, PAR-005). Engine-independent.
+  folder?: string;
+  isFavorite?: boolean;
+  color?: import("@/lib/connection-colors").ConnectionColor;
   host?: string;
   database?: string;
   port?: number;

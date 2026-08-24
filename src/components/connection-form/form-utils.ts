@@ -9,6 +9,10 @@
 
 import * as z from "zod";
 
+import {
+  CONNECTION_COLORS,
+  isConnectionColor,
+} from "@/lib/connection-colors";
 import type {
   ClickHouseStoredConnection,
   Connection,
@@ -34,6 +38,9 @@ export const connectionSchema = z.object({
   role: z.string().optional(),
   environment: z.enum(["development", "test", "staging", "production"]),
   safeMode: z.enum(["inherit", "disabled", "protected", "strict"]),
+  folder: z.string().max(120).optional(),
+  isFavorite: z.boolean().optional(),
+  color: z.enum(CONNECTION_COLORS).optional(),
   ssl: z.boolean().optional(),
   useHttps: z.boolean().optional(),
   urlPath: z.string().optional(),
@@ -76,6 +83,9 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   role: "read/write",
   environment: "development",
   safeMode: "inherit",
+  folder: "",
+  isFavorite: false,
+  color: undefined,
   ssl: true,
   useHttps: false,
   urlPath: "",
@@ -113,6 +123,9 @@ type CommonShape = {
   environment: ConnectionEnvironment;
   safeMode: SafeMode;
   readOnly: boolean;
+  folder: string;
+  isFavorite: boolean;
+  color?: import("@/lib/connection-colors").ConnectionColor;
 };
 
 // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
@@ -129,6 +142,9 @@ function commonFromForm(value: ConnectionFormData, id: string): CommonShape {
     environment: value.environment ?? "development",
     safeMode: value.safeMode ?? "inherit",
     readOnly: value.readOnly ?? false,
+    folder: value.folder?.trim() ?? "",
+    isFavorite: value.isFavorite ?? false,
+    ...(value.color ? { color: value.color } : null),
   };
 }
 
@@ -330,6 +346,11 @@ export function defaultValuesFromConnection(
     role: connection.role,
     environment: connection.environment ?? "development",
     safeMode: connection.safeMode ?? "inherit",
+    folder: connection.folder ?? "",
+    isFavorite: connection.isFavorite ?? false,
+    // The backend stores color opaquely — guard so an unknown token
+    // hydrates as "no color" instead of failing schema validation.
+    color: isConnectionColor(connection.color) ? connection.color : undefined,
   };
   const tunnel =
     connection.engine === "SQLite" ? undefined : connection.sshTunnel;

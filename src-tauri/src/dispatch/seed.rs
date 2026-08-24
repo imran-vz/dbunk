@@ -325,6 +325,9 @@ mod sqlite_live_tests {
 
     fn connection(path: &str) -> StoredConnection {
         StoredConnection::SQLite(SqliteStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "seed-sqlite-test".into(),
             name: "seed sqlite test".into(),
             database: path.to_string(),
@@ -577,6 +580,9 @@ mod mysql_live_tests {
 
     fn test_connection() -> StoredConnection {
         StoredConnection::MySQL(MySqlStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "seed-mysql-test".into(),
             name: "seed mysql test".into(),
             database: "dbunk_demo".into(),

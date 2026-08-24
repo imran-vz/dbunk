@@ -24,9 +24,32 @@ import type {
   ActiveView,
   AppStoreState,
   SettingsTab,
+  TabCaret,
   WorkspaceTab,
   Connection,
 } from "./types";
+
+/**
+ * Validate a persisted caret candidate: present members must be finite
+ * positive integers, and an anchor is only kept when both members are
+ * valid. Anything else degrades to "no caret" — never to a dropped tab.
+ */
+export function validateTabCaret(
+  caret: Partial<TabCaret> | undefined,
+): TabCaret | undefined {
+  if (typeof caret !== "object" || caret === null) return undefined;
+  // Persisted members may hold any JSON value at runtime;
+  // `Number.isInteger` rejects non-numbers before the range check.
+  const isPosition = (value: number | undefined): value is number =>
+    value !== undefined && Number.isInteger(value) && value >= 1;
+  if (!isPosition(caret.line) || !isPosition(caret.column)) return undefined;
+  const validated: TabCaret = { line: caret.line, column: caret.column };
+  if (isPosition(caret.anchorLine) && isPosition(caret.anchorColumn)) {
+    validated.anchorLine = caret.anchorLine;
+    validated.anchorColumn = caret.anchorColumn;
+  }
+  return validated;
+}
 
 // Module-local counters survive across the slice's actions but are
 // scoped to the slice file — they were globals in the monolith.
@@ -82,6 +105,14 @@ export type WorkspaceTabsSlice = {
    * falls back to an empty session silently (corrupt-state rule).
    */
   restoreSession: () => void;
+
+  /**
+   * Record the editor caret/selection for a query tab so it survives
+   * relaunch with the session blob. No-ops for missing or non-query
+   * tabs. Deliberately does NOT touch `isDirty` — moving the caret is
+   * not an edit. Plan 009 (caret wiring lands with Plan 010).
+   */
+  updateQueryCaret: (tabId: string, caret: TabCaret) => void;
 
   /**
    * Cascade cleanup — drops every Workspace Tab whose
@@ -339,6 +370,10 @@ export const createWorkspaceTabsSlice: StateCreator<
           if (typeof tab.query === "string") restored.query = tab.query;
           if (tab.pinned === true) restored.pinned = true;
           if (tab.isDirty === true) restored.isDirty = true;
+          if (tab.kind === "query") {
+            const caret = validateTabCaret(tab.caret);
+            if (caret) restored.caret = caret;
+          }
           return [restored];
         });
       }
@@ -378,6 +413,17 @@ export const createWorkspaceTabsSlice: StateCreator<
       return next;
     });
   },
+
+  updateQueryCaret: (tabId, caret) =>
+    set((state) => {
+      const tab = state.workspaceTabs.find((item) => item.id === tabId);
+      if (!tab || tab.kind !== "query") return {};
+      return {
+        workspaceTabs: state.workspaceTabs.map((item) =>
+          item.id === tabId ? { ...item, caret } : item,
+        ),
+      };
+    }),
 
   reopenHistoryEntry: (entry) => {
     const state = get();

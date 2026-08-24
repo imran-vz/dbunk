@@ -21,6 +21,8 @@ and update its status here when work finishes.
 | [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | DONE: 4e52c8a (selected mock: A)               |
 | [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | DONE: bd9f7ef                                  |
 | [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | DONE: 5409d66 (selected mock: C)               |
+| [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | READY FOR REVIEW                               |
+| [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -63,6 +65,35 @@ useful without authorizing commits implicitly.
 - **Selected mock (006):** A — persistent right-side mutation review
   inspector that keeps the result grid primary while showing grouped changes
   and exact generated DML.
+- **Selected (2026-08-24):** Plans 009 and 010 are the `PAR-005` execution
+  path, authored at `9570f11`. Scope was reconciled against the UI-refresh
+  series, which landed after the register's audit: UI refresh Phase 8
+  already delivered the persistence half of `PAR-005` (SQLite `ui.v1.*`
+  store, session restore of query/table tabs + hot-exit SQL + pins +
+  active tab + expanded nodes, corrupt-blob fallback, connection GC), and
+  the workbench consolidation (`8411dbf`) deleted the old sidebar and
+  several overview tabs, so some register evidence paths are stale. Plan
+  009 is a dark foundation: connection organization fields (migration 17:
+  folder / favorite / color), a backend `duplicate_connection`
+  (sequenced-with-rollback credential copy through the credential
+  backend; the secret never crosses IPC; credential read-modify-writes
+  now serialized by a mutex), a pure secret-free connection-URI
+  build/parse library, the pure Open Anything index/ranking library
+  (caps after ranking, capped frecency boost, typed targets,
+  saved-query target-resolution fix), the session-blob caret field, and
+  restore-orchestration tests. Plan 010 activates it: the palette
+  becomes Open Anything (flat ranked results, kind badges), connections
+  gain folders/favorites/colors/recency + Duplicate / Copy URI /
+  Import-from-URI, restored tabs stop erroring against disconnected
+  connections, and the caret round-trips. Both plans passed an
+  independent adversarial review on 2026-08-24 and were amended for its
+  findings (Plan 009's Review correction record has the list; Plan
+  010's palette dispatch, reveal-schema plumbing, and duplicate flow
+  were the substantive corrections). Deliberately deferred (recorded in
+  Plan 009's Reconciliation section): SQL files/recent files, split
+  editors, multiple windows, OS deep links, encrypted profile exchange,
+  offline metadata/data search, keyvalue tab restore, per-tab
+  browse-state persistence, and non-table object viewers (`PAR-007`).
 - **Selected mock (008):** C — restrained production banner with persistent
   target identity in the status bar and confirmation-forward safety flows.
 - **Delivered boundary:** PostgreSQL table tabs now use typed server-side
