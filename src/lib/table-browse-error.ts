@@ -1,5 +1,6 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Browse errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
 import { formatSharedTransportError } from "@/lib/safety-policy";
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Browse errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
+import { isTlsFailureKind } from "@/lib/store/types";
 import type { TableBrowseError } from "@/lib/table-browse";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -35,6 +36,12 @@ export function decodeTableBrowseError(error: unknown): TableBrowseError {
     case "invalidSort":
       return typeof error.column === "string"
         ? { kind: "invalidSort", column: error.column }
+        : { kind: "connectionLost" };
+    case "tlsFailed":
+      return typeof error.tlsKind === "string" &&
+        isTlsFailureKind(error.tlsKind) &&
+        typeof error.message === "string"
+        ? { kind: "tlsFailed", tlsKind: error.tlsKind, message: error.message }
         : { kind: "connectionLost" };
     case "timeout":
       return typeof error.operation === "string"
@@ -81,6 +88,7 @@ export function formatTableBrowseError(error: TableBrowseError): string {
       return "Browse cancelled.";
     case "connectionClosing":
     case "connectionLost":
+    case "tlsFailed":
     case "timeout":
     case "database":
       return formatSharedTransportError(error);

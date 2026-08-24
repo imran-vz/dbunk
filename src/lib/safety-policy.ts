@@ -151,6 +151,7 @@ export function decodeStatementSummaries(
 export type SharedTransportError =
   | { kind: "connectionClosing" }
   | { kind: "connectionLost" }
+  | { kind: "tlsFailed"; message: string }
   | { kind: "timeout"; operation: string }
   | { kind: "database"; code: string | null; message: string }
   | { kind: "policyBlocked"; reason: string }
@@ -164,6 +165,9 @@ export function formatSharedTransportError(
       return "The connection is closing.";
     case "connectionLost":
       return "The database connection was lost.";
+    case "tlsFailed":
+      // The backend message already carries the kind headline (ADR-0025).
+      return error.message;
     case "timeout":
       return `Timed out during ${error.operation}.`;
     case "database":

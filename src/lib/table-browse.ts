@@ -1,5 +1,5 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- Prefs JSON is an external boundary parsed into named types here. */
-import type { DatabaseEngine } from "@/lib/store/types";
+import type { DatabaseEngine, TlsFailureKind } from "@/lib/store/types";
 
 export const TABLE_BROWSE_PAGE_SIZES = [
   10, 25, 50, 100, 250, 500, 1000,
@@ -133,6 +133,7 @@ export type TableBrowseError =
   | { kind: "cancelled" }
   | { kind: "connectionClosing" }
   | { kind: "connectionLost" }
+  | { kind: "tlsFailed"; tlsKind: TlsFailureKind; message: string }
   | { kind: "timeout"; operation: string }
   | {
       kind: "database";
