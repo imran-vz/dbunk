@@ -23,6 +23,7 @@ import type {
   SshTunnelConfig,
   StoredConnection,
 } from "@/lib/store";
+import { PG_TLS_MODES } from "@/lib/store/types";
 
 export const connectionSchema = z.object({
   name: z.string().min(1, "Connection name is required"),
@@ -70,13 +71,7 @@ export const connectionSchema = z.object({
   // controls; until then nothing renders it.
   tlsOptions: z
     .object({
-      mode: z.enum([
-        "disable",
-        "prefer",
-        "require",
-        "verify-ca",
-        "verify-full",
-      ]),
+      mode: z.enum(PG_TLS_MODES),
       rootCertPath: z.string().optional(),
       clientCertPath: z.string().optional(),
       clientKeyPath: z.string().optional(),
@@ -174,7 +169,9 @@ function buildPg(
   return {
     ...common,
     engine: "PostgreSQL",
-    ssl: value.ssl ?? true,
+    ssl: value.tlsOptions
+      ? value.tlsOptions.mode !== "disable"
+      : (value.ssl ?? true),
     ...(value.tlsOptions ? { tlsOptions: value.tlsOptions } : null),
     ...(driverOptions ? { driverOptions } : null),
     ...(sshTunnel ? { sshTunnel } : null),
