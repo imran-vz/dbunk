@@ -171,7 +171,7 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
             if c.host.is_empty() || c.user.is_empty() {
                 return Err("PostgreSQL host and user are required".to_string());
             }
-            let port = if c.port == 0 { 5432 } else { c.port };
+            let port = c.effective_port();
             // ADR-0025: the DSN carries the same resolved TLS mode and
             // certificate paths as every other PG connect site. The
             // canonical PG sqlx path is `postgres::pool` which builds

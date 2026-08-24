@@ -1,16 +1,12 @@
+import {
+  decodeDatabaseError,
+  decodeTimeout,
+  decodeTlsFailed,
+  isRecord,
+} from "@/lib/decode-transport-error";
 import { formatSharedTransportError } from "@/lib/safety-policy";
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Browse errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
-import { isTlsFailureKind } from "@/lib/store/types";
 import type { TableBrowseError } from "@/lib/table-browse";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object";
-
-const isNullableString = (value: unknown): value is string | null =>
-  value === null || typeof value === "string";
-
-const isNullableNumber = (value: unknown): value is number | null =>
-  value === null || typeof value === "number";
 
 /** Decode, and structurally validate, an untrusted Tauri command rejection. */
 export function decodeTableBrowseError(error: unknown): TableBrowseError {
@@ -38,28 +34,11 @@ export function decodeTableBrowseError(error: unknown): TableBrowseError {
         ? { kind: "invalidSort", column: error.column }
         : { kind: "connectionLost" };
     case "tlsFailed":
-      return typeof error.tlsKind === "string" &&
-        isTlsFailureKind(error.tlsKind) &&
-        typeof error.message === "string"
-        ? { kind: "tlsFailed", tlsKind: error.tlsKind, message: error.message }
-        : { kind: "connectionLost" };
+      return decodeTlsFailed(error) ?? { kind: "connectionLost" };
     case "timeout":
-      return typeof error.operation === "string"
-        ? { kind: "timeout", operation: error.operation }
-        : { kind: "connectionLost" };
+      return decodeTimeout(error) ?? { kind: "connectionLost" };
     case "database":
-      return isNullableString(error.code) &&
-        typeof error.message === "string" &&
-        isNullableString(error.severity) &&
-        isNullableNumber(error.position)
-        ? {
-            kind: "database",
-            code: error.code,
-            message: error.message,
-            severity: error.severity,
-            position: error.position,
-          }
-        : { kind: "connectionLost" };
+      return decodeDatabaseError(error) ?? { kind: "connectionLost" };
     default:
       return { kind: "connectionLost" };
   }

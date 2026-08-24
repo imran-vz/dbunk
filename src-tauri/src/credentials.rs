@@ -58,7 +58,8 @@ use rand::{rngs::OsRng, RngCore};
 use sqlx::SqlitePool;
 
 use crate::{
-    keychain, storage, BastionAuthMethod, CredentialStorageMode, SecretChange, StoredConnection,
+    keychain, storage, BastionAuthMethod, CredentialStorageMode, SecretChange, SshTunnelConfig,
+    StoredConnection,
 };
 
 const SETTING_ONBOARDING_COMPLETED: &str = "onboardingCompleted";
@@ -499,6 +500,38 @@ pub async fn hydrate(
     Ok(())
 }
 
+/// Reusing a stored password is safe only while the caller-controlled
+/// connection still targets the same authentication boundary. Cosmetic,
+/// policy, and database-name edits may vary; endpoint and transport edits
+/// require the caller to provide the password explicitly.
+pub(crate) fn destination_matches(supplied: &StoredConnection, stored: &StoredConnection) -> bool {
+    if supplied.id() != stored.id()
+        || supplied.host().trim() != stored.host().trim()
+        || supplied.effective_port() != stored.effective_port()
+        || supplied.user() != stored.user()
+        || supplied.ssh_tunnel().map(SshTunnelConfig::normalized)
+            != stored.ssh_tunnel().map(SshTunnelConfig::normalized)
+    {
+        return false;
+    }
+
+    match (supplied, stored) {
+        (StoredConnection::PostgreSQL(a), StoredConnection::PostgreSQL(b)) => {
+            crate::postgres::tls::ResolvedTls::from_postgres(a)
+                == crate::postgres::tls::ResolvedTls::from_postgres(b)
+        }
+        (StoredConnection::MySQL(a), StoredConnection::MySQL(b)) => a.ssl == b.ssl,
+        (StoredConnection::ClickHouse(a), StoredConnection::ClickHouse(b)) => {
+            a.use_https == b.use_https && a.url_path == b.url_path
+        }
+        (StoredConnection::Redis(a), StoredConnection::Redis(b)) => {
+            a.use_tls == b.use_tls && a.verify_tls_cert == b.verify_tls_cert
+        }
+        (StoredConnection::SQLite(_), StoredConnection::SQLite(_)) => true,
+        _ => false,
+    }
+}
+
 /// Initial onboarding setup. Clears every storage area to a clean
 /// slate, sets up mode-specific session state (verifier + key for
 /// Encrypted; clear verifier + key for the others), and records the
@@ -934,6 +967,57 @@ mod tests {
             .as_deref(),
             Some("ssh-secret")
         );
+    }
+
+    fn postgres_fixture(port: u16) -> StoredConnection {
+        serde_json::from_value(serde_json::json!({
+            "engine": "PostgreSQL",
+            "id": "connection-1",
+            "name": "Postgres",
+            "database": "app",
+            "host": "db.internal",
+            "port": port,
+            "user": "app",
+            "password": "",
+            "role": "read/write",
+            "ssl": true,
+            "tlsOptions": { "mode": "verify-full" }
+        }))
+        .expect("postgres fixture")
+    }
+
+    fn postgres_mut(connection: &mut StoredConnection) -> &mut crate::PgStoredConnection {
+        let StoredConnection::PostgreSQL(pg) = connection else {
+            panic!("expected PostgreSQL fixture");
+        };
+        pg
+    }
+
+    #[test]
+    fn hydration_is_bound_to_endpoint_identity_and_transport() {
+        let stored = postgres_fixture(5432);
+        let mut supplied = stored.clone();
+        assert!(destination_matches(&supplied, &stored));
+
+        postgres_mut(&mut supplied).database = "another_database".into();
+        assert!(destination_matches(&supplied, &stored));
+        postgres_mut(&mut supplied).host = "attacker.example".into();
+        assert!(!destination_matches(&supplied, &stored));
+        postgres_mut(&mut supplied).host = "db.internal".into();
+        postgres_mut(&mut supplied)
+            .tls_options
+            .as_mut()
+            .unwrap()
+            .mode = crate::PgTlsMode::Disable;
+        assert!(!destination_matches(&supplied, &stored));
+    }
+
+    #[test]
+    fn hydration_treats_default_and_explicit_postgres_ports_as_the_same_destination() {
+        let stored = postgres_fixture(0);
+        let mut supplied = stored.clone();
+        postgres_mut(&mut supplied).port = 5432;
+        assert!(destination_matches(&supplied, &stored));
     }
 
     #[test]

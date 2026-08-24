@@ -76,10 +76,6 @@ impl ResolvedTls {
         }
     }
 
-    pub(crate) fn encrypts(&self) -> bool {
-        self.mode != PgTlsMode::Disable
-    }
-
     /// True when the certificate must be matched against a name other
     /// than the socket host — the SSH-tunnel and IP-literal cases.
     pub(crate) fn server_name_differs_from(&self, host: &str) -> bool {
@@ -173,60 +169,52 @@ pub(crate) fn sqlx_ssl_mode(mode: PgTlsMode, server_name_differs: bool) -> PgSsl
 pub(crate) fn client_config(
     tls: &ResolvedTls,
 ) -> Result<Option<Arc<rustls::ClientConfig>>, TlsMaterialError> {
-    if !tls.encrypts() {
+    if tls.mode == PgTlsMode::Disable {
         return Ok(None);
     }
     let client_auth = load_client_auth(tls)?;
-    let builder = rustls::ClientConfig::builder_with_provider(
-        rustls::crypto::ring::default_provider().into(),
-    )
-    .with_safe_default_protocol_versions()
-    .expect("ring protocol versions");
+    let builder = rustls::ClientConfig::builder_with_provider(ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring protocol versions");
 
-    let config = if tls.mode.verifies_chain() {
-        let roots = Arc::new(root_store(tls.root_cert_path.as_deref())?);
-        let webpki = WebPkiServerVerifier::builder_with_provider(
-            roots,
-            rustls::crypto::ring::default_provider().into(),
-        )
-        .build()
-        .map_err(|error| TlsMaterialError::Malformed {
-            path: tls
-                .root_cert_path
-                .as_deref()
-                .map(display_path)
-                .unwrap_or_else(|| "platform trust store".into()),
-            detail: error.to_string(),
-        })?;
-        let verifier: Arc<dyn ServerCertVerifier> = if tls.mode.verifies_hostname() {
+    let verifier: Arc<dyn ServerCertVerifier> = if tls.mode.verifies_chain() {
+        let roots = root_store(tls.root_cert_path.as_deref())?;
+        let webpki = WebPkiServerVerifier::builder_with_provider(roots, ring_provider())
+            .build()
+            .map_err(|error| TlsMaterialError::Malformed {
+                path: tls
+                    .root_cert_path
+                    .as_deref()
+                    .map(display_path)
+                    .unwrap_or_else(|| "platform trust store".into()),
+                detail: error.to_string(),
+            })?;
+        if tls.mode.verifies_hostname() {
             webpki
         } else {
             Arc::new(CaOnlyVerifier { inner: webpki })
-        };
-        let builder = builder
-            .dangerous()
-            .with_custom_certificate_verifier(verifier);
-        match client_auth {
-            Some((chain, key)) => builder
-                .with_client_auth_cert(chain, key)
-                .map_err(|error| client_auth_error(tls, error))?,
-            None => builder.with_no_client_auth(),
         }
     } else {
         // `prefer` / `require`: encrypt without authenticating the peer —
         // libpq semantics, and the policy every pre-ADR-0025 `ssl: true`
         // connection already had.
-        let builder = builder
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoVerification));
-        match client_auth {
-            Some((chain, key)) => builder
-                .with_client_auth_cert(chain, key)
-                .map_err(|error| client_auth_error(tls, error))?,
-            None => builder.with_no_client_auth(),
-        }
+        Arc::new(NoVerification)
+    };
+    let builder = builder
+        .dangerous()
+        .with_custom_certificate_verifier(verifier);
+    let config = match client_auth {
+        Some((chain, key)) => builder
+            .with_client_auth_cert(chain, key)
+            .map_err(|error| client_auth_error(tls, error))?,
+        None => builder.with_no_client_auth(),
     };
     Ok(Some(Arc::new(config)))
+}
+
+fn ring_provider() -> Arc<rustls::crypto::CryptoProvider> {
+    static PROVIDER: OnceLock<Arc<rustls::crypto::CryptoProvider>> = OnceLock::new();
+    Arc::clone(PROVIDER.get_or_init(|| rustls::crypto::ring::default_provider().into()))
 }
 
 fn client_auth_error(tls: &ResolvedTls, error: RustlsError) -> TlsMaterialError {
@@ -283,8 +271,8 @@ fn load_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, TlsMaterialEr
 
 fn load_private_key(path: &Path) -> Result<PrivateKeyDer<'static>, TlsMaterialError> {
     let pem = read_pem(path)?;
-    let text = String::from_utf8_lossy(&pem);
-    if text.contains("ENCRYPTED PRIVATE KEY") || text.contains("Proc-Type: 4,ENCRYPTED") {
+    if pem_contains(&pem, b"ENCRYPTED PRIVATE KEY") || pem_contains(&pem, b"Proc-Type: 4,ENCRYPTED")
+    {
         return Err(TlsMaterialError::ClientKeyEncrypted {
             path: display_path(path),
         });
@@ -295,6 +283,10 @@ fn load_private_key(path: &Path) -> Result<PrivateKeyDer<'static>, TlsMaterialEr
     })
 }
 
+fn pem_contains(pem: &[u8], needle: &[u8]) -> bool {
+    pem.windows(needle.len()).any(|window| window == needle)
+}
+
 fn display_path(path: &Path) -> String {
     path.display().to_string()
 }
@@ -302,8 +294,8 @@ fn display_path(path: &Path) -> String {
 /// Platform trust store, loaded once per process. Failures log and
 /// yield an empty set — verification then rests on the user CA file,
 /// which is exactly SQLx's behaviour on the pool path.
-fn native_roots() -> &'static RootCertStore {
-    static ROOTS: OnceLock<RootCertStore> = OnceLock::new();
+fn native_roots() -> &'static Arc<RootCertStore> {
+    static ROOTS: OnceLock<Arc<RootCertStore>> = OnceLock::new();
     ROOTS.get_or_init(|| {
         let mut store = RootCertStore::empty();
         match rustls_native_certs::load_native_certs() {
@@ -316,25 +308,26 @@ fn native_roots() -> &'static RootCertStore {
             }
             Err(error) => log::warn!("could not load platform root certificates: {error}"),
         }
-        store
+        Arc::new(store)
     })
 }
 
 /// Native roots ∪ the user's CA file (union, not replacement — SQLx
 /// cannot replace, and both paths must trust the same set).
-fn root_store(root_cert_path: Option<&Path>) -> Result<RootCertStore, TlsMaterialError> {
-    let mut store = native_roots().clone();
-    if let Some(path) = root_cert_path {
-        for cert in load_certs(path)? {
-            store
-                .add(cert)
-                .map_err(|error| TlsMaterialError::Malformed {
-                    path: display_path(path),
-                    detail: error.to_string(),
-                })?;
-        }
+fn root_store(root_cert_path: Option<&Path>) -> Result<Arc<RootCertStore>, TlsMaterialError> {
+    let Some(path) = root_cert_path else {
+        return Ok(Arc::clone(native_roots()));
+    };
+    let mut store = RootCertStore::clone(native_roots().as_ref());
+    for cert in load_certs(path)? {
+        store
+            .add(cert)
+            .map_err(|error| TlsMaterialError::Malformed {
+                path: display_path(path),
+                detail: error.to_string(),
+            })?;
     }
-    Ok(store)
+    Ok(Arc::new(store))
 }
 
 /// `prefer` / `require`: accept any certificate. Encryption without
@@ -370,7 +363,7 @@ impl ServerCertVerifier for NoVerification {
         Ok(HandshakeSignatureValid::assertion())
     }
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        rustls::crypto::ring::default_provider()
+        ring_provider()
             .signature_verification_algorithms
             .supported_schemes()
     }
@@ -509,11 +502,14 @@ pub(crate) fn dsn_query(tls: &ResolvedTls, encode: impl Fn(&str) -> String) -> S
 /// `pg_restore`. Over a tunnel `--host` is the certificate name and
 /// `PGHOSTADDR` the loopback address, so libpq verifies the real host
 /// name while connecting to the forwarded port.
+const LIBPQ_INHERITED_OVERRIDES: &[&str] =
+    &["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"];
+
 pub(crate) fn apply_to_command(tls: &ResolvedTls, host: &str, command: &mut Command) {
     // A GUI app may inherit libpq variables when launched from a shell.
     // Make the resolved connection authoritative: in particular, a stale
     // PGHOSTADDR must never redirect a subprocess carrying PGPASSWORD.
-    for key in ["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"] {
+    for key in LIBPQ_INHERITED_OVERRIDES {
         command.env_remove(key);
     }
     command.arg("--host").arg(&tls.server_name);
@@ -719,7 +715,7 @@ mod tests {
     #[test]
     fn command_clears_inherited_connection_and_certificate_overrides() {
         let mut command = Command::new("pg_dump");
-        for key in ["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"] {
+        for key in LIBPQ_INHERITED_OVERRIDES {
             command.env(key, "/ambient/value");
         }
 
@@ -729,10 +725,10 @@ mod tests {
             &mut command,
         );
 
-        for key in ["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"] {
+        for key in LIBPQ_INHERITED_OVERRIDES {
             assert!(command
                 .get_envs()
-                .any(|(candidate, value)| candidate == key && value.is_none()));
+                .any(|(candidate, value)| candidate == *key && value.is_none()));
         }
     }
 
