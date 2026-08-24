@@ -1,5 +1,8 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Tauri errors cross this boundary as unstructured values. */
-import type { StatementClassSummary } from "@/lib/safety-policy";
+import {
+  decodeStatementSummaries,
+  type StatementClassSummary,
+} from "@/lib/safety-policy";
 import type { DatabaseEngine } from "@/lib/store/types";
 
 export type AnalyzeSource =
@@ -228,48 +231,6 @@ const isNullableString = (value: unknown): value is string | null =>
 
 const isNullableNumber = (value: unknown): value is number | null =>
   value === null || typeof value === "number";
-
-const decodeStatementClass = (
-  value: unknown,
-): StatementClassSummary["class"] | null => {
-  switch (value) {
-    case "read":
-    case "dml":
-    case "ddl":
-    case "transaction":
-    case "session":
-    case "unknown":
-      return value;
-    default:
-      return null;
-  }
-};
-
-const decodeStatementSummaries = (
-  value: unknown,
-): StatementClassSummary[] | null => {
-  if (!Array.isArray(value)) return null;
-  const summaries: StatementClassSummary[] = [];
-  for (const statement of value) {
-    if (
-      !isRecord(statement) ||
-      typeof statement.index !== "number" ||
-      typeof statement.unbounded !== "boolean" ||
-      typeof statement.destructive !== "boolean"
-    ) {
-      return null;
-    }
-    const statementClass = decodeStatementClass(statement.class);
-    if (!statementClass) return null;
-    summaries.push({
-      index: statement.index,
-      class: statementClass,
-      unbounded: statement.unbounded,
-      destructive: statement.destructive,
-    });
-  }
-  return summaries;
-};
 
 const decodeInvalidPlanReason = (value: unknown): InvalidPlanReason | null => {
   switch (value) {

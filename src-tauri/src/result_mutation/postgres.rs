@@ -9,6 +9,7 @@ use tokio_postgres::Client;
 use crate::postgres::dedicated::{self, DedicatedConnection, DedicatedError, NoticeSink};
 use crate::postgres::identity::{resolve_identity, RelationIdentityKind, UniqueIndexCandidate};
 use crate::postgres::sql_lex::{lex_sql, SqlIdentifier, SqlToken};
+use crate::quote_double;
 
 use super::builder::{MutationColumnDescriptor, MutationTableDescriptor};
 use super::protocol::*;
@@ -256,7 +257,7 @@ impl RangeVariable {
                 } else {
                     part.value.to_ascii_lowercase()
                 };
-                quote_identifier(&value)
+                quote_double(&value)
             })
             .collect::<Vec<_>>()
             .join(".")
@@ -935,8 +936,8 @@ async fn lock_and_refresh_for_apply(
         }
         let lock = format!(
             "LOCK TABLE {}.{} IN ROW EXCLUSIVE MODE",
-            quote_identifier(&schema),
-            quote_identifier(&table)
+            quote_double(&schema),
+            quote_double(&table)
         );
         client
             .batch_execute(&lock)
@@ -994,10 +995,6 @@ fn operation_targets(plan: &MutationPlan) -> Vec<(MutationTable, usize)> {
                 .then(|| (table.clone(), op_index))
         })
         .collect()
-}
-
-fn quote_identifier(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 async fn failed_apply(client: &Client, error: ResultMutationError) -> ApplyExecution {

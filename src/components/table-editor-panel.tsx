@@ -162,8 +162,11 @@ export function TableEditorPanel({
       }),
     );
 
-  const { openQueryForTable, openTableTab, refreshTableBrowsesForRelation } =
-    useAppStore();
+  const openQueryForTable = useAppStore((state) => state.openQueryForTable);
+  const openTableTab = useAppStore((state) => state.openTableTab);
+  const refreshTableBrowsesForRelation = useAppStore(
+    (state) => state.refreshTableBrowsesForRelation,
+  );
 
   const [isAddRowOpen, setIsAddRowOpen] = useState(false);
   const [addRowSource, setAddRowSource] = useState<"new" | "duplicate">("new");
@@ -1278,16 +1281,20 @@ export interface TableSidebarProps {
 }
 
 export function TableSidebar({ tab, isClient }: TableSidebarProps) {
-  const {
-    connectionSchemaMapSchema,
-    connections,
-    resetSchemaMapPositions,
-    schemaExplorer,
-    schemaMapPrefs,
-    setConnectionSchemaMapSchema,
-    setSchemaMapPref,
-    tablePreviews,
-  } = useAppStore();
+  const connectionSchemaMapSchema = useAppStore(
+    (state) => state.connectionSchemaMapSchema,
+  );
+  const connections = useAppStore((state) => state.connections);
+  const resetSchemaMapPositions = useAppStore(
+    (state) => state.resetSchemaMapPositions,
+  );
+  const schemaExplorer = useAppStore((state) => state.schemaExplorer);
+  const schemaMapPrefs = useAppStore((state) => state.schemaMapPrefs);
+  const setConnectionSchemaMapSchema = useAppStore(
+    (state) => state.setConnectionSchemaMapSchema,
+  );
+  const setSchemaMapPref = useAppStore((state) => state.setSchemaMapPref);
+  const tablePreviews = useAppStore((state) => state.tablePreviews);
   const [isSchemaMapFullscreen, setIsSchemaMapFullscreen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const fullscreenMapRef = useRef<SchemaRelationshipMapHandle>(null);

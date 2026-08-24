@@ -17,12 +17,8 @@ export type Density = "compact" | "default" | "comfortable";
 
 export const DENSITY_STORAGE_KEY = "dbunk.density";
 
-const DENSITIES = new Set<Density>(["compact", "default", "comfortable"]);
-
 export function isDensity(value: unknown): value is Density {
-  // SAFETY: Set.has only returns true when the string is one of the
-  // three Density literals the set was built from.
-  return typeof value === "string" && DENSITIES.has(value as Density);
+  return value === "compact" || value === "default" || value === "comfortable";
 }
 
 export function loadDensity(): Density {
@@ -73,7 +69,5 @@ function subscribe(listener: () => void): () => void {
 
 /** React hook for the current density (settings UI). */
 export function useDensity(): Density {
-  // SAFETY: "default" is a member of the Density union; the assertion
-  // only widens the literal for the server-snapshot callback signature.
-  return useSyncExternalStore(subscribe, snapshot, () => "default" as Density);
+  return useSyncExternalStore(subscribe, snapshot, () => "default");
 }

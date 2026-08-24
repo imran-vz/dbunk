@@ -232,15 +232,6 @@ export function clampBrowsePageSize(pageSize: number): number {
   return DEFAULT_TABLE_BROWSE_PAGE_SIZE;
 }
 
-export function typedFiltersOf(filters: BrowseFilter[]): BrowseFilter[] {
-  return filters.filter((filter) => filter.kind !== "rawSql");
-}
-
-export function rawFilterTextOf(filters: BrowseFilter[]): string {
-  const raw = filters.find((filter) => filter.kind === "rawSql");
-  return raw && raw.kind === "rawSql" ? raw.text : "";
-}
-
 export function browseOperatorNeedsValue(
   operator: BrowseDraftOperator,
 ): boolean {

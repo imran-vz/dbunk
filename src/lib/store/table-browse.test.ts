@@ -15,7 +15,6 @@ vi.mock("@/lib/table-browse-client", () => ({
   countTableBrowseRows: vi.fn(),
   loadTableGridPrefs: vi.fn(),
   saveTableGridPrefs: vi.fn(() => Promise.resolve()),
-  nextTableBrowseRequestId: vi.fn(() => 1),
   resetTableBrowseClientForTab: vi.fn(),
 }));
 

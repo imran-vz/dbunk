@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decodeStatementSummaries,
   ENVIRONMENT_META,
   parsePolicyRefusal,
   resolveSafetyPolicy,
@@ -40,6 +41,37 @@ describe("resolveSafetyPolicy", () => {
       level: "disabled",
       readOnly: false,
     });
+  });
+
+  it("decodes structured statement summaries from untrusted payloads", () => {
+    expect(
+      decodeStatementSummaries([
+        {
+          index: 0,
+          class: "ddl",
+          unbounded: false,
+          destructive: true,
+        },
+      ]),
+    ).toEqual([
+      {
+        index: 0,
+        class: "ddl",
+        unbounded: false,
+        destructive: true,
+      },
+    ]);
+    expect(decodeStatementSummaries("delete from users")).toBeNull();
+    expect(
+      decodeStatementSummaries([
+        {
+          index: 0,
+          class: "drop-everything",
+          unbounded: true,
+          destructive: true,
+        },
+      ]),
+    ).toBeNull();
   });
 
   it("keeps environment tones fixed", () => {
