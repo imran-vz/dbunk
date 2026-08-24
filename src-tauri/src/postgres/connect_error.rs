@@ -8,6 +8,8 @@
 use std::error::Error as StdError;
 use std::io;
 
+use rustls::AlertDescription;
+
 use crate::TlsFailureKind;
 
 /// What the connect attempt actually reported, flattened.
@@ -144,7 +146,9 @@ pub(crate) fn classify(view: &ConnectErrorView, client_cert_configured: bool) ->
                 TlsFailureKind::HostnameMismatch
             }
             rustls::Error::InvalidCertificate(_) => TlsFailureKind::CertificateUntrusted,
-            rustls::Error::AlertReceived(_) if client_cert_configured => {
+            rustls::Error::AlertReceived(alert)
+                if client_cert_configured && is_certificate_alert(*alert) =>
+            {
                 TlsFailureKind::ClientCertificateRejected
             }
             _ => TlsFailureKind::HandshakeFailed,
@@ -161,6 +165,23 @@ pub(crate) fn classify(view: &ConnectErrorView, client_cert_configured: bool) ->
         return ConnectFailure::Io(kind, view.message.clone());
     }
     ConnectFailure::Other(view.message.clone())
+}
+
+fn is_certificate_alert(alert: AlertDescription) -> bool {
+    matches!(
+        alert,
+        AlertDescription::NoCertificate
+            | AlertDescription::BadCertificate
+            | AlertDescription::UnsupportedCertificate
+            | AlertDescription::CertificateRevoked
+            | AlertDescription::CertificateExpired
+            | AlertDescription::CertificateUnknown
+            | AlertDescription::UnknownCA
+            | AlertDescription::CertificateUnobtainable
+            | AlertDescription::BadCertificateStatusResponse
+            | AlertDescription::BadCertificateHashValue
+            | AlertDescription::CertificateRequired
+    )
 }
 
 pub(crate) fn tls_failure_message(kind: TlsFailureKind, detail: &str) -> String {
@@ -260,6 +281,13 @@ mod tests {
         );
         assert_eq!(
             classify(&v, false),
+            ConnectFailure::Tls(TlsFailureKind::HandshakeFailed)
+        );
+        v.rustls = Some(rustls::Error::AlertReceived(
+            AlertDescription::ProtocolVersion,
+        ));
+        assert_eq!(
+            classify(&v, true),
             ConnectFailure::Tls(TlsFailureKind::HandshakeFailed)
         );
         v.rustls = Some(rustls::Error::NoCertificatesPresented);
