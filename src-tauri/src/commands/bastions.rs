@@ -38,6 +38,10 @@ pub async fn save_bastion_server(
     let save_result = socket_lifecycle::with_connection_ids_fence(state, &connection_ids, async {
         let existing =
             storage::bastions::read_bastion_server_by_id(&state.pool, &payload.id).await?;
+        // Serialize this read-modify-write with `credentials::upsert` /
+        // `delete` so a concurrent connection save or duplicate can't
+        // be erased by our whole-map `write_all` below.
+        let _credentials_guard = credentials::mutation_guard().await;
         let current_secrets = credentials::read_all(&state.pool, mode).await?;
         let secret_patch = secret_patch_from_payload(&payload);
         let next_secrets = credentials::apply_bastion_secret_patch(current_secrets, &secret_patch);

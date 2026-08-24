@@ -28,7 +28,7 @@ import { QueryHistoryTab } from "@/components/workspace-overview/query-history-t
 import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { storageClassFor } from "@/lib/engine-policy";
 import { useShortcutHandler } from "@/lib/shortcuts";
-import { type Connection, useAppStore } from "@/lib/store";
+import { isConnectedStatus, useAppStore } from "@/lib/store";
 import { uiGet, uiSet } from "@/lib/ui-state";
 
 /** Navigator metrics per DESIGN-SYSTEM §3.3. */
@@ -45,10 +45,6 @@ interface RelationalWorkbenchProps {
   onPointerDown: React.PointerEventHandler<HTMLElement>;
   onDoubleClick: React.MouseEventHandler<HTMLElement>;
   settingsView?: React.ReactNode;
-}
-
-function isConnected(connection: Connection): boolean {
-  return connection.status === "Connected" || connection.status === "Read only";
 }
 
 function tableSectionToSubTab(section: TableSection): SubTab {
@@ -244,7 +240,7 @@ export function RelationalWorkbench({
       return <NoConnectionCard />;
     }
 
-    if (!isConnected(activeConnection) && schemas.length === 0) {
+    if (!isConnectedStatus(activeConnection.status) && schemas.length === 0) {
       return (
         <DisconnectedConnectionCard
           connection={activeConnection}
@@ -269,7 +265,7 @@ export function RelationalWorkbench({
         <OverviewRailView
           activeConnection={activeConnection}
           schemas={schemas}
-          isConnected={isConnected(activeConnection)}
+          isConnected={isConnectedStatus(activeConnection.status)}
           onOpenTable={handleOpenTable}
           onReopenQuery={reopenHistoryEntry}
         />

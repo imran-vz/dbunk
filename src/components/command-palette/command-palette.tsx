@@ -60,6 +60,38 @@ const FRECENCY_KEY = "dbunk.palette.frecency";
 
 type FrecencyMap = Record<string, { count: number; last: number }>;
 
+/** Pre-Open-Anything table keys: `table:<conn>::<schema>::<table>`. */
+const LEGACY_TABLE_KEY = /^table:(.+?)::(.+?)::(.+)$/;
+
+/**
+ * Migrate persisted `table:` keys onto the `relation:` keys the index
+ * emits now, so a user's most-used tables survive the upgrade instead
+ * of sitting orphaned in the map until they age out.
+ */
+const migrateLegacyFrecencyKeys = (map: FrecencyMap): FrecencyMap => {
+  let changed = false;
+  const next: FrecencyMap = {};
+  const merge = (key: string, entry: FrecencyMap[string]) => {
+    const existing = next[key];
+    next[key] = existing
+      ? {
+          count: existing.count + entry.count,
+          last: Math.max(existing.last, entry.last),
+        }
+      : entry;
+  };
+  for (const [key, entry] of Object.entries(map)) {
+    const legacy = LEGACY_TABLE_KEY.exec(key);
+    if (!legacy) {
+      merge(key, entry);
+      continue;
+    }
+    changed = true;
+    merge(`relation:${legacy[1]}:${legacy[2]}:${legacy[3]}`, entry);
+  }
+  return changed ? next : map;
+};
+
 const readFrecency = (): FrecencyMap => {
   try {
     const raw = uiGet(FRECENCY_KEY);
@@ -67,7 +99,9 @@ const readFrecency = (): FrecencyMap => {
     // SAFETY: scores are advisory ordering hints; malformed entries fall out below.
     const parsed = JSON.parse(raw) as FrecencyMap;
     // oxlint-disable-next-line anti-slop/no-runtime-typeof -- persisted-value validation.
-    return parsed && typeof parsed === "object" ? parsed : {};
+    return parsed && typeof parsed === "object"
+      ? migrateLegacyFrecencyKeys(parsed)
+      : {};
   } catch {
     return {};
   }
@@ -231,82 +265,86 @@ export function CommandPalette() {
     0,
   );
 
-  const runTarget = useCallback(
-    (target: OpenAnythingTarget) => {
-      const store = useAppStore.getState();
-      switch (target.type) {
-        case "command":
-          dispatchShortcut(target.commandId);
-          return;
-        case "connect":
-          useAppStore.setState({ activeConnectionId: target.connectionId });
-          void store.connectConnection(target.connectionId);
-          return;
-        case "activate-tab": {
-          const tab = store.workspaceTabs.find(
-            (item) => item.id === target.tabId,
-          );
-          if (!tab) return;
-          if (tab.connectionId !== store.activeConnectionId) {
-            useAppStore.setState({ activeConnectionId: tab.connectionId });
-          }
-          store.setActiveTabId(target.tabId);
-          return;
+  const runTarget = useCallback((target: OpenAnythingTarget) => {
+    const store = useAppStore.getState();
+    switch (target.type) {
+      case "command":
+        dispatchShortcut(target.commandId);
+        return;
+      case "connect":
+        useAppStore.setState({ activeConnectionId: target.connectionId });
+        void store.connectConnection(target.connectionId);
+        return;
+      case "activate-tab": {
+        const tab = store.workspaceTabs.find(
+          (item) => item.id === target.tabId,
+        );
+        if (!tab) return;
+        if (tab.connectionId !== store.activeConnectionId) {
+          useAppStore.setState({ activeConnectionId: tab.connectionId });
         }
-        case "open-relation": {
-          if (target.connectionId !== store.activeConnectionId) {
-            useAppStore.setState({ activeConnectionId: target.connectionId });
-          }
-          // Views/matviews/foreign tables open as SELECT query tabs —
-          // the table-browse contract is tables-only (Plan 010 §2).
-          if (target.relationKind === "table") {
-            useAppStore.getState().openTableTab(target.schema, target.name);
-          } else {
-            useAppStore.getState().openViewTab(target.schema, target.name);
-          }
-          return;
-        }
-        case "reveal-schema":
-          store.revealSchemaInNavigator(target.connectionId, target.schema);
-          return;
-        case "open-saved-query": {
-          const saved = store.savedQueries.find(
-            (item) => item.id === target.savedQueryId,
-          );
-          if (!saved) return;
-          const resolved = resolveSavedQueryTarget(
-            saved,
-            store.connections,
-            store.activeConnectionId,
-          );
-          if (!resolved.ok) {
-            toast.error(resolved.reason);
-            return;
-          }
-          store.openWorkspaceTab({
-            kind: "query",
-            label: `${saved.name}.sql`,
-            connectionId: resolved.connectionId,
-            schema: resolved.schema,
-            query: saved.body,
-          });
-          return;
-        }
-        case "open-history-entry": {
-          const entry = store.queryHistory.find(
-            (item) => item.id === target.historyId,
-          );
-          if (!entry) return;
-          store.reopenHistoryEntry({
-            sql: entry.sql,
-            connectionId: entry.connectionId,
-          });
-          return;
-        }
+        store.setActiveTabId(target.tabId);
+        return;
       }
-    },
-    [],
-  );
+      case "open-relation": {
+        if (target.connectionId !== store.activeConnectionId) {
+          useAppStore.setState({ activeConnectionId: target.connectionId });
+        }
+        // Views/matviews/foreign tables open as SELECT query tabs —
+        // the table-browse contract is tables-only (Plan 010 §2).
+        if (target.relationKind === "table") {
+          useAppStore.getState().openTableTab(target.schema, target.name);
+        } else {
+          useAppStore.getState().openViewTab(target.schema, target.name);
+        }
+        return;
+      }
+      case "reveal-schema":
+        store.revealSchemaInNavigator(target.connectionId, target.schema);
+        return;
+      case "open-saved-query": {
+        const saved = store.savedQueries.find(
+          (item) => item.id === target.savedQueryId,
+        );
+        if (!saved) return;
+        const resolved = resolveSavedQueryTarget(
+          saved,
+          store.connections,
+          store.activeConnectionId,
+          store.schemaExplorer,
+        );
+        if (!resolved.ok) {
+          toast.error(resolved.reason);
+          return;
+        }
+        store.openWorkspaceTab({
+          kind: "query",
+          label: `${saved.name}.sql`,
+          connectionId: resolved.connectionId,
+          schema: resolved.schema,
+          query: saved.body,
+        });
+        return;
+      }
+      case "open-history-entry": {
+        const entry = store.queryHistory.find(
+          (item) => item.id === target.historyId,
+        );
+        if (!entry) return;
+        store.reopenHistoryEntry({
+          sql: entry.sql,
+          connectionId: entry.connectionId,
+        });
+        return;
+      }
+      default: {
+        // Compile-time exhaustiveness: a new target type must be
+        // handled here, not silently ignored on Enter.
+        const unhandled: never = target;
+        return unhandled;
+      }
+    }
+  }, []);
 
   const runItem = useCallback(
     (item: OpenAnythingItem) => {
@@ -363,9 +401,8 @@ export function CommandPalette() {
               data-testid="palette-truncation"
               className="border-t border-border-subtle px-4 py-2 text-2xs text-text-muted"
             >
-              {truncatedTotal} more{" "}
-              {truncatedTotal === 1 ? "match" : "matches"} — keep typing to
-              narrow.
+              {truncatedTotal} more {truncatedTotal === 1 ? "match" : "matches"}{" "}
+              — keep typing to narrow.
             </div>
           ) : null}
         </Command>

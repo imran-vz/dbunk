@@ -1105,9 +1105,7 @@ mod tests {
 
     fn mysql_connection(id: &str, environment: Environment) -> StoredConnection {
         StoredConnection::MySQL(MySqlStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: id.into(),
             name: id.into(),
             database: "dbunk_demo".into(),

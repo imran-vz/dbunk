@@ -245,9 +245,7 @@ describe("session persistence (P8)", () => {
       workspaceTabs: [cleanTab],
       activeTabId: "tab-1",
     });
-    useAppStore
-      .getState()
-      .updateQueryCaret("tab-1", { line: 2, column: 9 });
+    useAppStore.getState().updateQueryCaret("tab-1", { line: 2, column: 9 });
     // No-ops: unknown tab and non-query tabs are ignored.
     useAppStore
       .getState()

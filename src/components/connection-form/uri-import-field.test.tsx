@@ -22,7 +22,13 @@ describe("UriImportField (Plan 010, mock A)", () => {
   it("prefills engine-first, then carried fields, from a postgres URI", () => {
     const { form, calls } = makeFakeForm();
     const onEngineChange = vi.fn();
-    render(<UriImportField form={form} onEngineChange={onEngineChange} />);
+    render(
+      <UriImportField
+        form={form}
+        engine="SQLite"
+        onEngineChange={onEngineChange}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("Import from URI"), {
       target: { value: "postgres://app:pw@10.0.0.1:5433/orders" },
@@ -44,7 +50,13 @@ describe("UriImportField (Plan 010, mock A)", () => {
   it("maps rediss URIs onto TLS and db-number fields", () => {
     const { form, calls } = makeFakeForm();
     const onEngineChange = vi.fn();
-    render(<UriImportField form={form} onEngineChange={onEngineChange} />);
+    render(
+      <UriImportField
+        form={form}
+        engine="SQLite"
+        onEngineChange={onEngineChange}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("Import from URI"), {
       target: { value: "rediss://cache.internal/2" },
@@ -57,7 +69,9 @@ describe("UriImportField (Plan 010, mock A)", () => {
 
   it("discloses ignored query parameters", () => {
     const { form } = makeFakeForm();
-    render(<UriImportField form={form} onEngineChange={vi.fn()} />);
+    render(
+      <UriImportField form={form} engine="SQLite" onEngineChange={vi.fn()} />,
+    );
 
     fireEvent.change(screen.getByLabelText("Import from URI"), {
       target: { value: "postgres://u@h/db?sslmode=require" },
@@ -68,10 +82,42 @@ describe("UriImportField (Plan 010, mock A)", () => {
     );
   });
 
+  it("waits for a host and leaves a matching engine alone", () => {
+    const { form, calls } = makeFakeForm();
+    const onEngineChange = vi.fn();
+    render(
+      <UriImportField
+        form={form}
+        engine="PostgreSQL"
+        onEngineChange={onEngineChange}
+      />,
+    );
+    const input = screen.getByLabelText("Import from URI");
+
+    // A bare scheme parses but must not blank the form mid-typing.
+    fireEvent.change(input, { target: { value: "postgres://" } });
+    expect(calls).toHaveLength(0);
+    expect(screen.getByTestId("uri-import-notice").textContent).toContain(
+      "Add a host",
+    );
+
+    // Same engine as the form: no engine reset, fields still applied.
+    fireEvent.change(input, { target: { value: "postgres://u@db/app" } });
+    expect(onEngineChange).not.toHaveBeenCalled();
+    expect(calls).toContainEqual(["host", "db"]);
+    expect(calls).toContainEqual(["database", "app"]);
+  });
+
   it("shows the parse reason and applies nothing for junk input", () => {
     const { form, calls } = makeFakeForm();
     const onEngineChange = vi.fn();
-    render(<UriImportField form={form} onEngineChange={onEngineChange} />);
+    render(
+      <UriImportField
+        form={form}
+        engine="SQLite"
+        onEngineChange={onEngineChange}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("Import from URI"), {
       target: { value: "mongodb://nope" },

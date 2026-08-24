@@ -117,12 +117,9 @@ function ColorSwatch({
       className={cn(
         "size-5 cursor-pointer appearance-none rounded-full border transition-shadow",
         color ? "border-transparent" : "border-dashed border-border-strong",
-        selected &&
-          "ring-2 ring-ring ring-offset-1 ring-offset-surface-window",
+        selected && "ring-2 ring-ring ring-offset-1 ring-offset-surface-window",
       )}
-      style={
-        color ? { backgroundColor: connectionColorVar(color) } : undefined
-      }
+      style={color ? { backgroundColor: connectionColorVar(color) } : undefined}
     />
   );
 }

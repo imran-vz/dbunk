@@ -792,9 +792,11 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
     let safe_mode = SafeMode::from_str(row.get::<String, _>("safe_mode").as_str())?;
     let read_only = row.get::<i64, _>("read_only") != 0;
     let last_activity_at: Option<String> = row.get("last_activity_at");
-    let folder: String = row.get("folder");
-    let is_favorite = row.get::<i64, _>("is_favorite") != 0;
-    let color: String = row.get("color");
+    let organization = crate::ConnectionOrganization {
+        folder: row.get("folder"),
+        is_favorite: row.get::<i64, _>("is_favorite") != 0,
+        color: row.get("color"),
+    };
     let ssh_tunnel = row_to_ssh_tunnel(&row, &id)?;
 
     let driver_options_json: Option<String> = row.get("driver_options");
@@ -825,9 +827,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
-            folder: folder.clone(),
-            is_favorite,
-            color: color.clone(),
+            organization,
             ssl: row.get::<i64, _>("ssl") != 0,
             driver_options,
             ssh_tunnel,
@@ -845,9 +845,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
-            folder: folder.clone(),
-            is_favorite,
-            color: color.clone(),
+            organization,
             ssl: row.get::<i64, _>("ssl") != 0,
             ssh_tunnel,
         }),
@@ -864,9 +862,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
-            folder: folder.clone(),
-            is_favorite,
-            color: color.clone(),
+            organization,
         }),
         DatabaseEngine::ClickHouse => StoredConnection::ClickHouse(ClickHouseStoredConnection {
             id,
@@ -881,9 +877,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
-            folder: folder.clone(),
-            is_favorite,
-            color: color.clone(),
+            organization,
             use_https: row.get::<i64, _>("use_https") != 0,
             url_path: row.get("url_path"),
             ssh_tunnel,
@@ -900,9 +894,7 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             environment,
             safe_mode,
             last_activity_at,
-            folder,
-            is_favorite,
-            color,
+            organization,
             db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
             use_tls: row.get::<i64, _>("use_tls") != 0,
             verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
@@ -1112,15 +1104,13 @@ pub async fn delete_connection(pool: &SqlitePool, connection_id: &str) -> Result
 pub async fn update_connection_organization(
     pool: &SqlitePool,
     connection_id: &str,
-    folder: &str,
-    is_favorite: bool,
-    color: &str,
+    organization: &crate::ConnectionOrganization,
 ) -> Result<bool, String> {
     let result =
         sqlx::query("UPDATE connections SET folder = ?, is_favorite = ?, color = ? WHERE id = ?")
-            .bind(folder)
-            .bind(bool_to_i64(is_favorite))
-            .bind(color)
+            .bind(&organization.folder)
+            .bind(bool_to_i64(organization.is_favorite))
+            .bind(&organization.color)
             .bind(connection_id)
             .execute(pool)
             .await
@@ -2057,9 +2047,7 @@ mod tests {
 
     fn connection(id: &str) -> StoredConnection {
         StoredConnection::PostgreSQL(PgStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: id.to_string(),
             name: "Primary".to_string(),
             database: "postgres".to_string(),
@@ -2081,9 +2069,7 @@ mod tests {
     fn policy_connections() -> Vec<StoredConnection> {
         vec![
             StoredConnection::PostgreSQL(PgStoredConnection {
-                folder: String::new(),
-                is_favorite: false,
-                color: String::new(),
+                organization: Default::default(),
                 id: "pg-policy".into(),
                 name: "Postgres policy".into(),
                 database: "postgres".into(),
@@ -2101,9 +2087,7 @@ mod tests {
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
             StoredConnection::MySQL(MySqlStoredConnection {
-                folder: String::new(),
-                is_favorite: false,
-                color: String::new(),
+                organization: Default::default(),
                 id: "mysql-policy".into(),
                 name: "MySQL policy".into(),
                 database: "mysql".into(),
@@ -2120,9 +2104,7 @@ mod tests {
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
             StoredConnection::SQLite(SqliteStoredConnection {
-                folder: String::new(),
-                is_favorite: false,
-                color: String::new(),
+                organization: Default::default(),
                 id: "sqlite-policy".into(),
                 name: "SQLite policy".into(),
                 database: ":memory:".into(),
@@ -2137,9 +2119,7 @@ mod tests {
                 last_activity_at: None,
             }),
             StoredConnection::ClickHouse(ClickHouseStoredConnection {
-                folder: String::new(),
-                is_favorite: false,
-                color: String::new(),
+                organization: Default::default(),
                 id: "clickhouse-policy".into(),
                 name: "ClickHouse policy".into(),
                 database: "default".into(),
@@ -2157,9 +2137,7 @@ mod tests {
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
             StoredConnection::Redis(RedisStoredConnection {
-                folder: String::new(),
-                is_favorite: false,
-                color: String::new(),
+                organization: Default::default(),
                 id: "redis-policy".into(),
                 name: "Redis policy".into(),
                 database: String::new(),
@@ -2255,20 +2233,11 @@ mod tests {
         favorite: bool,
         color: &str,
     ) {
-        macro_rules! apply {
-            ($c:expr) => {{
-                $c.folder = folder.to_string();
-                $c.is_favorite = favorite;
-                $c.color = color.to_string();
-            }};
-        }
-        match connection {
-            StoredConnection::PostgreSQL(c) => apply!(c),
-            StoredConnection::MySQL(c) => apply!(c),
-            StoredConnection::SQLite(c) => apply!(c),
-            StoredConnection::ClickHouse(c) => apply!(c),
-            StoredConnection::Redis(c) => apply!(c),
-        }
+        *connection.organization_mut() = crate::ConnectionOrganization {
+            folder: folder.to_string(),
+            is_favorite: favorite,
+            color: color.to_string(),
+        };
     }
 
     #[tokio::test]

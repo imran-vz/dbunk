@@ -12,6 +12,7 @@
  * in v1 and reported back via `ignoredParams` so the form can say so.
  */
 
+import { connectionFormPolicy } from "@/lib/engine-policy";
 import type { Connection } from "@/lib/store";
 
 export type BuildUriResult =
@@ -32,17 +33,35 @@ export type ParsedConnectionUri = {
   useTls?: boolean;
   /** Query parameters we understood syntactically but do not apply. */
   ignoredParams: string[];
+  /** Parts of the URI that were dropped for another reason (e.g. a
+   *  Redis db number outside the form's range) — disclosed, never
+   *  silently lost. */
+  warnings: string[];
 };
 
 export type ParseUriResult =
   | { ok: true; values: ParsedConnectionUri }
   | { ok: false; reason: string };
 
-const DEFAULT_PORTS = {
-  PostgreSQL: 5432,
-  MySQL: 3306,
-  Redis: 6379,
-} as const;
+/** Per-engine port defaults come from engine policy — the single
+ *  authority the connection form already reads. */
+const defaultPortFor = (engine: ParsedConnectionUri["engine"]): number => {
+  const form = connectionFormPolicy(engine);
+  switch (form.kind) {
+    case "host-auth":
+    case "redis":
+      return form.defaultPort;
+    case "clickhouse-http":
+      return form.defaultPortHttp;
+    case "file":
+      return 0;
+  }
+};
+
+const redisMaxDbNumber = (): number => {
+  const form = connectionFormPolicy("Redis");
+  return form.kind === "redis" ? form.maxDbNumber : 15;
+};
 
 const SCHEME_TO_ENGINE = new Map<
   string,
@@ -97,16 +116,14 @@ export function buildConnectionUri(
         : connection.useTls
           ? "rediss"
           : "redis";
-  const userInfo = connection.user
-    ? `${encodeSegment(connection.user)}@`
-    : "";
+  const userInfo = connection.user ? `${encodeSegment(connection.user)}@` : "";
   const rawHost = connection.host || "localhost";
   // Bracket bare IPv6 literals so `host:port` stays parseable.
   const host =
     rawHost.includes(":") && !rawHost.startsWith("[")
       ? `[${rawHost}]`
       : rawHost;
-  const port = connection.port || DEFAULT_PORTS[connection.engine];
+  const port = connection.port || defaultPortFor(connection.engine);
   const path =
     connection.engine === "Redis"
       ? connection.dbNumber
@@ -155,7 +172,7 @@ export function parseConnectionUri(input: string): ParseUriResult {
   const firstSegment = decode(url.pathname.replace(/^\//, "").split("/")[0]);
   const port = url.port
     ? Number.parseInt(url.port, 10)
-    : DEFAULT_PORTS[mapping.engine];
+    : defaultPortFor(mapping.engine);
 
   // WHATWG URL keeps IPv6 brackets on `hostname`; the connection form
   // and backend expect the bare literal.
@@ -169,12 +186,24 @@ export function parseConnectionUri(input: string): ParseUriResult {
     ...(url.password ? { password: decode(url.password) } : null),
     database: mapping.engine === "Redis" ? "" : firstSegment,
     ignoredParams: [...new Set(url.searchParams.keys())],
+    warnings: [],
   };
   if (mapping.engine === "Redis") {
     values.useTls = mapping.useTls ?? false;
-    const dbNumber = Number.parseInt(firstSegment, 10);
-    if (Number.isInteger(dbNumber) && dbNumber >= 0 && dbNumber <= 15) {
+    const maxDbNumber = redisMaxDbNumber();
+    const dbNumber = /^\d+$/.test(firstSegment)
+      ? Number.parseInt(firstSegment, 10)
+      : Number.NaN;
+    if (
+      Number.isInteger(dbNumber) &&
+      dbNumber >= 0 &&
+      dbNumber <= maxDbNumber
+    ) {
       values.dbNumber = dbNumber;
+    } else if (firstSegment) {
+      values.warnings.push(
+        `Database "${firstSegment}" was not applied — the DB number must be 0–${maxDbNumber}.`,
+      );
     }
   }
   return { ok: true, values };

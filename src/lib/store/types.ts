@@ -352,6 +352,15 @@ type ConnectionRuntimeFields = {
   errorMessage?: string;
 };
 
+/**
+ * The one definition of "this connection is live". Every surface that
+ * gates on status (palette index, table session, workbench, header,
+ * health checks) reads this so a new status literal is handled once.
+ */
+export const isConnectedStatus = (
+  status: ConnectionRuntimeFields["status"] | undefined,
+): boolean => status === "Connected" || status === "Read only";
+
 export type PgConnection = PgStoredConnection & ConnectionRuntimeFields;
 export type MySqlConnection = MySqlStoredConnection & ConnectionRuntimeFields;
 export type SqliteConnection = SqliteStoredConnection & ConnectionRuntimeFields;

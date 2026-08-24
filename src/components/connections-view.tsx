@@ -10,12 +10,6 @@ import {
 import { useMemo, useState } from "react";
 
 import {
-  connectionColorVar,
-  isConnectionColor,
-} from "@/lib/connection-colors";
-import { organizeConnections } from "@/lib/connection-organization";
-
-import {
   ConnectionActionsDropdown,
   ConnectionErrorAlert,
 } from "@/components/connection-actions";
@@ -26,6 +20,8 @@ import { EditConnectionDialog } from "@/components/edit-connection-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HealthPill, type StatusTone } from "@/components/ui/status-dot";
+import { connectionColorVar, isConnectionColor } from "@/lib/connection-colors";
+import { organizeConnections } from "@/lib/connection-organization";
 import { type Connection, useAppStore } from "@/lib/store";
 import { useContainerWidth } from "@/lib/use-container-width";
 import { cn } from "@/lib/utils";
@@ -128,9 +124,7 @@ export function ConnectionsView({
     void setConnectionOrganization(connection.id, {
       folder: connection.folder ?? "",
       isFavorite: !(connection.isFavorite ?? false),
-      color: isConnectionColor(connection.color)
-        ? connection.color
-        : undefined,
+      color: isConnectionColor(connection.color) ? connection.color : undefined,
     });
 
   return (

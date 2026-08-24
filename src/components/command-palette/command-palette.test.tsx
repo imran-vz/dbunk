@@ -25,6 +25,7 @@ vi.mock("sonner", () => ({ toast: toastMocks }));
 import { CommandPalette } from "@/components/command-palette/command-palette";
 import { useShortcutHandler } from "@/lib/shortcuts";
 import { type Connection, useAppStore } from "@/lib/store";
+import { uiSet } from "@/lib/ui-state";
 
 const initialStoreState = useAppStore.getState();
 
@@ -128,8 +129,7 @@ const paletteInput = () => screen.getByPlaceholderText(/Open anything/);
 const type = (value: string) =>
   fireEvent.change(paletteInput(), { target: { value } });
 
-const itemRows = () =>
-  Array.from(document.querySelectorAll('[cmdk-item=""]'));
+const itemRows = () => Array.from(document.querySelectorAll('[cmdk-item=""]'));
 
 describe("Open Anything palette (Plan 010, mock A)", () => {
   it("lists registered commands with their kbd hint and runs them", () => {
@@ -273,6 +273,21 @@ describe("Open Anything palette (Plan 010, mock A)", () => {
     const footer = screen.getByTestId("palette-truncation");
     expect(footer.textContent).toContain("50 more matches");
     expect(itemRows().length).toBe(200);
+  });
+
+  it("migrates pre-Open-Anything table frecency keys onto relation keys", () => {
+    seedStore();
+    uiSet(
+      "dbunk.palette.frecency",
+      JSON.stringify({
+        "table:c1::public::orders_archive": { count: 5, last: Date.now() },
+      }),
+    );
+    render(<Harness onToggle={vi.fn()} />);
+    openPalette();
+
+    // Empty query: recents first — the migrated table leads.
+    expect(itemRows()[0]?.textContent).toContain("orders_archive");
   });
 
   it("records frecency and ranks the used item first on reopen", () => {

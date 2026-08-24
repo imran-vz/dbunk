@@ -28,7 +28,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StatusDot } from "@/components/ui/status-dot";
-import { type Connection, useAppStore } from "@/lib/store";
+import { type Connection, isConnectedStatus, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface WorkbenchHeaderProps {
@@ -36,10 +36,6 @@ interface WorkbenchHeaderProps {
   isWindowFullscreen: boolean;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   onDoubleClick: (event: ReactMouseEvent<HTMLElement>) => void;
-}
-
-function isConnectedStatus(status: Connection["status"]): boolean {
-  return status === "Connected" || status === "Read only";
 }
 
 /**

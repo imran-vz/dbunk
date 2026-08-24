@@ -445,6 +445,18 @@ export const createWorkspaceTabsSlice: StateCreator<
     set((state) => {
       const tab = state.workspaceTabs.find((item) => item.id === tabId);
       if (!tab || tab.kind !== "query") return {};
+      // Unchanged caret → no new `workspaceTabs` identity, so the
+      // session persister and every tab subscriber stay quiet.
+      const current = tab.caret;
+      if (
+        current !== undefined &&
+        current.line === caret.line &&
+        current.column === caret.column &&
+        current.anchorLine === caret.anchorLine &&
+        current.anchorColumn === caret.anchorColumn
+      ) {
+        return {};
+      }
       return {
         workspaceTabs: state.workspaceTabs.map((item) =>
           item.id === tabId ? { ...item, caret } : item,

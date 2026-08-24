@@ -455,6 +455,22 @@ pub(crate) enum StoredConnection {
     Redis(RedisStoredConnection),
 }
 
+/// Organization metadata shared by every stored-connection variant
+/// (Plan 009): a single-level `folder` (empty = ungrouped), the
+/// favorite flag, and an opaque presentation `color` token that the
+/// frontend validates. Flattened into each variant so the wire shape
+/// stays `folder` / `isFavorite` / `color` at the top level.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConnectionOrganization {
+    #[serde(default)]
+    pub folder: String,
+    #[serde(default)]
+    pub is_favorite: bool,
+    #[serde(default)]
+    pub color: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PgStoredConnection {
@@ -474,14 +490,9 @@ pub(crate) struct PgStoredConnection {
     pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
-    /// Single-level organization group; empty = ungrouped. Plan 009.
-    #[serde(default)]
-    pub folder: String,
-    #[serde(default)]
-    pub is_favorite: bool,
-    /// Presentation color token; validated frontend-side, opaque here.
-    #[serde(default)]
-    pub color: String,
+    /// Folder / favorite / color; see `ConnectionOrganization`.
+    #[serde(default, flatten)]
+    pub organization: ConnectionOrganization,
     /// TLS for the wire-protocol upgrade. Distinct concept from
     /// ClickHouse's `useHttps` (TLS for HTTP transport) and Redis's
     /// `useTls` (`rediss://` scheme) — see CONTEXT.md `Connection`.
@@ -538,12 +549,9 @@ pub(crate) struct MySqlStoredConnection {
     pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
-    #[serde(default)]
-    pub folder: String,
-    #[serde(default)]
-    pub is_favorite: bool,
-    #[serde(default)]
-    pub color: String,
+    /// Folder / favorite / color; see `ConnectionOrganization`.
+    #[serde(default, flatten)]
+    pub organization: ConnectionOrganization,
     #[serde(default = "default_true")]
     pub ssl: bool,
     #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
@@ -577,12 +585,9 @@ pub(crate) struct SqliteStoredConnection {
     pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
-    #[serde(default)]
-    pub folder: String,
-    #[serde(default)]
-    pub is_favorite: bool,
-    #[serde(default)]
-    pub color: String,
+    /// Folder / favorite / color; see `ConnectionOrganization`.
+    #[serde(default, flatten)]
+    pub organization: ConnectionOrganization,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -604,12 +609,9 @@ pub(crate) struct ClickHouseStoredConnection {
     pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
-    #[serde(default)]
-    pub folder: String,
-    #[serde(default)]
-    pub is_favorite: bool,
-    #[serde(default)]
-    pub color: String,
+    /// Folder / favorite / color; see `ConnectionOrganization`.
+    #[serde(default, flatten)]
+    pub organization: ConnectionOrganization,
     /// When true the URL builder uses `https://` and defaults the
     /// port to 8443 instead of 8123.
     #[serde(default)]
@@ -642,12 +644,9 @@ pub(crate) struct RedisStoredConnection {
     pub safe_mode: SafeMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_at: Option<String>,
-    #[serde(default)]
-    pub folder: String,
-    #[serde(default)]
-    pub is_favorite: bool,
-    #[serde(default)]
-    pub color: String,
+    /// Folder / favorite / color; see `ConnectionOrganization`.
+    #[serde(default, flatten)]
+    pub organization: ConnectionOrganization,
     /// Which numbered DB (0–15 on standalone).
     #[serde(default)]
     pub db_number: u8,
@@ -773,7 +772,6 @@ impl StoredConnection {
             ($c:expr) => {{
                 $c.id = id;
                 $c.name = name;
-                $c.is_favorite = false;
                 $c.last_activity_at = None;
                 $c.password = String::new();
             }};
@@ -785,37 +783,40 @@ impl StoredConnection {
             Self::ClickHouse(c) => reset!(c),
             Self::Redis(c) => reset!(c),
         }
+        copy.organization_mut().is_favorite = false;
         copy
     }
 
-    pub fn folder(&self) -> &str {
+    pub fn organization(&self) -> &ConnectionOrganization {
         match self {
-            Self::PostgreSQL(c) => &c.folder,
-            Self::MySQL(c) => &c.folder,
-            Self::SQLite(c) => &c.folder,
-            Self::ClickHouse(c) => &c.folder,
-            Self::Redis(c) => &c.folder,
+            Self::PostgreSQL(c) => &c.organization,
+            Self::MySQL(c) => &c.organization,
+            Self::SQLite(c) => &c.organization,
+            Self::ClickHouse(c) => &c.organization,
+            Self::Redis(c) => &c.organization,
         }
+    }
+
+    pub fn organization_mut(&mut self) -> &mut ConnectionOrganization {
+        match self {
+            Self::PostgreSQL(c) => &mut c.organization,
+            Self::MySQL(c) => &mut c.organization,
+            Self::SQLite(c) => &mut c.organization,
+            Self::ClickHouse(c) => &mut c.organization,
+            Self::Redis(c) => &mut c.organization,
+        }
+    }
+
+    pub fn folder(&self) -> &str {
+        &self.organization().folder
     }
 
     pub fn is_favorite(&self) -> bool {
-        match self {
-            Self::PostgreSQL(c) => c.is_favorite,
-            Self::MySQL(c) => c.is_favorite,
-            Self::SQLite(c) => c.is_favorite,
-            Self::ClickHouse(c) => c.is_favorite,
-            Self::Redis(c) => c.is_favorite,
-        }
+        self.organization().is_favorite
     }
 
     pub fn color(&self) -> &str {
-        match self {
-            Self::PostgreSQL(c) => &c.color,
-            Self::MySQL(c) => &c.color,
-            Self::SQLite(c) => &c.color,
-            Self::ClickHouse(c) => &c.color,
-            Self::Redis(c) => &c.color,
-        }
+        &self.organization().color
     }
 
     pub(crate) fn policy(&self) -> ConnectionPolicy {

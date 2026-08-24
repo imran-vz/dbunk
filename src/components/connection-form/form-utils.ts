@@ -9,10 +9,7 @@
 
 import * as z from "zod";
 
-import {
-  CONNECTION_COLORS,
-  isConnectionColor,
-} from "@/lib/connection-colors";
+import { CONNECTION_COLORS, isConnectionColor } from "@/lib/connection-colors";
 import type {
   ClickHouseStoredConnection,
   Connection,

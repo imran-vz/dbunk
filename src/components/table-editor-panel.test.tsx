@@ -1026,6 +1026,26 @@ describe("TableEditorPanel server browse", () => {
     });
   };
 
+  it("keeps a loaded grid when the connection drops (health-check flap)", async () => {
+    seedBrowse();
+    useAppStore.setState({ connections: [postgresConnection] });
+    render(<TableEditorPanel tab={tableTab} />);
+    await act(async () => {});
+    expect(screen.getAllByText("ada@example.com").length).toBeGreaterThan(0);
+
+    act(() => {
+      useAppStore.setState({
+        connections: [
+          { ...postgresConnection, status: "Disconnected", latency: "--" },
+        ],
+      });
+    });
+    // The "restored from your last session" shell is for tabs that
+    // never fetched; a live grid stays put and only the pill changes.
+    expect(screen.queryByTestId("table-awaiting-connection")).toBeNull();
+    expect(screen.getAllByText("ada@example.com").length).toBeGreaterThan(0);
+  });
+
   it("labels estimated counts and offers Count rows", () => {
     seedBrowse();
     const onStatusItemsChange = vi.fn();
@@ -1874,6 +1894,8 @@ describe("Restored tab against a disconnected connection (Plan 010)", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("table-awaiting-connection")).toBeNull();
     });
-    expect(openTableBrowse.mock.calls.length + openTableSession.mock.calls.length).toBeGreaterThan(0);
+    expect(
+      openTableBrowse.mock.calls.length + openTableSession.mock.calls.length,
+    ).toBeGreaterThan(0);
   });
 });

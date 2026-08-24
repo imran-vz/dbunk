@@ -212,9 +212,7 @@ fn build_connection(
             safe_mode: SafeMode::default(),
             read_only: false,
             last_activity_at: None,
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             ssl: false,
             driver_options: None,
             ssh_tunnel: SshTunnelConfig::default(),
@@ -232,9 +230,7 @@ fn build_connection(
             safe_mode: SafeMode::default(),
             read_only: false,
             last_activity_at: None,
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             ssl: false,
             ssh_tunnel: SshTunnelConfig::default(),
         }),
@@ -261,12 +257,15 @@ fn connection_string(server: &ManagedServer, password: &str) -> String {
 async fn clean_up_failed_provision(
     pool: &SqlitePool,
     mode: CredentialStorageMode,
-    credentials_before: &std::collections::HashMap<String, String>,
     server: &ManagedServer,
     connection_id: &str,
 ) -> Vec<String> {
     let mut errors = Vec::new();
-    if let Err(error) = credentials::write_all(pool, mode, credentials_before).await {
+    // Delete by id under the credential mutation lock rather than
+    // restoring a pre-provision snapshot: a snapshot rewrite would
+    // erase any credential another caller saved while Docker was
+    // provisioning.
+    if let Err(error) = credentials::delete(pool, mode, connection_id).await {
         errors.push(format!("credential rollback failed: {error}"));
     }
     if let Err(error) = storage::delete_connection(pool, connection_id).await {
@@ -316,11 +315,6 @@ pub async fn provision(
             docker_status.error.unwrap_or_default()
         ));
     }
-    // Capture the credential backend before creating external resources.
-    // A partial credential write can otherwise evade delete-by-ID when
-    // the in-process credential cache was not updated.
-    let credentials_before = credentials::read_all(pool, mode).await?;
-
     let id = uuid::Uuid::new_v4().to_string();
     let short_id = &id[..8];
     let slug = slugify(&name);
@@ -403,9 +397,7 @@ pub async fn provision(
     }
     .await;
     if let Err(error) = persist_result {
-        let cleanup_errors =
-            clean_up_failed_provision(pool, mode, &credentials_before, &server, &connection_id)
-                .await;
+        let cleanup_errors = clean_up_failed_provision(pool, mode, &server, &connection_id).await;
         if cleanup_errors.is_empty() {
             return Err(format!(
                 "failed to save the managed server; provisioning was rolled back: {error}"

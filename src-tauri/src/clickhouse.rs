@@ -1142,9 +1142,7 @@ mod tests {
 
     fn ch_conn(host: &str, database: &str, port: u16) -> StoredConnection {
         StoredConnection::ClickHouse(ClickHouseStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "ch".into(),
             name: "ch".into(),
             database: database.into(),
@@ -1498,9 +1496,7 @@ mod seed_tests {
 
     fn ch_test_connection() -> StoredConnection {
         StoredConnection::ClickHouse(ClickHouseStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "seed-ch-test".into(),
             name: "seed ch test".into(),
             database: "dbunk_demo".into(),
