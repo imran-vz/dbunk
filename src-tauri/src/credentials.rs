@@ -87,6 +87,14 @@ fn password_cache() -> &'static Mutex<HashMap<String, String>> {
     PASSWORD_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Serializes every credential read-modify-write. Each backend stores
+/// the credential set as one whole map (keychain blob / full-table
+/// rewrite), so two concurrent `upsert`/`delete` calls would otherwise
+/// snapshot the map independently and the last `write_all` would erase
+/// the other caller's change — e.g. a `duplicate_connection` racing a
+/// `delete_connection` silently losing the copy's password.
+static MUTATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 // ---------------------------------------------------------------------------
 // App-settings shims (onboarding flag + active mode)
 // ---------------------------------------------------------------------------
@@ -123,6 +131,19 @@ fn parse_mode(value: &str) -> Result<CredentialStorageMode, String> {
         "plain-sqlite" => Ok(CredentialStorageMode::PlainSqlite),
         _ => Err(format!("unknown credential storage mode '{value}'")),
     }
+}
+
+/// Test-only: drop the in-memory session key and cache so encrypted-
+/// mode paths exercise their locked behavior from other modules' tests.
+#[cfg(test)]
+pub(crate) fn lock_for_tests() {
+    *session_key()
+        .lock()
+        .expect("credential session key poisoned") = None;
+    password_cache()
+        .lock()
+        .expect("credential password cache poisoned")
+        .clear();
 }
 
 pub fn is_unlocked() -> bool {
@@ -338,6 +359,7 @@ pub async fn upsert(
     if matches!(connection, StoredConnection::SQLite(_)) {
         return Ok(());
     }
+    let _guard = MUTATION_LOCK.lock().await;
     let mut all = read_all_cached(pool, mode).await?;
     if connection.password().is_empty() {
         all.remove(connection.id());
@@ -355,6 +377,7 @@ pub async fn delete(
     mode: CredentialStorageMode,
     connection_id: &str,
 ) -> Result<(), String> {
+    let _guard = MUTATION_LOCK.lock().await;
     let mut all = read_all_cached(pool, mode).await?;
     if all.remove(connection_id).is_none() {
         return Ok(());
@@ -440,6 +463,7 @@ pub async fn delete_bastion_secrets(
     mode: CredentialStorageMode,
     bastion_id: &str,
 ) -> Result<(), String> {
+    let _guard = MUTATION_LOCK.lock().await;
     let mut all = read_all_cached(pool, mode).await?;
     let prefix = format!("{BASTION_SECRET_NAMESPACE}:{bastion_id}:");
     let before = all.len();
@@ -712,6 +736,9 @@ mod tests {
     async fn seed_connections(pool: &SqlitePool, ids: &[&str]) {
         for id in ids {
             let connection = StoredConnection::PostgreSQL(crate::PgStoredConnection {
+                folder: String::new(),
+                is_favorite: false,
+                color: String::new(),
                 id: (*id).to_string(),
                 name: format!("test {id}"),
                 database: "test_db".into(),
@@ -814,6 +841,9 @@ mod tests {
         .expect("seed credential");
 
         let connection = StoredConnection::Redis(crate::RedisStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "conn-1".into(),
             name: "redis".into(),
             database: String::new(),

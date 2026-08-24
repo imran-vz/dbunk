@@ -1948,6 +1948,9 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
     let schema = unique_schema();
     let (_directory, state) = crate::test_app_state().await;
     let strict_connection = crate::StoredConnection::PostgreSQL(crate::PgStoredConnection {
+        folder: String::new(),
+        is_favorite: false,
+        color: String::new(),
         id: connection_id.clone(),
         name: "Safety apply".into(),
         database: "dbunk_demo".into(),

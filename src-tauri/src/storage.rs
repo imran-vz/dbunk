@@ -407,6 +407,17 @@ CREATE TABLE ui_state (
 );
 "#,
     ),
+    (
+        17,
+        // Plan 009 (PAR-005): connection organization. `folder` is a
+        // single-level group name (empty = ungrouped); `color` is an
+        // opaque presentation token validated frontend-side.
+        r#"
+ALTER TABLE connections ADD COLUMN folder TEXT NOT NULL DEFAULT '';
+ALTER TABLE connections ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE connections ADD COLUMN color TEXT NOT NULL DEFAULT '';
+"#,
+    ),
 ];
 
 pub struct Paths {
@@ -699,6 +710,7 @@ const CONNECTION_COLUMNS: &str = "id, name, database_name, engine, host, port, u
      last_activity_at, use_https, url_path,
      db_number, use_tls, verify_tls_cert, ssl, driver_options,
      read_only, environment, safe_mode,
+     folder, is_favorite, color,
      ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
      ssh_tunnel_local_bind_host, ssh_tunnel_local_port,
      ssh_tunnel_compression, ssh_tunnel_keepalive_interval_seconds,
@@ -780,6 +792,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
     let safe_mode = SafeMode::from_str(row.get::<String, _>("safe_mode").as_str())?;
     let read_only = row.get::<i64, _>("read_only") != 0;
     let last_activity_at: Option<String> = row.get("last_activity_at");
+    let folder: String = row.get("folder");
+    let is_favorite = row.get::<i64, _>("is_favorite") != 0;
+    let color: String = row.get("color");
     let ssh_tunnel = row_to_ssh_tunnel(&row, &id)?;
 
     let driver_options_json: Option<String> = row.get("driver_options");
@@ -810,6 +825,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
+            folder: folder.clone(),
+            is_favorite,
+            color: color.clone(),
             ssl: row.get::<i64, _>("ssl") != 0,
             driver_options,
             ssh_tunnel,
@@ -827,6 +845,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
+            folder: folder.clone(),
+            is_favorite,
+            color: color.clone(),
             ssl: row.get::<i64, _>("ssl") != 0,
             ssh_tunnel,
         }),
@@ -843,6 +864,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
+            folder: folder.clone(),
+            is_favorite,
+            color: color.clone(),
         }),
         DatabaseEngine::ClickHouse => StoredConnection::ClickHouse(ClickHouseStoredConnection {
             id,
@@ -857,6 +881,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             safe_mode,
             read_only,
             last_activity_at,
+            folder: folder.clone(),
+            is_favorite,
+            color: color.clone(),
             use_https: row.get::<i64, _>("use_https") != 0,
             url_path: row.get("url_path"),
             ssh_tunnel,
@@ -873,6 +900,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
             environment,
             safe_mode,
             last_activity_at,
+            folder,
+            is_favorite,
+            color,
             db_number: u8::try_from(row.get::<i64, _>("db_number")).unwrap_or(0),
             use_tls: row.get::<i64, _>("use_tls") != 0,
             verify_tls_cert: row.get::<i64, _>("verify_tls_cert") != 0,
@@ -945,6 +975,9 @@ pub async fn upsert_connection(
         _ => (0, 0, 1),
     };
     let read_only = bool_to_i64(policy.read_only);
+    let folder = connection.folder().to_string();
+    let is_favorite = bool_to_i64(connection.is_favorite());
+    let color = connection.color().to_string();
     let ssl = match connection {
         StoredConnection::PostgreSQL(c) => bool_to_i64(c.ssl),
         StoredConnection::MySQL(c) => bool_to_i64(c.ssl),
@@ -986,13 +1019,14 @@ pub async fn upsert_connection(
             last_activity_at, use_https, url_path,
             db_number, use_tls, verify_tls_cert, ssl, driver_options,
             read_only, environment, safe_mode,
+            folder, is_favorite, color,
             ssh_tunnel_enabled, ssh_tunnel_bastion_server_id,
             ssh_tunnel_local_bind_host, ssh_tunnel_local_port,
             ssh_tunnel_compression, ssh_tunnel_keepalive_interval_seconds,
             ssh_tunnel_keepalive_want_reply, ssh_tunnel_jump_chain,
             ssh_tunnel_proxy_command
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             database_name = excluded.database_name,
@@ -1012,6 +1046,9 @@ pub async fn upsert_connection(
             read_only = excluded.read_only,
             environment = excluded.environment,
             safe_mode = excluded.safe_mode,
+            folder = excluded.folder,
+            is_favorite = excluded.is_favorite,
+            color = excluded.color,
             ssh_tunnel_enabled = excluded.ssh_tunnel_enabled,
             ssh_tunnel_bastion_server_id = excluded.ssh_tunnel_bastion_server_id,
             ssh_tunnel_local_bind_host = excluded.ssh_tunnel_local_bind_host,
@@ -1041,6 +1078,9 @@ pub async fn upsert_connection(
     .bind(read_only)
     .bind(environment)
     .bind(safe_mode)
+    .bind(folder)
+    .bind(is_favorite)
+    .bind(color)
     .bind(ssh_tunnel_enabled)
     .bind(ssh_tunnel_bastion_server_id)
     .bind(ssh_tunnel_local_bind_host)
@@ -1994,6 +2034,9 @@ mod tests {
 
     fn connection(id: &str) -> StoredConnection {
         StoredConnection::PostgreSQL(PgStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: id.to_string(),
             name: "Primary".to_string(),
             database: "postgres".to_string(),
@@ -2015,6 +2058,9 @@ mod tests {
     fn policy_connections() -> Vec<StoredConnection> {
         vec![
             StoredConnection::PostgreSQL(PgStoredConnection {
+                folder: String::new(),
+                is_favorite: false,
+                color: String::new(),
                 id: "pg-policy".into(),
                 name: "Postgres policy".into(),
                 database: "postgres".into(),
@@ -2032,6 +2078,9 @@ mod tests {
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
             StoredConnection::MySQL(MySqlStoredConnection {
+                folder: String::new(),
+                is_favorite: false,
+                color: String::new(),
                 id: "mysql-policy".into(),
                 name: "MySQL policy".into(),
                 database: "mysql".into(),
@@ -2048,6 +2097,9 @@ mod tests {
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
             StoredConnection::SQLite(SqliteStoredConnection {
+                folder: String::new(),
+                is_favorite: false,
+                color: String::new(),
                 id: "sqlite-policy".into(),
                 name: "SQLite policy".into(),
                 database: ":memory:".into(),
@@ -2062,6 +2114,9 @@ mod tests {
                 last_activity_at: None,
             }),
             StoredConnection::ClickHouse(ClickHouseStoredConnection {
+                folder: String::new(),
+                is_favorite: false,
+                color: String::new(),
                 id: "clickhouse-policy".into(),
                 name: "ClickHouse policy".into(),
                 database: "default".into(),
@@ -2079,6 +2134,9 @@ mod tests {
                 ssh_tunnel: SshTunnelConfig::default(),
             }),
             StoredConnection::Redis(RedisStoredConnection {
+                folder: String::new(),
+                is_favorite: false,
+                color: String::new(),
                 id: "redis-policy".into(),
                 name: "Redis policy".into(),
                 database: String::new(),
@@ -2166,6 +2224,93 @@ mod tests {
             .expect("read legacy")
             .expect("legacy row");
         assert_eq!(stored.policy(), crate::ConnectionPolicy::default());
+    }
+
+    fn set_organization(
+        connection: &mut StoredConnection,
+        folder: &str,
+        favorite: bool,
+        color: &str,
+    ) {
+        macro_rules! apply {
+            ($c:expr) => {{
+                $c.folder = folder.to_string();
+                $c.is_favorite = favorite;
+                $c.color = color.to_string();
+            }};
+        }
+        match connection {
+            StoredConnection::PostgreSQL(c) => apply!(c),
+            StoredConnection::MySQL(c) => apply!(c),
+            StoredConnection::SQLite(c) => apply!(c),
+            StoredConnection::ClickHouse(c) => apply!(c),
+            StoredConnection::Redis(c) => apply!(c),
+        }
+    }
+
+    #[tokio::test]
+    async fn connection_organization_fields_round_trip_for_every_engine() {
+        let pool = test_pool().await;
+        for mut connection in policy_connections() {
+            set_organization(&mut connection, "Production fleet", true, "teal");
+            let id = connection.id().to_string();
+            upsert_connection(&pool, &connection)
+                .await
+                .expect("upsert organization connection");
+            let stored = read_connection_by_id(&pool, &id)
+                .await
+                .expect("read organization connection")
+                .expect("organization connection");
+            assert_eq!(stored.folder(), "Production fleet");
+            assert!(stored.is_favorite());
+            assert_eq!(stored.color(), "teal");
+
+            // Upsert with cleared fields must overwrite, not merge.
+            set_organization(&mut connection, "", false, "");
+            upsert_connection(&pool, &connection)
+                .await
+                .expect("upsert cleared organization");
+            let cleared = read_connection_by_id(&pool, &id)
+                .await
+                .expect("read cleared organization")
+                .expect("cleared organization connection");
+            assert_eq!(cleared.folder(), "");
+            assert!(!cleared.is_favorite());
+            assert_eq!(cleared.color(), "");
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_17_defaults_legacy_rows_to_no_organization() {
+        let pool = test_pool_through(16).await;
+        sqlx::query(
+            "INSERT INTO connections (
+                id, name, database_name, engine, host, port, user_name, role
+             ) VALUES ('legacy', 'Legacy', 'postgres', 'PostgreSQL', 'localhost', 5432, 'postgres', 'read/write')",
+        )
+        .execute(&pool)
+        .await
+        .expect("legacy connection");
+
+        run_migrations(&pool).await.expect("migration 17");
+        let columns: Vec<String> = sqlx::query("PRAGMA table_info(connections)")
+            .fetch_all(&pool)
+            .await
+            .expect("connection columns")
+            .into_iter()
+            .map(|row| row.get("name"))
+            .collect();
+        for column in ["folder", "is_favorite", "color"] {
+            assert!(columns.iter().any(|name| name == column));
+        }
+
+        let stored = read_connection_by_id(&pool, "legacy")
+            .await
+            .expect("read legacy")
+            .expect("legacy row");
+        assert_eq!(stored.folder(), "");
+        assert!(!stored.is_favorite());
+        assert_eq!(stored.color(), "");
     }
 
     #[tokio::test]

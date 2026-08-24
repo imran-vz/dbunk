@@ -32,6 +32,14 @@ const tauriMocks = vi.hoisted(() => {
   };
 });
 
+const sessionPersistenceMocks = vi.hoisted(() => ({
+  startSessionPersistence: vi.fn(),
+}));
+
+vi.mock("@/lib/session-persistence", () => ({
+  startSessionPersistence: sessionPersistenceMocks.startSessionPersistence,
+}));
+
 vi.mock("@/lib/ui-state", () => {
   const memory = new Map<string, string>();
   return {
@@ -167,6 +175,7 @@ beforeEach(() => {
     loadSavedQueries: vi.fn(async () => undefined),
     runHealthChecks: vi.fn(async () => undefined),
   });
+  sessionPersistenceMocks.startSessionPersistence.mockClear();
   mockedStartDragging.mockClear();
   mockedPrepareWindowZoomTransition.mockClear();
   mockedPrepareWindowZoomTransition.mockResolvedValue(null);
@@ -359,5 +368,54 @@ describe("AppShell workbench routing", () => {
 
     expect(screen.getByTestId("keyvalue-workbench")).toBeTruthy();
     expect(screen.queryByTestId("relational-workbench")).toBeNull();
+  });
+});
+
+describe("AppShell session restore orchestration (Plan 009)", () => {
+  it("restores once, then starts persistence, when connections load", async () => {
+    const callOrder: string[] = [];
+    const restoreSession = vi.fn(() => {
+      callOrder.push("restore");
+    });
+    sessionPersistenceMocks.startSessionPersistence.mockImplementation(() => {
+      callOrder.push("persist");
+    });
+    useAppStore.setState({ restoreSession });
+
+    render(<AppShell />);
+
+    await waitFor(() => {
+      expect(restoreSession).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      sessionPersistenceMocks.startSessionPersistence,
+    ).toHaveBeenCalledTimes(1);
+    // Persistence must only start after restore, so an empty boot
+    // state can never clobber the stored session.
+    expect(callOrder).toEqual(["restore", "persist"]);
+  });
+
+  it("skips restore AND persistence when connections never load", async () => {
+    vi.useFakeTimers();
+    try {
+      const restoreSession = vi.fn();
+      const loadConnections = vi.fn(async () => false);
+      useAppStore.setState({ restoreSession, loadConnections });
+
+      render(<AppShell />);
+
+      // Exhaust the three load attempts and their backoff delays.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+
+      expect(loadConnections).toHaveBeenCalledTimes(3);
+      expect(restoreSession).not.toHaveBeenCalled();
+      expect(
+        sessionPersistenceMocks.startSessionPersistence,
+      ).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
