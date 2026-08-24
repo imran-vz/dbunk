@@ -494,7 +494,12 @@ describe("Connection organization (Plan 010, mock A)", () => {
           folder: "Fleet",
           isFavorite: true,
         },
-        { ...baseConnection, id: "arch", name: "Archived one", folder: "Archive" },
+        {
+          ...baseConnection,
+          id: "arch",
+          name: "Archived one",
+          folder: "Archive",
+        },
       ],
     });
     render(<ConnectionsView variant="rail" />);

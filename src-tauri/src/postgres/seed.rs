@@ -231,9 +231,7 @@ mod live_tests {
 
     fn test_connection() -> StoredConnection {
         StoredConnection::PostgreSQL(PgStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "seed-live-test".into(),
             name: "seed live test".into(),
             database: "dbunk_demo".into(),

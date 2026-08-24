@@ -109,28 +109,26 @@ pub(crate) async fn duplicate_connection_inner(
     connection_id: &str,
 ) -> Result<Vec<StoredConnection>, String> {
     let mode = current_credential_mode(state).await?;
-    let source = storage::read_connection_by_id(&state.pool, connection_id)
-        .await?
+    // One list read serves both the source lookup and the name
+    // collision check.
+    let all = storage::read_connections(&state.pool).await?;
+    let mut source = all
+        .iter()
+        .find(|connection| connection.id() == connection_id)
+        .cloned()
         .ok_or_else(|| format!("Connection '{connection_id}' not found"))?;
 
-    // Read the secret up front so a failing credential store stops the
-    // operation before any row is written. Caveats by mode: SQLite
-    // connections carry no credential, so skip the read entirely (a
-    // locked encrypted store must not block duplicating them); the OS
-    // keychain backend never errors — read failures degrade to an
-    // empty map per its documented failure policy, so a locked
-    // keychain duplicates the record without a credential rather than
-    // failing.
-    let secret = if matches!(source, StoredConnection::SQLite(_)) {
-        None
-    } else {
-        crate::credentials::read_all(&state.pool, mode)
-            .await?
-            .remove(source.id())
-    };
+    // Hydrate the secret up front so a failing credential store stops
+    // the operation before any row is written. `hydrate` already
+    // skips SQLite (no credential — a locked encrypted store must not
+    // block duplicating them); the OS keychain backend never errors —
+    // read failures degrade to an empty map per its documented
+    // failure policy, so a locked keychain duplicates the record
+    // without a credential rather than failing.
+    crate::credentials::hydrate(&state.pool, mode, &mut source).await?;
+    let secret = (!source.password().is_empty()).then(|| source.password().to_string());
 
-    let existing_names: Vec<String> = storage::read_connections(&state.pool)
-        .await?
+    let existing_names: Vec<String> = all
         .iter()
         .map(|connection| connection.name().to_string())
         .collect();
@@ -180,14 +178,14 @@ pub(crate) async fn update_connection_organization_inner(
     state: &AppState,
     payload: ConnectionOrganizationPayload,
 ) -> Result<Vec<StoredConnection>, String> {
-    let updated = storage::update_connection_organization(
-        &state.pool,
-        &payload.connection_id,
-        payload.folder.trim(),
-        payload.is_favorite,
-        payload.color.trim(),
-    )
-    .await?;
+    let organization = crate::ConnectionOrganization {
+        folder: payload.folder.trim().to_string(),
+        is_favorite: payload.is_favorite,
+        color: payload.color.trim().to_string(),
+    };
+    let updated =
+        storage::update_connection_organization(&state.pool, &payload.connection_id, &organization)
+            .await?;
     if !updated {
         return Err(format!("Connection '{}' not found", payload.connection_id));
     }
@@ -263,8 +261,8 @@ pub async fn health_check_connection(
 mod tests {
     use super::*;
     use crate::{
-        CredentialStorageMode, Environment, PgDriverOptions, PgStoredConnection, SafeMode,
-        SshTunnelConfig,
+        ConnectionOrganization, CredentialStorageMode, Environment, PgDriverOptions,
+        PgStoredConnection, SafeMode, SshTunnelConfig,
     };
 
     fn pg_connection(id: &str, name: &str, password: &str) -> StoredConnection {
@@ -281,9 +279,11 @@ mod tests {
             safe_mode: SafeMode::Protected,
             read_only: true,
             last_activity_at: Some("2026-08-24T00:00:00Z".into()),
-            folder: "Fleet".into(),
-            is_favorite: true,
-            color: "teal".into(),
+            organization: ConnectionOrganization {
+                folder: "Fleet".into(),
+                is_favorite: true,
+                color: "teal".into(),
+            },
             ssl: true,
             driver_options: Some(PgDriverOptions {
                 statement_timeout_ms: Some(30_000),
@@ -370,9 +370,7 @@ mod tests {
             safe_mode: SafeMode::Inherit,
             read_only: false,
             last_activity_at: None,
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
         })
     }
 

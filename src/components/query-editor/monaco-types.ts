@@ -71,7 +71,5 @@ export type MonacoEditorInstance = {
     endLineNumber: number;
     endColumn: number;
   }) => void;
-  revealPositionInCenterIfOutsideViewport?: (
-    position: MonacoPosition,
-  ) => void;
+  revealPositionInCenterIfOutsideViewport?: (position: MonacoPosition) => void;
 };

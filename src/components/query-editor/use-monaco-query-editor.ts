@@ -89,11 +89,21 @@ export function useMonacoQueryEditor({
   });
 
   const editorRef = useRef<MonacoEditorInstance | null>(null);
+  // The panel — and so this editor instance — is reused across query
+  // tabs (the workbench renders no React `key`), and Monaco's
+  // `onMount` fires once per instance. Listeners installed there must
+  // read the tab id at fire time, never from the mount closure.
+  const tabIdRef = useRef(tabId);
+  tabIdRef.current = tabId;
   const caretPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  /** Restore is once per tab — `onMount` re-fires must not re-place a
-   *  caret the user has since moved. */
+  /** Caret awaiting its debounced write, tagged with the tab it belongs to. */
+  const pendingCaretRef = useRef<{ tabId: string; caret: TabCaret } | null>(
+    null,
+  );
+  /** Restore runs once per tab activation — a repeat for the same tab
+   *  must not re-place a caret the user has since moved. */
   const caretRestoredForTabRef = useRef<string | null>(null);
   const completionDisposableRef = useRef<MonacoCompletionDisposable | null>(
     null,
@@ -114,6 +124,85 @@ export function useMonacoQueryEditor({
     if (!selection || !model) return "";
     return model.getValueInRange(selection) ?? "";
   }, []);
+
+  /** Commit the pending caret (if any) to its own tab and clear the timer. */
+  const flushPendingCaret = useCallback(() => {
+    if (caretPersistTimerRef.current !== null) {
+      clearTimeout(caretPersistTimerRef.current);
+      caretPersistTimerRef.current = null;
+    }
+    const pending = pendingCaretRef.current;
+    pendingCaretRef.current = null;
+    if (pending) {
+      useAppStore.getState().updateQueryCaret(pending.tabId, pending.caret);
+    }
+  }, []);
+
+  const readCaret = useCallback(
+    (editor: MonacoEditorInstance, position: MonacoPosition): TabCaret => {
+      const caret: TabCaret = {
+        line: position.lineNumber,
+        column: position.column,
+      };
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+      const selection = editor.getSelection() as
+        | MonacoSelectionRange
+        | null
+        | undefined;
+      if (
+        selection &&
+        (selection.selectionStartLineNumber !== selection.positionLineNumber ||
+          selection.selectionStartColumn !== selection.positionColumn)
+      ) {
+        caret.anchorLine = selection.selectionStartLineNumber;
+        caret.anchorColumn = selection.selectionStartColumn;
+      }
+      return caret;
+    },
+    [],
+  );
+
+  /**
+   * Place the session-persisted caret for `forTabId`, clamped to the
+   * current model so a stale position degrades instead of erroring.
+   * Runs on mount and on every tab switch (see the `tabId` effect).
+   */
+  const restoreCaret = useCallback(
+    (editor: MonacoEditorInstance, forTabId: string) => {
+      if (caretRestoredForTabRef.current === forTabId) return;
+      caretRestoredForTabRef.current = forTabId;
+      const storedCaret = useAppStore
+        .getState()
+        .workspaceTabs.find((candidate) => candidate.id === forTabId)?.caret;
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+      const model = editor.getModel() as MonacoTextModel | null;
+      if (!storedCaret || !model) return;
+      const lineCount = model.getLineCount?.() ?? 1;
+      const clamp = (line: number, column: number): MonacoPosition => {
+        const safeLine = Math.min(Math.max(line, 1), lineCount);
+        const maxColumn = model.getLineMaxColumn?.(safeLine) ?? column;
+        return {
+          lineNumber: safeLine,
+          column: Math.min(Math.max(column, 1), maxColumn),
+        };
+      };
+      const head = clamp(storedCaret.line, storedCaret.column);
+      const anchor =
+        storedCaret.anchorLine !== undefined &&
+        storedCaret.anchorColumn !== undefined
+          ? clamp(storedCaret.anchorLine, storedCaret.anchorColumn)
+          : head;
+      editor.setSelection?.({
+        startLineNumber: anchor.lineNumber,
+        startColumn: anchor.column,
+        endLineNumber: head.lineNumber,
+        endColumn: head.column,
+      });
+      editor.revealPositionInCenterIfOutsideViewport?.(head);
+      setCursor(head);
+    },
+    [],
+  );
 
   const getCurrentStatementText = useCallback((): string => {
     const editor = editorRef.current;
@@ -247,74 +336,35 @@ export function useMonacoQueryEditor({
             // Caret persistence (Plan 010): debounced into the session
             // blob so relaunch restores it; moving the caret is not an
             // edit, so `updateQueryCaret` never touches `isDirty`.
+            const currentTabId = tabIdRef.current;
+            // A tab switch inside the debounce window: commit the
+            // previous tab's caret before tracking the new one.
+            if (
+              pendingCaretRef.current &&
+              pendingCaretRef.current.tabId !== currentTabId
+            ) {
+              flushPendingCaret();
+            }
+            pendingCaretRef.current = {
+              tabId: currentTabId,
+              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+              caret: readCaret(editor as MonacoEditorInstance, position),
+            };
             if (caretPersistTimerRef.current !== null) {
               clearTimeout(caretPersistTimerRef.current);
             }
-            caretPersistTimerRef.current = setTimeout(() => {
-              caretPersistTimerRef.current = null;
-              const latest = editorRef.current;
-              if (!latest) return;
-              const caret: TabCaret = {
-                line: position.lineNumber,
-                column: position.column,
-              };
-              // SAFETY: The value is constrained by the typed component or library contract at this boundary.
-              const selection = latest.getSelection() as
-                | MonacoSelectionRange
-                | null
-                | undefined;
-              if (
-                selection &&
-                (selection.selectionStartLineNumber !==
-                  selection.positionLineNumber ||
-                  selection.selectionStartColumn !== selection.positionColumn)
-              ) {
-                caret.anchorLine = selection.selectionStartLineNumber;
-                caret.anchorColumn = selection.selectionStartColumn;
-              }
-              useAppStore.getState().updateQueryCaret(tabId, caret);
-            }, CARET_PERSIST_DEBOUNCE_MS);
+            caretPersistTimerRef.current = setTimeout(
+              flushPendingCaret,
+              CARET_PERSIST_DEBOUNCE_MS,
+            );
           },
         );
       if (cursorDisposable) {
         editorDisposablesRef.current.push(cursorDisposable);
       }
 
-      // Restore the session-persisted caret, clamped to the current
-      // model so a stale position degrades instead of erroring.
-      const storedCaret =
-        caretRestoredForTabRef.current === tabId
-          ? undefined
-          : useAppStore
-              .getState()
-              .workspaceTabs.find((candidate) => candidate.id === tabId)
-              ?.caret;
-      caretRestoredForTabRef.current = tabId;
-      if (storedCaret && model) {
-        const lineCount = model.getLineCount?.() ?? 1;
-        const clamp = (line: number, column: number): MonacoPosition => {
-          const safeLine = Math.min(Math.max(line, 1), lineCount);
-          const maxColumn = model.getLineMaxColumn?.(safeLine) ?? column;
-          return {
-            lineNumber: safeLine,
-            column: Math.min(Math.max(column, 1), maxColumn),
-          };
-        };
-        const head = clamp(storedCaret.line, storedCaret.column);
-        const anchor =
-          storedCaret.anchorLine !== undefined &&
-          storedCaret.anchorColumn !== undefined
-            ? clamp(storedCaret.anchorLine, storedCaret.anchorColumn)
-            : head;
-        editor.setSelection?.({
-          startLineNumber: anchor.lineNumber,
-          startColumn: anchor.column,
-          endLineNumber: head.lineNumber,
-          endColumn: head.column,
-        });
-        editor.revealPositionInCenterIfOutsideViewport?.(head);
-        setCursor(head);
-      }
+      // SAFETY: The value is constrained by the typed component or library contract at this boundary.
+      restoreCaret(editor as MonacoEditorInstance, tabIdRef.current);
 
       const runCurrent = () => {
         if (interceptMultiStatementSelection()) return;
@@ -473,28 +523,50 @@ export function useMonacoQueryEditor({
     },
     [
       connectionId,
+      flushPendingCaret,
       getEditorSelectionText,
       interceptMultiStatementSelection,
       loadTableStructure,
       query,
+      readCaret,
+      restoreCaret,
       runSql,
-      tabId,
       updateQueryRunDecorations,
     ],
   );
 
-  useEffect(
-    () => () => {
+  // Tab switch on the reused editor: `@monaco-editor/react` has just
+  // swapped the model text (its `value` effect runs before this one),
+  // which may have fired a cursor event for the NEW tab — an artifact,
+  // not a user move, so it must not clobber the caret we restore here.
+  // Anything pending for the previous tab is committed.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (pendingCaretRef.current?.tabId === tabId) {
+      pendingCaretRef.current = null;
       if (caretPersistTimerRef.current !== null) {
         clearTimeout(caretPersistTimerRef.current);
+        caretPersistTimerRef.current = null;
       }
+    } else {
+      flushPendingCaret();
+    }
+    restoreCaret(editor, tabId);
+  }, [tabId, flushPendingCaret, restoreCaret]);
+
+  useEffect(
+    () => () => {
+      // Commit the last caret so a tab closed mid-debounce still
+      // restores where the user left it.
+      flushPendingCaret();
       completionDisposableRef.current?.dispose();
       decorationsCollectionRef.current?.clear();
       editorDisposablesRef.current.forEach((disposable) => {
         disposable.dispose();
       });
     },
-    [],
+    [flushPendingCaret],
   );
 
   return {

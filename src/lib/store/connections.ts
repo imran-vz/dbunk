@@ -30,6 +30,7 @@ import type {
   RedisCapabilities,
   StoredConnection,
 } from "./types";
+import { isConnectedStatus } from "./types";
 
 type ConnectResult = {
   latencyMs: number;
@@ -175,7 +176,9 @@ export type ConnectionsSlice = {
    * server-side; the secret never crosses IPC). Resolves the new copy
    * so callers can toast its name, or `undefined` on failure.
    */
-  duplicateConnection: (connectionId: string) => Promise<Connection | undefined>;
+  duplicateConnection: (
+    connectionId: string,
+  ) => Promise<Connection | undefined>;
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
   disconnectConnection: (connectionId: string) => Promise<void>;
@@ -302,26 +305,12 @@ export const createConnectionsSlice: StateCreator<
       const stored = await tauriInvoke<StoredConnection[]>("save_connection", {
         connection: toStoredConnection(connection),
       });
-      const connections = stored.map(hydrateConnection);
-      // Preserve the connection status for the updated connection
-      const currentConnection = get().connections.find(
-        (c) => c.id === connection.id,
-      );
-      if (currentConnection) {
-        const updatedConnections = connections.map((c) =>
-          c.id === connection.id
-            ? {
-                ...c,
-                status: currentConnection.status,
-                latency: currentConnection.latency,
-                lastActivityAt: currentConnection.lastActivityAt,
-              }
-            : c,
-        );
-        set({ connections: updatedConnections });
-      } else {
-        set({ connections });
-      }
+      // Same merge rule as every other full-list return: runtime
+      // fields survive, everything stored (including `lastActivityAt`,
+      // which the backend owns) comes from the response.
+      set((state) => ({
+        connections: mergeStoredConnections(stored, state.connections),
+      }));
     } catch (error) {
       console.error("Failed to update connection", error);
     }
@@ -483,9 +472,7 @@ export const createConnectionsSlice: StateCreator<
     // which flips the status to Connected even though the user never asked
     // for that engine. See ADR-0002 (revised 2026-05-12).
     const connectionIds = get()
-      .connections.filter(
-        (c) => c.status === "Connected" || c.status === "Read only",
-      )
+      .connections.filter((c) => isConnectedStatus(c.status))
       .map((c) => c.id);
     if (connectionIds.length === 0) {
       return;

@@ -29,9 +29,7 @@ export type ConnectionActionsProps = {
 };
 
 export function ConnectionActionsDropdown(props: ConnectionActionsProps) {
-  const duplicateConnection = useAppStore(
-    (state) => state.duplicateConnection,
-  );
+  const duplicateConnection = useAppStore((state) => state.duplicateConnection);
   const isDisconnected = props.connection.status === "Disconnected";
   // Secret-free by contract; SQLite/ClickHouse have no canonical URI
   // and hide the action instead of failing it (Plan 010).

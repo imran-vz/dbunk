@@ -133,7 +133,12 @@ export type {
   StageMutationDraftUpdateInput,
   TableMutationDraftScope,
 } from "./mutation-drafts";
-export { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
+export {
+  isConnectedStatus,
+  tableDataKey,
+  tableSessionKey,
+  tableStructureKey,
+} from "./types";
 export type { QueryTransactionCommand } from "./query-sessions";
 export { consoleSeverityForNotice } from "./console";
 export type { ConsoleEvent, ConsoleSeverity, ConsoleSource } from "./console";

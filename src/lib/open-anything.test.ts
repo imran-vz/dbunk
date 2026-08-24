@@ -144,12 +144,12 @@ describe("buildOpenAnythingIndex", () => {
   it("skips non-workspace tab kinds and objects without an open surface", () => {
     const items = buildOpenAnythingIndex(snapshot());
     expect(byKey(items, "tab:tab-redis")).toBeUndefined();
-    expect(
-      items.some((item) => item.keywords.includes("compute_totals")),
-    ).toBe(false);
-    expect(
-      items.some((item) => item.keywords.includes("users_id_seq")),
-    ).toBe(false);
+    expect(items.some((item) => item.keywords.includes("compute_totals"))).toBe(
+      false,
+    );
+    expect(items.some((item) => item.keywords.includes("users_id_seq"))).toBe(
+      false,
+    );
   });
 
   it("includes disconnected connections as connect targets without their objects", () => {

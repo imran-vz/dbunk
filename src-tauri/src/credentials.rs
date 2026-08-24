@@ -95,6 +95,13 @@ fn password_cache() -> &'static Mutex<HashMap<String, String>> {
 /// `delete_connection` silently losing the copy's password.
 static MUTATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// Hold this across any `read_all` → `write_all` sequence performed
+/// outside this module (bastion secret saves) so it serializes with
+/// `upsert` / `delete` instead of racing them.
+pub async fn mutation_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    MUTATION_LOCK.lock().await
+}
+
 // ---------------------------------------------------------------------------
 // App-settings shims (onboarding flag + active mode)
 // ---------------------------------------------------------------------------
@@ -378,7 +385,10 @@ pub async fn delete(
     connection_id: &str,
 ) -> Result<(), String> {
     let _guard = MUTATION_LOCK.lock().await;
-    let mut all = read_all_cached(pool, mode).await?;
+    // Read the backend, not the cache: a partially failed `upsert`
+    // (backend written, cache not yet updated) must still be
+    // reversible by id — the managed-server rollback relies on it.
+    let mut all = read_all(pool, mode).await?;
     if all.remove(connection_id).is_none() {
         return Ok(());
     }
@@ -736,9 +746,7 @@ mod tests {
     async fn seed_connections(pool: &SqlitePool, ids: &[&str]) {
         for id in ids {
             let connection = StoredConnection::PostgreSQL(crate::PgStoredConnection {
-                folder: String::new(),
-                is_favorite: false,
-                color: String::new(),
+                organization: Default::default(),
                 id: (*id).to_string(),
                 name: format!("test {id}"),
                 database: "test_db".into(),
@@ -841,9 +849,7 @@ mod tests {
         .expect("seed credential");
 
         let connection = StoredConnection::Redis(crate::RedisStoredConnection {
-            folder: String::new(),
-            is_favorite: false,
-            color: String::new(),
+            organization: Default::default(),
             id: "conn-1".into(),
             name: "redis".into(),
             database: String::new(),

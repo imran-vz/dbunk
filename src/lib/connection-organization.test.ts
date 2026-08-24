@@ -34,11 +34,7 @@ describe("organizeConnections", () => {
       conn("2", "Zed", { folder: "Zulu" }),
       conn("3", "Alpha member", { folder: "Alpha" }),
     ]);
-    expect(groups.map((group) => group.folder)).toEqual([
-      "Alpha",
-      "Zulu",
-      "",
-    ]);
+    expect(groups.map((group) => group.folder)).toEqual(["Alpha", "Zulu", ""]);
   });
 
   it("orders favorites → recency → name inside a group", () => {

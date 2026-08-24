@@ -43,6 +43,7 @@ import {
 import { DriverOptionsFields } from "@/components/connection-form/driver-options-fields";
 import { FormFooter } from "@/components/connection-form/form-footer";
 import { MySqlFields } from "@/components/connection-form/mysql-fields";
+import { OrganizationFields } from "@/components/connection-form/organization-fields";
 import { PgFields } from "@/components/connection-form/pg-fields";
 import {
   RedisAdvancedFields,
@@ -52,10 +53,9 @@ import {
   EnvironmentField,
   SafetyFields,
 } from "@/components/connection-form/safety-fields";
-import { OrganizationFields } from "@/components/connection-form/organization-fields";
-import { UriImportField } from "@/components/connection-form/uri-import-field";
 import { SqliteFields } from "@/components/connection-form/sqlite-fields";
 import { TunnelFields } from "@/components/connection-form/tunnel-fields";
+import { UriImportField } from "@/components/connection-form/uri-import-field";
 import {
   type ConnectionFormApi,
   useConnectionForm,
@@ -112,7 +112,11 @@ export function ConnectionForm({
     >
       <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-auto p-4">
         {formMode === "new" ? (
-          <UriImportField form={form} onEngineChange={handleEngineChange} />
+          <UriImportField
+            form={form}
+            engine={selectedEngine}
+            onEngineChange={handleEngineChange}
+          />
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <NameField form={form} />

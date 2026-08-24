@@ -19,6 +19,7 @@ import {
 import { readOnlyPolicyReason } from "@/lib/safety-policy";
 import {
   type EditOutcome,
+  isConnectedStatus,
   type MutationDraft,
   type TableDataState,
   type TableRef,
@@ -220,11 +221,7 @@ export function useTableSession(tab: WorkspaceTab) {
     state.connections.find((candidate) => candidate.id === tab.connectionId),
   );
   const engine = connection?.engine;
-  const isConnected =
-    connection?.status === "Connected" || connection?.status === "Read only";
-  /** Restored tab whose connection hasn't been connected yet (Plan 010):
-   *  no session/browse opens until the user connects. */
-  const awaitingConnection = connection !== undefined && !isConnected;
+  const isConnected = isConnectedStatus(connection?.status);
   const policyReadOnlyCopy = connection
     ? readOnlyPolicyReason(connection)
     : null;
@@ -258,6 +255,19 @@ export function useTableSession(tab: WorkspaceTab) {
   const status = useAppStore((state) =>
     refKey ? state.tableLoadStatus[refKey] : undefined,
   );
+  /**
+   * Restored tab whose connection hasn't been connected yet (Plan 010):
+   * nothing has been fetched and nothing will be until the user
+   * connects. Keyed on "no browse/session exists", not on raw status —
+   * a live tab whose connection later drops (health-check flap,
+   * explicit disconnect) keeps its grid and only the status pill moves.
+   */
+  const awaitingConnection =
+    connection !== undefined &&
+    !isConnected &&
+    browse === undefined &&
+    status === undefined &&
+    storeData === undefined;
   const commitStatus = useAppStore((state) =>
     refKey ? state.tableEditsCommitStatus[refKey] : undefined,
   );
@@ -344,11 +354,16 @@ export function useTableSession(tab: WorkspaceTab) {
     (state) => state.applyTableBrowseHistory,
   );
 
+  // One initial load per target. Session-restored tabs mount
+  // disconnected, so the load waits for the first connect; after that
+  // a status flap (health check, reconnect) must not re-open the
+  // browse/session and reset the user's page.
+  const loadFiredForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!ref) return;
-    // Session-restored tabs mount disconnected; opening a browse or
-    // legacy session would only error. Re-fires on connect.
     if (!isConnected) return;
+    if (loadFiredForRef.current === refKey) return;
+    loadFiredForRef.current = refKey;
     if (browseEnabled) {
       void openTableBrowse(tab.id, ref.connectionId, ref.schema, ref.table);
       void loadTableStructure(ref.connectionId, ref.schema, ref.table);
@@ -362,6 +377,7 @@ export function useTableSession(tab: WorkspaceTab) {
     openTableBrowse,
     openTableSession,
     ref,
+    refKey,
     tab.id,
   ]);
 
