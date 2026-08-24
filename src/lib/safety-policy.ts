@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Statement summaries arrive as unstructured invoke payloads and are decoded here. */
 import type {
   ConnectionEnvironment,
   SafeMode,
@@ -106,4 +107,43 @@ export function parsePolicyRefusal(error: string): PolicyRefusal | null {
 
 function hasExactPrefix(error: string, tag: string): boolean {
   return error === tag || error.startsWith(`${tag} `);
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object";
+
+const isStatementClass = (
+  value: unknown,
+): value is StatementClassSummary["class"] =>
+  value === "read" ||
+  value === "dml" ||
+  value === "ddl" ||
+  value === "transaction" ||
+  value === "session" ||
+  value === "unknown";
+
+/** Decode untrusted invoke payloads that claim to carry statement summaries. */
+export function decodeStatementSummaries(
+  value: unknown,
+): StatementClassSummary[] | null {
+  if (!Array.isArray(value)) return null;
+  const summaries: StatementClassSummary[] = [];
+  for (const statement of value) {
+    if (
+      !isRecord(statement) ||
+      typeof statement.index !== "number" ||
+      !isStatementClass(statement.class) ||
+      typeof statement.unbounded !== "boolean" ||
+      typeof statement.destructive !== "boolean"
+    ) {
+      return null;
+    }
+    summaries.push({
+      index: statement.index,
+      class: statement.class,
+      unbounded: statement.unbounded,
+      destructive: statement.destructive,
+    });
+  }
+  return summaries;
 }

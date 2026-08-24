@@ -32,7 +32,6 @@ import {
 import {
   type AppStoreState,
   type TableBrowseTabState,
-  type TableRef,
 } from "./types";
 
 const PREFS_DEBOUNCE_MS = 400;
@@ -249,7 +248,7 @@ const runBrowse = async (
   });
   const current = get().tableBrowses[tabId];
   if (!current || current.generation !== generation) return;
-  if (result.kind === "superseded") {
+  if (result.kind === "superseded" || result.kind === "cancelled") {
     if (current.inflightRequestId === pendingId) {
       patchBrowse(set, tabId, {
         loadStatus: current.result ? { state: "success" } : { state: "idle" },
@@ -259,13 +258,6 @@ const runBrowse = async (
     return;
   }
   if (current.inflightRequestId !== pendingId) return;
-  if (result.kind === "cancelled") {
-    patchBrowse(set, tabId, {
-      loadStatus: current.result ? { state: "success" } : { state: "idle" },
-      inflightRequestId: null,
-    });
-    return;
-  }
   if (result.kind === "error") {
     if (result.error.kind === "invalidCursor") {
       await runBrowse(set, get, tabId, firstPageRequest(current.sort), {
@@ -311,6 +303,27 @@ const runBrowse = async (
   if (options.recordHistory || prefs.pageSize !== current.prefs.pageSize) {
     schedulePrefsSave(get, { ...current, prefs });
   }
+};
+
+const browseFirstPage = async (
+  set: SliceSet,
+  get: SliceGet,
+  tabId: string,
+  options: {
+    recordHistory: boolean;
+    refreshStructure?: boolean;
+    invalidateExactCount?: boolean;
+  },
+) => {
+  const tab = get().tableBrowses[tabId];
+  if (!tab) return;
+  await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
+    recordHistory: options.recordHistory,
+    page: 1,
+    cursorStack: [],
+    refreshStructure: options.refreshStructure,
+    invalidateExactCount: options.invalidateExactCount,
+  });
 };
 
 const ensurePrefs = async (set: SliceSet, get: SliceGet, tabId: string) => {
@@ -376,20 +389,12 @@ export const createTableBrowseSlice: StateCreator<
     const tab = get().tableBrowses[tabId];
     if (!tab) return;
     if (sameTarget && tab.result && tab.loadStatus.state === "success") return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
-      recordHistory: false,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: false });
   },
 
   refreshTableBrowse: async (tabId, options) => {
-    const tab = get().tableBrowses[tabId];
-    if (!tab) return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
+    await browseFirstPage(set, get, tabId, {
       recordHistory: false,
-      page: 1,
-      cursorStack: [],
       refreshStructure: options?.refreshStructure ?? true,
       invalidateExactCount: options?.invalidateExactCount ?? true,
     });
@@ -421,35 +426,17 @@ export const createTableBrowseSlice: StateCreator<
 
   setTableBrowseFilters: async (tabId, filters) => {
     applyGridState(set, tabId, { typedFilters: filters });
-    const tab = get().tableBrowses[tabId];
-    if (!tab) return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
-      recordHistory: true,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: true });
   },
 
   clearTableBrowseFilters: async (tabId) => {
     applyGridState(set, tabId, { typedFilters: [], rawFilterText: "" });
-    const tab = get().tableBrowses[tabId];
-    if (!tab) return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
-      recordHistory: true,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: true });
   },
 
   setTableBrowseRawFilter: async (tabId, text) => {
     applyGridState(set, tabId, { rawFilterText: text });
-    const tab = get().tableBrowses[tabId];
-    if (!tab) return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
-      recordHistory: true,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: true });
   },
 
   setTableBrowseFilterMode: async (tabId, mode) => {
@@ -461,22 +448,12 @@ export const createTableBrowseSlice: StateCreator<
 
   setTableBrowseSort: async (tabId, sort) => {
     applyGridState(set, tabId, { sort });
-    await runBrowse(set, get, tabId, firstPageRequest(sort), {
-      recordHistory: true,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: true });
   },
 
   setTableBrowsePageSize: async (tabId, pageSize) => {
     applyGridState(set, tabId, { pageSize });
-    const tab = get().tableBrowses[tabId];
-    if (!tab) return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
-      recordHistory: false,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: false });
   },
 
   goToTableBrowsePage: async (tabId, page) => {
@@ -561,13 +538,7 @@ export const createTableBrowseSlice: StateCreator<
   },
 
   goToTableBrowseFirstPage: async (tabId) => {
-    const tab = get().tableBrowses[tabId];
-    if (!tab) return;
-    await runBrowse(set, get, tabId, firstPageRequest(tab.sort), {
-      recordHistory: false,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: false });
   },
 
   goToTableBrowseLastPage: async (tabId) => {
@@ -604,11 +575,7 @@ export const createTableBrowseSlice: StateCreator<
     });
     const current = get().tableBrowses[tabId];
     if (!current || current.generation !== generation) return;
-    if (result.kind === "superseded") {
-      patchBrowse(set, tabId, { countStatus: { state: "idle" } });
-      return;
-    }
-    if (result.kind === "cancelled") {
+    if (result.kind === "superseded" || result.kind === "cancelled") {
       patchBrowse(set, tabId, { countStatus: { state: "idle" } });
       return;
     }
@@ -641,11 +608,7 @@ export const createTableBrowseSlice: StateCreator<
       sort: preset.sort,
       pageSize: preset.pageSize,
     });
-    await runBrowse(set, get, tabId, firstPageRequest(preset.sort), {
-      recordHistory: false,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: false });
   },
 
   saveTableBrowsePreset: async (tabId, name) => {
@@ -678,11 +641,7 @@ export const createTableBrowseSlice: StateCreator<
       filterMode: entry.filterMode,
       sort: entry.sort,
     });
-    await runBrowse(set, get, tabId, firstPageRequest(entry.sort), {
-      recordHistory: false,
-      page: 1,
-      cursorStack: [],
-    });
+    await browseFirstPage(set, get, tabId, { recordHistory: false });
   },
 
   closeTableBrowseForTab: async (tabId) => {
@@ -706,10 +665,4 @@ export const createTableBrowseSlice: StateCreator<
       tabIds.map((tabId) => get().closeTableBrowseForTab(tabId)),
     );
   },
-});
-
-export const tableBrowseRef = (tab: TableBrowseTabState): TableRef => ({
-  connectionId: tab.connectionId,
-  schema: tab.schema,
-  table: tab.table,
 });

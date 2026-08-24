@@ -77,8 +77,9 @@ const isStaleAnalysis = (
 
 const fromError = (error: unknown): ResultMutationClientResult<never> => {
   const decoded = decodeResultMutationError(error);
-  if (decoded.kind === "superseded") return { kind: "superseded" };
-  if (decoded.kind === "cancelled") return { kind: "cancelled" };
+  if (decoded.kind === "superseded" || decoded.kind === "cancelled") {
+    return { kind: decoded.kind };
+  }
   return { kind: "error", error: decoded };
 };
 

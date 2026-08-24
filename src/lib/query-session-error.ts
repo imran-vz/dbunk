@@ -1,4 +1,5 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- Session errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Session errors arrive as unstructured invoke rejections and must be decoded at this boundary. */
+import { decodeStatementSummaries } from "@/lib/safety-policy";
 import type { QuerySessionError } from "@/lib/store/types";
 
 const QUERY_SESSION_ERROR_KINDS: ReadonlySet<string> = new Set([
@@ -19,51 +20,20 @@ const QUERY_SESSION_ERROR_KINDS: ReadonlySet<string> = new Set([
   "database",
 ]);
 
-const STATEMENT_CLASSES: ReadonlySet<string> = new Set([
-  "read",
-  "dml",
-  "ddl",
-  "transaction",
-  "session",
-  "unknown",
-]);
-
-const isObject = (value: unknown): value is object =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object";
-
-const hasValidStatementSummaries = (value: unknown): boolean =>
-  Array.isArray(value) &&
-  value.every(
-    (statement) =>
-      isObject(statement) &&
-      "index" in statement &&
-      typeof statement.index === "number" &&
-      "class" in statement &&
-      typeof statement.class === "string" &&
-      STATEMENT_CLASSES.has(statement.class) &&
-      "unbounded" in statement &&
-      typeof statement.unbounded === "boolean" &&
-      "destructive" in statement &&
-      typeof statement.destructive === "boolean",
-  );
 
 export function isQuerySessionError(
   error: unknown,
 ): error is QuerySessionError {
-  if (
-    !isObject(error) ||
-    !("kind" in error) ||
-    typeof error.kind !== "string"
-  ) {
+  if (!isRecord(error) || typeof error.kind !== "string") {
     return false;
   }
   if (error.kind === "policyBlocked") {
-    return "reason" in error && typeof error.reason === "string";
+    return typeof error.reason === "string";
   }
   if (error.kind === "policyNeedsConfirmation") {
-    return (
-      "statements" in error && hasValidStatementSummaries(error.statements)
-    );
+    return decodeStatementSummaries(error.statements) !== null;
   }
   return QUERY_SESSION_ERROR_KINDS.has(error.kind);
 }
