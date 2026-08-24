@@ -510,6 +510,12 @@ pub(crate) fn dsn_query(tls: &ResolvedTls, encode: impl Fn(&str) -> String) -> S
 /// `PGHOSTADDR` the loopback address, so libpq verifies the real host
 /// name while connecting to the forwarded port.
 pub(crate) fn apply_to_command(tls: &ResolvedTls, host: &str, command: &mut Command) {
+    // A GUI app may inherit libpq variables when launched from a shell.
+    // Make the resolved connection authoritative: in particular, a stale
+    // PGHOSTADDR must never redirect a subprocess carrying PGPASSWORD.
+    for key in ["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"] {
+        command.env_remove(key);
+    }
     command.arg("--host").arg(&tls.server_name);
     if tls.server_name_differs_from(host) {
         command.env("PGHOSTADDR", host);
@@ -687,24 +693,47 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert_eq!(args, vec!["--host", "db.internal"]);
-        let env: Vec<(String, String)> = command
+        let env: Vec<(String, Option<String>)> = command
             .get_envs()
             .map(|(k, v)| {
                 (
                     k.to_string_lossy().into_owned(),
-                    v.map(|v| v.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
                 )
             })
             .collect();
-        assert!(env.contains(&("PGHOSTADDR".into(), "127.0.0.1".into())));
-        assert!(env.contains(&("PGSSLMODE".into(), "verify-full".into())));
-        assert!(env.contains(&("PGSSLROOTCERT".into(), "/ca.pem".into())));
-        assert!(!env.iter().any(|(k, _)| k == "PGSSLCERT"));
+        assert!(env.contains(&("PGHOSTADDR".into(), Some("127.0.0.1".into()))));
+        assert!(env.contains(&("PGSSLMODE".into(), Some("verify-full".into()))));
+        assert!(env.contains(&("PGSSLROOTCERT".into(), Some("/ca.pem".into()))));
+        assert!(!env
+            .iter()
+            .any(|(key, value)| key == "PGSSLCERT" && value.is_some()));
 
         let mut plain = Command::new("pg_dump");
         apply_to_command(&ResolvedTls::plain("h"), "h", &mut plain);
-        assert!(!plain.get_envs().any(|(k, _)| k == "PGHOSTADDR"));
+        assert!(!plain
+            .get_envs()
+            .any(|(k, value)| k == "PGHOSTADDR" && value.is_some()));
+    }
+
+    #[test]
+    fn command_clears_inherited_connection_and_certificate_overrides() {
+        let mut command = Command::new("pg_dump");
+        for key in ["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"] {
+            command.env(key, "/ambient/value");
+        }
+
+        apply_to_command(
+            &ResolvedTls::prefer("db.internal"),
+            "db.internal",
+            &mut command,
+        );
+
+        for key in ["PGHOSTADDR", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY"] {
+            assert!(command
+                .get_envs()
+                .any(|(candidate, value)| candidate == key && value.is_none()));
+        }
     }
 
     #[test]
@@ -717,7 +746,9 @@ mod tests {
             apply_to_command(&tls, "h", &mut command);
 
             assert!(
-                !command.get_envs().any(|(key, _)| key == "PGSSLROOTCERT"),
+                !command
+                    .get_envs()
+                    .any(|(key, value)| key == "PGSSLROOTCERT" && value.is_some()),
                 "{mode:?} must not implicitly enable libpq certificate verification"
             );
         }
