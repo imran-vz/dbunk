@@ -27,6 +27,7 @@ import {
 import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { storageClassFor } from "@/lib/engine-policy";
+import { useShortcutHandler } from "@/lib/shortcuts";
 import { type Connection, useAppStore } from "@/lib/store";
 
 /** Navigator metrics per DESIGN-SYSTEM §3.3. */
@@ -80,9 +81,9 @@ export function RelationalWorkbench({
     navigatorState: navigatorPanel,
   });
 
-  // Cmd+B toggles the navigator (§3.2 restore paths; full keyboard
-  // registry lands in P7).
+  // Cmd+B toggles the navigator (§3.2 restore paths).
   const toggleNavigator = navigatorPanel.toggle;
+  useShortcutHandler("toggle-navigator", toggleNavigator);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {

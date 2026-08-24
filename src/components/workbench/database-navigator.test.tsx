@@ -49,32 +49,65 @@ describe("DatabaseNavigator", () => {
   it("expands a schema on click and shows its tables", () => {
     renderNavigator();
 
-    expect(screen.queryByRole("button", { name: /users/ })).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: /users/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /public/ }));
+    fireEvent.click(screen.getByRole("treeitem", { name: /public/ }));
 
-    expect(screen.getByRole("button", { name: /users/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /orders/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /events/ })).toBeNull();
+    expect(screen.getByRole("treeitem", { name: /users/ })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: /orders/ })).toBeTruthy();
+    expect(screen.queryByRole("treeitem", { name: /events/ })).toBeNull();
   });
 
   it("collapses an expanded schema on a second click", () => {
     renderNavigator();
 
-    const schemaRow = screen.getByRole("button", { name: /public/ });
+    const schemaRow = screen.getByRole("treeitem", { name: /public/ });
     fireEvent.click(schemaRow);
-    expect(screen.getByRole("button", { name: /users/ })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: /users/ })).toBeTruthy();
 
     fireEvent.click(schemaRow);
-    expect(screen.queryByRole("button", { name: /users/ })).toBeNull();
+    expect(screen.queryByRole("treeitem", { name: /users/ })).toBeNull();
   });
 
   it("opens a table from an expanded schema", () => {
     const onOpenTable = renderNavigator();
 
-    fireEvent.click(screen.getByRole("button", { name: /public/ }));
-    fireEvent.click(screen.getByRole("button", { name: /users/ }));
+    fireEvent.click(screen.getByRole("treeitem", { name: /public/ }));
+    fireEvent.click(screen.getByRole("treeitem", { name: /users/ }));
 
     expect(onOpenTable).toHaveBeenCalledWith("public", "users");
+  });
+});
+
+describe("DatabaseNavigator keyboard (§5.5)", () => {
+  it("navigates with arrows, expands with ArrowRight, opens with Enter", () => {
+    const onOpenTable = renderNavigator();
+    const schemaRow = screen.getByRole("treeitem", { name: /public/ });
+    schemaRow.focus();
+
+    const tree = screen.getByRole("tree");
+    fireEvent.keyDown(tree, { key: "ArrowRight" });
+    expect(screen.getByRole("treeitem", { name: /users/ })).toBeTruthy();
+
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    fireEvent.keyDown(tree, { key: "Enter" });
+    expect(onOpenTable).toHaveBeenCalledWith("public", "users");
+  });
+
+  it("jumps by type-ahead", () => {
+    const onOpenTable = renderNavigator();
+    fireEvent.click(screen.getByRole("treeitem", { name: /public/ }));
+
+    const tree = screen.getByRole("tree");
+    fireEvent.keyDown(tree, { key: "o" });
+    fireEvent.keyDown(tree, { key: "Enter" });
+    expect(onOpenTable).toHaveBeenCalledWith("public", "orders");
+  });
+
+  it("uses roving tabindex — one tab stop", () => {
+    renderNavigator();
+    const items = screen.getAllByRole("treeitem");
+    const tabbable = items.filter((el) => el.getAttribute("tabindex") === "0");
+    expect(tabbable).toHaveLength(1);
   });
 });

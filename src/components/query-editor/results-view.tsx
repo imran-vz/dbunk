@@ -46,6 +46,7 @@ import {
   toTxt,
 } from "@/lib/export";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
+import { shortcutKeys } from "@/lib/shortcuts";
 import type { QueryPreviewData, QuerySessionState } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import { browseCellsToGrid } from "@/lib/table-browse";
@@ -469,7 +470,7 @@ export function QueryResultsView({
               >
                 <IconChevronDown />
               </TooltipTrigger>
-              <TooltipContent kbd={["mod", "J"]}>
+              <TooltipContent kbd={shortcutKeys("toggle-results")}>
                 Collapse results pane
               </TooltipContent>
             </Tooltip>
