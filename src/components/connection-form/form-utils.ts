@@ -65,6 +65,24 @@ export const connectionSchema = z.object({
   keepaliveSeconds: z.number().int().optional(),
   defaultSearchPath: z.string().optional(),
   defaultRole: z.string().optional(),
+  // ADR-0025 TLS blob, carried whole through form state so an edit save
+  // cannot wipe it. Plan 012 replaces this passthrough with per-field
+  // controls; until then nothing renders it.
+  tlsOptions: z
+    .object({
+      mode: z.enum([
+        "disable",
+        "prefer",
+        "require",
+        "verify-ca",
+        "verify-full",
+      ]),
+      rootCertPath: z.string().optional(),
+      clientCertPath: z.string().optional(),
+      clientKeyPath: z.string().optional(),
+      serverName: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type ConnectionFormData = z.infer<typeof connectionSchema>;
@@ -105,6 +123,7 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   keepaliveSeconds: undefined,
   defaultSearchPath: "",
   defaultRole: "",
+  tlsOptions: undefined,
 };
 
 // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
@@ -156,6 +175,7 @@ function buildPg(
     ...common,
     engine: "PostgreSQL",
     ssl: value.ssl ?? true,
+    ...(value.tlsOptions ? { tlsOptions: value.tlsOptions } : null),
     ...(driverOptions ? { driverOptions } : null),
     ...(sshTunnel ? { sshTunnel } : null),
   };
@@ -372,6 +392,10 @@ export function defaultValuesFromConnection(
         ...common,
         ...tunnelDefaults,
         ...driverDefaults,
+        tlsOptions:
+          connection.engine === "PostgreSQL"
+            ? connection.tlsOptions
+            : undefined,
         ssl: connection.ssl,
         useHttps: false,
         urlPath: "",
