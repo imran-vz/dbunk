@@ -85,7 +85,6 @@ import {
 } from "@/lib/store";
 import { deriveSelectedTableSessionCapabilities } from "@/lib/table-session";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
-import { useContainerWidth } from "@/lib/use-resizable-width";
 
 /**
  * Engines with a backend `seed_table` implementation (ADR-0020). Redis
@@ -115,7 +114,6 @@ export function TableEditorPanel({
   const [internalSubTab, setInternalSubTab] = useState<SubTab>("data");
   const activeSubTab = controlledSubTab ?? internalSubTab;
   const setActiveSubTab = onSubTabChange ?? setInternalSubTab;
-  const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
 
   const tableSession = useTableSession(tab);
   const {
@@ -188,7 +186,7 @@ export function TableEditorPanel({
     target: ForeignKeyTarget;
     value: string;
   } | null>(null);
-  const rowDetails = useRowDetailsVisibility(bodyWidth);
+  const rowDetails = useRowDetailsVisibility();
 
   // Reset table-switch-scoped UI state. The panel instance is reused
   // across tab switches (no React key), so without this the inline
@@ -836,8 +834,6 @@ export function TableEditorPanel({
       ) : null}
 
       <TableEditorBody
-        bodyRef={bodyRef}
-        bodyWidth={bodyWidth}
         activeSubTab={activeSubTab}
         tableRef={ref}
         schema={tab.schema}

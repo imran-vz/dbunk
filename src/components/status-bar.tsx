@@ -1,6 +1,7 @@
 import type * as React from "react";
 import { useEffect, useRef } from "react";
 
+import { Button } from "@/components/ui/button";
 import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +11,9 @@ export type StatusBarItem = {
   value: React.ReactNode;
   tone?: StatusTone;
   align?: "left" | "right";
+  /** Status-bar segments are click targets (§3.1) — e.g. the pending
+   *  badge opens mutation review, the dock badge opens the dock. */
+  onClick?: () => void;
 };
 
 /**
@@ -31,7 +35,8 @@ export function statusItemsEqual(
       item.label === next[index].label &&
       item.value === next[index].value &&
       item.tone === next[index].tone &&
-      item.align === next[index].align,
+      item.align === next[index].align &&
+      item.onClick === next[index].onClick,
   );
 }
 
@@ -69,7 +74,7 @@ export function StatusBar({ items, className }: StatusBarProps) {
     <div
       data-slot="status-bar"
       className={cn(
-        "flex h-6 shrink-0 items-center justify-between gap-3 border-t border-border-subtle bg-surface-window px-3 text-2xs text-text-muted",
+        "flex h-(--h-statusbar) shrink-0 items-center justify-between gap-3 border-t border-border-subtle bg-surface-window px-3 text-xs text-text-muted",
         className,
       )}
     >
@@ -88,13 +93,31 @@ export function StatusBar({ items, className }: StatusBarProps) {
 }
 
 function StatusBarPair({ item }: { item: StatusBarItem }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+  const content = (
+    <>
       {item.tone ? <StatusDot tone={item.tone} className="size-1.5" /> : null}
       {item.label ? (
         <span className="text-text-muted/80">{item.label}</span>
       ) : null}
       <span className="text-text-secondary">{item.value}</span>
+    </>
+  );
+  if (item.onClick) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        onClick={item.onClick}
+        className="flex min-w-0 items-center gap-1.5 whitespace-nowrap font-normal"
+      >
+        {content}
+      </Button>
+    );
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+      {content}
     </span>
   );
 }

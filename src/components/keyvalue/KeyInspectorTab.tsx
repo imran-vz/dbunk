@@ -23,7 +23,7 @@ import { useInspectorDialogs } from "@/components/keyvalue/key-inspector/use-ins
 import { useKeyActions } from "@/components/keyvalue/key-inspector/use-key-actions";
 import { useKeyMetadata } from "@/components/keyvalue/key-inspector/use-key-metadata";
 import { ValueRouter } from "@/components/keyvalue/key-inspector/value-router";
-import { useContainerWidth } from "@/lib/use-resizable-width";
+import { useContainerWidth } from "@/lib/use-container-width";
 
 interface KeyInspectorTabProps {
   connectionId: string;
