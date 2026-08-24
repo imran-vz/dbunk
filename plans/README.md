@@ -22,7 +22,9 @@ and update its status here when work finishes.
 | [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | DONE: bd9f7ef                                  |
 | [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | DONE: 5409d66 (selected mock: C)               |
 | [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | DONE: f66abaa                                  |
-| [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | READY FOR REVIEW (selected mock: A)            |
+| [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | DONE: 4facea1 (selected mock: A)               |
+| [011](./011-connection-security-backend.md)      | PostgreSQL connection security backend (dark) |       P1 |      L | 001–010    | READY FOR REVIEW                               |
+| [012](./012-connection-security-activation.md)   | TLS controls, staged connection diagnosis, and truth pass | P1 | L | 011        | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -94,11 +96,66 @@ useful without authorizing commits implicitly.
   editors, multiple windows, OS deep links, encrypted profile exchange,
   offline metadata/data search, keyvalue tab restore, per-tab
   browse-state persistence, and non-table object viewers (`PAR-007`).
+- **Plan 011 delivery note (2026-08-24):** Steps 1–7 implemented in the
+  working tree on top of `4facea1`: migration 18 + `PgTlsOptions` /
+  `PgTlsMode` / `TlsFailureKind` types, `postgres/tls.rs` (resolver +
+  four renderers, native ∪ file roots, `CaOnlyVerifier`, client auth,
+  typed material errors, fixture PEMs), `postgres/connect_error.rs`
+  (stage classifier over an extracted view), the four connect sites
+  converged (`tls_prefer` is gone), tunnel server-name carry-over,
+  keepalive applied on the dedicated driver (test inverted), `TlsFailed`
+  arms on the three actor unions with TS mirrors + minimal formatter /
+  decoder arms (see the plan's correction record), `diagnose_connection`
+  with typed report + TS mirrors, a rebuilt `postgres-tls` fixture with
+  a real CA and `dbunk_cert` client-cert role, ADR-0025 plus pointers in
+  ADR-0013/0021. Gates: `just fmt/lint/test` (387 passed, 29 ignored),
+  `pnpm format/lint/typecheck`, vitest (1078 passed), and the live
+  suites against both fixtures (15 TLS/diagnosis tests plus the
+  pre-existing query-session / table-browse / result-mutation / safety
+  live suites) all green. `test_connection` is untouched; Plan 012
+  removes it.
 - **Selected mock (010):** A — folder section headers in the connections
   list, compact single-line palette rows with leading kind badges, and
   URI import as the first field of the connection form.
-- **Plan 010 delivery note (2026-08-24):** Steps 2–6 implemented in the
-  working tree on top of Plan 009 (`DONE: f66abaa`): flat-ranked Open
+- **Selected (2026-08-24):** Plans 011 and 012 are the `PAR-006`
+  execution path, authored at `4facea1`. Scope was reconciled against
+  Plans 009/010, which already delivered the *organization* half of
+  `PAR-006` (folders, favorites, colors, recency, Duplicate, secret-free
+  Copy URI, Import-from-URI); the pair covers the *security* half for
+  PostgreSQL only. Plan 011 is a dark backend: migration 18 adds a
+  `tls_options` JSON blob (`mode` in libpq vocabulary `disable |
+  prefer | require | verify-ca | verify-full`, CA / client cert /
+  client key *paths*, optional `serverName`), legacy rows keep resolving
+  through `ssl` unchanged; one `ResolvedTls` resolver with four
+  renderers converges the dedicated tokio-postgres driver, the sqlx
+  pool, the PG DSN, and `pg_dump`/`pg_restore` (today four independent
+  `prefer|disable` decisions and an accept-all verifier); real chain
+  and hostname verification with native ∪ user-CA roots; client
+  certificates; the SSH tunnel carries the original hostname so
+  `verify-full` survives tunnelling (`host` + `hostaddr` on the
+  dedicated driver, `PGHOSTADDR` on libpq; the sqlx pool verifies CA
+  only over a tunnel and discloses it); `keepalive_seconds` applied on
+  the dedicated driver; typed `tlsFailed` arms on the three actor
+  unions instead of `connectionLost`; a staged `diagnose_connection`
+  command (tunnel → DNS → TCP → TLS → authentication → database, each
+  passed / failed-with-kind / skipped, plus real encryption state from
+  `pg_stat_ssl`); a live fixture with a real CA, CA-signed server cert,
+  and a client-cert role; and ADR-0025. Plan 012 activates it: a TLS
+  mode select with conditional certificate-path fields and server-name
+  override for PostgreSQL (MySQL keeps its toggle), a keepalive control
+  with the pool-path disclosure, Test Connection as a per-stage
+  checklist available in edit mode too (credential hydrated backend
+  side), `sslmode` round-tripping through Copy URI / Import-from-URI,
+  `tlsFailed` rendered where `connectionLost` is today, removal of the
+  old `test_connection` command, and the `PAR-017` truth pass over
+  ROADMAP / ADR-0013 / CONTEXT / PENDING_TASKS / the stale keepalive
+  comments. Deliberately deferred (recorded in Plan 011's
+  Reconciliation section): MySQL TLS modes, connection tags, encrypted
+  client keys, certificate contents in the credential store / secure
+  bundles, IAM and external-secret adapters, keepalive on the sqlx pool.
+- **Plan 010 delivery note (2026-08-24, DONE: `4facea1`):** Steps 2–6
+  implemented on top of Plan 009 (`DONE: f66abaa`) and merged to `main`
+  as `e4a2fb8` + `4facea1`: flat-ranked Open
   Anything palette with controlled selection and disclosed truncation;
   folder/favorite/color organization (one Plan 009 amendment landed
   alongside: `update_connection_organization`, a credential-free
@@ -119,9 +176,9 @@ useful without authorizing commits implicitly.
   backend-authoritative row identity. Query-result mutation remains in
   `PAR-003`.
 
-## Dependency order after Plans 001 through 008
+## Dependency order after Plans 001 through 010
 
-Items 5 and later are candidate plans, not authored plans. Their identifiers
+Items 7 and later are candidate plans, not authored plans. Their identifiers
 refer to the gap register rather than files in this directory.
 
 1. Plans 001 and 002 delivered and activated the PostgreSQL query-session
@@ -140,12 +197,21 @@ refer to the gap register rather than files in this directory.
    one gate at every write surface, override audit), then UI activation
    (form fields, production identity, confirmation flows). They build on
    `PAR-001` transaction state and the `PAR-003` mutation preview as
-   planned. The next candidate is `PAR-005` workspace restoration.
-5. `PAR-005` workspace restoration should persist descriptors, never live
-   database handles or server transaction state.
-6. Professional PostgreSQL features (`PAR-007` through `PAR-011`) should follow
-   once execution, editing, safety, and restoration are trustworthy.
-7. Cross-engine breadth (`PAR-014`) should reuse the PostgreSQL contracts only
+   planned.
+5. Plans 009 and 010 delivered the `PAR-005` execution path: durable
+   descriptors (never live handles), Open Anything, and connection
+   organization. Plan 010 landed on `main` as `e4a2fb8` with review
+   amendments in `4facea1`.
+6. Plans 011 and 012 are the authored `PAR-006` execution path: the
+   PostgreSQL connection-security backend (TLS verification modes,
+   client certificates, tunnel-aware hostname verification, applied
+   keepalive, staged diagnosis) as a dark foundation, then the form and
+   diagnosis-panel activation. The next candidate after them is
+   `PAR-007` object lifecycle.
+7. Professional PostgreSQL features (`PAR-007` through `PAR-011`) should follow
+   once execution, editing, safety, restoration, and transport security are
+   trustworthy.
+8. Cross-engine breadth (`PAR-014`) should reuse the PostgreSQL contracts only
    after those contracts have proven stable.
 
 ## Planning rules
