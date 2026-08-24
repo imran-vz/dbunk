@@ -528,7 +528,10 @@ export function useTableSession(tab: WorkspaceTab) {
       runtimeMs: browse.result.runtimeMs,
     };
   }, [
-    browse,
+    browse?.exactCount,
+    browse?.page,
+    browse?.pageSize,
+    browse?.result,
     browseColumns,
     browseEnabled,
     insertedChanges,
@@ -928,28 +931,28 @@ export function useTableSession(tab: WorkspaceTab) {
   const serverBrowse: ServerBrowseGridModel | undefined =
     browseEnabled && browse
       ? {
-          typedFilters: browse?.typedFilters ?? [],
-          rawFilterText: browse?.rawFilterText ?? "",
-          filterMode: browse?.filterMode ?? "typed",
-          sort: browse?.sort ?? [],
-          pageSize: browse?.pageSize ?? 100,
-          loadStatus: browse?.loadStatus ?? { state: "idle" },
+          typedFilters: browse.typedFilters,
+          rawFilterText: browse.rawFilterText,
+          filterMode: browse.filterMode,
+          sort: browse.sort,
+          pageSize: browse.pageSize,
+          loadStatus: browse.loadStatus,
           error:
-            browse?.loadStatus.state === "error"
+            browse.loadStatus.state === "error"
               ? browse.loadStatus.error
               : null,
-          inspection: browse?.result?.inspection ?? null,
-          omittedRows: browse?.result?.omittedRows ?? 0,
-          truncatedCells: browse?.result?.truncatedCells ?? 0,
-          count: browse?.result?.count ?? { kind: "unknown", value: null },
-          exactCount: browse?.exactCount ?? null,
-          countStatus: browse?.countStatus ?? { state: "idle" },
-          pageInfo: browse?.result?.pageInfo ?? null,
-          history: browse?.prefs.filterHistory ?? [],
-          presets: browse?.prefs.presets ?? [],
+          inspection: browse.result?.inspection ?? null,
+          omittedRows: browse.result?.omittedRows ?? 0,
+          truncatedCells: browse.result?.truncatedCells ?? 0,
+          count: browse.result?.count ?? { kind: "unknown", value: null },
+          exactCount: browse.exactCount,
+          countStatus: browse.countStatus,
+          pageInfo: browse.result?.pageInfo ?? null,
+          history: browse.prefs.filterHistory,
+          presets: browse.prefs.presets,
           onApplyTypedFilter: (filter) => {
             const next = [
-              ...(browse?.typedFilters ?? []).filter((item) => {
+              ...browse.typedFilters.filter((item) => {
                 if (item.kind === "rawSql" || filter.kind === "rawSql")
                   return true;
                 return item.column !== filter.column;
@@ -961,7 +964,7 @@ export function useTableSession(tab: WorkspaceTab) {
           onRemoveTypedFilter: (column) => {
             void setTableBrowseFilters(
               tab.id,
-              (browse?.typedFilters ?? []).filter(
+              browse.typedFilters.filter(
                 (item) => item.kind === "rawSql" || item.column !== column,
               ),
             );
@@ -984,7 +987,7 @@ export function useTableSession(tab: WorkspaceTab) {
           onHeaderSort: (column, append) => {
             void setTableBrowseSort(
               tab.id,
-              cycleSort(browse?.sort ?? [], column, append),
+              cycleSort(browse.sort, column, append),
             );
           },
           onCountRows: () => {

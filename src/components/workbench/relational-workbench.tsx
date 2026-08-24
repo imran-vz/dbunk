@@ -74,20 +74,18 @@ export function RelationalWorkbench({
       max: NAVIGATOR_MAX,
     });
 
-  const {
-    activeConnectionId,
-    activeTabId,
-    connections,
-    workspaceTabs,
-    schemaExplorer,
-    queryHistory,
-    openSettings,
-    openTableTab,
-    createNewQueryTab,
-    connectConnection,
-    reopenHistoryEntry,
-    setActiveView,
-  } = useAppStore();
+  const activeConnectionId = useAppStore((state) => state.activeConnectionId);
+  const activeTabId = useAppStore((state) => state.activeTabId);
+  const connections = useAppStore((state) => state.connections);
+  const workspaceTabs = useAppStore((state) => state.workspaceTabs);
+  const schemaExplorer = useAppStore((state) => state.schemaExplorer);
+  const queryHistory = useAppStore((state) => state.queryHistory);
+  const openSettings = useAppStore((state) => state.openSettings);
+  const openTableTab = useAppStore((state) => state.openTableTab);
+  const createNewQueryTab = useAppStore((state) => state.createNewQueryTab);
+  const connectConnection = useAppStore((state) => state.connectConnection);
+  const reopenHistoryEntry = useAppStore((state) => state.reopenHistoryEntry);
+  const setActiveView = useAppStore((state) => state.setActiveView);
 
   const activeConnection = useMemo(() => {
     const selected = connections.find(

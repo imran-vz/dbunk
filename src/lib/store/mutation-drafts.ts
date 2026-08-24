@@ -9,16 +9,17 @@
 
 import type { StateCreator } from "zustand";
 
-import type {
-  AnalyzeResultSetResult,
-  AnalyzeSource,
-  ApplyResult,
-  MutationIdentityKind,
-  MutationPlan,
-  MutationTable,
-  MutationValue,
-  PreviewResult,
-  ResultMutationError,
+import {
+  type AnalyzeResultSetResult,
+  type AnalyzeSource,
+  type ApplyResult,
+  type MutationIdentityKind,
+  type MutationPlan,
+  type MutationTable,
+  type MutationValue,
+  type PreviewResult,
+  type ResultMutationError,
+  usesProjectedRowGuards,
 } from "@/lib/result-mutation";
 
 import type { AppStoreState } from "./types";
@@ -402,14 +403,12 @@ export const buildMutationDraftPlan = (
         const cell = change.cells[column];
         return cell ? [{ column, value: cell.value }] : [];
       });
-      const guards =
-        change.identityKind === "virtualKey" ||
-        change.identityKind === "ctidFallback"
-          ? cloneValues(change.originals)
-          : change.cellOrder.flatMap((column) => {
-              const cell = change.cells[column];
-              return cell ? [{ column, value: cell.original }] : [];
-            });
+      const guards = usesProjectedRowGuards(change.identityKind)
+        ? cloneValues(change.originals)
+        : change.cellOrder.flatMap((column) => {
+            const cell = change.cells[column];
+            return cell ? [{ column, value: cell.original }] : [];
+          });
       operations.push({
         kind: "update",
         table: { ...change.table },
@@ -562,13 +561,11 @@ export const rebindMutationDraftChanges = (
       continue;
     }
     const candidates = rowsByIdentity.get(change.identityKey) ?? [];
-    const safeCandidates =
-      change.identityKind === "virtualKey" ||
-      change.identityKind === "ctidFallback"
-        ? candidates.filter((loaded) =>
-            mutationValueSetsEqual(loaded.values, change.originals),
-          )
-        : candidates;
+    const safeCandidates = usesProjectedRowGuards(change.identityKind)
+      ? candidates.filter((loaded) =>
+          mutationValueSetsEqual(loaded.values, change.originals),
+        )
+      : candidates;
     const rowIndex =
       safeCandidates.length === 1
         ? (safeCandidates[0]?.rowIndex ?? null)
@@ -1094,7 +1091,7 @@ export const createMutationDraftsSlice: StateCreator<
           ? null
           : (request.build.opIndexToChangeId[opIndex] ?? null);
       let changes = draft.changes;
-      if (changeId && isAttributableError(error) && opIndex !== null) {
+      if (changeId && opIndex !== null && isAttributableError(error)) {
         const change = changes[changeId];
         if (change) {
           changes = {

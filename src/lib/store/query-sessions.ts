@@ -26,9 +26,9 @@ import {
 } from "@/lib/query-session-channel";
 import {
   formatQuerySessionError,
-  isQuerySessionError,
+  decodeQuerySessionError,
 } from "@/lib/query-session-error";
-import { requestSafetyConfirmation } from "@/lib/safety-confirmation";
+import { confirmWriteStatements } from "@/lib/safety-confirmation";
 
 import type {
   AppStoreState,
@@ -125,7 +125,7 @@ export const createQuerySessionsSlice: StateCreator<
         id: crypto.randomUUID(),
         tabId,
         connectionId,
-        generation: 0,
+        generation: null,
         transaction: defaultTransaction,
         execution: null,
         lastViewedAt: Date.now(),
@@ -166,21 +166,22 @@ export const createQuerySessionsSlice: StateCreator<
     try {
       await executeQuerySession(tabId, executionId, sql);
     } catch (error) {
-      if (!isQuerySessionError(error)) throw error;
-      if (error.kind === "policyBlocked") {
-        const reason = formatQuerySessionError(error);
+      if (error instanceof Error) throw error;
+      const decoded = decodeQuerySessionError(error);
+      if (decoded.kind === "policyBlocked") {
+        const reason = formatQuerySessionError(decoded);
         patchSession(set, tabId, { policyRefusal: reason });
         throw new Error(reason);
       }
-      if (error.kind !== "policyNeedsConfirmation") throw error;
+      if (decoded.kind !== "policyNeedsConfirmation") throw decoded;
       const connection = get().connections.find(
         (candidate) => candidate.id === connectionId,
       );
       if (!connection) throw new Error("Connection not found.");
-      const confirmed = await requestSafetyConfirmation({
+      const confirmed = await confirmWriteStatements(
         connection,
-        subject: { kind: "statements", statements: error.statements },
-      });
+        decoded.statements,
+      );
       if (!confirmed) throw new Error("Safety confirmation cancelled.");
       await executeQuerySession(tabId, executionId, sql, true);
     }

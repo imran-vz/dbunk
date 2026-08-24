@@ -362,3 +362,7 @@ export function decodeResultMutationError(error: unknown): ResultMutationError {
 export function supportsResultMutations(engine: DatabaseEngine): boolean {
   return engine === "PostgreSQL";
 }
+
+export function usesProjectedRowGuards(kind: MutationIdentityKind): boolean {
+  return kind === "virtualKey" || kind === "ctidFallback";
+}

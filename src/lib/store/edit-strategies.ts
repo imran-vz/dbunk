@@ -270,10 +270,11 @@ export const buildEditPayload = (
     const setEntries = buildSetEntries(colChanges, row, data.columns);
     if (setEntries.length === 0) continue;
 
-    const identityEntries = identity.columns.map((col) => {
-      // SAFETY: buildColumnIndex and chooseRowIdentity guarantee every identity column is indexed.
-      const idx = columnIndexByName.get(col) as number;
-      return { column: col, value: row[idx] ?? null };
+    const identityEntries = identity.columns.flatMap((col) => {
+      const idx = columnIndexByName.get(col);
+      return idx === undefined
+        ? []
+        : [{ column: col, value: row[idx] ?? null }];
     });
 
     payload.push({ rowIndex, identity: identityEntries, set: setEntries });
@@ -322,10 +323,11 @@ export const buildDeleteRowsPayload = (
     const row = data.rows[rowIndex];
     if (!row) continue;
     out.push(
-      identity.columns.map((col) => {
-        // SAFETY: buildColumnIndex and chooseRowIdentity guarantee every identity column is indexed.
-        const idx = columnIndexByName.get(col) as number;
-        return { column: col, value: row[idx] ?? null };
+      identity.columns.flatMap((col) => {
+        const idx = columnIndexByName.get(col);
+        return idx === undefined
+          ? []
+          : [{ column: col, value: row[idx] ?? null }];
       }),
     );
   }

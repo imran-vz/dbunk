@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decodeQuerySessionError,
   formatQuerySessionError,
   isQuerySessionError,
 } from "@/lib/query-session-error";
@@ -70,12 +71,22 @@ describe("formatQuerySessionError", () => {
     expect(isQuerySessionError({ kind: "connectionLost" })).toBe(true);
     expect(isQuerySessionError(new Error("nope"))).toBe(false);
     expect(isQuerySessionError({ kind: "other" })).toBe(false);
+    expect(isQuerySessionError({ kind: "timeout" })).toBe(false);
+    expect(decodeQuerySessionError({ kind: "timeout" })).toEqual({
+      kind: "connectionLost",
+    });
   });
 
   it("rejects malformed safety-policy errors", () => {
     expect(isQuerySessionError({ kind: "policyBlocked", reason: 42 })).toBe(
       false,
     );
+    expect(
+      decodeQuerySessionError({
+        kind: "policyNeedsConfirmation",
+        statements: [{ destructive: true }],
+      }),
+    ).toEqual({ kind: "connectionLost" });
     expect(
       isQuerySessionError({
         kind: "policyNeedsConfirmation",

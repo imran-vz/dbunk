@@ -30,7 +30,8 @@ export function DatabaseNavigator({
   className,
 }: DatabaseNavigatorProps) {
   const [filter, setFilter] = useState("");
-  const { expandedSchemas, toggleSchema } = useAppStore();
+  const expandedSchemas = useAppStore((state) => state.expandedSchemas);
+  const toggleSchema = useAppStore((state) => state.toggleSchema);
 
   const filteredSchemas = useMemo(() => {
     const needle = filter.trim().toLowerCase();
