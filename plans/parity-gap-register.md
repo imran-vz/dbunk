@@ -310,8 +310,8 @@ auto-connecting. The workbench consolidation also deleted
 the evidence lines below are stale in path terms.
 
 Plans 009 and 010 then delivered the navigation half (Plan 009 DONE at
-`f66abaa`; Plan 010 implemented at the same working state, selected
-mock A; both passed an independent adversarial review on 2026-08-24 and
+`f66abaa`; Plan 010 DONE at `4facea1`, landed as `e4a2fb8` + `4facea1`,
+selected mock A; both passed an independent adversarial review on 2026-08-24 and
 were amended for its findings — Plan 009's Review correction record has
 the list). Shipped: the ⌘K palette is a flat-ranked Open Anything over
 connections (including disconnected → connect), schemas
@@ -374,15 +374,55 @@ backend handles.
 
 ### PAR-006: Connection security and organization
 
-**Current state:** Partial. SSH and credential-storage depth are strong.
+**Current state:** Partial. SSH and credential-storage depth are strong;
+the organization half is complete; the security half is planned.
+
+**Progress (2026-08-24):** The organization half shipped with Plans 009
+and 010 (`PAR-005`): folders, favorites, colors, recency ordering,
+Duplicate (backend credential copy), secret-free Copy URI, and
+Import-from-URI. Environment type shipped with Plans 007/008. Plans 011
+and 012 were authored at commit `4facea1` as the selected execution path
+for the security half, PostgreSQL only. Plan 011 is a dark backend:
+migration 18 `tls_options` (libpq mode vocabulary `disable | prefer |
+require | verify-ca | verify-full`, CA / client cert / client key paths,
+optional server name; legacy rows keep resolving through `ssl`), one
+`ResolvedTls` resolver whose four renderers converge the dedicated
+tokio-postgres driver, the sqlx pool, the PG DSN, and
+`pg_dump`/`pg_restore` (today four independent `prefer|disable`
+decisions plus an accept-all verifier in
+`src-tauri/src/postgres/dedicated.rs`), chain and hostname verification
+against native ∪ user-CA roots, client-certificate auth, the SSH tunnel
+carrying the original hostname so `verify-full` survives tunnelling
+(`host` + `hostaddr`; `PGHOSTADDR` for libpq; the sqlx pool verifies CA
+only over a tunnel and discloses it), `keepalive_seconds` applied on the
+dedicated driver, typed `tlsFailed` arms on the query-session /
+table-browse / result-mutation unions, a staged `diagnose_connection`
+command (tunnel → DNS → TCP → TLS → authentication → database, with
+real encryption state from `pg_stat_ssl`), a live fixture with a real
+CA and a client-cert role, and ADR-0025. Plan 012 activates the TLS
+controls, a keepalive control, the per-stage Test Connection panel
+(also in edit mode), `sslmode` in Copy URI / Import-from-URI, `tlsFailed`
+rendering, and the `PAR-017` truth pass. Deferred with rationale in Plan
+011's Reconciliation section: MySQL TLS modes, connection tags,
+encrypted client keys, certificate contents / secure bundles, IAM and
+external-secret adapters, keepalive on the sqlx pool.
 
 **Evidence:**
 
 - `src/lib/store/types.ts:239-316` models relational connections and advanced
   fields.
-- `src-tauri/src/postgres/pool.rs:15-50` supports only limited PostgreSQL TLS
-  modes.
-- Stored TCP keepalive is not applied to PostgreSQL connections.
+- `src-tauri/src/postgres/pool.rs:29-51` supports only `prefer` / `disable`;
+  `src-tauri/src/postgres/dedicated.rs:173-229` installs an accept-all
+  certificate verifier; `src-tauri/src/dispatch/relational.rs:181` and
+  `src-tauri/src/postgres/ddl.rs:35-38` make the same two-way decision
+  independently.
+- Stored TCP keepalive is not applied to PostgreSQL connections
+  (`src-tauri/src/postgres/connect_spec.rs:77-107` asserts the driver
+  default is left alone).
+- `src-tauri/src/tunnel/endpoint.rs:58` overwrites the original hostname
+  after tunnelling, which would defeat hostname verification.
+- `src-tauri/src/commands/connections.rs:221-238` returns one string from
+  Test Connection and probes sqlx-Any rather than the query driver.
 
 **Missing pieces:**
 
@@ -392,8 +432,10 @@ backend handles.
 - Applied TCP keepalive settings.
 - Connection test details that separate DNS, tunnel, TLS, authentication, and
   database failures.
-- Connection groups, tags, colors, favorites, and environment type.
-- Duplicate, URL import/export, copy DSN, and secure connection bundles.
+- Connection tags (groups, colors, favorites, and environment type are
+  delivered).
+- Secure connection bundles (Duplicate, URL import/export, and copy DSN
+  are delivered).
 - IAM and external-secret integrations as later adapters.
 - Driver manager, custom drivers, and network profiles if literal DBeaver
   parity is accepted.
@@ -758,10 +800,11 @@ Parity work should reuse rather than replace these credible foundations:
    scope.
 4. `PAR-004`: backend-enforced production safety delivered by Plans 007 and
    008; both are implemented and merged to `main`.
-5. **Selected next:** `PAR-005`, durable workspace restoration and global
-   navigation.
-6. `PAR-006` and `PAR-007`: secure connections and full PostgreSQL object
-   lifecycle.
+5. `PAR-005`: durable workspace restoration and global navigation
+   delivered by Plans 009 and 010 through `4facea1`.
+6. **Selected next:** `PAR-006` security half — Plans 011 and 012,
+   authored at `4facea1`. `PAR-007` full PostgreSQL object lifecycle
+   follows.
 7. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and
    administration.
 8. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
