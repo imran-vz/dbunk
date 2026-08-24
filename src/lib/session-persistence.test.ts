@@ -112,6 +112,60 @@ describe("restoreSession (P8)", () => {
     expect(created?.label).not.toBe("query_7.sql");
   });
 
+  it("restores a valid caret and degrades malformed carets to none (Plan 009)", () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        tabs: [
+          {
+            id: "tab-1",
+            kind: "query",
+            label: "query_1.sql",
+            connectionId: "conn-1",
+            schema: "public",
+            query: "select 1;",
+            caret: { line: 3, column: 7, anchorLine: 1, anchorColumn: 2 },
+          },
+          {
+            id: "tab-2",
+            kind: "query",
+            label: "query_2.sql",
+            connectionId: "conn-1",
+            schema: "public",
+            // Malformed: zero/negative/fractional members. Tab must
+            // survive with no caret — the field degrades, not the tab.
+            caret: { line: 0, column: -1 },
+          },
+          {
+            id: "tab-3",
+            kind: "query",
+            label: "query_3.sql",
+            connectionId: "conn-1",
+            schema: "public",
+            // Half-valid anchor is dropped; primary position kept.
+            caret: { line: 2, column: 4, anchorLine: 1.5 },
+          },
+        ],
+        activeTabId: "tab-1",
+        expandedSchemas: [],
+      }),
+    );
+    useAppStore.setState({ connections: [connection("conn-1")] });
+
+    useAppStore.getState().restoreSession();
+
+    const [first, second, third] = useAppStore.getState().workspaceTabs;
+    expect(first?.caret).toEqual({
+      line: 3,
+      column: 7,
+      anchorLine: 1,
+      anchorColumn: 2,
+    });
+    expect(second?.id).toBe("tab-2");
+    expect(second?.caret).toBeUndefined();
+    expect(third?.caret).toEqual({ line: 2, column: 4 });
+  });
+
   it("falls back silently on corrupt data", () => {
     window.localStorage.setItem(SESSION_STORAGE_KEY, "{not json!");
     useAppStore.setState({ connections: [connection("conn-1")] });
@@ -178,6 +232,39 @@ describe("session persistence (P8)", () => {
     ]);
   });
 
+  it("persists the caret recorded via updateQueryCaret (Plan 009)", () => {
+    vi.useFakeTimers();
+    startSessionPersistence();
+
+    // Deliberately not dirty: the assertions below must prove that
+    // moving the caret alone never flips the dirty flag.
+    const cleanTab = { ...queryTab("tab-1", "select 42;") };
+    delete cleanTab.isDirty;
+    useAppStore.setState({
+      connections: [connection("conn-1")],
+      workspaceTabs: [cleanTab],
+      activeTabId: "tab-1",
+    });
+    useAppStore
+      .getState()
+      .updateQueryCaret("tab-1", { line: 2, column: 9 });
+    // No-ops: unknown tab and non-query tabs are ignored.
+    useAppStore
+      .getState()
+      .updateQueryCaret("tab-ghost", { line: 1, column: 1 });
+    vi.advanceTimersByTime(600);
+
+    const parsed = JSON.parse(
+      window.localStorage.getItem(SESSION_STORAGE_KEY) ?? "{}",
+    );
+    expect(parsed.tabs[0].caret).toEqual({ line: 2, column: 9 });
+    expect(parsed.tabs[0].isDirty).toBeUndefined();
+    // Moving the caret alone must not mark the tab dirty.
+    const tab = useAppStore.getState().workspaceTabs[0];
+    expect(tab.caret).toEqual({ line: 2, column: 9 });
+    expect(tab.isDirty).toBeUndefined();
+  });
+
   it("excludes keyvalue-workspace tabs from the blob", () => {
     vi.useFakeTimers();
     startSessionPersistence();
@@ -211,7 +298,10 @@ describe("session persistence (P8)", () => {
     // normal tab whose SQL must survive.
     useAppStore.setState({
       workspaceTabs: [
-        queryTab("tab-1", "x".repeat(600 * 1024)),
+        {
+          ...queryTab("tab-1", "x".repeat(600 * 1024)),
+          caret: { line: 4000, column: 1 },
+        },
         queryTab("tab-2", "select 2;"),
       ],
       activeTabId: "tab-2",
@@ -224,6 +314,11 @@ describe("session persistence (P8)", () => {
     expect(parsed.tabs).toHaveLength(2);
     expect(parsed.tabs[0].id).toBe("tab-1");
     expect(parsed.tabs[0].query).toBeUndefined();
+    // Shedding the SQL must also shed the caret and dirty flag — an
+    // orphaned caret and a false "unsaved changes" claim otherwise
+    // restore against an empty editor.
+    expect(parsed.tabs[0].caret).toBeUndefined();
+    expect(parsed.tabs[0].isDirty).toBeUndefined();
     expect(parsed.tabs[1].query).toBe("select 2;");
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();

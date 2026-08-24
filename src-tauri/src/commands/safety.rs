@@ -78,6 +78,9 @@ mod tests {
         read_only: bool,
     ) -> StoredConnection {
         StoredConnection::PostgreSQL(PgStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: "policy".into(),
             name: "Policy".into(),
             database: "postgres".into(),

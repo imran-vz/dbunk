@@ -41,6 +41,9 @@ const serializeTabs = (tabs: WorkspaceTab[]) =>
     if (tab.query !== undefined) serialized.query = tab.query;
     if (tab.pinned) serialized.pinned = true;
     if (tab.isDirty) serialized.isDirty = true;
+    if (tab.kind === "query" && tab.caret !== undefined) {
+      serialized.caret = tab.caret;
+    }
     return [serialized];
   });
 
@@ -75,6 +78,11 @@ export function startSessionPersistence(): void {
           `Session too large to persist; dropping hot-exit SQL for tab ${tab.id}`,
         );
         delete tab.query;
+        // The caret and dirty flag describe the shed SQL — restoring
+        // them against an empty editor would be an orphaned position
+        // and a false "unsaved changes" claim.
+        delete tab.caret;
+        delete tab.isDirty;
         payload = JSON.stringify({
           tabs,
           activeTabId: state.activeTabId,

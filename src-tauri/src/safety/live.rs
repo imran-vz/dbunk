@@ -20,6 +20,9 @@ fn connection(
     read_only: bool,
 ) -> StoredConnection {
     StoredConnection::PostgreSQL(PgStoredConnection {
+        folder: String::new(),
+        is_favorite: false,
+        color: String::new(),
         id: id.into(),
         name: "Safety live".into(),
         database: "dbunk_demo".into(),

@@ -296,6 +296,30 @@ actions. UI warnings explain policy but are not the enforcement boundary.
 
 **Current state:** Partial.
 
+**Progress (2026-08-24):** The UI-refresh series (landed after this
+register's audit) delivered most of the persistence half: migration 16
+added a namespaced `ui.v1.*` SQLite store (`src/lib/ui-state.ts`,
+debounced/serialized flushes, close-flush, 512 KiB caps, one-shot
+localStorage migration, corrupt-value fallback), and
+`src/lib/session-persistence.ts` + `restoreSession()`
+(`src/lib/store/workspace-tabs.ts`) restore query/table tabs, order,
+pins, active tab, hot-exit SQL, and expanded navigator nodes — dropping
+tabs of deleted connections and never restoring live sessions or
+auto-connecting. The workbench consolidation also deleted
+`src/components/sidebar.tsx` and several `workspace-overview/*` tabs, so
+the evidence lines below are stale in path terms. Plans 009 and 010 were
+authored at `9570f11` as the selected execution path for the remaining
+scope: the Open Anything index and palette activation, connection
+folders/favorites/colors/recency, duplicate / secret-free copy-URI /
+URI import, reconnect-safe restored tabs, and caret restore. Both
+plans passed an independent adversarial review on 2026-08-24 and were
+amended for its findings (Plan 009's Review correction record lists
+the code fixes folded in before commit). Deferred
+with rationale (see Plan 009's Reconciliation section): SQL files and
+recent files, split editors/results, multiple windows, OS deep links,
+encrypted profile exchange, offline metadata search and data search,
+keyvalue tab restore, per-tab browse-state persistence.
+
 **Evidence:**
 
 - `src/lib/store/workspace-tabs.ts:88-89` initializes workspace tabs and the

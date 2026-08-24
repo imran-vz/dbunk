@@ -217,6 +217,9 @@ mod tests {
 
     fn strict_connection(connection_id: &str) -> crate::StoredConnection {
         crate::StoredConnection::PostgreSQL(crate::PgStoredConnection {
+            folder: String::new(),
+            is_favorite: false,
+            color: String::new(),
             id: connection_id.into(),
             name: "Strict mutation".into(),
             database: "dbunk_demo".into(),
