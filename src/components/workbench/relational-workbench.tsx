@@ -1,15 +1,17 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   RELATIONAL_RAIL_ITEMS,
   type WorkbenchRailId,
 } from "@/components/app-shell/activity-rail";
+import { ConnectionsView } from "@/components/connections-view";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { ResultsView } from "@/components/query-editor/results-view";
 import type { StatusBarItem } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import type { SubTab } from "@/components/table-editor/header";
-import { ResizerHandle } from "@/components/ui/resizer-handle";
+import { Panel, useLayoutPressure, usePanelState } from "@/components/ui/panel";
+import { EmptyState } from "@/components/ui/state-panel";
 import { DatabaseNavigator } from "@/components/workbench/database-navigator";
 import {
   ObjectTabRow,
@@ -28,11 +30,14 @@ import { QueryHistoryTab } from "@/components/workspace-overview/query-history-t
 import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { storageClassFor } from "@/lib/engine-policy";
 import { type Connection, useAppStore } from "@/lib/store";
-import { useResizableWidth } from "@/lib/use-resizable-width";
 
-const NAVIGATOR_WIDTH = 224;
+/** Navigator metrics per DESIGN-SYSTEM §3.3. */
+const NAVIGATOR_DEFAULT = 260;
 const NAVIGATOR_MIN = 180;
-const NAVIGATOR_MAX = 360;
+const NAVIGATOR_SNAP = 90;
+const NAVIGATOR_MAX = () => Math.round(window.innerWidth * 0.5);
+/** Activity rail (40) + 1px borders — chrome that never yields. */
+const FIXED_CHROME_WIDTH = 42;
 
 interface RelationalWorkbenchProps {
   isClient: boolean;
@@ -66,13 +71,33 @@ export function RelationalWorkbench({
   >({});
   const [statusItems, setStatusItems] = useState<StatusBarItem[]>([]);
 
-  const { width: navigatorWidth, setWidth: setNavigatorWidth } =
-    useResizableWidth({
-      storageKey: "dbunk.workbench.navigatorWidth",
-      defaultWidth: NAVIGATOR_WIDTH,
-      min: NAVIGATOR_MIN,
-      max: NAVIGATOR_MAX,
-    });
+  const navigatorRef = useRef<HTMLDivElement>(null);
+  const navigatorPanel = usePanelState({
+    storageKey: "dbunk.workbench.navigator",
+    defaultSize: NAVIGATOR_DEFAULT,
+    min: NAVIGATOR_MIN,
+    max: NAVIGATOR_MAX,
+    snapThreshold: NAVIGATOR_SNAP,
+  });
+
+  useLayoutPressure({
+    fixedWidth: FIXED_CHROME_WIDTH,
+    navigatorState: navigatorPanel,
+  });
+
+  // Cmd+B toggles the navigator (§3.2 restore paths; full keyboard
+  // registry lands in P7).
+  const toggleNavigator = navigatorPanel.toggle;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        toggleNavigator();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleNavigator]);
 
   const activeConnectionId = useAppStore((state) => state.activeConnectionId);
   const activeTabId = useAppStore((state) => state.activeTabId);
@@ -121,6 +146,13 @@ export function RelationalWorkbench({
 
   const handleRailChange = useCallback(
     (next: WorkbenchRailId) => {
+      // Clicking the active rail item toggles its navigator (the rail
+      // doubles as the sidebar's restore affordance, §3.1).
+      if (next === rail && (next === "tables" || next === "queries")) {
+        navigatorPanel.toggle();
+      } else if (next === "tables" || next === "queries") {
+        navigatorPanel.expand();
+      }
       setRail(next);
       setActiveView("workspace");
       if (
@@ -130,7 +162,7 @@ export function RelationalWorkbench({
         createNewQueryTab();
       }
     },
-    [createNewQueryTab, setActiveView, workspaceTabs],
+    [createNewQueryTab, navigatorPanel, rail, setActiveView, workspaceTabs],
   );
 
   const handleOpenTable = useCallback(
@@ -211,6 +243,23 @@ export function RelationalWorkbench({
       );
     }
 
+    if (rail === "connections") {
+      return (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <ConnectionsView />
+        </div>
+      );
+    }
+
+    if (rail === "overview") {
+      return (
+        <EmptyState
+          title="Overview is on its way"
+          description="Connection health, stats, and the table catalog land here in a later phase."
+        />
+      );
+    }
+
     if (rail === "schema-map") {
       return (
         <SchemaMapTab
@@ -280,26 +329,32 @@ export function RelationalWorkbench({
     (rail === "tables" || rail === "queries") &&
     workspaceTabs.length > 0;
 
+  const autoFitNavigator = useCallback(() => {
+    // Double-click auto-fit: size to the widest visible tree label
+    // (§3.4), measured as the tree's scroll width.
+    const el = navigatorRef.current;
+    if (!el) return;
+    const content = el.querySelector('[data-slot="navigator-tree"]') ?? el;
+    navigatorPanel.setSize(content.scrollWidth + 16);
+  }, [navigatorPanel]);
+
   const leftPanel = showNavigator ? (
-    <div
-      className="relative flex shrink-0 flex-col"
-      style={{ width: navigatorWidth }}
+    <Panel
+      side="left"
+      state={navigatorPanel}
+      ariaLabel="Resize database navigator"
+      onAutoFit={autoFitNavigator}
     >
-      <DatabaseNavigator
-        connectionId={activeConnection?.id ?? ""}
-        schemas={schemas}
-        activeTableKey={activeTableKey}
-        onOpenTable={handleOpenTable}
-        className="h-full w-full"
-      />
-      <ResizerHandle
-        width={navigatorWidth}
-        onResize={setNavigatorWidth}
-        min={NAVIGATOR_MIN}
-        max={NAVIGATOR_MAX}
-        ariaLabel="Resize database navigator"
-      />
-    </div>
+      <div ref={navigatorRef} className="flex min-h-0 flex-1 flex-col">
+        <DatabaseNavigator
+          connectionId={activeConnection?.id ?? ""}
+          schemas={schemas}
+          activeTableKey={activeTableKey}
+          onOpenTable={handleOpenTable}
+          className="h-full w-full"
+        />
+      </div>
+    </Panel>
   ) : null;
 
   const toolbar = showObjectTabs ? (

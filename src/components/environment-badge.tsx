@@ -1,4 +1,9 @@
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ENVIRONMENT_META, resolveSafetyPolicy } from "@/lib/safety-policy";
 import type { ConnectionEnvironment } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -27,12 +32,18 @@ export function EnvironmentBadge({
 
   const meta = ENVIRONMENT_META[resolvedEnvironment];
   return (
-    <Badge
-      variant={ENVIRONMENT_BADGE_VARIANT[resolvedEnvironment]}
-      className={cn("uppercase tracking-wide", className)}
-      title={meta.description}
-    >
-      {short ? meta.shortLabel : meta.label}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Badge
+            variant={ENVIRONMENT_BADGE_VARIANT[resolvedEnvironment]}
+            className={cn("uppercase tracking-wide", className)}
+          />
+        }
+      >
+        {short ? meta.shortLabel : meta.label}
+      </TooltipTrigger>
+      <TooltipContent>{meta.description}</TooltipContent>
+    </Tooltip>
   );
 }

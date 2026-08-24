@@ -3,6 +3,8 @@ import {
   IconChartBar,
   IconHistory,
   IconKey,
+  IconLayoutDashboard,
+  IconPlug,
   IconServer,
   IconSettings,
   IconShare3,
@@ -14,14 +16,22 @@ import {
   MACOS_TRAFFIC_LIGHT_GUTTER_PX,
   needsMacTitlebarGutter,
 } from "@/components/app-shell/macos-titlebar";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type WorkbenchRailId =
+  | "connections"
   | "tables"
   | "queries"
-  | "schema-map"
   | "history"
-  | "admin";
+  | "schema-map"
+  | "admin"
+  | "overview";
 
 export type KeyValueRailId = "keys" | "cli" | "pubsub" | "server";
 
@@ -31,12 +41,15 @@ export interface RailItem<T extends string> {
   label: string;
 }
 
+/** Rail items per decision D4; Settings is pinned at the bottom. */
 export const RELATIONAL_RAIL_ITEMS: ReadonlyArray<RailItem<WorkbenchRailId>> = [
+  { id: "connections", icon: IconPlug, label: "Connections" },
   { id: "tables", icon: IconTable, label: "Tables" },
   { id: "queries", icon: IconTerminal2, label: "Queries" },
-  { id: "schema-map", icon: IconShare3, label: "Schema map" },
   { id: "history", icon: IconHistory, label: "History" },
+  { id: "schema-map", icon: IconShare3, label: "Schema map" },
   { id: "admin", icon: IconChartBar, label: "Admin" },
+  { id: "overview", icon: IconLayoutDashboard, label: "Overview" },
 ];
 
 export const KEYVALUE_RAIL_ITEMS: ReadonlyArray<RailItem<KeyValueRailId>> = [
@@ -57,6 +70,54 @@ interface ActivityRailProps<T extends string> {
   className?: string;
 }
 
+function RailButton({
+  icon: Icon,
+  label,
+  active = false,
+  onClick,
+}: {
+  icon: typeof IconTable;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            onClick={onClick}
+            className={cn(
+              // 28px hit target on the 40px rail (§3.1); icons 18px.
+              "relative size-auto h-7 w-7 rounded-sm p-0 [&_svg:not([class*='size-'])]:size-4.5",
+              active
+                ? "bg-accent-subdued text-accent hover:bg-accent-subdued hover:text-accent"
+                : "text-text-disabled hover:bg-transparent hover:text-text-muted",
+            )}
+          />
+        }
+      >
+        {active ? (
+          <span
+            aria-hidden="true"
+            className="absolute top-1/2 -left-1.5 h-4 w-0.5 -translate-y-1/2 bg-accent"
+          />
+        ) : null}
+        <Icon />
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * The permanent 40px activity rail (§3.1). Never collapses; doubles
+ * as the navigator's restore affordance.
+ */
 export function ActivityRail<T extends string>({
   items,
   active,
@@ -73,7 +134,7 @@ export function ActivityRail<T extends string>({
     <nav
       aria-label="Workbench sections"
       className={cn(
-        "flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border-subtle bg-surface-sidebar py-2",
+        "flex w-10 shrink-0 flex-col items-center gap-1 border-r border-border-subtle bg-surface-sidebar py-2",
         className,
       )}
     >
@@ -89,48 +150,25 @@ export function ActivityRail<T extends string>({
       ) : null}
       <div
         aria-hidden="true"
-        className="mb-2 flex size-7 items-center justify-center rounded-md bg-accent text-sm font-bold text-accent-foreground"
+        className="mb-2 flex size-6 items-center justify-center rounded-sm bg-accent text-xs font-bold text-accent-foreground"
       >
         d
       </div>
-      {items.map((item) => {
-        const Icon = item.icon;
-        const on = active === item.id;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            title={item.label}
-            aria-label={item.label}
-            aria-current={on ? "page" : undefined}
-            onClick={() => onChange(item.id)}
-            className={cn(
-              "relative flex size-9 items-center justify-center rounded-md transition-colors",
-              on
-                ? "bg-accent-subdued text-accent"
-                : "text-text-disabled hover:text-text-muted",
-            )}
-          >
-            {on ? (
-              <span
-                aria-hidden="true"
-                className="absolute left-0 h-5 w-0.5 rounded-full bg-accent"
-              />
-            ) : null}
-            <Icon className="size-5" />
-          </button>
-        );
-      })}
+      {items.map((item) => (
+        <RailButton
+          key={item.id}
+          icon={item.icon}
+          label={item.label}
+          active={active === item.id}
+          onClick={() => onChange(item.id)}
+        />
+      ))}
       <div className="mt-auto">
-        <button
-          type="button"
-          title="Settings"
-          aria-label="Settings"
+        <RailButton
+          icon={IconSettings}
+          label="Settings"
           onClick={onOpenSettings}
-          className="flex size-9 items-center justify-center rounded-md text-text-disabled transition-colors hover:text-text-muted"
-        >
-          <IconSettings className="size-5" />
-        </button>
+        />
       </div>
     </nav>
   );

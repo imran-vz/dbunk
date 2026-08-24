@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HealthPill, type StatusTone } from "@/components/ui/status-dot";
 import { type Connection, useAppStore } from "@/lib/store";
-import { useContainerWidth } from "@/lib/use-resizable-width";
+import { useContainerWidth } from "@/lib/use-container-width";
 import { cn } from "@/lib/utils";
 
 // Container-width breakpoints. We measure the panel, not the viewport,

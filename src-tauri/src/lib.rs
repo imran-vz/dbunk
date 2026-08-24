@@ -229,6 +229,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
+        // Persist and restore window geometry across launches (D7).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             log::info!("dbunk starting up");
             let paths = Paths::from_app(app.handle())
