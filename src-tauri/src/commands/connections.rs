@@ -236,17 +236,7 @@ pub async fn test_connection(
     let route = tunnel::EphemeralRoute::new("test");
     let connection =
         tunnel::resolve_connection(&state.pool, mode, route.key(), &payload.connection).await?;
-    match &connection {
-        StoredConnection::PostgreSQL(_) => {
-            crate::postgres::ping_once(&connection)
-                .await
-                .map(|latency_ms| ConnectResult {
-                    latency_ms,
-                    redis_capabilities: None,
-                })
-        }
-        _ => dispatch::ping_connection(&connection).await,
-    }
+    dispatch::ping_connection_once(&connection).await
 }
 
 /// Periodic poll: returns "healthy" + latency or "error" + message. Designed

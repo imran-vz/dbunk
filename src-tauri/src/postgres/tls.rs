@@ -38,6 +38,9 @@ pub(crate) const SQLX_INHERITED_OVERRIDES: &[&str] = &[
     "PGSSLROOTCERT",
 ];
 
+/// Runs once, from `run()`, before any worker thread exists. `remove_var`
+/// is not safe alongside C code reading the environment on another thread,
+/// so connect sites must not call this lazily — they rely on `run()`.
 pub(crate) fn prepare_sqlx_environment() {
     static PREPARE: Once = Once::new();
 
@@ -325,35 +328,33 @@ fn display_path(path: &Path) -> String {
 /// yield an empty set — verification then rests on the user CA file,
 /// which is exactly SQLx's behaviour on the pool path.
 struct NativeRoots {
-    certificates: Vec<CertificateDer<'static>>,
-    store: RootCertStore,
+    store: Arc<RootCertStore>,
+    /// The accepted roots, PEM-framed once for the libpq bundle.
+    pem: String,
 }
 
-fn native_roots() -> &'static Arc<NativeRoots> {
-    static ROOTS: OnceLock<Arc<NativeRoots>> = OnceLock::new();
+fn native_roots() -> &'static NativeRoots {
+    static ROOTS: OnceLock<NativeRoots> = OnceLock::new();
     ROOTS.get_or_init(|| {
         let mut store = RootCertStore::empty();
-        let certificates = match rustls_native_certs::load_native_certs() {
+        let mut pem = String::new();
+        match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
-                let mut accepted = Vec::with_capacity(certs.len());
                 for cert in certs {
-                    if let Err(error) = store.add(cert.clone()) {
+                    let framed_at = pem.len();
+                    push_cert_pem(&mut pem, cert.as_ref());
+                    if let Err(error) = store.add(cert) {
+                        pem.truncate(framed_at);
                         log::warn!("skipping unparsable native root certificate: {error}");
-                    } else {
-                        accepted.push(cert);
                     }
                 }
-                accepted
             }
-            Err(error) => {
-                log::warn!("could not load platform root certificates: {error}");
-                Vec::new()
-            }
-        };
-        Arc::new(NativeRoots {
-            certificates,
-            store,
-        })
+            Err(error) => log::warn!("could not load platform root certificates: {error}"),
+        }
+        NativeRoots {
+            store: Arc::new(store),
+            pem,
+        }
     })
 }
 
@@ -361,9 +362,9 @@ fn native_roots() -> &'static Arc<NativeRoots> {
 /// cannot replace, and both paths must trust the same set).
 fn root_store(root_cert_path: Option<&Path>) -> Result<Arc<RootCertStore>, TlsMaterialError> {
     let Some(path) = root_cert_path else {
-        return Ok(Arc::new(native_roots().store.clone()));
+        return Ok(Arc::clone(&native_roots().store));
     };
-    let mut store = native_roots().store.clone();
+    let mut store = RootCertStore::clone(&native_roots().store);
     for cert in load_certs(path)? {
         store
             .add(cert)
@@ -490,6 +491,22 @@ pub(crate) fn pool_hostname_verification(
     }
 }
 
+/// SQLx has no `hostaddr`, so a tunneled `verify-full` can only verify the
+/// CA chain on the SQLx paths (ADR-0025 §5). Each renderer that downgrades
+/// discloses it here, with the same wording.
+pub(crate) fn log_sqlx_verify_full_downgrade(
+    tls: &ResolvedTls,
+    host: &str,
+    connection_id: &str,
+    path: &str,
+) {
+    if tls.mode == PgTlsMode::VerifyFull && tls.server_name_differs_from(host) {
+        log::warn!(
+            "connection {connection_id}: verify-full over a tunnel verifies the CA chain only on the {path} (SQLx has no hostaddr); query sessions verify the host name"
+        );
+    }
+}
+
 pub(crate) fn apply_to_pg_options(
     tls: &ResolvedTls,
     host: &str,
@@ -497,11 +514,7 @@ pub(crate) fn apply_to_pg_options(
     mut options: PgConnectOptions,
 ) -> PgConnectOptions {
     let differs = tls.server_name_differs_from(host);
-    if tls.mode == PgTlsMode::VerifyFull && differs {
-        log::warn!(
-            "connection {connection_id}: verify-full over a tunnel verifies the CA chain only on the metadata pool (SQLx has no hostaddr); query sessions verify the host name"
-        );
-    }
+    log_sqlx_verify_full_downgrade(tls, host, connection_id, "metadata pool");
     options = options.ssl_mode(sqlx_ssl_mode(tls.mode, differs));
     if let Some(path) = &tls.root_cert_path {
         options = options.ssl_root_cert(path);
@@ -622,6 +635,14 @@ pub(crate) fn apply_to_command(
     for key in ["HOME", "USERPROFILE", "APPDATA"] {
         command.env(key, isolated_home.path());
     }
+    // `--no-password` only suppresses the prompt: an empty PGPASSWORD still
+    // makes libpq consult the password file, and it can find ~/.pgpass (or
+    // %APPDATA%\postgresql\pgpass.conf) without HOME. Point it at a file
+    // that does not exist, which libpq silently ignores.
+    command.env(
+        "PGPASSFILE",
+        isolated_home.path().join("pgpass-not-configured"),
+    );
     command.arg("--host").arg(&tls.server_name);
     if tls.server_name_differs_from(host) {
         command.env("PGHOSTADDR", host);
@@ -681,47 +702,38 @@ fn libpq_root_bundle(
 ) -> Result<tempfile::NamedTempFile, TlsMaterialError> {
     use std::io::Write as _;
 
-    let mut bundle =
-        tempfile::NamedTempFile::new().map_err(|error| TlsMaterialError::Unreadable {
-            path: "temporary libpq CA bundle".into(),
-            detail: error.to_string(),
-        })?;
-    for cert in &native_roots().certificates {
-        write_cert_pem(&mut bundle, cert.as_ref())?;
-    }
+    let mut user_roots = String::new();
     if let Some(path) = root_cert_path {
         for cert in load_certs(path)? {
-            write_cert_pem(&mut bundle, cert.as_ref())?;
+            push_cert_pem(&mut user_roots, cert.as_ref());
         }
     }
-    bundle
-        .flush()
-        .map_err(|error| TlsMaterialError::Unreadable {
-            path: "temporary libpq CA bundle".into(),
-            detail: error.to_string(),
-        })?;
-    Ok(bundle)
+    let write = || -> std::io::Result<tempfile::NamedTempFile> {
+        let mut bundle = tempfile::NamedTempFile::new()?;
+        bundle.write_all(native_roots().pem.as_bytes())?;
+        bundle.write_all(user_roots.as_bytes())?;
+        bundle.flush()?;
+        Ok(bundle)
+    };
+    write().map_err(|error| TlsMaterialError::Unreadable {
+        path: "temporary libpq CA bundle".into(),
+        detail: error.to_string(),
+    })
 }
 
-fn write_cert_pem(
-    output: &mut impl std::io::Write,
-    certificate: &[u8],
-) -> Result<(), TlsMaterialError> {
+/// RFC 7468 framing of one DER certificate, as libpq/OpenSSL read it.
+fn push_cert_pem(pem: &mut String, certificate: &[u8]) {
     let encoded = BASE64.encode(certificate);
-    output
-        .write_all(b"-----BEGIN CERTIFICATE-----\n")
-        .and_then(|()| {
-            for chunk in encoded.as_bytes().chunks(64) {
-                output.write_all(chunk)?;
-                output.write_all(b"\n")?;
-            }
-            Ok(())
-        })
-        .and_then(|()| output.write_all(b"-----END CERTIFICATE-----\n"))
-        .map_err(|error| TlsMaterialError::Unreadable {
-            path: "temporary libpq CA bundle".into(),
-            detail: error.to_string(),
-        })
+    pem.push_str("-----BEGIN CERTIFICATE-----\n");
+    let mut rest = encoded.as_str();
+    while !rest.is_empty() {
+        // base64 output is ASCII, so any byte offset is a char boundary.
+        let (line, tail) = rest.split_at(rest.len().min(64));
+        pem.push_str(line);
+        pem.push('\n');
+        rest = tail;
+    }
+    pem.push_str("-----END CERTIFICATE-----\n");
 }
 
 #[cfg(test)]
@@ -915,8 +927,8 @@ mod tests {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(certificates.len(), native_roots().certificates.len() + 1);
-        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLCRL"] {
+        assert_eq!(certificates.len(), native_roots().store.len() + 1);
+        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLCRL", "PGPASSFILE"] {
             let path = env
                 .iter()
                 .find_map(|(candidate, value)| (candidate == key).then_some(value.as_ref()))
@@ -968,7 +980,6 @@ mod tests {
         for key in [
             "PGSERVICE",
             "PGSERVICEFILE",
-            "PGPASSFILE",
             "PGSSLCERTMODE",
             "PGSSLCRL",
             "PGSSLCRLDIR",
@@ -1014,7 +1025,7 @@ mod tests {
         assert!(!isolated_home.join(".postgresql/postgresql.crt").exists());
         assert!(!isolated_home.join(".postgresql/postgresql.key").exists());
         assert!(!isolated_home.join(".postgresql/root.crt").exists());
-        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT"] {
+        for key in ["PGSSLCERT", "PGSSLKEY", "PGSSLROOTCERT", "PGPASSFILE"] {
             let path = command
                 .get_envs()
                 .find_map(|(candidate, value)| (candidate == key).then(|| value.unwrap()))
