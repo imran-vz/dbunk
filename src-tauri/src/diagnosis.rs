@@ -25,12 +25,11 @@ use crate::postgres::connect_error::{self, ConnectFailure};
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::postgres::tls::{self, PoolHostnameVerification};
 use crate::{
-    dispatch, tunnel, CredentialStorageMode, DatabaseEngine, Environment, PgTlsMode,
-    StoredConnection, TlsFailureKind,
+    dispatch, postgres::connect_spec::DEFAULT_CONNECT_TIMEOUT, tunnel, CredentialStorageMode,
+    DatabaseEngine, Environment, PgTlsMode, StoredConnection, TlsFailureKind,
 };
 
 const DNS_TIMEOUT: Duration = Duration::from_secs(5);
-const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 // ---------------------------------------------------------------------------
 // Wire types
@@ -244,7 +243,7 @@ impl Report {
         kind: FailureKind,
         message: String,
     ) {
-        self.push(
+        self.record(
             stage,
             StageResult::Failed {
                 elapsed_ms: elapsed_ms(started),
@@ -252,38 +251,18 @@ impl Report {
                 message,
             },
         );
-        self.failed = Some(stage);
-        while self.stages.len() < STAGE_ORDER.len() {
-            let next = STAGE_ORDER[self.stages.len()];
-            self.push(
-                next,
-                StageResult::Skipped {
-                    reason: SkipReason::BlockedByEarlierFailure,
-                },
-            );
-        }
     }
 
-    /// Replace an optimistic pass when a protocol error for that stage is
-    /// delivered during the following startup exchange. PostgreSQL can
-    /// surface TLS alerts after the handshake future itself has completed.
-    fn fail_existing(
-        &mut self,
-        stage: DiagnosisStageKind,
-        started: Instant,
-        kind: FailureKind,
-        message: String,
-    ) {
-        let existing = self
-            .stages
-            .iter_mut()
-            .find(|candidate| candidate.stage == stage)
-            .expect("failed stage was already reported");
-        existing.result = StageResult::Failed {
-            elapsed_ms: elapsed_ms(started),
-            kind,
-            message,
-        };
+    /// Record an outcome whose timing was measured earlier — a TLS
+    /// handshake whose verdict waited on the startup exchange, since
+    /// PostgreSQL can surface TLS alerts after the handshake future itself
+    /// has completed. A failure blocks every later stage.
+    fn record(&mut self, stage: DiagnosisStageKind, result: StageResult) {
+        let failed = matches!(result, StageResult::Failed { .. });
+        self.push(stage, result);
+        if !failed {
+            return;
+        }
         self.failed = Some(stage);
         while self.stages.len() < STAGE_ORDER.len() {
             let next = STAGE_ORDER[self.stages.len()];
@@ -539,6 +518,11 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
     // it is handed.
     config.ssl_mode(tokio_postgres::config::SslMode::Disable);
 
+    // A completed handshake is held back until the startup exchange confirms
+    // it: PostgreSQL can deliver TLS alerts (unknown CA, rejected client
+    // certificate) after the client's handshake future has resolved, and
+    // those belong to this stage, with the handshake's own timing.
+    let mut handshake: Option<(u64, StageDetail)> = None;
     let startup = match tls_config {
         None => {
             report.skip(DiagnosisStageKind::Tls, SkipReason::TlsDisabled);
@@ -617,18 +601,10 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     };
                 match tokio::time::timeout(connect_timeout, connector.connect(stream)).await {
                     Ok(Ok(tls_stream)) => {
-                        report.pass(
-                            DiagnosisStageKind::Tls,
-                            tls_started,
-                            Some(tls_detail(
-                                true,
-                                None,
-                                None,
-                                false,
-                                mode,
-                                pool_hostname_verification,
-                            )),
-                        );
+                        handshake = Some((
+                            elapsed_ms(tls_started),
+                            tls_detail(true, None, None, false, mode, pool_hostname_verification),
+                        ));
                         connect_startup(&config, tls_stream, connect_timeout).await
                     }
                     Ok(Err(error)) => {
@@ -662,8 +638,12 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
     // authentication -------------------------------------------------------
     let started = Instant::now();
     let client = match startup {
-        Ok(client) => client,
+        Ok(client) => {
+            confirm_handshake(report, handshake.take());
+            client
+        }
         Err(StartupError::Timeout) => {
+            confirm_handshake(report, handshake.take());
             report.fail(
                 DiagnosisStageKind::Authentication,
                 started,
@@ -674,7 +654,22 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
         }
         Err(StartupError::Postgres(error)) => {
             let view = connect_error::view_of(&error);
-            match connect_error::classify(&view, client_cert_configured) {
+            let failure = connect_error::classify(&view, client_cert_configured);
+            if let ConnectFailure::Tls(kind) = &failure {
+                if let Some((handshake_ms, _)) = handshake.take() {
+                    report.record(
+                        DiagnosisStageKind::Tls,
+                        StageResult::Failed {
+                            elapsed_ms: handshake_ms,
+                            kind: (*kind).into(),
+                            message: connect_error::tls_failure_message(*kind, &view.message),
+                        },
+                    );
+                    return;
+                }
+            }
+            confirm_handshake(report, handshake.take());
+            match failure {
                 ConnectFailure::Authentication { message } => {
                     report.fail(
                         DiagnosisStageKind::Authentication,
@@ -705,9 +700,11 @@ async fn diagnose_postgres(pg: &crate::PgStoredConnection, report: &mut Report) 
                     );
                 }
                 ConnectFailure::Tls(kind) => {
-                    report.fail_existing(
-                        DiagnosisStageKind::Tls,
-                        tls_started,
+                    // No handshake was pending, so the stream was plaintext;
+                    // attribute the error to the exchange that produced it.
+                    report.fail(
+                        DiagnosisStageKind::Authentication,
+                        started,
                         kind.into(),
                         connect_error::tls_failure_message(kind, &view.message),
                     );
@@ -789,6 +786,19 @@ fn record_known_transport_warnings(
     }
     if pool_hostname_verification == PoolHostnameVerification::CaOnly {
         report.warn(DiagnosisWarning::PoolHostnameVerificationCaOnly);
+    }
+}
+
+/// Push a handshake that the startup exchange did not contradict.
+fn confirm_handshake(report: &mut Report, handshake: Option<(u64, StageDetail)>) {
+    if let Some((elapsed_ms, detail)) = handshake {
+        report.record(
+            DiagnosisStageKind::Tls,
+            StageResult::Passed {
+                elapsed_ms,
+                detail: Some(detail),
+            },
+        );
     }
 }
 
@@ -954,18 +964,19 @@ mod tests {
     }
 
     #[test]
-    fn a_late_tls_error_replaces_the_tls_pass_and_blocks_startup_stages() {
+    fn a_late_tls_error_keeps_the_handshake_timing_and_blocks_startup_stages() {
         let mut report = Report::new(DatabaseEngine::PostgreSQL);
         report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
         report.pass(DiagnosisStageKind::Dns, Instant::now(), None);
         report.pass(DiagnosisStageKind::Tcp, Instant::now(), None);
-        report.pass(DiagnosisStageKind::Tls, Instant::now(), None);
 
-        report.fail_existing(
+        report.record(
             DiagnosisStageKind::Tls,
-            Instant::now(),
-            FailureKind::HandshakeFailed,
-            "late TLS alert".into(),
+            StageResult::Failed {
+                elapsed_ms: 7,
+                kind: FailureKind::HandshakeFailed,
+                message: "late TLS alert".into(),
+            },
         );
         let diagnosis = report.finish();
 
@@ -978,6 +989,7 @@ mod tests {
         assert!(matches!(
             result_of(&diagnosis, DiagnosisStageKind::Tls),
             StageResult::Failed {
+                elapsed_ms: 7,
                 kind: FailureKind::HandshakeFailed,
                 ..
             }
@@ -993,6 +1005,42 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn a_confirmed_handshake_is_recorded_with_its_own_timing() {
+        let mut report = Report::new(DatabaseEngine::PostgreSQL);
+        report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
+        report.pass(DiagnosisStageKind::Dns, Instant::now(), None);
+        report.pass(DiagnosisStageKind::Tcp, Instant::now(), None);
+
+        confirm_handshake(&mut report, None);
+        assert_eq!(report.stages.len(), 3, "nothing pending, nothing recorded");
+        confirm_handshake(
+            &mut report,
+            Some((
+                3,
+                tls_detail(
+                    true,
+                    None,
+                    None,
+                    false,
+                    PgTlsMode::VerifyFull,
+                    PoolHostnameVerification::Full,
+                ),
+            )),
+        );
+        report.pass(DiagnosisStageKind::Authentication, Instant::now(), None);
+        report.pass(DiagnosisStageKind::Database, Instant::now(), None);
+        let diagnosis = report.finish();
+
+        assert!(matches!(
+            result_of(&diagnosis, DiagnosisStageKind::Tls),
+            StageResult::Passed {
+                elapsed_ms: 3,
+                detail: Some(StageDetail::Tls { .. }),
+            }
+        ));
     }
 
     #[test]

@@ -52,9 +52,9 @@ failure to one string produced by a driver the query editor does not use.
    with `host = server_name` + `hostaddr = loopback`, and libpq tools
    with `--host server_name` + `PGHOSTADDR`. **Known limitation:** SQLx
    has no `hostaddr`, so `verify-full` over a tunnel verifies the chain
-   only on the metadata pool; the renderer downgrades that one path to
-   `VerifyCa`, logs it, and the diagnosis reports
-   `poolHostnameVerification: caOnly`.
+   only on the SQLx paths — the metadata pool and the schema-explorer
+   SQLx-Any connection; each renderer downgrades its path to `VerifyCa`,
+   logs it, and the diagnosis reports `poolHostnameVerification: caOnly`.
 6. **Keepalive applies where it can.** `keepalive_seconds` sets
    `keepalives_idle` on the dedicated driver (query sessions, table
    browse, result mutation). SQLx 0.8 still exposes no socket setter, so

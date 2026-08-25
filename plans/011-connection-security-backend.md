@@ -83,6 +83,13 @@
   can reuse a saved connection id and test tunnels are ephemeral, so a
   cached socket could test the wrong credentials or endpoint. The command's
   wire contract is unchanged; Plan 012 still owns its removal.
+- **Post-review fixes (2026-08-25):** the one-shot probe is bounded by
+  `DEFAULT_CONNECT_TIMEOUT` when no `connect_timeout_ms` is set and closes
+  its session gracefully; libpq tools get an explicit missing `PGPASSFILE`
+  alongside the certificate sentinels; a late TLS alert during startup is
+  recorded against the handshake's own timing; and the SQLx-Any DSN
+  renderer logs its tunneled `verify-full` downgrade (ADR-0025 §5 amended
+  to name both SQLx paths).
 
 ## Why this matters
 

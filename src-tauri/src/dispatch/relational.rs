@@ -168,7 +168,6 @@ fn sqlite_dsn(database: &str) -> Result<String, String> {
 fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
     match connection {
         StoredConnection::PostgreSQL(c) => {
-            crate::postgres::tls::prepare_sqlx_environment();
             if c.host.is_empty() || c.user.is_empty() {
                 return Err("PostgreSQL host and user are required".to_string());
             }
@@ -179,17 +178,23 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
             // `PgConnectOptions` directly; this string only serves the
             // sqlx-Any fallback below.
             let tls = crate::postgres::tls::ResolvedTls::from_postgres(c);
+            crate::postgres::tls::log_sqlx_verify_full_downgrade(
+                &tls,
+                &c.host,
+                &c.id,
+                "schema explorer (SQLx-Any) connection",
+            );
             Ok(format!(
-                "postgres://{}:{}@{}:{}/{}?{}&password={}",
+                "postgres://{}@{}:{}/{}?{}&password={}",
                 percent_encode_url_component(&c.user),
-                percent_encode_url_component(&c.password),
                 c.host,
                 port,
                 percent_encode_url_component(&c.database),
                 crate::postgres::tls::dsn_query(&tls, &c.host, percent_encode_url_component),
                 // SQLx's URL parser treats `user:@host` as no password and
-                // then consults `.pgpass`. The explicit query parameter keeps
-                // an intentionally empty StoredConnection password authoritative.
+                // then consults `.pgpass`, whereas the `password` query key
+                // is applied verbatim — so it alone carries the stored
+                // value, including an intentionally empty one.
                 percent_encode_url_component(&c.password)
             ))
         }
@@ -1522,7 +1527,7 @@ mod tests {
 
         assert_eq!(
             dsn,
-            "postgres://user%40name:p%3Aa%2Fs%25@db.example:5432/app%2Fdb?sslmode=disable&password=p%3Aa%2Fs%25"
+            "postgres://user%40name@db.example:5432/app%2Fdb?sslmode=disable&password=p%3Aa%2Fs%25"
         );
     }
 
@@ -1577,6 +1582,9 @@ mod tests {
             std::env::var("PGPASSWORD").as_deref(),
             Ok("ambient-password")
         );
+        // The app runs this once from `run()` before any worker thread; the
+        // re-exec'd child for this test never enters `run()`.
+        crate::postgres::tls::prepare_sqlx_environment();
         let dsn = sqlx_dsn(&postgres_connection("user", "", "database")).expect("dsn should build");
         for key in crate::postgres::tls::SQLX_INHERITED_OVERRIDES {
             assert!(
