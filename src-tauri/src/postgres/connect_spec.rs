@@ -2,6 +2,11 @@ use crate::postgres::tls::ResolvedTls;
 use crate::{PgDriverOptions, PgStoredConnection, StoredConnection};
 use std::time::Duration;
 
+/// Deadline applied when a connection sets no `connect_timeout_ms`. Every
+/// one-shot connect (diagnosis, Test Connection) is bounded by this so an
+/// unreachable host cannot hold the caller until the OS TCP timeout.
+pub(crate) const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Clone)]
 pub(crate) struct ResolvedPostgresConnectSpec {
     pub connection_id: String,
