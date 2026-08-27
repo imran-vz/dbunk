@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DataGridRowState } from "@/components/data-grid";
 import type { ServerBrowseGridModel } from "@/components/data-grid/browse-model";
+import { formatTlsFailure } from "@/lib/connection-diagnosis";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import type {
   AnalyzeResultSetResult,
@@ -66,6 +67,8 @@ const mutationErrorCopy = (error: ResultMutationError): string => {
     case "connectionClosing":
     case "connectionLost":
       return "The connection closed before analysis completed.";
+    case "tlsFailed":
+      return formatTlsFailure(error.tlsKind, error.message);
     case "timeout":
       return `Analysis timed out during ${error.operation}.`;
     case "database":

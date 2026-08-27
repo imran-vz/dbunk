@@ -22,7 +22,14 @@ these terms rather than coining synonyms.
   Engine-class-specific fields live on their variants and **only
   their variants** — TypeScript narrows on `connection.engine` to
   reach them. `ssl: boolean` lives on `PgConnection` /
-  `MySqlConnection` (TLS upgrade on the wire protocol); `useHttps`
+  `MySqlConnection` (TLS upgrade on the wire protocol). On
+  `PgConnection` it is the legacy mirror of `tlsOptions` (ADR-0025):
+  `mode` in libpq vocabulary — `disable | prefer | require |
+  verify-ca | verify-full` — plus optional `rootCertPath`,
+  `clientCertPath`, `clientKeyPath` (paths, never contents) and
+  `serverName`; the backend keeps `ssl === (mode !== "disable")` and
+  legacy rows without the blob resolve to `prefer` / `disable` by
+  `ssl`. `useHttps`
   and `urlPath` live on `ClickHouseConnection` (TLS for the HTTP
   transport — a distinct concept from `ssl`); `dbNumber`, `useTls`,
   `verifyTlsCert` live on `RedisConnection` (TLS via `rediss://`).
@@ -70,8 +77,10 @@ these terms rather than coining synonyms.
   persisted as one JSON blob on the Connection record so a new knob
   is a struct field rather than a schema migration. Covers
   `statementTimeoutMs`, `idleInTransactionTimeoutMs`,
-  `connectTimeoutMs`, `defaultSearchPath`, `defaultRole`, plus a
-  reserved `keepaliveSeconds` with no runtime yet. Every field is
+  `connectTimeoutMs`, `defaultSearchPath`, `defaultRole`, and
+  `keepaliveSeconds` (applied on the dedicated driver only — query
+  sessions, table browse, result mutation; the SQLx metadata pool has
+  no keepalive option, ADR-0025). Every field is
   optional and absent means "use the server default" — the whole blob
   is omitted rather than stored as all-empty. Note that **Driver
   Options** `defaultRole` is a Postgres `SET ROLE` target and is a
@@ -444,8 +453,16 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
 ## Live state
 
 - **Health Check** — a `SELECT 1` ping that verifies a connection is alive.
-  Fired every 30 seconds by a foreground tick (ADR-0002), and on demand from
-  the **Test Connection** button before save.
+  Fired every 30 seconds by a foreground tick (ADR-0002).
+- **Connection Diagnosis** — what the **Test Connection** button runs
+  (`diagnose_connection`, ADR-0025): the connect ladder stepwise —
+  tunnel → DNS → TCP → TLS → authentication → database — each stage
+  passed with detail, failed with a typed kind and message, or skipped
+  with a reason, plus the server's own encryption state from
+  `pg_stat_ssl` and warnings (`notEncrypted`,
+  `poolHostnameVerificationCaOnly`, `productionWithoutVerification`).
+  Available in edit mode: a blank password makes the backend hydrate
+  the saved credential, so the secret never crosses IPC.
 - **Last Activity** — ISO-8601 timestamp on the connection record. Bumped
   whenever a query or connect succeeds (ADR-0004).
 - **Database Overview** — the storage-class-shaped landing payload for an

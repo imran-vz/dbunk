@@ -74,11 +74,11 @@ describe("UriImportField (Plan 010, mock A)", () => {
     );
 
     fireEvent.change(screen.getByLabelText("Import from URI"), {
-      target: { value: "postgres://u@h/db?sslmode=require" },
+      target: { value: "postgres://u@h/db?sslrootcert=/ca.pem" },
     });
 
     expect(screen.getByTestId("uri-import-notice").textContent).toContain(
-      "sslmode",
+      "sslrootcert",
     );
   });
 
@@ -128,5 +128,25 @@ describe("UriImportField (Plan 010, mock A)", () => {
     expect(screen.getByTestId("uri-import-notice").textContent).toContain(
       "Unsupported scheme",
     );
+  });
+
+  it("prefills the TLS mode from a valid sslmode", () => {
+    const { form, calls } = makeFakeForm();
+    render(
+      <UriImportField
+        form={form}
+        engine="PostgreSQL"
+        onEngineChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Import from URI"), {
+      target: {
+        value: "postgres://app@10.0.0.1:5432/orders?sslmode=verify-full",
+      },
+    });
+
+    expect(calls).toContainEqual(["tlsMode", "verify-full"]);
+    expect(screen.getByText("Applied PostgreSQL URI.")).toBeTruthy();
   });
 });

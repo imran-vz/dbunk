@@ -16,6 +16,7 @@
 import type { StateCreator } from "zustand";
 
 import { requestConfirm } from "@/lib/confirm";
+import { syntheticReachableDiagnosis } from "@/lib/connection-diagnosis";
 import { storageClassFor } from "@/lib/engine-policy";
 import { formatLatencyMs } from "@/lib/format";
 import { fetchRedisAclSelf } from "@/lib/redis/api";
@@ -26,6 +27,7 @@ import { uiRemovePrefix } from "@/lib/ui-state";
 import type {
   AppStoreState,
   Connection,
+  ConnectionDiagnosis,
   OverviewTabId,
   RedisCapabilities,
   StoredConnection,
@@ -182,11 +184,19 @@ export type ConnectionsSlice = {
   deleteConnection: (connectionId: string) => Promise<void>;
   connectConnection: (connectionId: string) => Promise<void>;
   disconnectConnection: (connectionId: string) => Promise<void>;
-  testConnection: (
+  /**
+   * Staged connect diagnosis for a (possibly unsaved) connection
+   * (ADR-0025). `hydrateFrom` names a stored connection whose saved
+   * credential the backend substitutes when the payload's password is
+   * empty — edit mode never sees the secret. `ok: false` is the outer
+   * rejection only (validation / credential store); probe failures are
+   * stages inside the report.
+   */
+  diagnoseConnection: (
     connection: StoredConnection,
+    hydrateFrom?: string,
   ) => Promise<
-    | { ok: true; latencyMs: number; redisCapabilities?: RedisCapabilities }
-    | { ok: false; error: string }
+    { ok: true; report: ConnectionDiagnosis } | { ok: false; error: string }
   >;
   /**
    * Bump `lastActivityAt` on a connection record. Called from
@@ -438,24 +448,21 @@ export const createConnectionsSlice: StateCreator<
     }
   },
 
-  testConnection: async (connection) => {
+  diagnoseConnection: async (connection, hydrateFrom) => {
     if (!isTauri()) {
-      // In dev/storybook mode we can't actually connect — pretend it
-      // succeeded so the UI flow stays exercised.
-      return { ok: true, latencyMs: 0 };
+      // In dev/storybook mode we can't actually connect — return a
+      // reachable report so the panel stays exercised.
+      return { ok: true, report: syntheticReachableDiagnosis(connection) };
     }
     try {
       // The connection arg is already a `StoredConnection` union member;
       // serde on the Rust side decodes the engine-tagged JSON into the
       // matching `StoredConnection::*` variant (ADR-0010).
-      const result = await tauriInvoke<ConnectResult>("test_connection", {
-        payload: { connection },
-      });
-      return {
-        ok: true,
-        latencyMs: result.latencyMs,
-        redisCapabilities: result.redisCapabilities,
-      };
+      const report = await tauriInvoke<ConnectionDiagnosis>(
+        "diagnose_connection",
+        { payload: { connection, hydrateCredentialFrom: hydrateFrom } },
+      );
+      return { ok: true, report };
     } catch (error) {
       return { ok: false, error: errorToMessage(error) };
     }

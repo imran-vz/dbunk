@@ -113,9 +113,9 @@ fn insert(connection_id: String, manager: ConnectionManager) {
     }
 }
 
-/// Open a new, single-shot connection without caching it. Used by
-/// `test_connection` so a "Test" click doesn't leave a stale manager
-/// hanging around in the cache (the saved connection may differ).
+/// Open a new, single-shot connection without caching it. Used by the
+/// capabilities probe so a connect-time probe doesn't leave a stale
+/// manager hanging around in the cache (the saved connection may differ).
 pub async fn open_oneshot(
     connection: &RedisStoredConnection,
 ) -> Result<redis::aio::MultiplexedConnection, String> {

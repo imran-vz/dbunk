@@ -25,6 +25,12 @@ const errors: QuerySessionError[] = [
   { kind: "transactionStateUnknown", canRecheck: false },
   { kind: "transactionObserverUnavailable" },
   { kind: "connectionLost" },
+  {
+    kind: "tlsFailed",
+    tlsKind: "certificateUntrusted",
+    message:
+      "The server certificate is not trusted: invalid peer certificate: UnknownIssuer",
+  },
   { kind: "timeout", operation: "execute" },
   {
     kind: "database",
@@ -58,6 +64,7 @@ describe("formatQuerySessionError", () => {
       "Transaction state is unknown.",
       "Transaction observer is unavailable.",
       "The database connection was lost.",
+      "TLS: the server certificate is not trusted — invalid peer certificate: UnknownIssuer",
       "Timed out during execute.",
       "42P01: relation does not exist",
       "syntax error",
@@ -128,5 +135,33 @@ describe("formatQuerySessionError", () => {
         ],
       }),
     ).toBe(true);
+  });
+});
+
+describe("decodeQuerySessionError — tlsFailed", () => {
+  it("keeps the TLS kind and message instead of collapsing to connectionLost", () => {
+    expect(
+      decodeQuerySessionError({
+        kind: "tlsFailed",
+        tlsKind: "hostnameMismatch",
+        message:
+          "The server certificate does not match the expected host name: x",
+      }),
+    ).toEqual({
+      kind: "tlsFailed",
+      tlsKind: "hostnameMismatch",
+      message:
+        "The server certificate does not match the expected host name: x",
+    });
+  });
+
+  it("collapses a tlsFailed payload with an unknown kind, never trusting it", () => {
+    expect(
+      decodeQuerySessionError({
+        kind: "tlsFailed",
+        tlsKind: "somethingNew",
+        message: "x",
+      }),
+    ).toEqual({ kind: "connectionLost" });
   });
 });

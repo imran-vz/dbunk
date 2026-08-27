@@ -62,6 +62,9 @@ export function UriImportField({
     if (values.password !== undefined) {
       form.setFieldValue("password", values.password);
     }
+    if (values.tlsMode !== undefined) {
+      form.setFieldValue("tlsMode", values.tlsMode);
+    }
     if (values.engine === "Redis") {
       form.setFieldValue("useTls", values.useTls ?? false);
       if (values.dbNumber !== undefined) {
