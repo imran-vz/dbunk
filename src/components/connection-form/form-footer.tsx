@@ -1,7 +1,7 @@
 /**
- * Sticky footer: test-status banners + Test Connection button (new
- * mode only) + the primary submit + Cancel + credential-storage hint.
- * Split so the parent's JSX is just structure, not chrome.
+ * Sticky footer: the diagnosis panel (or the outer error) + Test
+ * Connection button + the primary submit + Cancel + credential-storage
+ * hint. Split so the parent's JSX is just structure, not chrome.
  */
 
 import { IconShieldLock } from "@tabler/icons-react";
@@ -9,6 +9,7 @@ import { IconShieldLock } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import type { CredentialStorageMode } from "@/lib/store";
 
+import { DiagnosisPanel } from "./diagnosis-panel";
 import type { Mode } from "./form-utils";
 import type { ConnectionFormApi, TestStatus } from "./use-connection-form";
 
@@ -35,10 +36,8 @@ export function FormFooter({
 }: FormFooterProps) {
   return (
     <div className="flex flex-col gap-2 border-t border-border-subtle bg-surface-window p-4">
-      {testStatus.state === "success" ? (
-        <div className="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-2xs text-accent-hover">
-          Connected in {testStatus.latencyMs} ms.
-        </div>
+      {testStatus.state === "done" ? (
+        <DiagnosisPanel report={testStatus.report} />
       ) : null}
       {testStatus.state === "error" ? (
         <div
@@ -49,20 +48,18 @@ export function FormFooter({
         </div>
       ) : null}
       <div className="flex gap-2">
-        {formMode === "new" ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="flex-1"
-            disabled={testStatus.state === "running"}
-            onClick={() => {
-              void onTest();
-            }}
-          >
-            {testStatus.state === "running" ? "Testing…" : "Test Connection"}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="flex-1"
+          disabled={testStatus.state === "running"}
+          onClick={() => {
+            void onTest();
+          }}
+        >
+          {testStatus.state === "running" ? "Testing…" : "Test Connection"}
+        </Button>
         <Button
           type="submit"
           size="sm"

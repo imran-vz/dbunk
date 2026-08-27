@@ -57,17 +57,36 @@ function renderFields(initial?: Partial<ConnectionFormData>) {
 }
 
 describe("DriverOptionsFields", () => {
-  it("renders the knobs the backend applies, and no control for keepalive", () => {
+  it("renders every knob the backend applies, keepalive included", () => {
     renderFields();
     expect(screen.getByLabelText("Statement timeout (ms)")).toBeTruthy();
     expect(screen.getByLabelText("Idle in transaction (ms)")).toBeTruthy();
     expect(screen.getByLabelText("Connect timeout (ms)")).toBeTruthy();
+    expect(screen.getByLabelText("Keepalive idle (seconds)")).toBeTruthy();
     expect(screen.getByLabelText("Search path")).toBeTruthy();
     expect(screen.getByLabelText("Default role")).toBeTruthy();
-    // sqlx 0.8 has no socket-keepalive setter — the field round-trips
-    // through form state but must not present a control that does
-    // nothing (ADR-0013 §Decision).
-    expect(screen.queryByLabelText(/keepalive/i)).toBeNull();
+  });
+
+  it("discloses that keepalive does not reach the pooled driver", () => {
+    // ADR-0025: applied on the dedicated driver only. The control must
+    // not imply metadata/admin queries are covered.
+    renderFields();
+    expect(screen.getByText(/pooled driver that cannot set it/i)).toBeTruthy();
+  });
+
+  it("round-trips keepalive as a number and clears it to undefined", () => {
+    const values = renderFields({ keepaliveSeconds: 30 });
+    expect(
+      screen.getByLabelText<HTMLInputElement>("Keepalive idle (seconds)").value,
+    ).toBe("30");
+    fireEvent.change(screen.getByLabelText("Keepalive idle (seconds)"), {
+      target: { value: "120" },
+    });
+    expect(values().keepaliveSeconds).toBe(120);
+    fireEvent.change(screen.getByLabelText("Keepalive idle (seconds)"), {
+      target: { value: "" },
+    });
+    expect(values().keepaliveSeconds).toBeUndefined();
   });
 
   it("writes a typed timeout into form state as a number", () => {

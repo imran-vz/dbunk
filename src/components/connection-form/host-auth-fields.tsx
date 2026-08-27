@@ -1,7 +1,8 @@
 /**
- * SSL toggle shared by PostgreSQL + MySQL. Both engines map to the
- * `host-auth` policy and surface a single bool — extracting once keeps
- * the dupe-detector happy and locks the wording in one place.
+ * The single-bool SSL toggle for `host-auth` engines whose policy says
+ * `tlsControls: "toggle"` (MySQL today). PostgreSQL moved to
+ * `<TlsFields>` in ADR-0025; this stays separate so the wording and the
+ * `ssl` wiring live in one place for whichever engines keep the toggle.
  */
 
 import { ToggleSwitchRow } from "./field-helpers";

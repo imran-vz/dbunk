@@ -8,10 +8,6 @@
  * Gated by `ConnectionFormPolicy.showDriverOptions` rather than an
  * `engine === "PostgreSQL"` check, per ADR-0012 — MySQL shares the
  * `host-auth` form kind but not the field.
- *
- * `keepaliveSeconds` is intentionally absent: it round-trips through
- * form state so a save can't wipe it, but sqlx 0.8 exposes no socket
- * keepalive setter, so there is nothing for a control to do yet.
  */
 
 import { Input } from "@/components/ui/input";
@@ -86,31 +82,60 @@ export function DriverOptionsFields({ form }: { form: ConnectionFormApi }) {
         </form.Field>
       </div>
 
-      <form.Field name="connectTimeoutMs">
-        {(field) => (
-          <div className="grid gap-1.5">
-            <Label htmlFor="connection-connect-timeout">
-              Connect timeout (ms)
-            </Label>
-            <Input
-              id="connection-connect-timeout"
-              type="number"
-              min={1}
-              placeholder="no limit"
-              value={field.state.value ?? ""}
-              onChange={(event) =>
-                field.handleChange(parseOptionalNumber(event.target.value))
-              }
-              onBlur={field.handleBlur}
-            />
-            <p className="text-2xs text-text-muted">
-              Gives up on an unresponsive server instead of waiting on the OS
-              TCP timeout.
-            </p>
-            <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
-          </div>
-        )}
-      </form.Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <form.Field name="connectTimeoutMs">
+          {(field) => (
+            <div className="grid gap-1.5">
+              <Label htmlFor="connection-connect-timeout">
+                Connect timeout (ms)
+              </Label>
+              <Input
+                id="connection-connect-timeout"
+                type="number"
+                min={1}
+                placeholder="no limit"
+                value={field.state.value ?? ""}
+                onChange={(event) =>
+                  field.handleChange(parseOptionalNumber(event.target.value))
+                }
+                onBlur={field.handleBlur}
+              />
+              <p className="text-2xs text-text-muted">
+                Gives up on an unresponsive server instead of waiting on the OS
+                TCP timeout.
+              </p>
+              <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+            </div>
+          )}
+        </form.Field>
+
+        <form.Field name="keepaliveSeconds">
+          {(field) => (
+            <div className="grid gap-1.5">
+              <Label htmlFor="connection-keepalive-seconds">
+                Keepalive idle (seconds)
+              </Label>
+              <Input
+                id="connection-keepalive-seconds"
+                type="number"
+                min={1}
+                max={7200}
+                placeholder="OS default"
+                value={field.state.value ?? ""}
+                onChange={(event) =>
+                  field.handleChange(parseOptionalNumber(event.target.value))
+                }
+                onBlur={field.handleBlur}
+              />
+              <p className="text-2xs text-text-muted">
+                Applies to query, browse, and edit sessions. Metadata and admin
+                queries use a pooled driver that cannot set it.
+              </p>
+              <FieldError text={FIELD_ERROR(field.state.meta.errors)} />
+            </div>
+          )}
+        </form.Field>
+      </div>
 
       <form.Field name="defaultSearchPath">
         {(field) => (

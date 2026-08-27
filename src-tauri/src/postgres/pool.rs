@@ -7,10 +7,10 @@ use once_cell::sync::Lazy;
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions},
-    Connection as _, Executor as _, Postgres,
+    Postgres,
 };
 
-use crate::postgres::connect_spec::{ResolvedPostgresConnectSpec, DEFAULT_CONNECT_TIMEOUT};
+use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::StoredConnection;
 
 /// Per-connection pool cache. Keyed by `connection_id`. Each pool allows
@@ -142,44 +142,6 @@ async fn bounded_connect<T>(
     result.map_err(|error| crate::dispatch::friendly_sqlx_error(error, host, port))
 }
 
-/// One-shot PostgreSQL probe for the legacy Test Connection command.
-/// It deliberately bypasses `POOL_CACHE`: unsaved form values can reuse a
-/// stored connection id, and neither those credentials nor an ephemeral
-/// tunnel endpoint may survive the probe.
-///
-/// The whole probe — handshake, session `SET`s and `SELECT 1` — runs under
-/// one deadline, defaulting to [`DEFAULT_CONNECT_TIMEOUT`]. The pool path
-/// is implicitly bounded by sqlx's acquire timeout; a bare connection would
-/// otherwise wait on the OS TCP timeout and pin the ephemeral tunnel.
-pub(crate) async fn ping_once(connection: &StoredConnection) -> Result<u64, String> {
-    let spec = ResolvedPostgresConnectSpec::from_postgres(super::pg_connection(connection)?);
-    let options = build_connect_options(&spec);
-    let started = std::time::Instant::now();
-    let probe = async {
-        let mut connection = PgConnection::connect_with(&options).await?;
-        apply_driver_options_raw(
-            &mut connection,
-            &spec.driver_options,
-            spec.safety_policy.read_only,
-        )
-        .await?;
-        connection.execute("SELECT 1").await?;
-        let latency_ms = started.elapsed().as_millis() as u64;
-        // sqlx has no Drop that sends Terminate; close the session
-        // gracefully so the server does not log an abnormal disconnect.
-        // A close failure after a successful probe is not a probe failure.
-        let _ = connection.close().await;
-        Ok::<_, sqlx::Error>(latency_ms)
-    };
-    bounded_connect(
-        &spec.host,
-        spec.port,
-        Some(spec.connect_timeout.unwrap_or(DEFAULT_CONNECT_TIMEOUT)),
-        probe,
-    )
-    .await
-}
-
 /// Evict a connection's pool from the cache. Called when the connection
 /// is saved (credentials/config may have changed) or deleted.
 pub fn drop_pool(connection_id: &str) {
@@ -243,60 +205,6 @@ mod tests {
             }),
             ssh_tunnel: Default::default(),
         })
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn one_shot_probe_ignores_a_cached_pool_with_the_same_id() {
-        let connection_id = "one-shot-does-not-use-cache";
-        let sentinel = PgPoolOptions::new().connect_lazy_with(PgConnectOptions::new());
-        sentinel.close().await;
-        POOL_CACHE
-            .lock()
-            .unwrap()
-            .insert(connection_id.into(), sentinel);
-
-        let error = ping_once(&probe(connection_id))
-            .await
-            .expect_err("port 1 should refuse the one-shot probe");
-
-        assert!(
-            !error.contains("closed pool"),
-            "the one-shot probe consulted the cached sentinel: {error}"
-        );
-        drop_pool(connection_id);
-    }
-
-    #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
-    async fn one_shot_probe_live_connects_over_verify_full_without_a_configured_timeout() {
-        let StoredConnection::PostgreSQL(mut pg) = probe("one-shot-live") else {
-            unreachable!()
-        };
-        pg.port = 15433;
-        pg.database = "dbunk_demo".into();
-        pg.user = "dbunk".into();
-        pg.password = "dbunk".into();
-        pg.ssl = true;
-        pg.tls_options = Some(crate::PgTlsOptions {
-            mode: crate::PgTlsMode::VerifyFull,
-            root_cert_path: Some(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../infrastructure/test-db/postgres-tls/certs/ca.crt")
-                    .display()
-                    .to_string(),
-            ),
-            ..Default::default()
-        });
-        // No `connect_timeout_ms`: the probe must still run under
-        // `DEFAULT_CONNECT_TIMEOUT` rather than unbounded.
-        pg.driver_options = None;
-
-        let latency_ms = ping_once(&StoredConnection::PostgreSQL(pg))
-            .await
-            .expect("one-shot probe over verify-full");
-
-        assert!(latency_ms < DEFAULT_CONNECT_TIMEOUT.as_millis() as u64);
     }
 
     #[test]

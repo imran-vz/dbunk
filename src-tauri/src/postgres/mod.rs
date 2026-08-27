@@ -54,7 +54,7 @@ pub use table_relationships::fetch_table_schema_relationships;
 // ---------------------------------------------------------------------------
 
 /// Acquire a connection from the cached pool.
-pub(crate) use pool::{connect, ping_once};
+pub(crate) use pool::connect;
 
 /// Narrow a `StoredConnection` to its PostgreSQL variant.
 fn pg_connection(connection: &StoredConnection) -> Result<&crate::PgStoredConnection, String> {

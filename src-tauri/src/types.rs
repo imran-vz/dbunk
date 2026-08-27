@@ -1399,12 +1399,6 @@ pub(crate) struct ConnectionPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TestConnectionPayload {
-    pub connection: StoredConnection,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct RunQueryPayload {
     pub connection_id: String,
     pub query: String,

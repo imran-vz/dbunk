@@ -57,8 +57,9 @@ failure to one string produced by a driver the query editor does not use.
    logs it, and the diagnosis reports `poolHostnameVerification: caOnly`.
 6. **Keepalive applies where it can.** `keepalive_seconds` sets
    `keepalives_idle` on the dedicated driver (query sessions, table
-   browse, result mutation). SQLx 0.8 still exposes no socket setter, so
-   the pool path is unchanged and documented as such.
+   browse, result mutation). SQLx 0.8 still has no socket keepalive
+   option, so the pool path is unchanged and documented as such — on the
+   form, next to the control.
 7. **TLS failures are typed.** The dedicated driver no longer collapses
    a failed handshake into `ConnectionLost`; the three actor unions gain
    `tlsFailed { tlsKind, message }` with

@@ -46,6 +46,7 @@ import {
   DESTRUCTIVE_SOFT as KEYVALUE_REDIS_DESTRUCTIVE_SOFT,
 } from "@/lib/redis/destructive-commands";
 import type { DatabaseEngine, StorageClass } from "@/lib/store";
+import type { PgTlsMode } from "@/lib/store/types";
 
 /**
  * Per-engine form-shape policy. A tagged union on `kind`; each
@@ -63,8 +64,13 @@ export type ConnectionFormPolicy =
       kind: "host-auth";
       /** Default port placeholder when the user hasn't typed one. */
       defaultPort: number;
-      /** Whether to render the SSL toggle (PG/MySQL only). */
-      showSslToggle: boolean;
+      /**
+       * Which TLS control the form renders. `"postgres-modes"` is the
+       * libpq `sslmode` select with certificate paths (ADR-0025);
+       * `"toggle"` is the single on/off switch MySQL keeps until it has
+       * a verification story of its own.
+       */
+      tlsControls: "postgres-modes" | "toggle";
       /**
        * Whether the Advanced section renders the driver/session knobs
        * (statement timeout, search_path, default role — ADR-0013).
@@ -212,7 +218,7 @@ const POLICIES = {
     connectionForm: {
       kind: "host-auth",
       defaultPort: 5432,
-      showSslToggle: true,
+      tlsControls: "postgres-modes",
       showDriverOptions: true,
     },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
@@ -228,7 +234,7 @@ const POLICIES = {
     connectionForm: {
       kind: "host-auth",
       defaultPort: 3306,
-      showSslToggle: true,
+      tlsControls: "toggle",
       showDriverOptions: false,
     },
     labels: { ...RELATIONAL_STRUCTURE_DEFAULTS },
@@ -400,6 +406,13 @@ export type ConnectionFormValues = {
   keepaliveSeconds?: number;
   defaultSearchPath?: string;
   defaultRole?: string;
+  // PostgreSQL TLS (ADR-0025). Only the `postgres-modes` TLS control
+  // renders these; `ssl` is derived from `tlsMode` when it is set.
+  tlsMode?: PgTlsMode;
+  tlsRootCertPath?: string;
+  tlsClientCertPath?: string;
+  tlsClientKeyPath?: string;
+  tlsServerName?: string;
 };
 
 /**
@@ -410,6 +423,9 @@ const MAX_TIMEOUT_MS = 86_400_000;
 
 /** Upper bound for connect timeout — 10 minutes. */
 const MAX_CONNECT_TIMEOUT_MS = 600_000;
+
+/** Upper bound for keepalive idle — 2 hours; longer defeats the purpose. */
+const MAX_KEEPALIVE_SECONDS = 7_200;
 
 export type ConnectionFormIssue = {
   path: keyof ConnectionFormValues;
@@ -455,6 +471,9 @@ export function validateConnection(
       validatePasswordRequired(value, mode, issues);
       if (policy.showDriverOptions) {
         validateDriverOptions(value, issues);
+      }
+      if (policy.tlsControls === "postgres-modes") {
+        validateTlsFields(value, issues);
       }
       break;
     }
@@ -572,7 +591,47 @@ function validateDriverOptions(
       });
     }
   }
+  validateKeepalive(value.keepaliveSeconds, issues);
   validateSearchPath(value.defaultSearchPath, issues);
+}
+
+function validateKeepalive(
+  raw: number | undefined,
+  issues: ConnectionFormIssue[],
+): void {
+  if (raw === undefined) return;
+  if (!Number.isInteger(raw) || raw < 1 || raw > MAX_KEEPALIVE_SECONDS) {
+    issues.push({
+      path: "keepaliveSeconds",
+      message: `Keepalive idle must be between 1 and ${MAX_KEEPALIVE_SECONDS} seconds`,
+    });
+  }
+}
+
+/**
+ * Client-certificate authentication needs both halves. The backend
+ * would refuse a lone path as `invalidLocalMaterial`, but only at
+ * connect time — the form catches it first.
+ */
+function validateTlsFields(
+  value: ConnectionFormValues,
+  issues: ConnectionFormIssue[],
+): void {
+  if (value.tlsMode === "disable") return;
+  const cert = value.tlsClientCertPath?.trim();
+  const key = value.tlsClientKeyPath?.trim();
+  if (cert && !key) {
+    issues.push({
+      path: "tlsClientKeyPath",
+      message: "Client key path is required with a client certificate",
+    });
+  }
+  if (key && !cert) {
+    issues.push({
+      path: "tlsClientCertPath",
+      message: "Client certificate path is required with a client key",
+    });
+  }
 }
 
 function validateMsRange(

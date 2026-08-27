@@ -50,12 +50,12 @@ The connection-pool builder (`postgres::connect`) reads these and:
   the narrower mapping is that connections the pool opens later, on an
   endpoint already proven reachable, are unbounded.
 - Reserves `keepalive_seconds` on the struct but does not apply it —
-  sqlx 0.8's `PgConnectOptions` exposes no socket keepalive setter. It
+  sqlx 0.8's `PgConnectOptions` has no socket keepalive option. It
   round-trips through the form so a save can't wipe it, but ships **no
   control**: a knob that silently does nothing is worse than an absent
   one. *(Amended by ADR-0025: the dedicated tokio-postgres driver now
-  applies it as `keepalives_idle`; the SQLx pool path remains unable
-  to.)*
+  applies it as `keepalives_idle`, and Plan 012 added the control with
+  a disclosure that the SQLx pool path remains unable to.)*
 - Routes through the SSH tunnel when configured (see §SSH below).
 
 **SSH tunnel is its own follow-up ADR.** It introduces a credential
