@@ -1,7 +1,8 @@
 //! Staged connection diagnosis (ADR-0025, Plan 011).
 //!
-//! `test_connection` returns one string from a driver the query editor
-//! does not use. This runs the connect **stepwise** — tunnel, DNS, TCP,
+//! The legacy `test_connection` command (removed by Plan 012) returned one
+//! string from a driver the query editor does not use. This runs the
+//! connect **stepwise** — tunnel, DNS, TCP,
 //! TLS, authentication, database — so every failure lands on the stage
 //! that produced it, and reports the server's own view of encryption
 //! (`pg_stat_ssl`) rather than what the selected mode implies.
@@ -1095,6 +1096,26 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"kind":"failed","stage":"authentication"}"#);
+    }
+
+    /// The frontend store sends `{ payload: { connection, hydrateCredentialFrom } }`
+    /// (`src/lib/store/connections.ts::diagnoseConnection`), omitting the key
+    /// when no hydration is requested. Both shapes must decode.
+    #[test]
+    fn payload_decodes_the_frontend_wire_shape() {
+        let connection =
+            serde_json::to_value(StoredConnection::PostgreSQL(pg(15433, None))).unwrap();
+        let hydrated: DiagnoseConnectionPayload = serde_json::from_value(serde_json::json!({
+            "connection": connection,
+            "hydrateCredentialFrom": "conn-1",
+        }))
+        .unwrap();
+        assert_eq!(hydrated.hydrate_credential_from.as_deref(), Some("conn-1"));
+        assert_eq!(hydrated.connection.password(), "dbunk");
+
+        let bare: DiagnoseConnectionPayload =
+            serde_json::from_value(serde_json::json!({ "connection": connection })).unwrap();
+        assert_eq!(bare.hydrate_credential_from, None);
     }
 
     // Live tests -----------------------------------------------------------

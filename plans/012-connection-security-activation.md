@@ -31,6 +31,46 @@
 - **Planned at**: commit `4facea1`, 2026-08-24
 - **Gap**: `PAR-006` in `plans/parity-gap-register.md`
 
+## Execution correction record
+
+- **Step 3 (2026-08-28):** deleting `test_connection` orphaned
+  `dispatch::ping_connection_once` and `postgres::ping_once` (added by
+  Plan 011's final review after this plan was authored; their only
+  non-test caller was the command). `just lint` runs clippy with
+  `-D warnings`, so both went with it, together with the two
+  `one_shot_probe_*` tests in `postgres/pool.rs` and the now-unused
+  imports. The diagnosis probe is already one-shot and pool-independent.
+  The dev-build synthetic report marks `tls` as *skipped*, not passed, so
+  it never claims encryption it did not observe.
+- **Step 4 (2026-08-28):** the backend's `tlsFailed` message already
+  begins with its own headline (`connect_error::tls_failure_message`
+  renders `"<headline>: <detail>"`), so the frontend headline + message
+  would read twice. `formatTlsFailure` in `src/lib/connection-diagnosis.ts`
+  strips that known prefix and renders `"<TLS headline> — <detail>"`;
+  every formatter arm and the diagnosis panel go through it.
+- **Step 4 (2026-08-28):** `query-session-channel.ts:187` needs no
+  change: the `sessionLost` event carries a string reason
+  (`connectionLost` / `ackTimeout` / `ownerTimeout` / `invalidSequence`)
+  and no TLS variant — a TLS failure rejects the *open* call with a typed
+  error that `decodeQuerySessionError` preserves (tested). The line
+  references in "Current frontend state" predate Plan 011's minimal arms;
+  `query-editor-panel.tsx:1707` and `use-table-session.ts:67` are copy
+  switches, not state branches — session/browse state does not branch on
+  `connectionLost`, so `tlsFailed` already shares its lifecycle.
+
+- **Step 6 (2026-08-28):** executed as an automated pass (details in
+  `plans/README.md`'s delivery note): live Rust suites on both fixtures
+  for the backend matrix, a Chrome DevTools-protocol walkthrough of the
+  real form against the dev-mode store for the UI checklist, and a new
+  Rust test (`payload_decodes_the_frontend_wire_shape`) for the IPC
+  payload. The native-window IPC round-trip remains for the reviewer.
+  Two notes from the walkthrough, neither in this plan's scope: the
+  Settings view mounts its inline New Connection form alongside the
+  edit dialog, so field ids such as `connection-tls-mode` are duplicated
+  on that page; and `pnpm db:postgres` runs `compose up` attached, so a
+  script that chains it with `pnpm db:postgres-tls` never reaches the
+  second command.
+
 ## Why this matters
 
 Plan 011 ships contracts nobody can reach: TLS modes no form can select,

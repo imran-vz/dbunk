@@ -195,3 +195,19 @@ describe("result mutation protocol", () => {
     expect(usesProjectedRowGuards("primaryKey")).toBe(false);
   });
 });
+
+describe("decodeResultMutationError — tlsFailed (ADR-0025)", () => {
+  it("keeps the TLS kind and message", () => {
+    expect(
+      decodeResultMutationError({
+        kind: "tlsFailed",
+        tlsKind: "serverRefusedTls",
+        message: "The server does not support TLS on this port",
+      }),
+    ).toEqual({
+      kind: "tlsFailed",
+      tlsKind: "serverRefusedTls",
+      message: "The server does not support TLS on this port",
+    });
+  });
+});

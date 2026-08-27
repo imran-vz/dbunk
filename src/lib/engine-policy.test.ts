@@ -137,14 +137,14 @@ describe("enginePolicy", () => {
     expect(enginePolicy("Redis").connectionForm.kind).toBe("redis");
   });
 
-  it("surfaces the SSL toggle only on host-auth engines (PG/MySQL)", () => {
+  it("renders PostgreSQL TLS modes and the MySQL toggle on the shared host-auth kind", () => {
     const pg = enginePolicy("PostgreSQL").connectionForm;
     const my = enginePolicy("MySQL").connectionForm;
     if (pg.kind !== "host-auth" || my.kind !== "host-auth") {
       throw new Error("expected host-auth kind for PG/MySQL");
     }
-    expect(pg.showSslToggle).toBe(true);
-    expect(my.showSslToggle).toBe(true);
+    expect(pg.tlsControls).toBe("postgres-modes");
+    expect(my.tlsControls).toBe("toggle");
   });
 
   it("surfaces driver options on PG only, not on the shared host-auth kind", () => {
@@ -520,5 +520,83 @@ describe("validateConnection — driver options (ADR-0013)", () => {
       "new",
     );
     expect(pathsOf(issues)).not.toContain("statementTimeoutMs");
+  });
+});
+
+describe("validateConnection — TLS fields (ADR-0025)", () => {
+  const pg = connectionFormPolicy("PostgreSQL");
+
+  it("accepts a client certificate and key together, or neither", () => {
+    expect(
+      validateConnection(
+        pg,
+        baseValues({
+          tlsMode: "verify-full",
+          tlsClientCertPath: "/c.crt",
+          tlsClientKeyPath: "/c.key",
+        }),
+        "new",
+      ),
+    ).toEqual([]);
+    expect(
+      validateConnection(pg, baseValues({ tlsMode: "verify-full" }), "new"),
+    ).toEqual([]);
+  });
+
+  it("rejects a client certificate without its key, and vice versa", () => {
+    const certOnly = validateConnection(
+      pg,
+      baseValues({ tlsMode: "require", tlsClientCertPath: "/c.crt" }),
+      "new",
+    );
+    expect(certOnly).toEqual([
+      {
+        path: "tlsClientKeyPath",
+        message: "Client key path is required with a client certificate",
+      },
+    ]);
+    const keyOnly = validateConnection(
+      pg,
+      baseValues({ tlsMode: "require", tlsClientKeyPath: "  /c.key " }),
+      "new",
+    );
+    expect(pathsOf(keyOnly)).toEqual(["tlsClientCertPath"]);
+  });
+
+  it("ignores stale client-certificate paths once TLS is disabled", () => {
+    expect(
+      validateConnection(
+        pg,
+        baseValues({ tlsMode: "disable", tlsClientCertPath: "/c.crt" }),
+        "new",
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores the TLS fields on engines whose policy renders the toggle", () => {
+    expect(
+      validateConnection(
+        connectionFormPolicy("MySQL"),
+        baseValues({
+          engine: "MySQL",
+          port: 3306,
+          tlsClientCertPath: "/c.crt",
+        }),
+        "new",
+      ),
+    ).toEqual([]);
+  });
+
+  it("bounds keepalive idle to 1–7200 whole seconds", () => {
+    expect(
+      validateConnection(pg, baseValues({ keepaliveSeconds: 60 }), "new"),
+    ).toEqual([]);
+    for (const keepaliveSeconds of [0, -1, 7201, 1.5]) {
+      expect(
+        pathsOf(
+          validateConnection(pg, baseValues({ keepaliveSeconds }), "new"),
+        ),
+      ).toEqual(["keepaliveSeconds"]);
+    }
   });
 });

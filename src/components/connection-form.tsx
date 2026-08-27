@@ -13,7 +13,8 @@
  *
  * Field rendering is policy-driven (`connectionFormPolicy(engine)`):
  * the form switches on `policy.kind` to decide which engine-specific
- * fields appear (`ssl` for host-auth, `useHttps`/`urlPath` for
+ * fields appear (the PostgreSQL TLS block or the MySQL `ssl` toggle for
+ * host-auth per `tlsControls`, `useHttps`/`urlPath` for
  * clickhouse-http, `dbNumber`/`useTls`/`verifyTlsCert` for redis,
  * nothing for file). Validation is delegated to `validateConnection`
  * — one shared validator, mode-aware password rule.
@@ -44,7 +45,6 @@ import { DriverOptionsFields } from "@/components/connection-form/driver-options
 import { FormFooter } from "@/components/connection-form/form-footer";
 import { MySqlFields } from "@/components/connection-form/mysql-fields";
 import { OrganizationFields } from "@/components/connection-form/organization-fields";
-import { PgFields } from "@/components/connection-form/pg-fields";
 import {
   RedisAdvancedFields,
   RedisDbNumberField,
@@ -54,6 +54,7 @@ import {
   SafetyFields,
 } from "@/components/connection-form/safety-fields";
 import { SqliteFields } from "@/components/connection-form/sqlite-fields";
+import { TlsFields } from "@/components/connection-form/tls-fields";
 import { TunnelFields } from "@/components/connection-form/tunnel-fields";
 import { UriImportField } from "@/components/connection-form/uri-import-field";
 import {
@@ -205,11 +206,9 @@ function HostAuthSection({
   policy,
 }: HostAuthSectionProps) {
   const isClickHouse = engineKind === "clickhouse-http";
-  const showSslToggle =
-    policy.kind === "host-auth" ? policy.showSslToggle : false;
+  const tlsControls = policy.kind === "host-auth" ? policy.tlsControls : null;
   const showDriverOptions =
     policy.kind === "host-auth" ? policy.showDriverOptions : false;
-  const sslEngine = form.state.values.engine;
 
   return (
     <>
@@ -221,9 +220,8 @@ function HostAuthSection({
         showPassword={showPassword}
         onTogglePassword={onTogglePassword}
       />
-      {showSslToggle ? (
-        <PgMySqlSslToggle form={form} engine={sslEngine} />
-      ) : null}
+      {tlsControls === "postgres-modes" ? <TlsFields form={form} /> : null}
+      {tlsControls === "toggle" ? <MySqlFields form={form} /> : null}
 
       <AdvancedToggle open={advancedOpen} onToggle={onToggleAdvanced} />
       {advancedOpen ? (
@@ -237,22 +235,6 @@ function HostAuthSection({
         </>
       ) : null}
     </>
-  );
-}
-
-function PgMySqlSslToggle({
-  form,
-  engine,
-}: {
-  form: ConnectionFormApi;
-  engine: string;
-}) {
-  // PG + MySQL share the same SSL surface; named components per engine
-  // keep parity with `<ClickHouseFields>` / `<RedisFields>` / `<SqliteFields>`.
-  return engine === "MySQL" ? (
-    <MySqlFields form={form} />
-  ) : (
-    <PgFields form={form} />
   );
 }
 

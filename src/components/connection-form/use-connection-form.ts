@@ -2,7 +2,7 @@
  * Owns every piece of mutable state for `<ConnectionForm>` so the
  * component file is pure JSX. The hook returns the form instance, the
  * engine handler (mode-aware: edit locks engine), cancel handler,
- * test-status state for the new-mode "Test Connection" button, and a
+ * test-status state for the "Test Connection" button (both modes), and a
  * couple of password-visibility/advanced-section toggles. Submission
  * builds the `StoredConnection` via the pure helpers in `form-utils`.
  */
@@ -13,6 +13,7 @@ import * as z from "zod";
 
 import { connectionFormPolicy, validateConnection } from "@/lib/engine-policy";
 import { type Connection, type DatabaseEngine, useAppStore } from "@/lib/store";
+import type { ConnectionDiagnosis } from "@/lib/store/types";
 
 import {
   buildConnectionFromForm,
@@ -26,7 +27,7 @@ import {
 export type TestStatus =
   | { state: "idle" }
   | { state: "running" }
-  | { state: "success"; latencyMs: number }
+  | { state: "done"; report: ConnectionDiagnosis }
   | { state: "error"; error: string };
 
 interface UseConnectionFormArgs {
@@ -56,7 +57,7 @@ export function useConnectionForm({
 
   const addConnection = useAppStore((state) => state.addConnection);
   const updateConnection = useAppStore((state) => state.updateConnection);
-  const testConnection = useAppStore((state) => state.testConnection);
+  const diagnoseConnection = useAppStore((state) => state.diagnoseConnection);
   const credentialMode = useAppStore(
     (state) => state.appSettings?.credentialStorageMode,
   );
@@ -136,11 +137,19 @@ export function useConnectionForm({
   const runTestConnection = async () => {
     const value = form.state.values;
     setTestStatus({ state: "running" });
-    const result = await testConnection(
+    // Edit mode holds a blanked password; the backend substitutes the
+    // saved credential when told which record to read (ADR-0025). A
+    // password typed into the field always wins.
+    const hydrateFrom =
+      formMode === "edit" && connection && !value.password
+        ? connection.id
+        : undefined;
+    const result = await diagnoseConnection(
       buildStoredConnectionFromForm(value, "test-connection"),
+      hydrateFrom,
     );
     if (result.ok) {
-      setTestStatus({ state: "success", latencyMs: result.latencyMs });
+      setTestStatus({ state: "done", report: result.report });
     } else {
       setTestStatus({ state: "error", error: result.error });
     }
@@ -164,15 +173,20 @@ export function useConnectionForm({
 
 type ConnectionForm = ReturnType<typeof useConnectionForm>["form"];
 
-function resetEngineSpecificDefaults(
+/**
+ * Exported for its test only — the hook itself needs the app store.
+ */
+export function resetEngineSpecificDefaults(
   form: ConnectionForm,
   engine: DatabaseEngine,
 ): void {
-  // Driver options are PG-only (ADR-0013). Switching away clears them
-  // so knobs typed against Postgres don't linger invisibly in form
-  // state and reappear if the user switches back mid-edit.
+  // Driver options (ADR-0013) and TLS fields (ADR-0025) are PG-only.
+  // Switching away clears them so values typed against Postgres don't
+  // linger invisibly in form state and reappear if the user switches
+  // back mid-edit.
   if (engine !== "PostgreSQL") {
     resetDriverOptions(form);
+    resetTlsFields(form);
   }
   switch (engine) {
     case "PostgreSQL":
@@ -202,6 +216,14 @@ function resetDriverOptions(form: ConnectionForm): void {
   form.setFieldValue("keepaliveSeconds", undefined);
   form.setFieldValue("defaultSearchPath", "");
   form.setFieldValue("defaultRole", "");
+}
+
+function resetTlsFields(form: ConnectionForm): void {
+  form.setFieldValue("tlsMode", "prefer");
+  form.setFieldValue("tlsRootCertPath", "");
+  form.setFieldValue("tlsClientCertPath", "");
+  form.setFieldValue("tlsClientKeyPath", "");
+  form.setFieldValue("tlsServerName", "");
 }
 
 export type ConnectionFormApi = ConnectionForm;

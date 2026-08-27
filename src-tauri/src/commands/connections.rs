@@ -7,10 +7,7 @@ use crate::managed;
 use crate::socket_lifecycle;
 use crate::storage;
 use crate::tunnel;
-use crate::{
-    AppState, ConnectResult, ConnectionPayload, HealthCheckResult, StoredConnection,
-    TestConnectionPayload,
-};
+use crate::{AppState, ConnectResult, ConnectionPayload, HealthCheckResult, StoredConnection};
 
 use super::{current_credential_mode, find_connection, public_connections, with_active_connection};
 
@@ -220,23 +217,6 @@ pub async fn connect_connection(
         dispatch::ping_connection(&connection).await
     })
     .await
-}
-
-/// Validate credentials without saving them. Used by the New Connection
-/// side panel's `Test Connection` button — connects, runs `SELECT 1`,
-/// disconnects, returns latency or surfaces the underlying driver error.
-#[tauri::command]
-pub async fn test_connection(
-    state: State<'_, AppState>,
-    payload: TestConnectionPayload,
-) -> Result<ConnectResult, String> {
-    let state = state.inner();
-    let mode = current_credential_mode(state).await?;
-    tunnel::validate_connection_tunnel(&payload.connection)?;
-    let route = tunnel::EphemeralRoute::new("test");
-    let connection =
-        tunnel::resolve_connection(&state.pool, mode, route.key(), &payload.connection).await?;
-    dispatch::ping_connection_once(&connection).await
 }
 
 /// Periodic poll: returns "healthy" + latency or "error" + message. Designed

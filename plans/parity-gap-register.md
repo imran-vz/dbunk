@@ -374,8 +374,28 @@ backend handles.
 
 ### PAR-006: Connection security and organization
 
-**Current state:** Partial. SSH and credential-storage depth are strong;
-the organization half is complete; the security half is planned.
+**Current state:** Delivered for PostgreSQL. SSH and credential-storage
+depth are strong; the organization half shipped with Plans 009/010 and
+the security half with Plans 011/012. Remaining items are the deferred
+follow-ons listed under "Missing pieces".
+
+**Progress (2026-08-28):** Plan 012 activated the Plan 011 backend on
+the connection form (selected mock A): a "Transport security" block
+inline under the credentials with the libpq TLS mode select
+(`disable | prefer | require | verify-ca | verify-full`), CA / client
+certificate / client key path fields shown only for the modes that read
+them, a certificate host-name override for `verify-full`, and a
+non-blocking production advisory; a keepalive control next to connect
+timeout that discloses the pooled-driver limitation; Test Connection as a
+per-stage checklist (tunnel → DNS → TCP → TLS → authentication →
+database, passed detail / failed kind + message / skipped reason, a TLS
+summary derived only from the report, `notEncrypted` in danger tone)
+available in edit mode with the saved credential hydrated backend-side;
+`sslmode` emitted by Copy URI when not `prefer` and applied by
+Import-from-URI (certificate-path parameters stay disclosed, never
+applied); typed `tlsFailed` errors rendered with their headline in the
+query editor, table browse, and mutation review; and the legacy
+`test_connection` command removed. MySQL keeps its SSL toggle.
 
 **Progress (2026-08-24):** The organization half shipped with Plans 009
 and 010 (`PAR-005`): folders, favorites, colors, recency ordering,
@@ -407,31 +427,33 @@ rendering, and the `PAR-017` truth pass. Deferred with rationale in Plan
 encrypted client keys, certificate contents / secure bundles, IAM and
 external-secret adapters, keepalive on the sqlx pool.
 
-**Evidence:**
+**Evidence (audit-time paths, superseded — kept for the record):**
 
-- `src/lib/store/types.ts:239-316` models relational connections and advanced
-  fields.
-- `src-tauri/src/postgres/pool.rs:29-51` supports only `prefer` / `disable`;
-  `src-tauri/src/postgres/dedicated.rs:173-229` installs an accept-all
-  certificate verifier; `src-tauri/src/dispatch/relational.rs:181` and
-  `src-tauri/src/postgres/ddl.rs:35-38` make the same two-way decision
-  independently.
-- Stored TCP keepalive is not applied to PostgreSQL connections
-  (`src-tauri/src/postgres/connect_spec.rs:77-107` asserts the driver
-  default is left alone).
-- `src-tauri/src/tunnel/endpoint.rs:58` overwrites the original hostname
-  after tunnelling, which would defeat hostname verification.
-- `src-tauri/src/commands/connections.rs:221-238` returns one string from
-  Test Connection and probes sqlx-Any rather than the query driver.
+- `src/lib/store/types.ts:239-316` modelled relational connections and
+  advanced fields; `PgTlsOptions` / `TlsFailureKind` / the diagnosis
+  types now live alongside them.
+- `src-tauri/src/postgres/pool.rs:29-51` supported only `prefer` /
+  `disable` and `src-tauri/src/postgres/dedicated.rs:173-229` installed
+  an accept-all verifier — replaced by `src-tauri/src/postgres/tls.rs`
+  (one `ResolvedTls` resolver, four renderers, real chain and hostname
+  verification).
+- Stored TCP keepalive was not applied — now `keepalives_idle` on the
+  dedicated driver.
+- `src-tauri/src/tunnel/endpoint.rs:58` overwrote the original hostname
+  after tunnelling — the tunnel now carries it (`host` + `hostaddr`).
+- `src-tauri/src/commands/connections.rs` returned one string from Test
+  Connection — replaced by `commands/diagnosis.rs::diagnose_connection`
+  and rendered by `src/components/connection-form/diagnosis-panel.tsx`.
 
-**Missing pieces:**
+**Missing pieces (deferred with rationale in Plan 011's Reconciliation
+section):**
 
-- TLS require, verify-ca, and verify-full modes.
-- CA, client certificate, and client key selection and validation.
-- Trust-store and hostname-verification diagnostics.
-- Applied TCP keepalive settings.
-- Connection test details that separate DNS, tunnel, TLS, authentication, and
-  database failures.
+- MySQL TLS modes (MySQL keeps the single SSL toggle).
+- Hostname verification on the SQLx metadata pool over an SSH tunnel
+  (CA-only there; disclosed in the diagnosis panel).
+- Keepalive on the SQLx metadata pool.
+- Passphrase-protected client keys; certificate contents in the
+  credential store.
 - Connection tags (groups, colors, favorites, and environment type are
   delivered).
 - Secure connection bundles (Duplicate, URL import/export, and copy DSN

@@ -8,12 +8,16 @@
  * affordance).
  *
  * Parse: `Import from URI` accepts `postgres://`, `postgresql://`,
- * `mysql://`, `redis://`, and `rediss://`. Query parameters are ignored
- * in v1 and reported back via `ignoredParams` so the form can say so.
+ * `mysql://`, `redis://`, and `rediss://`. The only query parameter
+ * applied is a valid PostgreSQL `sslmode` (ADR-0025); every other one —
+ * including `sslrootcert` / `sslcert` / `sslkey`, because paths from a
+ * pasted URI are not trusted blindly — is reported via `ignoredParams`
+ * so the form can say so.
  */
 
 import { connectionFormPolicy } from "@/lib/engine-policy";
 import type { Connection } from "@/lib/store";
+import { PG_TLS_MODES, type PgTlsMode } from "@/lib/store/types";
 
 export type BuildUriResult =
   | { ok: true; uri: string }
@@ -31,6 +35,8 @@ export type ParsedConnectionUri = {
   dbNumber?: number;
   /** Redis only: true for `rediss://`. */
   useTls?: boolean;
+  /** PostgreSQL only: a valid `sslmode` query parameter. */
+  tlsMode?: PgTlsMode;
   /** Query parameters we understood syntactically but do not apply. */
   ignoredParams: string[];
   /** Parts of the URI that were dropped for another reason (e.g. a
@@ -87,7 +93,15 @@ export type UriConnectionInput = {
   database: string;
   useTls?: boolean;
   dbNumber?: number;
+  /** PostgreSQL legacy TLS flag; `tlsOptions.mode` wins when present. */
+  ssl?: boolean;
+  tlsOptions?: { mode: PgTlsMode };
 };
+
+/** The mode a PostgreSQL record resolves to — the backend's own rule. */
+const resolvedPgTlsMode = (connection: UriConnectionInput): PgTlsMode =>
+  connection.tlsOptions?.mode ??
+  (connection.ssl === false ? "disable" : "prefer");
 
 export function buildConnectionUri(
   connection: UriConnectionInput,
@@ -132,7 +146,15 @@ export function buildConnectionUri(
       : connection.database
         ? `/${encodeSegment(connection.database)}`
         : "";
-  return { ok: true, uri: `${scheme}://${userInfo}${host}:${port}${path}` };
+  // `prefer` is libpq's default, so only a departure from it is worth
+  // carrying; `sslmode` is the one parameter the parser applies.
+  const tlsMode =
+    connection.engine === "PostgreSQL" ? resolvedPgTlsMode(connection) : null;
+  const query = tlsMode && tlsMode !== "prefer" ? `?sslmode=${tlsMode}` : "";
+  return {
+    ok: true,
+    uri: `${scheme}://${userInfo}${host}:${port}${path}${query}`,
+  };
 }
 
 export function parseConnectionUri(input: string): ParseUriResult {
@@ -178,6 +200,11 @@ export function parseConnectionUri(input: string): ParseUriResult {
   // and backend expect the bare literal.
   const hostname = url.hostname.replace(/^\[(.*)\]$/, "$1");
 
+  const sslMode = url.searchParams.get("sslmode");
+  const tlsMode =
+    mapping.engine === "PostgreSQL"
+      ? PG_TLS_MODES.find((mode) => mode === sslMode)
+      : undefined;
   const values: ParsedConnectionUri = {
     engine: mapping.engine,
     host: hostname,
@@ -185,7 +212,11 @@ export function parseConnectionUri(input: string): ParseUriResult {
     user: decode(url.username),
     ...(url.password ? { password: decode(url.password) } : null),
     database: mapping.engine === "Redis" ? "" : firstSegment,
-    ignoredParams: [...new Set(url.searchParams.keys())],
+    ...(tlsMode ? { tlsMode } : null),
+    // An invalid `sslmode` stays here: reported, never guessed at.
+    ignoredParams: [...new Set(url.searchParams.keys())].filter(
+      (key) => !(tlsMode && key === "sslmode"),
+    ),
     warnings: [],
   };
   if (mapping.engine === "Redis") {

@@ -28,9 +28,10 @@ before code lands.
 - **Connection Settings driver/session fields** —
   `workspace-overview/settings-tab.tsx` is still a read-mostly mirror
   even though `PgDriverOptions` (ADR-0013) ships statement-timeout /
-  search-path / role plumbing on the backend. Expand the Settings UI
-  to expose those knobs plus SSH tunnel, TCP keepalive, connect
-  timeout.
+  search-path / role plumbing on the backend and the connection form
+  already exposes those knobs, SSH tunnel, connect timeout, keepalive,
+  and the TLS mode / certificate paths (ADR-0025). Expand the Settings
+  UI to mirror them.
 - **Schema map deferred items** (issue #17) — notes / annotations on
   canvas, virtual / user-drawn relationships, MySQL / SQLite FK
   introspection, 1:1 cardinality detection, multi-schema canvases.

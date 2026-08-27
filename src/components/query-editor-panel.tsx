@@ -3,11 +3,11 @@ import { IconX } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import "@/lib/monaco-local";
 import {
   MutationReviewAside,
   MutationReviewPanel,
 } from "@/components/mutation-review";
+import "@/lib/monaco-local";
 import { ResultsStatusStrip } from "@/components/query-editor/results-status-strip";
 import {
   type ExplainPlanData,
@@ -39,6 +39,7 @@ import { Panel, usePanelState } from "@/components/ui/panel";
 import { SplitPane } from "@/components/ui/split-pane";
 import { applyBindVariables, extractBindVariables } from "@/lib/bind-variables";
 import { requestConfirm } from "@/lib/confirm";
+import { formatTlsFailure } from "@/lib/connection-diagnosis";
 import { MONO_FONT_FAMILY } from "@/lib/fonts";
 import { flattenResultSetRows } from "@/lib/query-session-budget";
 import {
@@ -1707,7 +1708,7 @@ function mutationClientErrorCopy(error: ResultMutationError): string {
     case "connectionLost":
       return "The database connection was lost. Reconnect and re-run the query.";
     case "tlsFailed":
-      return `${error.message} Check the connection's TLS settings and re-run the query.`;
+      return `${formatTlsFailure(error.tlsKind, error.message)}. Check the connection's TLS settings and re-run the query.`;
     case "policyBlocked":
       return `${error.reason} Edit the connection to unlock writes.`;
     case "policyNeedsConfirmation":

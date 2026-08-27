@@ -11,6 +11,8 @@ import {
   FIELD_ERROR,
   formatSearchPath,
   parseSearchPath,
+  tlsModeFields,
+  tlsOptionsFromForm,
 } from "./form-utils";
 
 const baseForm: ConnectionFormData = {
@@ -49,12 +51,25 @@ describe("buildStoredConnectionFromForm", () => {
     });
   });
 
-  it("projects PostgreSQL with ssl explicitly false", () => {
+  it("projects PostgreSQL ssl from the TLS mode when one is set", () => {
     const out = buildStoredConnectionFromForm(
-      { ...baseForm, engine: "PostgreSQL", ssl: false },
+      { ...baseForm, engine: "PostgreSQL", ssl: true, tlsMode: "disable" },
       "id-pg2",
     );
+    expect(out).toMatchObject({
+      engine: "PostgreSQL",
+      ssl: false,
+      tlsOptions: { mode: "disable" },
+    });
+  });
+
+  it("falls back to the legacy ssl flag when no TLS mode is in form state", () => {
+    const out = buildStoredConnectionFromForm(
+      { ...baseForm, engine: "PostgreSQL", ssl: false, tlsMode: undefined },
+      "id-pg3",
+    );
     expect(out).toMatchObject({ engine: "PostgreSQL", ssl: false });
+    expect(out).not.toHaveProperty("tlsOptions");
   });
 
   it("projects MySQL values with ssl default true", () => {
@@ -578,5 +593,138 @@ describe("FIELD_ERROR", () => {
 
   it("returns null when the object error has no message", () => {
     expect(FIELD_ERROR([{}])).toBeNull();
+  });
+});
+
+describe("TLS options (ADR-0025)", () => {
+  const pgConnection = {
+    id: "pg-tls",
+    name: "pg",
+    engine: "PostgreSQL" as const,
+    host: "pg.internal",
+    database: "postgres",
+    port: 5432,
+    user: "postgres",
+    password: "",
+    role: "read/write",
+    status: "Disconnected" as const,
+    latency: "--",
+  };
+
+  it("emits no blob for the default — prefer with no paths", () => {
+    expect(
+      tlsOptionsFromForm({ ...baseForm, tlsMode: "prefer" }),
+    ).toBeUndefined();
+    const out = buildStoredConnectionFromForm(baseForm, "pg-default");
+    expect(out).toMatchObject({ ssl: true });
+    expect(out).not.toHaveProperty("tlsOptions");
+  });
+
+  it("emits disable alone so a legacy ssl:false record round-trips", () => {
+    const values = defaultValuesFromConnection({ ...pgConnection, ssl: false });
+    expect(values.tlsMode).toBe("disable");
+    expect(buildStoredConnectionFromForm(values, "pg-tls")).toMatchObject({
+      ssl: false,
+      tlsOptions: { mode: "disable" },
+    });
+  });
+
+  it("hydrates a legacy ssl:true record as prefer", () => {
+    const values = defaultValuesFromConnection({ ...pgConnection, ssl: true });
+    expect(values).toMatchObject({
+      tlsMode: "prefer",
+      tlsRootCertPath: "",
+      tlsClientCertPath: "",
+      tlsClientKeyPath: "",
+      tlsServerName: "",
+    });
+  });
+
+  it("builds the full verify-full blob with ssl derived true", () => {
+    const out = buildStoredConnectionFromForm(
+      {
+        ...baseForm,
+        ssl: false,
+        tlsMode: "verify-full",
+        tlsRootCertPath: " /ca.pem ",
+        tlsClientCertPath: "/c.crt",
+        tlsClientKeyPath: "/c.key",
+        tlsServerName: "db.example.com",
+      },
+      "pg-full",
+    );
+    expect(out).toMatchObject({
+      ssl: true,
+      tlsOptions: {
+        mode: "verify-full",
+        rootCertPath: "/ca.pem",
+        clientCertPath: "/c.crt",
+        clientKeyPath: "/c.key",
+        serverName: "db.example.com",
+      },
+    });
+  });
+
+  it("persists only the paths the selected mode reads", () => {
+    // The form hides the fields a mode does not use; what is hidden
+    // must not be saved, or a later mode switch resurrects it.
+    const typed = {
+      ...baseForm,
+      tlsRootCertPath: "/ca.pem",
+      tlsClientCertPath: "/c.crt",
+      tlsClientKeyPath: "/c.key",
+      tlsServerName: "db.example.com",
+    };
+    expect(tlsOptionsFromForm({ ...typed, tlsMode: "disable" })).toEqual({
+      mode: "disable",
+    });
+    expect(tlsOptionsFromForm({ ...typed, tlsMode: "require" })).toEqual({
+      mode: "require",
+      clientCertPath: "/c.crt",
+      clientKeyPath: "/c.key",
+    });
+    expect(tlsOptionsFromForm({ ...typed, tlsMode: "verify-ca" })).toEqual({
+      mode: "verify-ca",
+      rootCertPath: "/ca.pem",
+      clientCertPath: "/c.crt",
+      clientKeyPath: "/c.key",
+    });
+    expect(tlsModeFields("verify-full")).toEqual({
+      rootCert: true,
+      clientCert: true,
+      serverName: true,
+    });
+  });
+
+  it("round-trips a stored blob through hydrate → build unchanged", () => {
+    const tlsOptions = {
+      mode: "verify-ca" as const,
+      rootCertPath: "/ca.pem",
+      clientCertPath: "/c.crt",
+      clientKeyPath: "/c.key",
+    };
+    const values = defaultValuesFromConnection({
+      ...pgConnection,
+      ssl: true,
+      tlsOptions,
+    });
+    expect(values.tlsMode).toBe("verify-ca");
+    expect(buildStoredConnectionFromForm(values, "pg-tls")).toMatchObject({
+      ssl: true,
+      tlsOptions,
+    });
+  });
+
+  it("hydrates neutral TLS fields for engines without the block", () => {
+    const values = defaultValuesFromConnection({
+      ...pgConnection,
+      engine: "MySQL",
+      ssl: false,
+    });
+    expect(values.tlsMode).toBe("prefer");
+    expect(values.ssl).toBe(false);
+    expect(buildStoredConnectionFromForm(values, "my-tls")).not.toHaveProperty(
+      "tlsOptions",
+    );
   });
 });

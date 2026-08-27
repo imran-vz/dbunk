@@ -75,3 +75,29 @@ describe("formatTableBrowseError", () => {
     );
   });
 });
+
+describe("tlsFailed (ADR-0025)", () => {
+  it("decodes a typed TLS failure without collapsing it", () => {
+    expect(
+      decodeTableBrowseError({
+        kind: "tlsFailed",
+        tlsKind: "clientCertificateRejected",
+        message: "The server rejected the client certificate: bad cert",
+      }),
+    ).toEqual({
+      kind: "tlsFailed",
+      tlsKind: "clientCertificateRejected",
+      message: "The server rejected the client certificate: bad cert",
+    });
+  });
+
+  it("formats the TLS headline and detail", () => {
+    expect(
+      formatTableBrowseError({
+        kind: "tlsFailed",
+        tlsKind: "clientCertificateRejected",
+        message: "The server rejected the client certificate: bad cert",
+      }),
+    ).toBe("TLS: the server rejected the client certificate — bad cert");
+  });
+});

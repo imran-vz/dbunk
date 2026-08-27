@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { formatSharedTransportError } from "@/lib/safety-policy";
+
 import {
   decodeStatementSummaries,
   ENVIRONMENT_META,
@@ -112,5 +114,23 @@ describe("parsePolicyRefusal", () => {
       parsePolicyRefusal(" [policy:confirm] leading whitespace"),
     ).toBeNull();
     expect(parsePolicyRefusal("[policy:confirming] near match")).toBeNull();
+  });
+});
+
+describe("formatSharedTransportError — tlsFailed (ADR-0025)", () => {
+  it("renders the TLS headline with the backend detail", () => {
+    expect(
+      formatSharedTransportError({
+        kind: "tlsFailed",
+        tlsKind: "certificateUntrusted",
+        message: "The server certificate is not trusted: UnknownIssuer",
+      }),
+    ).toBe("TLS: the server certificate is not trusted — UnknownIssuer");
+  });
+
+  it("still formats connectionLost as before", () => {
+    expect(formatSharedTransportError({ kind: "connectionLost" })).toBe(
+      "The database connection was lost.",
+    );
   });
 });

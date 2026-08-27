@@ -1,4 +1,5 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- Statement summaries arrive as unstructured invoke payloads and are decoded here. */
+import { formatTlsFailure } from "@/lib/connection-diagnosis";
 import type {
   ConnectionEnvironment,
   SafeMode,
@@ -167,8 +168,7 @@ export function formatSharedTransportError(
     case "connectionLost":
       return "The database connection was lost.";
     case "tlsFailed":
-      // The backend message already carries the kind headline (ADR-0025).
-      return error.message;
+      return formatTlsFailure(error.tlsKind, error.message);
     case "timeout":
       return `Timed out during ${error.operation}.`;
     case "database":

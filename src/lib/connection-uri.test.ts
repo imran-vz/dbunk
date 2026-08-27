@@ -159,10 +159,12 @@ describe("parseConnectionUri", () => {
     const parsed = parseConnectionUri(
       "postgres://u@h:5432/db?sslmode=require&connect_timeout=5",
     );
-    expect(parsed.ok && parsed.values.ignoredParams).toEqual([
-      "sslmode",
-      "connect_timeout",
-    ]);
+    // `sslmode` is the one parameter applied (ADR-0025); the rest are
+    // still disclosed.
+    expect(parsed.ok && parsed.values).toMatchObject({
+      tlsMode: "require",
+      ignoredParams: ["connect_timeout"],
+    });
   });
 
   it("round-trips IPv6 hosts through brackets", () => {
@@ -197,5 +199,83 @@ describe("parseConnectionUri", () => {
         expect(parsed.reason.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("PostgreSQL sslmode round-trip (ADR-0025)", () => {
+  const pg = {
+    engine: "PostgreSQL" as const,
+    user: "app",
+    host: "db.example.com",
+    port: 5432,
+    database: "orders",
+  };
+
+  it("emits sslmode only when the resolved mode is not prefer", () => {
+    expect(buildConnectionUri(pg)).toEqual({
+      ok: true,
+      uri: "postgres://app@db.example.com:5432/orders",
+    });
+    expect(buildConnectionUri({ ...pg, ssl: true })).toEqual({
+      ok: true,
+      uri: "postgres://app@db.example.com:5432/orders",
+    });
+    expect(
+      buildConnectionUri({ ...pg, tlsOptions: { mode: "prefer" } }),
+    ).toEqual({ ok: true, uri: "postgres://app@db.example.com:5432/orders" });
+    expect(
+      buildConnectionUri({ ...pg, tlsOptions: { mode: "verify-full" } }),
+    ).toEqual({
+      ok: true,
+      uri: "postgres://app@db.example.com:5432/orders?sslmode=verify-full",
+    });
+  });
+
+  it("resolves a legacy ssl:false record to disable", () => {
+    expect(buildConnectionUri({ ...pg, ssl: false })).toEqual({
+      ok: true,
+      uri: "postgres://app@db.example.com:5432/orders?sslmode=disable",
+    });
+  });
+
+  it("parses a valid sslmode into tlsMode and stops reporting it as ignored", () => {
+    const parsed = parseConnectionUri(
+      "postgres://app@db.example.com:5432/orders?sslmode=verify-ca",
+    );
+    expect(parsed.ok && parsed.values).toMatchObject({
+      tlsMode: "verify-ca",
+      ignoredParams: [],
+    });
+  });
+
+  it("round-trips the mode through build → parse", () => {
+    const built = buildConnectionUri({
+      ...pg,
+      tlsOptions: { mode: "require" },
+    });
+    if (!built.ok) throw new Error(built.reason);
+    const parsed = parseConnectionUri(built.uri);
+    expect(parsed.ok && parsed.values.tlsMode).toBe("require");
+  });
+
+  it("reports an invalid sslmode and certificate paths as ignored", () => {
+    const parsed = parseConnectionUri(
+      "postgres://app@h/db?sslmode=maybe&sslrootcert=/ca.pem&sslcert=/c.crt&sslkey=/c.key",
+    );
+    if (!parsed.ok) throw new Error(parsed.reason);
+    expect(parsed.values.tlsMode).toBeUndefined();
+    expect(parsed.values.ignoredParams).toEqual([
+      "sslmode",
+      "sslrootcert",
+      "sslcert",
+      "sslkey",
+    ]);
+  });
+
+  it("does not apply sslmode to engines without TLS modes", () => {
+    const parsed = parseConnectionUri("mysql://app@h:3306/db?sslmode=disable");
+    if (!parsed.ok) throw new Error(parsed.reason);
+    expect(parsed.values.tlsMode).toBeUndefined();
+    expect(parsed.values.ignoredParams).toEqual(["sslmode"]);
   });
 });

@@ -73,24 +73,6 @@ pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectRes
     }
 }
 
-/// Probe over a fresh connection, never a cached pool. `test_connection`
-/// runs unsaved form values that may reuse a stored id, through an
-/// ephemeral tunnel; neither may touch or outlive the probe. Every engine
-/// except PostgreSQL already probes one-shot in [`ping_connection`].
-pub async fn ping_connection_once(connection: &StoredConnection) -> Result<ConnectResult, String> {
-    match connection {
-        StoredConnection::PostgreSQL(_) => {
-            crate::postgres::ping_once(connection)
-                .await
-                .map(|latency_ms| ConnectResult {
-                    latency_ms,
-                    redis_capabilities: None,
-                })
-        }
-        _ => ping_connection(connection).await,
-    }
-}
-
 pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<QueryResult, String> {
     match connection.engine().storage_class() {
         StorageClass::Relational => relational::run_query(connection, query).await,

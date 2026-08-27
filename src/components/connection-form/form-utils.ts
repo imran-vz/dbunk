@@ -23,7 +23,11 @@ import type {
   SshTunnelConfig,
   StoredConnection,
 } from "@/lib/store";
-import { PG_TLS_MODES } from "@/lib/store/types";
+import {
+  PG_TLS_MODES,
+  type PgTlsMode,
+  type PgTlsOptions,
+} from "@/lib/store/types";
 
 export const connectionSchema = z.object({
   name: z.string().min(1, "Connection name is required"),
@@ -58,29 +62,36 @@ export const connectionSchema = z.object({
   statementTimeoutMs: z.number().int().optional(),
   idleInTransactionTimeoutMs: z.number().int().optional(),
   connectTimeoutMs: z.number().int().optional(),
-  // Carried in form state but deliberately not rendered — sqlx 0.8
-  // exposes no socket-keepalive setter, so there is no control for a
-  // knob nothing applies (ADR-0013 §Decision). Keeping it in the
-  // schema is what makes an existing value survive a round-trip
-  // instead of being wiped on save.
   keepaliveSeconds: z.number().int().optional(),
   defaultSearchPath: z.string().optional(),
   defaultRole: z.string().optional(),
-  // ADR-0025 TLS blob, carried whole through form state so an edit save
-  // cannot wipe it. Plan 012 replaces this passthrough with per-field
-  // controls; until then nothing renders it.
-  tlsOptions: z
-    .object({
-      mode: z.enum(PG_TLS_MODES),
-      rootCertPath: z.string().optional(),
-      clientCertPath: z.string().optional(),
-      clientKeyPath: z.string().optional(),
-      serverName: z.string().optional(),
-    })
-    .optional(),
+  // PostgreSQL TLS (ADR-0025) as per-field values; `tlsOptionsFromForm`
+  // folds them back into the stored blob.
+  tlsMode: z.enum(PG_TLS_MODES).optional(),
+  tlsRootCertPath: z.string().optional(),
+  tlsClientCertPath: z.string().optional(),
+  tlsClientKeyPath: z.string().optional(),
+  tlsServerName: z.string().optional(),
 });
 
 export type ConnectionFormData = z.infer<typeof connectionSchema>;
+
+type TlsFormDefaults = Pick<
+  ConnectionFormData,
+  | "tlsMode"
+  | "tlsRootCertPath"
+  | "tlsClientCertPath"
+  | "tlsClientKeyPath"
+  | "tlsServerName"
+>;
+
+const TLS_NEUTRAL_DEFAULTS: TlsFormDefaults = {
+  tlsMode: "prefer",
+  tlsRootCertPath: "",
+  tlsClientCertPath: "",
+  tlsClientKeyPath: "",
+  tlsServerName: "",
+};
 
 export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   name: "",
@@ -118,7 +129,7 @@ export const EMPTY_NEW_DEFAULTS: ConnectionFormData = {
   keepaliveSeconds: undefined,
   defaultSearchPath: "",
   defaultRole: "",
-  tlsOptions: undefined,
+  ...TLS_NEUTRAL_DEFAULTS,
 };
 
 // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- The value is handled at a typed library or domain boundary here.
@@ -166,13 +177,12 @@ function buildPg(
 ): PgStoredConnection {
   const sshTunnel = tunnelFromForm(value);
   const driverOptions = driverOptionsFromForm(value);
+  const tlsOptions = tlsOptionsFromForm(value);
   return {
     ...common,
     engine: "PostgreSQL",
-    ssl: value.tlsOptions
-      ? value.tlsOptions.mode !== "disable"
-      : (value.ssl ?? true),
-    ...(value.tlsOptions ? { tlsOptions: value.tlsOptions } : null),
+    ssl: value.tlsMode ? value.tlsMode !== "disable" : (value.ssl ?? true),
+    ...(tlsOptions ? { tlsOptions } : null),
     ...(driverOptions ? { driverOptions } : null),
     ...(sshTunnel ? { sshTunnel } : null),
   };
@@ -224,6 +234,54 @@ export function driverOptionsFromForm(
     ...(defaultRole ? { defaultRole } : null),
   };
   return Object.keys(options).length > 0 ? options : undefined;
+}
+
+/** Whether a mode checks the server certificate at all. */
+export function tlsModeVerifies(mode: PgTlsMode): boolean {
+  return mode === "verify-ca" || mode === "verify-full";
+}
+
+/**
+ * Which optional TLS fields a mode reads — mirrors the resolver in
+ * `src-tauri/src/postgres/tls.rs`. The form shows exactly these, and
+ * `tlsOptionsFromForm` persists exactly these, so a path typed under
+ * one mode never survives invisibly into another.
+ */
+export function tlsModeFields(mode: PgTlsMode) {
+  return {
+    rootCert: tlsModeVerifies(mode),
+    clientCert: mode !== "disable",
+    serverName: mode === "verify-full",
+  };
+}
+
+/**
+ * Fold the per-field TLS values into the ADR-0025 blob. Returns
+ * `undefined` for the default (`prefer`, no paths) so the record stays
+ * free of a blob that says nothing. `disable` is emitted even alone: a
+ * legacy `ssl: false` record hydrates as `disable` and must save back
+ * as `disable`, not snap to `prefer`.
+ */
+export function tlsOptionsFromForm(
+  value: ConnectionFormData,
+): PgTlsOptions | undefined {
+  const mode = value.tlsMode ?? "prefer";
+  const fields = tlsModeFields(mode);
+  const rootCertPath = value.tlsRootCertPath?.trim();
+  const clientCertPath = value.tlsClientCertPath?.trim();
+  const clientKeyPath = value.tlsClientKeyPath?.trim();
+  const serverName = value.tlsServerName?.trim();
+  const options: PgTlsOptions = {
+    mode,
+    ...(fields.rootCert && rootCertPath ? { rootCertPath } : null),
+    ...(fields.clientCert && clientCertPath ? { clientCertPath } : null),
+    ...(fields.clientCert && clientKeyPath ? { clientKeyPath } : null),
+    ...(fields.serverName && serverName ? { serverName } : null),
+  };
+  if (mode === "prefer" && Object.keys(options).length === 1) {
+    return undefined;
+  }
+  return options;
 }
 
 function buildMySql(
@@ -382,6 +440,7 @@ export function defaultValuesFromConnection(
   // Only PG carries driver options (ADR-0013); every other variant
   // hydrates the neutral blank so the shared form state stays total.
   const driverDefaults = driverDefaultsFromConnection(connection);
+  const tlsDefaults = tlsDefaultsFromConnection(connection);
   switch (connection.engine) {
     case "PostgreSQL":
     case "MySQL":
@@ -389,10 +448,7 @@ export function defaultValuesFromConnection(
         ...common,
         ...tunnelDefaults,
         ...driverDefaults,
-        tlsOptions:
-          connection.engine === "PostgreSQL"
-            ? connection.tlsOptions
-            : undefined,
+        ...tlsDefaults,
         ssl: connection.ssl,
         useHttps: false,
         urlPath: "",
@@ -406,6 +462,7 @@ export function defaultValuesFromConnection(
         ...common,
         ...tunnelDefaults,
         ...driverDefaults,
+        ...tlsDefaults,
         ssl: true,
         useHttps: false,
         urlPath: "",
@@ -419,6 +476,7 @@ export function defaultValuesFromConnection(
         ...common,
         ...tunnelDefaults,
         ...driverDefaults,
+        ...tlsDefaults,
         ssl: true,
         useHttps: connection.useHttps,
         urlPath: connection.urlPath,
@@ -432,6 +490,7 @@ export function defaultValuesFromConnection(
         ...common,
         ...tunnelDefaults,
         ...driverDefaults,
+        ...tlsDefaults,
         ssl: true,
         useHttps: false,
         urlPath: "",
@@ -465,6 +524,22 @@ function driverDefaultsFromConnection(
     keepaliveSeconds: options?.keepaliveSeconds,
     defaultSearchPath: formatSearchPath(options?.defaultSearchPath),
     defaultRole: options?.defaultRole ?? "",
+  };
+}
+
+function tlsDefaultsFromConnection(connection: Connection): TlsFormDefaults {
+  if (connection.engine !== "PostgreSQL") {
+    return TLS_NEUTRAL_DEFAULTS;
+  }
+  const options = connection.tlsOptions;
+  return {
+    // A record from before migration 18 carries only `ssl`; the backend
+    // resolves it to exactly `prefer` / `disable`.
+    tlsMode: options?.mode ?? (connection.ssl ? "prefer" : "disable"),
+    tlsRootCertPath: options?.rootCertPath ?? "",
+    tlsClientCertPath: options?.clientCertPath ?? "",
+    tlsClientKeyPath: options?.clientKeyPath ?? "",
+    tlsServerName: options?.serverName ?? "",
   };
 }
 

@@ -312,7 +312,6 @@ pub fn run() {
             commands::connections::delete_connection,
             commands::connections::connect_connection,
             commands::connections::disconnect_connection,
-            commands::connections::test_connection,
             commands::diagnosis::diagnose_connection,
             commands::connections::health_check_connection,
             // Relational: schema

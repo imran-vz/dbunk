@@ -1,6 +1,7 @@
 /**
- * MySQL engine-specific fields. See `pg-fields.tsx` — both engines
- * share `host-auth` policy and render the same SSL toggle.
+ * MySQL engine-specific fields: the single SSL toggle. PostgreSQL shares
+ * the `host-auth` policy but renders `<TlsFields>` instead
+ * (`tlsControls: "postgres-modes"`, ADR-0025).
  */
 
 import { HostAuthSslField } from "./host-auth-fields";

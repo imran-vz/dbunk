@@ -23,8 +23,8 @@ and update its status here when work finishes.
 | [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | DONE: 5409d66 (selected mock: C)               |
 | [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | DONE: f66abaa                                  |
 | [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | DONE: 4facea1 (selected mock: A)               |
-| [011](./011-connection-security-backend.md)      | PostgreSQL connection security backend (dark) |       P1 |      L | 001–010    | READY FOR REVIEW                               |
-| [012](./012-connection-security-activation.md)   | TLS controls, staged connection diagnosis, and truth pass | P1 | L | 011        | TODO                                           |
+| [011](./011-connection-security-backend.md)      | PostgreSQL connection security backend (dark) |       P1 |      L | 001–010    | DONE: b134766                                  |
+| [012](./012-connection-security-activation.md)   | TLS controls, staged connection diagnosis, and truth pass | P1 | L | 011        | READY FOR REVIEW (selected mock: A)            |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -116,6 +116,59 @@ useful without authorizing commits implicitly.
   `test_connection` implementation to a one-shot connect so unsaved values
   and ephemeral tunnel endpoints cannot reuse a cached socket; its wire
   contract is unchanged, and Plan 012 removes it.
+- **Plan 012 delivery note (2026-08-28):** Steps 1–5 implemented in the
+  working tree on top of `cf5ad07` (selected mock A). Step 2:
+  `tlsControls: "postgres-modes" | "toggle"` replaces `showSslToggle`
+  on the `host-auth` policy, `<TlsFields>` (mode select, conditional
+  CA / client cert / client key / certificate host-name fields,
+  production advisory), per-field TLS form state folded back into the
+  blob by `tlsOptionsFromForm` (only the paths the mode reads are
+  persisted; a legacy `ssl: false` record round-trips as `disable`),
+  the keepalive control with its pool disclosure, and both-or-neither /
+  keepalive-range validation. Step 3: `diagnoseConnection` store action
+  (dev stub marks `tls` skipped, never passed), `<DiagnosisPanel>`
+  replacing the footer banners, Test Connection in edit mode with
+  backend credential hydration, and `test_connection` removed together
+  with its now-orphaned one-shot probe helpers (recorded in the plan's
+  correction record). Step 4: `formatTlsFailure` renders every
+  `tlsFailed` arm as headline — detail (the backend prefix is stripped,
+  not repeated), the table-session copy gained the arm, and `sslmode`
+  round-trips through Copy URI / Import-from-URI (invalid values and
+  certificate-path parameters stay disclosed as ignored). Step 5: the
+  truth pass over ROADMAP / PENDING_TASKS / CONTEXT / ADR-0013 /
+  ADR-0025 / `types.ts` / the register. Gates green: `pnpm format`,
+  `lint`, `typecheck`, vitest (1140), `check:ui-gates`, and the `just`
+  trio (407 passed, 34 ignored). Step 6 was executed on 2026-08-28 as
+  an automated pass, because the implementing session cannot see the
+  native window: with both fixtures up, the 28 live suites
+  (`cargo test -- --ignored …`, 18 on 15432 + 10 on 15433) covered every
+  mode with and without the fixture CA, the `dbunk_cert` client
+  certificate, the wrong-server-name mismatch, the `prefer` plaintext
+  downgrade, wrong password → authentication, missing database →
+  database, and query-session / table-browse over TLS; the real form,
+  served by the Vite dev server and driven through Chrome's DevTools
+  protocol against the dev-mode store, confirmed the TLS block's
+  per-mode fields and advisory, the keepalive control with its
+  disclosure and range error, the diagnosis panel in the footer, Copy
+  URI emitting `?sslmode=verify-full`, edit mode hydrating the TLS
+  fields with a blank password and a working Test Connection, and
+  Import-from-URI prefilling the mode; a Rust test pins the IPC payload
+  shape the store sends. The mocks were deleted. What that pass could
+  **not** exercise is the native app's IPC round-trip end to end (a real
+  `diagnose_connection` from the form, and a `verify-full` query tab
+  with a broken CA path showing the TLS message); the app is left
+  running in `pnpm tauri dev` for the reviewer to click through before
+  recording DONE.
+- **Selected mock (012, 2026-08-28):** A — the "Transport security"
+  card inline under the credentials (always visible, not behind
+  Advanced), a checklist-style diagnosis panel replacing the footer
+  banners (one row per stage in fixed order, passed detail in a muted
+  column, elapsed right-aligned, the failing stage expanded in place
+  with the kind headline and monospace message, skipped stages muted
+  with their reason), the TLS summary line and the token-toned warning
+  lines below the rows, and the keepalive control staying in Session
+  defaults next to connect timeout. Plan 011 recorded `DONE: b134766`
+  at the same time (the 2026-08-25 hardening commits were its review).
 - **Selected mock (010):** A — folder section headers in the connections
   list, compact single-line palette rows with leading kind badges, and
   URI import as the first field of the connection form.

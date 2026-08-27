@@ -404,8 +404,9 @@ export type ConnectionDiagnosis = {
  *
  * `connectTimeoutMs` bounds the initial handshake on every driver.
  * `keepaliveSeconds` is applied on the dedicated driver (query sessions,
- * table browse, result mutation); the pooled metadata driver cannot set
- * it (sqlx 0.8 exposes no socket setter).
+ * table browse, result mutation); the pooled metadata driver (SQLx) has
+ * no keepalive option, so metadata and admin queries keep the OS default
+ * (ADR-0025).
  */
 export type PgDriverOptions = {
   statementTimeoutMs?: number;
