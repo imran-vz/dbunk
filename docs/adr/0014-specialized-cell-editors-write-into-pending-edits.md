@@ -95,6 +95,9 @@ keeps the overlay open with the user's input intact.
   appear in the panel at all — they fire from the data grid.
 - Pending mutations diff format is unchanged: editors emit PG
   literals, same as today's inline edit.
+- The schema-level index and foreign-key generators migrate to
+  ADR-0026's typed backend DDL operations in Plan 015; they do not use
+  the cell-editor registry.
 - A future "fancy" editor (graph view for `tsvector`, hex grid for
   `bytea`) is a registry entry, not a redesign.
 

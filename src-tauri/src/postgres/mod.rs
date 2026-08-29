@@ -7,6 +7,8 @@
 //! - `schema` — table structure and schema relationship introspection
 //! - `relationship_metadata` — pure cardinality/junction/trigger classification
 //! - `ddl` — DDL execution, export, pg_dump/pg_restore, materialized views
+//! - `objects` — typed object catalog, descriptions, and drop impact
+//! - `object_ddl` — typed object operations and deterministic SQL generation
 //! - `admin` — server details, overview stats, session/lock snapshots, maintenance
 
 mod admin;
@@ -16,6 +18,8 @@ mod ddl;
 pub(crate) mod dedicated;
 pub(crate) mod identity;
 mod mutations;
+pub(crate) mod object_ddl;
+pub(crate) mod objects;
 pub(crate) mod options;
 mod pool;
 mod query;

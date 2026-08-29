@@ -10,6 +10,7 @@ pub(crate) mod connections;
 pub(crate) mod diagnosis;
 pub(crate) mod keyvalue;
 pub(crate) mod managed;
+pub(crate) mod pg_objects;
 pub(crate) mod query_session;
 pub(crate) mod relational;
 pub(crate) mod result_mutation;

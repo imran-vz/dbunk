@@ -87,3 +87,6 @@ reviewed Mutation Plan the sole unit of commit.
   `analysisExpired` recovery keep failure behavior predictable.
 - Plan 006 owns the client-side Mutation Draft and activation; this ADR adds no
   frontend mutation path.
+- ADR-0026 applies the same preview and backend-regeneration boundary to typed
+  PostgreSQL object DDL, with explicit standalone groups for operations that
+  cannot run transactionally.
