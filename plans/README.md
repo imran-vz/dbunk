@@ -24,7 +24,10 @@ and update its status here when work finishes.
 | [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | DONE: f66abaa                                  |
 | [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | DONE: 4facea1 (selected mock: A)               |
 | [011](./011-connection-security-backend.md)      | PostgreSQL connection security backend (dark) |       P1 |      L | 001–010    | DONE: b134766                                  |
-| [012](./012-connection-security-activation.md)   | TLS controls, staged connection diagnosis, and truth pass | P1 | L | 011        | READY FOR REVIEW (selected mock: A)            |
+| [012](./012-connection-security-activation.md)   | TLS controls, staged connection diagnosis, and truth pass | P1 | L | 011        | DONE: b45e294 (selected mock: A)                |
+| [013](./013-object-catalog-ddl-backend.md)       | PostgreSQL object catalog and DDL workflow backend (dark) | P1 | L | 001–012    | READY FOR REVIEW                                |
+| [014](./014-object-explorer-lifecycle-activation.md) | Object explorer, viewers, and lifecycle activation | P1 | L | 013 | TODO                                           |
+| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow | P1 | M | 013, 014 | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -35,6 +38,60 @@ Executors update their own status row after each completed step and mark
 useful without authorizing commits implicitly.
 
 ## Current selection
+
+- **Selected (2026-08-29):** Plans 013, 014, and 015 are the `PAR-007`
+  execution path, authored at `b45e294` and amended the same day after
+  a pre-execution review (each plan carries a `Review correction
+  record`). `PAR-007` is `XL`; the trio deliberately delivers its core
+  and records the rest (Plan 013's Reconciliation section has the full
+  deferral list with rationale).
+  Plan 013 is a dark backend: a typed `PgObjectKind`/`PgObjectRef`
+  model with overload-safe routine identity (today the backend has no
+  object type at all — fourteen `Vec<String>` name lists, ten of which
+  the UI drops; event triggers/roles/tablespaces stay list-only entries,
+  not kinds), a batched, capped, extension-member-filtered
+  `load_pg_object_catalog` on the native PG pool with comments,
+  `describe_pg_object` (owner, comment, tagged facts, reconstructed DDL
+  per kind), `load_pg_drop_impact` as a bounded transitive closure over
+  `pg_depend` with `pg_rewrite` resolution, and a backend-owned DDL
+  workflow mirroring the Result Mutation shape: typed operations
+  (schemas, table rename/drop/comment, the six column ops with tagged
+  literal-vs-expression defaults and `USING`, PK/unique/FK/check and
+  constraint drop, index create/drop including `CONCURRENTLY`,
+  views/matviews from SQL bodies, sequences, enums) → pure server-side
+  generation with every rendered statement re-verified by
+  `classify_script` as exactly one statement → per-statement preview
+  with destructive and transactional flags and atomic/standalone
+  grouping → gated `apply_object_ddl` (regenerates from ops, never
+  accepts a whole statement over IPC; the sixteenth gated write
+  surface) on a detached connection with `statement_timeout = 0` and
+  `lock_timeout = 10s`, with a typed `PgObjectError` union carrying
+  SQLSTATE/statement-index/applied-count/lock-timeout/invalid-index
+  residue, plus a `lifecycle` fixture schema and ADR-0026. No migration
+  needed.
+  Plan 014 activates the schema-level half: navigator breadth with
+  grouped, per-group-capped object sections (catalog replaces the PG
+  explorer fetch behind a derive adapter with a generation guard
+  against the connect/disconnect race; the dead sqlx-Any PG explorer
+  arm is deleted in its truth pass), a persisted `object` workspace-tab
+  kind with per-kind viewers that honour the Plan 010 disconnected-
+  restore contract, palette reach into non-relation kinds (closing the
+  Plan 009 deferral), one shared DDL review dialog (per-statement
+  preview, reviewed gate, a new `ddl` safety-confirmation subject that
+  shows statement summaries, drop-impact dialog with explicit CASCADE
+  opt-in, refresh on partial failure), create dialogs, and the
+  `PAR-017` truth pass. Matview edit is drop + create; matview refresh
+  is the one declared legacy-path exception.
+  Plan 015 switches the PostgreSQL structure editor onto the typed
+  workflow (`StructureChange` union, PG forms produce ops directly,
+  tagged defaults and `USING`, constraint/index affordances, index and
+  cross-table FK panels queue typed ops; ClickHouse keeps `execute_ddl`).
+  Deferred, staying in the register: databases, roles/grants/default
+  privileges, RLS, triggers/event triggers, rules, partitions,
+  tablespaces, extension install/remove, structured routine
+  create/alter, the create-table designer, matview refresh policy, DDL
+  cancellation, and the non-DDL legacy typed-error migration
+  (`PAR-014`).
 
 - **Completed:** Plans 001 and 002 delivered the PostgreSQL query-session
   foundation of `PAR-001` through commit `26268ca`. Plans 003 and 004
@@ -261,8 +318,11 @@ refer to the gap register rather than files in this directory.
    PostgreSQL connection-security backend (TLS verification modes,
    client certificates, tunnel-aware hostname verification, applied
    keepalive, staged diagnosis) as a dark foundation, then the form and
-   diagnosis-panel activation. The next candidate after them is
-   `PAR-007` object lifecycle.
+   diagnosis-panel activation. Plans 013, 014, and 015 are the authored
+   `PAR-007` execution path that follows them: the object catalog and
+   DDL workflow backend as a dark foundation, then the object explorer,
+   viewers, and schema-level lifecycle activation, then the structure
+   editor's switchover onto the same typed workflow.
 7. Professional PostgreSQL features (`PAR-007` through `PAR-011`) should follow
    once execution, editing, safety, restoration, and transport security are
    trustworthy.
