@@ -81,6 +81,10 @@ pub(crate) fn quote_double(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
+pub(crate) fn quote_literal(value: &str) -> String {
+    format!("E'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
+}
+
 pub(crate) fn quote_backtick(identifier: &str) -> String {
     format!("`{}`", identifier.replace('`', "``"))
 }
@@ -316,6 +320,11 @@ pub fn run() {
             commands::connections::health_check_connection,
             // Relational: schema
             commands::relational::load_schema_explorer,
+            commands::pg_objects::load_pg_object_catalog,
+            commands::pg_objects::describe_pg_object,
+            commands::pg_objects::load_pg_drop_impact,
+            commands::pg_objects::preview_object_ddl,
+            commands::pg_objects::apply_object_ddl,
             commands::relational::load_schema_relationships,
             commands::relational::load_table_schema_relationships,
             commands::relational::load_schema_map_positions,

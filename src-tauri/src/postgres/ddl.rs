@@ -72,16 +72,23 @@ fn command_error(binary: &str, output: &std::process::Output) -> String {
     }
 }
 
-async fn export_relation_ddl(
+pub(crate) async fn export_relation_ddl(
     conn: &mut sqlx::postgres::PgConnection,
     schema: &str,
     table: &str,
 ) -> Result<String, String> {
-    let relkind: Option<String> = sqlx::query_scalar(
+    let relation = sqlx::query(
         r#"
-        SELECT c.relkind::text
+        SELECT c.relkind::text AS relkind,
+               CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END AS partition_key,
+               CASE WHEN c.relispartition THEN pg_get_expr(c.relpartbound, c.oid) END AS partition_bound,
+               parent_namespace.nspname AS parent_schema,
+               parent.relname AS parent_name
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN pg_inherits inherits ON c.relispartition AND inherits.inhrelid = c.oid
+        LEFT JOIN pg_class parent ON parent.oid = inherits.inhparent
+        LEFT JOIN pg_namespace parent_namespace ON parent_namespace.oid = parent.relnamespace
         WHERE n.nspname = $1 AND c.relname = $2
           AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
         "#,
@@ -91,9 +98,25 @@ async fn export_relation_ddl(
     .fetch_optional(&mut *conn)
     .await
     .map_err(|error| error.to_string())?;
-    let Some(relkind) = relkind else {
+    let Some(relation) = relation else {
         return Err(format!("relation {schema}.{table} was not found"));
     };
+    let relkind: String = relation
+        .try_get("relkind")
+        .map_err(|error| error.to_string())?;
+    let partition_key: Option<String> = relation
+        .try_get("partition_key")
+        .map_err(|error| error.to_string())?;
+    let partition_bound: Option<String> = relation
+        .try_get("partition_bound")
+        .map_err(|error| error.to_string())?;
+    let parent_schema: Option<String> = relation
+        .try_get("parent_schema")
+        .map_err(|error| error.to_string())?;
+    let parent_name: Option<String> = relation
+        .try_get("parent_name")
+        .map_err(|error| error.to_string())?;
+    let partition_parent = parent_schema.zip(parent_name);
     let qualified = format!("{}.{}", quote_double(schema), quote_double(table));
     if relkind == "v" || relkind == "m" {
         let view_sql: String = sqlx::query_scalar(
@@ -138,7 +161,13 @@ async fn export_relation_ddl(
     .map_err(|error| error.to_string())?;
 
     let mut definitions = Vec::new();
+    // A partition inherits its columns from the parent; only constraints
+    // declared on the partition itself can appear in PARTITION OF.
+    let is_partition = partition_parent.is_some();
     for column in columns {
+        if is_partition {
+            break;
+        }
         let name: String = column
             .try_get("attname")
             .map_err(|error| error.to_string())?;
@@ -168,7 +197,7 @@ async fn export_relation_ddl(
         FROM pg_constraint con
         JOIN pg_class c ON c.oid = con.conrelid
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = $1 AND c.relname = $2
+        WHERE n.nspname = $1 AND c.relname = $2 AND con.conislocal
         ORDER BY con.contype, con.conname
         "#,
     )
@@ -191,10 +220,30 @@ async fn export_relation_ddl(
         ));
     }
 
-    let mut ddl = format!(
-        "CREATE TABLE {qualified} (\n{}\n);",
-        definitions.join(",\n")
-    );
+    let mut ddl = match partition_parent {
+        Some((parent_schema, parent_name)) => {
+            let parent = format!(
+                "{}.{}",
+                quote_double(&parent_schema),
+                quote_double(&parent_name)
+            );
+            let mut ddl = format!("CREATE TABLE {qualified} PARTITION OF {parent}");
+            if !definitions.is_empty() {
+                ddl.push_str(&format!(" (\n{}\n)", definitions.join(",\n")));
+            }
+            ddl.push(' ');
+            ddl.push_str(partition_bound.as_deref().unwrap_or("DEFAULT"));
+            ddl
+        }
+        None => format!("CREATE TABLE {qualified} (\n{}\n)", definitions.join(",\n")),
+    };
+    if let Some(partition_key) = partition_key {
+        ddl.push_str(" PARTITION BY ");
+        ddl.push_str(&partition_key);
+    }
+    ddl.push(';');
+    // Indexes attached from a partitioned parent are recorded in pg_inherits
+    // and are recreated by the parent's index, not by the partition.
     let indexes = sqlx::query_scalar::<_, String>(
         r#"
         SELECT i.indexdef
@@ -204,6 +253,9 @@ async fn export_relation_ddl(
         WHERE i.schemaname = $1 AND i.tablename = $2
           AND NOT EXISTS (
             SELECT 1 FROM pg_constraint con WHERE con.conindid = idx.oid
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_inherits inherited WHERE inherited.inhrelid = idx.oid
           )
         ORDER BY i.indexname
         "#,

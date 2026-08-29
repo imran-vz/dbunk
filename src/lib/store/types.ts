@@ -1006,6 +1006,381 @@ export type SchemaExplorer = {
   tablespaces?: string[];
 };
 
+export type PgObjectKind =
+  | "schema"
+  | "table"
+  | "view"
+  | "materialized-view"
+  | "foreign-table"
+  | "sequence"
+  | "function"
+  | "procedure"
+  | "aggregate"
+  | "type"
+  | "domain"
+  | "extension";
+
+export type PgTypeClass = "enum" | "composite" | "range" | "multirange";
+
+export type PgObjectRef = {
+  kind: PgObjectKind;
+  schema: string | null;
+  name: string;
+  identityArgs: string | null;
+};
+
+export type PgCatalogEntry = {
+  name: string;
+  identityArgs?: string;
+  comment?: string;
+  typeClass?: PgTypeClass;
+};
+
+export type PgSchemaObjects = {
+  name: string;
+  tables: PgCatalogEntry[];
+  views: PgCatalogEntry[];
+  materializedViews: PgCatalogEntry[];
+  foreignTables: PgCatalogEntry[];
+  sequences: PgCatalogEntry[];
+  functions: PgCatalogEntry[];
+  procedures: PgCatalogEntry[];
+  aggregates: PgCatalogEntry[];
+  types: PgCatalogEntry[];
+  domains: PgCatalogEntry[];
+  extensions: PgCatalogEntry[];
+};
+
+export type PgCatalogTruncation = {
+  schema: string | null;
+  kind: string;
+};
+
+export type PgObjectCatalog = {
+  schemas: PgSchemaObjects[];
+  eventTriggers: PgCatalogEntry[];
+  roles: PgCatalogEntry[];
+  tablespaces: PgCatalogEntry[];
+  truncated: PgCatalogTruncation[];
+};
+
+export type PgTypeAttribute = {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+};
+
+export type PgObjectFacts =
+  | { kind: "schema" }
+  | { kind: "table" }
+  | { kind: "view"; definition: string }
+  | { kind: "materializedView"; definition: string; populated: boolean }
+  | { kind: "foreignTable"; server: string }
+  | {
+      kind: "sequence";
+      dataType: string;
+      start: string;
+      increment: string;
+      minValue: string;
+      maxValue: string;
+      cycle: boolean;
+      cache: string;
+      lastValue: string | null;
+      ownedBy: string | null;
+    }
+  | {
+      kind: "routine";
+      language: string;
+      returns: string | null;
+      volatility: string | null;
+      arguments: string;
+    }
+  | {
+      kind: "type";
+      class: PgTypeClass;
+      enumLabels: string[] | null;
+      attributes: PgTypeAttribute[] | null;
+      subtype: string | null;
+    }
+  | {
+      kind: "domain";
+      baseType: string;
+      notNull: boolean;
+      defaultValue: string | null;
+      checks: string[];
+    }
+  | { kind: "extension"; version: string; schema: string };
+
+export type PgObjectDescription = {
+  reference: PgObjectRef;
+  owner: string | null;
+  comment: string | null;
+  definitionSql: string | null;
+  facts: PgObjectFacts;
+};
+
+export type PgDropDependent = {
+  objectType: string;
+  identity: string;
+  depth: number;
+};
+
+export type PgDropImpact = {
+  dependents: PgDropDependent[];
+  truncated: boolean;
+};
+
+export type PgDefaultValue =
+  | { kind: "literal"; value: string }
+  | { kind: "expression"; sql: string };
+
+export type PgNewColumnSpec = {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  default: PgDefaultValue | null;
+};
+
+export type PgReferentialAction =
+  | "no-action"
+  | "restrict"
+  | "cascade"
+  | "set-null"
+  | "set-default";
+
+export type PgIndexColumn = {
+  expression: string;
+  descending: boolean;
+};
+
+export type PgEnumPosition =
+  | { kind: "before"; neighbor: string }
+  | { kind: "after"; neighbor: string };
+
+export type PgCommentTarget =
+  | { kind: "object"; reference: PgObjectRef }
+  | { kind: "column"; schema: string; table: string; column: string };
+
+export type PgObjectOp =
+  | { op: "createSchema"; name: string }
+  | { op: "renameObject"; reference: PgObjectRef; newName: string }
+  | { op: "dropObject"; reference: PgObjectRef; cascade: boolean }
+  | { op: "setComment"; target: PgCommentTarget; comment: string | null }
+  | {
+      op: "addColumn";
+      schema: string;
+      table: string;
+      column: PgNewColumnSpec;
+    }
+  | {
+      op: "dropColumn";
+      schema: string;
+      table: string;
+      name: string;
+      cascade: boolean;
+    }
+  | {
+      op: "renameColumn";
+      schema: string;
+      table: string;
+      name: string;
+      newName: string;
+    }
+  | {
+      op: "alterColumnType";
+      schema: string;
+      table: string;
+      name: string;
+      newType: string;
+      using: string | null;
+    }
+  | {
+      op: "setColumnNullable";
+      schema: string;
+      table: string;
+      name: string;
+      nullable: boolean;
+    }
+  | {
+      op: "setColumnDefault";
+      schema: string;
+      table: string;
+      name: string;
+      default: PgDefaultValue | null;
+    }
+  | {
+      op: "addPrimaryKey";
+      schema: string;
+      table: string;
+      name: string | null;
+      columns: string[];
+    }
+  | {
+      op: "addUnique";
+      schema: string;
+      table: string;
+      name: string | null;
+      columns: string[];
+    }
+  | {
+      op: "addForeignKey";
+      schema: string;
+      table: string;
+      name: string | null;
+      columns: string[];
+      referencedSchema: string;
+      referencedTable: string;
+      referencedColumns: string[];
+      onUpdate: PgReferentialAction;
+      onDelete: PgReferentialAction;
+      deferrable: boolean;
+      initiallyDeferred: boolean;
+      notValid: boolean;
+    }
+  | {
+      op: "addCheck";
+      schema: string;
+      table: string;
+      name: string | null;
+      expression: string;
+      notValid: boolean;
+    }
+  | {
+      op: "dropConstraint";
+      schema: string;
+      table: string;
+      name: string;
+      cascade: boolean;
+    }
+  | {
+      op: "createIndex";
+      schema: string;
+      table: string;
+      name: string | null;
+      unique: boolean;
+      method: string;
+      columns: PgIndexColumn[];
+      include: string[];
+      wherePredicate: string | null;
+      concurrently: boolean;
+    }
+  | {
+      op: "dropIndex";
+      schema: string;
+      name: string;
+      concurrently: boolean;
+      cascade: boolean;
+    }
+  | {
+      op: "createView";
+      schema: string;
+      name: string;
+      orReplace: boolean;
+      sqlBody: string;
+    }
+  | {
+      op: "createMaterializedView";
+      schema: string;
+      name: string;
+      sqlBody: string;
+      withData: boolean;
+    }
+  | {
+      op: "createSequence";
+      schema: string;
+      name: string;
+      dataType: string | null;
+      start: string | null;
+      increment: string | null;
+      minValue: string | null;
+      maxValue: string | null;
+      cycle: boolean | null;
+      cache: string | null;
+    }
+  | {
+      op: "alterSequence";
+      schema: string;
+      name: string;
+      restartWith: string | null;
+      incrementBy: string | null;
+      minValue: string | null;
+      maxValue: string | null;
+      cycle: boolean | null;
+      cache: string | null;
+    }
+  | { op: "createEnum"; schema: string; name: string; labels: string[] }
+  | {
+      op: "addEnumValue";
+      schema: string;
+      name: string;
+      value: string;
+      position: PgEnumPosition | null;
+    }
+  | {
+      op: "renameEnumValue";
+      schema: string;
+      name: string;
+      from: string;
+      to: string;
+    };
+
+export type PlannedStatement = {
+  sql: string;
+  summary: string;
+  destructive: boolean;
+  transactional: boolean;
+};
+
+export type StatementGroup =
+  | { kind: "atomic"; statementIndexes: number[] }
+  | { kind: "standalone"; statementIndex: number };
+
+export type DdlPlanPreview = {
+  statements: PlannedStatement[];
+  groups: StatementGroup[];
+};
+
+export type DdlStatementSummary = {
+  index: number;
+  summary: string;
+  destructive: boolean;
+  transactional: boolean;
+};
+
+export type DdlApplyResult = {
+  appliedStatements: number;
+  runtimeMs: number;
+};
+
+export type DdlResidue = {
+  kind: "invalidIndex";
+  schema: string;
+  name: string;
+};
+
+export type PgObjectError =
+  | { kind: "unsupportedEngine"; engine: string }
+  | { kind: "objectNotFound"; reference: PgObjectRef }
+  | { kind: "invalidOp"; opIndex: number; reason: string }
+  | { kind: "policyBlocked"; reason: string }
+  | { kind: "policyNeedsConfirmation"; statements: DdlStatementSummary[] }
+  | { kind: "connection"; message: string }
+  | {
+      kind: "lockTimeout";
+      statementIndex: number;
+      appliedStatements: number;
+      residue?: DdlResidue;
+    }
+  | {
+      kind: "database";
+      statementIndex?: number;
+      code: string | null;
+      message: string;
+      position: number | null;
+      appliedStatements: number;
+      residue?: DdlResidue;
+    };
+
 export type SavedQuery = {
   id: string;
   name: string;

@@ -60,7 +60,7 @@ pub(crate) fn lex_sql(sql: &str) -> Result<Vec<SqlToken>, ()> {
                     }));
                 }
             }
-            byte @ (b'(' | b')' | b',' | b'.' | b';' | b'*') => {
+            byte @ (b'(' | b')' | b'[' | b']' | b',' | b'.' | b';' | b'*') => {
                 tokens.push(SqlToken::Symbol(char::from(byte)));
                 index += 1;
             }
@@ -93,14 +93,29 @@ fn lex_block_comment(bytes: &[u8], mut index: usize) -> Result<usize, ()> {
     Err(())
 }
 
-fn lex_single_quote(bytes: &[u8], mut index: usize, escapes: bool) -> Result<usize, ()> {
+fn lex_single_quote(bytes: &[u8], index: usize, escapes: bool) -> Result<usize, ()> {
+    if escapes {
+        return scan_single_quote(bytes, index, true);
+    }
+    // Plain-string backslash semantics depend on standard_conforming_strings,
+    // which the lexer cannot observe. Accept the literal only when both
+    // interpretations end at the same byte, so a backslash can never move a
+    // statement or fragment boundary whichever setting the server uses.
+    let literal_end = scan_single_quote(bytes, index, false)?;
+    let escaped_end = scan_single_quote(bytes, index, true)?;
+    if literal_end == escaped_end {
+        Ok(literal_end)
+    } else {
+        Err(())
+    }
+}
+
+fn scan_single_quote(bytes: &[u8], mut index: usize, escapes: bool) -> Result<usize, ()> {
     while index < bytes.len() {
         match bytes[index] {
             b'\'' if bytes.get(index + 1) == Some(&b'\'') => index += 2,
             b'\'' => return Ok(index + 1),
             b'\\' if escapes && index + 1 < bytes.len() => index += 2,
-            // Plain-string backslash semantics depend on standard_conforming_strings.
-            b'\\' => return Err(()),
             _ => index += 1,
         }
     }
@@ -170,4 +185,52 @@ fn is_identifier_start(byte: u8) -> bool {
 
 fn is_identifier_continue(byte: u8) -> bool {
     is_identifier_start(byte) || byte.is_ascii_digit() || byte == b'$'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identifier(value: &str) -> SqlToken {
+        SqlToken::Identifier(SqlIdentifier {
+            value: value.into(),
+            quoted: false,
+        })
+    }
+
+    #[test]
+    fn plain_string_backslash_is_accepted_when_both_semantics_agree() {
+        let tokens = lex_sql(r"email ~ '^[^@]+@[^@]+\.[a-z]{2,}$' AND x").expect("regex literal");
+        assert_eq!(
+            tokens,
+            vec![
+                identifier("email"),
+                SqlToken::Opaque,
+                SqlToken::Opaque,
+                identifier("AND"),
+                identifier("x"),
+            ]
+        );
+        assert!(lex_sql(r"SELECT 'C:\temp'").is_ok());
+        assert!(lex_sql(r"SELECT '\\'").is_ok());
+    }
+
+    #[test]
+    fn plain_string_backslash_is_rejected_when_the_boundary_moves() {
+        // standard_conforming_strings=off would end this literal after `a'`.
+        assert!(lex_sql(r"'a\'' ; DROP TABLE t; --'").is_err());
+        assert!(lex_sql(r"'abc\'").is_err());
+        // E strings always escape.
+        assert!(lex_sql(r"E'a\'b'").is_ok());
+    }
+
+    #[test]
+    fn brackets_and_dollar_identifiers_are_lexed_structurally() {
+        let tokens = lex_sql("ARRAY[1, 2]").expect("array literal");
+        assert_eq!(tokens[1], SqlToken::Symbol('['));
+        assert_eq!(tokens.last(), Some(&SqlToken::Symbol(']')));
+        let tokens = lex_sql("d$x$ , y").expect("dollar identifier");
+        assert_eq!(tokens[0], identifier("d$x$"));
+        assert_eq!(tokens[1], SqlToken::Symbol(','));
+    }
 }
