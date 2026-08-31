@@ -3,7 +3,8 @@
  * `Cmd+K`, one unified surface on the Dialog primitive: a bare query
  * ranks everything the app can navigate to — commands, open tabs,
  * connections (including disconnected ones), schemas, relations,
- * saved queries, and history — through `src/lib/open-anything.ts`;
+ * catalog objects, saved queries, and history — through
+ * `src/lib/open-anything.ts`;
  * a `>` prefix restricts to commands.
  *
  * Results render as ONE flat ranked list with inline kind badges —
@@ -52,6 +53,7 @@ import {
   SHORTCUTS,
   subscribeShortcutRegistry,
 } from "@/lib/shortcuts";
+import type { PgObjectKind } from "@/lib/store";
 import { useAppStore } from "@/lib/store";
 import { uiGet, uiSet } from "@/lib/ui-state";
 import { cn } from "@/lib/utils";
@@ -139,6 +141,7 @@ const KIND_BADGES = {
   connection: { label: "Conn", className: "text-warning" },
   schema: { label: "Schema", className: "text-success" },
   relation: { label: "Object", className: "text-info" },
+  object: { label: "Object", className: "text-info" },
   "saved-query": { label: "Saved", className: "text-warning" },
   history: { label: "Hist", className: "text-text-muted" },
 } satisfies Record<
@@ -154,12 +157,28 @@ const RELATION_BADGES = {
   "foreign-table": "Foreign",
 } satisfies Record<RelationKind, string>;
 
+const OBJECT_BADGES = {
+  schema: "Schema",
+  table: "Table",
+  view: "View",
+  "materialized-view": "MatView",
+  "foreign-table": "Foreign",
+  sequence: "Seq",
+  function: "Fn",
+  procedure: "Proc",
+  aggregate: "Agg",
+  type: "Type",
+  domain: "Domain",
+  extension: "Ext",
+} satisfies Record<PgObjectKind, string>;
+
 const KIND_ICONS = {
   command: <IconBolt className="size-3.5" />,
   tab: <IconLayoutColumns className="size-3.5" />,
   connection: <IconDatabase className="size-3.5" />,
   schema: <IconFolder className="size-3.5" />,
   relation: <IconTable className="size-3.5" />,
+  object: <IconDatabase className="size-3.5" />,
   "saved-query": <IconBookmark className="size-3.5" />,
   history: <IconHistory className="size-3.5" />,
 } satisfies Record<OpenAnythingItem["kind"], React.ReactNode>;
@@ -170,6 +189,7 @@ export function CommandPalette() {
   const [selectedKey, setSelectedKey] = useState("");
   const connections = useAppStore((state) => state.connections);
   const schemaExplorer = useAppStore((state) => state.schemaExplorer);
+  const pgObjectCatalog = useAppStore((state) => state.pgObjectCatalog);
   const savedQueries = useAppStore((state) => state.savedQueries);
   const queryHistory = useAppStore((state) => state.queryHistory);
   const workspaceTabs = useAppStore((state) => state.workspaceTabs);
@@ -223,6 +243,12 @@ export function CommandPalette() {
     return buildOpenAnythingIndex({
       connections,
       schemaExplorer,
+      objectCatalog: Object.fromEntries(
+        Object.entries(pgObjectCatalog).map(([connectionId, state]) => [
+          connectionId,
+          state.status === "ready" ? state.catalog : undefined,
+        ]),
+      ),
       savedQueries,
       queryHistory,
       workspaceTabs,
@@ -232,6 +258,7 @@ export function CommandPalette() {
     open,
     connections,
     schemaExplorer,
+    pgObjectCatalog,
     savedQueries,
     queryHistory,
     workspaceTabs,
@@ -301,6 +328,12 @@ export function CommandPalette() {
       }
       case "reveal-schema":
         store.revealSchemaInNavigator(target.connectionId, target.schema);
+        return;
+      case "open-object":
+        if (target.connectionId !== store.activeConnectionId) {
+          useAppStore.setState({ activeConnectionId: target.connectionId });
+        }
+        useAppStore.getState().openObjectTab(target.reference);
         return;
       case "open-saved-query": {
         const saved = store.savedQueries.find(
@@ -378,7 +411,7 @@ export function CommandPalette() {
           <Command.Input
             value={query}
             onValueChange={setQuery}
-            placeholder="Open anything — tables, connections, queries… (> for commands)"
+            placeholder="Open anything: tables, objects, connections, queries… (> for commands)"
             className="w-full border-b border-border-subtle bg-transparent px-4 py-3 text-sm outline-none placeholder:text-text-muted"
             // oxlint-disable-next-line jsx-a11y/no-autofocus -- palette opens focused by definition.
             autoFocus
@@ -402,7 +435,7 @@ export function CommandPalette() {
               className="border-t border-border-subtle px-4 py-2 text-2xs text-text-muted"
             >
               {truncatedTotal} more {truncatedTotal === 1 ? "match" : "matches"}{" "}
-              — keep typing to narrow.
+              . Keep typing to narrow.
             </div>
           ) : null}
         </Command>
@@ -416,6 +449,12 @@ function badgeFor(item: OpenAnythingItem) {
     return {
       label: RELATION_BADGES[item.target.relationKind],
       className: KIND_BADGES.relation.className,
+    };
+  }
+  if (item.kind === "object" && item.target.type === "open-object") {
+    return {
+      label: OBJECT_BADGES[item.target.reference.kind],
+      className: KIND_BADGES.object.className,
     };
   }
   return KIND_BADGES[item.kind];

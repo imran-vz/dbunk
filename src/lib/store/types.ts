@@ -1022,12 +1022,27 @@ export type PgObjectKind =
 
 export type PgTypeClass = "enum" | "composite" | "range" | "multirange";
 
-export type PgObjectRef = {
-  kind: PgObjectKind;
-  schema: string | null;
-  name: string;
-  identityArgs: string | null;
-};
+export type PgRoutineObjectKind = "function" | "procedure" | "aggregate";
+export type PgScopedObjectKind = Exclude<
+  PgObjectKind,
+  "schema" | PgRoutineObjectKind
+>;
+
+/** Object identity is valid by construction inside the typed application. */
+export type PgObjectRef =
+  | { kind: "schema"; schema: null; name: string; identityArgs: null }
+  | {
+      kind: PgRoutineObjectKind;
+      schema: string;
+      name: string;
+      identityArgs: string;
+    }
+  | {
+      kind: PgScopedObjectKind;
+      schema: string;
+      name: string;
+      identityArgs: null;
+    };
 
 export type PgCatalogEntry = {
   name: string;
@@ -1421,6 +1436,7 @@ export type QueryHistoryEntry = {
 export type WorkspaceTabKind =
   | "table"
   | "query"
+  | "object"
   | "key"
   | "cli"
   | "pubsub"
@@ -1443,6 +1459,10 @@ export type WorkspaceTab = {
   connectionId: string;
   schema: string;
   table?: string;
+  /** PostgreSQL object tabs: overload-safe, canonical object identity. */
+  objectRef?: PgObjectRef;
+  /** Query tabs opened for a relation: schema-qualified dedupe identity. */
+  relationRef?: { schema: string; name: string };
   query?: string;
   /** Query tabs only: last known caret/selection, session-persisted. */
   caret?: TabCaret;
@@ -1524,6 +1544,7 @@ import type { KeyValuePubSubSlice } from "./keyvalue-pubsub";
 import type { KeyValueWorkspaceSlice } from "./keyvalue-workspace";
 import type { ManagedServersSlice } from "./managed-servers";
 import type { MutationDraftsSlice } from "./mutation-drafts";
+import type { PgObjectsSlice } from "./pg-objects";
 import type { QuerySessionsSlice } from "./query-sessions";
 import type { RelationalQueriesSlice } from "./relational-queries";
 import type { RelationalTablesSlice } from "./relational-tables";
@@ -1545,6 +1566,7 @@ export type AppStoreState = ConnectionsSlice &
   ManagedServersSlice &
   CredentialsSlice &
   WorkspaceTabsSlice &
+  PgObjectsSlice &
   RelationalTablesSlice &
   MutationDraftsSlice &
   QuerySessionsSlice &

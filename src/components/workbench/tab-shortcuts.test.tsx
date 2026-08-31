@@ -89,6 +89,42 @@ describe("TabShortcuts (§6.1)", () => {
     expect(screen.queryByTestId("mru-tab-switcher")).toBeNull();
   });
 
+  it("uses the object icon in the MRU switcher", () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        tab("a", "query"),
+        {
+          id: "object",
+          kind: "object",
+          label: "public.order_number_seq",
+          connectionId: "conn-1",
+          schema: "public",
+          objectRef: {
+            kind: "sequence",
+            schema: "public",
+            name: "order_number_seq",
+            identityArgs: null,
+          },
+        },
+      ],
+      activeTabId: "a",
+    });
+    const { rerender } = render(<TabShortcuts />);
+    useAppStore.setState({ activeTabId: "object" });
+    rerender(<TabShortcuts />);
+    useAppStore.setState({ activeTabId: "a" });
+    rerender(<TabShortcuts />);
+
+    fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+
+    expect(
+      screen
+        .getByText("public.order_number_seq")
+        .closest("li")
+        ?.querySelector(".tabler-icon-eye"),
+    ).not.toBeNull();
+  });
+
   it("does not close pinned tabs on Cmd+W", async () => {
     useAppStore.setState({
       workspaceTabs: [tab("a", "one", true), tab("b", "two")],

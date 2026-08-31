@@ -115,4 +115,31 @@ describe("ObjectTabRow drag reorder", () => {
     dragOverAt(tabEl("pinned-tab"), -10);
     expect(tabOrder()).toEqual(["a", "p"]);
   });
+
+  it("uses the object icon for PostgreSQL object tabs", () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "object",
+          kind: "object",
+          label: "public.order_number_seq",
+          connectionId: "conn-1",
+          schema: "public",
+          objectRef: {
+            kind: "sequence",
+            schema: "public",
+            name: "order_number_seq",
+            identityArgs: null,
+          },
+        },
+      ],
+      activeTabId: "object",
+    });
+
+    render(<ObjectTabRow />);
+
+    expect(
+      tabEl("public.order_number_seq").querySelector(".tabler-icon-eye"),
+    ).not.toBeNull();
+  });
 });

@@ -6,7 +6,7 @@
  * popup (hold Ctrl, Tab cycles most-recent-first, release commits).
  */
 
-import { IconTable, IconTerminal2 } from "@tabler/icons-react";
+import { IconEye, IconTable, IconTerminal2 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { confirmCloseQuerySession } from "@/lib/query-session-close";
@@ -20,6 +20,13 @@ function orderTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
     ...tabs.filter((tab) => tab.pinned),
     ...tabs.filter((tab) => !tab.pinned),
   ];
+}
+
+function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
+  const className = "size-3.5 shrink-0 text-text-muted";
+  if (tab.kind === "query") return <IconTerminal2 className={className} />;
+  if (tab.kind === "object") return <IconEye className={className} />;
+  return <IconTable className={className} />;
 }
 
 async function closeActiveTab(): Promise<void> {
@@ -185,11 +192,7 @@ export function TabShortcuts() {
                     : "text-text-secondary",
                 )}
               >
-                {tab.kind === "query" ? (
-                  <IconTerminal2 className="size-3.5 shrink-0 text-text-muted" />
-                ) : (
-                  <IconTable className="size-3.5 shrink-0 text-text-muted" />
-                )}
+                <WorkspaceTabIcon tab={tab} />
                 <span className="truncate">{tab.label}</span>
               </li>
             );

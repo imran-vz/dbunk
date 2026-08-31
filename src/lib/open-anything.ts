@@ -6,9 +6,8 @@
  * and every ranking rule is unit-testable without a store.
  *
  * Deliberate boundaries:
- * - Only relation kinds with an open surface are emitted (tables, views,
- *   materialized views, foreign tables). Functions/sequences/types wait
- *   on PAR-007 object viewers — extend `OpenAnythingTarget` then.
+ * - Relations keep their browse/query targets, while catalog kinds with an
+ *   Object Viewer use overload-safe `open-object` targets.
  * - Caps are applied per kind AFTER ranking, and the cut counts are
  *   reported via `truncated` so the UI can disclose them (no silent
  *   caps — register requirement).
@@ -16,9 +15,15 @@
  *   releases (`saved:<id>` keys predate this module).
  */
 
+import { canonicalPgObjectRefKey } from "@/lib/pg-object-ref";
 import {
   type Connection,
   isConnectedStatus,
+  type PgCatalogEntry,
+  type PgObjectCatalog,
+  type PgObjectKind,
+  type PgObjectRef,
+  type PgSchemaObjects,
   type QueryHistoryEntry,
   type SavedQuery,
   type SchemaExplorer,
@@ -43,6 +48,11 @@ export type OpenAnythingTarget =
       relationKind: RelationKind;
     }
   | { type: "reveal-schema"; connectionId: string; schema: string }
+  | {
+      type: "open-object";
+      connectionId: string;
+      reference: PgObjectRef;
+    }
   | { type: "open-saved-query"; savedQueryId: string }
   | { type: "open-history-entry"; historyId: string };
 
@@ -52,6 +62,7 @@ export type OpenAnythingKind =
   | "connection"
   | "schema"
   | "relation"
+  | "object"
   | "saved-query"
   | "history";
 
@@ -75,6 +86,7 @@ export type OpenAnythingCommand = {
 export type OpenAnythingSnapshot = {
   connections: Connection[];
   schemaExplorer: Record<string, SchemaExplorer[] | undefined>;
+  objectCatalog: Record<string, PgObjectCatalog | undefined>;
   savedQueries: SavedQuery[];
   queryHistory: QueryHistoryEntry[];
   workspaceTabs: WorkspaceTab[];
@@ -93,6 +105,7 @@ const KIND_CAPS = new Map<OpenAnythingKind, number>([
   ["connection", 20],
   ["schema", 20],
   ["relation", 200],
+  ["object", 200],
   ["saved-query", 50],
   ["history", 25],
 ]);
@@ -136,6 +149,56 @@ const RELATION_SOURCES: ReadonlyArray<{
   },
 ];
 
+type PaletteObjectKind = Extract<
+  PgObjectKind,
+  | "sequence"
+  | "function"
+  | "procedure"
+  | "aggregate"
+  | "type"
+  | "domain"
+  | "extension"
+>;
+
+const OBJECT_SOURCES: ReadonlyArray<{
+  field: keyof Pick<
+    PgSchemaObjects,
+    | "sequences"
+    | "functions"
+    | "procedures"
+    | "aggregates"
+    | "types"
+    | "domains"
+    | "extensions"
+  >;
+  objectKind: PaletteObjectKind;
+  badge: string;
+}> = [
+  { field: "functions", objectKind: "function", badge: "Fn" },
+  { field: "procedures", objectKind: "procedure", badge: "Proc" },
+  { field: "aggregates", objectKind: "aggregate", badge: "Agg" },
+  { field: "sequences", objectKind: "sequence", badge: "Seq" },
+  { field: "types", objectKind: "type", badge: "Type" },
+  { field: "domains", objectKind: "domain", badge: "Domain" },
+  { field: "extensions", objectKind: "extension", badge: "Ext" },
+];
+
+const paletteObjectRef = (
+  kind: PaletteObjectKind,
+  schema: string,
+  entry: PgCatalogEntry,
+): PgObjectRef => {
+  if (kind === "function" || kind === "procedure" || kind === "aggregate") {
+    return {
+      kind,
+      schema,
+      name: entry.name,
+      identityArgs: entry.identityArgs ?? "",
+    };
+  }
+  return { kind, schema, name: entry.name, identityArgs: null };
+};
+
 function firstLine(sql: string, max: number): string {
   const line = sql.trim().split("\n", 1)[0].trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
@@ -161,7 +224,9 @@ export function buildOpenAnythingIndex(
   }
 
   for (const tab of snapshot.workspaceTabs) {
-    if (tab.kind !== "query" && tab.kind !== "table") continue;
+    if (tab.kind !== "query" && tab.kind !== "table" && tab.kind !== "object") {
+      continue;
+    }
     const connectionName = connectionNames.get(tab.connectionId) ?? "";
     items.push({
       key: `tab:${tab.id}`,
@@ -169,7 +234,7 @@ export function buildOpenAnythingIndex(
       label: tab.label,
       description: connectionName ? `Open tab · ${connectionName}` : "Open tab",
       keywords:
-        `${tab.label} ${tab.table ?? ""} ${connectionName}`.toLowerCase(),
+        `${tab.label} ${tab.table ?? ""} ${tab.objectRef?.kind ?? ""} ${tab.objectRef?.schema ?? ""} ${tab.objectRef?.name ?? ""} ${connectionName}`.toLowerCase(),
       target: { type: "activate-tab", tabId: tab.id },
     });
   }
@@ -217,6 +282,35 @@ export function buildOpenAnythingIndex(
               schema: schema.name,
               name,
               relationKind: source.relationKind,
+            },
+          });
+        }
+      }
+    }
+
+    const catalog = snapshot.objectCatalog[connection.id];
+    for (const schema of catalog?.schemas ?? []) {
+      for (const source of OBJECT_SOURCES) {
+        for (const entry of schema[source.field]) {
+          const reference = paletteObjectRef(
+            source.objectKind,
+            schema.name,
+            entry,
+          );
+          items.push({
+            key: `object:${connection.id}:${canonicalPgObjectRefKey(reference)}`,
+            kind: "object",
+            label:
+              reference.identityArgs === null
+                ? reference.name
+                : `${reference.name}(${reference.identityArgs})`,
+            description: `${source.badge} · ${schema.name} · ${connection.name}`,
+            keywords:
+              `${schema.name}.${reference.name} ${reference.identityArgs ?? ""} ${source.badge} ${source.objectKind} ${connection.name}`.toLowerCase(),
+            target: {
+              type: "open-object",
+              connectionId: connection.id,
+              reference,
             },
           });
         }

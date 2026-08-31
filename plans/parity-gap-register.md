@@ -59,7 +59,7 @@ implementation's blast radius, not the severity of the missing capability.
 | PAR-005 | Workspace persistence and global navigation | Partial | P0 | L | Medium | High |
 | PAR-006 | Connection security and organization | Partial | P1 | L | High | High |
 | PAR-007 | PostgreSQL object lifecycle management | Partial | P1 | XL | Medium | High |
-| PAR-008 | Schema and data comparison with migration | Partial | P1 | XL | High | High |
+| PAR-008 | Schema and data comparison with migration | Missing | P1 | XL | High | High |
 | PAR-009 | Diagram editing and visual query building | Partial | P1 | L | Medium | High |
 | PAR-010 | Transfer, DDL export, backup, and restore | Partial | P1 | XL | High | High |
 | PAR-011 | PostgreSQL administration and observability | Partial | P1 | XL | Medium | High |
@@ -232,7 +232,7 @@ statement classifier built on the extracted Plan 005 lexer (unknown/`DO`/
 `CALL`/lex-failure treated as destructive writes, `EXPLAIN ANALYZE`
 unwrapping, `COPY` direction, `WITH` write detection, paren-depth-aware
 unbounded UPDATE/DELETE detection); one shared `assert_permitted` gate at
-all fifteen write-capable surfaces including the query-session admission
+all sixteen write-capable surfaces including the query-session admission
 point, the result-mutation apply, the `copy_table_rows` destination, and
 the subprocess restore; typed `policyBlocked` / `policyNeedsConfirmation`
 refusals on the actor surfaces and `[policy:…]`-tagged strings on legacy
@@ -334,9 +334,11 @@ Still open from the original list, deferred with rationale (see Plan
 009's Reconciliation section): SQL files and recent files, split
 editors/results, multiple windows, OS deep links, encrypted profile
 exchange, offline metadata search of disconnected connections and data
-search, keyvalue tab restore, per-tab browse-state persistence, and
-palette reach into non-relation object kinds (blocked on `PAR-007`
-object viewers).
+search, keyvalue tab restore, and per-tab browse-state persistence.
+Plan 014 delivered palette reach into connected PostgreSQL non-relation
+objects with overload-safe Object Viewer targets, shared object caps, and
+per-kind badges (`src/lib/open-anything.ts`,
+`src/components/command-palette/command-palette.tsx`).
 
 **Evidence:**
 
@@ -467,35 +469,50 @@ PostgreSQL deployments and can explain which transport stage failed.
 
 ### PAR-007: PostgreSQL object lifecycle management
 
-**Current state:** Partial. Browsing breadth is strong; structured lifecycle
-depth is not.
+**Current state:** Partial. Plans 013 and 014 delivered the catalog,
+inspection, schema-level lifecycle, reviewed DDL, and dependency-warning core.
+Plan 015 remains the pending typed structure-editor half.
+
+**Progress (2026-08-30):** `load_pg_object_catalog` now returns a typed,
+capped inventory with overload-safe Object Refs; `describe_pg_object` covers
+every ref kind with tagged facts and reconstructed definitions; and
+`load_pg_drop_impact` returns bounded transitive dependencies. Typed Object
+Operations generate per-statement DDL previews with atomic/standalone groups,
+run through the backend safety gate, and report statement-aware partial
+failures. The frontend derives the PostgreSQL navigator from that catalog,
+persists Object Viewer tabs, indexes openable non-relation kinds in Open
+Anything, and routes schema/view/materialized-view/sequence/enum plus generic
+comment and supported-kind drop actions through one reviewed flow. Extension
+install/remove remains deferred. The dead sqlx-Any PostgreSQL explorer
+implementation is removed. Materialized-view refresh is the declared non-DDL
+legacy-path exception.
 
 **Evidence:**
 
-- `src-tauri/src/types.rs:1614-1643` includes broad PostgreSQL object kinds.
-- `src-tauri/src/dispatch/relational.rs:511-718` frequently opens catalog SQL
-  for non-table objects.
-- `src/lib/ddl/postgres.ts:26-31` supports a limited set of queued column
-  changes.
-- `src/components/table-editor/specialized-editors.tsx` primarily generates SQL
-  and opens it in the query editor.
+- `src-tauri/src/postgres/objects.rs` owns Object Refs, catalog, descriptions,
+  and transitive drop impact on the native PostgreSQL pool.
+- `src-tauri/src/postgres/object_ddl.rs` owns the typed operation vocabulary,
+  validation, statement generation, grouping, and apply semantics.
+- `src/components/workbench/database-navigator.tsx` and
+  `src/components/object-viewer/object-viewer.tsx` activate catalog browsing
+  and per-kind inspection.
+- `src/components/object-ddl/ddl-review-dialog.tsx` owns the reviewed gate,
+  grouped preview, typed confirmation retry, and scoped cache refresh.
+- `src/lib/open-anything.ts` emits stable overload-safe object targets while
+  retaining views and other relations on their existing open path.
 
 **Missing pieces:**
 
-- Structured create, inspect, alter, rename, and drop for databases and schemas.
-- Complete table, column, primary key, foreign key, check, unique, and index
-  lifecycle.
-- Views and materialized views, including dependencies and refresh policy.
-- Functions, procedures, aggregates, triggers, and event triggers.
-- Sequences, types, enums, domains, and extensions.
+- Database lifecycle and a create-table designer.
+- The Plan 015 typed structure-editor switchover for columns, primary keys,
+  foreign keys, checks, unique constraints, and indexes.
+- Structured function, procedure, and aggregate create/alter flows; triggers,
+  event triggers, rules, and partitions.
+- Structured non-enum type/domain creation and extension install/remove.
 - Roles, users, memberships, ownership, grants, and default privileges.
-- Row-level security policies, tablespaces, partitions, rules, and comments.
-- Existing-definition introspection in every editor.
-- Explicit tagged literal-versus-expression defaults.
-- SQL preview, transactional apply where PostgreSQL permits it, and clear
-  non-transactional exceptions.
-- Dependency-aware drop warnings and generated DDL.
-- Overload-safe function/procedure identity.
+- Row-level security policies and tablespaces.
+- DDL cancellation, richer materialized-view refresh policy, and typed errors
+  for the remaining non-DDL legacy command surfaces.
 
 **Target outcome:** Routine PostgreSQL administration no longer requires users
 to leave dbunk or hand-write catalog queries, while generated SQL always remains
@@ -503,14 +520,14 @@ inspectable.
 
 ### PAR-008: Schema and data comparison with migration
 
-**Current state:** Prototype.
+**Current state:** Missing. The former prototype was removed during workspace
+consolidation and has not yet been replaced.
 
 **Evidence:**
 
-- `src/components/workspace-overview/compare-tab.tsx:20-46` compares selected
-  object-name sets.
-- `src/components/workspace-overview/compare-tab.tsx:268-325` compares the first
-  100 rows positionally.
+- The former `src/components/workspace-overview/compare-tab.tsx` prototype was
+  deleted by the workspace consolidation (`8411dbf`); there is no active
+  schema/data comparison surface in the current tree.
 
 **Missing pieces:**
 
