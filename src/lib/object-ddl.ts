@@ -166,6 +166,7 @@ export function formatObjectDdlError(
 
 export type ObjectDdlRefreshScope = {
   catalog: boolean;
+  revalidateAllDescriptions: boolean;
   references: PgObjectRef[];
 };
 
@@ -181,6 +182,7 @@ export function objectDdlRefreshScope(
   ops: readonly PgObjectOp[],
 ): ObjectDdlRefreshScope {
   let catalog = false;
+  let revalidateAllDescriptions = false;
   const references = new Map<string, PgObjectRef>();
   const add = (reference: PgObjectRef) => {
     references.set(canonicalPgObjectRefKey(reference), reference);
@@ -198,8 +200,12 @@ export function objectDdlRefreshScope(
         });
         break;
       case "renameObject":
+        catalog = true;
+        add(operation.reference);
+        break;
       case "dropObject":
         catalog = true;
+        revalidateAllDescriptions ||= operation.cascade;
         add(operation.reference);
         break;
       case "setComment":
@@ -281,5 +287,9 @@ export function objectDdlRefreshScope(
         break;
     }
   }
-  return { catalog, references: [...references.values()] };
+  return {
+    catalog,
+    revalidateAllDescriptions,
+    references: [...references.values()],
+  };
 }

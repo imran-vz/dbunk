@@ -18,6 +18,7 @@ import {
   objectDdlRefreshScope,
   previewObjectDdl,
 } from "@/lib/object-ddl";
+import { parseCanonicalPgObjectRefKey } from "@/lib/pg-object-ref";
 import {
   isConnectedStatus,
   pgObjectDescriptionKey,
@@ -210,6 +211,24 @@ export function DdlReviewDialog({
       return false;
     }
     const described = new Set(Object.keys(before.pgObjectDescriptions));
+    const references = new Map(
+      scope.references.map((reference) => [
+        pgObjectDescriptionKey(frozenConnectionId, reference),
+        reference,
+      ]),
+    );
+    if (scope.revalidateAllDescriptions) {
+      const prefix = `${frozenConnectionId}:`;
+      for (const [key, state] of Object.entries(before.pgObjectDescriptions)) {
+        if (!key.startsWith(prefix)) continue;
+        const reference =
+          state.description?.reference ??
+          (state.error?.kind === "objectNotFound"
+            ? state.error.reference
+            : parseCanonicalPgObjectRefKey(key.slice(prefix.length)));
+        if (reference) references.set(key, reference);
+      }
+    }
     if (scope.catalog) {
       const result = await before.loadPgObjectCatalog(
         frozenConnectionId,
@@ -217,10 +236,8 @@ export function DdlReviewDialog({
       );
       if (result === "stale") return false;
     }
-    for (const reference of scope.references) {
-      if (
-        described.has(pgObjectDescriptionKey(frozenConnectionId, reference))
-      ) {
+    for (const [key, reference] of references) {
+      if (described.has(key)) {
         await useAppStore
           .getState()
           .loadPgObjectDescription(
