@@ -1,5 +1,5 @@
 import { IconCopy, IconExternalLink } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DdlReviewDialog,
@@ -110,6 +110,8 @@ function ObjectViewerSession({
     (state) => state.pgObjectDescriptions[cacheKey],
   );
   const loadDescription = useAppStore((state) => state.loadPgObjectDescription);
+  const referenceRef = useRef(reference);
+  referenceRef.current = reference;
   const connected =
     connection !== undefined && isConnectedStatus(connection.status);
   const beginReview = (ops: PgObjectOp[]) => {
@@ -128,16 +130,18 @@ function ObjectViewerSession({
   }, [commentEditing, descriptionState]);
 
   useEffect(() => {
-    if (!connected || descriptionState !== undefined) return;
-    void loadDescription(connectionId, reference);
-  }, [
-    cacheKey,
-    connected,
-    connectionId,
-    descriptionState,
-    loadDescription,
-    reference,
-  ]);
+    if (!connected) return;
+    const revalidate = () => {
+      void loadDescription(connectionId, referenceRef.current);
+    };
+
+    // A cached viewer can outlive the database object. Revalidate on mount and
+    // whenever the app regains focus so an external drop reaches the typed
+    // objectNotFound state instead of leaving stale metadata on screen.
+    revalidate();
+    window.addEventListener("focus", revalidate);
+    return () => window.removeEventListener("focus", revalidate);
+  }, [cacheKey, connected, connectionId, loadDescription]);
 
   if (!connection) {
     return (
@@ -336,7 +340,12 @@ function ObjectViewerSession({
 
     if (reference.kind === "schema") {
       store.dropPgObjectDescriptionsForSchema(connectionId, reference.name);
-      if (!rename || rename.op !== "renameObject") return;
+      if (!rename || rename.op !== "renameObject") {
+        await useAppStore
+          .getState()
+          .loadPgObjectDescription(connectionId, reference, expectedGeneration);
+        return;
+      }
 
       const renamedSchema = rename.newName;
       const renamedReference = { ...reference, name: renamedSchema };
