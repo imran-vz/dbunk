@@ -14,6 +14,9 @@ const clientMocks = vi.hoisted(() => ({
   preview: vi.fn(),
   apply: vi.fn(),
 }));
+const tauriMocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+}));
 
 vi.mock("@/lib/object-ddl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/object-ddl")>();
@@ -24,11 +27,17 @@ vi.mock("@/lib/object-ddl", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/tauri", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/tauri")>();
+  return { ...actual, tauriInvoke: tauriMocks.invoke };
+});
+
 import { DdlReviewDialog } from "@/components/object-ddl/ddl-review-dialog";
 import {
   pgObjectDescriptionKey,
   type Connection,
   type DdlPlanPreview,
+  type PgObjectDescription,
   type PgObjectOp,
   type PgObjectRef,
   useAppStore,
@@ -103,6 +112,7 @@ const multiGroupPreview: DdlPlanPreview = {
 beforeEach(() => {
   clientMocks.preview.mockReset();
   clientMocks.apply.mockReset();
+  tauriMocks.invoke.mockReset();
   useAppStore.setState(initialStoreState, true);
   useAppStore.setState({ connections: [connection] });
 });
@@ -471,6 +481,193 @@ describe("DdlReviewDialog", () => {
       }
     },
   );
+
+  it("revalidates cached dependents after a cascading drop", async () => {
+    const dependentRef: PgObjectRef = {
+      kind: "materialized-view",
+      schema: "public",
+      name: "dependent_rollup",
+      identityArgs: null,
+    };
+    const targetRef: PgObjectRef = {
+      kind: "view",
+      schema: "public",
+      name: "source_view",
+      identityArgs: null,
+    };
+    clientMocks.preview.mockResolvedValue({
+      kind: "ok",
+      value: {
+        statements: [
+          {
+            sql: "DROP VIEW public.source_view CASCADE",
+            summary: "Drop view public.source_view (CASCADE)",
+            destructive: true,
+            transactional: true,
+          },
+        ],
+        groups: [{ kind: "atomic", statementIndexes: [0] }],
+      },
+    });
+    clientMocks.apply.mockResolvedValue({
+      kind: "ok",
+      value: { appliedStatements: 1, runtimeMs: 3 },
+    });
+    const loadCatalog = vi.fn(() => Promise.resolve("ready" as const));
+    const loadDescription = vi.fn(() => Promise.resolve("error" as const));
+    useAppStore.setState({
+      loadPgObjectCatalog: loadCatalog,
+      loadPgObjectDescription: loadDescription,
+      pgObjectDescriptions: {
+        [pgObjectDescriptionKey(connection.id, targetRef)]: {
+          status: "ready",
+          generation: 0,
+          description: {
+            reference: targetRef,
+            owner: "postgres",
+            comment: null,
+            definitionSql: "CREATE VIEW public.source_view AS SELECT 1",
+            facts: { kind: "view", definition: "SELECT 1" },
+          },
+        },
+        [pgObjectDescriptionKey(connection.id, dependentRef)]: {
+          status: "ready",
+          generation: 0,
+          description: {
+            reference: dependentRef,
+            owner: "postgres",
+            comment: null,
+            definitionSql:
+              "CREATE MATERIALIZED VIEW public.dependent_rollup AS SELECT 1 WITH DATA",
+            facts: {
+              kind: "materializedView",
+              definition: "SELECT 1",
+              populated: true,
+            },
+          },
+        },
+      },
+    });
+
+    render(
+      <DdlReviewDialog
+        open
+        variant="inline"
+        connectionId={connection.id}
+        ops={[{ op: "dropObject", reference: targetRef, cascade: true }]}
+        onOpenChange={() => undefined}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
+
+    expect(await screen.findByText("Applied in 3 ms.")).toBeTruthy();
+    await waitFor(() => expect(loadDescription).toHaveBeenCalledTimes(2));
+    expect(loadCatalog).toHaveBeenCalledWith(connection.id, 0);
+    expect(loadDescription).toHaveBeenCalledWith(connection.id, targetRef, 0);
+    expect(loadDescription).toHaveBeenCalledWith(
+      connection.id,
+      dependentRef,
+      0,
+    );
+  });
+
+  it("supersedes a loading dependent description after a cascading drop", async () => {
+    const dependentRef: PgObjectRef = {
+      kind: "view",
+      schema: "public",
+      name: "dependent_view",
+      identityArgs: null,
+    };
+    const targetRef: PgObjectRef = {
+      kind: "table",
+      schema: "public",
+      name: "source_table",
+      identityArgs: null,
+    };
+    const preview: DdlPlanPreview = {
+      statements: [
+        {
+          sql: "DROP TABLE public.source_table CASCADE",
+          summary: "Drop table public.source_table (CASCADE)",
+          destructive: true,
+          transactional: true,
+        },
+      ],
+      groups: [{ kind: "atomic", statementIndexes: [0] }],
+    };
+    clientMocks.preview.mockResolvedValue({ kind: "ok", value: preview });
+    clientMocks.apply.mockResolvedValue({
+      kind: "ok",
+      value: { appliedStatements: 1, runtimeMs: 3 },
+    });
+    let resolvePreDrop: (description: PgObjectDescription) => void = () =>
+      undefined;
+    tauriMocks.invoke
+      .mockImplementationOnce(
+        () =>
+          new Promise<PgObjectDescription>((resolve) => {
+            resolvePreDrop = resolve;
+          }),
+      )
+      .mockRejectedValueOnce({
+        kind: "objectNotFound",
+        reference: dependentRef,
+      });
+    useAppStore.setState({
+      loadPgObjectCatalog: vi.fn(() => Promise.resolve("ready" as const)),
+    });
+
+    const preDropLoad = useAppStore
+      .getState()
+      .loadPgObjectDescription(connection.id, dependentRef, 0);
+    const dependentKey = pgObjectDescriptionKey(connection.id, dependentRef);
+    expect(useAppStore.getState().pgObjectDescriptions[dependentKey]).toEqual({
+      status: "loading",
+      generation: 0,
+    });
+
+    render(
+      <DdlReviewDialog
+        open
+        variant="inline"
+        connectionId={connection.id}
+        ops={[{ op: "dropObject", reference: targetRef, cascade: true }]}
+        onOpenChange={() => undefined}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
+
+    await waitFor(() => expect(tauriMocks.invoke).toHaveBeenCalledTimes(2));
+    expect(tauriMocks.invoke).toHaveBeenNthCalledWith(2, "describe_pg_object", {
+      payload: { connectionId: connection.id, reference: dependentRef },
+    });
+    expect(
+      useAppStore.getState().pgObjectDescriptionRequestIds[dependentKey],
+    ).toBe(2);
+    await waitFor(() =>
+      expect(useAppStore.getState().pgObjectDescriptions[dependentKey]).toEqual(
+        {
+          status: "error",
+          generation: 0,
+          error: { kind: "objectNotFound", reference: dependentRef },
+        },
+      ),
+    );
+    resolvePreDrop({
+      reference: dependentRef,
+      owner: "postgres",
+      comment: null,
+      definitionSql: "CREATE VIEW public.dependent_view AS SELECT 1",
+      facts: { kind: "view", definition: "SELECT 1" },
+    });
+
+    await expect(preDropLoad).resolves.toBe("stale");
+    expect(useAppStore.getState().pgObjectDescriptions[dependentKey]).toEqual({
+      status: "error",
+      generation: 0,
+      error: { kind: "objectNotFound", reference: dependentRef },
+    });
+  });
 
   it("does not refresh metadata into a newer connection generation", async () => {
     let resolveApply: (result: {

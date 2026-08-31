@@ -231,6 +231,7 @@ describe("object DDL errors and refresh scope", () => {
       ]),
     ).toEqual({
       catalog: false,
+      revalidateAllDescriptions: false,
       references: [
         {
           kind: "sequence",
@@ -245,6 +246,20 @@ describe("object DDL errors and refresh scope", () => {
       objectDdlRefreshScope([
         { op: "dropObject", reference: viewRef, cascade: false },
       ]),
-    ).toEqual({ catalog: true, references: [viewRef] });
+    ).toEqual({
+      catalog: true,
+      revalidateAllDescriptions: false,
+      references: [viewRef],
+    });
+
+    expect(
+      objectDdlRefreshScope([
+        { op: "dropObject", reference: viewRef, cascade: true },
+      ]),
+    ).toEqual({
+      catalog: true,
+      revalidateAllDescriptions: true,
+      references: [viewRef],
+    });
   });
 });

@@ -80,6 +80,37 @@ export const canonicalPgObjectRefKey = (reference: PgObjectRef): string =>
     reference.identityArgs ?? "",
   ]);
 
+/** Recover typed identity from a key emitted by canonicalPgObjectRefKey. */
+export function parseCanonicalPgObjectRefKey(key: string): PgObjectRef | null {
+  try {
+    const identity: unknown = JSON.parse(key);
+    if (
+      !Array.isArray(identity) ||
+      identity.length !== 4 ||
+      !identity.every((part): part is string => typeof part === "string")
+    ) {
+      return null;
+    }
+    const [kind, schema, name, identityArgs] = identity;
+    if (!isPgObjectKind(kind)) return null;
+
+    const reference = validatePgObjectRef({
+      kind,
+      schema: kind === "schema" ? null : schema,
+      name,
+      identityArgs:
+        kind === "function" || kind === "procedure" || kind === "aggregate"
+          ? identityArgs
+          : null,
+    });
+    return reference && canonicalPgObjectRefKey(reference) === key
+      ? reference
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function displayPgObjectName(reference: PgObjectRef): string {
   const routineSuffix =
     reference.identityArgs === null ? "" : `(${reference.identityArgs})`;

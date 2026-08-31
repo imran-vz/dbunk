@@ -277,6 +277,33 @@ describe("ObjectViewer lifecycle", () => {
     expect(closeTab).toHaveBeenCalledWith("tab-object");
   });
 
+  it("revalidates a loaded viewer after focus and surfaces an external drop", async () => {
+    const reference = referenceFor("view");
+    mockedInvoke
+      .mockResolvedValueOnce(
+        descriptionFor(
+          reference,
+          { kind: "view", definition: "SELECT 1" },
+          "SELECT 1",
+        ),
+      )
+      .mockRejectedValueOnce({ kind: "objectNotFound", reference });
+
+    render(
+      <ObjectViewer
+        tabId="tab-object"
+        connectionId="conn-1"
+        reference={reference}
+      />,
+    );
+
+    expect(await screen.findByText("SELECT 1")).toBeTruthy();
+    act(() => window.dispatchEvent(new FocusEvent("focus")));
+
+    expect(await screen.findByText(/no longer exists/)).toBeTruthy();
+    expect(mockedInvoke).toHaveBeenCalledTimes(2);
+  });
+
   it("drops lifecycle dialog state when the active object identity changes", async () => {
     const first = referenceFor("view");
     const second = { ...first, name: "other_view" };
@@ -719,6 +746,70 @@ describe("ObjectViewer actions", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("describe_pg_object", {
       payload: { connectionId: "conn-1", reference: renamedReference },
     });
+  });
+
+  it("shows the terminal missing state after dropping a schema", async () => {
+    const reference = referenceFor("schema");
+    const childReference = referenceFor("view");
+    const childKey = pgObjectDescriptionKey("conn-1", childReference);
+    mockedInvoke
+      .mockResolvedValueOnce(descriptionFor(reference, { kind: "schema" }))
+      .mockResolvedValueOnce({ dependents: [], truncated: false })
+      .mockResolvedValueOnce({
+        statements: [
+          {
+            sql: "DROP SCHEMA lifecycle",
+            summary: "Drop schema lifecycle",
+            destructive: true,
+            transactional: true,
+          },
+        ],
+        groups: [{ kind: "atomic", statementIndexes: [0] }],
+      })
+      .mockResolvedValueOnce({ appliedStatements: 1, runtimeMs: 5 })
+      .mockResolvedValueOnce({
+        schemas: [],
+        eventTriggers: [],
+        roles: [],
+        tablespaces: [],
+        truncated: [],
+      })
+      .mockRejectedValueOnce({ kind: "objectNotFound", reference })
+      .mockRejectedValueOnce({ kind: "objectNotFound", reference });
+    useAppStore.setState({
+      pgObjectDescriptions: {
+        [childKey]: {
+          status: "ready",
+          generation: 0,
+          description: descriptionFor(childReference, {
+            kind: "view",
+            definition: "SELECT 1",
+          }),
+        },
+      },
+    });
+
+    render(
+      <ObjectViewer
+        tabId="tab-schema"
+        connectionId="conn-1"
+        reference={reference}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Drop" }));
+    expect(await screen.findByText("No dependents found.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review drop DDL" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
+
+    expect(await screen.findByText(/lifecycle no longer exists/)).toBeTruthy();
+    expect(screen.queryByText("Loading object…")).toBeNull();
+    expect(
+      useAppStore.getState().pgObjectDescriptions[childKey],
+    ).toBeUndefined();
+    const describeCalls = mockedInvoke.mock.calls.filter(
+      ([command]) => command === "describe_pg_object",
+    );
+    expect(describeCalls).toHaveLength(3);
   });
 
   it("keeps a terminal DDL result mounted through same-object refresh", async () => {
