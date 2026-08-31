@@ -14,7 +14,12 @@
 
 import type { StateCreator } from "zustand";
 
-import { generateDdlForEngine, type PendingChange } from "@/lib/ddl";
+import {
+  type ColumnChangeKind,
+  generateDdlForEngine,
+  type PendingChange,
+  type StructureChange,
+} from "@/lib/ddl";
 import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import { pendingMutationsFromResult } from "@/lib/pending-mutations";
 import {
@@ -46,7 +51,6 @@ import {
 } from "./edit-strategies";
 import type {
   AppStoreState,
-  ColumnChangeKind,
   DatabaseOverviewStats,
   DatabaseOverviewStatsStatus,
   DDLOutcome,
@@ -378,7 +382,11 @@ export type RelationalTablesSlice = {
 
   addPendingStructureChange: (
     key: string,
-    entry: { schema: string; table: string; change: ColumnChangeKind },
+    entry: {
+      schema: string;
+      table: string;
+      change: StructureChange | ColumnChangeKind;
+    },
   ) => void;
   removePendingStructureChange: (key: string, id: string) => void;
   clearPendingStructureChanges: (key: string) => void;
@@ -1567,7 +1575,10 @@ export const createRelationalTablesSlice: StateCreator<
         id: generatePendingId(),
         schema: entry.schema,
         table: entry.table,
-        change: entry.change,
+        change:
+          entry.change.kind === "column" || entry.change.kind === "pg-op"
+            ? entry.change
+            : { kind: "column", change: entry.change },
       };
       return {
         pendingStructureChanges: {
@@ -1621,7 +1632,12 @@ export const createRelationalTablesSlice: StateCreator<
       connection.engine,
       schema,
       table,
-      pending.map((entry) => entry.change),
+      pending.map((entry) => {
+        if (entry.change.kind !== "column") {
+          throw new Error("PostgreSQL typed operations require object DDL");
+        }
+        return entry.change.change;
+      }),
       ddlStructure?.columns,
     );
 

@@ -26,8 +26,8 @@ and update its status here when work finishes.
 | [011](./011-connection-security-backend.md)           | PostgreSQL connection security backend (dark)                    |       P1 |      L | 001–010    | DONE: b134766                                  |
 | [012](./012-connection-security-activation.md)        | TLS controls, staged connection diagnosis, and truth pass        |       P1 |      L | 011        | DONE: b45e294 (selected mock: A)               |
 | [013](./013-object-catalog-ddl-backend.md)            | PostgreSQL object catalog and DDL workflow backend (dark)        |       P1 |      L | 001–012    | DONE: 4833a42                                  |
-| [014](./014-object-explorer-lifecycle-activation.md)  | Object explorer, viewers, and lifecycle activation               |       P1 |      L | 013        | IN PROGRESS: through Step 6 (selected mock: C; native manual pass blocked) |
-| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | TODO                                           |
+| [014](./014-object-explorer-lifecycle-activation.md)  | Object explorer, viewers, and lifecycle activation               |       P1 |      L | 013        | DONE: 2e843a6 (selected mock: C)               |
+| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | IN PROGRESS: through Step 1                    |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
