@@ -16,6 +16,12 @@
 import type { StateCreator } from "zustand";
 
 import { requestConfirm } from "@/lib/confirm";
+import { createIdentQuoter } from "@/lib/ddl/shared";
+import {
+  canonicalPgObjectRefKey,
+  displayPgObjectName,
+  validatePgObjectRef,
+} from "@/lib/pg-object-ref";
 import { resetResultMutationClientForTab } from "@/lib/result-mutation-client";
 import { supportsServerTableBrowse } from "@/lib/table-browse";
 import { uiGet } from "@/lib/ui-state";
@@ -23,11 +29,16 @@ import { uiGet } from "@/lib/ui-state";
 import type {
   ActiveView,
   AppStoreState,
+  DatabaseEngine,
   SettingsTab,
   TabCaret,
   WorkspaceTab,
   Connection,
+  PgObjectRef,
 } from "./types";
+
+const relationQuoter = (engine: DatabaseEngine | undefined) =>
+  createIdentQuoter(engine === "MySQL" || engine === "ClickHouse" ? "`" : '"');
 
 /**
  * Validate a persisted caret candidate: present members must be finite
@@ -100,6 +111,7 @@ export type WorkspaceTabsSlice = {
   openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
   openTableTab: (schemaName: string, tableName: string) => void;
   openViewTab: (schemaName: string, viewName: string) => void;
+  openObjectTab: (reference: PgObjectRef) => void;
   openQueryForTable: (schemaName: string, tableName: string) => void;
   createNewQueryTab: () => void;
   createNewTableTab: () => void;
@@ -199,6 +211,10 @@ export const createWorkspaceTabsSlice: StateCreator<
   setSelectedRowIndex: (index) => set({ selectedRowIndex: index }),
 
   closeTab: async (tabId) => {
+    const tab = get().workspaceTabs.find((candidate) => candidate.id === tabId);
+    if (tab?.kind === "object" && get().pgObjectDdlApplying[tab.connectionId]) {
+      return;
+    }
     const tabDrafts = Object.values(get().mutationDrafts).filter(
       (draft) => draft?.owner.tabId === tabId,
     );
@@ -253,6 +269,20 @@ export const createWorkspaceTabsSlice: StateCreator<
       if (tab.kind === "table") {
         return item.schema === tab.schema && item.table === tab.table;
       }
+      if (tab.kind === "object") {
+        return (
+          item.objectRef !== undefined &&
+          tab.objectRef !== undefined &&
+          canonicalPgObjectRefKey(item.objectRef) ===
+            canonicalPgObjectRefKey(tab.objectRef)
+        );
+      }
+      if (tab.kind === "query" && tab.relationRef !== undefined) {
+        return (
+          item.relationRef?.schema === tab.relationRef.schema &&
+          item.relationRef.name === tab.relationRef.name
+        );
+      }
       return item.label === tab.label;
     });
     if (existing) {
@@ -295,17 +325,35 @@ export const createWorkspaceTabsSlice: StateCreator<
   },
 
   openViewTab: (schemaName, viewName) => {
+    const state = get();
+    const engine = state.connections.find(
+      (connection) => connection.id === state.activeConnectionId,
+    )?.engine;
     get().openWorkspaceTab({
       kind: "query",
       label: `${viewName}.sql`,
-      connectionId: get().activeConnectionId,
+      connectionId: state.activeConnectionId,
       schema: schemaName,
-      query: `select * from ${schemaName}.${viewName} limit 100;`,
+      relationRef: { schema: schemaName, name: viewName },
+      query: `select * from ${relationQuoter(engine).qualifiedTable(schemaName, viewName)} limit 100;`,
+    });
+  },
+
+  openObjectTab: (reference) => {
+    get().openWorkspaceTab({
+      kind: "object",
+      label: displayPgObjectName(reference),
+      connectionId: get().activeConnectionId,
+      schema: reference.schema ?? "",
+      objectRef: reference,
     });
   },
 
   openQueryForTable: (schemaName, tableName) => {
     const state = get();
+    const engine = state.connections.find(
+      (connection) => connection.id === state.activeConnectionId,
+    )?.engine;
     const queryLabel = `query_${nextQueryIndex}.sql`;
     nextQueryIndex += 1;
     get().openWorkspaceTab({
@@ -313,7 +361,7 @@ export const createWorkspaceTabsSlice: StateCreator<
       label: queryLabel,
       connectionId: state.activeConnectionId,
       schema: schemaName,
-      query: `select * from ${schemaName}.${tableName} limit 100;`,
+      query: `select * from ${relationQuoter(engine).qualifiedTable(schemaName, tableName)} limit 100;`,
     });
   },
 
@@ -352,12 +400,14 @@ export const createWorkspaceTabsSlice: StateCreator<
     let tabs: WorkspaceTab[] = [];
     let activeTabId = "";
     let expandedSchemas: string[] = [];
+    let expandedNavigatorGroups: string[] | null = null;
     try {
       // SAFETY: parsed session data is validated field-by-field below.
       const parsed = JSON.parse(raw) as {
         tabs?: unknown;
         activeTabId?: unknown;
         expandedSchemas?: unknown;
+        expandedNavigatorGroups?: unknown;
       };
       if (Array.isArray(parsed.tabs)) {
         tabs = parsed.tabs.flatMap((candidate): WorkspaceTab[] => {
@@ -369,7 +419,9 @@ export const createWorkspaceTabsSlice: StateCreator<
             typeof tab.label !== "string" ||
             typeof tab.connectionId !== "string" ||
             typeof tab.schema !== "string" ||
-            (tab.kind !== "query" && tab.kind !== "table") ||
+            (tab.kind !== "query" &&
+              tab.kind !== "table" &&
+              tab.kind !== "object") ||
             !connectionIds.has(tab.connectionId)
           ) {
             return [];
@@ -383,9 +435,26 @@ export const createWorkspaceTabsSlice: StateCreator<
           };
           if (typeof tab.table === "string") restored.table = tab.table;
           if (typeof tab.query === "string") restored.query = tab.query;
+          if (tab.kind === "object") {
+            const objectRef = validatePgObjectRef(tab.objectRef);
+            if (!objectRef) return [];
+            restored.objectRef = objectRef;
+            restored.schema = objectRef.schema ?? "";
+          }
           if (tab.pinned === true) restored.pinned = true;
           if (tab.isDirty === true) restored.isDirty = true;
           if (tab.kind === "query") {
+            if (
+              typeof tab.relationRef === "object" &&
+              tab.relationRef !== null &&
+              typeof tab.relationRef.schema === "string" &&
+              typeof tab.relationRef.name === "string"
+            ) {
+              restored.relationRef = {
+                schema: tab.relationRef.schema,
+                name: tab.relationRef.name,
+              };
+            }
             const caret = validateTabCaret(tab.caret);
             if (caret) restored.caret = caret;
           }
@@ -400,10 +469,21 @@ export const createWorkspaceTabsSlice: StateCreator<
           (value): value is string => typeof value === "string",
         );
       }
+      if (Array.isArray(parsed.expandedNavigatorGroups)) {
+        expandedNavigatorGroups = parsed.expandedNavigatorGroups.filter(
+          (value): value is string => typeof value === "string",
+        );
+      }
     } catch {
       return;
     }
-    if (tabs.length === 0 && expandedSchemas.length === 0) return;
+    if (
+      tabs.length === 0 &&
+      expandedSchemas.length === 0 &&
+      expandedNavigatorGroups === null
+    ) {
+      return;
+    }
     // Bump the id/label counters past restored tabs so new tabs never
     // collide with restored ids.
     for (const tab of tabs) {
@@ -423,6 +503,8 @@ export const createWorkspaceTabsSlice: StateCreator<
         activeTabId: active?.id ?? state.activeTabId,
         expandedSchemas:
           expandedSchemas.length > 0 ? expandedSchemas : state.expandedSchemas,
+        expandedNavigatorGroups:
+          expandedNavigatorGroups ?? state.expandedNavigatorGroups,
       };
       if (active) next.activeConnectionId = active.connectionId;
       return next;

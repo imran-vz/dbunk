@@ -92,6 +92,26 @@ export function SafetyConfirmDialog() {
               </li>
             ))}
           </ul>
+        ) : request.subject.kind === "ddl" ? (
+          <ol className="divide-y divide-border-subtle border-y border-border-subtle text-xs text-text-secondary">
+            {request.subject.statements.map((statement) => (
+              <li key={statement.index} className="grid gap-1 py-2">
+                <span className="font-medium text-foreground">
+                  {statement.index + 1}. {statement.summary}
+                </span>
+                <span className="flex gap-3">
+                  {statement.destructive ? (
+                    <span className="text-danger">Destructive</span>
+                  ) : null}
+                  {!statement.transactional ? (
+                    <span className="text-warning">
+                      Runs outside a transaction
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ol>
         ) : (
           <div className="border-y border-border-subtle py-2 text-xs text-text-secondary">
             Command:{" "}

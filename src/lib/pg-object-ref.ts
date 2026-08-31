@@ -1,0 +1,88 @@
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- Persisted and transported object refs are unstructured until decoded here. */
+import { isNullableString, isRecord } from "@/lib/decode-transport-error";
+import type { PgObjectKind, PgObjectRef } from "@/lib/store/types";
+
+export const PG_OBJECT_KINDS = [
+  "schema",
+  "table",
+  "view",
+  "materialized-view",
+  "foreign-table",
+  "sequence",
+  "function",
+  "procedure",
+  "aggregate",
+  "type",
+  "domain",
+  "extension",
+] as const satisfies readonly PgObjectKind[];
+
+export const isPgObjectKind = (value: unknown): value is PgObjectKind =>
+  typeof value === "string" &&
+  PG_OBJECT_KINDS.some((candidate) => candidate === value);
+
+/** Validate persisted or transported object identity field-by-field. */
+export function validatePgObjectRef(value: unknown): PgObjectRef | null {
+  if (!isRecord(value)) return null;
+  if (
+    !isPgObjectKind(value.kind) ||
+    !isNullableString(value.schema) ||
+    typeof value.name !== "string" ||
+    value.name.trim().length === 0 ||
+    !isNullableString(value.identityArgs)
+  ) {
+    return null;
+  }
+
+  if (value.kind === "schema") {
+    return value.schema === null && value.identityArgs === null
+      ? {
+          kind: "schema",
+          schema: null,
+          name: value.name,
+          identityArgs: null,
+        }
+      : null;
+  }
+
+  if (value.schema === null || value.schema.trim().length === 0) return null;
+  if (
+    value.kind === "function" ||
+    value.kind === "procedure" ||
+    value.kind === "aggregate"
+  ) {
+    return value.identityArgs === null
+      ? null
+      : {
+          kind: value.kind,
+          schema: value.schema,
+          name: value.name,
+          identityArgs: value.identityArgs,
+        };
+  }
+
+  return value.identityArgs === null
+    ? {
+        kind: value.kind,
+        schema: value.schema,
+        name: value.name,
+        identityArgs: null,
+      }
+    : null;
+}
+
+/** Null and empty schema/identity spellings name the same PostgreSQL object. */
+export const canonicalPgObjectRefKey = (reference: PgObjectRef): string =>
+  JSON.stringify([
+    reference.kind,
+    reference.schema ?? "",
+    reference.name,
+    reference.identityArgs ?? "",
+  ]);
+
+export function displayPgObjectName(reference: PgObjectRef): string {
+  const routineSuffix =
+    reference.identityArgs === null ? "" : `(${reference.identityArgs})`;
+  const name = `${reference.name}${routineSuffix}`;
+  return reference.schema ? `${reference.schema}.${name}` : name;
+}

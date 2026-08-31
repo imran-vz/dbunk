@@ -510,6 +510,12 @@ async fn run_sqlx_any(connection: &StoredConnection, query: &str) -> Result<Quer
 async fn fetch_schema_explorer_sqlx(
     connection: &StoredConnection,
 ) -> Result<Vec<SchemaExplorer>, String> {
+    if connection.engine() == DatabaseEngine::PostgreSQL {
+        return Err(
+            "PostgreSQL is unsupported by the legacy schema explorer; use load_pg_object_catalog"
+                .to_string(),
+        );
+    }
     ensure_sqlx_drivers();
     let dsn = sqlx_dsn(connection)?;
     let options = AnyConnectOptions::from_str(&dsn).map_err(|error| error.to_string())?;
@@ -518,138 +524,7 @@ async fn fetch_schema_explorer_sqlx(
         .map_err(|error| friendly_sqlx_error(error, connection.host(), connection.port()))?;
 
     match connection.engine() {
-        DatabaseEngine::PostgreSQL => {
-            let schemas = fetch_column(
-                &mut conn,
-                "SELECT nspname::text FROM pg_namespace WHERE nspname NOT IN ('information_schema') AND nspname NOT LIKE 'pg_%' ORDER BY nspname",
-                None,
-            )
-            .await?;
-            let mut explorer = Vec::new();
-            for schema in schemas {
-                let tables = fetch_column(
-                    &mut conn,
-                    "SELECT tablename::text FROM pg_tables WHERE schemaname = $1 ORDER BY tablename",
-                    Some(&schema),
-                )
-                .await?;
-                let views = fetch_column(
-                    &mut conn,
-                    "SELECT viewname::text FROM pg_views WHERE schemaname = $1 ORDER BY viewname",
-                    Some(&schema),
-                )
-                .await?;
-                let materialized_views = fetch_column(
-                    &mut conn,
-                    "SELECT matviewname::text FROM pg_matviews WHERE schemaname = $1 ORDER BY matviewname",
-                    Some(&schema),
-                )
-                .await?;
-                let sequences = fetch_column(
-                    &mut conn,
-                    "SELECT sequence_name::text FROM information_schema.sequences WHERE sequence_schema = $1 ORDER BY sequence_name",
-                    Some(&schema),
-                )
-                .await?;
-                let foreign_tables = fetch_column(
-                    &mut conn,
-                    "SELECT foreign_table_name::text FROM information_schema.foreign_tables WHERE foreign_table_schema = $1 ORDER BY foreign_table_name",
-                    Some(&schema),
-                )
-                .await?;
-                let functions = fetch_column(
-                    &mut conn,
-                    "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.prokind = 'f' ORDER BY p.proname",
-                    Some(&schema),
-                )
-                .await?;
-                let procedures = fetch_column(
-                    &mut conn,
-                    "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.prokind = 'p' ORDER BY p.proname",
-                    Some(&schema),
-                )
-                .await?;
-                let aggregate_functions = fetch_column(
-                    &mut conn,
-                    "SELECT p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.prokind = 'a' ORDER BY p.proname",
-                    Some(&schema),
-                )
-                .await?;
-                let types = fetch_column(
-                    &mut conn,
-                    "SELECT t.typname::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = $1 AND t.typtype IN ('c', 'e', 'r', 'm') AND t.typname NOT LIKE '\\_%' ORDER BY t.typname",
-                    Some(&schema),
-                )
-                .await?;
-                let domains = fetch_column(
-                    &mut conn,
-                    "SELECT domain_name::text FROM information_schema.domains WHERE domain_schema = $1 ORDER BY domain_name",
-                    Some(&schema),
-                )
-                .await?;
-                let extensions = fetch_column(
-                    &mut conn,
-                    "SELECT e.extname::text FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE n.nspname = $1 ORDER BY e.extname",
-                    Some(&schema),
-                )
-                .await?;
-                explorer.push(SchemaExplorer {
-                    name: schema,
-                    tables,
-                    views,
-                    materialized_views,
-                    sequences,
-                    foreign_tables,
-                    functions,
-                    procedures,
-                    aggregate_functions,
-                    types,
-                    domains,
-                    extensions,
-                    event_triggers: vec![],
-                    roles: vec![],
-                    tablespaces: vec![],
-                });
-            }
-            let event_triggers = fetch_column(
-                &mut conn,
-                "SELECT evtname::text FROM pg_event_trigger ORDER BY evtname",
-                None,
-            )
-            .await?;
-            let roles = fetch_column(
-                &mut conn,
-                "SELECT rolname::text FROM pg_roles ORDER BY rolname",
-                None,
-            )
-            .await?;
-            let tablespaces = fetch_column(
-                &mut conn,
-                "SELECT spcname::text FROM pg_tablespace ORDER BY spcname",
-                None,
-            )
-            .await?;
-            if !event_triggers.is_empty() || !roles.is_empty() || !tablespaces.is_empty() {
-                explorer.push(SchemaExplorer {
-                    name: "Database".to_string(),
-                    tables: vec![],
-                    views: vec![],
-                    materialized_views: vec![],
-                    sequences: vec![],
-                    foreign_tables: vec![],
-                    functions: vec![],
-                    procedures: vec![],
-                    aggregate_functions: vec![],
-                    types: vec![],
-                    domains: vec![],
-                    extensions: vec![],
-                    event_triggers,
-                    roles,
-                    tablespaces,
-                });
-            }
-            Ok(explorer)
-        }
+        DatabaseEngine::PostgreSQL => unreachable!("handled before opening a legacy connection"),
         DatabaseEngine::MySQL => {
             if connection.database().trim().is_empty() {
                 return Err("MySQL database is required".to_string());

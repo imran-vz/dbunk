@@ -30,10 +30,12 @@ export async function invokeWithSafetyConfirmation<Result>({
   command,
   payload,
   connection,
+  isConnectionCurrent = () => true,
 }: {
   command: string;
   payload: object;
   connection: Connection | undefined;
+  isConnectionCurrent?: () => boolean;
 }): Promise<Result> {
   try {
     return await tauriInvoke<Result>(command, { payload });
@@ -50,6 +52,9 @@ export async function invokeWithSafetyConfirmation<Result>({
       },
     });
     if (!confirmed) throw new Error("Safety confirmation cancelled.");
+    if (!isConnectionCurrent()) {
+      throw new Error("Connection changed during safety confirmation.");
+    }
     return tauriInvoke<Result>(command, {
       payload: { ...payload, confirmed: true },
     });

@@ -95,6 +95,27 @@ describe("invokeWithSafetyConfirmation", () => {
     await expect(result).rejects.toThrow("Safety confirmation cancelled.");
   });
 
+  it("does not retry a confirmed command in a newer connection lifetime", async () => {
+    mockedInvoke.mockRejectedValueOnce("[policy:confirm] protected write");
+    let current = true;
+
+    const result = invokeWithSafetyConfirmation({
+      command: "refresh_materialized_view",
+      connection,
+      payload: { connectionId: connection.id },
+      isConnectionCurrent: () => current,
+    });
+
+    await vi.waitFor(() => expect(getSafetyConfirmation()).not.toBeNull());
+    current = false;
+    resolveSafetyConfirmation(true);
+
+    await expect(result).rejects.toThrow(
+      "Connection changed during safety confirmation.",
+    );
+    expect(mockedInvoke).toHaveBeenCalledOnce();
+  });
+
   it("surfaces read-only tags without opening a confirmation", async () => {
     mockedInvoke.mockRejectedValueOnce("[policy:read-only] writes disabled");
 

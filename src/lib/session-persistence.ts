@@ -1,6 +1,6 @@
 /**
  * Session persistence (P8) — continuously (debounced) mirrors the
- * restorable session state into the UI-state store: open query/table
+ * restorable session state into the UI-state store: open query/table/object
  * tabs (including hot-exit SQL text, which lives on the tab), tab
  * order and pinning, the active tab, and expanded navigator nodes.
  *
@@ -26,10 +26,13 @@ const PERSIST_DEBOUNCE_MS = 500;
  */
 const SESSION_BUDGET_BYTES = UI_STATE_MAX_VALUE_BYTES - 64 * 1024;
 
-/** Only query/table tabs restore cleanly; strip runtime-only fields. */
+/** Only query/table/object tabs restore cleanly; strip runtime-only fields. */
 const serializeTabs = (tabs: WorkspaceTab[]) =>
   tabs.flatMap((tab) => {
-    if (tab.kind !== "query" && tab.kind !== "table") return [];
+    if (tab.kind !== "query" && tab.kind !== "table" && tab.kind !== "object") {
+      return [];
+    }
+    if (tab.kind === "object" && tab.objectRef === undefined) return [];
     const serialized: Partial<WorkspaceTab> = {
       id: tab.id,
       kind: tab.kind,
@@ -38,6 +41,12 @@ const serializeTabs = (tabs: WorkspaceTab[]) =>
       schema: tab.schema,
     };
     if (tab.table !== undefined) serialized.table = tab.table;
+    if (tab.kind === "object" && tab.objectRef !== undefined) {
+      serialized.objectRef = tab.objectRef;
+    }
+    if (tab.kind === "query" && tab.relationRef !== undefined) {
+      serialized.relationRef = tab.relationRef;
+    }
     if (tab.query !== undefined) serialized.query = tab.query;
     if (tab.pinned) serialized.pinned = true;
     if (tab.isDirty) serialized.isDirty = true;
@@ -57,6 +66,7 @@ export function startSessionPersistence(): void {
   let lastTabs = useAppStore.getState().workspaceTabs;
   let lastActive = useAppStore.getState().activeTabId;
   let lastExpanded = useAppStore.getState().expandedSchemas;
+  let lastExpandedGroups = useAppStore.getState().expandedNavigatorGroups;
 
   const persist = () => {
     timer = null;
@@ -66,6 +76,7 @@ export function startSessionPersistence(): void {
       tabs,
       activeTabId: state.activeTabId,
       expandedSchemas: state.expandedSchemas,
+      expandedNavigatorGroups: state.expandedNavigatorGroups,
     });
     // Over budget: shed hot-exit SQL from the largest tabs first so the
     // tab set itself (and every other tab's SQL) still persists.
@@ -87,6 +98,7 @@ export function startSessionPersistence(): void {
           tabs,
           activeTabId: state.activeTabId,
           expandedSchemas: state.expandedSchemas,
+          expandedNavigatorGroups: state.expandedNavigatorGroups,
         });
         if (!exceedsUtf8Length(payload, SESSION_BUDGET_BYTES)) break;
       }
@@ -98,13 +110,15 @@ export function startSessionPersistence(): void {
     if (
       state.workspaceTabs === lastTabs &&
       state.activeTabId === lastActive &&
-      state.expandedSchemas === lastExpanded
+      state.expandedSchemas === lastExpanded &&
+      state.expandedNavigatorGroups === lastExpandedGroups
     ) {
       return;
     }
     lastTabs = state.workspaceTabs;
     lastActive = state.activeTabId;
     lastExpanded = state.expandedSchemas;
+    lastExpandedGroups = state.expandedNavigatorGroups;
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(persist, PERSIST_DEBOUNCE_MS);
   });

@@ -119,6 +119,17 @@ const teardownConnectionWorkspace = async (
   connectionId: string,
   teardownBackend?: () => Promise<void>,
 ) => {
+  // Invalidate PostgreSQL catalog/description reads before the first await.
+  // A response that completes while session/backend teardown is in progress
+  // must not resurrect metadata from the old connection lifetime.
+  if (
+    state.connections.some(
+      (connection) =>
+        connection.id === connectionId && connection.engine === "PostgreSQL",
+    )
+  ) {
+    state.dropPgObjectCachesForConnection(connectionId);
+  }
   await state.closeQuerySessionsForConnection(connectionId);
   await state.closeTableBrowsesForConnection(connectionId);
   await closeResultMutationForConnection(connectionId).catch(() => undefined);
@@ -134,6 +145,10 @@ const teardownConnectionWorkspace = async (
 export type ConnectionsSlice = {
   connections: Connection[];
   activeConnectionId: string;
+  /** Monotonic identity for each backend connection lifetime. */
+  connectionEpochs: Record<string, number>;
+  /** Connections currently entering or leaving a backend lifetime. */
+  connectionTransitionIds: string[];
   /**
    * Active sub-tab inside each connection's Overview surface. Keyed
    * by connection id; missing entries default to `"overview"` at the
@@ -217,6 +232,8 @@ export const createConnectionsSlice: StateCreator<
 > = (set, get) => ({
   connections: [],
   activeConnectionId: "",
+  connectionEpochs: {},
+  connectionTransitionIds: [],
   connectionOverviewTab: {},
   connectionSchemaMapSchema: {},
 
@@ -252,7 +269,7 @@ export const createConnectionsSlice: StateCreator<
     }
     try {
       const stored = await tauriInvoke<StoredConnection[]>("load_connections");
-      const connections = stored.map(hydrateConnection);
+      const connections = mergeStoredConnections(stored, get().connections);
       const liveIds = new Set(connections.map((c) => c.id));
       set((state) => ({
         connections,
@@ -270,6 +287,14 @@ export const createConnectionsSlice: StateCreator<
           Object.entries(state.connectionSchemaMapSchema).filter(([key]) =>
             liveIds.has(key),
           ),
+        ),
+        connectionEpochs: Object.fromEntries(
+          Object.entries(state.connectionEpochs).filter(([key]) =>
+            liveIds.has(key),
+          ),
+        ),
+        connectionTransitionIds: state.connectionTransitionIds.filter((id) =>
+          liveIds.has(id),
         ),
       }));
       return true;
@@ -401,6 +426,27 @@ export const createConnectionsSlice: StateCreator<
   },
 
   deleteConnection: async (connectionId) => {
+    const stateAtStart = get();
+    const connectionAtStart = stateAtStart.connections.find(
+      (connection) => connection.id === connectionId,
+    );
+    if (
+      !connectionAtStart ||
+      stateAtStart.connectionTransitionIds.includes(connectionId) ||
+      stateAtStart.pgObjectDdlApplying[connectionId]
+    ) {
+      return;
+    }
+    const epoch = (stateAtStart.connectionEpochs[connectionId] ?? 0) + 1;
+    set((state) => ({
+      connectionEpochs: { ...state.connectionEpochs, [connectionId]: epoch },
+      connectionTransitionIds: [...state.connectionTransitionIds, connectionId],
+      connections: applyConnectionUpdate(state.connections, connectionId, {
+        status: "Disconnected",
+        latency: "--",
+      }),
+    }));
+
     const finalize = (connections: ReturnType<typeof get>["connections"]) => {
       set((state) => {
         const newActiveId =
@@ -413,11 +459,17 @@ export const createConnectionsSlice: StateCreator<
           [connectionId]: _droppedSchemaMapSchema,
           ...remainingSchemaMapSchemas
         } = state.connectionSchemaMapSchema;
+        const { [connectionId]: _droppedEpoch, ...remainingEpochs } =
+          state.connectionEpochs;
         return {
           connections,
           activeConnectionId: newActiveId,
           connectionOverviewTab: remainingTabs,
           connectionSchemaMapSchema: remainingSchemaMapSchemas,
+          connectionEpochs: remainingEpochs,
+          connectionTransitionIds: state.connectionTransitionIds.filter(
+            (id) => id !== connectionId,
+          ),
         };
       });
     };
@@ -445,6 +497,15 @@ export const createConnectionsSlice: StateCreator<
       finalize(connections);
     } catch (error) {
       console.error("Failed to delete connection", error);
+      set((state) =>
+        state.connectionEpochs[connectionId] === epoch
+          ? {
+              connectionTransitionIds: state.connectionTransitionIds.filter(
+                (id) => id !== connectionId,
+              ),
+            }
+          : {},
+      );
     }
   },
 
@@ -478,16 +539,25 @@ export const createConnectionsSlice: StateCreator<
     // each "health check" opens a real socket and runs SELECT 1 / PING,
     // which flips the status to Connected even though the user never asked
     // for that engine. See ADR-0002 (revised 2026-05-12).
-    const connectionIds = get()
-      .connections.filter((c) => isConnectedStatus(c.status))
-      .map((c) => c.id);
-    if (connectionIds.length === 0) {
+    const stateAtStart = get();
+    const lifetimes = stateAtStart.connections
+      .filter(
+        (connection) =>
+          isConnectedStatus(connection.status) &&
+          !stateAtStart.connectionTransitionIds.includes(connection.id) &&
+          !stateAtStart.pgObjectDdlApplying[connection.id],
+      )
+      .map((connection) => ({
+        connectionId: connection.id,
+        epoch: stateAtStart.connectionEpochs[connection.id] ?? 0,
+      }));
+    if (lifetimes.length === 0) {
       return;
     }
     // Fan out in parallel; per-connection failures are local and
     // shouldn't block siblings.
     const results = await Promise.all(
-      connectionIds.map(async (connectionId) => {
+      lifetimes.map(async ({ connectionId, epoch }) => {
         try {
           const result = await tauriInvoke<
             | { state: "healthy"; latencyMs: number }
@@ -495,10 +565,11 @@ export const createConnectionsSlice: StateCreator<
           >("health_check_connection", {
             payload: { connectionId },
           });
-          return { connectionId, result };
+          return { connectionId, epoch, result };
         } catch (error) {
           return {
             connectionId,
+            epoch,
             result: {
               state: "error" as const,
               error: errorToMessage(error),
@@ -507,10 +578,22 @@ export const createConnectionsSlice: StateCreator<
         }
       }),
     );
+    const failedPostgresIds: string[] = [];
     set((state) => {
+      const connectionEpochs = { ...state.connectionEpochs };
       const next = state.connections.map((connection) => {
         const found = results.find((r) => r.connectionId === connection.id);
-        if (!found) return connection;
+        // A manual transition or a newer connect lifetime may have completed
+        // while this probe was in flight. Late health results are inert.
+        if (
+          !found ||
+          !isConnectedStatus(connection.status) ||
+          state.connectionTransitionIds.includes(connection.id) ||
+          state.pgObjectDdlApplying[connection.id] ||
+          (connectionEpochs[connection.id] ?? 0) !== found.epoch
+        ) {
+          return connection;
+        }
         if (found.result.state === "healthy") {
           // Don't downgrade an explicit "Read only" status; the
           // health-check only proves reachability, not write capability.
@@ -524,14 +607,23 @@ export const createConnectionsSlice: StateCreator<
             errorMessage: undefined,
           };
         }
+        connectionEpochs[connection.id] = found.epoch + 1;
+        if (connection.engine === "PostgreSQL") {
+          failedPostgresIds.push(connection.id);
+        }
         return {
           ...connection,
           status: "Disconnected" as const,
           errorMessage: found.result.error,
         };
       });
-      return { connections: next };
+      return { connections: next, connectionEpochs };
     });
+    // Status changes first so mounted viewers cannot launch a new read in the
+    // generation that is about to become the disconnected lifetime.
+    for (const connectionId of failedPostgresIds) {
+      get().dropPgObjectCachesForConnection(connectionId);
+    }
   },
 
   applyConnectionActivity: (connectionId, at) => {
@@ -548,15 +640,51 @@ export const createConnectionsSlice: StateCreator<
     if (!connectionId) {
       return;
     }
+    const stateAtStart = get();
+    const connectionAtStart = stateAtStart.connections.find(
+      (connection) => connection.id === connectionId,
+    );
+    if (!connectionAtStart) return;
     set({ activeConnectionId: connectionId });
+    if (
+      stateAtStart.connectionTransitionIds.includes(connectionId) ||
+      isConnectedStatus(connectionAtStart.status)
+    ) {
+      return;
+    }
+    const epoch = (stateAtStart.connectionEpochs[connectionId] ?? 0) + 1;
+    set((state) => ({
+      connectionEpochs: { ...state.connectionEpochs, [connectionId]: epoch },
+      connectionTransitionIds: [...state.connectionTransitionIds, connectionId],
+    }));
+    const isCurrentLifetime = () =>
+      get().connectionEpochs[connectionId] === epoch;
+    const ownsTransition = () =>
+      isCurrentLifetime() &&
+      get().connectionTransitionIds.includes(connectionId);
+    const pgObjectGeneration =
+      connectionAtStart.engine === "PostgreSQL"
+        ? (stateAtStart.pgObjectCatalog[connectionId]?.generation ?? 0)
+        : undefined;
     if (!isTauri()) {
-      set((state) => ({
-        connections: applyConnectionUpdate(state.connections, connectionId, {
-          status: "Connected",
-          lastActivityAt: new Date().toISOString(),
-          errorMessage: undefined,
-        }),
-      }));
+      set((state) =>
+        state.connectionEpochs[connectionId] === epoch
+          ? {
+              connections: applyConnectionUpdate(
+                state.connections,
+                connectionId,
+                {
+                  status: "Connected",
+                  lastActivityAt: new Date().toISOString(),
+                  errorMessage: undefined,
+                },
+              ),
+              connectionTransitionIds: state.connectionTransitionIds.filter(
+                (id) => id !== connectionId,
+              ),
+            }
+          : {},
+      );
       return;
     }
     const managedServer = get().managedServers.find(
@@ -575,43 +703,77 @@ export const createConnectionsSlice: StateCreator<
       const result = await tauriInvoke<ConnectResult>("connect_connection", {
         payload: { connectionId },
       });
+      if (!ownsTransition()) return;
       // Schema introspection is a relational-only concept; the keyvalue
       // dispatch returns `Err("Schema explorer does not apply to Redis…")`
       // and would otherwise sink the whole connect flow back to
       // Disconnected. The keyspace browser loads keys lazily via its own
       // SCAN API, so there's nothing to prefetch for Redis here.
       const target = get().connections.find((c) => c.id === connectionId);
-      const isRelational =
-        target && storageClassFor(target.engine) === "relational";
-      let schema: import("./types").SchemaExplorer[] | undefined;
-      if (isRelational) {
+      if (!target || !ownsTransition()) {
+        return;
+      }
+      const publishConnected = () => {
+        if (!ownsTransition()) return;
+        set((state) =>
+          state.connectionEpochs[connectionId] === epoch
+            ? {
+                connections: applyConnectionUpdate(
+                  state.connections,
+                  connectionId,
+                  {
+                    status: "Connected",
+                    latency: formatLatencyMs(result.latencyMs),
+                    lastActivityAt: new Date().toISOString(),
+                    errorMessage: undefined,
+                  },
+                ),
+                connectionTransitionIds: state.connectionTransitionIds.filter(
+                  (id) => id !== connectionId,
+                ),
+              }
+            : {},
+        );
+      };
+      const isRelational = storageClassFor(target.engine) === "relational";
+      if (target.engine === "PostgreSQL") {
+        // PostgreSQL catalog loading is independent from the usable backend
+        // lifetime. Publish first so disconnect/delete can claim it while the
+        // generation-fenced catalog request is in flight.
+        publishConnected();
+        if (!isCurrentLifetime()) return;
+        const catalogResult = await get().loadPgObjectCatalog(
+          connectionId,
+          pgObjectGeneration,
+        );
+        if (catalogResult === "stale") {
+          return;
+        }
+      } else if (isRelational) {
+        // Preserve the legacy connect timing for MySQL, SQLite, and
+        // ClickHouse: their explorer load completes before Connected appears.
         try {
-          schema = await tauriInvoke<import("./types").SchemaExplorer[]>(
+          const schema = await tauriInvoke<import("./types").SchemaExplorer[]>(
             "load_schema_explorer",
             { payload: { connectionId } },
           );
+          if (!ownsTransition()) return;
+          get().setSchemaExplorerForConnection(connectionId, schema);
         } catch (schemaError) {
           console.error("Failed to load schema explorer", schemaError);
         }
+        publishConnected();
+      } else {
+        publishConnected();
       }
-      set((state) => ({
-        connections: applyConnectionUpdate(state.connections, connectionId, {
-          status: "Connected",
-          latency: formatLatencyMs(result.latencyMs),
-          lastActivityAt: new Date().toISOString(),
-          errorMessage: undefined,
-        }),
-        schemaExplorer: schema
-          ? { ...state.schemaExplorer, [connectionId]: schema }
-          : state.schemaExplorer,
-      }));
+      if (!isCurrentLifetime()) return;
       if (result.redisCapabilities) {
         get().setRedisCapabilities(connectionId, result.redisCapabilities);
       }
       get().appendConsoleEvent({
         severity: "info",
         source: "connection",
-        message: `Connected to ${target?.name ?? connectionId}`,
+        message: `Connected to ${target.name}`,
         connectionId,
       });
       const acltarget = get().connections.find((c) => c.id === connectionId);
@@ -624,19 +786,30 @@ export const createConnectionsSlice: StateCreator<
         Promise.resolve()
           .then(() => fetchRedisAclSelf({ connectionId }))
           .then((acl) => {
-            if (acl) get().setRedisAclSelf(connectionId, acl);
+            if (acl && get().connectionEpochs[connectionId] === epoch) {
+              get().setRedisAclSelf(connectionId, acl);
+            }
           })
           .catch(() => {});
       }
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to connect", error);
-      set((state) => ({
-        connections: applyConnectionUpdate(state.connections, connectionId, {
-          status: "Disconnected",
-          errorMessage: message,
-        }),
-      }));
+      if (!ownsTransition()) return;
+      set((state) =>
+        state.connectionEpochs[connectionId] === epoch
+          ? {
+              connections: applyConnectionUpdate(
+                state.connections,
+                connectionId,
+                {
+                  status: "Disconnected",
+                  errorMessage: message,
+                },
+              ),
+            }
+          : {},
+      );
       get().appendConsoleEvent({
         severity: "error",
         source: "connection",
@@ -651,6 +824,15 @@ export const createConnectionsSlice: StateCreator<
       if (managedServer) {
         await get().loadManagedServers();
       }
+      set((state) =>
+        state.connectionEpochs[connectionId] === epoch
+          ? {
+              connectionTransitionIds: state.connectionTransitionIds.filter(
+                (id) => id !== connectionId,
+              ),
+            }
+          : {},
+      );
     }
   },
 
@@ -660,7 +842,9 @@ export const createConnectionsSlice: StateCreator<
     }
     const state = get();
     if (
-      !state.connections.some((connection) => connection.id === connectionId)
+      !state.connections.some((connection) => connection.id === connectionId) ||
+      state.connectionTransitionIds.includes(connectionId) ||
+      state.pgObjectDdlApplying[connectionId]
     ) {
       return;
     }
@@ -681,6 +865,22 @@ export const createConnectionsSlice: StateCreator<
       return;
     }
 
+    // Confirmation is asynchronous, so recheck before claiming the lifetime.
+    const confirmedState = get();
+    if (
+      confirmedState.connectionTransitionIds.includes(connectionId) ||
+      confirmedState.pgObjectDdlApplying[connectionId] ||
+      !confirmedState.connections.some(
+        (connection) => connection.id === connectionId,
+      )
+    ) {
+      return;
+    }
+    const epoch = (confirmedState.connectionEpochs[connectionId] ?? 0) + 1;
+    const connectionName = confirmedState.connections.find(
+      (connection) => connection.id === connectionId,
+    )?.name;
+
     const teardownBackend = isTauri()
       ? async () => {
           try {
@@ -692,9 +892,28 @@ export const createConnectionsSlice: StateCreator<
           }
         }
       : undefined;
-    await teardownConnectionWorkspace(state, connectionId, teardownBackend);
+    // Status changes before cache invalidation. Otherwise a mounted object
+    // viewer can observe an empty cache while still Connected and start a new
+    // description request in the freshly incremented generation.
+    set((current) => ({
+      connectionEpochs: {
+        ...current.connectionEpochs,
+        [connectionId]: epoch,
+      },
+      connectionTransitionIds: [
+        ...current.connectionTransitionIds,
+        connectionId,
+      ],
+      connections: applyConnectionUpdate(current.connections, connectionId, {
+        status: "Disconnected",
+        latency: "--",
+        errorMessage: undefined,
+      }),
+    }));
+    await teardownConnectionWorkspace(get(), connectionId, teardownBackend);
 
     set((state) => {
+      if (state.connectionEpochs[connectionId] !== epoch) return {};
       const { [connectionId]: _droppedTab, ...remainingTabs } =
         state.connectionOverviewTab;
       const {
@@ -709,15 +928,15 @@ export const createConnectionsSlice: StateCreator<
         }),
         connectionOverviewTab: remainingTabs,
         connectionSchemaMapSchema: remainingSchemaMapSchemas,
+        connectionTransitionIds: state.connectionTransitionIds.filter(
+          (id) => id !== connectionId,
+        ),
       };
     });
     get().appendConsoleEvent({
       severity: "info",
       source: "connection",
-      message: `Disconnected from ${
-        state.connections.find((c) => c.id === connectionId)?.name ??
-        connectionId
-      }`,
+      message: `Disconnected from ${connectionName ?? connectionId}`,
       connectionId,
     });
   },

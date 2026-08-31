@@ -11,23 +11,23 @@ and update its status here when work finishes.
 
 ## Execution order and status
 
-| Plan                                             | Title                                       | Priority | Effort | Depends on | Status                                         |
-| ------------------------------------------------ | ------------------------------------------- | -------: | -----: | ---------- | ---------------------------------------------- |
-| [001](./001-query-session-foundation.md)         | PostgreSQL Query Session backend foundation |       P0 |      L | None       | DONE: 657553d                                  |
-| [002](./002-query-session-editor-integration.md) | PostgreSQL Query Session editor integration |       P0 |      L | 001        | DONE: 26268ca (selected mock: B)               |
-| [003](./003-table-browse-backend.md)             | PostgreSQL Table Browse backend             |       P0 |      L | 001, 002   | DONE: 202f756                                  |
-| [004](./004-table-browse-grid-integration.md)    | Server-backed browsing in table tabs        |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
-| [005](./005-result-mutation-backend.md)          | PostgreSQL Result Mutation backend          |       P0 |      L | 003, 004   | DONE: d98f8a1                                  |
-| [006](./006-staged-mutation-review-integration.md) | Staged mutation review in table and query results | P0 |      L | 005        | DONE: 4e52c8a (selected mock: A)               |
-| [007](./007-safety-policy-backend.md)            | Backend-enforced production safety policy   |       P0 |      L | 005, 006   | DONE: bd9f7ef                                  |
-| [008](./008-safety-policy-activation.md)         | Safety policy activation and production identity | P0 |      L | 007        | DONE: 5409d66 (selected mock: C)               |
-| [009](./009-workspace-navigation-foundation.md)  | Workspace navigation foundation (dark)      |       P0 |      L | 001–008    | DONE: f66abaa                                  |
-| [010](./010-open-anything-activation.md)         | Open Anything activation and connection organization | P0 | L | 009        | DONE: 4facea1 (selected mock: A)               |
-| [011](./011-connection-security-backend.md)      | PostgreSQL connection security backend (dark) |       P1 |      L | 001–010    | DONE: b134766                                  |
-| [012](./012-connection-security-activation.md)   | TLS controls, staged connection diagnosis, and truth pass | P1 | L | 011        | DONE: b45e294 (selected mock: A)                |
-| [013](./013-object-catalog-ddl-backend.md)       | PostgreSQL object catalog and DDL workflow backend (dark) | P1 | L | 001–012    | READY FOR REVIEW                                |
-| [014](./014-object-explorer-lifecycle-activation.md) | Object explorer, viewers, and lifecycle activation | P1 | L | 013 | TODO                                           |
-| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow | P1 | M | 013, 014 | TODO                                           |
+| Plan                                                  | Title                                                            | Priority | Effort | Depends on | Status                                         |
+| ----------------------------------------------------- | ---------------------------------------------------------------- | -------: | -----: | ---------- | ---------------------------------------------- |
+| [001](./001-query-session-foundation.md)              | PostgreSQL Query Session backend foundation                      |       P0 |      L | None       | DONE: 657553d                                  |
+| [002](./002-query-session-editor-integration.md)      | PostgreSQL Query Session editor integration                      |       P0 |      L | 001        | DONE: 26268ca (selected mock: B)               |
+| [003](./003-table-browse-backend.md)                  | PostgreSQL Table Browse backend                                  |       P0 |      L | 001, 002   | DONE: 202f756                                  |
+| [004](./004-table-browse-grid-integration.md)         | Server-backed browsing in table tabs                             |       P0 |      L | 003        | DONE: ecefce8 (selected mock: B)               |
+| [005](./005-result-mutation-backend.md)               | PostgreSQL Result Mutation backend                               |       P0 |      L | 003, 004   | DONE: d98f8a1                                  |
+| [006](./006-staged-mutation-review-integration.md)    | Staged mutation review in table and query results                |       P0 |      L | 005        | DONE: 4e52c8a (selected mock: A)               |
+| [007](./007-safety-policy-backend.md)                 | Backend-enforced production safety policy                        |       P0 |      L | 005, 006   | DONE: bd9f7ef                                  |
+| [008](./008-safety-policy-activation.md)              | Safety policy activation and production identity                 |       P0 |      L | 007        | DONE: 5409d66 (selected mock: C)               |
+| [009](./009-workspace-navigation-foundation.md)       | Workspace navigation foundation (dark)                           |       P0 |      L | 001–008    | DONE: f66abaa                                  |
+| [010](./010-open-anything-activation.md)              | Open Anything activation and connection organization             |       P0 |      L | 009        | DONE: 4facea1 (selected mock: A)               |
+| [011](./011-connection-security-backend.md)           | PostgreSQL connection security backend (dark)                    |       P1 |      L | 001–010    | DONE: b134766                                  |
+| [012](./012-connection-security-activation.md)        | TLS controls, staged connection diagnosis, and truth pass        |       P1 |      L | 011        | DONE: b45e294 (selected mock: A)               |
+| [013](./013-object-catalog-ddl-backend.md)            | PostgreSQL object catalog and DDL workflow backend (dark)        |       P1 |      L | 001–012    | DONE: 4833a42                                  |
+| [014](./014-object-explorer-lifecycle-activation.md)  | Object explorer, viewers, and lifecycle activation               |       P1 |      L | 013        | IN PROGRESS: through Step 6 (selected mock: C; native manual pass blocked) |
+| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | TODO                                           |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -39,6 +39,10 @@ useful without authorizing commits implicitly.
 
 ## Current selection
 
+- **Selected mock (014, 2026-08-29):** C — compact object viewer with
+  Definition / Facts tabs and the DDL review rendered inline immediately
+  above the object action row. Database-scoped list-only objects stay below
+  schema-scoped groups in the navigator.
 - **Selected (2026-08-29):** Plans 013, 014, and 015 are the `PAR-007`
   execution path, authored at `b45e294` and amended the same day after
   a pre-execution review (each plan carries a `Review correction
@@ -46,10 +50,9 @@ useful without authorizing commits implicitly.
   and records the rest (Plan 013's Reconciliation section has the full
   deferral list with rationale).
   Plan 013 is a dark backend: a typed `PgObjectKind`/`PgObjectRef`
-  model with overload-safe routine identity (today the backend has no
-  object type at all — fourteen `Vec<String>` name lists, ten of which
-  the UI drops; event triggers/roles/tablespaces stay list-only entries,
-  not kinds), a batched, capped, extension-member-filtered
+  model with overload-safe routine identity (replacing fourteen legacy
+  `Vec<String>` name lists; event triggers/roles/tablespaces stay list-only
+  entries, not kinds), a batched, capped, extension-member-filtered
   `load_pg_object_catalog` on the native PG pool with comments,
   `describe_pg_object` (owner, comment, tagged facts, reconstructed DDL
   per kind), `load_pg_drop_impact` as a bounded transitive closure over
@@ -64,8 +67,9 @@ useful without authorizing commits implicitly.
   with destructive and transactional flags and atomic/standalone
   grouping → gated `apply_object_ddl` (regenerates from ops, never
   accepts a whole statement over IPC; the sixteenth gated write
-  surface) on a detached connection with `statement_timeout = 0` and
-  `lock_timeout = 10s`, with a typed `PgObjectError` union carrying
+  surface) on a detached connection that preserves the configured
+  `statement_timeout` and adds `lock_timeout = 10s`, with a typed
+  `PgObjectError` union carrying
   SQLSTATE/statement-index/applied-count/lock-timeout/invalid-index
   residue, plus a `lifecycle` fixture schema and ADR-0026. No migration
   needed.
@@ -109,7 +113,7 @@ useful without authorizing commits implicitly.
   007 landed the dark backend: per-connection environment / Safe Mode /
   relational read-only fields (migration 15), a fail-closed PostgreSQL
   statement classifier extracted from the Plan 005 lexer, one shared policy gate
-  asserted at all fifteen write-capable surfaces (typed
+  asserted at all sixteen write-capable surfaces (typed
   `policyBlocked`/`policyNeedsConfirmation` on the query-session and
   result-mutation actors; tagged refusal strings on legacy commands), a
   belt-and-braces `default_transaction_read_only` session GUC, and a
@@ -231,13 +235,13 @@ useful without authorizing commits implicitly.
   URI import as the first field of the connection form.
 - **Selected (2026-08-24):** Plans 011 and 012 are the `PAR-006`
   execution path, authored at `4facea1`. Scope was reconciled against
-  Plans 009/010, which already delivered the *organization* half of
+  Plans 009/010, which already delivered the _organization_ half of
   `PAR-006` (folders, favorites, colors, recency, Duplicate, secret-free
-  Copy URI, Import-from-URI); the pair covers the *security* half for
+  Copy URI, Import-from-URI); the pair covers the _security_ half for
   PostgreSQL only. Plan 011 is a dark backend: migration 18 adds a
   `tls_options` JSON blob (`mode` in libpq vocabulary `disable |
   prefer | require | verify-ca | verify-full`, CA / client cert /
-  client key *paths*, optional `serverName`), legacy rows keep resolving
+  client key _paths_, optional `serverName`), legacy rows keep resolving
   through `ssl` unchanged; one `ResolvedTls` resolver with four
   renderers converges the dedicated tokio-postgres driver, the sqlx
   pool, the PG DSN, and `pg_dump`/`pg_restore` (today four independent
