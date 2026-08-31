@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { PendingChange } from "@/lib/ddl";
+import type { ColumnChangeKind, PendingChange } from "@/lib/ddl";
 import type { DDLOutcome, StructureCommitStatus } from "@/lib/store";
 
 import { PendingChangesSection } from "./pending-changes-section";
@@ -11,7 +11,7 @@ const change = (overrides: Partial<PendingChange> = {}): PendingChange => ({
   id: "p-1",
   schema: "public",
   table: "users",
-  change: { kind: "drop", columnName: "email" },
+  change: { kind: "column", change: { kind: "drop", columnName: "email" } },
   ...overrides,
 });
 
@@ -116,51 +116,34 @@ describe("PendingChangesSection", () => {
   });
 
   it("describes each pending change variant", () => {
+    const entry = (
+      id: string,
+      columnChange: ColumnChangeKind,
+    ): PendingChange => ({
+      id,
+      schema: "public",
+      table: "users",
+      change: { kind: "column", change: columnChange },
+    });
     const pending: PendingChange[] = [
-      {
-        id: "p-1",
-        schema: "public",
-        table: "users",
-        change: {
-          kind: "add",
-          column: {
-            name: "age",
-            dataType: "int",
-            nullable: true,
-            defaultValue: null,
-          },
+      entry("p-1", {
+        kind: "add",
+        column: {
+          name: "age",
+          dataType: "int",
+          nullable: true,
+          defaultValue: null,
         },
-      },
-      {
-        id: "p-2",
-        schema: "public",
-        table: "users",
-        change: { kind: "rename", columnName: "old", newName: "new" },
-      },
-      {
-        id: "p-3",
-        schema: "public",
-        table: "users",
-        change: { kind: "set_type", columnName: "age", newType: "bigint" },
-      },
-      {
-        id: "p-4",
-        schema: "public",
-        table: "users",
-        change: { kind: "set_nullable", columnName: "age", nullable: false },
-      },
-      {
-        id: "p-5",
-        schema: "public",
-        table: "users",
-        change: { kind: "set_default", columnName: "age", default: "0" },
-      },
-      {
-        id: "p-6",
-        schema: "public",
-        table: "users",
-        change: { kind: "set_default", columnName: "age", default: null },
-      },
+      }),
+      entry("p-2", { kind: "rename", columnName: "old", newName: "new" }),
+      entry("p-3", { kind: "set_type", columnName: "age", newType: "bigint" }),
+      entry("p-4", {
+        kind: "set_nullable",
+        columnName: "age",
+        nullable: false,
+      }),
+      entry("p-5", { kind: "set_default", columnName: "age", default: "0" }),
+      entry("p-6", { kind: "set_default", columnName: "age", default: null }),
     ];
     renderSection({ pending });
     expect(screen.getByText(/Add column age int/)).toBeTruthy();
