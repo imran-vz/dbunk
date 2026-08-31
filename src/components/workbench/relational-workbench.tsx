@@ -5,6 +5,14 @@ import {
   type WorkbenchRailId,
 } from "@/components/app-shell/activity-rail";
 import { ConnectionsView } from "@/components/connections-view";
+import {
+  NewEnumDialog,
+  NewMaterializedViewDialog,
+  NewSchemaDialog,
+  NewSequenceDialog,
+  NewViewDialog,
+} from "@/components/object-ddl";
+import { ObjectViewer } from "@/components/object-viewer";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { StatusBarItem } from "@/components/status-bar";
 import { TableEditorPanel } from "@/components/table-editor-panel";
@@ -16,7 +24,10 @@ import {
   type TableSection,
   TableSectionToggle,
 } from "@/components/workbench/object-tab-row";
-import { firstRelationalConnection } from "@/components/workbench/workbench-policy";
+import {
+  firstRelationalConnection,
+  relationalRailForTab,
+} from "@/components/workbench/workbench-policy";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { AdminTab } from "@/components/workspace-overview/admin-tab";
 import {
@@ -27,8 +38,9 @@ import { OverviewRailView } from "@/components/workspace-overview/overview-rail-
 import { QueryHistoryTab } from "@/components/workspace-overview/query-history-tab";
 import { SchemaMapTab } from "@/components/workspace-overview/schema-map-tab";
 import { storageClassFor } from "@/lib/engine-policy";
+import { canonicalPgObjectRefKey } from "@/lib/pg-object-ref";
 import { useShortcutHandler } from "@/lib/shortcuts";
-import { isConnectedStatus, useAppStore } from "@/lib/store";
+import { isConnectedStatus, type PgObjectRef, useAppStore } from "@/lib/store";
 import { uiGet, uiSet } from "@/lib/ui-state";
 
 /** Navigator metrics per DESIGN-SYSTEM §3.3. */
@@ -38,6 +50,12 @@ const NAVIGATOR_SNAP = 90;
 const NAVIGATOR_MAX = () => Math.round(window.innerWidth * 0.5);
 /** Activity rail (40) + 1px borders — chrome that never yields. */
 const FIXED_CHROME_WIDTH = 42;
+
+type CreateObjectTarget = {
+  connectionId: string;
+  kind: "schema" | "view" | "materialized-view" | "sequence" | "enum";
+  schema?: string;
+};
 
 interface RelationalWorkbenchProps {
   isClient: boolean;
@@ -71,6 +89,8 @@ export function RelationalWorkbench({
     Record<string, TableSection>
   >({});
   const [statusItems, setStatusItems] = useState<StatusBarItem[]>([]);
+  const [createObjectTarget, setCreateObjectTarget] =
+    useState<CreateObjectTarget | null>(null);
 
   const navigatorRef = useRef<HTMLDivElement>(null);
   const navigatorPanel = usePanelState({
@@ -108,6 +128,8 @@ export function RelationalWorkbench({
   const queryHistory = useAppStore((state) => state.queryHistory);
   const openSettings = useAppStore((state) => state.openSettings);
   const openTableTab = useAppStore((state) => state.openTableTab);
+  const openViewTab = useAppStore((state) => state.openViewTab);
+  const openObjectTab = useAppStore((state) => state.openObjectTab);
   const createNewQueryTab = useAppStore((state) => state.createNewQueryTab);
   const connectConnection = useAppStore((state) => state.connectConnection);
   const reopenHistoryEntry = useAppStore((state) => state.reopenHistoryEntry);
@@ -123,13 +145,14 @@ export function RelationalWorkbench({
     if (tabRevealRequest === lastRevealRef.current) return;
     lastRevealRef.current = tabRevealRequest;
     setRail((current) => {
-      if (current === "tables" || current === "queries") return current;
       const state = useAppStore.getState();
       const revealed = state.workspaceTabs.find(
         (tab) => tab.id === state.activeTabId,
       );
       if (!revealed) return current;
-      return revealed.kind === "query" ? "queries" : "tables";
+      // Object tabs share the tables rail because that rail owns the
+      // PostgreSQL object navigator and its secondary viewer actions.
+      return relationalRailForTab(revealed.kind);
     });
   }, [tabRevealRequest]);
 
@@ -161,6 +184,7 @@ export function RelationalWorkbench({
   const schemas = activeConnection
     ? (schemaExplorer[activeConnection.id] ?? [])
     : [];
+  const isPostgres = activeConnection?.engine === "PostgreSQL";
 
   const activeTableKey =
     activeTab?.kind === "table" && activeTab.table
@@ -205,6 +229,48 @@ export function RelationalWorkbench({
     [openTableTab, setActiveView],
   );
 
+  const handleOpenView = useCallback(
+    (schema: string, view: string) => {
+      setRail("tables");
+      setActiveView("workspace");
+      openViewTab(schema, view);
+    },
+    [openViewTab, setActiveView],
+  );
+
+  const handleOpenObject = useCallback(
+    (reference: PgObjectRef) => {
+      setRail("tables");
+      setActiveView("workspace");
+      openObjectTab(reference);
+    },
+    [openObjectTab, setActiveView],
+  );
+
+  const handleCreateObject = useCallback(
+    (kind: CreateObjectTarget["kind"], schema?: string) => {
+      if (!activeConnection || activeConnection.engine !== "PostgreSQL") {
+        return;
+      }
+      const state = useAppStore.getState();
+      const current = state.connections.find(
+        (connection) => connection.id === activeConnection.id,
+      );
+      if (
+        !isConnectedStatus(current?.status) ||
+        state.connectionTransitionIds.includes(activeConnection.id)
+      ) {
+        return;
+      }
+      setCreateObjectTarget({
+        connectionId: activeConnection.id,
+        kind,
+        schema,
+      });
+    },
+    [activeConnection],
+  );
+
   const tableSubTab: TableSection = activeTab
     ? (tableSections[activeTab.id] ?? "data")
     : "data";
@@ -240,7 +306,11 @@ export function RelationalWorkbench({
       return <NoConnectionCard />;
     }
 
-    if (!isConnectedStatus(activeConnection.status) && schemas.length === 0) {
+    if (
+      !isConnectedStatus(activeConnection.status) &&
+      schemas.length === 0 &&
+      activeTab?.kind !== "object"
+    ) {
       return (
         <DisconnectedConnectionCard
           connection={activeConnection}
@@ -323,9 +393,20 @@ export function RelationalWorkbench({
       );
     }
 
+    if (activeTab?.kind === "object" && activeTab.objectRef) {
+      return (
+        <ObjectViewer
+          key={`${activeTab.id}:${activeTab.connectionId}:${canonicalPgObjectRefKey(activeTab.objectRef)}`}
+          tabId={activeTab.id}
+          connectionId={activeTab.connectionId}
+          reference={activeTab.objectRef}
+        />
+      );
+    }
+
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-text-muted">
-        Select a table from the navigator or open a query tab.
+        Select an object from the navigator or open a query tab.
       </div>
     );
   };
@@ -357,6 +438,9 @@ export function RelationalWorkbench({
           schemas={schemas}
           activeTableKey={activeTableKey}
           onOpenTable={handleOpenTable}
+          onOpenView={handleOpenView}
+          onOpenObject={isPostgres ? handleOpenObject : undefined}
+          onCreateObject={isPostgres ? handleCreateObject : undefined}
           className="h-full w-full"
         />
       </div>
@@ -367,21 +451,48 @@ export function RelationalWorkbench({
     <ObjectTabRow sectionControl={sectionControl} />
   ) : null;
 
+  const creationDialog = (() => {
+    if (!createObjectTarget) return null;
+    const common = {
+      open: true,
+      connectionId: createObjectTarget.connectionId,
+      schema: createObjectTarget.schema,
+      onOpenChange: (open: boolean) => {
+        if (!open) setCreateObjectTarget(null);
+      },
+    };
+    switch (createObjectTarget.kind) {
+      case "schema":
+        return <NewSchemaDialog {...common} />;
+      case "view":
+        return <NewViewDialog {...common} />;
+      case "materialized-view":
+        return <NewMaterializedViewDialog {...common} />;
+      case "sequence":
+        return <NewSequenceDialog {...common} />;
+      case "enum":
+        return <NewEnumDialog {...common} />;
+    }
+  })();
+
   return (
-    <WorkbenchShell
-      activeConnection={activeConnection}
-      isWindowFullscreen={isWindowFullscreen}
-      onPointerDown={onPointerDown}
-      onDoubleClick={onDoubleClick}
-      railItems={RELATIONAL_RAIL_ITEMS}
-      activeRail={settingsView ? "tables" : rail}
-      onRailChange={handleRailChange}
-      onOpenSettings={handleOpenSettings}
-      statusItems={statusItems}
-      leftPanel={leftPanel}
-      toolbar={toolbar}
-    >
-      {renderMainPane()}
-    </WorkbenchShell>
+    <>
+      <WorkbenchShell
+        activeConnection={activeConnection}
+        isWindowFullscreen={isWindowFullscreen}
+        onPointerDown={onPointerDown}
+        onDoubleClick={onDoubleClick}
+        railItems={RELATIONAL_RAIL_ITEMS}
+        activeRail={settingsView ? "tables" : rail}
+        onRailChange={handleRailChange}
+        onOpenSettings={handleOpenSettings}
+        statusItems={statusItems}
+        leftPanel={leftPanel}
+        toolbar={toolbar}
+      >
+        {renderMainPane()}
+      </WorkbenchShell>
+      {creationDialog}
+    </>
   );
 }

@@ -3,6 +3,7 @@ import {
   type SafetyPolicyInput,
   type StatementClassSummary,
 } from "@/lib/safety-policy";
+import type { DdlStatementSummary } from "@/lib/store/types";
 
 export type SafetyConfirmationConnection = SafetyPolicyInput & {
   name: string;
@@ -12,6 +13,7 @@ export type SafetyConfirmationRequest = {
   connection: SafetyConfirmationConnection;
   subject:
     | { kind: "statements"; statements: StatementClassSummary[] }
+    | { kind: "ddl"; statements: DdlStatementSummary[] }
     | { kind: "command"; command: string; destructive: boolean };
 };
 
@@ -45,6 +47,15 @@ export const confirmWriteStatements = (
     subject: { kind: "statements", statements },
   });
 
+export const confirmDdlStatements = (
+  connection: SafetyConfirmationConnection,
+  statements: DdlStatementSummary[],
+): Promise<boolean> =>
+  requestSafetyConfirmation({
+    connection,
+    subject: { kind: "ddl", statements },
+  });
+
 export const requestSafetyConfirmation = (
   request: SafetyConfirmationRequest,
 ): Promise<boolean> =>
@@ -73,6 +84,8 @@ export const safetyConfirmationRequiresTyping = (
   return (
     (policy.environment === "production" && policy.level === "strict") ||
     (request.subject.kind === "statements" &&
+      request.subject.statements.some((statement) => statement.destructive)) ||
+    (request.subject.kind === "ddl" &&
       request.subject.statements.some((statement) => statement.destructive)) ||
     (request.subject.kind === "command" && request.subject.destructive)
   );

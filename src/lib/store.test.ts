@@ -83,6 +83,7 @@ import type {
 import {
   type Connection,
   type ManagedServerWithStatus,
+  type PgObjectCatalog,
   type QueryOutcome,
   tableMutationDraftScope,
   tableDataKey,
@@ -104,6 +105,14 @@ const resetStore = () => {
   useAppStore.setState(initialStoreState, true);
   useAppStore.setState({ activeConnectionId: "conn-1" });
 };
+
+const emptyPgObjectCatalog = () => ({
+  schemas: [],
+  eventTriggers: [],
+  roles: [],
+  tablespaces: [],
+  truncated: [],
+});
 
 beforeEach(() => {
   mockedIsTauri.mockReturnValue(true);
@@ -361,6 +370,24 @@ describe("store.openTableTab", () => {
     expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
   });
 
+  it("quotes relation navigation and deduplicates it by schema-qualified identity", () => {
+    useAppStore.getState().openViewTab('odd"schema', 'shared"view');
+    const firstTabId = useAppStore.getState().activeTabId;
+    useAppStore.getState().openViewTab("audit", 'shared"view');
+    useAppStore.getState().openViewTab('odd"schema', 'shared"view');
+
+    const tabs = useAppStore.getState().workspaceTabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.map((tab) => tab.relationRef)).toEqual([
+      { schema: 'odd"schema', name: 'shared"view' },
+      { schema: "audit", name: 'shared"view' },
+    ]);
+    expect(tabs[0]?.query).toBe(
+      'select * from "odd""schema"."shared""view" limit 100;',
+    );
+    expect(useAppStore.getState().activeTabId).toBe(firstTabId);
+  });
+
   it("invokes load_table_data and not run_query", async () => {
     mockedInvoke.mockResolvedValue({
       columns: [],
@@ -436,6 +463,57 @@ describe("store.openTableTab", () => {
     expect(calls).toContain("browse_table_data");
     expect(calls).not.toContain("load_table_data");
     expect(calls).not.toContain("run_query");
+  });
+});
+
+describe("store.openObjectTab", () => {
+  it("deduplicates by canonical typed reference", () => {
+    useAppStore.getState().openObjectTab({
+      kind: "schema",
+      schema: null,
+      name: "lifecycle",
+      identityArgs: null,
+    });
+    const firstId = useAppStore.getState().activeTabId;
+    useAppStore.getState().openObjectTab({
+      kind: "schema",
+      schema: null,
+      name: "lifecycle",
+      identityArgs: null,
+    });
+
+    const tabs = useAppStore.getState().workspaceTabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).toEqual(
+      expect.objectContaining({
+        id: firstId,
+        kind: "object",
+        label: "lifecycle",
+        schema: "",
+      }),
+    );
+  });
+
+  it("keeps overloaded routines as distinct object tabs", () => {
+    useAppStore.getState().openObjectTab({
+      kind: "function",
+      schema: "public",
+      name: "add_nums",
+      identityArgs: "integer, integer",
+    });
+    useAppStore.getState().openObjectTab({
+      kind: "function",
+      schema: "public",
+      name: "add_nums",
+      identityArgs: "numeric, numeric",
+    });
+
+    expect(
+      useAppStore.getState().workspaceTabs.map((tab) => tab.label),
+    ).toEqual([
+      "public.add_nums(integer, integer)",
+      "public.add_nums(numeric, numeric)",
+    ]);
   });
 });
 
@@ -767,6 +845,37 @@ describe("store.loadTableStructure", () => {
 });
 
 describe("connectConnection error feedback", () => {
+  it("preserves runtime lifetime ownership when stored connections reload", async () => {
+    const live: Connection = {
+      id: "conn-1",
+      name: "Local",
+      database: "postgres",
+      status: "Connected",
+      engine: "PostgreSQL",
+      host: "localhost",
+      port: 5432,
+      user: "postgres",
+      password: "",
+      role: "admin",
+      latency: "7 ms",
+      ssl: false,
+    };
+    const { status: _status, latency: _latency, ...stored } = live;
+    useAppStore.setState({
+      connections: [live],
+      connectionEpochs: { "conn-1": 6 },
+      connectionTransitionIds: ["conn-1"],
+    });
+    mockedInvoke.mockResolvedValueOnce([stored]);
+
+    await useAppStore.getState().loadConnections();
+
+    expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
+    expect(useAppStore.getState().connections[0]?.latency).toBe("7 ms");
+    expect(useAppStore.getState().connectionEpochs).toEqual({ "conn-1": 6 });
+    expect(useAppStore.getState().connectionTransitionIds).toEqual(["conn-1"]);
+  });
+
   it("shows a stopped managed server as starting until cold connect completes", async () => {
     const managedServer: ManagedServerWithStatus = {
       id: "server-1",
@@ -811,7 +920,7 @@ describe("connectConnection error feedback", () => {
             resolveConnect = resolve;
           }),
       )
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(emptyPgObjectCatalog())
       .mockResolvedValueOnce([{ ...managedServer, status: "running" }]);
 
     const connect = useAppStore.getState().connectConnection("conn-1");
@@ -884,7 +993,7 @@ describe("connectConnection error feedback", () => {
 
     mockedInvoke
       .mockResolvedValueOnce({ latencyMs: 10 })
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(emptyPgObjectCatalog());
 
     await act(async () => {
       await useAppStore.getState().connectConnection("conn-1");
@@ -897,7 +1006,167 @@ describe("connectConnection error feedback", () => {
     expect(connection?.errorMessage).toBeUndefined();
   });
 
-  it("keeps the connection connected when schema explorer loading fails", async () => {
+  it("fetches the PostgreSQL catalog once and publishes its derived explorer", async () => {
+    const catalog: PgObjectCatalog = {
+      schemas: [
+        {
+          name: "public",
+          tables: [{ name: "users" }],
+          views: [{ name: "active_users" }],
+          materializedViews: [],
+          foreignTables: [],
+          sequences: [],
+          functions: [{ name: "find_user", identityArgs: "uuid" }],
+          procedures: [],
+          aggregates: [],
+          types: [],
+          domains: [],
+          extensions: [],
+        },
+      ],
+      eventTriggers: [],
+      roles: [],
+      tablespaces: [],
+      truncated: [],
+    };
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+        },
+      ],
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ latencyMs: 10 })
+      .mockResolvedValueOnce(catalog);
+
+    await useAppStore.getState().connectConnection("conn-1");
+
+    expect(mockedInvoke.mock.calls.map(([command]) => command)).toEqual([
+      "connect_connection",
+      "load_pg_object_catalog",
+    ]);
+    expect(useAppStore.getState().schemaExplorer["conn-1"]).toEqual([
+      expect.objectContaining({
+        name: "public",
+        tables: ["users"],
+        views: ["active_users"],
+        functions: ["find_user(uuid)"],
+      }),
+    ]);
+  });
+
+  it("allows disconnect while the PostgreSQL catalog is loading", async () => {
+    let resolveCatalog: (catalog: PgObjectCatalog) => void = () => undefined;
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Disconnected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: true,
+        },
+      ],
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ latencyMs: 10 })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCatalog = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+
+    const connect = useAppStore.getState().connectConnection("conn-1");
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().connections[0]?.status).toBe("Connected"),
+    );
+    expect(useAppStore.getState().connectionTransitionIds).not.toContain(
+      "conn-1",
+    );
+
+    const disconnect = useAppStore.getState().disconnectConnection("conn-1");
+    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    resolveCatalog(emptyPgObjectCatalog());
+    await Promise.all([connect, disconnect]);
+
+    expect(useAppStore.getState().pgObjectCatalog["conn-1"]).toEqual({
+      status: "idle",
+      generation: 1,
+    });
+    expect(useAppStore.getState().schemaExplorer["conn-1"]).toBeUndefined();
+  });
+
+  it("keeps legacy relational engines disconnected until explorer loading finishes", async () => {
+    let resolveSchema: (
+      schema: Array<{ name: string; tables: string[]; views: string[] }>,
+    ) => void = () => undefined;
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-mysql",
+          name: "MySQL",
+          database: "app",
+          status: "Disconnected",
+          engine: "MySQL",
+          host: "localhost",
+          port: 3306,
+          user: "root",
+          password: "",
+          role: "admin",
+          latency: "--",
+          ssl: false,
+        },
+      ],
+    });
+    mockedInvoke.mockResolvedValueOnce({ latencyMs: 5 }).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSchema = resolve;
+        }),
+    );
+
+    const connect = useAppStore.getState().connectConnection("conn-mysql");
+    await vi.waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith("load_schema_explorer", {
+        payload: { connectionId: "conn-mysql" },
+      }),
+    );
+    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    expect(useAppStore.getState().connectionTransitionIds).toContain(
+      "conn-mysql",
+    );
+
+    resolveSchema([{ name: "public", tables: ["users"], views: [] }]);
+    await connect;
+
+    expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
+    expect(useAppStore.getState().schemaExplorer["conn-mysql"]).toEqual([
+      { name: "public", tables: ["users"], views: [] },
+    ]);
+  });
+
+  it("keeps the connection connected when object catalog loading fails", async () => {
     useAppStore.setState({
       connections: [
         {
@@ -931,6 +1200,9 @@ describe("connectConnection error feedback", () => {
     expect(connection?.status).toBe("Connected");
     expect(connection?.errorMessage).toBeUndefined();
     expect(useAppStore.getState().schemaExplorer["conn-1"]).toBeUndefined();
+    expect(useAppStore.getState().pgObjectCatalog["conn-1"]?.status).toBe(
+      "error",
+    );
   });
 
   it("falls back to placeholder latency when reconnect omits latency", async () => {
@@ -953,7 +1225,9 @@ describe("connectConnection error feedback", () => {
       ],
     });
 
-    mockedInvoke.mockResolvedValueOnce({}).mockResolvedValueOnce([]);
+    mockedInvoke
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce(emptyPgObjectCatalog());
 
     await act(async () => {
       await useAppStore.getState().connectConnection("conn-1");
@@ -1066,6 +1340,87 @@ describe("disconnectConnection cleanup", () => {
     expect(closeSessions).toHaveBeenCalledWith("conn-1");
   });
 
+  it("refuses disconnect and delete while object DDL is applying", async () => {
+    const closeSessions = vi.fn(() => Promise.resolve());
+    useAppStore.setState({
+      closeQuerySessionsForConnection: closeSessions,
+      connections: [connectedPostgres("conn-1", "Primary")],
+      pgObjectDdlApplying: { "conn-1": true },
+    });
+
+    await useAppStore.getState().disconnectConnection("conn-1");
+    await useAppStore.getState().deleteConnection("conn-1");
+
+    expect(useAppStore.getState().connections).toHaveLength(1);
+    expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
+    expect(closeSessions).not.toHaveBeenCalled();
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("marks disconnected before invalidating object metadata", async () => {
+    let releaseSessions: () => void = () => undefined;
+    const closeSessions = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSessions = resolve;
+        }),
+    );
+    useAppStore.setState({
+      closeQuerySessionsForConnection: closeSessions,
+      connections: [connectedPostgres("conn-1", "Primary")],
+      pgObjectCatalog: {
+        "conn-1": {
+          status: "ready",
+          catalog: emptyPgObjectCatalog(),
+          generation: 4,
+        },
+      },
+    });
+
+    const disconnect = useAppStore.getState().disconnectConnection("conn-1");
+
+    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    expect(useAppStore.getState().pgObjectCatalog["conn-1"]).toEqual({
+      status: "idle",
+      generation: 5,
+    });
+
+    releaseSessions();
+    await disconnect;
+  });
+
+  it("rejects reconnect while disconnect teardown owns the lifetime", async () => {
+    let releaseSessions: () => void = () => undefined;
+    useAppStore.setState({
+      closeQuerySessionsForConnection: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseSessions = resolve;
+          }),
+      ),
+      connections: [connectedPostgres("conn-1", "Primary")],
+    });
+    mockedInvoke.mockResolvedValue(undefined);
+
+    const disconnect = useAppStore.getState().disconnectConnection("conn-1");
+    const reconnect = useAppStore.getState().connectConnection("conn-1");
+
+    expect(useAppStore.getState().connectionTransitionIds).toContain("conn-1");
+    expect(
+      mockedInvoke.mock.calls.some(
+        ([command]) => command === "connect_connection",
+      ),
+    ).toBe(false);
+
+    releaseSessions();
+    await Promise.all([disconnect, reconnect]);
+
+    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    expect(useAppStore.getState().connectionTransitionIds).not.toContain(
+      "conn-1",
+    );
+  });
+
   it("keeps a live connection when staged changes are not confirmed", async () => {
     mockedRequestConfirm.mockReset();
     mockedRequestConfirm.mockResolvedValue(false);
@@ -1172,6 +1527,28 @@ describe("disconnectConnection cleanup", () => {
       schemaExplorer: {
         "conn-1": [{ name: "public", tables: ["users"], views: [] }],
         "conn-2": [{ name: "public", tables: ["orders"], views: [] }],
+      },
+      pgObjectCatalog: {
+        "conn-1": {
+          status: "ready",
+          catalog: emptyPgObjectCatalog(),
+          generation: 3,
+        },
+        "conn-2": {
+          status: "ready",
+          catalog: emptyPgObjectCatalog(),
+          generation: 5,
+        },
+      },
+      pgObjectDescriptions: {
+        'conn-1:["sequence","public","orders_id_seq",""]': {
+          status: "loading",
+          generation: 3,
+        },
+        'conn-2:["sequence","public","orders_id_seq",""]': {
+          status: "loading",
+          generation: 5,
+        },
       },
       tableData: {
         [conn1DataKey]: {
@@ -1282,6 +1659,21 @@ describe("disconnectConnection cleanup", () => {
     expect(state.activeConnectionId).toBe("conn-2");
     expect(state.schemaExplorer["conn-1"]).toBeUndefined();
     expect(state.schemaExplorer["conn-2"]).toBeDefined();
+    expect(state.pgObjectCatalog["conn-1"]).toEqual({
+      status: "idle",
+      generation: 4,
+    });
+    expect(state.pgObjectCatalog["conn-2"]?.status).toBe("ready");
+    expect(
+      state.pgObjectDescriptions[
+        'conn-1:["sequence","public","orders_id_seq",""]'
+      ],
+    ).toBeUndefined();
+    expect(
+      state.pgObjectDescriptions[
+        'conn-2:["sequence","public","orders_id_seq",""]'
+      ],
+    ).toBeDefined();
     expect(state.tableData[conn1DataKey]).toBeUndefined();
     expect(state.tableData[conn2DataKey]).toBeDefined();
     expect(state.tableLoadStatus[conn1DataKey]).toBeUndefined();
@@ -1387,6 +1779,122 @@ describe("runHealthChecks latency", () => {
       .getState()
       .connections.find((c) => c.id === "conn-pg");
     expect(pg?.status).toBe("Disconnected");
+  });
+
+  it("invalidates PostgreSQL object metadata after a failed health check", async () => {
+    const reference = {
+      kind: "view" as const,
+      schema: "public",
+      name: "active_users",
+      identityArgs: null,
+    };
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "2 ms",
+          ssl: true,
+        },
+      ],
+      pgObjectCatalog: {
+        "conn-1": {
+          status: "ready",
+          catalog: emptyPgObjectCatalog(),
+          generation: 7,
+        },
+      },
+      pgObjectDescriptions: {
+        'conn-1:["view","public","active_users",""]': {
+          status: "ready",
+          generation: 7,
+          description: {
+            reference,
+            owner: "postgres",
+            comment: null,
+            definitionSql: "CREATE VIEW public.active_users AS SELECT 1",
+            facts: { kind: "view", definition: "SELECT 1" },
+          },
+        },
+      },
+    });
+    mockedInvoke.mockResolvedValueOnce({
+      state: "error",
+      error: "connection closed",
+    });
+
+    await useAppStore.getState().runHealthChecks();
+
+    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    expect(useAppStore.getState().pgObjectCatalog["conn-1"]).toEqual({
+      status: "idle",
+      generation: 8,
+    });
+    expect(useAppStore.getState().pgObjectDescriptions).toEqual({});
+  });
+
+  it("ignores a probe result from an earlier connection lifetime", async () => {
+    let resolveHealth: (value: {
+      state: "error";
+      error: string;
+    }) => void = () => undefined;
+    useAppStore.setState({
+      connections: [
+        {
+          id: "conn-1",
+          name: "Local",
+          database: "postgres",
+          status: "Connected",
+          engine: "PostgreSQL",
+          host: "localhost",
+          port: 5432,
+          user: "postgres",
+          password: "",
+          role: "admin",
+          latency: "2 ms",
+          ssl: true,
+        },
+      ],
+      connectionEpochs: { "conn-1": 4 },
+      pgObjectCatalog: {
+        "conn-1": {
+          status: "ready",
+          catalog: emptyPgObjectCatalog(),
+          generation: 7,
+        },
+      },
+    });
+    mockedInvoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveHealth = resolve;
+        }),
+    );
+
+    const health = useAppStore.getState().runHealthChecks();
+    useAppStore.setState((state) => ({
+      connectionEpochs: { ...state.connectionEpochs, "conn-1": 5 },
+      connections: state.connections.map((connection) => ({
+        ...connection,
+        latency: "1 ms",
+      })),
+    }));
+    resolveHealth({ state: "error", error: "old socket closed" });
+    await health;
+
+    expect(useAppStore.getState().connections[0]?.status).toBe("Connected");
+    expect(useAppStore.getState().connections[0]?.latency).toBe("1 ms");
+    expect(useAppStore.getState().pgObjectCatalog["conn-1"]?.generation).toBe(
+      7,
+    );
   });
 });
 
@@ -3811,6 +4319,33 @@ describe("connectionOverviewTab", () => {
 });
 
 describe("closeTab table browse cleanup", () => {
+  it("keeps an object tab open while its connection is applying DDL", async () => {
+    useAppStore.setState({
+      workspaceTabs: [
+        {
+          id: "tab-object",
+          kind: "object",
+          label: "public.orders_view",
+          connectionId: "conn-1",
+          schema: "public",
+          objectRef: {
+            kind: "view",
+            schema: "public",
+            name: "orders_view",
+            identityArgs: null,
+          },
+        },
+      ],
+      activeTabId: "tab-object",
+      pgObjectDdlApplying: { "conn-1": true },
+    });
+
+    await useAppStore.getState().closeTab("tab-object");
+
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+    expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
+  });
+
   it("keeps an applying mutation and its tab open", async () => {
     mockedRequestConfirm.mockReset();
     mockedRequestConfirm.mockResolvedValue(true);

@@ -1,5 +1,10 @@
 import { storageClassFor } from "@/lib/engine-policy";
-import type { Connection } from "@/lib/store";
+import type { Connection, WorkspaceTab } from "@/lib/store";
+
+/** Relational object/table tabs belong to Tables; SQL editors to Queries. */
+export const relationalRailForTab = (
+  kind: WorkspaceTab["kind"],
+): "tables" | "queries" => (kind === "query" ? "queries" : "tables");
 
 export function isKeyValueConnection(
   connection: Connection | undefined,

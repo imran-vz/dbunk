@@ -161,6 +161,38 @@ type SchemaMapPrefsWire = {
   showComments: boolean;
 };
 
+export type NavigatorGroupKey =
+  | "tables"
+  | "views"
+  | "materializedViews"
+  | "foreignTables"
+  | "sequences"
+  | "functions"
+  | "procedures"
+  | "aggregates"
+  | "types"
+  | "domains"
+  | "extensions"
+  | "eventTriggers"
+  | "roles"
+  | "tablespaces";
+
+export const navigatorGroupId = (
+  connectionId: string,
+  schema: string,
+  group: NavigatorGroupKey,
+): string => `${connectionId}:${schema}:${group}`;
+
+/** Tables default open; every other navigator group defaults closed. */
+export const isNavigatorGroupExpanded = (
+  expandedGroups: readonly string[],
+  groupId: string,
+  group: NavigatorGroupKey,
+): boolean =>
+  group === "tables"
+    ? !expandedGroups.includes(groupId)
+    : expandedGroups.includes(groupId);
+
 const schemaMapPrefsFromWire = (prefs: SchemaMapPrefsWire): SchemaMapPrefs => ({
   routing: prefs.routing,
   attrMode: prefs.attrMode,
@@ -188,6 +220,11 @@ const generatePendingId = (): string => {
 
 export type RelationalTablesSlice = {
   expandedSchemas: string[];
+  /**
+   * Navigator group expansion exceptions. Tables are open when absent;
+   * every other group is open when present, so the default serializes to [].
+   */
+  expandedNavigatorGroups: string[];
   schemaExplorer: Record<string, SchemaExplorer[]>;
   tablePreviews: Record<string, TablePreviewData>;
   tableData: Record<string, TableDataState>;
@@ -229,6 +266,9 @@ export type RelationalTablesSlice = {
   setExpandedSchemas: (
     schemas: string[] | ((prev: string[]) => string[]),
   ) => void;
+  setExpandedNavigatorGroups: (
+    groups: string[] | ((prev: string[]) => string[]),
+  ) => void;
   /**
    * Toggle a navigator schema row. Takes the full expansion id
    * (`"<connectionId>:<schemaName>"`) built by the caller — the store
@@ -237,6 +277,11 @@ export type RelationalTablesSlice = {
    * the relational workbench shows the first relational connection).
    */
   toggleSchema: (schemaId: string) => void;
+  toggleNavigatorGroup: (groupId: string) => void;
+  setSchemaExplorerForConnection: (
+    connectionId: string,
+    schemas: SchemaExplorer[],
+  ) => void;
   focusTableInSchemaMap: (
     connectionId: string,
     schema: string,
@@ -389,6 +434,7 @@ export const createRelationalTablesSlice: StateCreator<
   RelationalTablesSlice
 > = (set, get) => ({
   expandedSchemas: [],
+  expandedNavigatorGroups: [],
   schemaExplorer: {},
   tablePreviews: {},
   tableData: {},
@@ -420,11 +466,33 @@ export const createRelationalTablesSlice: StateCreator<
           : schemas,
     })),
 
+  setExpandedNavigatorGroups: (groups) =>
+    set((state) => ({
+      expandedNavigatorGroups:
+        typeof groups === "function"
+          ? groups(state.expandedNavigatorGroups)
+          : groups,
+    })),
+
   toggleSchema: (schemaId) => {
     set((state) => ({
       expandedSchemas: state.expandedSchemas.includes(schemaId)
         ? state.expandedSchemas.filter((item) => item !== schemaId)
         : [...state.expandedSchemas, schemaId],
+    }));
+  },
+
+  toggleNavigatorGroup: (groupId) => {
+    set((state) => ({
+      expandedNavigatorGroups: state.expandedNavigatorGroups.includes(groupId)
+        ? state.expandedNavigatorGroups.filter((item) => item !== groupId)
+        : [...state.expandedNavigatorGroups, groupId],
+    }));
+  },
+
+  setSchemaExplorerForConnection: (connectionId, schemas) => {
+    set((state) => ({
+      schemaExplorer: { ...state.schemaExplorer, [connectionId]: schemas },
     }));
   },
 

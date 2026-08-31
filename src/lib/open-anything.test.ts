@@ -7,7 +7,12 @@ import {
   rankOpenAnythingItems,
   resolveSavedQueryTarget,
 } from "./open-anything";
-import type { Connection, QueryHistoryEntry, SavedQuery } from "./store";
+import type {
+  Connection,
+  PgObjectCatalog,
+  QueryHistoryEntry,
+  SavedQuery,
+} from "./store";
 
 const NO_FRECENCY: ReadonlyMap<string, number> = new Map();
 
@@ -86,6 +91,7 @@ function snapshot(
       // Present but must be ignored: conn-b is disconnected.
       "conn-b": [{ name: "reporting", tables: ["facts"] }],
     },
+    objectCatalog: { "conn-a": objectCatalog() },
     savedQueries: [savedQuery("sq-1", "Slow queries", "conn-a")],
     queryHistory: [historyEntry("h-1", "SELECT * FROM users LIMIT 10")],
     workspaceTabs: [
@@ -103,11 +109,52 @@ function snapshot(
         connectionId: "conn-c",
         schema: "",
       },
+      {
+        id: "tab-object",
+        kind: "object",
+        label: "public.users_id_seq",
+        connectionId: "conn-a",
+        schema: "public",
+        objectRef: {
+          kind: "sequence",
+          schema: "public",
+          name: "users_id_seq",
+          identityArgs: null,
+        },
+      },
     ],
     commands: [
       { id: "new-query", label: "New query tab", description: "Editor" },
     ],
     ...overrides,
+  };
+}
+
+function objectCatalog(): PgObjectCatalog {
+  return {
+    schemas: [
+      {
+        name: "public",
+        tables: [{ name: "users" }],
+        views: [{ name: "active_users" }],
+        materializedViews: [{ name: "daily_totals" }],
+        foreignTables: [{ name: "remote_events" }],
+        sequences: [{ name: "users_id_seq" }],
+        functions: [
+          { name: "compute_totals", identityArgs: "integer" },
+          { name: "compute_totals", identityArgs: "numeric" },
+        ],
+        procedures: [{ name: "archive_orders", identityArgs: "date" }],
+        aggregates: [{ name: "median", identityArgs: "numeric" }],
+        types: [{ name: "order_status", typeClass: "enum" }],
+        domains: [{ name: "positive_amount" }],
+        extensions: [{ name: "pgcrypto" }],
+      },
+    ],
+    eventTriggers: [{ name: "audit_ddl" }],
+    roles: [{ name: "app_writer" }],
+    tablespaces: [{ name: "fast_disk" }],
+    truncated: [],
   };
 }
 
@@ -119,6 +166,10 @@ describe("buildOpenAnythingIndex", () => {
     const items = buildOpenAnythingIndex(snapshot());
     expect(byKey(items, "command:new-query")?.kind).toBe("command");
     expect(byKey(items, "tab:tab-1")?.kind).toBe("tab");
+    expect(byKey(items, "tab:tab-object")?.target).toEqual({
+      type: "activate-tab",
+      tabId: "tab-object",
+    });
     expect(byKey(items, "connection:conn-a")?.kind).toBe("connection");
     expect(byKey(items, "schema:conn-a:public")?.kind).toBe("schema");
     expect(byKey(items, "relation:conn-a:public:users")?.target).toEqual({
@@ -141,14 +192,63 @@ describe("buildOpenAnythingIndex", () => {
     expect(byKey(items, "history:h-1")?.kind).toBe("history");
   });
 
-  it("skips non-workspace tab kinds and objects without an open surface", () => {
+  it("emits overload-safe object targets with stable frecency keys", () => {
+    const items = buildOpenAnythingIndex(snapshot());
+    const functionKey =
+      'object:conn-a:["function","public","compute_totals","integer"]';
+    expect(byKey(items, functionKey)).toEqual(
+      expect.objectContaining({
+        kind: "object",
+        label: "compute_totals(integer)",
+        description: "Fn · public · Primary",
+        target: {
+          type: "open-object",
+          connectionId: "conn-a",
+          reference: {
+            kind: "function",
+            schema: "public",
+            name: "compute_totals",
+            identityArgs: "integer",
+          },
+        },
+      }),
+    );
+    expect(
+      byKey(
+        items,
+        'object:conn-a:["function","public","compute_totals","numeric"]',
+      ),
+    ).toBeDefined();
+  });
+
+  it("skips non-workspace tabs and list-only catalog kinds", () => {
     const items = buildOpenAnythingIndex(snapshot());
     expect(byKey(items, "tab:tab-redis")).toBeUndefined();
-    expect(items.some((item) => item.keywords.includes("compute_totals"))).toBe(
+    expect(items.some((item) => item.keywords.includes("audit_ddl"))).toBe(
       false,
     );
-    expect(items.some((item) => item.keywords.includes("users_id_seq"))).toBe(
+    expect(items.some((item) => item.keywords.includes("app_writer"))).toBe(
       false,
+    );
+    expect(items.some((item) => item.keywords.includes("fast_disk"))).toBe(
+      false,
+    );
+    expect(byKey(items, "tab:tab-object")?.keywords).toContain("users_id_seq");
+  });
+
+  it("keeps views on the relation path without double-indexing them", () => {
+    const items = buildOpenAnythingIndex(snapshot());
+    expect(items.filter((item) => item.label === "active_users")).toHaveLength(
+      1,
+    );
+    expect(byKey(items, "relation:conn-a:public:active_users")?.target).toEqual(
+      {
+        type: "open-relation",
+        connectionId: "conn-a",
+        schema: "public",
+        name: "active_users",
+        relationKind: "view",
+      },
     );
   });
 
@@ -231,6 +331,28 @@ describe("rankOpenAnythingItems", () => {
     expect(relations).toHaveLength(200);
     expect(relations[0].label).toBe("target");
     expect(ranked.truncated.relation).toBe(51);
+  });
+
+  it("applies one shared cap across object kinds", () => {
+    const catalog = objectCatalog();
+    const schema = catalog.schemas[0];
+    if (!schema) throw new Error("Object catalog fixture has no schema.");
+    schema.functions = Array.from({ length: 150 }, (_, index) => ({
+      name: `shared_${index}`,
+      identityArgs: "integer",
+    }));
+    schema.sequences = Array.from({ length: 100 }, (_, index) => ({
+      name: `shared_seq_${index}`,
+    }));
+    const items = buildOpenAnythingIndex(
+      snapshot({ objectCatalog: { "conn-a": catalog } }),
+    );
+
+    const ranked = rankOpenAnythingItems(items, "shared", NO_FRECENCY);
+    expect(ranked.items.filter((item) => item.kind === "object")).toHaveLength(
+      200,
+    );
+    expect(ranked.truncated.object).toBe(50);
   });
 
   it("boosts frecent items and serves recents for the empty query", () => {
