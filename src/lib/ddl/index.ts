@@ -11,7 +11,12 @@ import type { ColumnInfo, DatabaseEngine } from "@/lib/store";
 import { generateClickHouseDdl } from "./clickhouse";
 import { type ColumnChangeKind, generatePostgresDdl } from "./postgres";
 
-export type { ColumnChangeKind, NewColumn, PendingChange } from "./postgres";
+export type {
+  ColumnChangeKind,
+  NewColumn,
+  PendingChange,
+  StructureChange,
+} from "./postgres";
 export { classifyDestructive } from "./postgres";
 
 /** Build a `name -> dataType` map from the loaded column list, used by
