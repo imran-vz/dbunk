@@ -72,6 +72,34 @@ const seedStore = () => {
         },
       ],
     },
+    pgObjectCatalog: {
+      c1: {
+        status: "ready",
+        generation: 0,
+        catalog: {
+          schemas: [
+            {
+              name: "public",
+              tables: [],
+              views: [{ name: "active_orders" }],
+              materializedViews: [{ name: "orders_daily" }],
+              foreignTables: [],
+              sequences: [{ name: "order_number_seq" }],
+              functions: [{ name: "calculate_tax", identityArgs: "numeric" }],
+              procedures: [],
+              aggregates: [],
+              types: [],
+              domains: [],
+              extensions: [],
+            },
+          ],
+          eventTriggers: [{ name: "audit_ddl" }],
+          roles: [],
+          tablespaces: [],
+          truncated: [],
+        },
+      },
+    },
     savedQueries: [
       {
         id: "sq1",
@@ -189,6 +217,29 @@ describe("Open Anything palette (Plan 010, mock A)", () => {
     fireEvent.click(screen.getByText("active_orders"));
     expect(openViewTab).toHaveBeenCalledWith("public", "active_orders");
     expect(openTableTab).not.toHaveBeenCalled();
+  });
+
+  it("opens catalog objects in the Object Viewer with concrete badges", () => {
+    seedStore();
+    const openObjectTab = vi.fn();
+    useAppStore.setState({ activeConnectionId: "c2", openObjectTab });
+    render(<Harness onToggle={vi.fn()} />);
+    openPalette();
+
+    type("calculate_tax");
+    const row = screen
+      .getByText("calculate_tax(numeric)")
+      .closest('[cmdk-item=""]');
+    expect(row?.textContent).toContain("Fn");
+    fireEvent.click(screen.getByText("calculate_tax(numeric)"));
+
+    expect(useAppStore.getState().activeConnectionId).toBe("c1");
+    expect(openObjectTab).toHaveBeenCalledWith({
+      kind: "function",
+      schema: "public",
+      name: "calculate_tax",
+      identityArgs: "numeric",
+    });
   });
 
   it("switches the active connection before opening a cross-connection relation", () => {

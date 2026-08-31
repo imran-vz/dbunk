@@ -8,6 +8,7 @@ import { createKeyValuePubSubSlice } from "./keyvalue-pubsub";
 import { createKeyValueWorkspaceSlice } from "./keyvalue-workspace";
 import { createManagedServersSlice } from "./managed-servers";
 import { createMutationDraftsSlice } from "./mutation-drafts";
+import { createPgObjectsSlice } from "./pg-objects";
 import { createQuerySessionsSlice } from "./query-sessions";
 import { createRelationalQueriesSlice } from "./relational-queries";
 import { createRelationalTablesSlice } from "./relational-tables";
@@ -67,7 +68,9 @@ export type {
   PgObjectOp,
   PgObjectRef,
   PgReferentialAction,
+  PgRoutineObjectKind,
   PgSchemaObjects,
+  PgScopedObjectKind,
   PgSetting,
   PgStoredConnection,
   PgTypeAttribute,
@@ -133,6 +136,26 @@ export {
   rebindMutationDraftChanges,
   tableMutationDraftScope,
 } from "./mutation-drafts";
+export {
+  canonicalPgObjectRefKey,
+  catalogToSchemaExplorer,
+  decodePgObjectError,
+  formatPgCatalogError,
+  pgObjectDdlApplyKey,
+  pgObjectDescriptionKey,
+} from "./pg-objects";
+export type {
+  PgObjectCatalogState,
+  PgObjectDescriptionState,
+  PgObjectLoadResult,
+  PgObjectLoadStatus,
+  PgObjectsSlice,
+} from "./pg-objects";
+export {
+  isNavigatorGroupExpanded,
+  navigatorGroupId,
+} from "./relational-tables";
+export type { NavigatorGroupKey } from "./relational-tables";
 export type {
   MutationDraft,
   MutationDraftAnalysisRecovery,
@@ -186,6 +209,7 @@ export const useAppStore = create<AppStoreState>()((set, get, store) => ({
   ...createManagedServersSlice(set, get, store),
   ...createConnectionsSlice(set, get, store),
   ...createWorkspaceTabsSlice(set, get, store),
+  ...createPgObjectsSlice(set, get, store),
   ...createRelationalTablesSlice(set, get, store),
   ...createMutationDraftsSlice(set, get, store),
   ...createQuerySessionsSlice(set, get, store),

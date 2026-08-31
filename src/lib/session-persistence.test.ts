@@ -38,6 +38,20 @@ const queryTab = (id: string, query: string): WorkspaceTab => ({
   isDirty: true,
 });
 
+const objectTab = (id: string): WorkspaceTab => ({
+  id,
+  kind: "object",
+  label: "public.add_nums(integer)",
+  connectionId: "conn-1",
+  schema: "public",
+  objectRef: {
+    kind: "function",
+    schema: "public",
+    name: "add_nums",
+    identityArgs: "integer",
+  },
+});
+
 beforeEach(() => {
   window.localStorage.clear();
   resetSessionPersistenceForTests();
@@ -86,6 +100,7 @@ describe("restoreSession (P8)", () => {
         ],
         activeTabId: "tab-5",
         expandedSchemas: ["conn-1:public"],
+        expandedNavigatorGroups: ["conn-1:public:views"],
       }),
     );
     useAppStore.setState({ connections: [connection("conn-1")] });
@@ -103,6 +118,7 @@ describe("restoreSession (P8)", () => {
     expect(state.workspaceTabs[1]?.pinned).toBe(true);
     expect(state.activeTabId).toBe("tab-5");
     expect(state.expandedSchemas).toEqual(["conn-1:public"]);
+    expect(state.expandedNavigatorGroups).toEqual(["conn-1:public:views"]);
 
     // Counters bumped past restored ids/labels — no collisions.
     useAppStore.getState().createNewQueryTab();
@@ -173,6 +189,79 @@ describe("restoreSession (P8)", () => {
     expect(useAppStore.getState().workspaceTabs).toEqual([]);
   });
 
+  it("restores valid object refs field-by-field and drops malformed refs", () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        tabs: [
+          {
+            ...objectTab("tab-object"),
+            // Restore derives this from the validated ref.
+            schema: "stale-schema",
+          },
+          {
+            ...objectTab("tab-bad-kind"),
+            objectRef: {
+              kind: "trigger",
+              schema: "public",
+              name: "audit_ddl",
+              identityArgs: null,
+            },
+          },
+          {
+            ...objectTab("tab-missing-identity"),
+            objectRef: {
+              kind: "function",
+              schema: "public",
+              name: "add_nums",
+            },
+          },
+          {
+            ...objectTab("tab-schema-with-parent"),
+            objectRef: {
+              kind: "schema",
+              schema: "public",
+              name: "lifecycle",
+              identityArgs: null,
+            },
+          },
+          {
+            ...objectTab("tab-view-without-schema"),
+            objectRef: {
+              kind: "view",
+              schema: null,
+              name: "orders_view",
+              identityArgs: null,
+            },
+          },
+          {
+            ...objectTab("tab-view-with-identity"),
+            objectRef: {
+              kind: "view",
+              schema: "public",
+              name: "orders_view",
+              identityArgs: "integer",
+            },
+          },
+        ],
+        activeTabId: "tab-object",
+        expandedSchemas: [],
+      }),
+    );
+    useAppStore.setState({ connections: [connection("conn-1")] });
+
+    useAppStore.getState().restoreSession();
+
+    expect(useAppStore.getState().workspaceTabs).toEqual([
+      expect.objectContaining({
+        id: "tab-object",
+        kind: "object",
+        schema: "public",
+        objectRef: objectTab("tab-object").objectRef,
+      }),
+    ]);
+  });
+
   it("is a no-op without a stored session", () => {
     useAppStore.getState().restoreSession();
     expect(useAppStore.getState().workspaceTabs).toEqual([]);
@@ -219,6 +308,7 @@ describe("session persistence (P8)", () => {
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw ?? "{}");
     expect(parsed.activeTabId).toBe("tab-1");
+    expect(parsed.expandedNavigatorGroups).toEqual([]);
     expect(parsed.tabs).toEqual([
       {
         id: "tab-1",
@@ -230,6 +320,72 @@ describe("session persistence (P8)", () => {
         isDirty: true,
       },
     ]);
+  });
+
+  it("persists navigator group expansion independently of schemas", () => {
+    vi.useFakeTimers();
+    startSessionPersistence();
+
+    useAppStore.setState({
+      expandedSchemas: ["conn-1:public"],
+      expandedNavigatorGroups: ["conn-1:public:functions"],
+    });
+    vi.advanceTimersByTime(600);
+
+    const parsed = JSON.parse(
+      window.localStorage.getItem(SESSION_STORAGE_KEY) ?? "{}",
+    );
+    expect(parsed.expandedSchemas).toEqual(["conn-1:public"]);
+    expect(parsed.expandedNavigatorGroups).toEqual(["conn-1:public:functions"]);
+  });
+
+  it("round-trips a typed object tab", () => {
+    vi.useFakeTimers();
+    startSessionPersistence();
+    useAppStore.setState({
+      connections: [connection("conn-1")],
+      workspaceTabs: [objectTab("tab-object")],
+      activeTabId: "tab-object",
+    });
+    vi.advanceTimersByTime(600);
+
+    const persisted = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    expect(JSON.parse(persisted ?? "{}").tabs).toEqual([
+      objectTab("tab-object"),
+    ]);
+
+    useAppStore.setState(initialStoreState, true);
+    useAppStore.setState({ connections: [connection("conn-1")] });
+    useAppStore.getState().restoreSession();
+
+    expect(useAppStore.getState().workspaceTabs).toEqual([
+      objectTab("tab-object"),
+    ]);
+    expect(useAppStore.getState().activeTabId).toBe("tab-object");
+  });
+
+  it("round-trips schema-qualified relation identity for query tabs", () => {
+    vi.useFakeTimers();
+    startSessionPersistence();
+    const tab: WorkspaceTab = {
+      ...queryTab("tab-view", 'select * from "audit"."orders";'),
+      relationRef: { schema: "audit", name: "orders" },
+    };
+    useAppStore.setState({
+      connections: [connection("conn-1")],
+      workspaceTabs: [tab],
+      activeTabId: tab.id,
+    });
+    vi.advanceTimersByTime(600);
+
+    useAppStore.setState(initialStoreState, true);
+    useAppStore.setState({ connections: [connection("conn-1")] });
+    useAppStore.getState().restoreSession();
+
+    expect(useAppStore.getState().workspaceTabs[0]?.relationRef).toEqual({
+      schema: "audit",
+      name: "orders",
+    });
   });
 
   it("persists the caret recorded via updateQueryCaret (Plan 009)", () => {

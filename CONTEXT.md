@@ -141,7 +141,22 @@ identity; see the **Keyspace model** section below.
   collapses to a single schema, ClickHouse calls them databases. The UI
   treats them uniformly as schemas.
 - **Schema Explorer** — the schemas + tables + views tree shown in the
-  sidebar. Loaded per-connection on connect.
+  sidebar. PostgreSQL derives its explorer-compatible relation lists from the
+  Object Catalog; other relational engines retain their native explorer
+  loaders.
+- **Object Ref** — the stable PostgreSQL identity of one catalog object:
+  `kind + schema + name + identityArgs`. `identityArgs` disambiguates routine
+  overloads, while empty and null schema spellings canonicalize to the same
+  key.
+- **Object Catalog** — the typed, capped PostgreSQL inventory loaded once per
+  connection generation. It covers schema-scoped relations, routines,
+  sequences, types, domains, and extensions plus database-scoped list-only
+  event triggers, roles, and tablespaces. A disconnect invalidates the
+  generation so a late response cannot resurrect cached metadata.
+- **Object Viewer** — the `object` Workspace Tab for one Object Ref. It shows
+  reconstructed definition SQL and kind-specific facts, restores without
+  auto-connecting, and loads its description after the connection becomes
+  active. List-only catalog entries have no Object Viewer.
 - **Schema Relationships** — the foreign-key graph used to render the schema
   map. Loaded lazily per-schema.
 - **Schema Map** — the visual graph of relational tables and their
@@ -258,7 +273,7 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
 - **Navigator** — the left tree panel (schemas → tables) with the filter
   input pinned on top. One tab stop with roving focus; toggled with
   `Cmd+B`.
-- **Object tab strip** — the row of open `table`/`query` tabs above the
+- **Object tab strip** — the row of open `table`/`query`/`object` tabs above the
   main pane. Pinned tabs sit leftmost; a prod/staging connection colors
   its bottom underline.
 - **Results pane** — the bottom half of the query editor split, holding
@@ -282,12 +297,13 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
 
 - **Workspace Shell** — the contents of the main area when a connection is
   active. Forks on the active connection's storage class (ADR-0008): the
-  **Relational Workspace** renders the schema explorer + `table`/`query`
-  tab kinds; the **KeyValue Workspace** renders the keyspace browser +
+  **Relational Workspace** renders the object navigator +
+  `table`/`query`/`object` tab kinds; the **KeyValue Workspace** renders the keyspace browser +
   `key`/`cli`/`pubsub`/`server` tab kinds. The app shell (top bar,
   connections list, settings, credential onboarding) is shared.
 - **Workspace Tab** — an open tab in the main area. Relational kinds:
-  `table` (the data browser) and `query` (the SQL editor). Keyvalue kinds:
+  `table` (the data browser), `query` (the SQL editor), and `object` (the
+  PostgreSQL Object Viewer). Keyvalue kinds:
   `key` (multi-instance, one per inspected key), `cli` (singleton REPL),
   `pubsub` (singleton subscription monitor), `server` (singleton INFO /
   health view; also the default-opened tab when a Redis connection becomes
@@ -388,11 +404,24 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
 - **DML Preview** — the display-only statements and ordered text parameters
   produced from a Mutation Plan. Apply uses the same builder and analysis
   snapshot. Preview content, SQL, parameters, and row values are never logged.
-- **DDL Statement** — a schema-level change (CREATE/ALTER/DROP), executed via
-  the `execute_ddl` command rather than the regular query path so the
-  frontend can model the response shape distinctly. Relational-only — Redis
-  has no schema-shaped surface; its equivalents (key creation, rename,
-  expire) flow through dedicated Tauri commands, not `execute_ddl`.
+- **DDL Plan** — an ordered list of typed PostgreSQL Object Operations. The
+  backend validates and renders those operations; neither preview nor apply
+  accepts arbitrary generated statement text from the frontend.
+- **DDL Preview** — the exact, display-only statements generated from a DDL
+  Plan, including summaries, destructive flags, and atomic or standalone
+  groups. It is distinct from DML Preview, which carries bound row-value
+  parameters.
+- **Drop Impact** — the bounded transitive PostgreSQL dependency set for an
+  Object Ref, grouped by dependency depth. It is inspected before a drop;
+  CASCADE remains an explicit opt-in and server truncation is disclosed.
+- **DDL Statement** — a schema-level change (CREATE/ALTER/DROP). PostgreSQL
+  object lifecycle statements are generated from a DDL Plan and reviewed in a
+  DDL Preview before apply. Atomic groups run in a transaction; standalone
+  statements run outside one, so earlier statements can remain applied after
+  a later failure. The legacy structure editor still uses `execute_ddl` until
+  its typed switchover. Materialized-view refresh is not DDL and deliberately
+  remains on the existing safety-confirmed command path. Redis has no
+  schema-shaped surface.
 - **Pending Mutation** — a single ClickHouse `ALTER TABLE … UPDATE` or
   `ALTER TABLE … DELETE` statement that has been accepted by the server
   and is applying asynchronously across MergeTree parts. Identified by
@@ -421,19 +450,14 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
   for the UI badge); the Edit Outcome is the truth a caller awaits,
   the lifecycle status is a best-effort view for badge rendering and
   concurrent-op gating.
-- **DDL Outcome** — the caller-facing terminal result of one
-  `commitStructureChanges` invocation — i.e. the outcome of executing
-  one batch of **DDL Statement**s. A tagged union on `kind`:
-  `"completed" | "failed" | "noop"`, returned by the store action so
-  the caller can await its own operation's result. Always synchronous
-  today: `execute_ddl` returns a final status from the engine
-  immediately and DDL never enters a **Pending Mutation** flow on any
-  current engine — hence no `timeout` variant (unlike Edit Outcome).
-  The `noop` variant is returned when there were no pending changes;
-  the UI does not render a banner for it. Distinct from the lifecycle
-  status the store keeps in `structureCommitStatus` (`running` only),
-  which exists solely to keep the Commit button disabled across tab
-  unmounts.
+- **DDL Outcome** — the caller-facing terminal result of applying a DDL Plan:
+  success with applied-statement count and runtime, cancellation, or a typed
+  PostgreSQL object error. A database or lock failure records the failing
+  statement and how many earlier standalone statements applied, so callers
+  refresh stale catalog and description caches after a partial apply. The
+  legacy structure editor retains its separate `completed | failed | noop`
+  outcome until its typed switchover. Materialized-view refresh has a runtime
+  result but is not a DDL Outcome.
 - **Query Outcome** — the caller-facing terminal result of one
   `runQuery` invocation — i.e. the outcome of executing one SQL
   statement on a `query`-kind **Workspace Tab**. A tagged union on

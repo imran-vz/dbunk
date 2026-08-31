@@ -102,4 +102,44 @@ describe("SafetyConfirmDialog", () => {
     act(() => resolveSafetyConfirmation(false));
     await expect(nextResult).resolves.toBe(false);
   });
+
+  it("renders DDL summaries with destructive and standalone flags", async () => {
+    render(<SafetyConfirmDialog />);
+    let result: Promise<boolean> | undefined;
+    act(() => {
+      result = requestSafetyConfirmation({
+        connection: staging,
+        subject: {
+          kind: "ddl",
+          statements: [
+            {
+              index: 0,
+              summary: "Drop view public.active_users",
+              destructive: true,
+              transactional: true,
+            },
+            {
+              index: 1,
+              summary: "Create index concurrently",
+              destructive: false,
+              transactional: false,
+            },
+          ],
+        },
+      });
+    });
+
+    expect(screen.getByText("1. Drop view public.active_users")).toBeTruthy();
+    expect(screen.getByText("Destructive")).toBeTruthy();
+    expect(screen.getByText("2. Create index concurrently")).toBeTruthy();
+    expect(screen.getByText("Runs outside a transaction")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Confirm and run" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+
+    act(() => resolveSafetyConfirmation(false));
+    await expect(result).resolves.toBe(false);
+  });
 });

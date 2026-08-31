@@ -1,6 +1,7 @@
 import {
   IconChevronDown,
   IconColumns3,
+  IconEye,
   IconKey,
   IconPlus,
   IconTable,
@@ -63,6 +64,18 @@ function orderTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   const pinned = tabs.filter((tab) => tab.pinned);
   const rest = tabs.filter((tab) => !tab.pinned);
   return [...pinned, ...rest];
+}
+
+function WorkspaceTabIcon({
+  tab,
+  className,
+}: {
+  tab: WorkspaceTab;
+  className?: string;
+}) {
+  if (tab.kind === "query") return <IconTerminal2 className={className} />;
+  if (tab.kind === "object") return <IconEye className={className} />;
+  return <IconTable className={className} />;
 }
 
 /**
@@ -344,14 +357,13 @@ function TabOverflowMenu({ tabs }: { tabs: WorkspaceTab[] }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         {tabs.map((tab) => {
-          const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
           return (
             <DropdownMenuItem
               key={tab.id}
               className={cn(tab.id === activeTabId && "bg-accent-subdued")}
               onClick={() => setActiveTabId(tab.id)}
             >
-              <TabIcon className="text-text-disabled" />
+              <WorkspaceTabIcon tab={tab} className="text-text-disabled" />
               <span className="truncate">{tab.label}</span>
             </DropdownMenuItem>
           );
@@ -386,7 +398,6 @@ function ObjectTab({
   onDragOverTab: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEndTab: () => void;
 }) {
-  const TabIcon = tab.kind === "query" ? IconTerminal2 : IconTable;
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -432,7 +443,10 @@ function ObjectTab({
             className="absolute inset-x-0 top-0 h-0.5 bg-accent"
           />
         ) : null}
-        <TabIcon className="size-4 shrink-0 text-text-disabled" />
+        <WorkspaceTabIcon
+          tab={tab}
+          className="size-4 shrink-0 text-text-disabled"
+        />
         {tab.pinned ? null : (
           <span className="max-w-40 truncate">{tab.label}</span>
         )}
