@@ -515,7 +515,10 @@ describe("TableStructureView edit flow", () => {
 
     const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
     expect(pending).toHaveLength(1);
-    expect(pending[0].change).toEqual({ kind: "drop", columnName: "email" });
+    expect(pending[0].change).toEqual({
+      kind: "column",
+      change: { kind: "drop", columnName: "email" },
+    });
     // The pending changes section is now visible.
     expect(screen.getByTestId("structure-pending-section")).toBeTruthy();
   });

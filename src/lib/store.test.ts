@@ -2291,7 +2291,7 @@ describe("store.pendingStructureChanges", () => {
     });
     const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
     expect(pending).toHaveLength(1);
-    expect(pending[0].change).toEqual(change);
+    expect(pending[0].change).toEqual({ kind: "column", change });
     expect(pending[0].schema).toBe("public");
     expect(pending[0].table).toBe("users");
     expect(typeof pending[0].id).toBe("string");
@@ -2314,7 +2314,47 @@ describe("store.pendingStructureChanges", () => {
       });
     });
     const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
-    expect(pending.map((p) => p.change)).toEqual([a, b]);
+    expect(pending.map((p) => p.change)).toEqual([
+      { kind: "column", change: a },
+      { kind: "column", change: b },
+    ]);
+  });
+
+  it("keeps each table's pending list engine-homogeneous", () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: { kind: "drop", columnName: "legacy" },
+      });
+    });
+    const clickHousePending =
+      useAppStore.getState().pendingStructureChanges[key];
+    expect(
+      clickHousePending?.every((entry) => entry.change.kind === "column"),
+    ).toBe(true);
+
+    const pgKey = tableStructureKey("conn-1", "public", "accounts");
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(pgKey, {
+        schema: "public",
+        table: "accounts",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "accounts",
+            name: "legacy",
+            cascade: false,
+          },
+        },
+      });
+    });
+    const pgPending = useAppStore.getState().pendingStructureChanges[pgKey];
+    expect(pgPending?.every((entry) => entry.change.kind === "pg-op")).toBe(
+      true,
+    );
   });
 
   it("removePendingStructureChange removes only the targeted entry", () => {

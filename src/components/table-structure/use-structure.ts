@@ -154,7 +154,14 @@ export function useStructure({
         engine ?? "PostgreSQL",
         schema,
         tableName,
-        pending.map((entry) => entry.change),
+        pending.map((entry) => {
+          if (entry.change.kind !== "column") {
+            throw new Error(
+              "PostgreSQL typed operations require async preview",
+            );
+          }
+          return entry.change.change;
+        }),
         snapshot.columns,
       ),
     [engine, schema, tableName, snapshot.columns, pending],
@@ -191,7 +198,11 @@ export function useStructure({
     sampleBy: snapshot.sampleBy,
     showPhysicalLayout: Boolean(snapshot.partitionBy || snapshot.sampleBy),
     queueChange: (change: ColumnChangeKind) =>
-      addPendingStructureChange(key, { schema, table: tableName, change }),
+      addPendingStructureChange(key, {
+        schema,
+        table: tableName,
+        change: { kind: "column", change },
+      }),
     removePending: (id: string) => removePendingStructureChange(key, id),
     retry: () => {
       if (connectionId && schema && tableName) {
@@ -208,7 +219,14 @@ async function runDestructiveCommit<T>(
 ): Promise<T | undefined> {
   if (pending.length === 0) return undefined;
   const { destructive } = classifyDestructive(
-    pending.map((entry) => entry.change),
+    pending.map((entry) => {
+      if (entry.change.kind !== "column") {
+        throw new Error(
+          "PostgreSQL typed operations use backend safety policy",
+        );
+      }
+      return entry.change.change;
+    }),
   );
   if (destructive.length > 0) {
     const summary = destructive
