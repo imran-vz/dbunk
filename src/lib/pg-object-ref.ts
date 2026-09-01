@@ -80,6 +80,16 @@ export const canonicalPgObjectRefKey = (reference: PgObjectRef): string =>
     reference.identityArgs ?? "",
   ]);
 
+/** Per-connection description-cache key for an object reference. */
+export const pgObjectDescriptionKey = (
+  connectionId: string,
+  reference: PgObjectRef,
+): string => `${connectionId}:${canonicalPgObjectRefKey(reference)}`;
+
+/** Per-connection mutual-exclusion key for object-DDL applies. */
+export const pgObjectDdlApplyKey = (connectionId: string): string =>
+  connectionId;
+
 /** Recover typed identity from a key emitted by canonicalPgObjectRefKey. */
 export function parseCanonicalPgObjectRefKey(key: string): PgObjectRef | null {
   try {

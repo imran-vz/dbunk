@@ -418,8 +418,11 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
   object lifecycle statements are generated from a DDL Plan and reviewed in a
   DDL Preview before apply. Atomic groups run in a transaction; standalone
   statements run outside one, so earlier statements can remain applied after
-  a later failure. The legacy structure editor still uses `execute_ddl` until
-  its typed switchover. Materialized-view refresh is not DDL and deliberately
+  a later failure. The PostgreSQL structure editor queues typed `PgObjectOp`s
+  and commits them through the same preview → review → gated
+  `apply_object_ddl` workflow (Plan 015); ClickHouse structure edits are the
+  remaining `execute_ddl` caller (plus the unsupported MySQL/SQLite
+  dead end). Materialized-view refresh is not DDL and deliberately
   remains on the existing safety-confirmed command path. Redis has no
   schema-shaped surface.
 - **Pending Mutation** — a single ClickHouse `ALTER TABLE … UPDATE` or
@@ -455,8 +458,11 @@ The redesigned shell's regions, named per `designs/DESIGN-SYSTEM.md` §3:
   PostgreSQL object error. A database or lock failure records the failing
   statement and how many earlier standalone statements applied, so callers
   refresh stale catalog and description caches after a partial apply. The
-  legacy structure editor retains its separate `completed | failed | noop`
-  outcome until its typed switchover. Materialized-view refresh has a runtime
+  structure editor keeps its `completed | failed | noop` outcome shape for
+  both engines; for PostgreSQL the `failed` reason is the typed object error
+  formatted against the reviewed preview's statement summaries, and a partial
+  apply still runs the structure/data refresh fan-out while keeping the
+  pending batch for edit-and-retry. Materialized-view refresh has a runtime
   result but is not a DDL Outcome.
 - **Query Outcome** — the caller-facing terminal result of one
   `runQuery` invocation — i.e. the outcome of executing one SQL

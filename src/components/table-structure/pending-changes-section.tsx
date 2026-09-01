@@ -1,5 +1,6 @@
 import { IconAlertTriangle, IconX } from "@tabler/icons-react";
 
+import { DdlPlanPreviewGroups } from "@/components/object-ddl/plan-preview";
 import { Button } from "@/components/ui/button";
 import type {
   DDLOutcome,
@@ -8,12 +9,15 @@ import type {
 } from "@/lib/store";
 
 import { describeChange, EmptyRow, Section } from "./shared";
+import type { StructurePgPreview } from "./use-structure";
 
 interface PendingChangesSectionProps {
   pending: PendingChange[];
   previewSql: string;
+  pgPreview: StructurePgPreview;
   showPreview: boolean;
   commitStatus: StructureCommitStatus | undefined;
+  commitDisabled: boolean;
   lastOutcome: DDLOutcome | null;
   onTogglePreview: () => void;
   onRemove: (id: string) => void;
@@ -23,8 +27,10 @@ interface PendingChangesSectionProps {
 export function PendingChangesSection({
   pending,
   previewSql,
+  pgPreview,
   showPreview,
   commitStatus,
+  commitDisabled,
   lastOutcome,
   onTogglePreview,
   onRemove,
@@ -46,14 +52,43 @@ export function PendingChangesSection({
           showPreview={showPreview}
           isRunning={isRunning}
           isEmpty={isEmpty}
+          commitDisabled={commitDisabled}
           onTogglePreview={onTogglePreview}
           onCommit={onCommit}
         />
       }
     >
-      <PendingList pending={pending} onRemove={onRemove} />
+      <PendingList
+        pending={pending}
+        pgPreview={pgPreview}
+        onRemove={onRemove}
+      />
+      {pgPreview.state === "loading" && !isEmpty ? (
+        <div
+          data-testid="structure-preview-loading"
+          className="border-t border-border-subtle px-3 py-2 text-xs text-muted-foreground"
+        >
+          Generating DDL preview…
+        </div>
+      ) : null}
+      {pgPreview.state === "error" ? (
+        <ErrorBanner
+          testId="structure-preview-error"
+          message={`DDL preview failed: ${pgPreview.message}`}
+        />
+      ) : null}
+      {showPreview && pgPreview.state === "ready" ? (
+        <div data-testid="structure-ddl-preview">
+          <DdlPlanPreviewGroups preview={pgPreview.preview} />
+        </div>
+      ) : null}
       {showPreview && previewSql ? <SqlPreview sql={previewSql} /> : null}
-      {errorMessage ? <ErrorBanner message={errorMessage} /> : null}
+      {errorMessage ? (
+        <ErrorBanner
+          testId="structure-commit-error"
+          message={`Commit failed: ${errorMessage}`}
+        />
+      ) : null}
       {successRuntime !== null && successRuntime !== undefined ? (
         <SuccessBanner runtimeMs={successRuntime} />
       ) : null}
@@ -65,12 +100,14 @@ function SectionActions({
   showPreview,
   isRunning,
   isEmpty,
+  commitDisabled,
   onTogglePreview,
   onCommit,
 }: {
   showPreview: boolean;
   isRunning: boolean;
   isEmpty: boolean;
+  commitDisabled: boolean;
   onTogglePreview: () => void;
   onCommit: () => void;
 }) {
@@ -90,7 +127,7 @@ function SectionActions({
         variant="default"
         size="sm"
         onClick={onCommit}
-        disabled={isEmpty || isRunning}
+        disabled={commitDisabled}
       >
         {isRunning ? "Committing..." : "Commit"}
       </Button>
@@ -98,26 +135,47 @@ function SectionActions({
   );
 }
 
+/** Per-row label. PG rows read the preview's statement summary — the
+ * backend workflow renders exactly one statement per operation, and a
+ * count mismatch falls back to the neutral label rather than guessing. */
+const pendingLabel = (
+  entry: PendingChange,
+  index: number,
+  pending: PendingChange[],
+  pgPreview: StructurePgPreview,
+): string => {
+  if (entry.change.kind === "column") {
+    return describeChange(entry.change.change);
+  }
+  if (
+    pgPreview.state === "ready" &&
+    pgPreview.preview.statements.length === pending.length
+  ) {
+    return pgPreview.preview.statements[index]?.summary ?? "Pending preview";
+  }
+  return "Pending preview";
+};
+
 function PendingList({
   pending,
+  pgPreview,
   onRemove,
 }: {
   pending: PendingChange[];
+  pgPreview: StructurePgPreview;
   onRemove: (id: string) => void;
 }) {
   if (pending.length === 0) return <EmptyRow>No pending changes.</EmptyRow>;
   return (
     <ul className="divide-y divide-border-subtle">
-      {pending.map((entry) => (
+      {pending.map((entry, index) => (
         <li
           key={entry.id}
           data-testid={`structure-pending-${entry.id}`}
           className="flex items-center gap-2 px-3 py-1.5 text-xs"
         >
           <span className="truncate text-foreground">
-            {entry.change.kind === "column"
-              ? describeChange(entry.change.change)
-              : "Pending preview"}
+            {pendingLabel(entry, index, pending, pgPreview)}
           </span>
           <Button
             data-testid={`structure-remove-pending-${entry.id}`}
@@ -146,15 +204,15 @@ function SqlPreview({ sql }: { sql: string }) {
   );
 }
 
-function ErrorBanner({ message }: { message: string }) {
+function ErrorBanner({ testId, message }: { testId: string; message: string }) {
   return (
     <div
-      data-testid="structure-commit-error"
+      data-testid={testId}
       role="alert"
       className="flex items-center gap-2 border-t border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger"
     >
       <IconAlertTriangle className="size-3.5" />
-      <span>Commit failed: {message}</span>
+      <span>{message}</span>
     </div>
   );
 }

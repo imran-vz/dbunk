@@ -86,6 +86,7 @@ import {
   type PgObjectCatalog,
   type QueryOutcome,
   type StructureChange,
+  pgObjectDescriptionKey,
   tableMutationDraftScope,
   tableDataKey,
   tableStructureKey,
@@ -2285,6 +2286,26 @@ const columnStructureChange = (
   change,
 });
 
+const emptyStructure = () => ({
+  columns: [],
+  primaryKey: null,
+  foreignKeys: [],
+  indexes: [],
+  constraints: [],
+  capabilities: {
+    columns: true,
+    primaryKey: true,
+    foreignKeys: true,
+    indexes: true,
+    constraints: true,
+    canInsertRows: true,
+    canUpdateRows: true,
+    canDeleteRows: true,
+    canAlterSchema: true,
+    uniquenessGuarantee: "exact",
+  },
+});
+
 describe("store.pendingStructureChanges", () => {
   const key = tableStructureKey("conn-1", "public", "users");
 
@@ -2461,7 +2482,61 @@ describe("store.commitStructureChanges", () => {
     expect(outcome.kind).toBe("noop");
   });
 
-  it("returns a failed outcome for typed operations before their workflow is active", async () => {
+  it("routes a pg-op batch through apply_object_ddl and clears pending on success", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "setColumnNullable",
+            schema: "public",
+            table: "users",
+            name: "email",
+            nullable: false,
+          },
+        },
+      });
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ appliedStatements: 1, runtimeMs: 9 })
+      .mockResolvedValueOnce(emptyStructure());
+
+    const versionBefore = useAppStore.getState().pgObjectDdlVersion;
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "apply_object_ddl", {
+      payload: {
+        connectionId: "conn-1",
+        ops: [
+          {
+            op: "setColumnNullable",
+            schema: "public",
+            table: "users",
+            name: "email",
+            nullable: false,
+          },
+        ],
+        confirmed: false,
+      },
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_structure", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+      },
+    });
+    const state = useAppStore.getState();
+    expect(state.pendingStructureChanges[key] ?? []).toHaveLength(0);
+    expect(state.structureCommitStatus[key]).toBeUndefined();
+    // Other reviewed-but-unapplied DDL previews must invalidate.
+    expect(state.pgObjectDdlVersion).toBe(versionBefore + 1);
+    expect(outcome).toEqual({ kind: "completed", runtimeMs: 9 });
+  });
+
+  it("keeps pending, names the statement, and still refreshes after a partial pg-op failure", async () => {
     act(() => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
@@ -2478,16 +2553,244 @@ describe("store.commitStructureChanges", () => {
         },
       });
     });
+    mockedInvoke
+      .mockRejectedValueOnce({
+        kind: "database",
+        code: "42701",
+        message: "column already exists",
+        position: null,
+        appliedStatements: 1,
+        statementIndex: 1,
+      })
+      .mockResolvedValueOnce(emptyStructure());
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key, {
+      statements: [{ summary: "Drop column legacy" }, { summary: "Add check" }],
+    });
+
+    if (outcome.kind !== "failed") {
+      throw new Error(`expected failed outcome, got ${outcome.kind}`);
+    }
+    expect(outcome.reason).toContain("Statement 2 (Add check)");
+    expect(outcome.reason).toContain("column already exists");
+    expect(outcome.reason).toContain("[42701]");
+    expect(outcome.reason).toContain("1 earlier statement was applied");
+    // Something applied, so the structure refresh fan-out must run …
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "load_table_structure", {
+      payload: {
+        connectionId: "conn-1",
+        schema: "public",
+        table: "users",
+      },
+    });
+    // … but the batch stays queued for edit-and-retry.
+    expect(useAppStore.getState().pendingStructureChanges[key]).toHaveLength(1);
+    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
+  });
+
+  it("preserves ops queued while a pg-op apply is in flight", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "users",
+            name: "legacy",
+            cascade: false,
+          },
+        },
+      });
+    });
+    let resolveApply!: (value: unknown) => void;
+    mockedInvoke
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(emptyStructure());
+
+    const promise = useAppStore.getState().commitStructureChanges(key);
+    await Promise.resolve();
+    // A second edit arrives while the apply is running.
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "renameColumn",
+            schema: "public",
+            table: "users",
+            name: "email",
+            newName: "contact_email",
+          },
+        },
+      });
+    });
+
+    resolveApply({ appliedStatements: 1, runtimeMs: 5 });
+    const outcome = await promise;
+
+    expect(outcome).toEqual({ kind: "completed", runtimeMs: 5 });
+    const remaining = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].change).toEqual({
+      kind: "pg-op",
+      op: {
+        op: "renameColumn",
+        schema: "public",
+        table: "users",
+        name: "email",
+        newName: "contact_email",
+      },
+    });
+  });
+
+  it("refuses a pg-op apply while another DDL apply holds the connection lock", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "users",
+            name: "legacy",
+            cascade: false,
+          },
+        },
+      });
+    });
+    expect(useAppStore.getState().beginPgObjectDdlApply("conn-1")).toBe(true);
 
     const outcome = await useAppStore.getState().commitStructureChanges(key);
 
-    expect(mockedInvoke).not.toHaveBeenCalled();
     expect(outcome).toEqual({
       kind: "failed",
-      reason:
-        "PostgreSQL structure operations require the backend object-DDL workflow.",
+      reason: "Another DDL apply is already running on this connection.",
     });
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    // The foreign lock is not released by the refused commit.
+    expect(useAppStore.getState().pgObjectDdlApplying["conn-1"]).toBe(true);
+    useAppStore.getState().endPgObjectDdlApply("conn-1");
+  });
+
+  it("refuses a pg-op apply when the connection is not currently connected", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "users",
+            name: "legacy",
+            cascade: false,
+          },
+        },
+      });
+    });
+    useAppStore.setState((state) => ({
+      connections: state.connections.map((connection) => ({
+        ...connection,
+        status: "Disconnected" as const,
+      })),
+    }));
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason: "Connect to the PostgreSQL database before applying DDL.",
+    });
+    expect(mockedInvoke).not.toHaveBeenCalled();
     expect(useAppStore.getState().pendingStructureChanges[key]).toHaveLength(1);
+  });
+
+  it("revalidates the table's loaded object description after a dropIndex apply", async () => {
+    const tableReference = {
+      kind: "table",
+      schema: "public",
+      name: "users",
+      identityArgs: null,
+    } as const;
+    const descriptionKey = pgObjectDescriptionKey("conn-1", tableReference);
+    const loadDescription = vi.fn(() => Promise.resolve("ready" as const));
+    useAppStore.setState({
+      pgObjectDescriptions: {
+        [descriptionKey]: { status: "ready", generation: 0 },
+      },
+      loadPgObjectDescription: loadDescription,
+    });
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          // dropIndex is the one op whose refresh scope cannot name the
+          // table; the structure commit must supply it.
+          op: {
+            op: "dropIndex",
+            schema: "public",
+            name: "users_email_idx",
+            concurrently: false,
+            cascade: false,
+          },
+        },
+      });
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ appliedStatements: 1, runtimeMs: 4 })
+      .mockResolvedValueOnce(emptyStructure());
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(outcome).toEqual({ kind: "completed", runtimeMs: 4 });
+    expect(loadDescription).toHaveBeenCalledWith("conn-1", tableReference);
+  });
+
+  it("does not refresh when a pg-op batch fails before anything applied", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "users",
+            name: "legacy",
+            cascade: false,
+          },
+        },
+      });
+    });
+    mockedInvoke.mockRejectedValueOnce({
+      kind: "policyBlocked",
+      reason: "Safe Mode blocks DDL on this connection.",
+    });
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason: "Safe Mode blocks DDL on this connection.",
+    });
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().pendingStructureChanges[key]).toHaveLength(1);
+    expect(useAppStore.getState().structureCommitStatus[key]).toBeUndefined();
   });
 
   it("invokes execute_ddl with generated SQL and clears pending on success", async () => {
