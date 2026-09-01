@@ -18,7 +18,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { type ColumnInfo, type TableStructure, useAppStore } from "@/lib/store";
+import { pgQuoteIdent } from "@/lib/ddl/postgres";
+import {
+  type ColumnInfo,
+  type PgObjectOp,
+  type TableStructure,
+  tableStructureKey,
+  useAppStore,
+} from "@/lib/store";
+import {
+  asPgReferentialAction,
+  buildAddForeignKeyOp,
+  buildCreateIndexOp,
+  PG_REFERENTIAL_ACTIONS,
+} from "@/lib/structure-changes";
+import { errorToMessage } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 type SpecializedEditorsProps = {
@@ -39,13 +53,9 @@ const RLS_COMMANDS = ["ALL", "SELECT", "INSERT", "UPDATE", "DELETE"] as const;
 const INDEX_METHODS = ["btree", "hash", "gin", "gist", "brin"] as const;
 const TRIGGER_TIMINGS = ["BEFORE", "AFTER", "INSTEAD OF"] as const;
 const TRIGGER_EVENTS = ["INSERT", "UPDATE", "DELETE", "TRUNCATE"] as const;
-const REFERENTIAL_ACTIONS = [
-  "NO ACTION",
-  "RESTRICT",
-  "CASCADE",
-  "SET NULL",
-  "SET DEFAULT",
-] as const;
+const REFERENTIAL_ACTIONS = PG_REFERENTIAL_ACTIONS.map(
+  (option) => option.label,
+);
 
 export function SpecializedEditors({
   schema,
@@ -54,17 +64,55 @@ export function SpecializedEditors({
   structure,
 }: SpecializedEditorsProps) {
   const openWorkspaceTab = useAppStore((state) => state.openWorkspaceTab);
+  const addPendingStructureChange = useAppStore(
+    (state) => state.addPendingStructureChange,
+  );
+  const engine = useAppStore(
+    (state) =>
+      state.connections.find((candidate) => candidate.id === connectionId)
+        ?.engine,
+  );
+  // Only PostgreSQL has the typed object-DDL workflow (Plan 015). Every
+  // other engine keeps this tab's original generate-SQL behaviour.
+  const typedOpsAvailable = engine === "PostgreSQL";
   const columns = useMemo(() => structure?.columns ?? [], [structure]);
   const columnNames = useMemo(
     () => columns.map((column) => column.name),
     [columns],
   );
-  const qualifiedTable = `${quoteIdent(schema)}.${quoteIdent(table)}`;
+  const qualifiedTable = `${pgQuoteIdent(schema)}.${pgQuoteIdent(table)}`;
+  const structureKey = tableStructureKey(connectionId, schema, table);
 
   const [generatedSql, setGeneratedSql] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
+  const [queueNotice, setQueueNotice] = useState<{
+    panel: "index" | "fk";
+    message: string;
+    failed: boolean;
+  } | null>(null);
+
+  // The index and cross-table FK panels queue typed operations into the
+  // shared structure-editor pending list (Plan 015); queueing fails when
+  // that list still holds legacy column entries for this table.
+  const queueTypedOp = (panel: "index" | "fk", op: PgObjectOp) => {
+    try {
+      addPendingStructureChange(structureKey, {
+        schema,
+        table,
+        change: { kind: "pg-op", op },
+      });
+      setQueueNotice({
+        panel,
+        message:
+          "Queued. Review and commit in the Structure tab's pending changes.",
+        failed: false,
+      });
+    } catch (error) {
+      setQueueNotice({ panel, message: errorToMessage(error), failed: true });
+    }
+  };
 
   const [grantState, setGrantState] = useState({
     objectType: "TABLE",
@@ -163,7 +211,7 @@ export function SpecializedEditors({
       lines.push(`ALTER TABLE ${qualifiedTable} FORCE ROW LEVEL SECURITY;`);
     }
     const policySql = [
-      `CREATE POLICY ${quoteIdent(rlsState.policy || `${table}_policy`)} ON ${qualifiedTable}`,
+      `CREATE POLICY ${pgQuoteIdent(rlsState.policy || `${table}_policy`)} ON ${qualifiedTable}`,
       `  AS PERMISSIVE FOR ${rlsState.command}`,
       `  TO ${quoteIdentOrPublic(rlsState.role)}`,
       `  USING (${rlsState.usingExpression || "true"})`,
@@ -177,16 +225,65 @@ export function SpecializedEditors({
     setGeneratedSql(lines.join("\n"));
   };
 
-  const generateIndex = () => {
+  const indexFormColumns = () => {
     const selectedColumns = Array.from(indexState.columns);
+    return selectedColumns.length > 0
+      ? selectedColumns
+      : columnNames.slice(0, 1);
+  };
+
+  const fkFormColumns = () => {
+    const selectedColumns = Array.from(fkState.columns);
+    return selectedColumns.length > 0
+      ? selectedColumns
+      : columnNames.slice(0, 1);
+  };
+
+  const queueIndex = () => {
+    queueTypedOp(
+      "index",
+      buildCreateIndexOp({
+        schema,
+        table,
+        name: indexState.name,
+        unique: indexState.unique,
+        method: indexState.method,
+        columnExpressions: indexFormColumns(),
+        include: Array.from(indexState.includeColumns),
+        wherePredicate: indexState.predicate,
+        concurrently: indexState.concurrently,
+      }),
+    );
+  };
+
+  const queueForeignKey = () => {
+    queueTypedOp(
+      "fk",
+      buildAddForeignKeyOp({
+        schema,
+        table,
+        name: fkState.name,
+        columns: fkFormColumns(),
+        referencedSchema: fkState.referencedSchema,
+        referencedTable: fkState.referencedTable.trim() || "referenced_table",
+        referencedColumns: splitIdentifierList(fkState.referencedColumns),
+        onUpdate: asPgReferentialAction(fkState.onUpdate),
+        onDelete: asPgReferentialAction(fkState.onDelete),
+        deferrable: fkState.deferrable,
+      }),
+    );
+  };
+
+  // Pre-Plan-015 generate-only fallback for engines without the typed
+  // object-DDL workflow.
+  const generateIndex = () => {
+    const indexColumns = indexFormColumns();
     const includeColumns = Array.from(indexState.includeColumns);
-    const indexColumns =
-      selectedColumns.length > 0 ? selectedColumns : columnNames.slice(0, 1);
     const lines = [
-      `CREATE ${indexState.unique ? "UNIQUE " : ""}INDEX ${indexState.concurrently ? "CONCURRENTLY " : ""}${quoteIdent(indexState.name || `${table}_idx`)}`,
-      `ON ${qualifiedTable} USING ${indexState.method} (${indexColumns.map(quoteIdent).join(", ")})`,
+      `CREATE ${indexState.unique ? "UNIQUE " : ""}INDEX ${indexState.concurrently ? "CONCURRENTLY " : ""}${pgQuoteIdent(indexState.name || `${table}_idx`)}`,
+      `ON ${qualifiedTable} USING ${indexState.method} (${indexColumns.map(pgQuoteIdent).join(", ")})`,
       includeColumns.length > 0
-        ? `INCLUDE (${includeColumns.map(quoteIdent).join(", ")})`
+        ? `INCLUDE (${includeColumns.map(pgQuoteIdent).join(", ")})`
         : "",
       indexState.predicate ? `WHERE ${indexState.predicate}` : "",
     ].filter(Boolean);
@@ -194,15 +291,13 @@ export function SpecializedEditors({
   };
 
   const generateForeignKey = () => {
-    const selectedColumns = Array.from(fkState.columns);
-    const fkColumns =
-      selectedColumns.length > 0 ? selectedColumns : columnNames.slice(0, 1);
+    const fkColumns = fkFormColumns();
     const references = splitIdentifierList(fkState.referencedColumns);
     const foreignKeySql = [
       `ALTER TABLE ${qualifiedTable}`,
-      `  ADD CONSTRAINT ${quoteIdent(fkState.name || `${table}_fk`)}`,
-      `  FOREIGN KEY (${fkColumns.map(quoteIdent).join(", ")})`,
-      `  REFERENCES ${quoteIdent(fkState.referencedSchema || schema)}.${quoteIdent(fkState.referencedTable || "referenced_table")} (${references.map(quoteIdent).join(", ")})`,
+      `  ADD CONSTRAINT ${pgQuoteIdent(fkState.name || `${table}_fk`)}`,
+      `  FOREIGN KEY (${fkColumns.map(pgQuoteIdent).join(", ")})`,
+      `  REFERENCES ${pgQuoteIdent(fkState.referencedSchema || schema)}.${pgQuoteIdent(fkState.referencedTable || "referenced_table")} (${references.map(pgQuoteIdent).join(", ")})`,
       `  ON UPDATE ${fkState.onUpdate}`,
       `  ON DELETE ${fkState.onDelete}`,
       fkState.deferrable ? "  DEFERRABLE INITIALLY DEFERRED" : "",
@@ -215,7 +310,7 @@ export function SpecializedEditors({
   const generateTrigger = () => {
     const events = Array.from(triggerState.events);
     const selectedEvents = events.length > 0 ? events : ["UPDATE"];
-    const triggerFn = `${quoteIdent(triggerState.functionSchema || schema)}.${quoteIdent(triggerState.functionName || `${table}_trigger_fn`)}`;
+    const triggerFn = `${pgQuoteIdent(triggerState.functionSchema || schema)}.${pgQuoteIdent(triggerState.functionName || `${table}_trigger_fn`)}`;
     setGeneratedSql(
       [
         `CREATE OR REPLACE FUNCTION ${triggerFn}()`,
@@ -225,7 +320,7 @@ export function SpecializedEditors({
         "END;",
         "$$ LANGUAGE plpgsql;",
         "",
-        `CREATE TRIGGER ${quoteIdent(triggerState.name || `${table}_trigger`)}`,
+        `CREATE TRIGGER ${pgQuoteIdent(triggerState.name || `${table}_trigger`)}`,
         `${triggerState.timing} ${selectedEvents.join(" OR ")} ON ${qualifiedTable}`,
         `FOR EACH ${triggerState.orientation}`,
         `EXECUTE FUNCTION ${triggerFn}();`,
@@ -387,9 +482,12 @@ export function SpecializedEditors({
           <EditorPanel
             title="Index creation"
             icon={<IconDatabaseCog />}
-            action="Generate index"
-            onGenerate={generateIndex}
+            action={typedOpsAvailable ? "Queue index" : "Generate index"}
+            onGenerate={typedOpsAvailable ? queueIndex : generateIndex}
           >
+            {queueNotice?.panel === "index" ? (
+              <QueueNotice notice={queueNotice} />
+            ) : null}
             <FormGrid>
               <Field label="Index name">
                 <Input
@@ -470,9 +568,14 @@ export function SpecializedEditors({
           <EditorPanel
             title="Cross-table foreign key"
             icon={<IconSitemap />}
-            action="Generate FK"
-            onGenerate={generateForeignKey}
+            action={typedOpsAvailable ? "Queue foreign key" : "Generate FK"}
+            onGenerate={
+              typedOpsAvailable ? queueForeignKey : generateForeignKey
+            }
           >
+            {queueNotice?.panel === "fk" ? (
+              <QueueNotice notice={queueNotice} />
+            ) : null}
             <FormGrid>
               <Field label="Constraint name">
                 <Input
@@ -788,6 +891,26 @@ function EditorPanel({
       </div>
       {children}
     </section>
+  );
+}
+
+function QueueNotice({
+  notice,
+}: {
+  notice: { message: string; failed: boolean };
+}) {
+  return (
+    <p
+      data-testid={`specialized-queue-notice${notice.failed ? "-failed" : ""}`}
+      className={cn(
+        "rounded-sm border px-2 py-1.5 text-xs",
+        notice.failed
+          ? "border-danger/40 bg-danger/10 text-danger"
+          : "border-border-subtle bg-surface-panel text-text-secondary",
+      )}
+    >
+      {notice.message}
+    </p>
   );
 }
 
@@ -1124,16 +1247,12 @@ function toPgArrayLiteral(value: string): string {
   return `{${items.join(",")}}`;
 }
 
-function quoteIdent(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
-}
-
 function quoteIdentOrPublic(value: string): string {
   const trimmed = value.trim();
   if (!trimmed || trimmed.toUpperCase() === "PUBLIC") {
     return "PUBLIC";
   }
-  return quoteIdent(trimmed);
+  return pgQuoteIdent(trimmed);
 }
 
 function quoteLiteral(value: string): string {

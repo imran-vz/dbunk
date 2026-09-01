@@ -533,7 +533,7 @@ describe("TableStructureView edit flow", () => {
     expect(screen.queryByTestId("structure-sql-preview")).toBeNull();
   });
 
-  it("queues a drop column change when the drop button is clicked", () => {
+  it("queues a typed drop-column op when the drop button is clicked on PostgreSQL", () => {
     const key = seedStructure(baseStructure);
     render(
       <TableStructureView
@@ -551,8 +551,14 @@ describe("TableStructureView edit flow", () => {
     const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
     expect(pending).toHaveLength(1);
     expect(pending[0].change).toEqual({
-      kind: "column",
-      change: { kind: "drop", columnName: "email" },
+      kind: "pg-op",
+      op: {
+        op: "dropColumn",
+        schema: "public",
+        table: "users",
+        name: "email",
+        cascade: false,
+      },
     });
     // The pending changes section is now visible.
     expect(screen.getByTestId("structure-pending-section")).toBeTruthy();
@@ -587,8 +593,18 @@ describe("TableStructureView edit flow", () => {
     ).toHaveLength(0);
   });
 
-  it("renders the SQL preview on demand", () => {
+  it("loads the backend preview, shows its summaries, and gates Commit on it", async () => {
     const key = seedStructure(baseStructure);
+    let resolvePreview!: (value: unknown) => void;
+    mockedInvoke.mockReset();
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "preview_object_ddl") {
+        return new Promise((resolve) => {
+          resolvePreview = resolve;
+        });
+      }
+      return new Promise(() => {});
+    });
     render(
       <TableStructureView
         connectionId="conn-1"
@@ -601,18 +617,77 @@ describe("TableStructureView edit flow", () => {
     act(() => {
       fireEvent.click(screen.getByTestId("structure-drop-column-email"));
     });
+
+    // Preview in flight: neutral row label and Commit disabled.
+    expect(screen.getByText("Pending preview")).toBeTruthy();
+    expect(screen.getByTestId("structure-preview-loading")).toBeTruthy();
+    expect(
+      screen.getByTestId("structure-commit").hasAttribute("disabled"),
+    ).toBe(true);
+    const previewCall = mockedInvoke.mock.calls.find(
+      ([name]) => name === "preview_object_ddl",
+    );
+    expect(previewCall).toBeDefined();
+
+    await act(async () => {
+      resolvePreview({
+        statements: [
+          {
+            sql: 'ALTER TABLE "public"."users" DROP COLUMN "email";',
+            summary: "Drop column email",
+            destructive: true,
+            transactional: true,
+          },
+        ],
+        groups: [{ kind: "atomic", statementIndexes: [0] }],
+      });
+      await Promise.resolve();
+    });
+
+    // Row label comes from the loaded preview, never describeChange.
+    expect(screen.getByText("Drop column email")).toBeTruthy();
+    expect(
+      screen.getByTestId("structure-commit").hasAttribute("disabled"),
+    ).toBe(false);
+
     act(() => {
       fireEvent.click(screen.getByTestId("structure-preview-sql"));
     });
-
-    const preview = screen.getByTestId("structure-sql-preview");
-    expect(preview.textContent).toContain(
-      'ALTER TABLE "public"."users" DROP COLUMN "email"',
+    expect(screen.getByTestId("structure-ddl-preview").textContent).toContain(
+      'DROP COLUMN "email"',
     );
+    // The legacy single-blob preview never renders for typed batches.
+    expect(screen.queryByTestId("structure-sql-preview")).toBeNull();
+
+    // Editing the pending list invalidates the loaded preview.
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-toggle-nullable-email"));
+    });
+    expect(
+      screen.getByTestId("structure-commit").hasAttribute("disabled"),
+    ).toBe(true);
+    expect(screen.getByTestId("structure-preview-loading")).toBeTruthy();
   });
 
-  it("aborts commit when the destructive confirm dialog is dismissed", async () => {
+  it("invalidates a loaded preview when DDL is applied elsewhere", async () => {
     const key = seedStructure(baseStructure);
+    mockedInvoke.mockReset();
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "preview_object_ddl") {
+        return Promise.resolve({
+          statements: [
+            {
+              sql: 'ALTER TABLE "public"."users" DROP COLUMN "email";',
+              summary: "Drop column email",
+              destructive: true,
+              transactional: true,
+            },
+          ],
+          groups: [{ kind: "atomic", statementIndexes: [0] }],
+        });
+      }
+      return new Promise(() => {});
+    });
     render(
       <TableStructureView
         connectionId="conn-1"
@@ -624,29 +699,114 @@ describe("TableStructureView edit flow", () => {
 
     act(() => {
       fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      screen.getByTestId("structure-commit").hasAttribute("disabled"),
+    ).toBe(false);
+    const previewCallsBefore = mockedInvoke.mock.calls.filter(
+      ([name]) => name === "preview_object_ddl",
+    ).length;
+
+    // Another surface (object viewer, second window) applies DDL.
+    act(() => {
+      useAppStore.getState().markPgObjectDdlApplied();
+    });
+
+    // The reviewed preview is no longer trusted: a reload was issued.
+    const previewCallsAfter = mockedInvoke.mock.calls.filter(
+      ([name]) => name === "preview_object_ddl",
+    ).length;
+    expect(previewCallsAfter).toBe(previewCallsBefore + 1);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      screen.getByTestId("structure-commit").hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it("aborts the typed commit when the destructive confirm dialog is dismissed", async () => {
+    const key = seedStructure(baseStructure);
+    mockedInvoke.mockReset();
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "preview_object_ddl") {
+        return Promise.resolve({
+          statements: [
+            {
+              sql: 'ALTER TABLE "public"."users" DROP COLUMN "email";',
+              summary: "Drop column email",
+              destructive: true,
+              transactional: true,
+            },
+          ],
+          groups: [{ kind: "atomic", statementIndexes: [0] }],
+        });
+      }
+      return new Promise(() => {});
+    });
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
     mockedRequestConfirm.mockReset();
     mockedRequestConfirm.mockResolvedValue(false);
-    mockedInvoke.mockReset();
-    mockedInvoke.mockImplementation(() => new Promise(() => {}));
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("structure-commit"));
     });
 
-    expect(mockedRequestConfirm).toHaveBeenCalled();
-    // Pending preserved; no execute_ddl.
+    // The confirm detail comes from the preview's destructive summaries.
+    expect(mockedRequestConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: "Drop column email" }),
+    );
     expect(
       useAppStore.getState().pendingStructureChanges[key] ?? [],
     ).toHaveLength(1);
     expect(
-      mockedInvoke.mock.calls.some(([name]) => name === "execute_ddl"),
+      mockedInvoke.mock.calls.some(([name]) => name === "apply_object_ddl"),
     ).toBe(false);
   });
 
-  it("sends execute_ddl when the destructive confirm dialog is accepted", async () => {
+  it("applies a typed batch through apply_object_ddl when confirmed", async () => {
     const key = seedStructure(baseStructure);
+    mockedInvoke.mockReset();
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "preview_object_ddl") {
+        return Promise.resolve({
+          statements: [
+            {
+              sql: 'ALTER TABLE "public"."users" DROP COLUMN "email";',
+              summary: "Drop column email",
+              destructive: true,
+              transactional: true,
+            },
+          ],
+          groups: [{ kind: "atomic", statementIndexes: [0] }],
+        });
+      }
+      if (command === "apply_object_ddl") {
+        return Promise.resolve({ appliedStatements: 1, runtimeMs: 8 });
+      }
+      if (command === "load_table_structure") {
+        return Promise.resolve(baseStructure);
+      }
+      return new Promise(() => {});
+    });
     render(
       <TableStructureView
         connectionId="conn-1"
@@ -659,6 +819,85 @@ describe("TableStructureView edit flow", () => {
     act(() => {
       fireEvent.click(screen.getByTestId("structure-drop-column-email"));
     });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    mockedRequestConfirm.mockReset();
+    mockedRequestConfirm.mockResolvedValue(true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("structure-commit"));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockedRequestConfirm).toHaveBeenCalled();
+    const applyCall = mockedInvoke.mock.calls.find(
+      ([name]) => name === "apply_object_ddl",
+    );
+    expect(applyCall).toBeDefined();
+    if (applyCall) {
+      expect(applyCall[1]).toEqual({
+        payload: {
+          connectionId: "conn-1",
+          ops: [
+            {
+              op: "dropColumn",
+              schema: "public",
+              table: "users",
+              name: "email",
+              cascade: false,
+            },
+          ],
+          confirmed: false,
+        },
+      });
+    }
+    expect(
+      useAppStore.getState().pendingStructureChanges[key] ?? [],
+    ).toHaveLength(0);
+    expect(
+      screen.getByTestId("structure-commit-success").textContent,
+    ).toContain("8");
+    expect(
+      mockedInvoke.mock.calls.some(([name]) => name === "execute_ddl"),
+    ).toBe(false);
+  });
+
+  it("keeps ClickHouse on the frontend generator and execute_ddl", async () => {
+    seedConnection("ClickHouse");
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    // No PostgreSQL lifecycle affordances leak into ClickHouse.
+    expect(screen.queryByTestId("structure-add-fk")).toBeNull();
+    expect(screen.queryByTestId("structure-add-index")).toBeNull();
+    expect(screen.queryByTestId("structure-add-check")).toBeNull();
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-drop-column-email"));
+    });
+    const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    expect(pending[0]?.change).toEqual({
+      kind: "column",
+      change: { kind: "drop", columnName: "email" },
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-preview-sql"));
+    });
+    expect(screen.getByTestId("structure-sql-preview").textContent).toContain(
+      "DROP COLUMN",
+    );
 
     mockedRequestConfirm.mockReset();
     mockedRequestConfirm.mockResolvedValue(true);
@@ -681,7 +920,444 @@ describe("TableStructureView edit flow", () => {
     expect(ddlCall).toBeDefined();
     if (ddlCall) {
       const payload = (ddlCall[1] as { payload: { sql: string } }).payload;
-      expect(payload.sql).toContain('DROP COLUMN "email"');
+      expect(payload.sql).toContain("DROP COLUMN");
     }
+    expect(
+      mockedInvoke.mock.calls.some(([name]) => name === "apply_object_ddl"),
+    ).toBe(false);
+  });
+});
+
+describe("TableStructureView PostgreSQL typed forms", () => {
+  const renderView = () => {
+    const key = seedStructure(baseStructure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+    return key;
+  };
+
+  const lastQueuedOp = (key: string) => {
+    const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
+    const entry = pending[pending.length - 1];
+    if (!entry || entry.change.kind !== "pg-op") {
+      throw new Error("expected a queued pg-op");
+    }
+    return entry.change.op;
+  };
+
+  it("queues addColumn with a tagged expression default", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-column"));
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-name"), {
+      target: { value: "created_at" },
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-type"), {
+      target: { value: "timestamptz" },
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-default-kind"), {
+      target: { value: "expression" },
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-default"), {
+      target: { value: "now()" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-column-submit"));
+    });
+
+    expect(lastQueuedOp(key)).toEqual({
+      op: "addColumn",
+      schema: "public",
+      table: "users",
+      column: {
+        name: "created_at",
+        dataType: "timestamptz",
+        nullable: true,
+        default: { kind: "expression", sql: "now()" },
+      },
+    });
+  });
+
+  it("queues addColumn with a tagged literal default", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-column"));
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-name"), {
+      target: { value: "status" },
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-type"), {
+      target: { value: "text" },
+    });
+    fireEvent.change(screen.getByTestId("structure-add-column-default"), {
+      target: { value: "active" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-column-submit"));
+    });
+
+    expect(lastQueuedOp(key)).toEqual({
+      op: "addColumn",
+      schema: "public",
+      table: "users",
+      column: {
+        name: "status",
+        dataType: "text",
+        nullable: true,
+        default: { kind: "literal", value: "active" },
+      },
+    });
+  });
+
+  it("threads USING through a queued type change", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-edit-column-email"));
+    });
+    fireEvent.change(screen.getByTestId("structure-type-input-email"), {
+      target: { value: "integer" },
+    });
+    fireEvent.change(screen.getByTestId("structure-using-input-email"), {
+      target: { value: "email::integer" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-type-confirm-email"));
+    });
+
+    expect(lastQueuedOp(key)).toEqual({
+      op: "alterColumnType",
+      schema: "public",
+      table: "users",
+      name: "email",
+      newType: "integer",
+      using: "email::integer",
+    });
+  });
+
+  it("queues a tagged literal default from the edit panel", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-edit-column-email"));
+    });
+    fireEvent.change(screen.getByTestId("structure-default-input-email"), {
+      target: { value: "unknown@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("structure-default-kind-email"), {
+      target: { value: "literal" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-default-confirm-email"));
+    });
+
+    expect(lastQueuedOp(key)).toEqual({
+      op: "setColumnDefault",
+      schema: "public",
+      table: "users",
+      name: "email",
+      default: { kind: "literal", value: "unknown@example.com" },
+    });
+  });
+
+  it("queues renameColumn from the edit panel", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-edit-column-email"));
+    });
+    fireEvent.change(screen.getByTestId("structure-rename-input-email"), {
+      target: { value: "contact_email" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-rename-confirm-email"));
+    });
+
+    expect(lastQueuedOp(key)).toEqual({
+      op: "renameColumn",
+      schema: "public",
+      table: "users",
+      name: "email",
+      newName: "contact_email",
+    });
+  });
+
+  it("queues a default clear as setColumnDefault null", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-edit-column-is_active"));
+    });
+    fireEvent.change(screen.getByTestId("structure-default-input-is_active"), {
+      target: { value: "" },
+    });
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId("structure-default-confirm-is_active"),
+      );
+    });
+
+    expect(lastQueuedOp(key)).toEqual({
+      op: "setColumnDefault",
+      schema: "public",
+      table: "users",
+      name: "is_active",
+      default: null,
+    });
+  });
+
+  it("queues setColumnNullable from the nullable toggle", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-toggle-nullable-email"));
+    });
+    expect(lastQueuedOp(key)).toEqual({
+      op: "setColumnNullable",
+      schema: "public",
+      table: "users",
+      name: "email",
+      nullable: false,
+    });
+  });
+});
+
+describe("TableStructureView PostgreSQL lifecycle affordances", () => {
+  const renderView = (structure = baseStructure) => {
+    const key = seedStructure(structure);
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+    return key;
+  };
+
+  const queuedOps = (key: string) =>
+    (useAppStore.getState().pendingStructureChanges[key] ?? []).map((entry) => {
+      if (entry.change.kind !== "pg-op") {
+        throw new Error("expected a queued pg-op");
+      }
+      return entry.change.op;
+    });
+
+  it("queues dropConstraint from foreign-key and constraint rows", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId("structure-drop-fk-users_org_id_fkey"),
+      );
+    });
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId("structure-drop-constraint-users_email_check"),
+      );
+    });
+    expect(queuedOps(key)).toEqual([
+      {
+        op: "dropConstraint",
+        schema: "public",
+        table: "users",
+        name: "users_org_id_fkey",
+        cascade: false,
+      },
+      {
+        op: "dropConstraint",
+        schema: "public",
+        table: "users",
+        name: "users_email_check",
+        cascade: false,
+      },
+    ]);
+  });
+
+  it("queues dropIndex with the chosen concurrently flag and shields the primary index", () => {
+    const key = renderView();
+    expect(screen.queryByTestId("structure-drop-index-users_pkey")).toBeNull();
+
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId("structure-drop-index-users_email_idx"),
+      );
+    });
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId("structure-drop-index-concurrently-users_email_idx"),
+      );
+    });
+    act(() => {
+      fireEvent.click(
+        screen.getByTestId("structure-drop-index-submit-users_email_idx"),
+      );
+    });
+
+    expect(queuedOps(key)).toEqual([
+      {
+        op: "dropIndex",
+        schema: "public",
+        name: "users_email_idx",
+        concurrently: true,
+        cascade: false,
+      },
+    ]);
+  });
+
+  it("queues createIndex from the New index form", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-index"));
+    });
+    fireEvent.change(screen.getByTestId("structure-index-name"), {
+      target: { value: "users_active_idx" },
+    });
+    fireEvent.change(screen.getByTestId("structure-index-columns"), {
+      target: { value: "is_active, email" },
+    });
+    fireEvent.change(screen.getByTestId("structure-index-where"), {
+      target: { value: "is_active" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-index-unique"));
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-index-submit"));
+    });
+
+    expect(queuedOps(key)).toEqual([
+      {
+        op: "createIndex",
+        schema: "public",
+        table: "users",
+        name: "users_active_idx",
+        unique: true,
+        method: "btree",
+        columns: [
+          { expression: "is_active", descending: false },
+          { expression: "email", descending: false },
+        ],
+        include: [],
+        wherePredicate: "is_active",
+        concurrently: true,
+      },
+    ]);
+  });
+
+  it("queues addForeignKey from the Add foreign key form", () => {
+    const key = renderView();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-fk"));
+    });
+    fireEvent.change(screen.getByTestId("structure-fk-columns"), {
+      target: { value: "org_id" },
+    });
+    fireEvent.change(screen.getByTestId("structure-fk-ref-table"), {
+      target: { value: "orgs" },
+    });
+    fireEvent.change(screen.getByTestId("structure-fk-ref-columns"), {
+      target: { value: "id" },
+    });
+    fireEvent.change(screen.getByTestId("structure-fk-on-delete"), {
+      target: { value: "cascade" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-fk-submit"));
+    });
+
+    expect(queuedOps(key)).toEqual([
+      {
+        op: "addForeignKey",
+        schema: "public",
+        table: "users",
+        name: null,
+        columns: ["org_id"],
+        referencedSchema: "public",
+        referencedTable: "orgs",
+        referencedColumns: ["id"],
+        onUpdate: "no-action",
+        onDelete: "cascade",
+        deferrable: false,
+        initiallyDeferred: false,
+        notValid: false,
+      },
+    ]);
+  });
+
+  it("queues addCheck and addUnique, and hides Add primary key when a PK exists", () => {
+    const key = renderView();
+    expect(screen.queryByTestId("structure-add-pk")).toBeNull();
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-check"));
+    });
+    fireEvent.change(screen.getByTestId("structure-check-expression"), {
+      target: { value: "email <> ''" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-check-submit"));
+    });
+
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-unique"));
+    });
+    fireEvent.change(screen.getByTestId("structure-unique-columns"), {
+      target: { value: "email" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-unique-submit"));
+    });
+
+    expect(queuedOps(key)).toEqual([
+      {
+        op: "addCheck",
+        schema: "public",
+        table: "users",
+        name: null,
+        expression: "email <> ''",
+        notValid: false,
+      },
+      {
+        op: "addUnique",
+        schema: "public",
+        table: "users",
+        name: null,
+        columns: ["email"],
+      },
+    ]);
+  });
+
+  it("offers Add primary key only when the table has none", () => {
+    const key = renderView({
+      ...baseStructure,
+      primaryKey: null,
+      columns: baseStructure.columns.map((column) => ({
+        ...column,
+        isPrimaryKey: false,
+      })),
+      indexes: baseStructure.indexes.filter((index) => !index.isPrimary),
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-add-pk"));
+    });
+    fireEvent.change(screen.getByTestId("structure-pk-columns"), {
+      target: { value: "id" },
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-pk-submit"));
+    });
+
+    expect(queuedOps(key)).toEqual([
+      {
+        op: "addPrimaryKey",
+        schema: "public",
+        table: "users",
+        name: null,
+        columns: ["id"],
+      },
+    ]);
   });
 });

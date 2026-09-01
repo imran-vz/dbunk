@@ -1,7 +1,50 @@
 import type * as React from "react";
 
 import type { ColumnChangeKind } from "@/lib/ddl";
-import type { DatabaseEngine } from "@/lib/store";
+import type { DatabaseEngine, PgObjectOp } from "@/lib/store";
+
+/**
+ * Typed-op context handed to PostgreSQL structure forms. Present only
+ * for editable PostgreSQL tables; every other engine keeps the legacy
+ * `ColumnChangeKind` path. Forms produce `PgObjectOp`s directly — the
+ * preview is the source of description and destructiveness.
+ */
+export interface PgStructureOps {
+  schema: string;
+  table: string;
+  hasPrimaryKey: boolean;
+  queueOp: (op: PgObjectOp) => void;
+}
+
+export function MiniSelect({
+  value,
+  options,
+  onChange,
+  testId,
+  ariaLabel,
+}: {
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onChange: (value: string) => void;
+  testId?: string;
+  ariaLabel?: string;
+}) {
+  return (
+    <select
+      data-testid={testId}
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="h-6 rounded-sm border border-border-subtle bg-surface-input px-1.5 text-xs text-foreground outline-none transition-colors focus:border-ring"
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function Section({
   title,

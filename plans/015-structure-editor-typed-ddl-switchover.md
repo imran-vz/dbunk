@@ -278,6 +278,87 @@ live database. Step 4 is the manual pass.
 - A PG pending row would need `describeChange` or
   `classifyDestructive` (the preview must be the source).
 
+## Execution deviation record (2026-09-01)
+
+Steps 2–4 were implemented on top of the Step 1 commit (`b468108`).
+Deviations from the plan text, none contract-changing:
+
+- **`quoteIdent` retirement.** The plan expected
+  `grep quoteIdent src/components/table-editor` to come back empty, but
+  the GRANT / RLS / trigger panels it keeps generate-only still need
+  identifier quoting. The private helper is deleted; those panels now
+  import `pgQuoteIdent` from `src/lib/ddl/postgres.ts` (plus the
+  `quoteIdentOrPublic` wrapper built on it).
+- **Error labelling plumbing.** `commitStructureChanges` gained an
+  optional `{ statements }` second argument so the store can format
+  typed failures against the reviewed preview's summaries
+  ("Statement 2 (Add check) failed …"); the plan required the output
+  but left the mechanism unspecified.
+- **Extra refresh scope.** After a full or partial apply the store also
+  bumps `pgObjectDdlVersion` (invalidating other reviewed-but-unapplied
+  DDL previews) and revalidates already-loaded object descriptions the
+  batch touched via `objectDdlRefreshScope` — otherwise an open object
+  viewer would keep showing stale reconstructed DDL. This mirrors what
+  the Plan 014 review dialog already does after its own applies.
+- **Shared preview component.** The grouped per-statement preview
+  rendering was extracted from `ddl-review-dialog.tsx` into
+  `object-ddl/plan-preview.tsx` (`DdlPlanPreviewGroups`) so the pending
+  changes section and the review dialog render the identical breakdown.
+- **Slice isolation.** `pgObjectDescriptionKey` moved from the
+  `pg-objects` store slice into `src/lib/pg-object-ref.ts` (re-exported
+  unchanged) because `relational-tables` may not import a sibling slice
+  (`check:slice-isolation`).
+- **Step 4 manual pass.** The implementing session has no display; the
+  live `pnpm db:postgres` + `pnpm tauri dev` checklist against
+  `lifecycle.orders` still needs a reviewer walkthrough before DONE.
+  All automated gates are green: `pnpm format` / `lint` / `typecheck`,
+  vitest (1265), `check:ui-gates`, `check:slice-isolation`.
+
+## Review correction record (2026-09-01, second pass)
+
+An adversarial review of the first delivery found five correctness
+gaps and two process/maintainability issues; all are fixed in the
+working tree:
+
+- **Stale previews could authorize unreviewed ops.** The loaded
+  preview now records its execution identity — the ops JSON, the
+  `pgObjectDdlVersion`, and the connection epoch at load time — and
+  `use-structure` derives the exposed preview synchronously, so a
+  `ready` result for any other identity reads as loading in the same
+  render that changed the pending list. The commit handler re-verifies
+  the identity against live store state before and after the
+  destructive-confirm await. A version bump from any other DDL surface
+  reloads the preview (test pins it).
+- **Applies were unfenced.** The structure commit now takes the same
+  per-connection `pgObjectDdlApplying` lock as the review dialog
+  (refusing with a clear message when held), checks
+  engine/status/epoch/transition up front, and passes
+  `isConnectionCurrent` into the safety-confirmation retry so a
+  reconnect during the dialog aborts the apply. Tests pin the lock
+  refusal and the disconnected refusal.
+- **Edits queued mid-apply were lost.** Success cleanup now removes
+  only the entry ids that were part of the applied batch (both the
+  typed and the legacy path); a test queues an op while the apply is
+  in flight and asserts it survives.
+- **Non-PostgreSQL engines regressed in the specialized tab.** The
+  index and FK panels queue typed ops only when the connection engine
+  is PostgreSQL; every other engine keeps the original generate-SQL
+  behaviour (restored verbatim, tests on a ClickHouse connection).
+- **`dropIndex` left object viewers stale.** `objectDdlRefreshScope`
+  cannot attribute `dropIndex` to a table, so the structure commit's
+  description revalidation always unions in the committing table's
+  ref; a test pins the reload.
+- **Status honesty.** The README row was downgraded from
+  `READY FOR REVIEW` to `IN PROGRESS` because Step 4's manual pass —
+  part of its gates — has not run.
+- **Duplication.** Referential-action options/normalization and the
+  index/FK op constructors moved to `src/lib/structure-changes.ts`
+  (`PG_REFERENTIAL_ACTIONS`, `asPgReferentialAction`,
+  `buildCreateIndexOp`, `buildAddForeignKeyOp`), shared by the
+  structure sections and the specialized panels. Test-matrix gaps were
+  closed: rename and default-clear column ops, RLS and trigger
+  generate-only behaviour.
+
 ## Maintenance notes
 
 - `StructureChange` is engine-homogeneous per table; a mixed list is a

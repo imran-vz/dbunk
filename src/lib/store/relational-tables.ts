@@ -16,7 +16,16 @@ import type { StateCreator } from "zustand";
 
 import { generateDdlForEngine } from "@/lib/ddl";
 import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
+import {
+  applyObjectDdlWithSafetyConfirmation,
+  formatObjectDdlError,
+  objectDdlRefreshScope,
+} from "@/lib/object-ddl";
 import { pendingMutationsFromResult } from "@/lib/pending-mutations";
+import {
+  pgObjectDdlApplyKey,
+  pgObjectDescriptionKey,
+} from "@/lib/pg-object-ref";
 import {
   DEFAULT_SCHEMA_MAP_PREFS,
   type SchemaForeignKey,
@@ -72,10 +81,16 @@ import type {
   TablePreviewData,
   TableRef,
   TableSessionSnapshot,
+  PgObjectRef,
   TableStructure,
   TableStructureStatus,
 } from "./types";
-import { tableDataKey, tableSessionKey, tableStructureKey } from "./types";
+import {
+  isConnectedStatus,
+  tableDataKey,
+  tableSessionKey,
+  tableStructureKey,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Private helpers and shapes
@@ -391,7 +406,18 @@ export type RelationalTablesSlice = {
   ) => void;
   removePendingStructureChange: (key: string, id: string) => void;
   clearPendingStructureChanges: (key: string) => void;
-  commitStructureChanges: (key: string) => Promise<DDLOutcome>;
+  /**
+   * Commit a table's pending structure batch. PostgreSQL `pg-op`
+   * batches route through the gated `apply_object_ddl` workflow;
+   * `statements` carries the reviewed preview's summaries so typed
+   * failures can name the statement they stopped at. `column` batches
+   * stay on the legacy frontend-rendered `execute_ddl` path
+   * (ClickHouse, plus the MySQL/SQLite dead end).
+   */
+  commitStructureChanges: (
+    key: string,
+    options?: { statements?: { summary: string }[] },
+  ) => Promise<DDLOutcome>;
 
   /**
    * Cascade cleanup — drops every per-connection cache entry. Not
@@ -1614,7 +1640,7 @@ export const createRelationalTablesSlice: StateCreator<
       return { pendingStructureChanges: rest };
     }),
 
-  commitStructureChanges: async (key): Promise<DDLOutcome> => {
+  commitStructureChanges: async (key, options): Promise<DDLOutcome> => {
     const state = get();
     const pending = state.pendingStructureChanges[key];
     if (!pending || pending.length === 0) {
@@ -1623,13 +1649,6 @@ export const createRelationalTablesSlice: StateCreator<
     const batch = pendingStructureBatch(pending);
     if (batch.kind === "invalid") {
       return { kind: "failed", reason: batch.reason };
-    }
-    if (batch.kind === "pg-op") {
-      return {
-        kind: "failed",
-        reason:
-          "PostgreSQL structure operations require the backend object-DDL workflow.",
-      };
     }
     if (batch.kind === "empty") {
       return { kind: "noop" };
@@ -1644,14 +1663,10 @@ export const createRelationalTablesSlice: StateCreator<
       return { kind: "failed", reason: ctx.reason };
     }
     const { connection, ddlStructure, schema, table, connectionId } = ctx;
-
-    const sql = generateDdlForEngine(
-      connection.engine,
-      schema,
-      table,
-      batch.changes,
-      ddlStructure?.columns,
-    );
+    // Only the entries that are part of this apply. Edits queued while
+    // the request is in flight belong to the next commit and must
+    // survive this one's cleanup.
+    const committedIds = new Set(pending.map((entry) => entry.id));
 
     set((s) => ({
       structureCommitStatus: {
@@ -1671,35 +1686,48 @@ export const createRelationalTablesSlice: StateCreator<
       };
     }
 
-    try {
-      const result = await invokeWithSafetyConfirmation<{ runtimeMs: number }>({
-        command: "execute_ddl",
-        connection,
-        payload: { connectionId, sql },
-      });
+    // Drops the running status and — because statements may have
+    // applied — invalidates the per-connection relation-stats cache so
+    // the Tables / Schemas sub-tabs re-fetch on next activation. Only
+    // the committed entries are cleared, and only on full success; a
+    // partial apply keeps the batch so the user can edit and retry.
+    const finalizeApplied = (clearPending: boolean) =>
       set((s) => {
-        const { [key]: _pending, ...restPending } = s.pendingStructureChanges;
         const { [key]: _status, ...restStatus } = s.structureCommitStatus;
-        // Invalidate the per-connection relation-stats cache so the
-        // Tables / Schemas sub-tabs re-fetch on next activation. The
-        // status slot is dropped alongside so the next call kicks
-        // through its loading transition cleanly.
         const { [connectionId]: _stats, ...restRelationStats } =
           s.relationStats;
         const { [connectionId]: _statsStatus, ...restRelationStatsStatus } =
           s.relationStatsStatus;
-        return {
-          pendingStructureChanges: restPending,
+        const next = {
           structureCommitStatus: restStatus,
           relationStats: restRelationStats,
           relationStatsStatus: restRelationStatsStatus,
         };
+        if (!clearPending) {
+          return next;
+        }
+        const remaining = (s.pendingStructureChanges[key] ?? []).filter(
+          (entry) => !committedIds.has(entry.id),
+        );
+        if (remaining.length === 0) {
+          const { [key]: _pending, ...restPending } = s.pendingStructureChanges;
+          return { ...next, pendingStructureChanges: restPending };
+        }
+        return {
+          ...next,
+          pendingStructureChanges: {
+            ...s.pendingStructureChanges,
+            [key]: remaining,
+          },
+        };
       });
-      // Post-DDL refreshes are independent reads against the same
-      // connection and write to disjoint store slices, so they run
-      // concurrently — saves ~1 RTT on a remote DB. `loadTableData`
-      // is only re-fetched when the data tab has already loaded it
-      // once (preserved from the pre-parallel ordering).
+
+    // Post-DDL refreshes are independent reads against the same
+    // connection and write to disjoint store slices, so they run
+    // concurrently — saves ~1 RTT on a remote DB. `loadTableData`
+    // is only re-fetched when the data tab has already loaded it
+    // once (preserved from the pre-parallel ordering).
+    const runPostDdlRefreshes = async () => {
       const dataKey = tableDataKey(connectionId, schema, table);
       const refreshes: Promise<unknown>[] = [
         get().loadTableStructure(connectionId, schema, table),
@@ -1714,6 +1742,147 @@ export const createRelationalTablesSlice: StateCreator<
         }),
       );
       await Promise.all(refreshes);
+    };
+
+    if (batch.kind === "pg-op") {
+      if (connection.engine !== "PostgreSQL") {
+        clearLifecycle();
+        return {
+          kind: "failed",
+          reason: "Typed structure operations require a PostgreSQL connection.",
+        };
+      }
+      // Same fencing as the Plan 014 review dialog: a reconnect (epoch
+      // bump), engine change, disconnect, or in-progress transition
+      // invalidates the reviewed batch — including while the safety
+      // confirmation dialog is open.
+      const expectedConnectionEpoch = get().connectionEpochs[connectionId] ?? 0;
+      const isConnectionCurrent = () => {
+        const current = get();
+        const liveConnection = current.connections.find(
+          (candidate) => candidate.id === connectionId,
+        );
+        return (
+          (current.connectionEpochs[connectionId] ?? 0) ===
+            expectedConnectionEpoch &&
+          liveConnection?.engine === "PostgreSQL" &&
+          isConnectedStatus(liveConnection.status) &&
+          !current.connectionTransitionIds.includes(connectionId)
+        );
+      };
+      if (!isConnectionCurrent()) {
+        clearLifecycle();
+        return {
+          kind: "failed",
+          reason: "Connect to the PostgreSQL database before applying DDL.",
+        };
+      }
+      // One apply per connection at a time, shared with the object-DDL
+      // review dialog's gate.
+      const applyKey = pgObjectDdlApplyKey(connectionId);
+      if (!get().beginPgObjectDdlApply(applyKey)) {
+        clearLifecycle();
+        return {
+          kind: "failed",
+          reason: "Another DDL apply is already running on this connection.",
+        };
+      }
+      // Revalidate any already-loaded object descriptions this batch can
+      // make stale (the table's reconstructed DDL in open object
+      // viewers). `objectDdlRefreshScope` cannot attribute `dropIndex`
+      // to a table, but every op in a structure-editor batch targets
+      // this table, so its ref is always included.
+      const refreshObjectDescriptions = async () => {
+        const tableReference: PgObjectRef = {
+          kind: "table",
+          schema,
+          name: table,
+          identityArgs: null,
+        };
+        const references = new Map(
+          [...objectDdlRefreshScope(batch.ops).references, tableReference].map(
+            (reference) => [
+              pgObjectDescriptionKey(connectionId, reference),
+              reference,
+            ],
+          ),
+        );
+        const current = get();
+        await Promise.all(
+          [...references]
+            .filter(
+              ([descriptionKey]) =>
+                descriptionKey in current.pgObjectDescriptions,
+            )
+            .map(([, reference]) =>
+              current.loadPgObjectDescription(connectionId, reference),
+            ),
+        );
+      };
+      const refreshAfterApply = async () => {
+        try {
+          await Promise.all([
+            runPostDdlRefreshes(),
+            refreshObjectDescriptions(),
+          ]);
+        } catch (refreshError) {
+          // The DDL outcome is already decided; a refresh failure must
+          // not masquerade as an apply failure.
+          console.error("Post-DDL refresh failed", refreshError);
+        }
+      };
+      try {
+        const result = await applyObjectDdlWithSafetyConfirmation(
+          { connectionId, ops: batch.ops },
+          connection,
+          isConnectionCurrent,
+        );
+        if (result.kind === "cancelled") {
+          clearLifecycle();
+          return { kind: "noop" };
+        }
+        if (result.kind === "error") {
+          const { error } = result;
+          const partiallyApplied =
+            (error.kind === "database" || error.kind === "lockTimeout") &&
+            error.appliedStatements > 0;
+          if (partiallyApplied) {
+            get().markPgObjectDdlApplied();
+            finalizeApplied(false);
+            await refreshAfterApply();
+          } else {
+            clearLifecycle();
+          }
+          return {
+            kind: "failed",
+            reason: formatObjectDdlError(error, options?.statements ?? []),
+          };
+        }
+        get().markPgObjectDdlApplied();
+        finalizeApplied(true);
+        await refreshAfterApply();
+        return { kind: "completed", runtimeMs: result.value.runtimeMs };
+      } finally {
+        get().endPgObjectDdlApply(applyKey);
+      }
+    }
+
+    const sql = generateDdlForEngine(
+      connection.engine,
+      schema,
+      table,
+      batch.changes,
+      ddlStructure?.columns,
+    );
+
+    try {
+      const result = await invokeWithSafetyConfirmation<{ runtimeMs: number }>({
+        command: "execute_ddl",
+        connection,
+        payload: { connectionId, sql },
+      });
+      finalizeApplied(true);
+      await runPostDdlRefreshes();
       return { kind: "completed", runtimeMs: result.runtimeMs };
     } catch (error) {
       const message = errorToMessage(error);

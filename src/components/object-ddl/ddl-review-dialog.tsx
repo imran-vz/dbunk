@@ -1,6 +1,7 @@
-import { IconCopy, IconX } from "@tabler/icons-react";
+import { IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
+import { DdlPlanPreviewGroups } from "@/components/object-ddl/plan-preview";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,7 +31,6 @@ import {
   useAppStore,
 } from "@/lib/store";
 import { errorToMessage } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
 
 type PreviewState =
   | { state: "loading" }
@@ -396,76 +396,7 @@ export function DdlReviewDialog({
             Recreating this materialized view drops its indexes and grants.
           </p>
         ) : null}
-        <div className="divide-y divide-border-subtle border-y border-border-subtle">
-          {previewState.preview.groups.map((group, groupIndex) => {
-            const indexes =
-              group.kind === "atomic"
-                ? group.statementIndexes
-                : [group.statementIndex];
-            return (
-              <section
-                key={`${group.kind}:${indexes.join(",")}`}
-                aria-label={`DDL group ${groupIndex + 1}`}
-              >
-                <header className="bg-surface-panel px-3 py-2 text-2xs font-semibold text-text-secondary">
-                  Group {groupIndex + 1} ·{" "}
-                  {group.kind === "atomic" ? "Atomic" : "Standalone"}
-                </header>
-                {group.kind === "standalone" ? (
-                  <div className="border-l-2 border-warning bg-warning/10 px-3 py-2 text-xs text-text-secondary">
-                    Runs outside a transaction. Earlier statements stay applied
-                    if it fails.
-                  </div>
-                ) : null}
-                <div className="divide-y divide-border-subtle">
-                  {indexes.map((statementIndex) => {
-                    const statement =
-                      previewState.preview.statements[statementIndex];
-                    if (!statement) return null;
-                    return (
-                      <article
-                        key={statementIndex}
-                        className={cn(
-                          "min-w-0 border-l-2",
-                          statement.destructive
-                            ? "border-danger bg-danger/5"
-                            : "border-transparent",
-                        )}
-                      >
-                        <div className="flex items-center gap-2 px-3 py-2">
-                          <span className="text-2xs text-text-muted">
-                            {statementIndex + 1}
-                          </span>
-                          <strong className="min-w-0 flex-1 text-xs font-medium text-foreground">
-                            {statement.summary}
-                          </strong>
-                          {statement.destructive ? (
-                            <span className="text-2xs font-semibold text-danger">
-                              Destructive
-                            </span>
-                          ) : null}
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => {
-                              void navigator.clipboard.writeText(statement.sql);
-                            }}
-                          >
-                            <IconCopy /> Copy
-                          </Button>
-                        </div>
-                        <pre className="overflow-x-auto border-t border-border-subtle p-3 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-text-secondary">
-                          {statement.sql}
-                        </pre>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        <DdlPlanPreviewGroups preview={previewState.preview} />
       </>
     );
   })();

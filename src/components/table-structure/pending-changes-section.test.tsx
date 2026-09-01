@@ -25,9 +25,12 @@ const renderSection = (
   const onTogglePreview = vi.fn();
   const onRemove = vi.fn();
   const onCommit = vi.fn();
-  const props: React.ComponentProps<typeof PendingChangesSection> = {
-    pending: [],
+  const emptyPending: PendingChange[] = [];
+  const base = {
+    pending: emptyPending,
     previewSql: "",
+    // SAFETY: literal narrowed to the idle arm of StructurePgPreview.
+    pgPreview: { state: "idle" } as const,
     showPreview: false,
     commitStatus: undefined,
     lastOutcome: null,
@@ -35,6 +38,13 @@ const renderSection = (
     onRemove,
     onCommit,
     ...overrides,
+  };
+  // Commit disabling is computed by useStructure; mirror its base rule
+  // here unless a test pins it explicitly.
+  const props: React.ComponentProps<typeof PendingChangesSection> = {
+    commitDisabled:
+      base.pending.length === 0 || base.commitStatus?.state === "running",
+    ...base,
   };
   render(<PendingChangesSection {...props} />);
   return { onTogglePreview, onRemove, onCommit };

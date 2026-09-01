@@ -471,7 +471,8 @@ PostgreSQL deployments and can explain which transport stage failed.
 
 **Current state:** Partial. Plans 013 and 014 delivered the catalog,
 inspection, schema-level lifecycle, reviewed DDL, and dependency-warning core.
-Plan 015 remains the pending typed structure-editor half.
+Plan 015 delivered the typed structure-editor half; the remaining scope is
+the deferred kinds listed below.
 
 **Progress (2026-08-30):** `load_pg_object_catalog` now returns a typed,
 capped inventory with overload-safe Object Refs; `describe_pg_object` covers
@@ -486,6 +487,20 @@ comment and supported-kind drop actions through one reviewed flow. Extension
 install/remove remains deferred. The dead sqlx-Any PostgreSQL explorer
 implementation is removed. Materialized-view refresh is the declared non-DDL
 legacy-path exception.
+
+**Progress (2026-09-01, Plan 015):** The PostgreSQL structure editor queues
+typed `PgObjectOp`s directly from its forms (tagged literal/expression
+defaults, `USING` on type changes), renders the backend's per-statement
+grouped preview in the pending-changes section with a reviewed gate (any
+pending edit reloads the preview and disables Commit), and commits through
+the gated `apply_object_ddl` with typed statement-aware errors; a partial
+apply refreshes structure/data caches while keeping the batch queued. The
+read-only PK/FK/index/constraint sections gained add/drop affordances, and
+the specialized index and cross-table FK panels queue the same typed ops on
+PostgreSQL connections (other engines keep those panels' generate-SQL
+behaviour). Applies share the per-connection DDL lock and connection-epoch
+fencing with the object-DDL review dialog. ClickHouse (and the MySQL/SQLite
+dead end) stay on the frontend generator + `execute_ddl`.
 
 **Evidence:**
 
@@ -504,8 +519,6 @@ legacy-path exception.
 **Missing pieces:**
 
 - Database lifecycle and a create-table designer.
-- The Plan 015 typed structure-editor switchover for columns, primary keys,
-  foreign keys, checks, unique constraints, and indexes.
 - Structured function, procedure, and aggregate create/alter flows; triggers,
   event triggers, rules, and partitions.
 - Structured non-enum type/domain creation and extension install/remove.

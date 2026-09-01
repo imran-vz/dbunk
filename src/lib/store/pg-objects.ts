@@ -15,7 +15,7 @@ import {
   isRecord,
 } from "@/lib/decode-transport-error";
 import {
-  canonicalPgObjectRefKey,
+  pgObjectDescriptionKey,
   validatePgObjectRef,
 } from "@/lib/pg-object-ref";
 import { errorToMessage, tauriInvoke } from "@/lib/tauri";
@@ -205,12 +205,10 @@ export function catalogToSchemaExplorer(
   }));
 }
 
-export { canonicalPgObjectRefKey } from "@/lib/pg-object-ref";
-
-export const pgObjectDescriptionKey = (
-  connectionId: string,
-  reference: PgObjectRef,
-): string => `${connectionId}:${canonicalPgObjectRefKey(reference)}`;
+export {
+  canonicalPgObjectRefKey,
+  pgObjectDescriptionKey,
+} from "@/lib/pg-object-ref";
 
 export type PgObjectLoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -260,8 +258,7 @@ export type PgObjectsSlice = {
   dropPgObjectCachesForConnection: (connectionId: string) => void;
 };
 
-export const pgObjectDdlApplyKey = (connectionId: string): string =>
-  connectionId;
+export { pgObjectDdlApplyKey } from "@/lib/pg-object-ref";
 
 const generationFor = (state: AppStoreState, connectionId: string): number =>
   state.pgObjectCatalog[connectionId]?.generation ?? 0;

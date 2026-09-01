@@ -27,7 +27,7 @@ and update its status here when work finishes.
 | [012](./012-connection-security-activation.md)        | TLS controls, staged connection diagnosis, and truth pass        |       P1 |      L | 011        | DONE: b45e294 (selected mock: A)               |
 | [013](./013-object-catalog-ddl-backend.md)            | PostgreSQL object catalog and DDL workflow backend (dark)        |       P1 |      L | 001–012    | DONE: 4833a42                                  |
 | [014](./014-object-explorer-lifecycle-activation.md)  | Object explorer, viewers, and lifecycle activation               |       P1 |      L | 013        | DONE: 2e843a6 (selected mock: C)               |
-| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | IN PROGRESS: through Step 1                    |
+| [015](./015-structure-editor-typed-ddl-switchover.md) | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | IN PROGRESS: Steps 1–3 + Step 4 docs/gates done; Step 4 manual dev-app pass pending |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -39,6 +39,45 @@ useful without authorizing commits implicitly.
 
 ## Current selection
 
+- **Plan 015 delivery note (2026-09-01):** Steps 2–4 implemented in the
+  working tree on top of the Step 1 commit `b468108`. PostgreSQL column
+  forms produce typed ops directly (tagged literal/expression defaults,
+  `USING` on type changes); the pending-changes section loads the
+  backend's grouped per-statement preview (shared
+  `DdlPlanPreviewGroups`, extracted from the Plan 014 dialog) with a
+  reviewed gate — any pending edit reloads it and disables Commit; the
+  destructive confirm sources its summaries from the preview; the store
+  routes `pg-op` batches through `apply_object_ddl` with the typed
+  confirmation retry, formats failures against the reviewed statement
+  summaries, and on full or partial apply bumps `pgObjectDdlVersion`,
+  runs the structure/data refresh fan-out, and revalidates loaded
+  object descriptions the batch touched (partial applies keep the
+  batch queued for edit-and-retry). The PK/FK/index/constraint sections
+  gained add/drop affordances (index drops offer `CONCURRENTLY`; Add
+  primary key hides when a PK exists), and the specialized index and
+  cross-table FK panels queue the same typed ops into the shared
+  pending list (`quoteIdent` retired in favour of `pgQuoteIdent` from
+  the ddl lib for the still-generate-only GRANT/RLS/trigger panels).
+  ClickHouse is behaviourally unchanged (its tests untouched). A
+  2026-09-01 review pass hardened the first delivery: the loaded
+  preview carries its execution identity (ops JSON + `pgObjectDdlVersion`
+  + connection epoch) and is derived stale-proof, with commit
+  re-verifying against live store state after every await; the apply
+  acquires the shared per-connection `pgObjectDdlApplying` lock and the
+  dialog's `isConnectionCurrent` fencing; success cleanup removes only
+  the committed entry ids so edits queued mid-apply survive; the
+  specialized index/FK panels queue typed ops only on PostgreSQL and
+  keep the original generate-SQL fallback on other engines; and the
+  description revalidation always includes the committing table's ref
+  (covering `dropIndex`, which `objectDdlRefreshScope` cannot
+  attribute). Referential-action vocabulary and index/FK op
+  construction live once in `src/lib/structure-changes.ts`. Gates
+  green: `pnpm format`/`lint`/`typecheck`, vitest, `check:ui-gates`,
+  `check:slice-isolation`. The plan's Step 4 **interactive dev-app pass
+  has not been run in the implementing session** (no display) — walk it
+  in `pnpm tauri dev` against `lifecycle.orders`, then mark READY FOR
+  REVIEW / DONE; the plan file carries the full execution deviation
+  record.
 - **Selected mock (014, 2026-08-29):** C — compact object viewer with
   Definition / Facts tabs and the DDL review rendered inline immediately
   above the object action row. Database-scoped list-only objects stay below

@@ -19,12 +19,12 @@ before code lands.
 
 ### Postgres / relational
 
-- **Default-value tagged-union** (`src/lib/ddl/shared.ts`) — replace
-  the current "bareword whitelist + `()` heuristic" with a tagged
-  `{ kind: "literal", text } | { kind: "expression", sql }` model on
-  the column record + Literal/Expression toggle in the column form.
-  Cross-cutting: column type, introspection round-trip, every form,
-  all `formatDefault` callers.
+- **Default-value tagged-union** (`src/lib/ddl/shared.ts`) —
+  PostgreSQL delivered this in Plan 015: column forms carry a tagged
+  `PgDefaultValue` with a Literal/Expression toggle and the backend
+  renders it. What remains is the ClickHouse (and dead-end
+  MySQL/SQLite) column path, which still runs defaults through the
+  `formatDefault` "bareword whitelist + `()` heuristic".
 - **Connection Settings driver/session fields** —
   `workspace-overview/settings-tab.tsx` is still a read-mostly mirror
   even though `PgDriverOptions` (ADR-0013) ships statement-timeout /

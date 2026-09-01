@@ -3,6 +3,7 @@ import type {
   DatabaseEngine,
   PendingChange,
   PgObjectOp,
+  PgReferentialAction,
   StructureChange,
 } from "@/lib/store/types";
 
@@ -70,3 +71,84 @@ export const assertStructureChangeCanAppend = (
     );
   }
 };
+
+/** One vocabulary for FK referential actions across every surface that
+ * builds `addForeignKey` ops (structure editor, specialized FK panel). */
+export const PG_REFERENTIAL_ACTIONS: readonly {
+  value: PgReferentialAction;
+  label: string;
+}[] = [
+  { value: "no-action", label: "NO ACTION" },
+  { value: "restrict", label: "RESTRICT" },
+  { value: "cascade", label: "CASCADE" },
+  { value: "set-null", label: "SET NULL" },
+  { value: "set-default", label: "SET DEFAULT" },
+];
+
+/** Accepts either the tagged value or the SQL label; unknown input falls
+ * back to the PostgreSQL default, NO ACTION. */
+export const asPgReferentialAction = (value: string): PgReferentialAction =>
+  PG_REFERENTIAL_ACTIONS.find(
+    (option) => option.value === value || option.label === value,
+  )?.value ?? "no-action";
+
+const trimmedOrNull = (value: string): string | null => {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+};
+
+/** Normalizing constructors shared by the structure editor's forms and
+ * the specialized editors, so the two surfaces cannot drift on how the
+ * same user input becomes a typed op. */
+export const buildCreateIndexOp = (input: {
+  schema: string;
+  table: string;
+  name: string;
+  unique: boolean;
+  method: string;
+  columnExpressions: string[];
+  include: string[];
+  wherePredicate: string;
+  concurrently: boolean;
+}): PgObjectOp => ({
+  op: "createIndex",
+  schema: input.schema,
+  table: input.table,
+  name: trimmedOrNull(input.name),
+  unique: input.unique,
+  method: input.method.trim(),
+  columns: input.columnExpressions.map((expression) => ({
+    expression,
+    descending: false,
+  })),
+  include: input.include,
+  wherePredicate: trimmedOrNull(input.wherePredicate),
+  concurrently: input.concurrently,
+});
+
+export const buildAddForeignKeyOp = (input: {
+  schema: string;
+  table: string;
+  name: string;
+  columns: string[];
+  referencedSchema: string;
+  referencedTable: string;
+  referencedColumns: string[];
+  onUpdate: PgReferentialAction;
+  onDelete: PgReferentialAction;
+  deferrable: boolean;
+}): PgObjectOp => ({
+  op: "addForeignKey",
+  schema: input.schema,
+  table: input.table,
+  name: trimmedOrNull(input.name),
+  columns: input.columns,
+  referencedSchema: input.referencedSchema.trim() || input.schema,
+  referencedTable: input.referencedTable.trim(),
+  referencedColumns: input.referencedColumns,
+  onUpdate: input.onUpdate,
+  onDelete: input.onDelete,
+  deferrable: input.deferrable,
+  initiallyDeferred: input.deferrable,
+  notValid: false,
+});
