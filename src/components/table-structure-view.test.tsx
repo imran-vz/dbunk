@@ -498,6 +498,41 @@ describe("TableStructureView edit flow", () => {
     expect(screen.getByTestId("structure-add-column")).toBeTruthy();
   });
 
+  it("renders a queued PostgreSQL operation without entering legacy preview", () => {
+    const key = seedStructure(baseStructure);
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "users",
+            name: "email",
+            cascade: false,
+          },
+        },
+      });
+    });
+
+    render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(key);
+
+    expect(screen.getByText("Pending preview")).toBeTruthy();
+    act(() => {
+      fireEvent.click(screen.getByTestId("structure-preview-sql"));
+    });
+    expect(screen.queryByTestId("structure-sql-preview")).toBeNull();
+  });
+
   it("queues a drop column change when the drop button is clicked", () => {
     const key = seedStructure(baseStructure);
     render(

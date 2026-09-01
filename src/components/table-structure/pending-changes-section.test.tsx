@@ -2,8 +2,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ColumnChangeKind, PendingChange } from "@/lib/ddl";
-import type { DDLOutcome, StructureCommitStatus } from "@/lib/store";
+import type { ColumnChangeKind } from "@/lib/ddl";
+import type {
+  DDLOutcome,
+  PendingChange,
+  StructureCommitStatus,
+} from "@/lib/store";
 
 import { PendingChangesSection } from "./pending-changes-section";
 
