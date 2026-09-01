@@ -511,8 +511,7 @@ fencing with the object-DDL review dialog. ClickHouse (and the MySQL/SQLite
 dead end) stay on the frontend generator + `execute_ddl`.
 
 **Progress (2026-09-02, Plan 016):** The dark backend half of the next slice
-is implemented and READY FOR REVIEW (second review pass applied; awaiting an
-authorized commit). `PgObjectOp` gained `createTable` (columns with tagged defaults and
+is DONE through `6b573f1`. `PgObjectOp` gained `createTable` (columns with tagged defaults and
 identity, primary key, unique, check, and foreign-key constraints),
 `createFunction` / `createProcedure` (signature fragments plus an opaque body
 sealed in a body-derived dollar quote; `orReplace` is the alter path),
@@ -885,9 +884,9 @@ Parity work should reuse rather than replace these credible foundations:
 6. `PAR-006` security half delivered by Plans 011 and 012 through
    `b45e294`.
 7. `PAR-007`: catalog, viewers, schema-level lifecycle, and the structure
-   editor delivered by Plans 013–015. **Selected next:** Plans 016 and 017
-   (table designer, routine editor, triggers, row-level security,
-   privileges), authored at `b82de63`.
+   editor delivered by Plans 013–015; the table designer, routine, trigger,
+   row-level security, and privilege backend by Plan 016 through `6b573f1`.
+   **Selected next:** Plan 017, its activation.
 8. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and
    administration.
 9. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
