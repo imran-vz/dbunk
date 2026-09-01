@@ -85,6 +85,7 @@ import {
   type ManagedServerWithStatus,
   type PgObjectCatalog,
   type QueryOutcome,
+  type StructureChange,
   tableMutationDraftScope,
   tableDataKey,
   tableStructureKey,
@@ -2277,6 +2278,13 @@ const seedPostgresConnection = () => {
   return connection;
 };
 
+const columnStructureChange = (
+  change: ColumnChangeKind,
+): Extract<StructureChange, { kind: "column" }> => ({
+  kind: "column",
+  change,
+});
+
 describe("store.pendingStructureChanges", () => {
   const key = tableStructureKey("conn-1", "public", "users");
 
@@ -2286,7 +2294,7 @@ describe("store.pendingStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change,
+        change: columnStructureChange(change),
       });
     });
     const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
@@ -2305,12 +2313,12 @@ describe("store.pendingStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: a,
+        change: columnStructureChange(a),
       });
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: b,
+        change: columnStructureChange(b),
       });
     });
     const pending = useAppStore.getState().pendingStructureChanges[key] ?? [];
@@ -2320,20 +2328,8 @@ describe("store.pendingStructureChanges", () => {
     ]);
   });
 
-  it("keeps each table's pending list engine-homogeneous", () => {
-    act(() => {
-      useAppStore.getState().addPendingStructureChange(key, {
-        schema: "public",
-        table: "users",
-        change: { kind: "drop", columnName: "legacy" },
-      });
-    });
-    const clickHousePending =
-      useAppStore.getState().pendingStructureChanges[key];
-    expect(
-      clickHousePending?.every((entry) => entry.change.kind === "column"),
-    ).toBe(true);
-
+  it("rejects mixed variants in one table's pending list", () => {
+    seedPostgresConnection();
     const pgKey = tableStructureKey("conn-1", "public", "accounts");
     act(() => {
       useAppStore.getState().addPendingStructureChange(pgKey, {
@@ -2351,10 +2347,65 @@ describe("store.pendingStructureChanges", () => {
         },
       });
     });
+
+    expect(() =>
+      act(() => {
+        useAppStore.getState().addPendingStructureChange(pgKey, {
+          schema: "public",
+          table: "accounts",
+          change: columnStructureChange({
+            kind: "drop",
+            columnName: "other_legacy",
+          }),
+        });
+      }),
+    ).toThrow(/cannot mix/i);
+
     const pgPending = useAppStore.getState().pendingStructureChanges[pgKey];
+    expect(pgPending).toHaveLength(1);
     expect(pgPending?.every((entry) => entry.change.kind === "pg-op")).toBe(
       true,
     );
+  });
+
+  it("rejects PostgreSQL operations for non-PostgreSQL connections", () => {
+    const pg = seedPostgresConnection();
+    const clickHouse: Connection = {
+      id: pg.id,
+      name: pg.name,
+      database: pg.database,
+      status: pg.status,
+      host: pg.host,
+      port: 8123,
+      user: pg.user,
+      password: pg.password,
+      role: pg.role,
+      latency: pg.latency,
+      engine: "ClickHouse",
+      useHttps: false,
+      urlPath: "",
+    };
+    useAppStore.setState({ connections: [clickHouse] });
+
+    expect(() =>
+      act(() => {
+        useAppStore.getState().addPendingStructureChange(key, {
+          schema: "public",
+          table: "users",
+          change: {
+            kind: "pg-op",
+            op: {
+              op: "dropColumn",
+              schema: "public",
+              table: "users",
+              name: "legacy",
+              cascade: false,
+            },
+          },
+        });
+      }),
+    ).toThrow(/require a PostgreSQL connection/i);
+    expect(useAppStore.getState().pendingStructureChanges[key]).toBeUndefined();
   });
 
   it("removePendingStructureChange removes only the targeted entry", () => {
@@ -2362,12 +2413,12 @@ describe("store.pendingStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "a" },
+        change: columnStructureChange({ kind: "drop", columnName: "a" }),
       });
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "b" },
+        change: columnStructureChange({ kind: "drop", columnName: "b" }),
       });
     });
     const firstId =
@@ -2385,7 +2436,7 @@ describe("store.pendingStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "a" },
+        change: columnStructureChange({ kind: "drop", columnName: "a" }),
       });
     });
     act(() => {
@@ -2410,12 +2461,44 @@ describe("store.commitStructureChanges", () => {
     expect(outcome.kind).toBe("noop");
   });
 
+  it("returns a failed outcome for typed operations before their workflow is active", async () => {
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "dropColumn",
+            schema: "public",
+            table: "users",
+            name: "legacy",
+            cascade: false,
+          },
+        },
+      });
+    });
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason:
+        "PostgreSQL structure operations require the backend object-DDL workflow.",
+    });
+    expect(useAppStore.getState().pendingStructureChanges[key]).toHaveLength(1);
+  });
+
   it("invokes execute_ddl with generated SQL and clears pending on success", async () => {
     act(() => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "legacy" },
+        change: columnStructureChange({
+          kind: "drop",
+          columnName: "legacy",
+        }),
       });
     });
     // Deferred first invoke so we can observe the in-flight `running`
@@ -2489,7 +2572,10 @@ describe("store.commitStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "legacy" },
+        change: columnStructureChange({
+          kind: "drop",
+          columnName: "legacy",
+        }),
       });
     });
     mockedInvoke
@@ -2527,7 +2613,10 @@ describe("store.commitStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "legacy" },
+        change: columnStructureChange({
+          kind: "drop",
+          columnName: "legacy",
+        }),
       });
     });
     // Wipe the connection between adding the pending change and
@@ -2546,7 +2635,10 @@ describe("store.commitStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "legacy" },
+        change: columnStructureChange({
+          kind: "drop",
+          columnName: "legacy",
+        }),
       });
     });
     // Force the !isTauri() short-circuit. This is the only `failed`
@@ -2561,7 +2653,10 @@ describe("store.commitStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "legacy" },
+        change: columnStructureChange({
+          kind: "drop",
+          columnName: "legacy",
+        }),
       });
     });
     mockedInvoke.mockRejectedValueOnce(new Error("permission denied"));
@@ -2631,7 +2726,10 @@ describe("store.commitStructureChanges", () => {
       useAppStore.getState().addPendingStructureChange(key, {
         schema: "public",
         table: "users",
-        change: { kind: "drop", columnName: "legacy" },
+        change: columnStructureChange({
+          kind: "drop",
+          columnName: "legacy",
+        }),
       });
     });
 

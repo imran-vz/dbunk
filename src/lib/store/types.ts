@@ -11,7 +11,7 @@
  * `errorToMessage`) live in `@/lib/format` and `@/lib/tauri`.
  */
 
-import type { ColumnChangeKind, PendingChange } from "@/lib/ddl";
+import type { ColumnChangeKind } from "@/lib/ddl/postgres";
 import type {
   SchemaMapAttrMode,
   SchemaMapPosition,
@@ -797,6 +797,22 @@ export type TableStructureStatus =
   | { state: "error"; error: string };
 
 /**
+ * One queued table-structure edit. A table's pending list is homogeneous:
+ * legacy frontend-rendered column changes and PostgreSQL object operations
+ * never share a batch.
+ */
+export type StructureChange =
+  | { kind: "column"; change: ColumnChangeKind }
+  | { kind: "pg-op"; op: PgObjectOp };
+
+export type PendingChange = {
+  id: string;
+  schema: string;
+  table: string;
+  change: StructureChange;
+};
+
+/**
  * Lifecycle state of an in-flight DDL commit — the **best-effort view**
  * the store keeps so the Commit button can stay disabled and labelled
  * "Committing..." across tab unmounts. Terminal state is NOT carried
@@ -975,7 +991,7 @@ export type ServerDetailsStatus =
 // Re-export domain types from their owning modules so the workspace
 // state type (and slice files) can refer to them through one import
 // path.
-export type { ColumnChangeKind, PendingChange };
+export type { ColumnChangeKind };
 export type {
   SchemaMapAttrMode,
   SchemaMapPosition,
