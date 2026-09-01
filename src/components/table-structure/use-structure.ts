@@ -5,7 +5,6 @@ import {
   type ColumnChangeKind,
   classifyDestructive,
   generateDdlForEngine,
-  type PendingChange,
 } from "@/lib/ddl";
 import { type RelationalPolicy, relationalPolicy } from "@/lib/engine-policy";
 import {
@@ -15,6 +14,7 @@ import {
   type DDLOutcome,
   type ForeignKeyInfo,
   type IndexInfo,
+  type PendingChange,
   type StructureCapabilities,
   type StructureCommitStatus,
   type TableStructure,
@@ -22,6 +22,7 @@ import {
   tableStructureKey,
   useAppStore,
 } from "@/lib/store";
+import { pendingStructureBatch } from "@/lib/structure-changes";
 
 import { describeChange } from "./shared";
 
@@ -147,30 +148,26 @@ export function useStructure({
   const policy = relationalPolicy(engine ?? "PostgreSQL");
   const isLoading = status?.state === "loading";
   const errorMessage = status?.state === "error" ? status.error : null;
+  const pendingBatch = useMemo(() => pendingStructureBatch(pending), [pending]);
 
-  const previewSql = useMemo(
-    () =>
-      generateDdlForEngine(
-        engine ?? "PostgreSQL",
-        schema,
-        tableName,
-        pending.map((entry) => {
-          if (entry.change.kind !== "column") {
-            throw new Error(
-              "PostgreSQL typed operations require async preview",
-            );
-          }
-          return entry.change.change;
-        }),
-        snapshot.columns,
-      ),
-    [engine, schema, tableName, snapshot.columns, pending],
-  );
+  const previewSql = useMemo(() => {
+    if (pendingBatch.kind !== "column") return "";
+    return generateDdlForEngine(
+      engine ?? "PostgreSQL",
+      schema,
+      tableName,
+      pendingBatch.changes,
+      snapshot.columns,
+    );
+  }, [engine, schema, tableName, snapshot.columns, pendingBatch]);
 
   const commit = async () => {
-    const outcome = await runDestructiveCommit(pending, () =>
-      commitStructureChanges(key),
-    );
+    const outcome =
+      pendingBatch.kind === "column"
+        ? await runDestructiveCommit(pendingBatch.changes, () =>
+            commitStructureChanges(key),
+          )
+        : await commitStructureChanges(key);
     if (outcome) setLastOutcome(outcome);
   };
 
@@ -214,20 +211,11 @@ export function useStructure({
 }
 
 async function runDestructiveCommit<T>(
-  pending: PendingChange[],
+  changes: ColumnChangeKind[],
   commit: () => Promise<T>,
 ): Promise<T | undefined> {
-  if (pending.length === 0) return undefined;
-  const { destructive } = classifyDestructive(
-    pending.map((entry) => {
-      if (entry.change.kind !== "column") {
-        throw new Error(
-          "PostgreSQL typed operations use backend safety policy",
-        );
-      }
-      return entry.change.change;
-    }),
-  );
+  if (changes.length === 0) return undefined;
+  const { destructive } = classifyDestructive(changes);
   if (destructive.length > 0) {
     const summary = destructive
       .map((change) => describeChange(change))

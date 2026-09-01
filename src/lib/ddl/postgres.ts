@@ -1,17 +1,15 @@
 /**
  * PostgreSQL DDL generation for table structure changes.
  *
- * Legacy frontend fallback for ClickHouse and the not-yet-supported
- * MySQL/SQLite structure paths. PostgreSQL now previews and applies typed
- * operations through the backend object-DDL workflow.
+ * This is still the active PostgreSQL structure path through Plan 015 Step 1
+ * and the unsupported MySQL/SQLite fallback. ClickHouse has its own renderer.
+ * Typed PostgreSQL object operations deliberately do not enter this module.
  *
  * This module is pure: it takes a structured description of column-level
  * changes and produces an executable PostgreSQL DDL string. It is responsible
  * only for SQL formatting — it does NOT validate that the changes are
  * semantically safe against a live schema.
  */
-
-import type { PgObjectOp } from "@/lib/store/types";
 
 import {
   createIdentQuoter,
@@ -35,17 +33,6 @@ export type ColumnChangeKind =
   | { kind: "set_type"; columnName: string; newType: string }
   | { kind: "set_nullable"; columnName: string; nullable: boolean }
   | { kind: "set_default"; columnName: string; default: string | null };
-
-export type PendingChange = {
-  id: string;
-  schema: string;
-  table: string;
-  change: StructureChange;
-};
-
-export type StructureChange =
-  | { kind: "column"; change: ColumnChangeKind }
-  | { kind: "pg-op"; op: PgObjectOp };
 
 const { quoteIdent, qualifiedTable } = createIdentQuoter('"');
 

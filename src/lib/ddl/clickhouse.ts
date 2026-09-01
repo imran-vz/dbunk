@@ -20,11 +20,7 @@
  * schema.
  */
 
-import type {
-  ColumnChangeKind,
-  NewColumn,
-  PendingChange,
-} from "@/lib/ddl/postgres";
+import type { ColumnChangeKind, NewColumn } from "@/lib/ddl/postgres";
 
 import {
   createIdentQuoter,
@@ -34,7 +30,7 @@ import {
   renderRenameColumn,
 } from "./shared";
 
-export type { ColumnChangeKind, NewColumn, PendingChange };
+export type { ColumnChangeKind, NewColumn };
 
 const { quoteIdent, qualifiedTable } = createIdentQuoter("`");
 
