@@ -187,9 +187,16 @@ identity; see the **Keyspace model** section below.
 - **Focused Relationship Edge** — the selected Relationship Edge whose two
   endpoint Table Cards remain emphasized while unrelated graph elements dim.
 - **Table Structure** — columns, primary key, foreign keys, indexes, and
-  constraints for one table. Includes a **capabilities** flag that tells the
-  frontend which fields are populated for the active engine. Relational-only;
-  Redis uses **Key Metadata** instead.
+  constraints for one table. On PostgreSQL it also carries the table's user
+  triggers (with their four-way enabled state), row-level-security policies,
+  explicit privileges, and row-security flags (ADR-0027). Includes a
+  **capabilities** flag that tells the frontend which fields are populated for
+  the active engine. Relational-only; Redis uses **Key Metadata** instead.
+- **Routine Source** — the `arguments`, `returns`, `body`, `language`, and
+  header attributes (`volatility`, `strict`, `securityDefiner`, `parallel`)
+  reported for a function or procedure. They are text the backend accepts
+  back verbatim in `createFunction` / `createProcedure { orReplace: true }`,
+  so editing a routine never parses `pg_get_functiondef` output.
 - **Row Identity** — the columns used to address a single row. On the
   legacy `load_table_data` path the frontend still picks them via
   `pickRowIdentity` (primary key, else a non-null unique index; keyless
@@ -379,7 +386,11 @@ ADR-0009 for the writes-by-default posture.
   snapshot. Preview content, SQL, parameters, and row values are never logged.
 - **DDL Plan** — an ordered list of typed PostgreSQL Object Operations. The
   backend validates and renders those operations; neither preview nor apply
-  accepts arbitrary generated statement text from the frontend.
+  accepts arbitrary generated statement text from the frontend. Routine
+  bodies are the one opaque field: they are sealed in a renderer-chosen
+  dollar quote rather than validated as SQL (ADR-0027). The renderer, not the
+  statement classifier, decides that revokes, disabled triggers, disabled
+  row security, and dropped policies are destructive.
 - **DDL Preview** — the exact, display-only statements generated from a DDL
   Plan, including summaries, destructive flags, and atomic or standalone
   groups. It is distinct from DML Preview, which carries bound row-value

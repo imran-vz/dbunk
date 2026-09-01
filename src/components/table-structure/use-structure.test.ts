@@ -20,6 +20,10 @@ const baseStructure: TableStructure = {
   foreignKeys: [],
   indexes: [],
   constraints: [],
+  triggers: [],
+  policies: [],
+  privileges: [],
+  rowSecurity: null,
   capabilities: {
     columns: true,
     primaryKey: true,
@@ -31,6 +35,9 @@ const baseStructure: TableStructure = {
     canDeleteRows: true,
     canAlterSchema: true,
     uniquenessGuarantee: "exact",
+    triggers: false,
+    policies: false,
+    privileges: false,
   },
 };
 

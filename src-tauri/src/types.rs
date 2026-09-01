@@ -1857,6 +1857,82 @@ pub(crate) struct ConstraintInfo {
     pub definition: String,
 }
 
+/// `pg_trigger.tgenabled`, decoded as a closed set so an unknown catalog
+/// value is an error rather than a plausible default.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TriggerEnabledState {
+    Origin,
+    Disabled,
+    Replica,
+    Always,
+}
+
+/// `pg_policies.cmd`, decoded as a closed set.
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub(crate) enum PolicyCommand {
+    All,
+    Select,
+    Insert,
+    Update,
+    Delete,
+}
+
+/// One user trigger on a table (PostgreSQL). Internal and
+/// partition-cloned triggers are excluded.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TriggerInfo {
+    pub name: String,
+    /// `BEFORE` | `AFTER` | `INSTEAD OF`.
+    pub timing: String,
+    /// Any of `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`.
+    pub events: Vec<String>,
+    /// Columns of an `UPDATE OF` list; empty otherwise.
+    pub update_columns: Vec<String>,
+    /// `ROW` | `STATEMENT`.
+    pub level: String,
+    pub enabled: TriggerEnabledState,
+    pub function_schema: String,
+    pub function_name: String,
+    /// `pg_get_triggerdef` output, shown verbatim (it carries the WHEN
+    /// clause and arguments without any parsing on our side).
+    pub definition: String,
+}
+
+/// One row-level-security policy on a table (PostgreSQL).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PolicyInfo {
+    pub name: String,
+    pub permissive: bool,
+    pub command: PolicyCommand,
+    /// Role names as PostgreSQL reports them; `public` is the pseudo-role.
+    pub roles: Vec<String>,
+    pub using: Option<String>,
+    pub with_check: Option<String>,
+}
+
+/// One explicit ACL entry on a relation from `aclexplode(relacl)`
+/// (PostgreSQL). A relation with no explicit ACL reports no rows; the owner's
+/// implicit privileges are not synthesized.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PrivilegeInfo {
+    /// Role name, or `PUBLIC`.
+    pub grantee: String,
+    pub privilege: String,
+    pub grantable: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RowSecurityInfo {
+    pub enabled: bool,
+    pub forced: bool,
+}
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StructureCapabilities {
@@ -1865,6 +1941,11 @@ pub(crate) struct StructureCapabilities {
     pub foreign_keys: bool,
     pub indexes: bool,
     pub constraints: bool,
+    /// Whether `triggers`, `policies`, and `privileges` are populated.
+    /// PostgreSQL only.
+    pub triggers: bool,
+    pub policies: bool,
+    pub privileges: bool,
     /// Per-table mutation capabilities. The frontend reads these to
     /// decide whether to show edit/insert/delete UI rather than gating
     /// on engine name — this matters for ClickHouse where MergeTree
@@ -1888,6 +1969,15 @@ pub(crate) struct TableStructure {
     pub foreign_keys: Vec<ForeignKeyInfo>,
     pub indexes: Vec<IndexInfo>,
     pub constraints: Vec<ConstraintInfo>,
+    /// PostgreSQL table security and behaviour; empty for other engines.
+    #[serde(default)]
+    pub triggers: Vec<TriggerInfo>,
+    #[serde(default)]
+    pub policies: Vec<PolicyInfo>,
+    #[serde(default)]
+    pub privileges: Vec<PrivilegeInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_security: Option<RowSecurityInfo>,
     pub capabilities: StructureCapabilities,
     /// Engine-specific extension fields. Currently populated only for
     /// ClickHouse — the storage engine name (`MergeTree`,

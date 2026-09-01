@@ -329,6 +329,10 @@ const editableStructure: TableStructure = {
   foreignKeys: [],
   indexes: [],
   constraints: [],
+  triggers: [],
+  policies: [],
+  privileges: [],
+  rowSecurity: null,
   capabilities: {
     columns: true,
     primaryKey: true,
@@ -340,6 +344,9 @@ const editableStructure: TableStructure = {
     canDeleteRows: true,
     canAlterSchema: true,
     uniquenessGuarantee: "exact",
+    triggers: false,
+    policies: false,
+    privileges: false,
   },
 };
 

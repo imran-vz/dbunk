@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use sqlx::Row;
 
 use crate::{
-    ColumnInfo, ConstraintInfo, ForeignKeyInfo, IndexInfo, SchemaForeignKey, SchemaRelationships,
-    SchemaTableColumn, SchemaTableNode, SchemaTableTrigger, StoredConnection,
-    StructureCapabilities, TableStructure,
+    ColumnInfo, ConstraintInfo, ForeignKeyInfo, IndexInfo, PolicyCommand, PolicyInfo,
+    PrivilegeInfo, RowSecurityInfo, SchemaForeignKey, SchemaRelationships, SchemaTableColumn,
+    SchemaTableNode, SchemaTableTrigger, StoredConnection, StructureCapabilities, TableStructure,
+    TriggerEnabledState, TriggerInfo,
 };
 
 use super::connect;
@@ -263,6 +264,11 @@ pub async fn fetch_table_structure(
         })
         .collect::<Vec<_>>();
 
+    let triggers = fetch_table_triggers(&mut conn, schema, table).await?;
+    let policies = fetch_table_policies(&mut conn, schema, table).await?;
+    let privileges = fetch_table_privileges(&mut conn, schema, table).await?;
+    let row_security = fetch_row_security(&mut conn, schema, table).await?;
+
     let primary_key = if primary_key_cols.is_empty() {
         None
     } else {
@@ -277,12 +283,19 @@ pub async fn fetch_table_structure(
         foreign_keys,
         indexes,
         constraints,
+        triggers,
+        policies,
+        privileges,
+        row_security,
         capabilities: StructureCapabilities {
             columns: true,
             primary_key: true,
             foreign_keys: true,
             indexes: true,
             constraints: true,
+            triggers: true,
+            policies: true,
+            privileges: true,
             can_insert_rows: true,
             can_update_rows: has_primary_key,
             can_delete_rows: has_primary_key,
@@ -297,6 +310,222 @@ pub async fn fetch_table_structure(
         partition_by: None,
         sample_by: None,
     })
+}
+
+/// User triggers on one table. Mirrors the Trigger Indicator filter:
+/// internal (FK-enforcement) triggers and partition-cloned copies stay
+/// hidden. Rows decode into typed records so a catalog surprise is an error,
+/// never a plausible default.
+async fn fetch_table_triggers(
+    conn: &mut sqlx::PgConnection,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<TriggerInfo>, String> {
+    #[derive(sqlx::FromRow)]
+    struct TriggerRow {
+        name: String,
+        tgtype: i16,
+        enabled_state: String,
+        function_schema: String,
+        function_name: String,
+        definition: String,
+        update_columns: Option<Vec<String>>,
+    }
+    let rows = sqlx::query_as::<_, TriggerRow>(
+        r#"
+        SELECT tg.tgname::text AS name,
+               tg.tgtype::int2 AS tgtype,
+               tg.tgenabled::text AS enabled_state,
+               fn_nsp.nspname::text AS function_schema,
+               proc.proname::text AS function_name,
+               pg_get_triggerdef(tg.oid, true) AS definition,
+               (
+                   SELECT array_agg(att.attname::text ORDER BY u.ord)
+                   FROM unnest(tg.tgattr) WITH ORDINALITY AS u(attnum, ord)
+                   JOIN pg_attribute att
+                     ON att.attrelid = tg.tgrelid AND att.attnum = u.attnum
+               ) AS update_columns
+        FROM pg_trigger tg
+        JOIN pg_class cls ON cls.oid = tg.tgrelid
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        JOIN pg_proc proc ON proc.oid = tg.tgfoid
+        JOIN pg_namespace fn_nsp ON fn_nsp.oid = proc.pronamespace
+        WHERE NOT tg.tgisinternal
+          AND tg.tgparentid = 0
+          AND nsp.nspname = $1
+          AND cls.relname = $2
+        ORDER BY tg.tgname
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(TriggerInfo {
+                name: row.name,
+                timing: trigger_timing(row.tgtype).to_string(),
+                events: trigger_events(row.tgtype),
+                // A NULL `tgattr` aggregate is a trigger without an UPDATE OF
+                // list, not a decoding failure.
+                update_columns: row.update_columns.unwrap_or_default(),
+                level: trigger_orientation(row.tgtype).to_string(),
+                enabled: trigger_enabled_state(&row.enabled_state)?,
+                function_schema: row.function_schema,
+                function_name: row.function_name,
+                definition: row.definition,
+            })
+        })
+        .collect()
+}
+
+/// `pg_trigger.tgenabled`: `O` origin, `D` disabled, `R` replica, `A` always.
+fn trigger_enabled_state(tgenabled: &str) -> Result<TriggerEnabledState, String> {
+    match tgenabled {
+        "O" => Ok(TriggerEnabledState::Origin),
+        "D" => Ok(TriggerEnabledState::Disabled),
+        "R" => Ok(TriggerEnabledState::Replica),
+        "A" => Ok(TriggerEnabledState::Always),
+        other => Err(format!("unknown trigger enabled state {other:?}")),
+    }
+}
+
+fn policy_command(cmd: &str) -> Result<PolicyCommand, String> {
+    match cmd {
+        "ALL" => Ok(PolicyCommand::All),
+        "SELECT" => Ok(PolicyCommand::Select),
+        "INSERT" => Ok(PolicyCommand::Insert),
+        "UPDATE" => Ok(PolicyCommand::Update),
+        "DELETE" => Ok(PolicyCommand::Delete),
+        other => Err(format!("unknown policy command {other:?}")),
+    }
+}
+
+fn policy_permissive(kind: &str) -> Result<bool, String> {
+    match kind {
+        "PERMISSIVE" => Ok(true),
+        "RESTRICTIVE" => Ok(false),
+        other => Err(format!("unknown policy kind {other:?}")),
+    }
+}
+
+async fn fetch_table_policies(
+    conn: &mut sqlx::PgConnection,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<PolicyInfo>, String> {
+    #[derive(sqlx::FromRow)]
+    struct PolicyRow {
+        name: String,
+        permissive: String,
+        roles: Vec<String>,
+        command: String,
+        using_expression: Option<String>,
+        with_check: Option<String>,
+    }
+    let rows = sqlx::query_as::<_, PolicyRow>(
+        r#"
+        SELECT policyname::text AS name,
+               permissive::text AS permissive,
+               roles::text[] AS roles,
+               cmd::text AS command,
+               qual::text AS using_expression,
+               with_check::text AS with_check
+        FROM pg_policies
+        WHERE schemaname = $1 AND tablename = $2
+        ORDER BY policyname
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(PolicyInfo {
+                name: row.name,
+                permissive: policy_permissive(&row.permissive)?,
+                command: policy_command(&row.command)?,
+                roles: row.roles,
+                using: row.using_expression,
+                with_check: row.with_check,
+            })
+        })
+        .collect()
+}
+
+/// Explicit ACL entries only. `aclexplode(NULL)` yields no rows, so a
+/// relation whose owner has never granted anything reports an empty list
+/// rather than synthesized owner privileges.
+async fn fetch_table_privileges(
+    conn: &mut sqlx::PgConnection,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<PrivilegeInfo>, String> {
+    #[derive(sqlx::FromRow)]
+    struct PrivilegeRow {
+        grantee: String,
+        privilege: String,
+        grantable: bool,
+    }
+    let rows = sqlx::query_as::<_, PrivilegeRow>(
+        r#"
+        SELECT CASE WHEN acl.grantee = 0 THEN 'PUBLIC'
+                    ELSE pg_get_userbyid(acl.grantee)::text END AS grantee,
+               acl.privilege_type::text AS privilege,
+               acl.is_grantable AS grantable
+        FROM pg_class cls
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        CROSS JOIN LATERAL aclexplode(cls.relacl) AS acl
+        WHERE nsp.nspname = $1 AND cls.relname = $2
+        ORDER BY 1, 2
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PrivilegeInfo {
+            grantee: row.grantee,
+            privilege: row.privilege,
+            grantable: row.grantable,
+        })
+        .collect())
+}
+
+async fn fetch_row_security(
+    conn: &mut sqlx::PgConnection,
+    schema: &str,
+    table: &str,
+) -> Result<Option<RowSecurityInfo>, String> {
+    #[derive(sqlx::FromRow)]
+    struct RowSecurityRow {
+        enabled: bool,
+        forced: bool,
+    }
+    let row = sqlx::query_as::<_, RowSecurityRow>(
+        r#"
+        SELECT cls.relrowsecurity AS enabled, cls.relforcerowsecurity AS forced
+        FROM pg_class cls
+        JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+        WHERE nsp.nspname = $1 AND cls.relname = $2 AND cls.relkind IN ('r', 'p')
+        "#,
+    )
+    .bind(schema)
+    .bind(table)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(row.map(|row| RowSecurityInfo {
+        enabled: row.enabled,
+        forced: row.forced,
+    }))
 }
 
 pub async fn fetch_schema_relationships(
@@ -627,6 +856,32 @@ pub async fn fetch_schema_relationships(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn security_catalog_codes_decode_into_closed_sets_or_fail() {
+        use super::{policy_command, policy_permissive, trigger_enabled_state};
+        use crate::{PolicyCommand, TriggerEnabledState};
+        assert_eq!(trigger_enabled_state("O"), Ok(TriggerEnabledState::Origin));
+        assert_eq!(
+            trigger_enabled_state("D"),
+            Ok(TriggerEnabledState::Disabled)
+        );
+        assert_eq!(trigger_enabled_state("R"), Ok(TriggerEnabledState::Replica));
+        assert_eq!(trigger_enabled_state("A"), Ok(TriggerEnabledState::Always));
+        assert!(trigger_enabled_state("").is_err());
+        assert_eq!(policy_command("UPDATE"), Ok(PolicyCommand::Update));
+        assert!(policy_command("MERGE").is_err());
+        assert_eq!(policy_permissive("RESTRICTIVE"), Ok(false));
+        assert!(policy_permissive("").is_err());
+        assert_eq!(
+            serde_json::to_value(TriggerEnabledState::Disabled).expect("serialize"),
+            serde_json::json!("disabled")
+        );
+        assert_eq!(
+            serde_json::to_value(PolicyCommand::All).expect("serialize"),
+            serde_json::json!("ALL")
+        );
+    }
+
     use super::fk_action_label;
 
     #[test]

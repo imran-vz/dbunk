@@ -756,12 +756,60 @@ export type ConstraintInfo = {
   definition: string;
 };
 
+export type TriggerEnabledState = "origin" | "disabled" | "replica" | "always";
+
+export type PolicyCommand = "ALL" | "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+
+export type TriggerInfo = {
+  name: string;
+  /** `BEFORE` | `AFTER` | `INSTEAD OF`. */
+  timing: string;
+  /** Any of `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`. */
+  events: string[];
+  /** Columns of an `UPDATE OF` list; empty otherwise. */
+  updateColumns: string[];
+  /** `ROW` | `STATEMENT`. */
+  level: string;
+  enabled: TriggerEnabledState;
+  functionSchema: string;
+  functionName: string;
+  /** `pg_get_triggerdef` output, verbatim. */
+  definition: string;
+};
+
+export type PolicyInfo = {
+  name: string;
+  permissive: boolean;
+  command: PolicyCommand;
+  /** Role names as PostgreSQL reports them; `public` is the pseudo-role. */
+  roles: string[];
+  using: string | null;
+  withCheck: string | null;
+};
+
+/** One explicit ACL entry; a relation with no explicit ACL reports none. */
+export type PrivilegeInfo = {
+  /** Role name, or `PUBLIC`. */
+  grantee: string;
+  privilege: string;
+  grantable: boolean;
+};
+
+export type RowSecurityInfo = {
+  enabled: boolean;
+  forced: boolean;
+};
+
 export type StructureCapabilities = {
   columns: boolean;
   primaryKey: boolean;
   foreignKeys: boolean;
   indexes: boolean;
   constraints: boolean;
+  /** Whether `triggers` / `policies` / `privileges` are populated (PostgreSQL). */
+  triggers: boolean;
+  policies: boolean;
+  privileges: boolean;
   /** Whether new rows can be inserted via the row editor. */
   canInsertRows: boolean;
   /** Whether existing cells can be updated via the row editor. */
@@ -783,6 +831,11 @@ export type TableStructure = {
   foreignKeys: ForeignKeyInfo[];
   indexes: IndexInfo[];
   constraints: ConstraintInfo[];
+  /** PostgreSQL table security and behaviour; empty on other engines. */
+  triggers: TriggerInfo[];
+  policies: PolicyInfo[];
+  privileges: PrivilegeInfo[];
+  rowSecurity: RowSecurityInfo | null;
   capabilities: StructureCapabilities;
   /** Engine-specific extension fields. Populated only for ClickHouse. */
   tableEngine?: string;
@@ -1125,6 +1178,12 @@ export type PgObjectFacts =
       returns: string | null;
       volatility: string | null;
       arguments: string;
+      /** `prosrc`; the symbol name for C/internal routines, null for aggregates. */
+      body: string | null;
+      strict: boolean;
+      securityDefiner: boolean;
+      /** `safe` | `restricted` | `unsafe`; null for aggregates. */
+      parallel: string | null;
     }
   | {
       kind: "type";
@@ -1165,12 +1224,75 @@ export type PgDefaultValue =
   | { kind: "literal"; value: string }
   | { kind: "expression"; sql: string };
 
+export type PgIdentity = "always" | "by-default";
+
 export type PgNewColumnSpec = {
   name: string;
   dataType: string;
   nullable: boolean;
   default: PgDefaultValue | null;
+  /** Identity columns must be NOT NULL and carry no default. */
+  identity?: PgIdentity | null;
 };
+
+export type PgKeySpec = {
+  name: string | null;
+  columns: string[];
+};
+
+export type PgCheckSpec = {
+  name: string | null;
+  expression: string;
+};
+
+export type PgForeignKeySpec = {
+  name: string | null;
+  columns: string[];
+  referencedSchema: string;
+  referencedTable: string;
+  referencedColumns: string[];
+  onUpdate: PgReferentialAction;
+  onDelete: PgReferentialAction;
+  deferrable: boolean;
+  initiallyDeferred: boolean;
+};
+
+export type PgVolatility = "immutable" | "stable" | "volatile";
+
+export type PgParallelSafety = "safe" | "restricted" | "unsafe";
+
+export type PgTriggerTiming = "before" | "after" | "instead-of";
+
+export type PgTriggerEvent =
+  | { kind: "insert" }
+  | { kind: "update"; columns: string[] }
+  | { kind: "delete" }
+  | { kind: "truncate" };
+
+export type PgTriggerLevel = "row" | "statement";
+
+export type PgTriggerMode =
+  | "enable"
+  | "disable"
+  | "enable-replica"
+  | "enable-always";
+
+export type PgGrantee = { kind: "public" } | { kind: "role"; name: string };
+
+export type PgPolicyCommand = "all" | "select" | "insert" | "update" | "delete";
+
+export type PgPrivilege =
+  | "select"
+  | "insert"
+  | "update"
+  | "delete"
+  | "truncate"
+  | "references"
+  | "trigger"
+  | "usage"
+  | "create"
+  | "execute"
+  | "maintain";
 
 export type PgReferentialAction =
   | "no-action"
@@ -1353,6 +1475,109 @@ export type PgObjectOp =
       name: string;
       from: string;
       to: string;
+    }
+  | {
+      op: "createTable";
+      schema: string;
+      name: string;
+      columns: PgNewColumnSpec[];
+      primaryKey: PgKeySpec | null;
+      uniques: PgKeySpec[];
+      checks: PgCheckSpec[];
+      foreignKeys: PgForeignKeySpec[];
+      unlogged: boolean;
+      ifNotExists: boolean;
+    }
+  | {
+      op: "createFunction";
+      schema: string;
+      name: string;
+      orReplace: boolean;
+      /** Signature fragment, e.g. `a integer, b text DEFAULT 'x'`. */
+      arguments: string;
+      /** Return clause fragment, e.g. `trigger`, `SETOF integer`. */
+      returns: string;
+      language: string;
+      /** Opaque; the backend seals it in a dollar quote. */
+      body: string;
+      volatility: PgVolatility;
+      strict: boolean;
+      securityDefiner: boolean;
+      parallel: PgParallelSafety | null;
+    }
+  | {
+      op: "createProcedure";
+      schema: string;
+      name: string;
+      orReplace: boolean;
+      arguments: string;
+      language: string;
+      body: string;
+      securityDefiner: boolean;
+    }
+  | {
+      op: "createTrigger";
+      schema: string;
+      table: string;
+      name: string;
+      timing: PgTriggerTiming;
+      events: PgTriggerEvent[];
+      forEach: PgTriggerLevel;
+      when: string | null;
+      functionSchema: string;
+      functionName: string;
+      arguments: string[];
+      orReplace: boolean;
+    }
+  | {
+      op: "dropTrigger";
+      schema: string;
+      table: string;
+      name: string;
+      cascade: boolean;
+    }
+  | {
+      op: "setTriggerEnabled";
+      schema: string;
+      table: string;
+      name: string;
+      mode: PgTriggerMode;
+    }
+  | {
+      op: "setRowLevelSecurity";
+      schema: string;
+      table: string;
+      enabled: boolean;
+      force: boolean | null;
+    }
+  | {
+      op: "createPolicy";
+      schema: string;
+      table: string;
+      name: string;
+      permissive: boolean;
+      command: PgPolicyCommand;
+      roles: PgGrantee[];
+      using: string | null;
+      withCheck: string | null;
+    }
+  | { op: "dropPolicy"; schema: string; table: string; name: string }
+  | {
+      op: "grantPrivileges";
+      target: PgObjectRef;
+      privileges: PgPrivilege[];
+      allPrivileges: boolean;
+      grantee: PgGrantee;
+      withGrantOption: boolean;
+    }
+  | {
+      op: "revokePrivileges";
+      target: PgObjectRef;
+      privileges: PgPrivilege[];
+      allPrivileges: boolean;
+      grantee: PgGrantee;
+      grantOptionFor: boolean;
+      cascade: boolean;
     };
 
 export type PlannedStatement = {

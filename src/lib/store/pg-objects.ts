@@ -18,6 +18,10 @@ import {
   pgObjectDescriptionKey,
   validatePgObjectRef,
 } from "@/lib/pg-object-ref";
+import {
+  normalizePgObjectDescription,
+  type PgObjectDescriptionPayload,
+} from "@/lib/table-structure-contract";
 import { errorToMessage, tauriInvoke } from "@/lib/tauri";
 
 import type {
@@ -402,9 +406,10 @@ export const createPgObjectsSlice: StateCreator<
       };
     });
     try {
-      const description = await tauriInvoke<PgObjectDescription>(
-        "describe_pg_object",
-        { payload: { connectionId, reference } },
+      const description = normalizePgObjectDescription(
+        await tauriInvoke<PgObjectDescriptionPayload>("describe_pg_object", {
+          payload: { connectionId, reference },
+        }),
       );
       if (
         generationFor(get(), connectionId) !== generation ||

@@ -154,3 +154,5 @@ not undo the schema change an earlier group already made.
 - ADR-0024: backend-enforced production safety policy and audit rules.
 - ADR-0025: native PostgreSQL connection and TLS resolution used by the
   catalog and detached apply socket.
+- ADR-0027: table-scoped security and routine operations added to this
+  vocabulary by Plan 016.

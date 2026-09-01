@@ -468,10 +468,17 @@ pub async fn fetch_table_structure(
             can_delete_rows: is_mergetree_family,
             can_alter_schema: is_mergetree_family,
             uniqueness_guarantee: "best-effort".to_string(),
+            triggers: false,
+            policies: false,
+            privileges: false,
         },
         table_engine: table_engine_name,
         partition_by,
         sample_by,
+        triggers: Vec::new(),
+        policies: Vec::new(),
+        privileges: Vec::new(),
+        row_security: None,
     })
 }
 
