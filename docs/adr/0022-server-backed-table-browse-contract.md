@@ -1,6 +1,6 @@
 # ADR-0022: Server-backed PostgreSQL Table Browse contract
 
-Status: Accepted
+**Status**: Accepted (Plan 003, `PAR-002`)
 
 ## Decision
 

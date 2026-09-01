@@ -1,6 +1,6 @@
 # ADR-0015 — Visual query builder: scaffold-then-text, no round-trip
 
-**Status**: Proposed (2026-05-14)
+**Status**: Proposed — unbuilt (2026-05-14)
 
 ## Context
 

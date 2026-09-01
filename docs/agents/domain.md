@@ -2,10 +2,14 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-## Before exploring, read these
+## Domain reference
 
-- **`CONTEXT.md`** at the repo root.
-- **`docs/adr/`** for architectural decisions that touch the area being changed.
+- **`CONTEXT.md`** at the repo root is the canonical glossary. Consult it as a
+  lookup reference when naming or defining domain concepts — don't ingest it
+  wholesale before starting work.
+- **`docs/adr/`** holds architectural decisions. Read only the ADRs that touch
+  the area being changed (each has a one-line `**Status**` header; skip
+  superseded or unbuilt ones unless working on that feature).
 
 If any of these files don't exist, proceed silently. Don't flag their absence; don't suggest creating them upfront. Producer skills create them lazily when terms or decisions get resolved.
 
