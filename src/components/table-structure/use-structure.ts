@@ -52,6 +52,9 @@ const FALLBACK_CAPABILITIES: StructureCapabilities = {
   canDeleteRows: false,
   canAlterSchema: false,
   uniquenessGuarantee: "best-effort",
+  triggers: false,
+  policies: false,
+  privileges: false,
 };
 
 interface StructureSnapshot {

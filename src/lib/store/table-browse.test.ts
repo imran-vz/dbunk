@@ -826,6 +826,10 @@ describe("table browse edit identity", () => {
     foreignKeys: [],
     indexes: [],
     constraints: [],
+    triggers: [],
+    policies: [],
+    privileges: [],
+    rowSecurity: null,
     capabilities: {
       columns: true,
       primaryKey: true,
@@ -837,6 +841,9 @@ describe("table browse edit identity", () => {
       canDeleteRows: true,
       canAlterSchema: true,
       uniquenessGuarantee: "exact",
+      triggers: false,
+      policies: false,
+      privileges: false,
     },
   };
 

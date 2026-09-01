@@ -471,8 +471,16 @@ PostgreSQL deployments and can explain which transport stage failed.
 
 **Current state:** Partial. Plans 013 and 014 delivered the catalog,
 inspection, schema-level lifecycle, reviewed DDL, and dependency-warning core.
-Plan 015 delivered the typed structure-editor half; the remaining scope is
-the deferred kinds listed below.
+Plan 015 delivered the typed structure-editor half. Plans 016 and 017
+(authored 2026-09-01 at `b82de63`) are the selected next slice: a dark
+backend adding `createTable`, `createFunction`/`createProcedure`, trigger,
+row-level-security, and grant/revoke operations plus routine-source and
+table-security facts, then their activation as a create-table designer, a
+routine editor, Structure-tab trigger/policy/privilege sections, and the
+switch of the last three generate-only Specialized panels. Database
+lifecycle, aggregates, roles/ownership/default privileges, partitions,
+rules, event triggers, extensions, non-enum types/domains, and tablespaces
+stay deferred with rationale in Plan 016's Reconciliation section.
 
 **Progress (2026-08-30):** `load_pg_object_catalog` now returns a typed,
 capped inventory with overload-safe Object Refs; `describe_pg_object` covers
@@ -501,6 +509,26 @@ PostgreSQL connections (other engines keep those panels' generate-SQL
 behaviour). Applies share the per-connection DDL lock and connection-epoch
 fencing with the object-DDL review dialog. ClickHouse (and the MySQL/SQLite
 dead end) stay on the frontend generator + `execute_ddl`.
+
+**Progress (2026-09-02, Plan 016):** The dark backend half of the next slice
+is implemented and READY FOR REVIEW (second review pass applied; awaiting an
+authorized commit). `PgObjectOp` gained `createTable` (columns with tagged defaults and
+identity, primary key, unique, check, and foreign-key constraints),
+`createFunction` / `createProcedure` (signature fragments plus an opaque body
+sealed in a body-derived dollar quote; `orReplace` is the alter path),
+`createTrigger` / `dropTrigger` / `setTriggerEnabled`, `setRowLevelSecurity`
+/ `createPolicy` / `dropPolicy`, and `grantPrivileges` / `revokePrivileges`
+over a closed privilege set with per-kind validity. Revoke, disable trigger,
+disable row security, and drop policy are flagged destructive by the renderer
+(ADR-0027). Routine facts now include the body and header attributes, and the
+PostgreSQL `TableStructure` reports triggers, policies, privileges, and
+row-security state behind new capability flags. Fixture
+`005_table_security.sql` and an ignored live round trip cover the designer
+batch, routine replace, trigger lifecycle, RLS and policies, and grants.
+The generator now lives in domain modules under
+`src-tauri/src/postgres/object_ddl/`, one `ObjectOperation` implementation
+per payload, with no wildcard dispatch. Nothing is user-visible until Plan
+017.
 
 **Evidence:**
 
@@ -854,12 +882,15 @@ Parity work should reuse rather than replace these credible foundations:
    008; both are implemented and merged to `main`.
 5. `PAR-005`: durable workspace restoration and global navigation
    delivered by Plans 009 and 010 through `4facea1`.
-6. **Selected next:** `PAR-006` security half — Plans 011 and 012,
-   authored at `4facea1`. `PAR-007` full PostgreSQL object lifecycle
-   follows.
-7. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and
+6. `PAR-006` security half delivered by Plans 011 and 012 through
+   `b45e294`.
+7. `PAR-007`: catalog, viewers, schema-level lifecycle, and the structure
+   editor delivered by Plans 013–015. **Selected next:** Plans 016 and 017
+   (table designer, routine editor, triggers, row-level security,
+   privileges), authored at `b82de63`.
+8. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and
    administration.
-8. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
+9. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
    parity only after the daily-driver foundation is stable.
 
 ## Official competitor references
