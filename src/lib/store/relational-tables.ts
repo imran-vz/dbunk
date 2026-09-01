@@ -14,12 +14,7 @@
 
 import type { StateCreator } from "zustand";
 
-import {
-  type ColumnChangeKind,
-  generateDdlForEngine,
-  type PendingChange,
-  type StructureChange,
-} from "@/lib/ddl";
+import { generateDdlForEngine } from "@/lib/ddl";
 import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
 import { pendingMutationsFromResult } from "@/lib/pending-mutations";
 import {
@@ -33,6 +28,10 @@ import {
   tableSchemaMapScope,
 } from "@/lib/schema-graph";
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
+import {
+  assertStructureChangeCanAppend,
+  pendingStructureBatch,
+} from "@/lib/structure-changes";
 import { browseCellsToGrid } from "@/lib/table-browse";
 import {
   buildTableSessionSnapshot,
@@ -56,6 +55,7 @@ import type {
   DDLOutcome,
   EditOutcome,
   LoadingStatus,
+  PendingChange,
   QueryStatus,
   RelationInfo,
   RelationStatsStatus,
@@ -63,6 +63,7 @@ import type {
   SchemaRelationshipsStatus,
   ServerDetails,
   ServerDetailsStatus,
+  StructureChange,
   StructureCommitStatus,
   TableBrowseTabState,
   TableDataState,
@@ -385,7 +386,7 @@ export type RelationalTablesSlice = {
     entry: {
       schema: string;
       table: string;
-      change: StructureChange | ColumnChangeKind;
+      change: StructureChange;
     },
   ) => void;
   removePendingStructureChange: (key: string, id: string) => void;
@@ -1571,14 +1572,16 @@ export const createRelationalTablesSlice: StateCreator<
   addPendingStructureChange: (key, entry) =>
     set((state) => {
       const existing = state.pendingStructureChanges[key] ?? [];
+      const connectionId = key.split("::")[0];
+      const engine = state.connections.find(
+        (connection) => connection.id === connectionId,
+      )?.engine;
+      assertStructureChangeCanAppend(existing, entry.change, engine);
       const next: PendingChange = {
         id: generatePendingId(),
         schema: entry.schema,
         table: entry.table,
-        change:
-          entry.change.kind === "column" || entry.change.kind === "pg-op"
-            ? entry.change
-            : { kind: "column", change: entry.change },
+        change: entry.change,
       };
       return {
         pendingStructureChanges: {
@@ -1617,6 +1620,20 @@ export const createRelationalTablesSlice: StateCreator<
     if (!pending || pending.length === 0) {
       return { kind: "noop" };
     }
+    const batch = pendingStructureBatch(pending);
+    if (batch.kind === "invalid") {
+      return { kind: "failed", reason: batch.reason };
+    }
+    if (batch.kind === "pg-op") {
+      return {
+        kind: "failed",
+        reason:
+          "PostgreSQL structure operations require the backend object-DDL workflow.",
+      };
+    }
+    if (batch.kind === "empty") {
+      return { kind: "noop" };
+    }
     const ctx = resolveStructureCommitContext({
       pending,
       key,
@@ -1632,12 +1649,7 @@ export const createRelationalTablesSlice: StateCreator<
       connection.engine,
       schema,
       table,
-      pending.map((entry) => {
-        if (entry.change.kind !== "column") {
-          throw new Error("PostgreSQL typed operations require object DDL");
-        }
-        return entry.change.change;
-      }),
+      batch.changes,
       ddlStructure?.columns,
     );
 

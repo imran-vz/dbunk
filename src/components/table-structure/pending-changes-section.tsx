@@ -1,8 +1,11 @@
 import { IconAlertTriangle, IconX } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
-import type { PendingChange } from "@/lib/ddl";
-import type { DDLOutcome, StructureCommitStatus } from "@/lib/store";
+import type {
+  DDLOutcome,
+  PendingChange,
+  StructureCommitStatus,
+} from "@/lib/store";
 
 import { describeChange, EmptyRow, Section } from "./shared";
 

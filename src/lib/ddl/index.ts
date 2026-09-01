@@ -1,9 +1,9 @@
 /**
- * Engine-aware DDL dispatch.
+ * Legacy column-change DDL dispatch.
  *
- * The structure-edit UI builds a list of `ColumnChangeKind` entries
- * regardless of engine; this module renders them as engine-specific
- * SQL. Adding a new engine = a new builder file + a new branch here.
+ * ClickHouse remains on this frontend-rendered path. PostgreSQL still uses it
+ * through Plan 015 Step 1, then moves to backend-owned typed object DDL.
+ * `PgObjectOp` batches never enter this module.
  */
 
 import type { ColumnInfo, DatabaseEngine } from "@/lib/store";
@@ -11,12 +11,7 @@ import type { ColumnInfo, DatabaseEngine } from "@/lib/store";
 import { generateClickHouseDdl } from "./clickhouse";
 import { type ColumnChangeKind, generatePostgresDdl } from "./postgres";
 
-export type {
-  ColumnChangeKind,
-  NewColumn,
-  PendingChange,
-  StructureChange,
-} from "./postgres";
+export type { ColumnChangeKind, NewColumn } from "./postgres";
 export { classifyDestructive } from "./postgres";
 
 /** Build a `name -> dataType` map from the loaded column list, used by
