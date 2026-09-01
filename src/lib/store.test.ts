@@ -795,12 +795,17 @@ describe("store.loadTableStructure", () => {
 
     const key = tableStructureKey("conn-1", "public", "users");
     const state = useAppStore.getState();
+    // The boundary normalizer fills the Plan 016 security flags a payload
+    // omits; every flag the backend did report stays as reported.
     expect(state.tableStructure[key]?.capabilities).toEqual({
       columns: true,
       primaryKey: true,
       foreignKeys: false,
       indexes: false,
       constraints: false,
+      triggers: false,
+      policies: false,
+      privileges: false,
     });
   });
 
@@ -3010,6 +3015,10 @@ describe("store.commitStructureChanges", () => {
           constraints: [],
           // MySQL is in the "unsupported" tier — capabilities reflect that
           // and the frontend short-circuits without round-tripping.
+          triggers: [],
+          policies: [],
+          privileges: [],
+          rowSecurity: null,
           capabilities: {
             columns: true,
             primaryKey: false,
@@ -3021,6 +3030,9 @@ describe("store.commitStructureChanges", () => {
             canDeleteRows: false,
             canAlterSchema: false,
             uniquenessGuarantee: "best-effort",
+            triggers: false,
+            policies: false,
+            privileges: false,
           },
         },
       },
@@ -3485,6 +3497,10 @@ describe("store.commitTableEdits", () => {
           foreignKeys: [],
           indexes,
           constraints: [],
+          triggers: [],
+          policies: [],
+          privileges: [],
+          rowSecurity: null,
           capabilities: {
             columns: true,
             primaryKey: true,
@@ -3496,6 +3512,9 @@ describe("store.commitTableEdits", () => {
             canDeleteRows: true,
             canAlterSchema: true,
             uniquenessGuarantee: "exact",
+            triggers: false,
+            policies: false,
+            privileges: false,
           },
         },
       },
@@ -3854,6 +3873,10 @@ describe("store.addTableRow", () => {
           foreignKeys: [],
           indexes: [],
           constraints: [],
+          triggers: [],
+          policies: [],
+          privileges: [],
+          rowSecurity: null,
           capabilities: {
             columns: true,
             primaryKey: true,
@@ -3865,6 +3888,9 @@ describe("store.addTableRow", () => {
             canDeleteRows: true,
             canAlterSchema: true,
             uniquenessGuarantee: "exact",
+            triggers: false,
+            policies: false,
+            privileges: false,
           },
         },
       },
@@ -3971,6 +3997,10 @@ describe("store.addTableRow", () => {
           foreignKeys: [],
           indexes: [],
           constraints: [],
+          triggers: [],
+          policies: [],
+          privileges: [],
+          rowSecurity: null,
           capabilities: {
             columns: true,
             primaryKey: false,
@@ -3982,6 +4012,9 @@ describe("store.addTableRow", () => {
             canDeleteRows: false,
             canAlterSchema: false,
             uniquenessGuarantee: "best-effort",
+            triggers: false,
+            policies: false,
+            privileges: false,
           },
         },
       },
@@ -4087,6 +4120,10 @@ describe("store.deleteSelectedTableRows", () => {
           foreignKeys: [],
           indexes: [],
           constraints: [],
+          triggers: [],
+          policies: [],
+          privileges: [],
+          rowSecurity: null,
           capabilities: {
             columns: true,
             primaryKey: true,
@@ -4098,6 +4135,9 @@ describe("store.deleteSelectedTableRows", () => {
             canDeleteRows: true,
             canAlterSchema: true,
             uniquenessGuarantee: "exact",
+            triggers: false,
+            policies: false,
+            privileges: false,
           },
         },
       },
@@ -4221,6 +4261,10 @@ describe("store.deleteSelectedTableRows", () => {
           foreignKeys: [],
           indexes: [],
           constraints: [],
+          triggers: [],
+          policies: [],
+          privileges: [],
+          rowSecurity: null,
           capabilities: {
             columns: true,
             primaryKey: true,
@@ -4232,6 +4276,9 @@ describe("store.deleteSelectedTableRows", () => {
             canDeleteRows: true,
             canAlterSchema: true,
             uniquenessGuarantee: "exact",
+            triggers: false,
+            policies: false,
+            privileges: false,
           },
         },
       },

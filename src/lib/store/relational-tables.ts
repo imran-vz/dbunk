@@ -38,6 +38,10 @@ import {
 } from "@/lib/schema-graph";
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
 import {
+  normalizeTableStructure,
+  type TableStructurePayload,
+} from "@/lib/table-structure-contract";
+import {
   assertStructureChangeCanAppend,
   pendingStructureBatch,
 } from "@/lib/structure-changes";
@@ -1067,9 +1071,11 @@ export const createRelationalTablesSlice: StateCreator<
       return;
     }
     try {
-      const result = await tauriInvoke<TableStructure>("load_table_structure", {
-        payload: { connectionId, schema, table },
-      });
+      const result = normalizeTableStructure(
+        await tauriInvoke<TableStructurePayload>("load_table_structure", {
+          payload: { connectionId, schema, table },
+        }),
+      );
       set((state) => ({
         tableStructure: {
           ...state.tableStructure,

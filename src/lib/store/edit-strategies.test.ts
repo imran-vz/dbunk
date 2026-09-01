@@ -26,6 +26,9 @@ const baseCapabilities: StructureCapabilities = {
   canDeleteRows: true,
   canAlterSchema: true,
   uniquenessGuarantee: "exact",
+  triggers: false,
+  policies: false,
+  privileges: false,
 };
 
 const makeStructure = (
@@ -53,6 +56,10 @@ const makeStructure = (
   foreignKeys: [],
   indexes: [],
   constraints: [],
+  triggers: [],
+  policies: [],
+  privileges: [],
+  rowSecurity: null,
   capabilities: { ...baseCapabilities, ...caps },
 });
 

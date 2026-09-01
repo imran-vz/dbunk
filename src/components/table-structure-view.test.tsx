@@ -175,6 +175,10 @@ const baseStructure: TableStructure = {
       definition: "CHECK (email <> '')",
     },
   ],
+  triggers: [],
+  policies: [],
+  privileges: [],
+  rowSecurity: null,
   capabilities: {
     columns: true,
     primaryKey: true,
@@ -186,6 +190,9 @@ const baseStructure: TableStructure = {
     canDeleteRows: true,
     canAlterSchema: true,
     uniquenessGuarantee: "exact",
+    triggers: false,
+    policies: false,
+    privileges: false,
   },
 };
 
@@ -435,6 +442,9 @@ describe("TableStructureView", () => {
         canDeleteRows: false,
         canAlterSchema: false,
         uniquenessGuarantee: "best-effort",
+        triggers: false,
+        policies: false,
+        privileges: false,
       },
     });
     render(

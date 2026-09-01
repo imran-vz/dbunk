@@ -1214,7 +1214,14 @@ SELECT p.oid::bigint AS object_id,
        CASE WHEN p.prokind = 'p' THEN NULL ELSE pg_get_function_result(p.oid) END AS returns,
        CASE p.provolatile WHEN 'i' THEN 'immutable' WHEN 's' THEN 'stable' ELSE 'volatile' END AS volatility,
        pg_get_function_arguments(p.oid)::text AS arguments,
-       CASE WHEN p.prokind = 'a' THEN NULL ELSE pg_get_functiondef(p.oid) END AS definition
+       CASE WHEN p.prokind = 'a' THEN NULL ELSE pg_get_functiondef(p.oid) END AS definition,
+       CASE WHEN p.prokind = 'a' THEN NULL ELSE p.prosrc END AS body,
+       p.proisstrict AS strict,
+       p.prosecdef AS security_definer,
+       CASE WHEN p.prokind = 'a' THEN NULL
+            WHEN p.proparallel = 's' THEN 'safe'
+            WHEN p.proparallel = 'r' THEN 'restricted'
+            ELSE 'unsafe' END AS parallel
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language language ON language.oid = p.prolang
@@ -1243,6 +1250,12 @@ WHERE n.nspname = $1
             returns: row.try_get("returns").map_err(read_database_error)?,
             volatility: row.try_get("volatility").map_err(read_database_error)?,
             arguments: row.try_get("arguments").map_err(read_database_error)?,
+            body: row.try_get("body").map_err(read_database_error)?,
+            strict: row.try_get("strict").map_err(read_database_error)?,
+            security_definer: row
+                .try_get("security_definer")
+                .map_err(read_database_error)?,
+            parallel: row.try_get("parallel").map_err(read_database_error)?,
         },
     })
 }
@@ -2030,6 +2043,13 @@ pub(crate) enum PgObjectFacts {
         returns: Option<String>,
         volatility: Option<String>,
         arguments: String,
+        /// `prosrc`: the body for interpreted languages, the symbol name
+        /// for C/internal routines, `None` for aggregates.
+        body: Option<String>,
+        strict: bool,
+        security_definer: bool,
+        /// `safe` | `restricted` | `unsafe`; `None` for aggregates.
+        parallel: Option<String>,
     },
     Type {
         class: PgTypeClass,
@@ -2077,6 +2097,28 @@ pub(crate) struct PgDropImpact {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn routine_facts_serialize_source_and_header_attributes() {
+        let facts = PgObjectFacts::Routine {
+            language: "plpgsql".into(),
+            returns: Some("numeric".into()),
+            volatility: Some("stable".into()),
+            arguments: "order_id integer".into(),
+            body: Some("BEGIN RETURN 1; END".into()),
+            strict: true,
+            security_definer: false,
+            parallel: Some("safe".into()),
+        };
+        let json = serde_json::to_value(&facts).expect("serialize");
+        assert_eq!(json["kind"], "routine");
+        assert_eq!(json["body"], "BEGIN RETURN 1; END");
+        assert_eq!(json["strict"], true);
+        assert_eq!(json["securityDefiner"], false);
+        assert_eq!(json["parallel"], "safe");
+        let decoded: PgObjectFacts = serde_json::from_value(json).expect("round trip");
+        assert_eq!(decoded, facts);
+    }
     use crate::{
         ConnectionOrganization, Environment, PgStoredConnection, SafeMode, SqliteStoredConnection,
         SshTunnelConfig,

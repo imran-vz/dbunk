@@ -407,9 +407,36 @@ fn assemble(
             } else {
                 "best-effort".to_string()
             },
+            triggers: false,
+            policies: false,
+            privileges: false,
         },
+        triggers: Vec::new(),
+        policies: Vec::new(),
+        privileges: Vec::new(),
+        row_security: None,
         table_engine: None,
         partition_by: None,
         sample_by: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_postgres_structures_report_no_table_security() {
+        let structure = assemble(Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        assert!(!structure.capabilities.triggers);
+        assert!(!structure.capabilities.policies);
+        assert!(!structure.capabilities.privileges);
+        assert!(structure.triggers.is_empty());
+        assert!(structure.policies.is_empty());
+        assert!(structure.privileges.is_empty());
+        assert!(structure.row_security.is_none());
+        let json = serde_json::to_value(&structure).expect("serialize");
+        assert!(json.get("rowSecurity").is_none());
+        assert_eq!(json["capabilities"]["triggers"], false);
     }
 }

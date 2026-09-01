@@ -32,6 +32,10 @@ const buildStructure = (
   foreignKeys: overrides.foreignKeys ?? [],
   indexes: overrides.indexes ?? [],
   constraints: overrides.constraints ?? [],
+  triggers: [],
+  policies: [],
+  privileges: [],
+  rowSecurity: null,
   capabilities: overrides.capabilities ?? {
     columns: true,
     primaryKey: true,
@@ -43,6 +47,9 @@ const buildStructure = (
     canDeleteRows: true,
     canAlterSchema: true,
     uniquenessGuarantee: "exact",
+    triggers: false,
+    policies: false,
+    privileges: false,
   },
 });
 
