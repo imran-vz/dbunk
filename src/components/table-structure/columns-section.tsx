@@ -4,21 +4,24 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ColumnChangeKind, NewColumn } from "@/lib/ddl";
-import type { ColumnInfo } from "@/lib/store";
+import type { ColumnInfo, PgDefaultValue } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 import { ColumnRow } from "./column-row";
-import { EmptyRow, Section } from "./shared";
+import { EmptyRow, MiniSelect, type PgStructureOps, Section } from "./shared";
 
 interface ColumnsSectionProps {
   columns: ColumnInfo[];
   editable: boolean;
+  /** Present for editable PostgreSQL tables — forms queue typed ops. */
+  pg: PgStructureOps | null;
   onQueueChange: (change: ColumnChangeKind) => void;
 }
 
 export function ColumnsSection({
   columns,
   editable,
+  pg,
   onQueueChange,
 }: ColumnsSectionProps) {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -43,6 +46,7 @@ export function ColumnsSection({
     >
       {editable && showAddForm ? (
         <AddColumnForm
+          pg={pg}
           onCancel={() => setShowAddForm(false)}
           onSubmit={(column) => {
             onQueueChange({ kind: "add", column });
@@ -59,6 +63,7 @@ export function ColumnsSection({
               key={column.name}
               column={column}
               editable={editable}
+              pg={pg}
               onQueueChange={onQueueChange}
             />
           ))}
@@ -68,19 +73,48 @@ export function ColumnsSection({
   );
 }
 
+export const taggedDefault = (
+  kind: "literal" | "expression",
+  value: string,
+): PgDefaultValue | null =>
+  value === ""
+    ? null
+    : kind === "literal"
+      ? { kind: "literal", value }
+      : { kind: "expression", sql: value };
+
 interface AddColumnFormProps {
+  pg: PgStructureOps | null;
   onSubmit: (column: NewColumn) => void;
   onCancel: () => void;
 }
 
-function AddColumnForm({ onSubmit, onCancel }: AddColumnFormProps) {
+function AddColumnForm({ pg, onSubmit, onCancel }: AddColumnFormProps) {
   const [name, setName] = useState("");
   const [dataType, setDataType] = useState("text");
   const [nullable, setNullable] = useState(true);
   const [defaultValue, setDefaultValue] = useState("");
+  const [defaultKind, setDefaultKind] = useState<"literal" | "expression">(
+    "literal",
+  );
 
   const submit = () => {
     if (name.trim() === "" || dataType.trim() === "") return;
+    if (pg) {
+      pg.queueOp({
+        op: "addColumn",
+        schema: pg.schema,
+        table: pg.table,
+        column: {
+          name: name.trim(),
+          dataType: dataType.trim(),
+          nullable,
+          default: taggedDefault(defaultKind, defaultValue),
+        },
+      });
+      onCancel();
+      return;
+    }
     onSubmit({
       name: name.trim(),
       dataType: dataType.trim(),
@@ -120,6 +154,20 @@ function AddColumnForm({ onSubmit, onCancel }: AddColumnFormProps) {
       >
         {nullable ? "nullable" : "not null"}
       </Button>
+      {pg ? (
+        <MiniSelect
+          testId="structure-add-column-default-kind"
+          ariaLabel="Default value kind"
+          value={defaultKind}
+          options={[
+            { value: "literal", label: "Literal" },
+            { value: "expression", label: "Expression" },
+          ]}
+          onChange={(value) =>
+            setDefaultKind(value === "expression" ? "expression" : "literal")
+          }
+        />
+      ) : null}
       <Input
         data-testid="structure-add-column-default"
         value={defaultValue}

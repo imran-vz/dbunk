@@ -4,6 +4,7 @@ export {
   type DdlReviewTerminal,
 } from "./ddl-review-dialog";
 export { DropImpactDialog } from "./drop-impact-dialog";
+export { DdlPlanPreviewGroups } from "./plan-preview";
 export {
   buildCreateEnumOps,
   buildCreateMaterializedViewOps,

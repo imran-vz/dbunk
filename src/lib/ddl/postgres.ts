@@ -1,9 +1,10 @@
 /**
  * PostgreSQL DDL generation for table structure changes.
  *
- * This is still the active PostgreSQL structure path through Plan 015 Step 1
- * and the unsupported MySQL/SQLite fallback. ClickHouse has its own renderer.
- * Typed PostgreSQL object operations deliberately do not enter this module.
+ * PostgreSQL structure edits no longer use this builder — they queue typed
+ * `PgObjectOp`s rendered server-side (Plan 015). It survives only as the
+ * unsupported MySQL/SQLite dead-end fallback; ClickHouse has its own
+ * renderer. Typed PostgreSQL object operations never enter this module.
  *
  * This module is pure: it takes a structured description of column-level
  * changes and produces an executable PostgreSQL DDL string. It is responsible
@@ -35,6 +36,11 @@ export type ColumnChangeKind =
   | { kind: "set_default"; columnName: string; default: string | null };
 
 const { quoteIdent, qualifiedTable } = createIdentQuoter('"');
+
+/** PostgreSQL identifier quoting for surfaces that still hand users SQL
+ * text (the generate-only GRANT / RLS / trigger panels). Typed object
+ * operations never need it — the backend renders their statements. */
+export const pgQuoteIdent = quoteIdent;
 
 const renderColumnDefinition = (column: NewColumn): string => {
   const parts = [quoteIdent(column.name), column.dataType];

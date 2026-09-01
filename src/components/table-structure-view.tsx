@@ -74,6 +74,14 @@ function StructureContent({
   onTogglePreview: () => void;
 }) {
   const { capabilities, policy, editable } = view;
+  const pg = view.queuePgOp
+    ? {
+        schema,
+        table: tableName,
+        queueOp: view.queuePgOp,
+        hasPrimaryKey: (view.primaryKey?.length ?? 0) > 0,
+      }
+    : null;
   return (
     <div className="mx-auto max-w-5xl space-y-3">
       <Header
@@ -94,6 +102,7 @@ function StructureContent({
       <ColumnsSection
         columns={view.columns}
         editable={editable}
+        pg={pg}
         onQueueChange={view.queueChange}
       />
 
@@ -101,8 +110,10 @@ function StructureContent({
         <PendingChangesSection
           pending={view.pending}
           previewSql={view.previewSql}
+          pgPreview={view.pgPreview}
           showPreview={showPreview}
           commitStatus={view.commitStatus}
+          commitDisabled={view.commitDisabled}
           lastOutcome={view.lastOutcome}
           onTogglePreview={onTogglePreview}
           onRemove={view.removePending}
@@ -123,6 +134,7 @@ function StructureContent({
         supported={capabilities.foreignKeys}
         engine={view.engine}
         policy={policy}
+        pg={pg}
       />
 
       <IndexesSection
@@ -130,12 +142,14 @@ function StructureContent({
         supported={capabilities.indexes}
         engine={view.engine}
         policy={policy}
+        pg={pg}
       />
 
       <ConstraintsSection
         constraints={view.constraints}
         supported={capabilities.constraints}
         engine={view.engine}
+        pg={pg}
       />
     </div>
   );

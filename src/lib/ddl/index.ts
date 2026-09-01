@@ -1,9 +1,11 @@
 /**
  * Legacy column-change DDL dispatch.
  *
- * ClickHouse remains on this frontend-rendered path. PostgreSQL still uses it
- * through Plan 015 Step 1, then moves to backend-owned typed object DDL.
- * `PgObjectOp` batches never enter this module.
+ * ClickHouse remains on this frontend-rendered path. PostgreSQL structure
+ * edits moved to backend-owned typed object DDL (`preview_object_ddl` /
+ * `apply_object_ddl`, Plan 015); the PG builder below survives only as the
+ * unsupported MySQL/SQLite fallback. `PgObjectOp` batches never enter this
+ * module.
  */
 
 import type { ColumnInfo, DatabaseEngine } from "@/lib/store";

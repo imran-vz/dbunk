@@ -8,13 +8,23 @@ import type { ColumnChangeKind } from "@/lib/ddl";
 import type { ColumnInfo } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
+import { taggedDefault } from "./columns-section";
+import { MiniSelect, type PgStructureOps } from "./shared";
+
 interface ColumnRowProps {
   column: ColumnInfo;
   editable: boolean;
+  /** Present for editable PostgreSQL tables — actions queue typed ops. */
+  pg: PgStructureOps | null;
   onQueueChange: (change: ColumnChangeKind) => void;
 }
 
-export function ColumnRow({ column, editable, onQueueChange }: ColumnRowProps) {
+export function ColumnRow({
+  column,
+  editable,
+  pg,
+  onQueueChange,
+}: ColumnRowProps) {
   const [editing, setEditing] = useState(false);
 
   return (
@@ -27,13 +37,23 @@ export function ColumnRow({ column, editable, onQueueChange }: ColumnRowProps) {
         <TypeCell
           column={column}
           editable={editable}
-          onToggleNullable={() =>
+          onToggleNullable={() => {
+            if (pg) {
+              pg.queueOp({
+                op: "setColumnNullable",
+                schema: pg.schema,
+                table: pg.table,
+                name: column.name,
+                nullable: !column.nullable,
+              });
+              return;
+            }
             onQueueChange({
               kind: "set_nullable",
               columnName: column.name,
               nullable: !column.nullable,
-            })
-          }
+            });
+          }}
         />
         <DefaultCell column={column} />
         <RowActions
@@ -41,14 +61,25 @@ export function ColumnRow({ column, editable, onQueueChange }: ColumnRowProps) {
           editable={editable}
           editing={editing}
           onToggleEdit={() => setEditing((value) => !value)}
-          onDrop={() =>
-            onQueueChange({ kind: "drop", columnName: column.name })
-          }
+          onDrop={() => {
+            if (pg) {
+              pg.queueOp({
+                op: "dropColumn",
+                schema: pg.schema,
+                table: pg.table,
+                name: column.name,
+                cascade: false,
+              });
+              return;
+            }
+            onQueueChange({ kind: "drop", columnName: column.name });
+          }}
         />
       </div>
       {editable && editing ? (
         <ColumnEditPanel
           column={column}
+          pg={pg}
           onQueueChange={onQueueChange}
           onDone={() => setEditing(false)}
         />
@@ -168,18 +199,24 @@ function RowActions({
 
 interface ColumnEditPanelProps {
   column: ColumnInfo;
+  pg: PgStructureOps | null;
   onQueueChange: (change: ColumnChangeKind) => void;
   onDone: () => void;
 }
 
 function ColumnEditPanel({
   column,
+  pg,
   onQueueChange,
   onDone,
 }: ColumnEditPanelProps) {
   const [renameValue, setRenameValue] = useState(column.name);
   const [typeValue, setTypeValue] = useState(column.dataType);
+  const [usingValue, setUsingValue] = useState("");
   const [defaultValue, setDefaultValue] = useState(column.defaultValue ?? "");
+  const [defaultKind, setDefaultKind] = useState<"literal" | "expression">(
+    "expression",
+  );
 
   return (
     <div
@@ -202,11 +239,21 @@ function ColumnEditPanel({
           className="px-1.5"
           aria-label="Queue rename"
           onClick={() => {
-            onQueueChange({
-              kind: "rename",
-              columnName: column.name,
-              newName: renameValue,
-            });
+            if (pg) {
+              pg.queueOp({
+                op: "renameColumn",
+                schema: pg.schema,
+                table: pg.table,
+                name: column.name,
+                newName: renameValue,
+              });
+            } else {
+              onQueueChange({
+                kind: "rename",
+                columnName: column.name,
+                newName: renameValue,
+              });
+            }
             setRenameValue(column.name);
             onDone();
           }}
@@ -215,13 +262,25 @@ function ColumnEditPanel({
         </Button>
       </EditField>
       <EditField label="Type">
-        <Input
-          data-testid={`structure-type-input-${column.name}`}
-          aria-label={`Change type of ${column.name}`}
-          value={typeValue}
-          onChange={(event) => setTypeValue(event.target.value)}
-          className="h-6 font-mono text-xs text-info"
-        />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Input
+            data-testid={`structure-type-input-${column.name}`}
+            aria-label={`Change type of ${column.name}`}
+            value={typeValue}
+            onChange={(event) => setTypeValue(event.target.value)}
+            className="h-6 font-mono text-xs text-info"
+          />
+          {pg ? (
+            <Input
+              data-testid={`structure-using-input-${column.name}`}
+              aria-label={`USING expression for ${column.name}`}
+              value={usingValue}
+              onChange={(event) => setUsingValue(event.target.value)}
+              placeholder="USING expression (optional)"
+              className="h-6 font-mono text-xs"
+            />
+          ) : null}
+        </div>
         <Button
           data-testid={`structure-type-confirm-${column.name}`}
           variant="ghost"
@@ -230,12 +289,24 @@ function ColumnEditPanel({
           className="px-1.5"
           aria-label="Queue type change"
           onClick={() => {
-            onQueueChange({
-              kind: "set_type",
-              columnName: column.name,
-              newType: typeValue,
-            });
+            if (pg) {
+              pg.queueOp({
+                op: "alterColumnType",
+                schema: pg.schema,
+                table: pg.table,
+                name: column.name,
+                newType: typeValue,
+                using: usingValue.trim() === "" ? null : usingValue.trim(),
+              });
+            } else {
+              onQueueChange({
+                kind: "set_type",
+                columnName: column.name,
+                newType: typeValue,
+              });
+            }
             setTypeValue(column.dataType);
+            setUsingValue("");
             onDone();
           }}
         >
@@ -243,14 +314,30 @@ function ColumnEditPanel({
         </Button>
       </EditField>
       <EditField label="Default">
-        <Input
-          data-testid={`structure-default-input-${column.name}`}
-          aria-label={`Set default for ${column.name}`}
-          value={defaultValue}
-          onChange={(event) => setDefaultValue(event.target.value)}
-          placeholder="(none)"
-          className="h-6 font-mono text-xs"
-        />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Input
+            data-testid={`structure-default-input-${column.name}`}
+            aria-label={`Set default for ${column.name}`}
+            value={defaultValue}
+            onChange={(event) => setDefaultValue(event.target.value)}
+            placeholder="(none)"
+            className="h-6 font-mono text-xs"
+          />
+          {pg ? (
+            <MiniSelect
+              testId={`structure-default-kind-${column.name}`}
+              ariaLabel={`Default kind for ${column.name}`}
+              value={defaultKind}
+              options={[
+                { value: "literal", label: "Literal" },
+                { value: "expression", label: "Expression" },
+              ]}
+              onChange={(value) =>
+                setDefaultKind(value === "literal" ? "literal" : "expression")
+              }
+            />
+          ) : null}
+        </div>
         <Button
           data-testid={`structure-default-confirm-${column.name}`}
           variant="ghost"
@@ -259,11 +346,21 @@ function ColumnEditPanel({
           className="px-1.5"
           aria-label="Queue default change"
           onClick={() => {
-            onQueueChange({
-              kind: "set_default",
-              columnName: column.name,
-              default: defaultValue === "" ? null : defaultValue,
-            });
+            if (pg) {
+              pg.queueOp({
+                op: "setColumnDefault",
+                schema: pg.schema,
+                table: pg.table,
+                name: column.name,
+                default: taggedDefault(defaultKind, defaultValue),
+              });
+            } else {
+              onQueueChange({
+                kind: "set_default",
+                columnName: column.name,
+                default: defaultValue === "" ? null : defaultValue,
+              });
+            }
             setDefaultValue(column.defaultValue ?? "");
             onDone();
           }}
