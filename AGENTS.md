@@ -6,6 +6,12 @@ Issues are tracked in GitHub Issues for `imran-vz/dbunk` using the `gh` CLI. See
 
 This repo uses a single-context domain docs layout. See `docs/agents/domain.md`.
 
+### Status and plans
+
+- Plan status: `plans/README.md` — the single source of truth for plan state.
+- Parity gap inventory: `plans/parity-gap-register.md`.
+- Feature roadmap and queued work: `ROADMAP.md`.
+
 Core Priorities
 
 1. Performance and Reliability first.

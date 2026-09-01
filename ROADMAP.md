@@ -118,6 +118,51 @@ Have: CSV / XLSX import wizard with column mapping.
 
 ---
 
+## Queued work
+
+Feature-scope items not covered by the gap sections above (absorbed from the
+retired `docs/PENDING_TASKS.md`; deep detail lives in `designs/FOLLOWUPS.md`
+and the ADRs cited). Treat each bullet as the seed for its own design pass.
+
+### Postgres / relational
+
+- **Default-value tagged-union, remaining engines** — PostgreSQL delivered
+  the tagged `PgDefaultValue` (Literal/Expression) in Plan 015; the
+  ClickHouse (and dead-end MySQL/SQLite) column path still runs defaults
+  through the `formatDefault` bareword-whitelist heuristic in
+  `src/lib/ddl/shared.ts`.
+- **Connection Settings tab expansion** — `settings-tab.tsx` is a read-only
+  mirror; expand it to edit the driver/session knobs the connection form
+  already exposes (ADR-0013, ADR-0025).
+- **PL/pgSQL debugger** (ADR-0016, unbuilt), **visual query builder**
+  (ADR-0015, unbuilt), **Parquet export / XML import-export** (ADR-0017,
+  unbuilt) — see the ❌ rows in the gap sections above.
+
+### Redis Tier 2 + cross-cutting
+
+- **Cross-tab DB switching cascade** — key tabs still open on the
+  connection's default DB; re-key open key tabs or reuse the scan session's
+  connection.
+- **Sentinel discovery + Cluster awareness** — form changes, dispatch
+  routing, slot-aware command routing.
+- **Module viewers** — RediSearch, RedisTimeSeries, RedisBloom.
+- **Advanced tab kinds** — Transaction Builder, Lua / Redis Functions
+  scripting, MONITOR capture; parameter substitution for saved commands;
+  non-string multi-key compare.
+- **Geo static-map rendering.**
+
+### Cross-cutting UX
+
+- **Empty / loading / error state polish** — surface-specific empty states,
+  skeleton loaders, inline error + retry on every data-bound view.
+- **Query editor transaction status footer** — per-connection transaction
+  state surfaced as `Auto-commit ON / In transaction / Failed transaction`
+  with commit/rollback controls.
+- **Reserved store slices** — `keyvalue-pubsub.ts` (no-op until Pub/Sub
+  auto-reconnect) and parts of `keyvalue-workspace.ts` (watched keys,
+  per-session DB switcher) are documented placeholders awaiting their
+  features.
+
 ## Phased implementation
 
 The gap above is sequenced into ten phases in [`docs/design/PHASES.md`](docs/design/PHASES.md). Each phase is a discrete deliverable that gets planned individually before it ships. Phases 1–4 cover the user-facing pain points that motivated this roadmap (dead overview tabs, weak schema map, missing import/export).

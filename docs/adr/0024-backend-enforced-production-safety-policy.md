@@ -1,6 +1,6 @@
 # ADR-0024: Backend-enforced production safety policy
 
-Status: Accepted
+**Status**: Accepted (Plan 007, `PAR-004`)
 
 ## Decision
 

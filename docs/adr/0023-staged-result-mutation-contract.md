@@ -1,6 +1,6 @@
 # ADR-0023: Staged PostgreSQL Result Mutation contract
 
-Status: Accepted
+**Status**: Accepted (Plan 005, `PAR-003`)
 
 ## Decision
 
