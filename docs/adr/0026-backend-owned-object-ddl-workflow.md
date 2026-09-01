@@ -1,7 +1,6 @@
 # ADR-0026: Backend-owned PostgreSQL object DDL workflow
 
-- **Status:** Accepted (Plan 013, `PAR-007`)
-- **Date:** 2026-08-29
+**Status**: Accepted (2026-08-29, Plan 013, `PAR-007`)
 
 ## Context
 

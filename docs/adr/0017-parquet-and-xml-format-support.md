@@ -1,6 +1,6 @@
 # ADR-0017 — Parquet and XML format support
 
-**Status**: Proposed (2026-05-14)
+**Status**: Proposed — unbuilt (2026-05-14)
 
 ## Context
 

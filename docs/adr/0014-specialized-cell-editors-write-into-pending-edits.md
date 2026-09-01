@@ -1,6 +1,6 @@
 # ADR-0014 — Specialized cell editors write into pending row edits
 
-**Status**: Proposed (2026-05-14)
+**Status**: Accepted (2026-09-01; proposed 2026-05-14) — delivered; Plan 015 moved the structure editor onto typed ops
 
 ## Context
 

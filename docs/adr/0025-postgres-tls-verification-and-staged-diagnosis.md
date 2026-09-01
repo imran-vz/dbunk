@@ -1,7 +1,7 @@
 # ADR 0025: PostgreSQL TLS verification modes, one TLS resolver, and staged connection diagnosis
 
-- **Status:** Accepted (Plan 011, `PAR-006`)
-- **Date:** 2026-08-24
+**Status**: Accepted (2026-08-24, Plan 011, `PAR-006`)
+
 - **Supersedes:** the TLS sentence of ADR-0021 ("Prefer accepts the
   existing permissive certificate policy"); amends the keepalive bullet
   of ADR-0013.

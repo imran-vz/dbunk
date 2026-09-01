@@ -1,6 +1,6 @@
 # ADR-0021: Dedicated PostgreSQL query-session driver
 
-Status: Accepted
+**Status**: Accepted (Plan 001, `PAR-001`) — TLS policy superseded by ADR-0025
 
 ## Decision
 

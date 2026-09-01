@@ -1,6 +1,6 @@
 # ADR-0016 — PL/pgSQL debugger via `pldbgapi`
 
-**Status**: Proposed (2026-05-14)
+**Status**: Proposed — unbuilt (2026-05-14)
 
 ## Context
 
