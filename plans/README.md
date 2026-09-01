@@ -27,7 +27,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 013                                                   | PostgreSQL object catalog and DDL workflow backend (dark)        |       P1 |      L | 001–012    | DONE: 4833a42                                  |
 | 014                                                   | Object explorer, viewers, and lifecycle activation               |       P1 |      L | 013        | DONE: 2e843a6 (selected mock: C)               |
 | 015                                                   | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | DONE: 84112dc                                  |
-| [016](./016-pg-table-designer-trigger-policy-privilege-ddl-backend.md) | PostgreSQL table designer, routine, trigger, policy, and privilege DDL backend (dark) | P1 | L | 013–015 | READY FOR REVIEW: Steps 1–4 done; second-pass review corrections applied 2026-09-02, awaiting `DONE` record |
+| 016                                                   | PostgreSQL table designer, routine, trigger, policy, and privilege DDL backend (dark) |       P1 |      L | 013–015    | DONE: 6b573f1                                  |
 | [017](./017-table-designer-and-table-security-activation.md) | Table designer, routine editor, and table security activation | P1 | L | 016 | TODO |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
@@ -37,15 +37,10 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently active: Plan 016** (authored at `b82de63`), the next `PAR-007`
-slice: a dark backend for create-table, function/procedure, trigger,
-row-level-security, and privilege operations. All four steps are implemented
-in the working tree with every gate green, including the eight live tests;
-the first adversarial review's findings are fixed and recorded in the plan's
-Review correction record, and the decision record is ADR-0027. The remaining
-step is an authorized commit, after which the operator records `DONE`. Plan
-017 activates the vocabulary in the navigator, Object Viewer, Structure tab,
-and Specialized tab and may not start before then.
+**Currently active: none.** Plan 016 is `DONE` at `6b573f1` (decision record
+ADR-0027). **Queued next: Plan 017** (authored at `b82de63`), which activates
+the create-table designer, routine editor, and Structure-tab trigger, policy,
+and privilege sections and starts with its mock step.
 
 ## Planning rules
 

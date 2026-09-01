@@ -12,7 +12,7 @@
 > **Fresh-start drift check**:
 >
 > ```sh
-> git diff --stat <PLAN_016_COMPLETION_SHA>..HEAD -- src src-tauri plans/README.md
+> git diff --stat 6b573f1..HEAD -- src src-tauri plans/README.md
 > git status --short -- src src-tauri plans/README.md
 > grep -n "generateGrant\|generateRls\|generateTrigger" src/components/table-editor/specialized-editors.tsx   # expect the three generate-only panels
 > grep -n "type CreateKind" src/components/object-ddl/create-object-dialogs.tsx                                # expect schema|sequence|enum|view|materialized-view
