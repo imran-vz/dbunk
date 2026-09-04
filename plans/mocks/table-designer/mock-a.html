@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 017 · Table designer mock A</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --app: #000;
+        --chrome: #0e1218;
+        --sidebar: #0e1218;
+        --panel: #131820;
+        --raised: #1a2029;
+        --input: #0f141b;
+        --hover: #1b212b;
+        --line: rgba(255, 255, 255, 0.08);
+        --line-strong: rgba(255, 255, 255, 0.15);
+        --text: #fff;
+        --secondary: #9aa5b1;
+        --muted: #7b8595;
+        --accent: #f5a623;
+        --accent-bg: #2b2519;
+        --info: #539bf5;
+        --success: #3fb950;
+        --warning: #d29922;
+        --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; background: var(--app); color: var(--text); font: 13px/18px var(--sans); }
+      body { min-height: 560px; min-width: 0; overflow-x: hidden; }
+      button, input, select { border-radius: 4px; color: inherit; font: inherit; }
+      button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .choice-bar { height: 54px; display: flex; align-items: center; gap: 16px; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--app); }
+      .choice-copy { flex: 0 0 auto; }
+      .choice-copy strong { display: block; white-space: nowrap; font-size: 13px; }
+      .choice-copy span { color: var(--secondary); font-size: 12px; }
+      .variant-nav { flex: 0 0 auto; display: flex; margin-left: auto; }
+      .variant-nav a { min-height: 30px; padding: 6px 11px; border: 1px solid var(--line-strong); border-right: 0; background: var(--chrome); color: var(--secondary); text-decoration: none; font-size: 13px; }
+      .variant-nav a:last-child { border-right: 1px solid var(--line-strong); }
+      .variant-nav .active { background: var(--accent-bg); color: var(--accent); }
+      .app { height: calc(100vh - 54px); min-height: 506px; display: grid; grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: 36px 30px minmax(0, 1fr) 24px; }
+      .activity-rail { grid-column: 1; grid-row: 1 / 4; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; border-right: 1px solid var(--line); background: var(--app); }
+      .rail-action { position: relative; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--secondary); font-size: 18px; line-height: 1; }
+      .rail-action:hover { background: var(--hover); color: var(--text); }
+      .rail-action.active { background: var(--accent-bg); color: var(--accent); }
+      .rail-action.active::before { position: absolute; left: -6px; width: 2px; height: 18px; background: var(--accent); content: ""; }
+      .rail-action.settings { margin-top: auto; }
+      .titlebar, .tabs, .workspace { grid-column: 2; min-width: 0; }
+      .titlebar { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--chrome); border-bottom: 1px solid var(--line); font-size: 12px; }
+      .brand { color: var(--accent); font-weight: 780; letter-spacing: .04em; }
+      .connection { color: var(--secondary); }
+      .environment { margin-left: auto; padding-left: 9px; border-left: 3px solid var(--success); color: var(--success); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+      .top-action { border: 1px solid var(--line-strong); background: transparent; padding: 4px 8px; font-size: 13px; }
+      .tabs { display: flex; background: var(--sidebar); border-bottom: 1px solid var(--line); }
+      .tab { min-width: 170px; display: flex; align-items: center; gap: 7px; padding: 0 12px; border-right: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+      .tab.active { background: var(--panel); color: var(--text); border-top: 2px solid var(--accent); }
+      .tab-kind { color: var(--info); font: 11px var(--mono); }
+      .dirty { margin-left: auto; color: var(--accent); }
+      .workspace { min-height: 0; display: grid; grid-template-columns: 255px 1fr; }
+      .navigator { min-height: 0; background: var(--sidebar); border-right: 1px solid var(--line); }
+      .label { padding: 9px 11px 7px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
+      .filter { width: calc(100% - 18px); height: 26px; margin: 9px; padding: 0 9px; border: 1px solid var(--line-strong); background: var(--input); color: var(--text); font-size: 13px; }
+      .tree { padding: 0 7px; font-size: 13px; }
+      .tree-row { min-height: 27px; display: flex; align-items: center; gap: 7px; padding: 3px 6px; color: var(--secondary); }
+      .tree-row.schema { color: var(--text); font-weight: 650; }
+      .tree-row.group { padding-left: 20px; font-weight: 600; background: var(--accent-bg); border-left: 2px solid var(--accent); }
+      .tree-row.object { padding-left: 43px; color: var(--muted); }
+      .kind { width: 28px; color: var(--muted); font: 11px var(--mono); }
+      .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+      .new { margin-left: 3px; border: 0; background: transparent; color: var(--accent); padding: 2px 4px; }
+      .designer { min-width: 0; min-height: 0; display: grid; grid-template-rows: 44px 1fr; background: var(--panel); }
+      .designer-head { display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--sidebar); }
+      .designer-head strong { font: 600 13px var(--mono); }
+      .unsaved { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      .head-actions { margin-left: auto; display: flex; gap: 7px; }
+      .btn { min-height: 26px; padding: 4px 8px; border: 1px solid var(--line-strong); background: transparent; color: var(--secondary); font-size: 13px; }
+      .btn:hover { background: var(--hover); color: var(--text); }
+      .btn.primary { border-color: var(--accent); background: var(--accent); color: #1a1205; font-weight: 750; }
+      .designer-body { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .85fr); overflow: hidden; }
+      .form-pane, .preview-pane { min-width: 0; min-height: 0; overflow: auto; }
+      .form-pane { border-right: 1px solid var(--line); }
+      .identity { display: grid; grid-template-columns: 145px minmax(180px, 1fr) 150px; border-bottom: 1px solid var(--line); }
+      .field { padding: 10px 12px; border-right: 1px solid var(--line); }
+      .field:last-child { border-right: 0; }
+      .field label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      .input, .select { width: 100%; height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); background: var(--input); color: var(--text); font: 13px var(--mono); }
+      .section-head { min-height: 36px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--sidebar); }
+      .section-head h2 { margin: 0; font-size: 11px; }
+      .section-head span { margin-left: 7px; color: var(--muted); font-size: 11px; }
+      .section-head .btn { margin-left: auto; min-height: 24px; padding: 2px 8px; font-size: 13px; }
+      .columns-scroll { width: 100%; overflow-x: auto; }
+      .columns { min-width: 980px; font: 13px var(--mono); }
+      .grid-row { display: grid; grid-template-columns: 27px minmax(110px, 1.05fr) minmax(130px, 1.15fr) 56px 86px 108px minmax(105px, .9fr) 92px 26px; align-items: center; min-height: 36px; border-bottom: 1px solid var(--line); }
+      .grid-row > * { min-width: 0; padding: 0 7px; }
+      .grid-head { min-height: 29px; color: var(--muted); background: var(--sidebar); font: 11px var(--sans); font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+      .grab, .remove { color: var(--muted); text-align: center; }
+      .grab { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; cursor: grab; }
+      .grab:hover { color: var(--text); background: var(--hover); }
+      .remove { width: 25px; height: 25px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+      .remove:hover { color: var(--text); background: var(--hover); }
+      .cell-input { width: 100%; height: 26px; padding: 0 6px; border: 1px solid transparent; background: transparent; color: var(--text); font: 13px var(--mono); }
+      .cell-input:hover { border-color: var(--line-strong); background: var(--input); }
+      .check { display: flex; justify-content: center; accent-color: var(--accent); }
+      .locked { color: var(--muted); }
+      .constraints details { border-bottom: 1px solid var(--line); }
+      .constraints .constraint-block { position: relative; border-bottom: 1px solid var(--line); }
+      .constraints .constraint-block details { border-bottom: 0; }
+      .constraints .constraint-block summary { padding-right: 82px; }
+      .constraints .constraint-block > .add { position: absolute; z-index: 2; top: 5px; right: 8px; min-height: 26px; padding: 2px 8px; border: 0; background: transparent; color: var(--accent); font-size: 13px; }
+      .constraints summary { min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; cursor: pointer; color: var(--secondary); font-size: 13px; font-weight: 650; list-style: none; }
+      .constraints summary::before { content: "›"; color: var(--muted); }
+      .constraints details[open] summary::before { content: "⌄"; }
+      .constraints summary .count { margin-left: 0; }
+      .constraint-row { display: grid; grid-template-columns: 145px 1fr auto; gap: 12px; align-items: center; min-height: 39px; padding: 0 12px 0 30px; border-top: 1px solid var(--line); color: var(--secondary); font: 12px var(--mono); }
+      .preview-pane { background: var(--sidebar); }
+      .preview-meta { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+      .preview-meta .live { color: var(--success); }
+      .plan-group { border-bottom: 1px solid var(--line); }
+      .group-head { padding: 8px 12px; background: var(--panel); color: var(--secondary); font-size: 11px; font-weight: 600; }
+      .group-head strong { font-weight: 600; }
+      .callout { padding: 8px 12px; border-left: 2px solid var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--secondary); font-size: 12px; }
+      .statement { min-width: 0; border-left: 2px solid transparent; }
+      .statement + .statement { border-top: 1px solid var(--line); }
+      .statement-top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+      .statement-top .number { color: var(--muted); font: 11px var(--mono); }
+      .statement-top strong { min-width: 0; flex: 1; color: var(--text); font-size: 12px; font-weight: 500; }
+      .copy { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 22px; padding: 2px 6px; border: 0; background: transparent; color: var(--secondary); font-size: 11px; }
+      .copy svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+      .statement pre { margin: 0; overflow-x: auto; padding: 12px; border-top: 1px solid var(--line); white-space: pre-wrap; color: var(--secondary); font: 11px/1.625 var(--mono); }
+      .statusbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-top: 1px solid var(--line); background: var(--app); color: var(--muted); font: 11px var(--mono); }
+      .statusbar .ok { color: var(--success); }
+      .statusbar .right { margin-left: auto; }
+      @media (max-width: 1160px) { .workspace { grid-template-columns: minmax(0, 1fr); } .navigator { display: none; } .choice-copy span { display: none; } }
+      @media (max-width: 940px) { .identity { grid-template-columns: 120px minmax(160px, 1fr) 130px; } }
+      @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+    </style>
+  </head>
+  <body>
+    <header class="choice-bar">
+      <div class="choice-copy"><strong>Plan 017 · Mock A</strong><span>Dedicated designer tab with a persistent live preview</span></div>
+      <nav class="variant-nav" aria-label="Mock variants"><a class="active" href="mock-a.html" aria-current="page">A · Designer tab</a><a href="mock-b.html">B · Large dialog</a><a href="mock-c.html">C · Empty structure</a></nav>
+    </header>
+    <div class="app">
+      <aside class="activity-rail" aria-label="Primary navigation"><button class="rail-action active" aria-label="Tables" aria-current="page">▦</button><button class="rail-action" aria-label="Queries">⌁</button><button class="rail-action" aria-label="History">◷</button><button class="rail-action" aria-label="Schema map">◇</button><button class="rail-action settings" aria-label="Settings">⚙</button></aside>
+      <div class="titlebar"><span class="brand">dbunk</span><span class="connection">warehouse_local / postgres</span><span class="environment">Development</span><button class="top-action">Open anything ⌘K</button></div>
+      <div class="tabs"><div class="tab"><span class="tab-kind">SQL</span>scratch.sql</div><div class="tab active"><span class="tab-kind">NEW</span>public.orders_archive<span class="dirty">●</span></div></div>
+      <div class="workspace">
+        <aside class="navigator" aria-label="Database navigator">
+          <div class="label">Database navigator</div><input class="filter" aria-label="Filter database objects" placeholder="Filter objects" />
+          <div class="tree"><div class="tree-row schema"><span>⌄</span><span class="kind">DB</span>public<span class="count">38</span></div><div class="tree-row group"><span>⌄</span><span class="kind">TBL</span>Tables<span class="count">12</span><button class="new" aria-label="New table">＋</button></div><div class="tree-row object"><span class="kind">▦</span>customers</div><div class="tree-row object"><span class="kind">▦</span>orders</div><div class="tree-row object"><span class="kind">▦</span>order_items</div><div class="tree-row"><span style="margin-left:20px">›</span><span class="kind">VIEW</span>Views<span class="count">4</span></div><div class="tree-row"><span style="margin-left:20px">›</span><span class="kind">FN</span>Functions<span class="count">9</span></div></div>
+        </aside>
+        <main class="designer">
+          <header class="designer-head"><strong>public.orders_archive</strong><span class="unsaved">Unsaved design</span><div class="head-actions"><button class="btn">Discard</button><button class="btn primary">Review and create</button></div></header>
+          <div class="designer-body">
+            <section class="form-pane" aria-label="Table design form">
+              <div class="identity"><div class="field"><label for="schema">Schema</label><select id="schema" class="select"><option>public</option></select></div><div class="field"><label for="name">Table name</label><input id="name" class="input" value="orders_archive" /></div><div class="field"><label for="comment">Table comment</label><input id="comment" class="input" value="Historical orders" /></div></div>
+              <div class="section-head"><h2>Columns</h2><span>7 columns</span><button class="btn">＋ Add column</button></div>
+              <div class="columns-scroll"><div class="columns" role="table" aria-label="Columns"><div class="grid-row grid-head" role="row"><span role="columnheader" aria-label="Reorder"></span><span role="columnheader">Name</span><span role="columnheader">Type</span><span role="columnheader">Null</span><span role="columnheader">Identity</span><span role="columnheader">Default mode</span><span role="columnheader">Default value</span><span role="columnheader">Comment</span><span role="columnheader" aria-label="Actions"></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder id column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for id column" value="id" /></span><span role="cell"><input class="cell-input" aria-label="Type for id column" value="bigint" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for id column" disabled /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for id column"><option>always</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for id column" disabled><option>Disabled</option></select></span><span class="locked" role="cell">Identity</span><span role="cell"><input class="cell-input" aria-label="Comment for id column" placeholder="Comment" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove id column">×</button></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder order_no column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for order_no column" value="order_no" /></span><span role="cell"><input class="cell-input" aria-label="Type for order_no column" value="text" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for order_no column" /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for order_no column"><option>none</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for order_no column"><option>None</option></select></span><span role="cell"></span><span role="cell"><input class="cell-input" aria-label="Comment for order_no column" placeholder="Comment" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove order_no column">×</button></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder customer_id column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for customer_id column" value="customer_id" /></span><span role="cell"><input class="cell-input" aria-label="Type for customer_id column" value="bigint" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for customer_id column" /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for customer_id column"><option>none</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for customer_id column"><option>None</option></select></span><span role="cell"></span><span role="cell"><input class="cell-input" aria-label="Comment for customer_id column" placeholder="Comment" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove customer_id column">×</button></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder status column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for status column" value="status" /></span><span role="cell"><input class="cell-input" aria-label="Type for status column" value="order_status" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for status column" /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for status column"><option>none</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for status column"><option>Literal</option></select></span><span role="cell"><input class="cell-input" aria-label="Default value for status column" value="pending" /></span><span role="cell"><input class="cell-input" aria-label="Comment for status column" placeholder="Comment" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove status column">×</button></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder total column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for total column" value="total" /></span><span role="cell"><input class="cell-input" aria-label="Type for total column" value="numeric(12,2)" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for total column" /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for total column"><option>none</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for total column"><option>Expression</option></select></span><span role="cell"><input class="cell-input" aria-label="Default value for total column" value="0" /></span><span role="cell"><input class="cell-input" aria-label="Comment for total column" placeholder="Comment" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove total column">×</button></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder created_at column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for created_at column" value="created_at" /></span><span role="cell"><input class="cell-input" aria-label="Type for created_at column" value="timestamptz" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for created_at column" /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for created_at column"><option>none</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for created_at column"><option>Expression</option></select></span><span role="cell"><input class="cell-input" aria-label="Default value for created_at column" value="now()" /></span><span role="cell"><input class="cell-input" aria-label="Comment for created_at column" value="Creation time" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove created_at column">×</button></span></div>
+                <div class="grid-row" role="row"><span role="cell"><button type="button" class="grab" aria-label="Reorder notes column">⠿</button></span><span role="cell"><input class="cell-input" aria-label="Name for notes column" value="notes" /></span><span role="cell"><input class="cell-input" aria-label="Type for notes column" value="text" /></span><span role="cell"><label class="check"><input type="checkbox" aria-label="Nullable for notes column" checked /></label></span><span role="cell"><select class="cell-input" aria-label="Identity for notes column"><option>none</option></select></span><span role="cell"><select class="cell-input" aria-label="Default mode for notes column"><option>None</option></select></span><span role="cell"></span><span role="cell"><input class="cell-input" aria-label="Comment for notes column" placeholder="Comment" /></span><span role="cell"><button type="button" class="remove" aria-label="Remove notes column">×</button></span></div>
+              </div></div>
+              <div class="constraints"><details open><summary>Primary key <span class="count">1</span></summary><div class="constraint-row"><span>orders_archive_pkey</span><span>(id)</span><button class="btn" aria-label="Edit primary key orders_archive_pkey">Edit</button></div></details><div class="constraint-block"><details><summary>Foreign keys <span class="count">1</span></summary><div class="constraint-row"><span>orders_customer_fk</span><span>customer_id → public.customers.id</span><button class="btn" aria-label="Edit foreign key orders_customer_fk">Edit</button></div></details><button type="button" class="add" aria-label="Add foreign key">＋ Add</button></div><div class="constraint-block"><details><summary>Unique constraints <span class="count">1</span></summary><div class="constraint-row"><span>orders_archive_order_no_key</span><span>(order_no)</span><button class="btn" aria-label="Edit unique constraint orders_archive_order_no_key">Edit</button></div></details><button type="button" class="add" aria-label="Add unique constraint">＋ Add</button></div><div class="constraint-block"><details><summary>Indexes <span class="count">1</span></summary><div class="constraint-row"><span>orders_archive_created_idx</span><span>(created_at DESC) · concurrently</span><button class="btn" aria-label="Edit index orders_archive_created_idx">Edit</button></div></details><button type="button" class="add" aria-label="Add index">＋ Add</button></div></div>
+            </section>
+            <aside class="preview-pane" aria-label="Live DDL preview"><div class="section-head"><h2>Live DDL preview</h2><div class="preview-meta"><span class="live">● Current</span><span>4 operations</span></div></div><section class="plan-group" aria-label="DDL group 1"><header class="group-head"><strong>Group 1 · Atomic</strong></header><article class="statement"><div class="statement-top"><span class="number">1</span><strong>Create table public.orders_archive (7 columns, 3 constraints)</strong><button type="button" class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>Copy</button></div><pre>CREATE TABLE "public"."orders_archive" (
+  "id" bigint NOT NULL GENERATED ALWAYS AS IDENTITY,
+  "order_no" text NOT NULL,
+  "customer_id" bigint NOT NULL,
+  "status" order_status NOT NULL DEFAULT E'pending',
+  "total" numeric(12,2) NOT NULL DEFAULT (0),
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  "notes" text,
+  CONSTRAINT "orders_archive_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "orders_archive_order_no_key" UNIQUE ("order_no"),
+  CONSTRAINT "orders_customer_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION NOT DEFERRABLE
+);</pre></article><article class="statement"><div class="statement-top"><span class="number">2</span><strong>Set comment on public.orders_archive</strong><button type="button" class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>Copy</button></div><pre>COMMENT ON TABLE "public"."orders_archive" IS E'Historical orders';</pre></article><article class="statement"><div class="statement-top"><span class="number">3</span><strong>Set comment on public.orders_archive.created_at</strong><button type="button" class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>Copy</button></div><pre>COMMENT ON COLUMN "public"."orders_archive"."created_at" IS E'Creation time';</pre></article></section><section class="plan-group" aria-label="DDL group 2"><header class="group-head"><strong>Group 2 · Standalone</strong></header><div class="callout">Runs outside a transaction. Earlier statements stay applied if it fails.</div><article class="statement"><div class="statement-top"><span class="number">4</span><strong>Create index public.orders_archive_created_idx on public.orders_archive</strong><button type="button" class="copy"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>Copy</button></div><pre>CREATE INDEX CONCURRENTLY "orders_archive_created_idx" ON "public"."orders_archive" USING "btree" (created_at DESC);</pre></article></section></aside>
+          </div>
+        </main>
+      </div>
+      <div class="statusbar"><span class="ok">● Connected</span><span>PostgreSQL 17</span><span>Preview updated just now</span><span class="right">7 columns · 4 operations</span></div>
+    </div>
+  </body>
+</html>
