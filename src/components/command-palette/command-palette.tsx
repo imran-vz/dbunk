@@ -298,6 +298,12 @@ export function CommandPalette() {
       case "command":
         dispatchShortcut(target.commandId);
         return;
+      case "new-table":
+        if (target.connectionId !== store.activeConnectionId) {
+          useAppStore.setState({ activeConnectionId: target.connectionId });
+        }
+        useAppStore.getState().openTableDesignerTab(target.schema);
+        return;
       case "connect":
         useAppStore.setState({ activeConnectionId: target.connectionId });
         void store.connectConnection(target.connectionId);

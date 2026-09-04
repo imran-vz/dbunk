@@ -408,8 +408,11 @@ export function DatabaseNavigator({
                   ? (
                       [
                         ["view", "View"],
+                        ["table", "Table"],
                         ["materialized-view", "Materialized view"],
                         ["sequence", "Sequence"],
+                        ["function", "Function"],
+                        ["procedure", "Procedure"],
                         ["enum", "Enum"],
                       ] as const
                     ).map(([kind, label]) => (

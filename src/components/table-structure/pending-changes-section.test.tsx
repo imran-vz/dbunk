@@ -19,6 +19,33 @@ const change = (overrides: Partial<PendingChange> = {}): PendingChange => ({
   ...overrides,
 });
 
+const pgChange = (id: string, destructive: boolean): PendingChange => ({
+  id,
+  schema: "public",
+  table: "users",
+  change: {
+    kind: "pg-op",
+    op: destructive
+      ? {
+          op: "dropPolicy",
+          schema: "public",
+          table: "users",
+          name: "tenant_policy",
+        }
+      : {
+          op: "createPolicy",
+          schema: "public",
+          table: "users",
+          name: "tenant_policy",
+          permissive: true,
+          command: "all",
+          roles: [{ kind: "public" }],
+          using: null,
+          withCheck: null,
+        },
+  },
+});
+
 const renderSection = (
   overrides: Partial<React.ComponentProps<typeof PendingChangesSection>> = {},
 ) => {
@@ -87,6 +114,62 @@ describe("PendingChangesSection", () => {
     const { onTogglePreview } = renderSection({ pending: [change()] });
     fireEvent.click(screen.getByTestId("structure-preview-sql"));
     expect(onTogglePreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("badges only rows the matching backend preview marks destructive", () => {
+    const pending = [pgChange("safe", false), pgChange("danger", true)];
+    renderSection({
+      pending,
+      pgPreview: {
+        state: "ready",
+        preview: {
+          statements: [
+            {
+              sql: "CREATE POLICY tenant_policy ON public.users;",
+              summary: "Create policy tenant_policy",
+              destructive: false,
+              transactional: true,
+            },
+            {
+              sql: "DROP POLICY tenant_policy ON public.users;",
+              summary: "Drop policy tenant_policy",
+              destructive: true,
+              transactional: true,
+            },
+          ],
+          groups: [{ kind: "atomic", statementIndexes: [0, 1] }],
+        },
+      },
+    });
+
+    expect(
+      screen.queryByTestId("structure-pending-destructive-safe"),
+    ).toBeNull();
+    expect(
+      screen.getByTestId("structure-pending-destructive-danger").textContent,
+    ).toBe("Destructive");
+  });
+
+  it("does not infer a destructive badge when preview rows do not align", () => {
+    renderSection({
+      pending: [pgChange("danger", true), pgChange("safe", false)],
+      pgPreview: {
+        state: "ready",
+        preview: {
+          statements: [
+            {
+              sql: "DROP POLICY tenant_policy ON public.users;",
+              summary: "Drop policy tenant_policy",
+              destructive: true,
+              transactional: true,
+            },
+          ],
+          groups: [{ kind: "atomic", statementIndexes: [0] }],
+        },
+      },
+    });
+
+    expect(screen.queryByText("Destructive")).toBeNull();
   });
 
   it("renders SQL when preview is shown and previewSql is non-empty", () => {

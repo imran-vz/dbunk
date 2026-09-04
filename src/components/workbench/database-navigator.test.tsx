@@ -334,6 +334,10 @@ describe("DatabaseNavigator PostgreSQL Object Catalog", () => {
     expect(onCreateObject).toHaveBeenLastCalledWith("schema");
 
     fireEvent.click(screen.getByRole("treeitem", { name: /lifecycle/ }));
+    fireEvent.click(screen.getByRole("button", { name: "New table" }));
+    expect(onCreateObject).toHaveBeenLastCalledWith("table", "lifecycle");
+    fireEvent.click(screen.getByRole("button", { name: "New function" }));
+    expect(onCreateObject).toHaveBeenLastCalledWith("function", "lifecycle");
     fireEvent.click(screen.getByRole("button", { name: "New view" }));
     expect(onCreateObject).toHaveBeenLastCalledWith("view", "lifecycle");
     fireEvent.click(
@@ -347,6 +351,11 @@ describe("DatabaseNavigator PostgreSQL Object Catalog", () => {
     expect(onCreateObject).toHaveBeenLastCalledWith("sequence", "lifecycle");
     fireEvent.click(screen.getByRole("button", { name: "New enum" }));
     expect(onCreateObject).toHaveBeenLastCalledWith("enum", "lifecycle");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for schema lifecycle" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "New procedure" }));
+    expect(onCreateObject).toHaveBeenLastCalledWith("procedure", "lifecycle");
   });
 
   it("hides object creation while the connection is disconnected", () => {

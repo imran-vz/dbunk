@@ -55,7 +55,9 @@ describe("normalizeTableStructure", () => {
         },
       ],
       policies: [],
-      privileges: [{ grantee: "PUBLIC", privilege: "SELECT", grantable: false }],
+      privileges: [
+        { grantee: "PUBLIC", privilege: "SELECT", grantable: false },
+      ],
       rowSecurity: { enabled: true, forced: false },
       capabilities: {
         ...legacyStructure.capabilities,
@@ -105,7 +107,12 @@ describe("normalizePgObjectDescription", () => {
 
   it("passes non-routine facts through unchanged", () => {
     const description: PgObjectDescription = {
-      reference: { ...reference, kind: "schema", schema: null, identityArgs: null },
+      reference: {
+        ...reference,
+        kind: "schema",
+        schema: null,
+        identityArgs: null,
+      },
       owner: "dbunk",
       comment: null,
       definitionSql: null,

@@ -1676,6 +1676,7 @@ export type QueryHistoryEntry = {
 
 export type WorkspaceTabKind =
   | "table"
+  | "table-designer"
   | "query"
   | "object"
   | "key"
@@ -1693,6 +1694,46 @@ export type TabCaret = {
   anchorColumn?: number;
 };
 
+export type TableDesignerColumnDraft = {
+  id: string;
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  identity: "none" | PgIdentity;
+  defaultKind: "none" | "literal" | "expression";
+  defaultValue: string;
+  comment: string;
+};
+
+export type TableDesignerIndexDraft = {
+  id: string;
+  name: string;
+  columns: string[];
+  unique: boolean;
+  method: string;
+  include: string[];
+  wherePredicate: string;
+  concurrently: boolean;
+};
+
+export type TableDesignerKeyDraft = PgKeySpec & { id: string };
+export type TableDesignerCheckDraft = PgCheckSpec & { id: string };
+export type TableDesignerForeignKeyDraft = PgForeignKeySpec & { id: string };
+
+/** Complete, serializable form state owned by a table-designer tab. */
+export type TableDesignerDraft = {
+  schema: string;
+  name: string;
+  comment: string;
+  columns: TableDesignerColumnDraft[];
+  primaryKey: PgKeySpec | null;
+  uniques: TableDesignerKeyDraft[];
+  checks: TableDesignerCheckDraft[];
+  foreignKeys: TableDesignerForeignKeyDraft[];
+  indexes: TableDesignerIndexDraft[];
+  unlogged: boolean;
+};
+
 export type WorkspaceTab = {
   id: string;
   kind: WorkspaceTabKind;
@@ -1707,6 +1748,10 @@ export type WorkspaceTab = {
   query?: string;
   /** Query tabs only: last known caret/selection, session-persisted. */
   caret?: TabCaret;
+  /** Table-designer tabs only: complete form draft, session-persisted. */
+  tableDesignerDraft?: TableDesignerDraft;
+  /** Table-designer tabs only: runtime guard while reviewed DDL is applying. */
+  tableDesignerApplying?: boolean;
   lastRun?: string;
   isDirty?: boolean;
   /** Pinned tabs sit leftmost at icon width and are excluded from

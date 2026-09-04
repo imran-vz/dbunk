@@ -94,6 +94,7 @@ import {
 } from "@/lib/store";
 import { defaultTableGridPrefs } from "@/lib/table-browse";
 import { closeTableBrowseForTab } from "@/lib/table-browse-client";
+import { newTableDesignerForm } from "@/lib/table-designer";
 import { isTauri, tauriInvoke } from "@/lib/tauri";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
@@ -465,6 +466,26 @@ describe("store.openTableTab", () => {
     expect(calls).toContain("browse_table_data");
     expect(calls).not.toContain("load_table_data");
     expect(calls).not.toContain("run_query");
+  });
+});
+
+describe("store.openTableDesignerTab", () => {
+  it("opens a fresh draft for every New table action in the same schema", () => {
+    useAppStore.getState().openTableDesignerTab("public");
+    const firstTabId = useAppStore.getState().activeTabId;
+    useAppStore.getState().updateTableDesignerDraft(firstTabId, (draft) => ({
+      ...draft,
+      name: "orders",
+    }));
+
+    useAppStore.getState().openTableDesignerTab("public");
+
+    const state = useAppStore.getState();
+    expect(state.workspaceTabs).toHaveLength(2);
+    expect(state.activeTabId).not.toBe(firstTabId);
+    expect(
+      state.workspaceTabs.map((tab) => tab.tableDesignerDraft?.name),
+    ).toEqual(["orders", ""]);
   });
 });
 
@@ -2762,7 +2783,142 @@ describe("store.commitStructureChanges", () => {
     const outcome = await useAppStore.getState().commitStructureChanges(key);
 
     expect(outcome).toEqual({ kind: "completed", runtimeMs: 4 });
-    expect(loadDescription).toHaveBeenCalledWith("conn-1", tableReference);
+    expect(loadDescription).toHaveBeenCalledWith("conn-1", tableReference, 0);
+  });
+
+  it.each([
+    {
+      name: "continues refresh after catalog stale at the same generation",
+      catalogResult: "stale",
+      firstDescriptionResult: "ready",
+    },
+    {
+      name: "continues later descriptions after one is stale at the same generation",
+      catalogResult: "ready",
+      firstDescriptionResult: "stale",
+    },
+  ] as const)("$name", async ({ catalogResult, firstDescriptionResult }) => {
+    const tableReference = {
+      kind: "table",
+      schema: "public",
+      name: "users",
+      identityArgs: null,
+    } as const;
+    const routineReference = {
+      kind: "function",
+      schema: "audit",
+      name: "touch_users",
+      identityArgs: "",
+    } as const;
+    const otherConnectionReference = {
+      kind: "function",
+      schema: "public",
+      name: "unrelated",
+      identityArgs: "",
+    } as const;
+    const loadCatalog = vi.fn(
+      async (): Promise<"ready" | "stale"> => catalogResult,
+    );
+    let descriptionCalls = 0;
+    const loadDescription = vi.fn(async (): Promise<"ready" | "stale"> => {
+      const result = descriptionCalls === 0 ? firstDescriptionResult : "ready";
+      descriptionCalls += 1;
+      return result;
+    });
+    useAppStore.setState({
+      pgObjectCatalog: {
+        "conn-1": {
+          status: "ready",
+          generation: 3,
+          catalog: emptyPgObjectCatalog(),
+        },
+      },
+      pgObjectDescriptions: {
+        [pgObjectDescriptionKey("conn-1", tableReference)]: {
+          status: "loading",
+          generation: 3,
+        },
+        [pgObjectDescriptionKey("conn-1", routineReference)]: {
+          status: "loading",
+          generation: 3,
+        },
+        [pgObjectDescriptionKey("conn-2", otherConnectionReference)]: {
+          status: "loading",
+          generation: 0,
+        },
+      },
+      loadPgObjectCatalog: loadCatalog,
+      loadPgObjectDescription: loadDescription,
+    });
+    act(() => {
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "createFunction",
+            schema: "audit",
+            name: "touch_users",
+            orReplace: true,
+            arguments: "",
+            returns: "trigger",
+            language: "plpgsql",
+            body: "BEGIN RETURN NEW; END;",
+            volatility: "volatile",
+            strict: false,
+            securityDefiner: false,
+            parallel: null,
+          },
+        },
+      });
+      useAppStore.getState().addPendingStructureChange(key, {
+        schema: "public",
+        table: "users",
+        change: {
+          kind: "pg-op",
+          op: {
+            op: "createTrigger",
+            schema: "public",
+            table: "users",
+            name: "users_touch",
+            timing: "before",
+            events: [{ kind: "update", columns: [] }],
+            forEach: "row",
+            when: null,
+            functionSchema: "audit",
+            functionName: "touch_users",
+            arguments: [],
+            orReplace: false,
+          },
+        },
+      });
+    });
+    mockedInvoke
+      .mockResolvedValueOnce({ appliedStatements: 2, runtimeMs: 4 })
+      .mockResolvedValueOnce(emptyStructure());
+
+    const outcome = await useAppStore.getState().commitStructureChanges(key);
+
+    expect(outcome).toEqual({ kind: "completed", runtimeMs: 4 });
+    expect(loadCatalog).toHaveBeenCalledWith("conn-1", 3);
+    expect(loadDescription).toHaveBeenNthCalledWith(
+      1,
+      "conn-1",
+      tableReference,
+      3,
+    );
+    expect(loadDescription).toHaveBeenNthCalledWith(
+      2,
+      "conn-1",
+      routineReference,
+      3,
+    );
+    expect(loadDescription).not.toHaveBeenCalledWith(
+      "conn-2",
+      otherConnectionReference,
+      expect.anything(),
+    );
   });
 
   it("does not refresh when a pg-op batch fails before anything applied", async () => {
@@ -4832,6 +4988,34 @@ describe("closeTab table browse cleanup", () => {
 
     expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
     expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
+  });
+
+  it("keeps a table designer open while its reviewed DDL is applying", async () => {
+    const designerTab = {
+      id: "tab-designer",
+      kind: "table-designer" as const,
+      label: "New table · public",
+      connectionId: "conn-1",
+      schema: "public",
+      tableDesignerDraft: newTableDesignerForm("public"),
+    };
+    useAppStore.setState({
+      workspaceTabs: [designerTab],
+      activeTabId: designerTab.id,
+    });
+    useAppStore.getState().setTableDesignerApplying(designerTab.id, true);
+
+    await useAppStore.getState().closeTab(designerTab.id);
+
+    expect(useAppStore.getState().workspaceTabs).toHaveLength(1);
+    expect(useAppStore.getState().workspaceTabs[0]?.tableDesignerApplying).toBe(
+      true,
+    );
+    expect(mockedCloseTableBrowseForTab).not.toHaveBeenCalled();
+
+    useAppStore.getState().setTableDesignerApplying(designerTab.id, false);
+    await useAppStore.getState().closeTab(designerTab.id);
+    expect(useAppStore.getState().workspaceTabs).toEqual([]);
   });
 
   it("keeps an applying mutation and its tab open", async () => {

@@ -216,6 +216,7 @@ describe("DdlReviewDialog", () => {
     );
 
     const onOpenChange = vi.fn();
+    const onApplyingChange = vi.fn();
     render(
       <DdlReviewDialog
         open
@@ -223,6 +224,7 @@ describe("DdlReviewDialog", () => {
         connectionId={connection.id}
         ops={[alterSequence]}
         onOpenChange={onOpenChange}
+        onApplyingChange={onApplyingChange}
       />,
     );
 
@@ -230,6 +232,7 @@ describe("DdlReviewDialog", () => {
     fireEvent.click(apply);
     fireEvent.click(apply);
     expect(clientMocks.apply).toHaveBeenCalledOnce();
+    expect(onApplyingChange).toHaveBeenLastCalledWith(true);
     expect(
       screen
         .getByRole("button", { name: "Applying…" })
@@ -251,6 +254,62 @@ describe("DdlReviewDialog", () => {
     expect(
       screen.getByRole("button", { name: "Applied" }).hasAttribute("disabled"),
     ).toBe(true);
+    expect(onApplyingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("clears the applying lifecycle after the dialog unmounts", async () => {
+    clientMocks.preview.mockResolvedValue({
+      kind: "ok",
+      value: multiGroupPreview,
+    });
+    let resolveApply: (result: {
+      kind: "error";
+      error: {
+        kind: "database";
+        statementIndex: number;
+        code: string;
+        message: string;
+        position: null;
+        appliedStatements: number;
+      };
+    }) => void = () => undefined;
+    clientMocks.apply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+    );
+    const onApplyingChange = vi.fn();
+    const rendered = render(
+      <DdlReviewDialog
+        open
+        variant="inline"
+        connectionId={connection.id}
+        ops={[alterSequence]}
+        onOpenChange={() => undefined}
+        onApplyingChange={onApplyingChange}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
+    expect(onApplyingChange).toHaveBeenLastCalledWith(true);
+    rendered.unmount();
+    await act(async () => {
+      resolveApply({
+        kind: "error",
+        error: {
+          kind: "database",
+          statementIndex: 0,
+          code: "XX000",
+          message: "apply failed",
+          position: null,
+          appliedStatements: 0,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(onApplyingChange).toHaveBeenLastCalledWith(false);
   });
 
   it("reconciles applied identity when a newer metadata refresh wins", async () => {
@@ -443,6 +502,7 @@ describe("DdlReviewDialog", () => {
         },
       });
       const onRefresh = vi.fn();
+      const onPartiallyApplied = vi.fn();
 
       render(
         <DdlReviewDialog
@@ -452,6 +512,7 @@ describe("DdlReviewDialog", () => {
           ops={[alterSequence]}
           onOpenChange={() => undefined}
           onRefresh={onRefresh}
+          onPartiallyApplied={onPartiallyApplied}
         />,
       );
       fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
@@ -466,12 +527,14 @@ describe("DdlReviewDialog", () => {
       expect(loadCatalog).not.toHaveBeenCalled();
       expect(onRefresh).toHaveBeenCalledOnce();
       if (result.kind === "ok") {
+        expect(onPartiallyApplied).not.toHaveBeenCalled();
         expect(
           screen
             .getByRole("button", { name: "Applied" })
             .hasAttribute("disabled"),
         ).toBe(true);
       } else {
+        expect(onPartiallyApplied).toHaveBeenCalledWith(result.error, 0);
         expect(clientMocks.preview).toHaveBeenCalledOnce();
         expect(
           screen

@@ -22,3 +22,9 @@ export {
   ObjectActionDialog,
   type ObjectActionKind,
 } from "./object-action-dialog";
+export {
+  buildRoutineOp,
+  RoutineEditorDialog,
+  routineEditorState,
+  type RoutineEditorState,
+} from "./routine-editor-dialog";
