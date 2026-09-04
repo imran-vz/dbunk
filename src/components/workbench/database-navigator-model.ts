@@ -13,6 +13,9 @@ import {
 
 export type CreatableObjectKind =
   | "schema"
+  | "table"
+  | "function"
+  | "procedure"
   | "view"
   | "materialized-view"
   | "sequence"
@@ -231,6 +234,12 @@ export const createKindForGroup = (
   group: NavigatorGroupKey,
 ): Exclude<CreatableObjectKind, "schema"> | null => {
   switch (group) {
+    case "tables":
+      return "table";
+    case "functions":
+      return "function";
+    case "procedures":
+      return "procedure";
     case "views":
       return "view";
     case "materializedViews":

@@ -7,6 +7,7 @@ import {
   startSessionPersistence,
 } from "@/lib/session-persistence";
 import { useAppStore, type Connection, type WorkspaceTab } from "@/lib/store";
+import { newTableDesignerForm } from "@/lib/table-designer";
 
 // Non-Tauri: the ui-state store passes through to localStorage, so the
 // session blob is directly observable there.
@@ -87,6 +88,13 @@ describe("restoreSession (P8)", () => {
             table: "users",
             pinned: true,
           },
+          {
+            id: "tab-7",
+            kind: "table-designer",
+            label: "New table · public",
+            connectionId: "conn-1",
+            schema: "public",
+          },
           // Dropped: its connection no longer exists.
           {
             id: "tab-6",
@@ -111,11 +119,16 @@ describe("restoreSession (P8)", () => {
     expect(state.workspaceTabs.map((tab) => tab.id)).toEqual([
       "tab-4",
       "tab-5",
+      "tab-7",
     ]);
     // Hot-exit SQL restored exactly.
     expect(state.workspaceTabs[0]?.query).toBe("select 1;");
     expect(state.workspaceTabs[0]?.isDirty).toBe(true);
     expect(state.workspaceTabs[1]?.pinned).toBe(true);
+    expect(state.workspaceTabs[2]?.tableDesignerDraft).toMatchObject({
+      schema: "public",
+      name: "",
+    });
     expect(state.activeTabId).toBe("tab-5");
     expect(state.expandedSchemas).toEqual(["conn-1:public"]);
     expect(state.expandedNavigatorGroups).toEqual(["conn-1:public:views"]);
@@ -364,6 +377,78 @@ describe("session persistence (P8)", () => {
     expect(useAppStore.getState().activeTabId).toBe("tab-object");
   });
 
+  it("round-trips the complete table-designer draft", () => {
+    vi.useFakeTimers();
+    const draft = newTableDesignerForm("audit");
+    draft.name = "events";
+    draft.comment = "Persisted table draft";
+    draft.columns[0] = {
+      ...draft.columns[0]!,
+      comment: "Stable identifier",
+      identity: "always",
+      nullable: false,
+    };
+    draft.uniques.push({
+      id: "unique-1",
+      name: "events_id_key",
+      columns: ["id"],
+    });
+    draft.checks.push({
+      id: "check-1",
+      name: null,
+      expression: "id > 0",
+    });
+    draft.foreignKeys.push({
+      id: "foreign-key-1",
+      name: "events_parent_fk",
+      columns: ["id"],
+      referencedSchema: "public",
+      referencedTable: "parents",
+      referencedColumns: ["id"],
+      onUpdate: "no-action",
+      onDelete: "cascade",
+      deferrable: true,
+      initiallyDeferred: true,
+    });
+    draft.indexes.push({
+      id: "index-1",
+      name: "events_id_idx",
+      columns: ["id"],
+      unique: false,
+      method: "btree",
+      include: [],
+      wherePredicate: "id > 0",
+      concurrently: true,
+    });
+    const tab: WorkspaceTab = {
+      id: "tab-designer",
+      kind: "table-designer",
+      label: "New table · audit",
+      connectionId: "conn-1",
+      schema: "audit",
+      tableDesignerDraft: draft,
+    };
+    startSessionPersistence();
+    useAppStore.setState({
+      connections: [connection("conn-1")],
+      workspaceTabs: [tab],
+      activeTabId: tab.id,
+    });
+    vi.advanceTimersByTime(600);
+
+    const persisted = JSON.parse(
+      window.localStorage.getItem(SESSION_STORAGE_KEY) ?? "{}",
+    );
+    expect(persisted.tabs).toEqual([tab]);
+
+    useAppStore.setState(initialStoreState, true);
+    useAppStore.setState({ connections: [connection("conn-1")] });
+    useAppStore.getState().restoreSession();
+
+    expect(useAppStore.getState().workspaceTabs).toEqual([tab]);
+    expect(useAppStore.getState().activeTabId).toBe(tab.id);
+  });
+
   it("round-trips schema-qualified relation identity for query tabs", () => {
     vi.useFakeTimers();
     startSessionPersistence();
@@ -475,6 +560,56 @@ describe("session persistence (P8)", () => {
     expect(parsed.tabs[0].isDirty).toBeUndefined();
     expect(parsed.tabs[1].query).toBe("select 2;");
     expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("sheds an oversized designer draft while preserving every tab", () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const oversizedDraft = newTableDesignerForm("public");
+    oversizedDraft.name = "large_design";
+    oversizedDraft.comment = "x".repeat(160 * 1024);
+    const designer: WorkspaceTab = {
+      id: "tab-designer",
+      kind: "table-designer",
+      label: "New table · public",
+      connectionId: "conn-1",
+      schema: "public",
+      tableDesignerDraft: oversizedDraft,
+    };
+    startSessionPersistence();
+
+    useAppStore.setState({
+      workspaceTabs: [designer, queryTab("tab-query", "select 42;")],
+      activeTabId: designer.id,
+    });
+    vi.advanceTimersByTime(600);
+
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw ?? "{}");
+    expect(parsed.tabs).toEqual([
+      {
+        id: "tab-designer",
+        kind: "table-designer",
+        label: "New table · public",
+        connectionId: "conn-1",
+        schema: "public",
+      },
+      {
+        id: "tab-query",
+        kind: "query",
+        label: "tab-query.sql",
+        connectionId: "conn-1",
+        schema: "public",
+        query: "select 42;",
+        isDirty: true,
+      },
+    ]);
+    expect(parsed.activeTabId).toBe(designer.id);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Table designer draft too large to persist; dropping draft for tab tab-designer",
+    );
     warnSpy.mockRestore();
   });
 });

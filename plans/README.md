@@ -28,7 +28,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 014                                                   | Object explorer, viewers, and lifecycle activation               |       P1 |      L | 013        | DONE: 2e843a6 (selected mock: C)               |
 | 015                                                   | PostgreSQL structure editor switchover to the typed DDL workflow |       P1 |      M | 013, 014   | DONE: 84112dc                                  |
 | 016                                                   | PostgreSQL table designer, routine, trigger, policy, and privilege DDL backend (dark) |       P1 |      L | 013–015    | DONE: 6b573f1                                  |
-| [017](./017-table-designer-and-table-security-activation.md) | Table designer, routine editor, and table security activation | P1 | L | 016 | IN PROGRESS: through Step 0 (selected mock: A) |
+| [017](./017-table-designer-and-table-security-activation.md) | Table designer, routine editor, and table security activation | P1 | L | 016 | READY FOR REVIEW (selected mock: A)              |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -37,8 +37,10 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently active: Plan 017 through Step 0.** Plan 016 is `DONE` at `6b573f1`
-(decision record ADR-0027). Plan 017 selected mock A and is ready for Step 1.
+**Currently active: Plan 017 is `READY FOR REVIEW`.**
+Plan 016 is `DONE` at `6b573f1` (decision record ADR-0027). Plan 017 selected
+mock A and completed its native manual pass on the disposable PostgreSQL and
+ClickHouse fixtures.
 
 ## Planning rules
 

@@ -23,6 +23,7 @@ import {
 } from "@/lib/object-ddl";
 import { pendingMutationsFromResult } from "@/lib/pending-mutations";
 import {
+  parseCanonicalPgObjectRefKey,
   pgObjectDdlApplyKey,
   pgObjectDescriptionKey,
 } from "@/lib/pg-object-ref";
@@ -38,10 +39,6 @@ import {
 } from "@/lib/schema-graph";
 import { clearLifecycleSlot } from "@/lib/store-lifecycle";
 import {
-  normalizeTableStructure,
-  type TableStructurePayload,
-} from "@/lib/table-structure-contract";
-import {
   assertStructureChangeCanAppend,
   pendingStructureBatch,
 } from "@/lib/structure-changes";
@@ -51,6 +48,10 @@ import {
   resolveTableRefByName,
   tableSessionStructureKey,
 } from "@/lib/table-session";
+import {
+  normalizeTableStructure,
+  type TableStructurePayload,
+} from "@/lib/table-structure-contract";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import {
@@ -1793,12 +1794,15 @@ export const createRelationalTablesSlice: StateCreator<
           reason: "Another DDL apply is already running on this connection.",
         };
       }
-      // Revalidate any already-loaded object descriptions this batch can
-      // make stale (the table's reconstructed DDL in open object
-      // viewers). `objectDdlRefreshScope` cannot attribute `dropIndex`
-      // to a table, but every op in a structure-editor batch targets
-      // this table, so its ref is always included.
-      const refreshObjectDescriptions = async () => {
+      const expectedGeneration =
+        get().pgObjectCatalog[connectionId]?.generation ?? 0;
+      const refreshScope = objectDdlRefreshScope(batch.ops);
+      // Refresh every object cache named by the shared DDL scope. The table
+      // is always included because `dropIndex` cannot carry its table ref.
+      // Inline CREATE OR REPLACE FUNCTION additionally refreshes the catalog
+      // and every description loaded for this connection: its identity args
+      // cannot be reconstructed safely from the create operation.
+      const refreshObjectCaches = async () => {
         const tableReference: PgObjectRef = {
           kind: "table",
           schema,
@@ -1806,31 +1810,62 @@ export const createRelationalTablesSlice: StateCreator<
           identityArgs: null,
         };
         const references = new Map(
-          [...objectDdlRefreshScope(batch.ops).references, tableReference].map(
-            (reference) => [
-              pgObjectDescriptionKey(connectionId, reference),
-              reference,
-            ],
-          ),
+          [...refreshScope.references, tableReference].map((reference) => [
+            pgObjectDescriptionKey(connectionId, reference),
+            reference,
+          ]),
         );
-        const current = get();
-        await Promise.all(
-          [...references]
-            .filter(
-              ([descriptionKey]) =>
-                descriptionKey in current.pgObjectDescriptions,
-            )
-            .map(([, reference]) =>
-              current.loadPgObjectDescription(connectionId, reference),
-            ),
-        );
+        const before = get();
+        if (
+          (before.pgObjectCatalog[connectionId]?.generation ?? 0) !==
+          expectedGeneration
+        ) {
+          return;
+        }
+        const described = new Set(Object.keys(before.pgObjectDescriptions));
+        if (refreshScope.revalidateAllDescriptions) {
+          const prefix = `${connectionId}:`;
+          for (const [descriptionKey, descriptionState] of Object.entries(
+            before.pgObjectDescriptions,
+          )) {
+            if (!descriptionKey.startsWith(prefix)) continue;
+            const reference =
+              descriptionState.description?.reference ??
+              (descriptionState.error?.kind === "objectNotFound"
+                ? descriptionState.error.reference
+                : parseCanonicalPgObjectRefKey(
+                    descriptionKey.slice(prefix.length),
+                  ));
+            if (reference) references.set(descriptionKey, reference);
+          }
+        }
+        if (refreshScope.catalog) {
+          await before.loadPgObjectCatalog(connectionId, expectedGeneration);
+          if (
+            (get().pgObjectCatalog[connectionId]?.generation ?? 0) !==
+            expectedGeneration
+          ) {
+            return;
+          }
+        }
+        for (const [descriptionKey, reference] of references) {
+          if (!described.has(descriptionKey)) continue;
+          await get().loadPgObjectDescription(
+            connectionId,
+            reference,
+            expectedGeneration,
+          );
+          if (
+            (get().pgObjectCatalog[connectionId]?.generation ?? 0) !==
+            expectedGeneration
+          ) {
+            return;
+          }
+        }
       };
       const refreshAfterApply = async () => {
         try {
-          await Promise.all([
-            runPostDdlRefreshes(),
-            refreshObjectDescriptions(),
-          ]);
+          await Promise.all([runPostDdlRefreshes(), refreshObjectCaches()]);
         } catch (refreshError) {
           // The DDL outcome is already decided; a refresh failure must
           // not masquerade as an apply failure.

@@ -16,12 +16,16 @@ import {
   type DDLOutcome,
   type ForeignKeyInfo,
   type IndexInfo,
+  type PolicyInfo,
+  type PrivilegeInfo,
   type PendingChange,
   type PgObjectOp,
   type StructureCapabilities,
   type StructureCommitStatus,
   type TableStructure,
   type TableStructureStatus,
+  type RowSecurityInfo,
+  type TriggerInfo,
   tableStructureKey,
   useAppStore,
 } from "@/lib/store";
@@ -63,6 +67,10 @@ interface StructureSnapshot {
   foreignKeys: ForeignKeyInfo[];
   indexes: IndexInfo[];
   constraints: ConstraintInfo[];
+  triggers: TriggerInfo[];
+  policies: PolicyInfo[];
+  privileges: PrivilegeInfo[];
+  rowSecurity: RowSecurityInfo | null;
   capabilities: StructureCapabilities;
   tableEngine: string | undefined;
   partitionBy: string | null;
@@ -78,6 +86,10 @@ export function snapshotFromStructure(
     foreignKeys: structure?.foreignKeys ?? [],
     indexes: structure?.indexes ?? [],
     constraints: structure?.constraints ?? [],
+    triggers: structure?.triggers ?? [],
+    policies: structure?.policies ?? [],
+    privileges: structure?.privileges ?? [],
+    rowSecurity: structure?.rowSecurity ?? null,
     capabilities: structure?.capabilities ?? FALLBACK_CAPABILITIES,
     tableEngine: structure?.tableEngine,
     partitionBy: structure?.partitionBy ?? null,
@@ -113,6 +125,10 @@ export interface StructureView {
   foreignKeys: ForeignKeyInfo[];
   indexes: IndexInfo[];
   constraints: ConstraintInfo[];
+  triggers: TriggerInfo[];
+  policies: PolicyInfo[];
+  privileges: PrivilegeInfo[];
+  rowSecurity: RowSecurityInfo | null;
   tableEngine: string | undefined;
   partitionBy: string | null;
   sampleBy: string | null;
@@ -335,6 +351,10 @@ export function useStructure({
     foreignKeys: snapshot.foreignKeys,
     indexes: snapshot.indexes,
     constraints: snapshot.constraints,
+    triggers: snapshot.triggers,
+    policies: snapshot.policies,
+    privileges: snapshot.privileges,
+    rowSecurity: snapshot.rowSecurity,
     tableEngine: snapshot.tableEngine,
     partitionBy: snapshot.partitionBy,
     sampleBy: snapshot.sampleBy,

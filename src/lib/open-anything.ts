@@ -38,6 +38,11 @@ export type RelationKind =
 
 export type OpenAnythingTarget =
   | { type: "command"; commandId: string }
+  | {
+      type: "new-table";
+      connectionId: string;
+      schema: string;
+    }
   | { type: "connect"; connectionId: string }
   | { type: "activate-tab"; tabId: string }
   | {
@@ -224,7 +229,12 @@ export function buildOpenAnythingIndex(
   }
 
   for (const tab of snapshot.workspaceTabs) {
-    if (tab.kind !== "query" && tab.kind !== "table" && tab.kind !== "object") {
+    if (
+      tab.kind !== "query" &&
+      tab.kind !== "table" &&
+      tab.kind !== "table-designer" &&
+      tab.kind !== "object"
+    ) {
       continue;
     }
     const connectionName = connectionNames.get(tab.connectionId) ?? "";
@@ -255,6 +265,20 @@ export function buildOpenAnythingIndex(
     if (!isConnectedStatus(connection.status)) continue;
     const schemas = snapshot.schemaExplorer[connection.id] ?? [];
     for (const schema of schemas) {
+      if (connection.engine === "PostgreSQL") {
+        items.push({
+          key: `command:new-table:${connection.id}:${schema.name}`,
+          kind: "command",
+          label: `New table in ${schema.name}`,
+          keywords:
+            `create new table ${schema.name} ${connection.name}`.toLowerCase(),
+          target: {
+            type: "new-table",
+            connectionId: connection.id,
+            schema: schema.name,
+          },
+        });
+      }
       items.push({
         key: `schema:${connection.id}:${schema.name}`,
         kind: "schema",

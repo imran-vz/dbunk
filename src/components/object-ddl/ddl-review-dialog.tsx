@@ -55,6 +55,13 @@ export type DdlReviewDialogProps = {
     result: DdlApplyResult,
     expectedGeneration: number,
   ) => void | Promise<void>;
+  /** Runs after metadata reconciliation when at least one statement persisted. */
+  onPartiallyApplied?: (
+    error: PgObjectError,
+    expectedGeneration: number,
+  ) => void | Promise<void>;
+  /** Mirrors this review's apply lifetime even when the dialog unmounts. */
+  onApplyingChange?: (applying: boolean) => void;
   onRefresh?: () => void | Promise<void>;
   initialTerminal?: DdlReviewTerminal | null;
   onTerminalChange?: (terminal: DdlReviewTerminal | null) => void;
@@ -68,6 +75,8 @@ export function DdlReviewDialog({
   ops,
   variant = "dialog",
   onApplied,
+  onPartiallyApplied,
+  onApplyingChange,
   onRefresh,
   initialTerminal = null,
   onTerminalChange,
@@ -282,6 +291,7 @@ export function DdlReviewDialog({
     if (!useAppStore.getState().beginPgObjectDdlApply(applyKey)) return;
     applyingRef.current = true;
     setApplying(true);
+    onApplyingChange?.(true);
     setOutcome(null);
     const expectedGeneration =
       useAppStore.getState().pgObjectCatalog[frozenConnectionId]?.generation ??
@@ -357,6 +367,13 @@ export function DdlReviewDialog({
               `${failureOutcome} Metadata refresh failed: ${errorToMessage(refreshError)}`,
             );
           }
+          if (
+            isConnectionCurrent() &&
+            (useAppStore.getState().pgObjectCatalog[frozenConnectionId]
+              ?.generation ?? 0) === expectedGeneration
+          ) {
+            await onPartiallyApplied?.(result.error, expectedGeneration);
+          }
         }
       }
     } catch (error) {
@@ -365,6 +382,9 @@ export function DdlReviewDialog({
       useAppStore.getState().endPgObjectDdlApply(applyKey);
       applyingRef.current = false;
       setApplying(false);
+      // The async handler survives a React unmount, so owners cannot retain a
+      // stale runtime guard after this apply reaches a terminal result.
+      onApplyingChange?.(false);
     }
   };
 

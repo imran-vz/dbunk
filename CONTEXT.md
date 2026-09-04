@@ -156,7 +156,16 @@ identity; see the **Keyspace model** section below.
 - **Object Viewer** — the `object` Workspace Tab for one Object Ref. It shows
   reconstructed definition SQL and kind-specific facts, restores without
   auto-connecting, and loads its description after the connection becomes
-  active. List-only catalog entries have no Object Viewer.
+  active. Functions and procedures expose **Edit source**, which opens the
+  Routine Editor. List-only catalog entries have no Object Viewer.
+- **Table Designer** — the `table-designer` Workspace Tab for creating one
+  PostgreSQL table. Its form maps purely to a `createTable` operation followed
+  by table/column comments and extra indexes, continuously previews the typed
+  plan, and opens the created table after reviewed apply.
+- **Routine Editor** — the shared create/edit dialog for PostgreSQL functions
+  and procedures. It round-trips Routine Source fields into one typed
+  `createFunction` or `createProcedure` operation; edit mode always uses
+  `orReplace`, while C/internal routines remain read-only.
 - **Schema Relationships** — the foreign-key graph used to render the schema
   map. Loaded lazily per-schema.
 - **Schema Map** — the visual graph of relational tables and their
@@ -278,12 +287,13 @@ ADR-0009 for the writes-by-default posture.
 - **Workspace Shell** — the contents of the main area when a connection is
   active. Forks on the active connection's storage class (ADR-0008): the
   **Relational Workspace** renders the object navigator +
-  `table`/`query`/`object` tab kinds; the **KeyValue Workspace** renders the keyspace browser +
+  `table`/`query`/`object`/`table-designer` tab kinds; the **KeyValue Workspace** renders the keyspace browser +
   `key`/`cli`/`pubsub`/`server` tab kinds. The app shell (top bar,
   connections list, settings, credential onboarding) is shared.
 - **Workspace Tab** — an open tab in the main area. Relational kinds:
   `table` (the data browser), `query` (the SQL editor), and `object` (the
-  PostgreSQL Object Viewer). Keyvalue kinds:
+  PostgreSQL Object Viewer), plus `table-designer` (a persisted new-table
+  draft). Keyvalue kinds:
   `key` (multi-instance, one per inspected key), `cli` (singleton REPL),
   `pubsub` (singleton subscription monitor), `server` (singleton INFO /
   health view; also the default-opened tab when a Redis connection becomes

@@ -1,5 +1,5 @@
 import { IconAlertTriangle, IconColumns3 } from "@tabler/icons-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { ColumnsSection } from "@/components/table-structure/columns-section";
 import { PendingChangesSection } from "@/components/table-structure/pending-changes-section";
@@ -10,9 +10,16 @@ import {
   IndexesSection,
   PrimaryKeySection,
 } from "@/components/table-structure/read-only-sections";
+import {
+  PrivilegesSection,
+  RowLevelSecuritySection,
+  TriggersSection,
+  type TriggerFunctionOption,
+} from "@/components/table-structure/table-security-sections";
 import { useStructure } from "@/components/table-structure/use-structure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { pgObjectDescriptionKey, useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface TableStructureViewProps {
@@ -28,8 +35,62 @@ export function TableStructureView({
   tableName,
   className,
 }: TableStructureViewProps) {
+  // Remount the whole editor when a reused workspace panel changes tables so
+  // every open structure form and row control loses its previous-table state.
+  return (
+    <TableStructureViewForTable
+      key={`${connectionId}\u0000${schema}\u0000${tableName}`}
+      connectionId={connectionId}
+      schema={schema}
+      tableName={tableName}
+      className={className}
+    />
+  );
+}
+
+function TableStructureViewForTable({
+  connectionId,
+  schema,
+  tableName,
+  className,
+}: TableStructureViewProps) {
   const view = useStructure({ connectionId, schema, tableName });
   const [showPreview, setShowPreview] = useState(false);
+  const catalogState = useAppStore(
+    (state) => state.pgObjectCatalog[connectionId],
+  );
+  const descriptions = useAppStore((state) => state.pgObjectDescriptions);
+  const roles =
+    catalogState?.status === "ready" && catalogState.catalog
+      ? catalogState.catalog.roles.map((role) => role.name)
+      : [];
+  const functions = useMemo<TriggerFunctionOption[]>(() => {
+    if (catalogState?.status !== "ready" || !catalogState.catalog) return [];
+    return catalogState.catalog.schemas.flatMap((schemaEntry) =>
+      schemaEntry.functions
+        .filter((fn) => (fn.identityArgs ?? "").trim() === "")
+        .map((fn) => {
+          const reference = {
+            kind: "function",
+            schema: schemaEntry.name,
+            name: fn.name,
+            identityArgs: "",
+          } as const;
+          const description =
+            descriptions[pgObjectDescriptionKey(connectionId, reference)]
+              ?.description;
+          return {
+            schema: schemaEntry.name,
+            name: fn.name,
+            identityArgs: "",
+            returns:
+              description?.facts.kind === "routine"
+                ? description.facts.returns
+                : null,
+          };
+        }),
+    );
+  }, [catalogState, connectionId, descriptions]);
 
   return (
     <div
@@ -54,6 +115,8 @@ export function TableStructureView({
           view={view}
           showPreview={showPreview}
           onTogglePreview={() => setShowPreview((value) => !value)}
+          roles={roles}
+          functions={functions}
         />
       </div>
     </div>
@@ -66,12 +129,16 @@ function StructureContent({
   view,
   showPreview,
   onTogglePreview,
+  roles,
+  functions,
 }: {
   schema: string;
   tableName: string;
   view: ReturnType<typeof useStructure>;
   showPreview: boolean;
   onTogglePreview: () => void;
+  roles: string[];
+  functions: TriggerFunctionOption[];
 }) {
   const { capabilities, policy, editable } = view;
   const pg = view.queuePgOp
@@ -150,6 +217,28 @@ function StructureContent({
         supported={capabilities.constraints}
         engine={view.engine}
         pg={pg}
+      />
+
+      <TriggersSection
+        triggers={view.triggers}
+        supported={capabilities.triggers}
+        pg={pg}
+        functions={functions}
+      />
+
+      <RowLevelSecuritySection
+        rowSecurity={view.rowSecurity}
+        policies={view.policies}
+        supported={capabilities.policies}
+        pg={pg}
+        roles={roles}
+      />
+
+      <PrivilegesSection
+        privileges={view.privileges}
+        supported={capabilities.privileges}
+        pg={pg}
+        roles={roles}
       />
     </div>
   );

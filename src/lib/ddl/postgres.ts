@@ -37,9 +37,8 @@ export type ColumnChangeKind =
 
 const { quoteIdent, qualifiedTable } = createIdentQuoter('"');
 
-/** PostgreSQL identifier quoting for surfaces that still hand users SQL
- * text (the generate-only GRANT / RLS / trigger panels). Typed object
- * operations never need it — the backend renders their statements. */
+/** PostgreSQL identifier quoting for legacy non-PostgreSQL fallbacks and
+ * display-only literals. Typed PostgreSQL operations are rendered server-side. */
 export const pgQuoteIdent = quoteIdent;
 
 const renderColumnDefinition = (column: NewColumn): string => {

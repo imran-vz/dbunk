@@ -1,6 +1,7 @@
 import { IconAlertTriangle, IconX } from "@tabler/icons-react";
 
 import { DdlPlanPreviewGroups } from "@/components/object-ddl/plan-preview";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
   DDLOutcome,
@@ -135,9 +136,24 @@ function SectionActions({
   );
 }
 
-/** Per-row label. PG rows read the preview's statement summary — the
- * backend workflow renders exactly one statement per operation, and a
- * count mismatch falls back to the neutral label rather than guessing. */
+/** PG row summary and destructiveness come from the same aligned backend
+ * statement. A count mismatch falls back to neutral UI rather than guessing. */
+const pendingPreviewStatement = (
+  entry: PendingChange,
+  index: number,
+  pending: PendingChange[],
+  pgPreview: StructurePgPreview,
+) => {
+  if (entry.change.kind === "column") return null;
+  if (
+    pgPreview.state === "ready" &&
+    pgPreview.preview.statements.length === pending.length
+  ) {
+    return pgPreview.preview.statements[index] ?? null;
+  }
+  return null;
+};
+
 const pendingLabel = (
   entry: PendingChange,
   index: number,
@@ -147,12 +163,8 @@ const pendingLabel = (
   if (entry.change.kind === "column") {
     return describeChange(entry.change.change);
   }
-  if (
-    pgPreview.state === "ready" &&
-    pgPreview.preview.statements.length === pending.length
-  ) {
-    return pgPreview.preview.statements[index]?.summary ?? "Pending preview";
-  }
+  const statement = pendingPreviewStatement(entry, index, pending, pgPreview);
+  if (statement) return statement.summary;
   return "Pending preview";
 };
 
@@ -177,6 +189,16 @@ function PendingList({
           <span className="truncate text-foreground">
             {pendingLabel(entry, index, pending, pgPreview)}
           </span>
+          {pendingPreviewStatement(entry, index, pending, pgPreview)
+            ?.destructive ? (
+            <Badge
+              data-testid={`structure-pending-destructive-${entry.id}`}
+              variant="destructive"
+              className="shrink-0 text-2xs"
+            >
+              Destructive
+            </Badge>
+          ) : null}
           <Button
             data-testid={`structure-remove-pending-${entry.id}`}
             variant="ghost"

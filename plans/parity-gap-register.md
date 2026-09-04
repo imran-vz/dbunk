@@ -471,13 +471,10 @@ PostgreSQL deployments and can explain which transport stage failed.
 
 **Current state:** Partial. Plans 013 and 014 delivered the catalog,
 inspection, schema-level lifecycle, reviewed DDL, and dependency-warning core.
-Plan 015 delivered the typed structure-editor half. Plans 016 and 017
-(authored 2026-09-01 at `b82de63`) are the selected next slice: a dark
-backend adding `createTable`, `createFunction`/`createProcedure`, trigger,
-row-level-security, and grant/revoke operations plus routine-source and
-table-security facts, then their activation as a create-table designer, a
-routine editor, Structure-tab trigger/policy/privilege sections, and the
-switch of the last three generate-only Specialized panels. Database
+Plan 015 delivered the typed structure-editor half. Plan 016 delivered the
+backend for the next slice. Plan 017 (authored 2026-09-01 at `b82de63`) is
+review-ready after activating and manually verifying the table designer,
+routine editor, Structure tab, and Specialized panels. Database
 lifecycle, aggregates, roles/ownership/default privileges, partitions,
 rules, event triggers, extensions, non-enum types/domains, and tablespaces
 stay deferred with rationale in Plan 016's Reconciliation section.
@@ -529,6 +526,19 @@ The generator now lives in domain modules under
 per payload, with no wildcard dispatch. Nothing is user-visible until Plan
 017.
 
+**Progress (2026-09-04, Plan 017):** The selected dedicated-tab
+table designer maps columns, constraints, comments, and indexes to the typed
+plan, shows a live grouped preview, and opens the new table after reviewed apply.
+Functions and procedures can be created from the navigator and edited from
+the Object Viewer with every routine header attribute round-tripped. The
+Structure tab now manages triggers, row security and policies, and relation
+privileges through its shared pending list. The last PostgreSQL string-only
+Specialized panels now queue the same shared builders; ClickHouse retains the
+previous generated SQL. The native disposable-fixture pass covered the grouped
+designer apply, routine source refresh and SQLSTATE `42P13`, trigger toggles,
+policy creation, grant/revoke, destructive badges, and the production typed
+confirmation.
+
 **Evidence:**
 
 - `src-tauri/src/postgres/objects.rs` owns Object Refs, catalog, descriptions,
@@ -545,12 +555,12 @@ per payload, with no wildcard dispatch. Nothing is user-visible until Plan
 
 **Missing pieces:**
 
-- Database lifecycle and a create-table designer.
-- Structured function, procedure, and aggregate create/alter flows; triggers,
-  event triggers, rules, and partitions.
+- Database lifecycle.
+- Structured aggregate create/alter flows; event triggers, rules, and
+  partitions.
 - Structured non-enum type/domain creation and extension install/remove.
-- Roles, users, memberships, ownership, grants, and default privileges.
-- Row-level security policies and tablespaces.
+- Roles, users, memberships, ownership, and default privileges.
+- Tablespaces.
 - DDL cancellation, richer materialized-view refresh policy, and typed errors
   for the remaining non-DDL legacy command surfaces.
 
@@ -824,8 +834,6 @@ the implemented behavior.
   unwired.
 - `ROADMAP.md:77` describes literal bind substitution as parameterized
   execution.
-- `ROADMAP.md:107-111` presents specialized SQL generators as complete object
-  editors.
 - `docs/design/PHASES.md:162` requires schema diff plus migration SQL, while the
   implementation compares object names and emits no migration SQL.
 - Generic MySQL and SQLite import affordances exceed backend write capability.
@@ -886,7 +894,7 @@ Parity work should reuse rather than replace these credible foundations:
 7. `PAR-007`: catalog, viewers, schema-level lifecycle, and the structure
    editor delivered by Plans 013–015; the table designer, routine, trigger,
    row-level security, and privilege backend by Plan 016 through `6b573f1`.
-   **Selected next:** Plan 017, its activation.
+   Plan 017 activation completed its native manual pass and is review-ready.
 8. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and
    administration.
 9. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise

@@ -47,6 +47,7 @@ import { TableStructureView } from "@/components/table-structure-view";
 import {
   type Connection,
   type TableStructure,
+  pgObjectDescriptionKey,
   tableStructureKey,
   useAppStore,
 } from "@/lib/store";
@@ -469,6 +470,121 @@ describe("TableStructureView", () => {
 });
 
 describe("TableStructureView edit flow", () => {
+  it("closes stale table forms before they can queue against the next table", () => {
+    const usersKey = tableStructureKey("conn-1", "public", "users");
+    const ordersKey = tableStructureKey("conn-1", "public", "orders");
+    const structure = {
+      ...baseStructure,
+      foreignKeys: [],
+      indexes: [],
+      constraints: [],
+      rowSecurity: { enabled: false, forced: false },
+      capabilities: {
+        ...baseStructure.capabilities,
+        triggers: true,
+        policies: true,
+        privileges: true,
+      },
+    } satisfies TableStructure;
+    useAppStore.setState({
+      tableStructure: {
+        [usersKey]: structure,
+        [ordersKey]: structure,
+      },
+      tableStructureStatus: {
+        [usersKey]: { state: "success" },
+        [ordersKey]: { state: "success" },
+      },
+    });
+
+    const { rerender } = render(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="users"
+      />,
+    );
+    settleSuccess(usersKey);
+
+    fireEvent.click(screen.getByTestId("structure-add-fk"));
+    fireEvent.change(screen.getByTestId("structure-fk-name"), {
+      target: { value: "stale_users_fk" },
+    });
+    fireEvent.click(screen.getByTestId("structure-add-index"));
+    fireEvent.change(screen.getByTestId("structure-index-name"), {
+      target: { value: "stale_users_idx" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New trigger" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Trigger name" }), {
+      target: { value: "stale_users_trigger" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New policy" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Policy name" }), {
+      target: { value: "stale_users_policy" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Privilege grantee kind" }),
+      { target: { value: "role" } },
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Privilege grantee" }),
+      { target: { value: "stale_users_role" } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Enabled" }));
+    expect(
+      screen.getByRole<HTMLInputElement>("checkbox", { name: "Enabled" })
+        .checked,
+    ).toBe(true);
+
+    rerender(
+      <TableStructureView
+        connectionId="conn-1"
+        schema="public"
+        tableName="orders"
+      />,
+    );
+    settleSuccess(ordersKey);
+
+    expect(screen.queryByTestId("structure-add-fk-form")).toBeNull();
+    expect(screen.queryByTestId("structure-add-index-form")).toBeNull();
+    expect(screen.queryByTestId("structure-trigger-form")).toBeNull();
+    expect(screen.queryByTestId("structure-policy-form")).toBeNull();
+    expect(screen.queryByTestId("structure-grant-form")).toBeNull();
+    expect(
+      screen.getByRole<HTMLInputElement>("checkbox", { name: "Enabled" })
+        .checked,
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "New policy" }));
+    expect(
+      screen.getByRole<HTMLInputElement>("textbox", { name: "Policy name" })
+        .value,
+    ).toBe("");
+    fireEvent.change(screen.getByRole("textbox", { name: "Policy name" }), {
+      target: { value: "orders_policy" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Queue policy" }));
+
+    expect(
+      useAppStore.getState().pendingStructureChanges[usersKey],
+    ).toBeUndefined();
+    expect(
+      useAppStore
+        .getState()
+        .pendingStructureChanges[ordersKey]?.map((entry) =>
+          entry.change.kind === "pg-op" ? entry.change.op : null,
+        ),
+    ).toEqual([
+      expect.objectContaining({
+        op: "createPolicy",
+        schema: "public",
+        table: "orders",
+        name: "orders_policy",
+      }),
+    ]);
+  });
+
   it("hides editing controls when the engine cannot alter schema", () => {
     seedConnection("MySQL");
     const key = seedStructure({
@@ -1368,6 +1484,148 @@ describe("TableStructureView PostgreSQL lifecycle affordances", () => {
         name: null,
         columns: ["id"],
       },
+    ]);
+  });
+
+  it("offers zero-argument trigger-returning functions without conflating schemas", () => {
+    const publicReference = {
+      kind: "function",
+      schema: "public",
+      name: "route_event",
+      identityArgs: "",
+    } as const;
+    const auditReference = {
+      kind: "function",
+      schema: "audit",
+      name: "route_event",
+      identityArgs: "",
+    } as const;
+    const parameterizedReference = {
+      kind: "function",
+      schema: "audit",
+      name: "route_event",
+      identityArgs: "integer",
+    } as const;
+    const numericReference = {
+      kind: "function",
+      schema: "public",
+      name: "calculate_total",
+      identityArgs: "",
+    } as const;
+    const description = (
+      reference: {
+        kind: "function";
+        schema: string;
+        name: string;
+        identityArgs: string;
+      },
+      returns: string,
+    ) => ({
+      status: "ready" as const,
+      generation: 0,
+      description: {
+        reference,
+        owner: "postgres",
+        comment: null,
+        definitionSql: null,
+        facts: {
+          kind: "routine" as const,
+          language: "plpgsql",
+          returns,
+          volatility: "volatile",
+          arguments: reference.identityArgs,
+          body: "BEGIN RETURN NEW; END;",
+          strict: false,
+          securityDefiner: false,
+          parallel: "unsafe",
+        },
+      },
+    });
+    useAppStore.setState({
+      pgObjectCatalog: {
+        "conn-1": {
+          status: "ready",
+          generation: 0,
+          catalog: {
+            schemas: [
+              {
+                name: "public",
+                tables: [],
+                views: [],
+                materializedViews: [],
+                foreignTables: [],
+                sequences: [],
+                functions: [
+                  { name: "route_event", identityArgs: "" },
+                  { name: "calculate_total", identityArgs: "" },
+                ],
+                procedures: [],
+                aggregates: [],
+                types: [],
+                domains: [],
+                extensions: [],
+              },
+              {
+                name: "audit",
+                tables: [],
+                views: [],
+                materializedViews: [],
+                foreignTables: [],
+                sequences: [],
+                functions: [
+                  { name: "route_event", identityArgs: "" },
+                  { name: "route_event", identityArgs: "integer" },
+                ],
+                procedures: [],
+                aggregates: [],
+                types: [],
+                domains: [],
+                extensions: [],
+              },
+            ],
+            eventTriggers: [],
+            roles: [],
+            tablespaces: [],
+            truncated: [],
+          },
+        },
+      },
+      pgObjectDescriptions: {
+        [pgObjectDescriptionKey("conn-1", publicReference)]: description(
+          publicReference,
+          "trigger",
+        ),
+        [pgObjectDescriptionKey("conn-1", auditReference)]: description(
+          auditReference,
+          "trigger",
+        ),
+        [pgObjectDescriptionKey("conn-1", parameterizedReference)]: description(
+          parameterizedReference,
+          "trigger",
+        ),
+        [pgObjectDescriptionKey("conn-1", numericReference)]: description(
+          numericReference,
+          "numeric",
+        ),
+      },
+    });
+    renderView({
+      ...baseStructure,
+      capabilities: { ...baseStructure.capabilities, triggers: true },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New trigger" }));
+
+    const picker = screen.getByRole("combobox", { name: "Trigger function" });
+    const list = document.getElementById(
+      picker.getAttribute("list") ?? "missing",
+    );
+    expect(
+      [...(list?.querySelectorAll("option") ?? [])].map(
+        (option) => option.value,
+      ),
+    ).toEqual([
+      "public.route_event() → trigger",
+      "audit.route_event() → trigger",
     ]);
   });
 });

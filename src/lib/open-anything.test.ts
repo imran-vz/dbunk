@@ -165,6 +165,11 @@ describe("buildOpenAnythingIndex", () => {
   it("emits every navigable kind with stable keys", () => {
     const items = buildOpenAnythingIndex(snapshot());
     expect(byKey(items, "command:new-query")?.kind).toBe("command");
+    expect(byKey(items, "command:new-table:conn-a:public")?.target).toEqual({
+      type: "new-table",
+      connectionId: "conn-a",
+      schema: "public",
+    });
     expect(byKey(items, "tab:tab-1")?.kind).toBe("tab");
     expect(byKey(items, "tab:tab-object")?.target).toEqual({
       type: "activate-tab",

@@ -11,10 +11,12 @@ import {
   NewSchemaDialog,
   NewSequenceDialog,
   NewViewDialog,
+  RoutineEditorDialog,
 } from "@/components/object-ddl";
 import { ObjectViewer } from "@/components/object-viewer";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { StatusBarItem } from "@/components/status-bar";
+import { TableDesigner } from "@/components/table-designer";
 import { TableEditorPanel } from "@/components/table-editor-panel";
 import type { SubTab } from "@/components/table-editor/header";
 import { Panel, useLayoutPressure, usePanelState } from "@/components/ui/panel";
@@ -53,7 +55,15 @@ const FIXED_CHROME_WIDTH = 42;
 
 type CreateObjectTarget = {
   connectionId: string;
-  kind: "schema" | "view" | "materialized-view" | "sequence" | "enum";
+  kind:
+    | "schema"
+    | "table"
+    | "function"
+    | "procedure"
+    | "view"
+    | "materialized-view"
+    | "sequence"
+    | "enum";
   schema?: string;
 };
 
@@ -128,6 +138,9 @@ export function RelationalWorkbench({
   const queryHistory = useAppStore((state) => state.queryHistory);
   const openSettings = useAppStore((state) => state.openSettings);
   const openTableTab = useAppStore((state) => state.openTableTab);
+  const openTableDesignerTab = useAppStore(
+    (state) => state.openTableDesignerTab,
+  );
   const openViewTab = useAppStore((state) => state.openViewTab);
   const openObjectTab = useAppStore((state) => state.openObjectTab);
   const createNewQueryTab = useAppStore((state) => state.createNewQueryTab);
@@ -262,13 +275,18 @@ export function RelationalWorkbench({
       ) {
         return;
       }
+      if (kind === "table" && schema) {
+        setRail("tables");
+        openTableDesignerTab(schema);
+        return;
+      }
       setCreateObjectTarget({
         connectionId: activeConnection.id,
         kind,
         schema,
       });
     },
-    [activeConnection],
+    [activeConnection, openTableDesignerTab],
   );
 
   const tableSubTab: TableSection = activeTab
@@ -393,6 +411,17 @@ export function RelationalWorkbench({
       );
     }
 
+    if (activeTab?.kind === "table-designer") {
+      return (
+        <TableDesigner
+          key={activeTab.id}
+          tabId={activeTab.id}
+          connectionId={activeTab.connectionId}
+          schema={activeTab.schema}
+        />
+      );
+    }
+
     if (activeTab?.kind === "object" && activeTab.objectRef) {
       return (
         <ObjectViewer
@@ -472,6 +501,24 @@ export function RelationalWorkbench({
         return <NewSequenceDialog {...common} />;
       case "enum":
         return <NewEnumDialog {...common} />;
+      case "function":
+        return (
+          <RoutineEditorDialog
+            {...common}
+            kind="function"
+            schema={createObjectTarget.schema ?? ""}
+          />
+        );
+      case "procedure":
+        return (
+          <RoutineEditorDialog
+            {...common}
+            kind="procedure"
+            schema={createObjectTarget.schema ?? ""}
+          />
+        );
+      case "table":
+        return null;
     }
   })();
 

@@ -313,6 +313,57 @@ shows the badge and the production confirmation lists it. Confirm the
 ClickHouse Specialized tab still generates SQL. Then §5 docs and the
 full gate set. Mark `READY FOR REVIEW`.
 
+## Execution record
+
+- 2026-09-04: Step 0 mock A confirmed by the operator.
+- 2026-09-04: Steps 1–4 implemented. The full automated suite passed: `pnpm
+  format`, `pnpm lint`, `pnpm typecheck`, 1,352 Vitest tests across 109 files,
+  `check:ui-gates`, `check:slice-isolation`, the production Vite build, and the
+  removed-generator grep.
+- 2026-09-04: The disposable PostgreSQL fixture became healthy on port 15432,
+  `pnpm tauri dev` compiled and launched, and its Vite server listened on port
+  3000. The native Computer Use walkthrough passed against the packaged debug
+  app: `lifecycle.plan017_designer_check` was created with a `BY DEFAULT`
+  identity, a commented column, an FK to `lifecycle.orders`, and a concurrent
+  index; its preview split the table/comments into an atomic group and the
+  index into a standalone group, and the table opened after apply.
+- 2026-09-04: The routine walkthrough replaced `lifecycle.order_total` with a
+  body that adds one and the refreshed viewer showed the new source. Attempting
+  to change the return type to `text` failed with PostgreSQL SQLSTATE `42P13`,
+  rendered against the failed statement.
+- 2026-09-04: The Structure walkthrough disabled and re-enabled
+  `orders_touch`, created `plan017_tenant_read` on `lifecycle.tenant_rows`,
+  granted `SELECT` to `lifecycle_reader`, and revoked it. Destructive pending
+  rows carried the backend-provided badge; on the disposable connection marked
+  Production, the typed confirmation listed the revoke before apply. A local
+  ClickHouse connection retained the Specialized generator and produced
+  `GRANT SELECT ON TABLE \"dbunk_demo\".\"events\" TO \"plan017_reader\";`
+  without executing it.
+- 2026-09-04: Fresh review fixes made routine names and arguments editable,
+  added local statement-boundary validation for designer index expressions,
+  and replaced the `PUBLIC` string sentinel with an explicit typed grantee
+  choice. The rebuilt native app showed separate `PUBLIC` and `Role` options;
+  entering a real uppercase `PUBLIC` role previewed `TO \"PUBLIC\"`. The
+  verification-only change was removed before apply, and the full gate set
+  passed again.
+- 2026-09-04: A second review pass removed the remaining unsafe grantee
+  inference when the role catalog is unavailable, truncated, or collides with
+  PostgreSQL's public pseudo-role; ambiguous edits now require an explicit
+  target and privilege ops are deduplicated. Designer follow-ups added local
+  index-predicate validation, SQL-aware top-level expression splitting, and an
+  explicit default kind so an empty literal remains `DEFAULT ''`. The full
+  gate set passed again with the final test count above.
+- 2026-09-04: The final review fixes require every introspected `PUBLIC` or
+  `public` sentinel to be resolved explicitly, disable PostgreSQL privilege and
+  trigger operations when their typed selections are empty, and preserve
+  in-progress trailing separators in designer comma-list inputs while keeping
+  submit validation strict. The full gate set passed after these changes.
+- 2026-09-04: The terminal review added field-level validation for blank SQL
+  expression defaults while preserving empty literal defaults, closed the
+  Specialized policy and trigger state over typed choices, rejected unknown
+  policy commands and trigger events instead of broadening them, and removed a
+  duplicate referential-action converter. All gates and 1,352 tests passed.
+
 ## Test plan
 
 Steps 1–4 enumerate the automated coverage; none needs a live

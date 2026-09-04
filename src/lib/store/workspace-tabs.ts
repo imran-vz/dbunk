@@ -24,6 +24,10 @@ import {
 } from "@/lib/pg-object-ref";
 import { resetResultMutationClientForTab } from "@/lib/result-mutation-client";
 import { supportsServerTableBrowse } from "@/lib/table-browse";
+import {
+  newTableDesignerForm,
+  validatePersistedTableDesignerDraft,
+} from "@/lib/table-designer";
 import { uiGet } from "@/lib/ui-state";
 
 import type {
@@ -32,6 +36,7 @@ import type {
   DatabaseEngine,
   SettingsTab,
   TabCaret,
+  TableDesignerDraft,
   WorkspaceTab,
   Connection,
   PgObjectRef,
@@ -110,6 +115,14 @@ export type WorkspaceTabsSlice = {
   closeTab: (tabId: string) => Promise<void>;
   openWorkspaceTab: (tab: Omit<WorkspaceTab, "id">) => void;
   openTableTab: (schemaName: string, tableName: string) => void;
+  openTableDesignerTab: (schemaName: string) => void;
+  updateTableDesignerDraft: (
+    tabId: string,
+    update:
+      | TableDesignerDraft
+      | ((draft: TableDesignerDraft) => TableDesignerDraft),
+  ) => void;
+  setTableDesignerApplying: (tabId: string, applying: boolean) => void;
   openViewTab: (schemaName: string, viewName: string) => void;
   openObjectTab: (reference: PgObjectRef) => void;
   openQueryForTable: (schemaName: string, tableName: string) => void;
@@ -215,6 +228,9 @@ export const createWorkspaceTabsSlice: StateCreator<
     if (tab?.kind === "object" && get().pgObjectDdlApplying[tab.connectionId]) {
       return;
     }
+    if (tab?.kind === "table-designer" && tab.tableDesignerApplying) {
+      return;
+    }
     const tabDrafts = Object.values(get().mutationDrafts).filter(
       (draft) => draft?.owner.tabId === tabId,
     );
@@ -264,6 +280,9 @@ export const createWorkspaceTabsSlice: StateCreator<
 
     const existing = state.workspaceTabs.find((item) => {
       if (item.kind !== tab.kind || item.connectionId !== tab.connectionId) {
+        return false;
+      }
+      if (tab.kind === "table-designer") {
         return false;
       }
       if (tab.kind === "table") {
@@ -323,6 +342,57 @@ export const createWorkspaceTabsSlice: StateCreator<
       }
     }
   },
+
+  openTableDesignerTab: (schemaName) => {
+    get().openWorkspaceTab({
+      kind: "table-designer",
+      label: `New table · ${schemaName}`,
+      connectionId: get().activeConnectionId,
+      schema: schemaName,
+      tableDesignerDraft: newTableDesignerForm(schemaName),
+    });
+  },
+
+  updateTableDesignerDraft: (tabId, update) =>
+    set((state) => {
+      const tab = state.workspaceTabs.find(
+        (candidate) =>
+          candidate.id === tabId && candidate.kind === "table-designer",
+      );
+      if (!tab) return {};
+      const currentDraft = tab.tableDesignerDraft;
+      let draft: TableDesignerDraft;
+      if (typeof update === "function") {
+        if (!currentDraft) return {};
+        draft = update(currentDraft);
+      } else {
+        draft = update;
+      }
+      if (draft === tab.tableDesignerDraft) return {};
+      return {
+        workspaceTabs: state.workspaceTabs.map((candidate) =>
+          candidate.id === tabId
+            ? { ...candidate, tableDesignerDraft: draft }
+            : candidate,
+        ),
+      };
+    }),
+
+  setTableDesignerApplying: (tabId, applying) =>
+    set((state) => {
+      const tab = state.workspaceTabs.find(
+        (candidate) =>
+          candidate.id === tabId && candidate.kind === "table-designer",
+      );
+      if (!tab || Boolean(tab.tableDesignerApplying) === applying) return {};
+      return {
+        workspaceTabs: state.workspaceTabs.map((candidate) =>
+          candidate.id === tabId
+            ? { ...candidate, tableDesignerApplying: applying }
+            : candidate,
+        ),
+      };
+    }),
 
   openViewTab: (schemaName, viewName) => {
     const state = get();
@@ -421,6 +491,7 @@ export const createWorkspaceTabsSlice: StateCreator<
             typeof tab.schema !== "string" ||
             (tab.kind !== "query" &&
               tab.kind !== "table" &&
+              tab.kind !== "table-designer" &&
               tab.kind !== "object") ||
             !connectionIds.has(tab.connectionId)
           ) {
@@ -440,6 +511,13 @@ export const createWorkspaceTabsSlice: StateCreator<
             if (!objectRef) return [];
             restored.objectRef = objectRef;
             restored.schema = objectRef.schema ?? "";
+          }
+          if (tab.kind === "table-designer") {
+            restored.tableDesignerDraft =
+              validatePersistedTableDesignerDraft(
+                tab.tableDesignerDraft,
+                tab.schema,
+              ) ?? newTableDesignerForm(tab.schema);
           }
           if (tab.pinned === true) restored.pinned = true;
           if (tab.isDirty === true) restored.isDirty = true;

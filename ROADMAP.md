@@ -104,11 +104,13 @@ Have: CSV / XLSX import wizard with column mapping.
 - ✅ `COPY FROM` streaming (Postgres fast-path bulk load)
 
 ### 8. Other Postgres-shaped tooling
-- ✅ Permissions / GRANT editor (per object) — Specialized editors panel generates DDL, opens in SQL editor
-- ✅ Row-Level Security policies UI — same panel
-- ✅ Index creation UI — same panel
-- ✅ Cross-table FK creation UI — same panel
-- ✅ Trigger creation UI — same panel
+- ✅ Create table designer — live typed preview and reviewed apply
+- ✅ Function / procedure editor — typed reviewed create and edit flows in the navigator and Object Viewer
+- ✅ Permissions / GRANT editor — typed reviewed Structure and Specialized flows
+- ✅ Row-Level Security policies UI — typed reviewed Structure and Specialized flows
+- ✅ Index creation UI — Structure and Specialized panels queue typed reviewed operations
+- ✅ Cross-table FK creation UI — Structure and Specialized panels queue typed reviewed operations
+- ✅ Trigger creation UI — typed reviewed Structure and Specialized flows
 - ✅ Postgres `array` cell editor — list editor in the data grid; writes a PG array literal back into pending edits
 - ✅ `json` / `jsonb` tree editor — modal editor with `JSON.parse` validation + Pretty print; writes into pending edits
 - ✅ PostGIS / geometry visualization — WKT modal editor with sanity validation; writes into pending edits
