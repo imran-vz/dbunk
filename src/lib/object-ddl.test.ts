@@ -262,4 +262,29 @@ describe("object DDL errors and refresh scope", () => {
       references: [viewRef],
     });
   });
+
+  it("revalidates all descriptions for CREATE OR REPLACE FUNCTION", () => {
+    expect(
+      objectDdlRefreshScope([
+        {
+          op: "createFunction",
+          schema: "audit",
+          name: "touch_users",
+          orReplace: true,
+          arguments: "",
+          returns: "trigger",
+          language: "plpgsql",
+          body: "BEGIN RETURN NEW; END;",
+          volatility: "volatile",
+          strict: false,
+          securityDefiner: false,
+          parallel: null,
+        },
+      ]),
+    ).toEqual({
+      catalog: true,
+      revalidateAllDescriptions: true,
+      references: [],
+    });
+  });
 });

@@ -87,19 +87,21 @@ keeps the overlay open with the user's input intact.
   component. No grid changes, no store changes.
 - `specialized-editors.tsx` graduates from "generate DDL" panel to
   the home of two distinct types of editors: schema-level (GRANT,
-  RLS, INDEX, FK, TRIGGER — open in SQL editor, ADR-0014 *not*
-  applicable) and cell-level (JSON, array, WKT — registry, ADR-0014
-  applicable). The file may split when it gets there.
-- The Specialized Editors *panel* keeps its "Copy" / "Open in SQL
-  editor" buttons for schema-level DDL. Cell-level editors don't
+  RLS, INDEX, FK, TRIGGER — typed reviewed operations on PostgreSQL,
+  ADR-0014 *not* applicable) and cell-level (JSON, array, WKT —
+  registry, ADR-0014 applicable). The file may split when it gets
+  there.
+- The Specialized Editors *panel* queues schema-level operations on
+  PostgreSQL. Engines without the typed operation contract retain the
+  "Copy" / "Open in SQL editor" fallback. Cell-level editors don't
   appear in the panel at all — they fire from the data grid.
 - Pending mutations diff format is unchanged: editors emit PG
   literals, same as today's inline edit.
-- The schema-level index and foreign-key panels queue ADR-0026 typed
-  backend DDL operations into the structure editor's shared pending
-  list (delivered in Plan 015); they do not use the cell-editor
-  registry. The GRANT / RLS / trigger panels stay generate-only until
-  their object kinds gain typed operations.
+- Every schema-level panel queues typed backend DDL operations into the
+  structure editor's shared pending list on PostgreSQL (index and foreign key
+  in Plan 015; GRANT, RLS, and trigger in Plan 017). They do not use the
+  cell-editor registry. Other engines retain their prior generated-SQL
+  fallback.
 - A future "fancy" editor (graph view for `tsvector`, hex grid for
   `bytea`) is a registry entry, not a redesign.
 

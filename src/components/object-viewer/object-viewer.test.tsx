@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-module-mocking, anti-slop/no-unknown-parameters -- Tauri is the viewer's transport boundary. */
+/* oxlint-disable anti-slop/no-module-mocking, anti-slop/no-unknown-parameters -- Tauri and Monaco are replaced at the viewer's test boundaries. */
 // @vitest-environment jsdom
 import {
   act,
@@ -19,6 +19,25 @@ vi.mock("@/lib/tauri", () => ({
 
 vi.mock("@/lib/invoke-with-safety-confirmation", () => ({
   invokeWithSafetyConfirmation: vi.fn(),
+}));
+
+vi.mock("@monaco-editor/react", () => ({
+  default: ({
+    value,
+    onChange,
+    options,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    options?: { readOnly?: boolean };
+  }) => (
+    <textarea
+      aria-label="Routine body"
+      value={value}
+      readOnly={options?.readOnly}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
 }));
 
 import {
@@ -308,6 +327,125 @@ describe("ObjectViewer lifecycle", () => {
     expect(mockedInvoke).toHaveBeenCalledTimes(2);
   });
 
+  it("reloads routine source after an edit is applied", async () => {
+    const reference = referenceFor("function");
+    const facts = {
+      kind: "routine" as const,
+      language: "sql",
+      returns: "integer",
+      volatility: "stable",
+      arguments: "value integer",
+      body: "SELECT value + 1",
+      strict: true,
+      securityDefiner: false,
+      parallel: "safe",
+    };
+    const initialSql = "CREATE FUNCTION lifecycle.sample_function(integer)";
+    const updatedSql =
+      "CREATE OR REPLACE FUNCTION lifecycle.sample_function(integer)";
+    mockedInvoke
+      .mockResolvedValueOnce(descriptionFor(reference, facts, initialSql))
+      .mockResolvedValueOnce({
+        statements: [
+          {
+            sql: updatedSql,
+            summary: "Replace function lifecycle.sample_function",
+            destructive: true,
+            transactional: true,
+          },
+        ],
+        groups: [{ kind: "atomic", statementIndexes: [0] }],
+      })
+      .mockResolvedValueOnce({ appliedStatements: 1, runtimeMs: 5 })
+      .mockResolvedValueOnce({
+        schemas: [],
+        eventTriggers: [],
+        roles: [],
+        tablespaces: [],
+        truncated: [],
+      })
+      .mockResolvedValueOnce(descriptionFor(reference, facts, updatedSql));
+
+    render(
+      <ObjectViewer
+        tabId="tab-function"
+        connectionId="conn-1"
+        reference={reference}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Edit source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review DDL" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
+
+    expect(await screen.findByText(updatedSql)).toBeTruthy();
+    expect(mockedInvoke).toHaveBeenCalledWith("load_pg_object_catalog", {
+      payload: { connectionId: "conn-1" },
+    });
+    const describeCalls = mockedInvoke.mock.calls.filter(
+      ([command]) => command === "describe_pg_object",
+    );
+    expect(describeCalls).toHaveLength(2);
+  });
+
+  it("shows routine not-found after the post-apply reload", async () => {
+    const reference = referenceFor("function");
+    const facts = {
+      kind: "routine" as const,
+      language: "sql",
+      returns: "integer",
+      volatility: "stable",
+      arguments: "value integer",
+      body: "SELECT value + 1",
+      strict: true,
+      securityDefiner: false,
+      parallel: "safe",
+    };
+    mockedInvoke
+      .mockResolvedValueOnce(descriptionFor(reference, facts))
+      .mockResolvedValueOnce({
+        statements: [
+          {
+            sql: "CREATE OR REPLACE FUNCTION lifecycle.sample_function(integer)",
+            summary: "Replace function lifecycle.sample_function",
+            destructive: true,
+            transactional: true,
+          },
+        ],
+        groups: [{ kind: "atomic", statementIndexes: [0] }],
+      })
+      .mockResolvedValueOnce({ appliedStatements: 1, runtimeMs: 5 })
+      .mockResolvedValueOnce({
+        schemas: [],
+        eventTriggers: [],
+        roles: [],
+        tablespaces: [],
+        truncated: [],
+      })
+      .mockRejectedValueOnce({ kind: "objectNotFound", reference });
+
+    render(
+      <ObjectViewer
+        tabId="tab-function"
+        connectionId="conn-1"
+        reference={reference}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Edit source" }));
+    fireEvent.change(screen.getByLabelText("Routine arguments"), {
+      target: { value: "value bigint" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review DDL" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Apply DDL" }));
+
+    expect(await screen.findByText(/no longer exists/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close tab" })).toBeTruthy();
+    expect(mockedInvoke).toHaveBeenCalledWith("preview_object_ddl", {
+      payload: expect.objectContaining({
+        ops: [expect.objectContaining({ arguments: "value bigint" })],
+      }),
+    });
+  });
+
   it("drops lifecycle dialog state when the active object identity changes", async () => {
     const first = referenceFor("view");
     const second = { ...first, name: "other_view" };
@@ -411,6 +549,7 @@ describe("ObjectViewer lifecycle", () => {
     );
 
     expect(await screen.findByText(sql)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit source" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(sql));
     fireEvent.click(screen.getByRole("button", { name: "Open in SQL editor" }));

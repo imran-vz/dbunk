@@ -252,6 +252,18 @@ export function objectDdlRefreshScope(
           identityArgs: null,
         });
         break;
+      case "createTable":
+        catalog = true;
+        add(tableRef(operation.schema, operation.name));
+        break;
+      case "createFunction":
+        catalog = true;
+        revalidateAllDescriptions ||= operation.orReplace;
+        break;
+      case "createProcedure":
+        catalog = true;
+        revalidateAllDescriptions ||= operation.orReplace;
+        break;
       case "alterSequence":
         add({
           kind: "sequence",
@@ -281,9 +293,19 @@ export function objectDdlRefreshScope(
       case "addCheck":
       case "dropConstraint":
       case "createIndex":
+      case "createTrigger":
+      case "dropTrigger":
+      case "setTriggerEnabled":
+      case "setRowLevelSecurity":
+      case "createPolicy":
+      case "dropPolicy":
         add(tableRef(operation.schema, operation.table));
         break;
       case "dropIndex":
+        break;
+      case "grantPrivileges":
+      case "revokePrivileges":
+        add(operation.target);
         break;
     }
   }

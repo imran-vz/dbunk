@@ -1,7 +1,7 @@
 /**
  * Session persistence (P8) — continuously (debounced) mirrors the
- * restorable session state into the UI-state store: open query/table/object
- * tabs (including hot-exit SQL text, which lives on the tab), tab
+ * restorable session state into the UI-state store: open query/table/object/
+ * table-designer tabs (including hot-exit SQL and designer drafts), tab
  * order and pinning, the active tab, and expanded navigator nodes.
  *
  * Started once after `restoreSession()` so an empty boot state can't
@@ -25,11 +25,17 @@ const PERSIST_DEBOUNCE_MS = 500;
  * session unpersisted (typical culprit: a huge pasted SQL script).
  */
 const SESSION_BUDGET_BYTES = UI_STATE_MAX_VALUE_BYTES - 64 * 1024;
+const DESIGNER_DRAFT_BUDGET_BYTES = 128 * 1024;
 
-/** Only query/table/object tabs restore cleanly; strip runtime-only fields. */
+/** Only restorable relational tabs are serialized; strip runtime-only fields. */
 const serializeTabs = (tabs: WorkspaceTab[]) =>
   tabs.flatMap((tab) => {
-    if (tab.kind !== "query" && tab.kind !== "table" && tab.kind !== "object") {
+    if (
+      tab.kind !== "query" &&
+      tab.kind !== "table" &&
+      tab.kind !== "table-designer" &&
+      tab.kind !== "object"
+    ) {
       return [];
     }
     if (tab.kind === "object" && tab.objectRef === undefined) return [];
@@ -52,6 +58,16 @@ const serializeTabs = (tabs: WorkspaceTab[]) =>
     if (tab.isDirty) serialized.isDirty = true;
     if (tab.kind === "query" && tab.caret !== undefined) {
       serialized.caret = tab.caret;
+    }
+    if (tab.kind === "table-designer" && tab.tableDesignerDraft !== undefined) {
+      const serializedDraft = JSON.stringify(tab.tableDesignerDraft);
+      if (exceedsUtf8Length(serializedDraft, DESIGNER_DRAFT_BUDGET_BYTES)) {
+        console.warn(
+          `Table designer draft too large to persist; dropping draft for tab ${tab.id}`,
+        );
+      } else {
+        serialized.tableDesignerDraft = tab.tableDesignerDraft;
+      }
     }
     return [serialized];
   });
@@ -94,6 +110,30 @@ export function startSessionPersistence(): void {
         // and a false "unsaved changes" claim.
         delete tab.caret;
         delete tab.isDirty;
+        payload = JSON.stringify({
+          tabs,
+          activeTabId: state.activeTabId,
+          expandedSchemas: state.expandedSchemas,
+          expandedNavigatorGroups: state.expandedNavigatorGroups,
+        });
+        if (!exceedsUtf8Length(payload, SESSION_BUDGET_BYTES)) break;
+      }
+    }
+    // Designer tabs survive without their drafts (restore initializes a fresh
+    // form), so shed drafts before allowing one to reject the complete session.
+    if (exceedsUtf8Length(payload, SESSION_BUDGET_BYTES)) {
+      const byDraftSize = tabs
+        .filter((tab) => tab.tableDesignerDraft !== undefined)
+        .sort(
+          (a, b) =>
+            JSON.stringify(b.tableDesignerDraft).length -
+            JSON.stringify(a.tableDesignerDraft).length,
+        );
+      for (const tab of byDraftSize) {
+        console.warn(
+          `Session too large to persist; dropping table designer draft for tab ${tab.id}`,
+        );
+        delete tab.tableDesignerDraft;
         payload = JSON.stringify({
           tabs,
           activeTabId: state.activeTabId,

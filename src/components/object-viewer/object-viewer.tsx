@@ -7,6 +7,7 @@ import {
   NewMaterializedViewDialog,
   NewViewDialog,
   ObjectActionDialog,
+  RoutineEditorDialog,
   type DdlReviewTerminal,
   type ObjectActionKind,
 } from "@/components/object-ddl";
@@ -93,7 +94,7 @@ function ObjectViewerSession({
     null,
   );
   const [definitionDialog, setDefinitionDialog] = useState<
-    "view" | "materialized-view" | null
+    "view" | "materialized-view" | "routine" | null
   >(null);
   const [dropAppendOps, setDropAppendOps] = useState<PgObjectOp[] | null>(null);
   const [refreshState, setRefreshState] = useState<
@@ -649,6 +650,18 @@ function ObjectViewerSession({
             </Button>
           </>
         ) : null}
+        {(reference.kind === "function" || reference.kind === "procedure") &&
+        facts.kind === "routine" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={lifecycleReviewOpen}
+            onClick={() => setDefinitionDialog("routine")}
+          >
+            Edit source
+          </Button>
+        ) : null}
         {refreshState === "success" ? (
           <output className="ml-2 text-xs text-success">Refreshed</output>
         ) : refreshState === "error" ? (
@@ -707,6 +720,22 @@ function ObjectViewerSession({
             if (!next) setDefinitionDialog(null);
           }}
           onOps={(ops) => setDropAppendOps(ops)}
+        />
+      ) : null}
+      {definitionDialog === "routine" &&
+      facts.kind === "routine" &&
+      (reference.kind === "function" || reference.kind === "procedure") ? (
+        <RoutineEditorDialog
+          open
+          connectionId={connectionId}
+          kind={reference.kind}
+          schema={reference.schema ?? ""}
+          name={reference.name}
+          facts={facts}
+          onOpenChange={(next) => {
+            if (!next) setDefinitionDialog(null);
+          }}
+          onOps={beginReview}
         />
       ) : null}
       {dropAppendOps ? (
