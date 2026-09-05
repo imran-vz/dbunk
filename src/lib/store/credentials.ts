@@ -11,6 +11,7 @@
 
 import type { StateCreator } from "zustand";
 
+import { preparePgToolFence } from "@/lib/pg-tool-jobs/lifecycle";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 import {
   applyTheme,
@@ -163,6 +164,8 @@ export const createCredentialsSlice: StateCreator<
       set({ appSettings: snapshot, appSettingsStatus: { state: "ready" } });
       return snapshot;
     }
+    const finish = await preparePgToolFence("Configure credential storage");
+    if (!finish) return null;
     set({ credentialStorageStatus: { state: "running" } });
     try {
       const snapshot = await tauriInvoke<AppSettingsSnapshot>(
@@ -179,6 +182,8 @@ export const createCredentialsSlice: StateCreator<
       const message = errorToMessage(error);
       set({ credentialStorageStatus: { state: "error", error: message } });
       return null;
+    } finally {
+      finish();
     }
   },
 
@@ -216,6 +221,8 @@ export const createCredentialsSlice: StateCreator<
       set({ appSettings: snapshot });
       return snapshot;
     }
+    const finish = await preparePgToolFence("Change credential storage");
+    if (!finish) return null;
     set({ credentialStorageStatus: { state: "running" } });
     try {
       const snapshot = await tauriInvoke<AppSettingsSnapshot>(
@@ -234,6 +241,8 @@ export const createCredentialsSlice: StateCreator<
       const message = errorToMessage(error);
       set({ credentialStorageStatus: { state: "error", error: message } });
       return null;
+    } finally {
+      finish();
     }
   },
 
@@ -241,6 +250,8 @@ export const createCredentialsSlice: StateCreator<
     if (!isTauri()) {
       return get().loadAppSettings();
     }
+    const finish = await preparePgToolFence("Reset credential storage");
+    if (!finish) return null;
     set({ credentialStorageStatus: { state: "running" } });
     try {
       await Promise.all(
@@ -267,6 +278,8 @@ export const createCredentialsSlice: StateCreator<
       const message = errorToMessage(error);
       set({ credentialStorageStatus: { state: "error", error: message } });
       return null;
+    } finally {
+      finish();
     }
   },
 });

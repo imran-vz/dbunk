@@ -18,8 +18,11 @@ import { KeyValueWorkbench } from "@/components/workbench/keyvalue-workbench";
 import { RelationalWorkbench } from "@/components/workbench/relational-workbench";
 import { TabShortcuts } from "@/components/workbench/tab-shortcuts";
 import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
+import { pgToolObserver } from "@/lib/pg-tool-jobs/observer";
+import { refreshAfterPgRestore } from "@/lib/pg-tool-jobs/restore-refresh";
 import { startSessionPersistence } from "@/lib/session-persistence";
 import { useAppStore } from "@/lib/store";
+import { isTauri } from "@/lib/tauri";
 import { applyTheme, subscribeSystem } from "@/lib/theme";
 import { initUiState, isUiStateReady } from "@/lib/ui-state";
 import { cn } from "@/lib/utils";
@@ -198,6 +201,12 @@ export function AppShell() {
   ]);
 
   useForegroundHealthCheck(appSettings?.credentialState, runHealthChecks);
+  useEffect(() => {
+    if (!isTauri() || appSettings?.credentialState !== "ready") return;
+    return pgToolObserver.mount((job) => {
+      void refreshAfterPgRestore(job);
+    });
+  }, [appSettings?.credentialState]);
 
   if (
     appSettingsStatus.state === "loading" ||

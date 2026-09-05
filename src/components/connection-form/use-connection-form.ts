@@ -75,7 +75,15 @@ export function useConnectionForm({
           errorMessage: connection.errorMessage,
           lastActivityAt: connection.lastActivityAt,
         });
-        await updateConnection(updated);
+        const outcome = await updateConnection(updated);
+        if (outcome !== "saved") {
+          if (outcome === "failed")
+            setTestStatus({
+              state: "error",
+              error: "Connection could not be saved. Your edits are preserved.",
+            });
+          return;
+        }
       } else {
         const created = buildConnectionFromForm(value, crypto.randomUUID(), {
           status: "Disconnected",

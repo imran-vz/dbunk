@@ -41,6 +41,7 @@ interface TableEditorHeaderProps {
   /** Table Seeding is engine-gated (PostgreSQL-first, ADR-0020). */
   showSeedAction: boolean;
   onOpenSeedTable: () => void;
+  onOpenBackupRestore?: (operation: "backup" | "restore") => void;
 }
 
 export function TableEditorHeader({
@@ -57,6 +58,7 @@ export function TableEditorHeader({
   onRunMaintenance,
   showSeedAction,
   onOpenSeedTable,
+  onOpenBackupRestore,
 }: TableEditorHeaderProps) {
   const actions = (
     <div className="ml-auto flex items-center gap-1.5">
@@ -87,6 +89,16 @@ export function TableEditorHeader({
           <span className="dbunk-optional-label">Table actions</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
+          {onOpenBackupRestore ? (
+            <>
+              <DropdownMenuItem onClick={() => onOpenBackupRestore("backup")}>
+                Back up table…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onOpenBackupRestore("restore")}>
+                Restore database…
+              </DropdownMenuItem>
+            </>
+          ) : null}
           <DropdownMenuItem onClick={onOpenSql}>Open in SQL</DropdownMenuItem>
           <DropdownMenuItem onClick={onExportTableDdl}>
             Export table DDL

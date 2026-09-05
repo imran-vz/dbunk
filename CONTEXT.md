@@ -617,5 +617,7 @@ An in-memory, file-backed PostgreSQL backup or restore owned by the native
 `PgToolJobManager`. It exposes typed admission, polling, cancellation, and release;
 bounds process output and terminal history; and joins connection teardown before
 tunnel/pool invalidation. Backup publishes a complete non-overwriting archive.
-Restore is authorized before admission and audited only after success. This backend
-is dark until Plan 019 adds UI activation. See ADR-0028.
+Restore is authorized before admission and audited only after success. Plan 019
+activates these jobs through global and table-context workspaces; table Restore
+reviews the database target. Native dialog verification remains open in the plan.
+See ADR-0028.

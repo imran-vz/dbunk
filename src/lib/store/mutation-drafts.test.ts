@@ -748,3 +748,178 @@ describe("mutation draft fencing and cleanup", () => {
     });
   });
 });
+
+it("preserves restored-over edits but refuses preview, apply and row rebinding", async () => {
+  const { refreshAfterPgRestore } =
+    await import("@/lib/pg-tool-jobs/restore-refresh");
+  openTableDraft();
+  stageUpdate("1", "before", "draft");
+  const request = useAppStore
+    .getState()
+    .beginMutationDraftPreview("table:tab-1");
+  expect(request).not.toBeNull();
+  const before = useAppStore.getState().mutationDrafts["table:tab-1"];
+  const generation = before?.generation ?? 0;
+  const ddlVersion = useAppStore.getState().pgObjectDdlVersion;
+  await refreshAfterPgRestore({
+    jobId: "restore",
+    connectionId: "conn-1",
+    kind: "restore",
+    format: "custom",
+    fileName: "restore.dump",
+    phase: "completed",
+    startedAt: "now",
+    finishedAt: "now",
+    bytesProcessed: null,
+    totalBytes: 1,
+    toolVersion: null,
+    failure: null,
+  });
+  const state = useAppStore.getState();
+  expect(state.pgObjectDdlVersion).toBeGreaterThan(ddlVersion);
+  expect(state.mutationDrafts["table:tab-1"]?.changes).toEqual(before?.changes);
+  expect(state.mutationDrafts["table:tab-1"]?.sourceInvalidated).toBe(true);
+  expect(state.mutationDrafts["table:tab-1"]?.generation).toBeGreaterThan(
+    generation,
+  );
+  expect(state.mutationDrafts["table:tab-1"]?.analysis).toBeNull();
+  expect(state.mutationDraftGenerations["table:tab-1"]).toBe(
+    state.mutationDrafts["table:tab-1"]?.generation,
+  );
+  if (request)
+    expect(state.resolveMutationDraftPreview(request, preview(["old"]))).toBe(
+      false,
+    );
+  if (request) {
+    expect(state.setMutationDraftAnalysis(request, analysis(99))).toBe(false);
+    expect(
+      state.failMutationDraftPreview(request, { kind: "connectionLost" }),
+    ).toBe(false);
+  }
+  expect(state.beginMutationDraftPreview("table:tab-1")).toBeNull();
+  expect(state.beginMutationDraftApply("table:tab-1")).toBeNull();
+  expect(
+    state.rebindMutationDraftRows("table:tab-1", table, [
+      { rowIndex: 0, identity: identity("1"), values: row("1", "restored") },
+    ]),
+  ).toBe(false);
+});
+
+it("blocks every edit boundary after restore invalidates a draft", async () => {
+  const { refreshAfterPgRestore } =
+    await import("@/lib/pg-tool-jobs/restore-refresh");
+  const handle = openTableDraft();
+  const updateId = stageUpdate("1", "before", "draft");
+  const insertId = useAppStore
+    .getState()
+    .stageMutationDraftInsert(handle.scope, {
+      table,
+      values: [{ column: "name", value: "insert" }],
+    });
+  if (!updateId || !insertId) throw new Error("Expected staged changes");
+
+  await refreshAfterPgRestore({
+    jobId: "restore-edits",
+    connectionId: "conn-1",
+    kind: "restore",
+    format: "custom",
+    fileName: "restore.dump",
+    phase: "completed",
+    startedAt: "now",
+    finishedAt: "now",
+    bytesProcessed: null,
+    totalBytes: 1,
+    toolVersion: null,
+    failure: null,
+  });
+
+  const state = useAppStore.getState();
+  expect(stageUpdate("2", "old", "new")).toBeNull();
+  expect(
+    state.stageMutationDraftDelete(handle.scope, {
+      table,
+      identityKind: "primaryKey",
+      identity: identity("2"),
+      originals: row("2", "old"),
+    }),
+  ).toBeNull();
+  expect(
+    state.stageMutationDraftInsert(handle.scope, {
+      table,
+      values: [{ column: "name", value: "another" }],
+    }),
+  ).toBeNull();
+  expect(
+    state.replaceMutationDraftInsertValues(handle.scope, insertId, [
+      { column: "name", value: "changed" },
+    ]),
+  ).toBe(false);
+  expect(
+    state.setMutationDraftChangeIncluded(handle.scope, updateId, false),
+  ).toBe(false);
+  expect(state.revertMutationDraftChange(handle.scope, updateId)).toBe(false);
+  expect(state.revertAllMutationDraftChanges(handle.scope)).toBe(false);
+  expect(state.mutationDrafts[handle.scope]?.changeOrder).toEqual([
+    updateId,
+    insertId,
+  ]);
+});
+
+it("settles an apply invalidated by restore without clearing its stale edits", async () => {
+  const { refreshAfterPgRestore } =
+    await import("@/lib/pg-tool-jobs/restore-refresh");
+  const handle = openTableDraft();
+  const changeId = stageUpdate("1", "before", "draft");
+  previewTableDraft(["reviewed"]);
+  const request = useAppStore.getState().beginMutationDraftApply(handle.scope);
+  if (!request || !changeId) throw new Error("Expected apply request");
+  const before = useAppStore.getState().mutationDrafts[handle.scope];
+
+  await refreshAfterPgRestore({
+    jobId: "restore-during-apply",
+    connectionId: "conn-1",
+    kind: "restore",
+    format: "custom",
+    fileName: "restore.dump",
+    phase: "completed",
+    startedAt: "now",
+    finishedAt: "now",
+    bytesProcessed: null,
+    totalBytes: 1,
+    toolVersion: null,
+    failure: null,
+  });
+
+  let state = useAppStore.getState();
+  expect(state.mutationDrafts[handle.scope]).toMatchObject({
+    generation: expect.any(Number),
+    sourceInvalidated: true,
+    analysis: null,
+    apply: {
+      state: "applying",
+      requestGeneration: request.generation,
+    },
+  });
+  expect(state.mutationDrafts[handle.scope]?.generation).toBeGreaterThan(
+    request.generation,
+  );
+  expect(state.discardMutationDraft(handle.scope)).toBe(false);
+  expect(stageUpdate("2", "old", "new")).toBeNull();
+  expect(
+    state.resolveMutationDraftApply(request, {
+      operations: [{ opIndex: 0, rowsAffected: 1 }],
+      runtimeMs: 5,
+    }),
+  ).toBe(true);
+
+  state = useAppStore.getState();
+  expect(state.mutationDrafts[handle.scope]?.changes).toEqual(before?.changes);
+  expect(state.mutationDrafts[handle.scope]?.changeOrder).toEqual([changeId]);
+  expect(state.mutationDrafts[handle.scope]?.sourceInvalidated).toBe(true);
+  expect(state.mutationDrafts[handle.scope]?.apply).toMatchObject({
+    state: "success",
+    result: { operations: [{ opIndex: 0, rowsAffected: 1 }] },
+  });
+  expect(state.beginMutationDraftApply(handle.scope)).toBeNull();
+  expect(state.discardMutationDraft(handle.scope)).toBe(true);
+});

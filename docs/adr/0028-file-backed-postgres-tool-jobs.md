@@ -5,9 +5,11 @@
 ## Decision
 
 A PostgreSQL Tool Job is an in-memory backup or restore owned by
-`postgres::backup::PgToolJobManager`. The backend remains dark until Plan 019
-adds activation. There is no UI, picker, event stream, persistence, scheduler,
-or generic job framework in this change.
+`postgres::backup::PgToolJobManager`. Plan 018 delivered the backend; Plan 019
+activates it through a global Backup / Restore workspace and contextual table
+tabs. A table restore opens the database-target review. Native dialogs select
+paths only; paths stay in transient form state. There is no event stream,
+persistence, scheduler, or generic job framework.
 
 The six typed commands are `start_pg_backup`, `start_pg_restore`,
 `get_pg_tool_job`, `list_pg_tool_jobs`, `cancel_pg_tool_job`, and
@@ -49,7 +51,7 @@ is covered by the execution record.
 A hard crash can leave a clearly named sibling partial in an arbitrary user
 directory. The final archive is protected from partial publication, but cleanup
 is not guaranteed after a hard crash. Never promote or sweep old partials.
-Plan 019 must explain this limitation. Network or unusual filesystems require
+The UI explains this limitation. Network or unusual filesystems require
 separate validation of atomic rename guarantees.
 
 Native tools run through Tokio directly, without a shell, with kill-on-drop,
@@ -123,7 +125,7 @@ a cosmetic rename through the full save path cancels an active job. The separate
 organization-only metadata update does not invalidate connection resources.
 Bastion save, deletion, and host-key reset close global admission before reading
 references, so concurrent connection edits cannot introduce an unfenced job.
-This conservatively cancels jobs on unrelated connections during Bastion changes. Plan 019 should list jobs before save and warn the user.
+This conservatively cancels jobs on unrelated connections during Bastion changes. The UI lists jobs before save and warns the user.
 Pending resolutions belong to the manager and are cancelled before the fence
 invalidates caches. The resolution future is dropped before its reservation
 releases, preventing a stale SSH route from being inserted after invalidation.
@@ -153,5 +155,9 @@ includes `close_all` in the existing three-second join. Normal native children
 are killed and cleaned within that budget; forced exit retains the hard-crash
 partial limitation above.
 
-Plan 019 owns user activation and warnings. Plan 020 owns bounded table
-import/export. Neither successor is implemented or implied complete here.
+Plan 019 owns user activation and warnings; native UI verification remains
+open in its execution record. The app uses bounded polling, invalidates pending
+restore reviews before lifecycle changes, and refreshes database metadata once
+per observed completed restore. Staged edits remain preserved but cannot apply
+after their source is invalidated. Plan 020 owns bounded table import/export
+and is not implemented by this activation.

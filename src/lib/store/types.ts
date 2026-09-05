@@ -1675,6 +1675,7 @@ export type QueryHistoryEntry = {
 // ---------------------------------------------------------------------------
 
 export type WorkspaceTabKind =
+  | "pg-tools"
   | "table"
   | "table-designer"
   | "query"
@@ -1735,6 +1736,8 @@ export type TableDesignerDraft = {
 };
 
 export type WorkspaceTab = {
+  /** Transient backup/restore tabs never persist paths or job state. */
+  toolOperation?: "backup" | "restore";
   id: string;
   kind: WorkspaceTabKind;
   label: string;

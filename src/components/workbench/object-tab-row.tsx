@@ -1,5 +1,6 @@
 import {
   IconChevronDown,
+  IconArchive,
   IconColumns3,
   IconEye,
   IconKey,
@@ -73,6 +74,7 @@ function WorkspaceTabIcon({
   tab: WorkspaceTab;
   className?: string;
 }) {
+  if (tab.kind === "pg-tools") return <IconArchive className={className} />;
   if (tab.kind === "query") return <IconTerminal2 className={className} />;
   if (tab.kind === "object") return <IconEye className={className} />;
   return <IconTable className={className} />;

@@ -151,6 +151,13 @@
     color-scheme: dark;
 }
 
+/* Backup/restore follows its selected true-black direction in dark mode while
+ * retaining the active theme's semantic surfaces in light mode. */
+.dark .pg-tool-workspace {
+    --surface-app: #000000;
+    --foreground: #ffffff;
+}
+
 /* -------------------------------------------------------------------------
  * Theme presets (Phase 2 — see docs/design/theme-support-plan.md).
  *

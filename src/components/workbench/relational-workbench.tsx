@@ -14,6 +14,7 @@ import {
   RoutineEditorDialog,
 } from "@/components/object-ddl";
 import { ObjectViewer } from "@/components/object-viewer";
+import { PgToolWorkspace } from "@/components/pg-tool-jobs/workspace";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { StatusBarItem } from "@/components/status-bar";
 import { TableDesigner } from "@/components/table-designer";
@@ -198,6 +199,12 @@ export function RelationalWorkbench({
     ? (schemaExplorer[activeConnection.id] ?? [])
     : [];
   const isPostgres = activeConnection?.engine === "PostgreSQL";
+  const effectiveRail = !isPostgres && rail === "pg-tools" ? "tables" : rail;
+  useEffect(() => {
+    if (effectiveRail !== rail) {
+      setRail(effectiveRail);
+    }
+  }, [effectiveRail, rail]);
 
   const activeTableKey =
     activeTab?.kind === "table" && activeTab.table
@@ -205,7 +212,8 @@ export function RelationalWorkbench({
       : null;
 
   const showNavigator =
-    !settingsView && (rail === "tables" || rail === "queries");
+    !settingsView &&
+    (effectiveRail === "tables" || effectiveRail === "queries");
 
   const handleOpenSettings = useCallback(() => {
     openSettings();
@@ -324,6 +332,32 @@ export function RelationalWorkbench({
       return <NoConnectionCard />;
     }
 
+    const contextual =
+      (effectiveRail === "tables" || effectiveRail === "queries") &&
+      activeTab?.kind === "pg-tools"
+        ? activeTab
+        : undefined;
+    const pgToolConnection = contextual
+      ? connections.find(
+          (connection) => connection.id === contextual.connectionId,
+        )
+      : effectiveRail === "pg-tools"
+        ? activeConnection
+        : undefined;
+    if (pgToolConnection?.engine === "PostgreSQL") {
+      return (
+        <PgToolWorkspace
+          key={contextual?.id ?? pgToolConnection.id}
+          connection={pgToolConnection}
+          table={
+            contextual?.table
+              ? { schema: contextual.schema, name: contextual.table }
+              : undefined
+          }
+          initialOperation={contextual?.toolOperation}
+        />
+      );
+    }
     if (
       !isConnectedStatus(activeConnection.status) &&
       schemas.length === 0 &&
@@ -340,7 +374,7 @@ export function RelationalWorkbench({
       );
     }
 
-    if (rail === "connections") {
+    if (effectiveRail === "connections") {
       return (
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConnectionsView variant="rail" />
@@ -348,7 +382,7 @@ export function RelationalWorkbench({
       );
     }
 
-    if (rail === "overview") {
+    if (effectiveRail === "overview") {
       return (
         <OverviewRailView
           activeConnection={activeConnection}
@@ -360,7 +394,7 @@ export function RelationalWorkbench({
       );
     }
 
-    if (rail === "schema-map") {
+    if (effectiveRail === "schema-map") {
       return (
         <SchemaMapTab
           activeConnection={activeConnection}
@@ -370,7 +404,7 @@ export function RelationalWorkbench({
       );
     }
 
-    if (rail === "history") {
+    if (effectiveRail === "history") {
       return (
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <QueryHistoryTab
@@ -382,7 +416,7 @@ export function RelationalWorkbench({
       );
     }
 
-    if (rail === "admin") {
+    if (effectiveRail === "admin") {
       return (
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <AdminTab connection={activeConnection} />
@@ -442,7 +476,7 @@ export function RelationalWorkbench({
 
   const showObjectTabs =
     !settingsView &&
-    (rail === "tables" || rail === "queries") &&
+    (effectiveRail === "tables" || effectiveRail === "queries") &&
     workspaceTabs.length > 0;
 
   const autoFitNavigator = useCallback(() => {
@@ -529,8 +563,10 @@ export function RelationalWorkbench({
         isWindowFullscreen={isWindowFullscreen}
         onPointerDown={onPointerDown}
         onDoubleClick={onDoubleClick}
-        railItems={RELATIONAL_RAIL_ITEMS}
-        activeRail={settingsView ? "tables" : rail}
+        railItems={RELATIONAL_RAIL_ITEMS.filter(
+          (item) => item.id !== "pg-tools" || isPostgres,
+        )}
+        activeRail={settingsView ? "tables" : effectiveRail}
         onRailChange={handleRailChange}
         onOpenSettings={handleOpenSettings}
         statusItems={statusItems}

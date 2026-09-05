@@ -138,3 +138,29 @@ describe("useConnectionForm — Test Connection", () => {
     });
   });
 });
+
+describe("connection save outcome", () => {
+  it.each(["cancelled", "failed", "saved"] as const)(
+    "preserves the form unless save is %s",
+    async (outcome) => {
+      const original = useAppStore.getState().updateConnection;
+      const updateConnection = vi.fn().mockResolvedValue(outcome);
+      useAppStore.setState({ updateConnection });
+      const onSaved = vi.fn();
+      try {
+        const { result } = renderHook(() =>
+          useConnectionForm({ mode: "edit", connection: STORED, onSaved }),
+        );
+        act(() => result.current.form.setFieldValue("name", "Keep this edit"));
+        await act(() => result.current.form.handleSubmit());
+        expect(updateConnection).toHaveBeenCalledOnce();
+        expect(onSaved).toHaveBeenCalledTimes(outcome === "saved" ? 1 : 0);
+        expect(result.current.form.state.values.name).toBe("Keep this edit");
+        if (outcome === "failed")
+          expect(result.current.testStatus.state).toBe("error");
+      } finally {
+        useAppStore.setState({ updateConnection: original });
+      }
+    },
+  );
+});

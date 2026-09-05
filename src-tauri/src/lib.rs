@@ -263,6 +263,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         // Persist and restore window geometry across launches (D7).
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
@@ -402,6 +403,7 @@ pub fn run() {
             commands::relational::execute_ddl,
             commands::relational::export_ddl,
             commands::pg_backup::start_pg_backup,
+            commands::pg_backup::pick_pg_tool_file,
             commands::pg_backup::start_pg_restore,
             commands::pg_backup::get_pg_tool_job,
             commands::pg_backup::list_pg_tool_jobs,

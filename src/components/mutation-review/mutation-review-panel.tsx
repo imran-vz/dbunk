@@ -64,6 +64,7 @@ const hasIncludedChanges = (draft: MutationDraft): boolean =>
 
 const applyWithSafetyConfirmation = async (
   payload: Parameters<typeof applyResultMutations>[0],
+  canRetry: () => boolean,
 ): Promise<ResultMutationClientResult<ApplyResult>> => {
   const firstAttempt = await applyResultMutations(payload);
   if (
@@ -83,6 +84,7 @@ const applyWithSafetyConfirmation = async (
     firstAttempt.error.statements,
   );
   if (!confirmed) return { kind: "cancelled" };
+  if (!canRetry()) return { kind: "superseded" };
   return applyResultMutations({ ...payload, confirmed: true });
 };
 
@@ -91,6 +93,18 @@ const statusForDraft = (
   analysisError: ResultMutationError | null,
 ): string => {
   if (!draft) return "This mutation draft is no longer available.";
+  if (draft.sourceInvalidated) {
+    switch (draft.apply.state) {
+      case "applying":
+        return "The apply is still finishing after the database restore. Its outcome may include committed changes.";
+      case "failed":
+        return "The apply ended after the database restore invalidated its source. Its final database state cannot be safely inferred from this stale draft.";
+      case "success":
+        return "The apply reported success after the database restore invalidated its source. Reload to see the final database state.";
+      case "idle":
+        return "The staged edits are stale after the database restore and cannot be changed or applied.";
+    }
+  }
   if (analysisError) return formatMutationError(analysisError);
   switch (draft.apply.state) {
     case "applying":
@@ -210,7 +224,8 @@ export function MutationReviewPanel({
     draft?.apply.state === "success"
       ? draft.apply.result.operations.length
       : changeCount;
-  const controlsDisabled = applying || applied;
+  const controlsDisabled =
+    applying || applied || Boolean(draft?.sourceInvalidated);
 
   const requestAnalysis = useCallback(async () => {
     const current = useAppStore.getState().mutationDrafts[scope];
@@ -231,6 +246,14 @@ export function MutationReviewPanel({
       analysisRun.current.generation === current.generation
     ) {
       analysisRun.current = undefined;
+    }
+    const latest = useAppStore.getState().mutationDrafts[scope];
+    if (
+      !latest ||
+      latest.generation !== current.generation ||
+      latest.sourceInvalidated
+    ) {
+      return;
     }
     if (result.kind === "ok") {
       setAnalysis(draftHandle(current), result.value);
@@ -291,6 +314,7 @@ export function MutationReviewPanel({
       const current = useAppStore.getState().mutationDrafts[scope];
       if (
         current?.analysis &&
+        !current.sourceInvalidated &&
         hasIncludedChanges(current) &&
         current.preview.state === "idle" &&
         current.apply.state !== "applying"
@@ -303,6 +327,7 @@ export function MutationReviewPanel({
   useEffect(() => {
     if (
       draft &&
+      !draft.sourceInvalidated &&
       !draft.analysis &&
       draft.changeOrder.length > 0 &&
       !visibleAnalysisFailure
@@ -314,6 +339,7 @@ export function MutationReviewPanel({
   useEffect(() => {
     if (
       draft?.analysis &&
+      !draft.sourceInvalidated &&
       hasIncludedChanges(draft) &&
       draft.preview.state === "idle" &&
       draft.apply.state !== "applying"
@@ -330,7 +356,12 @@ export function MutationReviewPanel({
       if (result.kind !== "ok") {
         const error = clientResultError(result);
         if (failApply(request, error)) {
-          setAnnouncement(formatMutationError(error));
+          const settled = useAppStore.getState().mutationDrafts[request.scope];
+          setAnnouncement(
+            settled?.sourceInvalidated
+              ? "The apply ended after the database restore invalidated its source. Its final database state cannot be safely inferred from this stale draft."
+              : formatMutationError(error),
+          );
         }
         return;
       }
@@ -358,7 +389,14 @@ export function MutationReviewPanel({
   const recoverExpiredApply = useCallback(
     async (request: MutationDraftApplyRequest): Promise<void> => {
       const current = useAppStore.getState().mutationDrafts[request.scope];
-      if (!current || current.generation !== request.generation) return;
+      if (
+        !current ||
+        current.generation !== request.generation ||
+        current.sourceInvalidated
+      ) {
+        await handleApplyResult(request, { kind: "superseded" });
+        return;
+      }
       const analysis = await analyzeDraft(current);
       if (analysis.kind !== "ok") {
         await handleApplyResult(request, analysis);
@@ -379,7 +417,10 @@ export function MutationReviewPanel({
         analysis.value,
         candidate.value,
       );
-      if (recovery === "stale") return;
+      if (recovery === "stale") {
+        await handleApplyResult(request, { kind: "superseded" });
+        return;
+      }
       if (recovery === "changed") {
         setAnnouncement(
           "Analysis changed the generated DML. Review the refreshed preview before applying.",
@@ -387,13 +428,26 @@ export function MutationReviewPanel({
         return;
       }
       const retryRequest = retryApplyAfterRecovery(draftHandle(current));
-      if (!retryRequest) return;
-      const retry = await applyWithSafetyConfirmation({
-        connectionId: current.connectionId,
-        tabId: current.owner.tabId,
-        analysisId: retryRequest.analysisId,
-        plan: retryRequest.build.plan,
-      });
+      if (!retryRequest) {
+        await handleApplyResult(request, { kind: "superseded" });
+        return;
+      }
+      const retry = await applyWithSafetyConfirmation(
+        {
+          connectionId: current.connectionId,
+          tabId: current.owner.tabId,
+          analysisId: retryRequest.analysisId,
+          plan: retryRequest.build.plan,
+        },
+        () => {
+          const latest = useAppStore.getState().mutationDrafts[request.scope];
+          return (
+            latest?.generation === retryRequest.generation &&
+            !latest.sourceInvalidated &&
+            latest.apply.state === "applying"
+          );
+        },
+      );
       await handleApplyResult(retryRequest, retry);
     },
     [handleApplyResult, recoverAnalysis, retryApplyAfterRecovery],
@@ -406,12 +460,22 @@ export function MutationReviewPanel({
     if (!current || current.generation !== request.generation) return;
     setCancelRequested(false);
     setAnnouncement("Applying included changes in one transaction.");
-    const result = await applyWithSafetyConfirmation({
-      connectionId: current.connectionId,
-      tabId: current.owner.tabId,
-      analysisId: request.analysisId,
-      plan: request.build.plan,
-    });
+    const result = await applyWithSafetyConfirmation(
+      {
+        connectionId: current.connectionId,
+        tabId: current.owner.tabId,
+        analysisId: request.analysisId,
+        plan: request.build.plan,
+      },
+      () => {
+        const latest = useAppStore.getState().mutationDrafts[scope];
+        return (
+          latest?.generation === request.generation &&
+          !latest.sourceInvalidated &&
+          latest.apply.state === "applying"
+        );
+      },
+    );
     if (result.kind === "error" && result.error.kind === "analysisExpired") {
       await recoverExpiredApply(request);
       return;
@@ -432,7 +496,7 @@ export function MutationReviewPanel({
       setCancelRequested(result.value.cancelRequested);
       setAnnouncement(
         result.value.cancelRequested
-          ? "Cancellation requested. Waiting for transaction rollback."
+          ? "Cancellation requested. Waiting for the apply result; changes may already have committed."
           : "No cancellable mutation request was found.",
       );
       return;
@@ -478,6 +542,20 @@ export function MutationReviewPanel({
       aria-label="Mutation review"
       className="flex h-full min-h-0 w-full flex-col text-xs text-foreground"
     >
+      {draft?.sourceInvalidated ? (
+        <p
+          role="alert"
+          className="border-b border-border-subtle p-3 text-warning"
+        >
+          {applying
+            ? "The database was restored while this apply is still finishing. Its changes may already have committed. Wait for the final result before discarding."
+            : applied
+              ? "The database was restored while these changes were applying. The apply reported success, but these preserved edits are stale. Discard them and reload before editing again."
+              : draft.apply.state === "failed"
+                ? "The database was restored while these changes were applying. The final database state may include committed changes. Discard these stale edits and reload before editing again."
+                : "The database was restored. These staged edits are preserved but stale and cannot be changed or applied. Discard them and reload before editing again."}
+        </p>
+      ) : null}
       <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">
@@ -590,7 +668,9 @@ export function MutationReviewPanel({
           >
             Revert all
           </Button>
-          {draft?.apply.state === "failed" && onRefresh ? (
+          {draft?.apply.state === "failed" &&
+          onRefresh &&
+          !draft.sourceInvalidated ? (
             <Button
               type="button"
               size="sm"
@@ -616,7 +696,9 @@ export function MutationReviewPanel({
                   : "Cancel apply"}
             </Button>
           ) : null}
-          {readyPreview && !readyPreview.reviewed ? (
+          {readyPreview &&
+          !readyPreview.reviewed &&
+          !draft?.sourceInvalidated ? (
             <Button
               type="button"
               size="sm"

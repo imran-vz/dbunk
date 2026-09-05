@@ -130,7 +130,12 @@ export type MutationDraftPreviewState =
 
 export type MutationDraftApplyState =
   | { state: "idle" }
-  | { state: "applying"; build: MutationDraftPlanBuild }
+  | {
+      state: "applying";
+      build: MutationDraftPlanBuild;
+      /** Retains ownership when source invalidation advances the draft generation. */
+      requestGeneration: number;
+    }
   | {
       state: "failed";
       error: ResultMutationError;
@@ -143,6 +148,8 @@ export type MutationDraftApplyState =
     };
 
 export type MutationDraft = {
+  /** Source database was restored; retained edits require discard and reload. */
+  sourceInvalidated?: boolean;
   scope: MutationDraftScope;
   owner: MutationDraftOwner;
   connectionId: string;
@@ -370,6 +377,15 @@ const clearFailures = (
 
 const isLocked = (draft: MutationDraft): boolean =>
   draft.apply.state === "applying";
+
+const ownsApplyRequest = (
+  draft: MutationDraft | undefined,
+  request: MutationDraftApplyRequest,
+): draft is MutationDraft & {
+  apply: Extract<MutationDraftApplyState, { state: "applying" }>;
+} =>
+  draft?.apply.state === "applying" &&
+  draft.apply.requestGeneration === request.generation;
 
 const changeForIdentity = (
   draft: MutationDraft,
@@ -661,7 +677,12 @@ export const createMutationDraftsSlice: StateCreator<
     let updated = false;
     set((state) => {
       const draft = state.mutationDrafts[handle.scope];
-      if (!draftMatchesHandle(draft, handle) || isLocked(draft)) return {};
+      if (
+        !draftMatchesHandle(draft, handle) ||
+        draft.sourceInvalidated ||
+        isLocked(draft)
+      )
+        return {};
       updated = true;
       return {
         mutationDrafts: {
@@ -680,7 +701,7 @@ export const createMutationDraftsSlice: StateCreator<
     let activeChangeId: string | null = null;
     set((state) => {
       const current = state.mutationDrafts[scope];
-      if (!current || isLocked(current)) return {};
+      if (!current || current.sourceInvalidated || isLocked(current)) return {};
       let draft = invalidateReview(current);
       const existing = changeForIdentity(draft, input.table, input.identity);
       if (existing?.kind === "deleteRow") return {};
@@ -742,7 +763,7 @@ export const createMutationDraftsSlice: StateCreator<
     let stagedChangeId: string | null = null;
     set((state) => {
       const current = state.mutationDrafts[scope];
-      if (!current || isLocked(current)) return {};
+      if (!current || current.sourceInvalidated || isLocked(current)) return {};
       let draft = invalidateReview(current);
       const existing = changeForIdentity(draft, input.table, input.identity);
       const changeId = existing?.changeId ?? nextChangeId(draft);
@@ -780,7 +801,7 @@ export const createMutationDraftsSlice: StateCreator<
     let stagedChangeId: string | null = null;
     set((state) => {
       const current = state.mutationDrafts[scope];
-      if (!current || isLocked(current)) return {};
+      if (!current || current.sourceInvalidated || isLocked(current)) return {};
       const draft = invalidateReview(current);
       const changeId = nextChangeId(draft);
       const change: MutationDraftInsert = {
@@ -813,7 +834,12 @@ export const createMutationDraftsSlice: StateCreator<
     set((state) => {
       const current = state.mutationDrafts[scope];
       const change = current?.changes[changeId];
-      if (!current || isLocked(current) || change?.kind !== "insertRow") {
+      if (
+        !current ||
+        current.sourceInvalidated ||
+        isLocked(current) ||
+        change?.kind !== "insertRow"
+      ) {
         return {};
       }
       updated = true;
@@ -838,7 +864,7 @@ export const createMutationDraftsSlice: StateCreator<
     let rebound = false;
     set((state) => {
       const draft = state.mutationDrafts[scope];
-      if (!draft) return {};
+      if (!draft || draft.sourceInvalidated) return {};
       const next = rebindMutationDraftChanges(draft, table, rows);
       if (next === draft) return {};
       rebound = true;
@@ -854,7 +880,8 @@ export const createMutationDraftsSlice: StateCreator<
     set((state) => {
       const current = state.mutationDrafts[scope];
       const change = current?.changes[changeId];
-      if (!current || isLocked(current) || !change) return {};
+      if (!current || current.sourceInvalidated || isLocked(current) || !change)
+        return {};
       if (change.included === included) return {};
       updated = true;
       const draft = invalidateReview(current);
@@ -878,7 +905,12 @@ export const createMutationDraftsSlice: StateCreator<
     let reverted = false;
     set((state) => {
       const current = state.mutationDrafts[scope];
-      if (!current || isLocked(current) || !current.changes[changeId]) {
+      if (
+        !current ||
+        current.sourceInvalidated ||
+        isLocked(current) ||
+        !current.changes[changeId]
+      ) {
         return {};
       }
       reverted = true;
@@ -894,7 +926,12 @@ export const createMutationDraftsSlice: StateCreator<
     let reverted = false;
     set((state) => {
       const draft = state.mutationDrafts[scope];
-      if (!draft || isLocked(draft) || draft.changeOrder.length === 0) {
+      if (
+        !draft ||
+        draft.sourceInvalidated ||
+        isLocked(draft) ||
+        draft.changeOrder.length === 0
+      ) {
         return {};
       }
       reverted = true;
@@ -904,6 +941,7 @@ export const createMutationDraftsSlice: StateCreator<
           [scope]: {
             ...draft,
             changes: {},
+            sourceInvalidated: false,
             changeOrder: [],
             preview: { state: "idle" },
             apply: { state: "idle" },
@@ -916,7 +954,8 @@ export const createMutationDraftsSlice: StateCreator<
 
   beginMutationDraftPreview: (scope) => {
     const draft = get().mutationDrafts[scope];
-    if (!draft?.analysis || isLocked(draft)) return null;
+    if (!draft?.analysis || draft.sourceInvalidated || isLocked(draft))
+      return null;
     const build = buildMutationDraftPlan(draft);
     if (build.plan.operations.length === 0) return null;
     const requestId = draft.nextPreviewRequestId;
@@ -949,6 +988,7 @@ export const createMutationDraftsSlice: StateCreator<
       const draft = state.mutationDrafts[request.scope];
       if (
         !draftMatchesHandle(draft, request) ||
+        draft.sourceInvalidated ||
         draft.preview.state !== "loading" ||
         draft.preview.requestId !== request.requestId
       ) {
@@ -980,6 +1020,7 @@ export const createMutationDraftsSlice: StateCreator<
       const draft = state.mutationDrafts[request.scope];
       if (
         !draftMatchesHandle(draft, request) ||
+        draft.sourceInvalidated ||
         draft.preview.state !== "loading" ||
         draft.preview.requestId !== request.requestId
       ) {
@@ -1003,7 +1044,8 @@ export const createMutationDraftsSlice: StateCreator<
     let acknowledged = false;
     set((state) => {
       const draft = state.mutationDrafts[scope];
-      if (!draft || draft.preview.state !== "ready") return {};
+      if (!draft || draft.sourceInvalidated || draft.preview.state !== "ready")
+        return {};
       acknowledged = true;
       return {
         mutationDrafts: {
@@ -1022,6 +1064,7 @@ export const createMutationDraftsSlice: StateCreator<
     const draft = get().mutationDrafts[scope];
     if (
       !draft?.analysis ||
+      draft.sourceInvalidated ||
       draft.preview.state !== "ready" ||
       !draft.preview.reviewed ||
       isLocked(draft)
@@ -1041,7 +1084,11 @@ export const createMutationDraftsSlice: StateCreator<
           [scope]: {
             ...current,
             changes: clearFailures(current.changes),
-            apply: { state: "applying", build },
+            apply: {
+              state: "applying",
+              build,
+              requestGeneration: draft.generation,
+            },
           },
         },
       };
@@ -1058,21 +1105,31 @@ export const createMutationDraftsSlice: StateCreator<
     let resolved = false;
     set((state) => {
       const draft = state.mutationDrafts[request.scope];
-      if (!draftMatchesHandle(draft, request) || !isLocked(draft)) return {};
+      if (!ownsApplyRequest(draft, request)) return {};
       resolved = true;
+      const apply: MutationDraftApplyState = {
+        state: "success",
+        result,
+        opIndexToChangeId: request.build.opIndexToChangeId,
+      };
+      if (draft.sourceInvalidated) {
+        return {
+          mutationDrafts: {
+            ...state.mutationDrafts,
+            [request.scope]: { ...draft, apply },
+          },
+        };
+      }
       return {
         mutationDrafts: {
           ...state.mutationDrafts,
           [request.scope]: {
             ...draft,
             changes: {},
+            sourceInvalidated: false,
             changeOrder: [],
             preview: { state: "idle" },
-            apply: {
-              state: "success",
-              result,
-              opIndexToChangeId: request.build.opIndexToChangeId,
-            },
+            apply,
           },
         },
       };
@@ -1084,7 +1141,7 @@ export const createMutationDraftsSlice: StateCreator<
     let failed = false;
     set((state) => {
       const draft = state.mutationDrafts[request.scope];
-      if (!draftMatchesHandle(draft, request) || !isLocked(draft)) return {};
+      if (!ownsApplyRequest(draft, request)) return {};
       const opIndex = attributedOpIndex(error);
       const changeId =
         opIndex === null
@@ -1121,6 +1178,7 @@ export const createMutationDraftsSlice: StateCreator<
       const draft = state.mutationDrafts[handle.scope];
       if (
         !draftMatchesHandle(draft, handle) ||
+        draft.sourceInvalidated ||
         draft.preview.state !== "ready"
       ) {
         return {};
@@ -1153,6 +1211,7 @@ export const createMutationDraftsSlice: StateCreator<
     const draft = get().mutationDrafts[handle.scope];
     if (
       !draftMatchesHandle(draft, handle) ||
+      draft.sourceInvalidated ||
       !draft.analysis ||
       draft.apply.state !== "applying" ||
       draft.preview.state !== "ready" ||

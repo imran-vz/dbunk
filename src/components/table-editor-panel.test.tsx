@@ -75,6 +75,7 @@ import {
   TableEditorPanel,
   TableSidebar,
 } from "@/components/table-editor-panel";
+import { refreshAfterPgRestore } from "@/lib/pg-tool-jobs/restore-refresh";
 import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
 import { supportsResultMutations } from "@/lib/result-mutation";
 import {
@@ -438,6 +439,32 @@ const seedMutationDraftAnalysis = (analysis: AnalyzeResultSetResult) => {
   if (!handle) throw new Error("Expected mutation draft handle");
   useAppStore.getState().setMutationDraftAnalysis(handle, analysis);
   return handle;
+};
+
+const invalidateTableMutationDraftSource = (
+  scope: ReturnType<typeof tableMutationDraftScope>,
+) => {
+  useAppStore.setState((state) => {
+    const draft = state.mutationDrafts[scope];
+    if (!draft) return state;
+    const generation = draft.generation + 1;
+    return {
+      mutationDrafts: {
+        ...state.mutationDrafts,
+        [scope]: {
+          ...draft,
+          generation,
+          analysis: null,
+          sourceInvalidated: true,
+          preview: { state: "idle" },
+        },
+      },
+      mutationDraftGenerations: {
+        ...state.mutationDraftGenerations,
+        [scope]: generation,
+      },
+    };
+  });
 };
 
 describe("TableEditorPanel read-only handling", () => {
@@ -1387,6 +1414,329 @@ describe("TableEditorPanel server browse", () => {
       expect(screen.getByTestId("table-mutation-status").textContent).toContain(
         "Staged editing ready",
       );
+    });
+
+    it("does not open Add row from analysis whose virtual-key load crossed a restore", async () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          identity: { kind: "none", columns: [] },
+          rowIdentity: null,
+        },
+      });
+      const keylessAnalysis = mutationAnalysis({ kind: "none", columns: [] });
+      let analysisCalls = 0;
+      let resolveVirtualKey: ((value: null) => void) | undefined;
+      mockedInvoke.mockImplementation((command) => {
+        if (command === "analyze_result_set") {
+          analysisCalls += 1;
+          return Promise.resolve(
+            analysisCalls === 1 ? keylessAnalysis : mutationAnalysis(),
+          );
+        }
+        if (command === "load_virtual_key") {
+          return new Promise((resolve) => {
+            resolveVirtualKey = resolve;
+          });
+        }
+        if (command === "browse_table_data") {
+          return Promise.resolve(refreshedBrowseResult);
+        }
+        if (command === "load_table_structure") {
+          return Promise.resolve(editableStructure);
+        }
+        return Promise.resolve(undefined);
+      });
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+      await waitFor(() => expect(resolveVirtualKey).toBeTypeOf("function"));
+
+      await act(async () => {
+        await refreshAfterPgRestore({
+          jobId: "restore-1",
+          connectionId: "conn-1",
+          kind: "restore",
+          format: "custom",
+          fileName: "restore.dump",
+          phase: "completed",
+          startedAt: "now",
+          finishedAt: "now",
+          bytesProcessed: null,
+          totalBytes: 1,
+          toolVersion: null,
+          failure: null,
+        });
+        resolveVirtualKey?.(null);
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByTestId("add-row-form")).toBeNull();
+      expect(
+        useAppStore.getState().mutationDrafts[tableMutationDraftScope("tab-1")],
+      ).toBeUndefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("add-row-form")).toBeTruthy(),
+      );
+      expect(analysisCalls).toBe(2);
+    });
+
+    it("closes zero-change Add, Bulk, and virtual-key authoring after restore", async () => {
+      seedBrowse();
+      seedMutationDraftAnalysis(mutationAnalysis());
+      mockedInvoke.mockResolvedValue(undefined);
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("add-row-form")).toBeTruthy(),
+      );
+
+      await act(async () => {
+        await refreshAfterPgRestore({
+          jobId: "restore-2",
+          connectionId: "conn-1",
+          kind: "restore",
+          format: "custom",
+          fileName: "restore.dump",
+          phase: "completed",
+          startedAt: "now",
+          finishedAt: "now",
+          bytesProcessed: null,
+          totalBytes: 1,
+          toolVersion: null,
+          failure: null,
+        });
+      });
+      expect(screen.queryByTestId("add-row-form")).toBeNull();
+
+      seedStructure(editableStructure);
+      seedMutationDraftAnalysis(mutationAnalysis());
+      fireEvent.click(screen.getAllByRole("checkbox")[1] as HTMLInputElement);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Bulk edit selected rows" }),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("bulk-edit-form")).toBeTruthy(),
+      );
+
+      await act(async () => {
+        await refreshAfterPgRestore({
+          jobId: "restore-3",
+          connectionId: "conn-1",
+          kind: "restore",
+          format: "custom",
+          fileName: "restore.dump",
+          phase: "completed",
+          startedAt: "now",
+          finishedAt: "now",
+          bytesProcessed: null,
+          totalBytes: 1,
+          toolVersion: null,
+          failure: null,
+        });
+      });
+      expect(screen.queryByTestId("bulk-edit-form")).toBeNull();
+
+      seedStructure(editableStructure);
+      const handle = seedMutationDraftAnalysis(
+        mutationAnalysis({ kind: "none", columns: [] }),
+      );
+      act(() => {
+        useAppStore.setState((state) => ({
+          tableBrowses: {
+            ...state.tableBrowses,
+            "tab-1": {
+              ...state.tableBrowses["tab-1"]!,
+              result: {
+                ...state.tableBrowses["tab-1"]!.result!,
+                identity: { kind: "none", columns: [] },
+                rowIdentity: null,
+              },
+            },
+          },
+        }));
+      });
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Choose virtual key" }),
+      );
+      fireEvent.click(screen.getByRole("checkbox", { name: "email" }));
+      const staleSave = screen.getByRole("button", {
+        name: "Save virtual key",
+      });
+      mockedInvoke.mockClear();
+
+      await act(async () => {
+        await refreshAfterPgRestore({
+          jobId: "restore-4",
+          connectionId: "conn-1",
+          kind: "restore",
+          format: "custom",
+          fileName: "restore.dump",
+          phase: "completed",
+          startedAt: "now",
+          finishedAt: "now",
+          bytesProcessed: null,
+          totalBytes: 1,
+          toolVersion: null,
+          failure: null,
+        });
+        fireEvent.click(staleSave);
+      });
+      expect(
+        useAppStore.getState().mutationDrafts[handle.scope],
+      ).toBeUndefined();
+      expect(
+        mockedInvoke.mock.calls.some(
+          ([command]) => command === "save_virtual_key",
+        ),
+      ).toBe(false);
+      expect(
+        screen.queryByRole("button", { name: "Save virtual key" }),
+      ).toBeNull();
+    });
+
+    it("locks restore-invalidated drafts while preserving review and discard", async () => {
+      seedBrowse();
+      const handle = seedMutationDraftAnalysis(mutationAnalysis());
+      useAppStore.getState().stageMutationDraftUpdate(handle.scope, {
+        table: { schema: "public", table: "users" },
+        identityKind: "primaryKey",
+        identity: [{ column: "id", value: "1" }],
+        originals: [
+          { column: "id", value: "1" },
+          { column: "email", value: "ada@example.com" },
+        ],
+        cells: [
+          {
+            column: "email",
+            original: "ada@example.com",
+            value: "ada@new.example",
+          },
+        ],
+        rowIndex: 0,
+      });
+      render(<TableEditorPanel tab={tableTab} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("add-row-form")).toBeTruthy();
+
+      act(() =>
+        invalidateTableMutationDraftSource(tableMutationDraftScope("tab-1")),
+      );
+
+      await waitFor(() =>
+        expect(screen.queryByTestId("add-row-form")).toBeNull(),
+      );
+      expect(screen.getByTestId("table-mutation-status").textContent).toContain(
+        "Restore completed",
+      );
+      expect(
+        (screen.getByRole("button", { name: "Add row" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+
+      fireEvent.click(screen.getAllByRole("checkbox")[1] as HTMLInputElement);
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Delete selected",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(
+        screen.queryByRole("button", { name: "Duplicate selected row" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Bulk edit selected rows" }),
+      ).toBeNull();
+      expect(
+        screen
+          .getByRole("button", { name: "ada@new.example" })
+          .getAttribute("title"),
+      ).toContain("Review or discard staged changes");
+
+      const review = screen.getByLabelText("Review 1 staged changes");
+      const discard = screen.getByRole("button", { name: /^Discard$/ });
+      expect((review as HTMLButtonElement).disabled).toBe(false);
+      expect((discard as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(review);
+      expect(
+        screen.getByRole("complementary", { name: "Mutation review" }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/staged edits are preserved but stale/i),
+      ).toBeTruthy();
+      expect(
+        mockedInvoke.mock.calls.some(
+          ([command]) => command === "analyze_result_set",
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects analysis that finishes after a restore invalidates the draft", async () => {
+      seedBrowse({
+        result: {
+          ...refreshedBrowseResult,
+          identity: { kind: "none", columns: [] },
+          rowIdentity: null,
+        },
+      });
+      const handle = seedMutationDraftAnalysis(
+        mutationAnalysis({ kind: "none", columns: [] }),
+      );
+      useAppStore.getState().stageMutationDraftInsert(handle.scope, {
+        table: { schema: "public", table: "users" },
+        values: [{ column: "email", value: "grace@example.com" }],
+      });
+      let resolveAnalysis:
+        | ((analysis: AnalyzeResultSetResult) => void)
+        | undefined;
+      mockedInvoke.mockImplementation((command) => {
+        if (command === "save_virtual_key") return Promise.resolve(undefined);
+        if (command === "analyze_result_set") {
+          return new Promise((resolve) => {
+            resolveAnalysis = resolve;
+          });
+        }
+        return new Promise(() => {});
+      });
+      render(<TableEditorPanel tab={tableTab} />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose virtual key" }),
+      );
+      fireEvent.click(screen.getByRole("checkbox", { name: "email" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save virtual key" }));
+      await waitFor(() => expect(resolveAnalysis).toBeTypeOf("function"));
+
+      act(() =>
+        invalidateTableMutationDraftSource(tableMutationDraftScope("tab-1")),
+      );
+      await act(async () => {
+        resolveAnalysis?.(
+          mutationAnalysis({
+            kind: "virtualKey",
+            columns: ["email"],
+          }),
+        );
+        await Promise.resolve();
+      });
+
+      expect(
+        useAppStore.getState().mutationDrafts[handle.scope]?.analysis,
+      ).toBeNull();
+      expect(screen.getByTestId("table-mutation-status").textContent).toContain(
+        "Restore completed",
+      );
+      expect(
+        screen.queryByRole("button", { name: "Save virtual key" }),
+      ).toBeNull();
     });
 
     it("stages a true-NULL cell update by browse row identity and opens Variant A review", async () => {

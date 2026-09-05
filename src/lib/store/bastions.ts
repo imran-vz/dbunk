@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
 
+import { preparePgToolFence } from "@/lib/pg-tool-jobs/lifecycle";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
 
 import { connectionReferencesBastion } from "./bastion-references";
@@ -66,6 +67,8 @@ export const createBastionsSlice: StateCreator<
       }));
       return true;
     }
+    const finish = await preparePgToolFence("Save bastion");
+    if (!finish) return false;
     try {
       const bastionServers = await tauriInvoke<BastionServer[]>(
         "save_bastion_server",
@@ -84,6 +87,8 @@ export const createBastionsSlice: StateCreator<
       const message = errorToMessage(error);
       set({ bastionStatus: { state: "error", error: message } });
       return false;
+    } finally {
+      finish();
     }
   },
 
@@ -96,6 +101,8 @@ export const createBastionsSlice: StateCreator<
       }));
       return true;
     }
+    const finish = await preparePgToolFence("Delete bastion");
+    if (!finish) return false;
     try {
       const bastionServers = await tauriInvoke<BastionServer[]>(
         "delete_bastion_server",
@@ -107,6 +114,8 @@ export const createBastionsSlice: StateCreator<
       const message = errorToMessage(error);
       set({ bastionStatus: { state: "error", error: message } });
       return false;
+    } finally {
+      finish();
     }
   },
 
@@ -120,6 +129,8 @@ export const createBastionsSlice: StateCreator<
     if (!isTauri()) {
       return true;
     }
+    const finish = await preparePgToolFence("Reset bastion host key");
+    if (!finish) return false;
     try {
       const bastionServers = await tauriInvoke<BastionServer[]>(
         "reset_bastion_host_key",
@@ -138,6 +149,8 @@ export const createBastionsSlice: StateCreator<
       const message = errorToMessage(error);
       set({ bastionStatus: { state: "error", error: message } });
       return false;
+    } finally {
+      finish();
     }
   },
 

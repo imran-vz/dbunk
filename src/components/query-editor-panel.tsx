@@ -66,6 +66,7 @@ import { formatSql } from "@/lib/sql-format";
 import {
   type QueryOutcome,
   type QueryPreviewData,
+  type MutationDraftHandle,
   type MutationDraft,
   queryMutationDraftScope,
   type QueryMutationDraftScope,
@@ -93,11 +94,47 @@ type MutationGridStatus = {
   tone: QueryMutationGridProps["statusTone"];
 };
 
-type QueryVirtualKeyState = {
+type QueryAnalysisHandle = MutationDraftHandle & {
   scope: QueryMutationDraftScope;
+  analysisId: number;
+};
+
+type QueryVirtualKeyState = QueryAnalysisHandle & {
   table: MutationTable;
   projectedColumns: string[];
   savedColumns: string[];
+};
+
+type QueryVirtualKeyRequest = QueryAnalysisHandle & {
+  requestId: number;
+};
+
+const queryAnalysisHandlesEqual = (
+  left: QueryAnalysisHandle | null,
+  right: QueryAnalysisHandle,
+): boolean =>
+  left?.scope === right.scope &&
+  left.generation === right.generation &&
+  left.analysisId === right.analysisId;
+
+const queryDraftMatchesHandle = (handle: MutationDraftHandle): boolean => {
+  const draft = useAppStore.getState().mutationDrafts[handle.scope];
+  return Boolean(
+    draft && draft.generation === handle.generation && !draft.sourceInvalidated,
+  );
+};
+
+const queryAnalysisMatchesHandle = (
+  handle: QueryAnalysisHandle,
+  analysis?: AnalyzeResultSetResult,
+): boolean => {
+  const draft = useAppStore.getState().mutationDrafts[handle.scope];
+  return Boolean(
+    draft &&
+    draft.generation === handle.generation &&
+    draft.analysis?.analysisId === handle.analysisId &&
+    (!analysis || draft.analysis.snapshot === analysis),
+  );
 };
 
 const EMPTY_QUERY_EDITS: Record<number, Record<number, string>> = {};
@@ -159,6 +196,9 @@ export function QueryEditorPanel({
     useState<QueryVirtualKeyState | null>(null);
   const [isVirtualKeyOpen, setIsVirtualKeyOpen] = useState(false);
   const [isVirtualKeyBusy, setIsVirtualKeyBusy] = useState(false);
+  const virtualKeyOwnerRef = useRef<QueryAnalysisHandle | null>(null);
+  const virtualKeyRequestRef = useRef<QueryVirtualKeyRequest | null>(null);
+  const nextVirtualKeyRequestIdRef = useRef(1);
 
   const queryPreview = useAppStore((state) => state.queryPreviews[tab.id]);
   const session = useAppStore((state) => state.querySessions[tab.id]);
@@ -212,6 +252,8 @@ export function QueryEditorPanel({
     analysisRequestsRef.current.clear();
     setStaleExecutionId(null);
     setVirtualKeyState(null);
+    virtualKeyOwnerRef.current = null;
+    virtualKeyRequestRef.current = null;
     setIsVirtualKeyOpen(false);
     setIsVirtualKeyBusy(false);
     // A fresh execution takes the foreground; pinned snapshots stay in
@@ -352,6 +394,26 @@ export function QueryEditorPanel({
   const mutationDraft = mutationScope ? mutationDrafts[mutationScope] : null;
   const stagedChangeCount = mutationDraft?.changeOrder.length ?? 0;
   const mutationLocked = mutationDraft?.apply.state === "applying";
+  const mutationSourceInvalidated = Boolean(mutationDraft?.sourceInvalidated);
+
+  useEffect(() => {
+    if (mutationSourceInvalidated) setIsVirtualKeyOpen(false);
+  }, [mutationSourceInvalidated]);
+
+  useEffect(() => {
+    if (!virtualKeyState || queryAnalysisMatchesHandle(virtualKeyState)) return;
+    setVirtualKeyState((current) =>
+      queryAnalysisHandlesEqual(current, virtualKeyState) ? null : current,
+    );
+    if (
+      queryAnalysisHandlesEqual(virtualKeyOwnerRef.current, virtualKeyState)
+    ) {
+      virtualKeyOwnerRef.current = null;
+      virtualKeyRequestRef.current = null;
+      setIsVirtualKeyOpen(false);
+      setIsVirtualKeyBusy(false);
+    }
+  }, [mutationDraft, virtualKeyState]);
   const executionDraftSummary = useMemo(
     () =>
       Object.values(mutationDrafts).reduce(
@@ -428,13 +490,17 @@ export function QueryEditorPanel({
       force?: boolean;
       refreshStructure?: boolean;
     }): Promise<AnalyzeResultSetResult | null> => {
+      const currentDraft = mutationScope
+        ? useAppStore.getState().mutationDrafts[mutationScope]
+        : null;
       if (
         policyReadOnlyCopy ||
         !mutationCapable ||
         !mutationScope ||
         !executionId ||
         resultIndex !== 0 ||
-        (!options?.force && mutationDraft?.analysis) ||
+        currentDraft?.sourceInvalidated ||
+        (!options?.force && currentDraft?.analysis) ||
         analysisRequestsRef.current.has(mutationScope)
       ) {
         return null;
@@ -477,21 +543,47 @@ export function QueryEditorPanel({
         refreshStructure: options?.refreshStructure ?? false,
       });
       analysisRequestsRef.current.delete(mutationScope);
-      if (result.kind === "ok") {
-        setMutationDraftAnalysis(handle, result.value);
+      if (
+        activeMutationScopeRef.current !== mutationScope ||
+        !queryDraftMatchesHandle(handle)
+      ) {
         setAnalysisState((current) =>
           current?.scope === mutationScope ? null : current,
         );
-        if (activeMutationScopeRef.current !== mutationScope) return null;
+        return null;
+      }
+      if (result.kind === "ok") {
+        if (!setMutationDraftAnalysis(handle, result.value)) {
+          setAnalysisState((current) =>
+            current?.scope === mutationScope ? null : current,
+          );
+          return null;
+        }
+        setAnalysisState((current) =>
+          current?.scope === mutationScope ? null : current,
+        );
+        const analysisHandle: QueryAnalysisHandle = {
+          scope: mutationScope,
+          generation: handle.generation,
+          analysisId: result.value.analysisId,
+        };
+        if (
+          activeMutationScopeRef.current !== mutationScope ||
+          !queryAnalysisMatchesHandle(analysisHandle, result.value)
+        ) {
+          return null;
+        }
         const target = queryVirtualKeyTarget(result.value);
         if (!target) {
+          virtualKeyOwnerRef.current = null;
           setVirtualKeyState(null);
           setIsVirtualKeyOpen(false);
           return result.value;
         }
         if (target.table.identity.kind === "virtualKey") {
+          virtualKeyOwnerRef.current = analysisHandle;
           setVirtualKeyState({
-            scope: mutationScope,
+            ...analysisHandle,
             table: { schema: target.table.schema, table: target.table.table },
             projectedColumns: target.projectedColumns,
             savedColumns: target.table.identity.columns,
@@ -499,27 +591,47 @@ export function QueryEditorPanel({
           return result.value;
         }
         const targetState: QueryVirtualKeyState = {
-          scope: mutationScope,
+          ...analysisHandle,
           table: { schema: target.table.schema, table: target.table.table },
           projectedColumns: target.projectedColumns,
           savedColumns: [],
         };
+        virtualKeyOwnerRef.current = analysisHandle;
         setVirtualKeyState(targetState);
         const key = await loadVirtualKey({
           connectionId: tab.connectionId,
           schema: target.table.schema,
           table: target.table.table,
         });
-        if (
-          key.kind === "ok" &&
-          activeMutationScopeRef.current === mutationScope
-        ) {
-          setVirtualKeyState({
-            ...targetState,
-            savedColumns: key.value?.columns ?? [],
-          });
+        if (!queryAnalysisMatchesHandle(analysisHandle, result.value)) {
+          setVirtualKeyState((current) =>
+            current?.scope === analysisHandle.scope &&
+            current.generation === analysisHandle.generation &&
+            current.analysisId === analysisHandle.analysisId
+              ? null
+              : current,
+          );
+          if (
+            queryAnalysisHandlesEqual(
+              virtualKeyOwnerRef.current,
+              analysisHandle,
+            )
+          ) {
+            virtualKeyOwnerRef.current = null;
+            setIsVirtualKeyOpen(false);
+          }
+          return null;
         }
-        return result.value;
+        if (key.kind === "ok") {
+          setVirtualKeyState((current) =>
+            current && queryAnalysisHandlesEqual(current, analysisHandle)
+              ? { ...current, savedColumns: key.value?.columns ?? [] }
+              : current,
+          );
+        }
+        return activeMutationScopeRef.current === mutationScope
+          ? result.value
+          : null;
       }
       if (result.kind === "superseded" || result.kind === "cancelled") {
         setAnalysisState((current) =>
@@ -538,7 +650,6 @@ export function QueryEditorPanel({
       exactExecutionSql,
       executionId,
       mutationCapable,
-      mutationDraft?.analysis,
       mutationScope,
       openMutationDraft,
       policyReadOnlyCopy,
@@ -556,16 +667,85 @@ export function QueryEditorPanel({
 
   const handleSaveVirtualKey = useCallback(
     async (columns: string[]): Promise<boolean> => {
-      if (!virtualKeyState || columns.length === 0 || isVirtualKeyBusy) {
+      if (
+        !virtualKeyState ||
+        columns.length === 0 ||
+        virtualKeyRequestRef.current !== null ||
+        activeMutationScopeRef.current !== virtualKeyState.scope ||
+        !queryAnalysisMatchesHandle(virtualKeyState)
+      ) {
         return false;
       }
+      const request: QueryVirtualKeyRequest = {
+        scope: virtualKeyState.scope,
+        generation: virtualKeyState.generation,
+        analysisId: virtualKeyState.analysisId,
+        requestId: nextVirtualKeyRequestIdRef.current++,
+      };
+      virtualKeyRequestRef.current = request;
       setIsVirtualKeyBusy(true);
-      const result = await saveVirtualKey({
+      try {
+        const result = await saveVirtualKey({
+          connectionId: tab.connectionId,
+          schema: virtualKeyState.table.schema,
+          table: virtualKeyState.table.table,
+          columns,
+        });
+        if (!queryAnalysisMatchesHandle(virtualKeyState)) return false;
+        if (result.kind !== "ok") {
+          if (result.kind === "error" && mutationScope) {
+            setAnalysisState({
+              scope: mutationScope,
+              state: "error",
+              message: mutationClientErrorCopy(result.error),
+            });
+          }
+          return false;
+        }
+        setVirtualKeyState((current) =>
+          current && queryAnalysisHandlesEqual(current, virtualKeyState)
+            ? { ...current, savedColumns: columns }
+            : current,
+        );
+        const analysis = await analyzeMutation({
+          force: true,
+          refreshStructure: true,
+        });
+        return analysis !== null;
+      } finally {
+        if (virtualKeyRequestRef.current?.requestId === request.requestId) {
+          virtualKeyRequestRef.current = null;
+          setIsVirtualKeyBusy(false);
+        }
+      }
+    },
+    [analyzeMutation, mutationScope, tab.connectionId, virtualKeyState],
+  );
+
+  const handleClearVirtualKey = useCallback(async (): Promise<boolean> => {
+    if (
+      !virtualKeyState ||
+      virtualKeyRequestRef.current !== null ||
+      activeMutationScopeRef.current !== virtualKeyState.scope ||
+      !queryAnalysisMatchesHandle(virtualKeyState)
+    ) {
+      return false;
+    }
+    const request: QueryVirtualKeyRequest = {
+      scope: virtualKeyState.scope,
+      generation: virtualKeyState.generation,
+      analysisId: virtualKeyState.analysisId,
+      requestId: nextVirtualKeyRequestIdRef.current++,
+    };
+    virtualKeyRequestRef.current = request;
+    setIsVirtualKeyBusy(true);
+    try {
+      const result = await clearVirtualKey({
         connectionId: tab.connectionId,
         schema: virtualKeyState.table.schema,
         table: virtualKeyState.table.table,
-        columns,
       });
+      if (!queryAnalysisMatchesHandle(virtualKeyState)) return false;
       if (result.kind !== "ok") {
         if (result.kind === "error" && mutationScope) {
           setAnalysisState({
@@ -574,63 +754,25 @@ export function QueryEditorPanel({
             message: mutationClientErrorCopy(result.error),
           });
         }
-        setIsVirtualKeyBusy(false);
         return false;
       }
       setVirtualKeyState((current) =>
-        current ? { ...current, savedColumns: columns } : current,
+        current && queryAnalysisHandlesEqual(current, virtualKeyState)
+          ? { ...current, savedColumns: [] }
+          : current,
       );
       const analysis = await analyzeMutation({
         force: true,
         refreshStructure: true,
       });
-      setIsVirtualKeyBusy(false);
       return analysis !== null;
-    },
-    [
-      analyzeMutation,
-      isVirtualKeyBusy,
-      mutationScope,
-      tab.connectionId,
-      virtualKeyState,
-    ],
-  );
-
-  const handleClearVirtualKey = useCallback(async (): Promise<boolean> => {
-    if (!virtualKeyState || isVirtualKeyBusy) return false;
-    setIsVirtualKeyBusy(true);
-    const result = await clearVirtualKey({
-      connectionId: tab.connectionId,
-      schema: virtualKeyState.table.schema,
-      table: virtualKeyState.table.table,
-    });
-    if (result.kind !== "ok") {
-      if (result.kind === "error" && mutationScope) {
-        setAnalysisState({
-          scope: mutationScope,
-          state: "error",
-          message: mutationClientErrorCopy(result.error),
-        });
+    } finally {
+      if (virtualKeyRequestRef.current?.requestId === request.requestId) {
+        virtualKeyRequestRef.current = null;
+        setIsVirtualKeyBusy(false);
       }
-      setIsVirtualKeyBusy(false);
-      return false;
     }
-    setVirtualKeyState((current) =>
-      current ? { ...current, savedColumns: [] } : current,
-    );
-    const analysis = await analyzeMutation({
-      force: true,
-      refreshStructure: true,
-    });
-    setIsVirtualKeyBusy(false);
-    return analysis !== null;
-  }, [
-    analyzeMutation,
-    isVirtualKeyBusy,
-    mutationScope,
-    tab.connectionId,
-    virtualKeyState,
-  ]);
+  }, [analyzeMutation, mutationScope, tab.connectionId, virtualKeyState]);
 
   const mutationAnalysis = mutationDraft?.analysis?.snapshot ?? null;
   const selectedResult = execution?.resultSets[resultIndex];
@@ -652,10 +794,12 @@ export function QueryEditorPanel({
     analysisState:
       analysisState?.scope === mutationScope ? analysisState : null,
     stale: isResultStale,
+    sourceInvalidated: mutationSourceInvalidated,
   });
   const getMutationCellReadOnlyReason = useCallback(
     (rowIndex: number, colIndex: number) => {
       if (policyReadOnlyCopy) return policyReadOnlyCopy;
+      if (mutationSourceInvalidated) return mutationStatus.copy;
       if (isResultStale) return "Re-run the query before editing this result.";
       if (resultIndex !== 0) return "Only the first result set can be edited.";
       if (!mutationAnalysis) return mutationStatus.copy;
@@ -667,6 +811,7 @@ export function QueryEditorPanel({
     },
     [
       isResultStale,
+      mutationSourceInvalidated,
       policyReadOnlyCopy,
       mutationAnalysis,
       mutationStatus.copy,
@@ -930,6 +1075,7 @@ export function QueryEditorPanel({
         edits: mutationEdits,
         readOnly:
           Boolean(policyReadOnlyCopy) ||
+          mutationSourceInvalidated ||
           isResultStale ||
           !mutationAnalysis ||
           mutationAnalysis.statement.kind !== "analyzed" ||
@@ -940,8 +1086,13 @@ export function QueryEditorPanel({
         onCellEdit: handleMutationCellEdit,
         onEditIntent: () => void ensureMutationAnalysis(),
         getCellReadOnlyReason: getMutationCellReadOnlyReason,
-        statusCopy: policyReadOnlyCopy ?? mutationStatus.copy,
-        statusTone: policyReadOnlyCopy ? "warning" : mutationStatus.tone,
+        statusCopy: mutationSourceInvalidated
+          ? mutationStatus.copy
+          : (policyReadOnlyCopy ?? mutationStatus.copy),
+        statusTone:
+          policyReadOnlyCopy || mutationSourceInvalidated
+            ? "warning"
+            : mutationStatus.tone,
         stale: isResultStale && !reviewScope,
         onRerun: () => void handleRerunResult(),
       }
@@ -949,6 +1100,7 @@ export function QueryEditorPanel({
 
   const virtualKeyEditor =
     mutationCapable &&
+    !mutationSourceInvalidated &&
     virtualKeyState &&
     virtualKeyState.scope === mutationScope ? (
       <QueryVirtualKeyEditor
@@ -1585,6 +1737,7 @@ function mutationGridStatus({
   analysis,
   analysisState,
   stale,
+  sourceInvalidated,
 }: {
   resultIndex: number;
   analysis: AnalyzeResultSetResult | null;
@@ -1593,7 +1746,14 @@ function mutationGridStatus({
     | { state: "error"; message: string }
     | null;
   stale: boolean;
+  sourceInvalidated: boolean;
 }): MutationGridStatus {
+  if (sourceInvalidated) {
+    return {
+      copy: "Restore completed. Review or discard staged changes from the previous database state.",
+      tone: "warning",
+    };
+  }
   if (stale) {
     return {
       copy: "Changes were applied. This result is stale until you re-run it.",

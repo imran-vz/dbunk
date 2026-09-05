@@ -459,6 +459,16 @@ impl Paths {
 }
 
 fn resolve_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    // Explicit debug-only isolation for native fixture walkthroughs. Release
+    // builds always use the normal directory, regardless of environment.
+    #[cfg(debug_assertions)]
+    if let Some(directory) = std::env::var_os("DBUNK_DEV_CONFIG_DIR") {
+        let directory = PathBuf::from(directory);
+        if !directory.is_absolute() {
+            return Err("DBUNK_DEV_CONFIG_DIR must be absolute".to_string());
+        }
+        return Ok(directory);
+    }
     #[cfg(target_os = "windows")]
     {
         app.path()
