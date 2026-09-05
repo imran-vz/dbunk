@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dbunk next parity item</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #000;
+        --fg: #fff;
+        --muted: #9a9a9a;
+        --line: #292929;
+        --accent: #61f4b0;
+        --warn: #ffd166;
+        --danger: #ff7b7b;
+        --mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
+        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 52px 0 80px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(250px, 0.6fr);
+        gap: 40px;
+        align-items: end;
+        padding-bottom: 26px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin-bottom: 14px;
+        font-size: clamp(2.1rem, 5vw, 4.5rem);
+        line-height: 0.98;
+        letter-spacing: -0.055em;
+      }
+
+      h2 {
+        margin-bottom: 18px;
+        font-size: 1rem;
+        letter-spacing: 0.01em;
+      }
+
+      h3 {
+        margin-bottom: 4px;
+        font-size: 0.96rem;
+      }
+
+      .lede {
+        max-width: 700px;
+        margin-bottom: 0;
+        color: #d8d8d8;
+        font-size: 1rem;
+      }
+
+      .meta {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+      }
+
+      .meta strong {
+        color: var(--fg);
+        font-weight: 500;
+      }
+
+      section {
+        padding: 30px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .decision {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 28px;
+      }
+
+      .label {
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 0.73rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .decision-copy strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: clamp(1.35rem, 3vw, 2.2rem);
+        line-height: 1.15;
+        letter-spacing: -0.025em;
+      }
+
+      .decision-copy p {
+        max-width: 820px;
+        margin-bottom: 0;
+        color: #c7c7c7;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        min-width: 880px;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 12px 14px 12px 0;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      td:first-child {
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+
+      tr.recommended td {
+        color: var(--fg);
+        background: linear-gradient(90deg, rgba(97, 244, 176, 0.09), transparent 76%);
+      }
+
+      tr.recommended td:first-child,
+      tr.recommended .signal {
+        color: var(--accent);
+      }
+
+      .signal {
+        color: var(--warn);
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .sequence {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .step {
+        min-width: 0;
+        padding: 20px 24px 4px 0;
+      }
+
+      .step + .step {
+        padding-left: 24px;
+        border-left: 1px solid var(--line);
+      }
+
+      .step-number {
+        display: block;
+        margin-bottom: 14px;
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      .step p,
+      .step ul {
+        color: #bcbcbc;
+      }
+
+      ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+      }
+
+      li + li {
+        margin-top: 5px;
+      }
+
+      code {
+        color: #d7ffeb;
+        font-family: var(--mono);
+        font-size: 0.88em;
+      }
+
+      .boundary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 36px;
+      }
+
+      .boundary h3 {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+      }
+
+      .in h3 {
+        color: var(--accent);
+      }
+
+      .out h3 {
+        color: var(--danger);
+      }
+
+      .evidence {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 36px;
+      }
+
+      .evidence div {
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .evidence p {
+        margin-bottom: 0;
+        color: var(--muted);
+      }
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        padding-top: 30px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      @media (max-width: 760px) {
+        main {
+          width: min(100% - 28px, 1180px);
+          padding-top: 30px;
+        }
+
+        header,
+        .decision,
+        .boundary,
+        .evidence {
+          grid-template-columns: 1fr;
+        }
+
+        .sequence {
+          grid-template-columns: 1fr;
+        }
+
+        .step + .step {
+          padding-left: 0;
+          border-top: 1px solid var(--line);
+          border-left: 0;
+        }
+
+        footer {
+          flex-direction: column;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Choose the next parity arc by failure cost.</h1>
+          <p class="lede">
+            Plans 001 through 017 closed the daily-driver foundations. The next
+            decision is among four real gaps, but one already has hidden backend
+            work and an unsafe large-file boundary.
+          </p>
+        </div>
+        <div class="meta">
+          <span>Audit commit <strong>25d36f1</strong></span>
+          <span>Open GitHub issues <strong>0</strong></span>
+          <span>Active numbered plan <strong>none</strong></span>
+          <span>Decision scope <strong>PAR-008 to PAR-011</strong></span>
+        </div>
+      </header>
+
+      <section class="decision">
+        <div class="label">Recommendation</div>
+        <div class="decision-copy">
+          <strong>PAR-010: file-backed PostgreSQL backup and restore</strong>
+          <p>
+            Start with a dark backend plan. Existing native-tool commands capture
+            full dumps in process memory, base64 them across IPC, and have no
+            cancellation. Their former UI was deleted. Fixing that boundary before
+            reactivation is the highest-leverage match for dbunk's reliability-first
+            priority.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Vetted options</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Parity arc</th>
+                <th>Current truth</th>
+                <th>User value</th>
+                <th>Effort</th>
+                <th>Risk</th>
+                <th>Why now or later</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="recommended">
+                <td>01</td>
+                <td><strong>PAR-010 backup / restore</strong></td>
+                <td>Backend-only and memory-heavy</td>
+                <td class="signal">Very high</td>
+                <td>L</td>
+                <td>High</td>
+                <td>Reliability blocker with reusable job/file substrate</td>
+              </tr>
+              <tr>
+                <td>02</td>
+                <td><strong>PAR-008 schema diff / migration</strong></td>
+                <td>Absent after prototype deletion</td>
+                <td class="signal">Very high</td>
+                <td>XL</td>
+                <td>High</td>
+                <td>Natural follow-on to typed DDL, but needs two large plans</td>
+              </tr>
+              <tr>
+                <td>03</td>
+                <td><strong>PAR-011 production triage</strong></td>
+                <td>Basic snapshot is unbounded and all-or-nothing</td>
+                <td class="signal">High</td>
+                <td>M + L</td>
+                <td>Medium</td>
+                <td>Bound the current admin surface before adding metrics</td>
+              </tr>
+              <tr>
+                <td>04</td>
+                <td><strong>PAR-009 visual query builder</strong></td>
+                <td>Accepted ADR, no implementation</td>
+                <td class="signal">Medium-high</td>
+                <td>L</td>
+                <td>Medium</td>
+                <td>Contained one-way design, but less urgent than data safety</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Proposed PAR-010 sequence</h2>
+        <div class="sequence">
+          <article class="step">
+            <span class="step-number">PLAN 018 · DARK BACKEND</span>
+            <h3>File jobs and native-tool execution</h3>
+            <ul>
+              <li>Async <code>pg_dump</code>, <code>psql</code>, and <code>pg_restore</code></li>
+              <li>Direct file paths, never dump bytes over IPC</li>
+              <li>Job IDs, progress phases, cancellation, deadlines</li>
+              <li>Tool/version preflight and typed errors</li>
+              <li>Partial-output and child-process cleanup</li>
+            </ul>
+          </article>
+          <article class="step">
+            <span class="step-number">PLAN 019 · ACTIVATION</span>
+            <h3>Reviewed backup and restore UI</h3>
+            <ul>
+              <li>Three static mocks before component work</li>
+              <li>PostgreSQL-only capability disclosure</li>
+              <li>Backup progress, cancel, success, and failure states</li>
+              <li>Restore preview and production confirmation</li>
+              <li>History without credentials or command-line secrets</li>
+            </ul>
+          </article>
+          <article class="step">
+            <span class="step-number">PLAN 020 · TRANSFER</span>
+            <h3>Bounded CSV import and export</h3>
+            <ul>
+              <li>Reuse the job/file lifecycle</li>
+              <li>PostgreSQL <code>COPY TO/FROM</code> with backpressure</li>
+              <li>Progress, cancellation, reject reporting</li>
+              <li>Explicit dialect, encoding, NULL, and transaction policy</li>
+              <li>Keep visible-row exports in memory</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>Plan 018 boundary</h2>
+        <div class="boundary">
+          <div class="in">
+            <h3>In</h3>
+            <ul>
+              <li>PostgreSQL native backup and restore only</li>
+              <li>Plain and custom dump formats</li>
+              <li>Existing TLS, tunnel, credential, and driver resolution</li>
+              <li>Backend safety policy for restore</li>
+              <li>Unit, process-fixture, and disposable PostgreSQL tests</li>
+            </ul>
+          </div>
+          <div class="out">
+            <h3>Out</h3>
+            <ul>
+              <li>No production or daily-driver channel changes</li>
+              <li>No UI until Plan 019 and mock selection</li>
+              <li>No MySQL, SQLite, ClickHouse, or Redis backup parity</li>
+              <li>No scheduler or generalized task engine</li>
+              <li>No Parquet, XML, or generated database-DDL expansion</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Evidence that changes the ordering</h2>
+        <div class="evidence">
+          <div>
+            <code>src-tauri/src/postgres/ddl.rs:353-454</code>
+            <p>Native tools use synchronous process execution and buffer output.</p>
+          </div>
+          <div>
+            <code>src-tauri/src/types.rs:1271-1283</code>
+            <p>Backup data crosses the frontend boundary as base64.</p>
+          </div>
+          <div>
+            <code>src/components/app-shell/activity-rail.tsx:27-53</code>
+            <p>No current rail or settings surface exposes backup and restore.</p>
+          </div>
+          <div>
+            <code>src/components/table-editor-panel.tsx:1318-1355</code>
+            <p>Whole-table export still accumulates every row in renderer memory.</p>
+          </div>
+          <div>
+            <code>plans/parity-gap-register.md:571-600</code>
+            <p>Schema comparison is genuinely absent and remains the next net-new arc.</p>
+          </div>
+          <div>
+            <code>src-tauri/src/postgres/admin.rs:193-294</code>
+            <p>Admin sections are fetched without row caps in one failure domain.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span>Decision requested: accept PAR-010, or choose PAR-008 / 009 / 011.</span>
+        <span>Planning artifact only. No source implementation changed.</span>
+      </footer>
+    </main>
+  </body>
+</html>

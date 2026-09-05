@@ -10,6 +10,7 @@ pub(crate) mod connections;
 pub(crate) mod diagnosis;
 pub(crate) mod keyvalue;
 pub(crate) mod managed;
+pub(crate) mod pg_backup;
 pub(crate) mod pg_objects;
 #[cfg(test)]
 mod pg_objects_live_tests;

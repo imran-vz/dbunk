@@ -23,9 +23,9 @@ use crate::{
     bytes_to_hex, clickhouse, postgres, CellEdit, CellEditKeyValue, ColumnInfo,
     CommitCellEditsResult, ConnectResult, CopyTableResult, DatabaseEngine, DatabaseOverviewStats,
     DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult, InsertRowResult,
-    MutationStatus, PgAdminSnapshot, PgBackendActionResult, PgDumpResult, PgRestoreResult,
-    QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships, ServerDetails,
-    StoredConnection, StructureCapabilities, TableStructure,
+    MutationStatus, PgAdminSnapshot, PgBackendActionResult, QueryResult, RelationInfo,
+    SchemaExplorer, SchemaRelationships, ServerDetails, StoredConnection, StructureCapabilities,
+    TableStructure,
 };
 
 // ---------------------------------------------------------------------------
@@ -934,41 +934,6 @@ pub async fn export_ddl(
         DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
             Err(not_implemented_yet(&connection.engine(), "DDL export"))
         }
-        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
-    }
-}
-
-pub async fn run_pg_dump(
-    connection: &StoredConnection,
-    scope: &str,
-    schema: Option<&str>,
-    table: Option<&str>,
-    format: &str,
-) -> Result<PgDumpResult, String> {
-    match connection.engine() {
-        DatabaseEngine::PostgreSQL => {
-            postgres::run_pg_dump(connection, scope, schema, table, format).await
-        }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => {
-            Err(not_implemented_yet(&connection.engine(), "PostgreSQL dump"))
-        }
-        DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
-    }
-}
-
-pub async fn run_pg_restore(
-    connection: &StoredConnection,
-    data_base64: &str,
-    format: &str,
-    clean: bool,
-) -> Result<PgRestoreResult, String> {
-    match connection.engine() {
-        DatabaseEngine::PostgreSQL => {
-            postgres::run_pg_restore(connection, data_base64, format, clean).await
-        }
-        DatabaseEngine::MySQL | DatabaseEngine::SQLite | DatabaseEngine::ClickHouse => Err(
-            not_implemented_yet(&connection.engine(), "PostgreSQL restore"),
-        ),
         DatabaseEngine::Redis => unreachable!("BUG: relational dispatch reached for Redis"),
     }
 }

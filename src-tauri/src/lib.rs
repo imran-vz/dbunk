@@ -19,6 +19,10 @@ mod tunnel;
 mod types;
 mod xlsx;
 
+#[cfg(test)]
+#[path = "commands/pg_backup/lifecycle_tests.rs"]
+mod pg_backup_lifecycle_tests;
+
 // Re-export DTOs at the crate root so existing `crate::Foo` paths in child
 // modules and the `#[tauri::command]` macros keep working unchanged.
 pub(crate) use types::*;
@@ -44,6 +48,7 @@ pub(crate) struct AppState {
     query_sessions: query_session::QuerySessionManager,
     result_mutations: result_mutation::ResultMutationManager,
     table_browse: table_browse::TableBrowseManager,
+    pg_tool_jobs: postgres::backup::PgToolJobManager,
 }
 
 #[cfg(test)]
@@ -67,6 +72,7 @@ pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
         query_sessions: query_session::QuerySessionManager::new(pool.clone()),
         result_mutations: result_mutation::ResultMutationManager::new(),
         table_browse: table_browse::TableBrowseManager::new(),
+        pg_tool_jobs: postgres::backup::PgToolJobManager::new(),
         pool,
         paths,
     };
@@ -224,6 +230,25 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
+const EXIT_SOCKET_CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+async fn close_socket_managers_for_exit(
+    query_sessions: query_session::QuerySessionManager,
+    table_browse: table_browse::TableBrowseManager,
+    result_mutations: result_mutation::ResultMutationManager,
+    pg_tool_jobs: postgres::backup::PgToolJobManager,
+) {
+    let _ = tokio::time::timeout(EXIT_SOCKET_CLOSE_TIMEOUT, async {
+        tokio::join!(
+            query_sessions.close_all(),
+            table_browse.close_all(),
+            result_mutations.close_all(),
+            pg_tool_jobs.close_all()
+        )
+    })
+    .await;
+}
+
 // ---------------------------------------------------------------------------
 // Application entry point
 // ---------------------------------------------------------------------------
@@ -254,12 +279,15 @@ pub fn run() {
             table_browse.start_monitor();
             let result_mutations = result_mutation::ResultMutationManager::new();
             result_mutations.start_monitor();
+            let pg_tool_jobs = postgres::backup::PgToolJobManager::new();
+            pg_tool_jobs.start_monitor();
             app.manage(AppState {
                 pool,
                 paths,
                 query_sessions,
                 result_mutations,
                 table_browse,
+                pg_tool_jobs,
             });
             Ok(())
         })
@@ -373,8 +401,12 @@ pub fn run() {
             commands::relational::load_table_structure,
             commands::relational::execute_ddl,
             commands::relational::export_ddl,
-            commands::relational::run_pg_dump,
-            commands::relational::run_pg_restore,
+            commands::pg_backup::start_pg_backup,
+            commands::pg_backup::start_pg_restore,
+            commands::pg_backup::get_pg_tool_job,
+            commands::pg_backup::list_pg_tool_jobs,
+            commands::pg_backup::cancel_pg_tool_job,
+            commands::pg_backup::release_pg_tool_job,
             commands::relational::refresh_materialized_view,
             commands::relational::run_pg_maintenance,
             // Relational: mutations
@@ -468,14 +500,14 @@ pub fn run() {
                 let manager = handle.state::<AppState>().query_sessions.clone();
                 let table_browse = handle.state::<AppState>().table_browse.clone();
                 let result_mutations = handle.state::<AppState>().result_mutations.clone();
+                let pg_tool_jobs = handle.state::<AppState>().pg_tool_jobs.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-                        tokio::join!(
-                            manager.close_all(),
-                            table_browse.close_all(),
-                            result_mutations.close_all()
-                        )
-                    })
+                    close_socket_managers_for_exit(
+                        manager,
+                        table_browse,
+                        result_mutations,
+                        pg_tool_jobs,
+                    )
                     .await;
                     handle.exit(code.unwrap_or(0));
                 });

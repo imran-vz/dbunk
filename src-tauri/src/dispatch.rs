@@ -41,9 +41,9 @@ pub(crate) use relational::{
 use crate::{
     CellEdit, CellEditKeyValue, CommitCellEditsResult, ConnectResult, CopyTableResult,
     DatabaseOverviewStats, DeleteRowsResult, ExecuteDdlResult, ExportDdlResult, ImportRowsResult,
-    InsertRowResult, MutationStatus, PgAdminSnapshot, PgBackendActionResult, PgDumpResult,
-    PgRestoreResult, QueryResult, RelationInfo, SchemaExplorer, SchemaRelationships,
-    SeedColumnSpec, SeedTableResult, ServerDetails, StorageClass, StoredConnection, TableStructure,
+    InsertRowResult, MutationStatus, PgAdminSnapshot, PgBackendActionResult, QueryResult,
+    RelationInfo, SchemaExplorer, SchemaRelationships, SeedColumnSpec, SeedTableResult,
+    ServerDetails, StorageClass, StoredConnection, TableStructure,
 };
 
 /// "This operation does not exist on this engine's class." Reserved
@@ -203,35 +203,6 @@ pub async fn export_ddl(
     match connection.engine().storage_class() {
         StorageClass::Relational => relational::export_ddl(connection, scope, schema, table).await,
         StorageClass::KeyValue => Err(not_applicable(connection, "DDL export")),
-    }
-}
-
-pub async fn run_pg_dump(
-    connection: &StoredConnection,
-    scope: &str,
-    schema: Option<&str>,
-    table: Option<&str>,
-    format: &str,
-) -> Result<PgDumpResult, String> {
-    match connection.engine().storage_class() {
-        StorageClass::Relational => {
-            relational::run_pg_dump(connection, scope, schema, table, format).await
-        }
-        StorageClass::KeyValue => Err(not_applicable(connection, "PostgreSQL dump")),
-    }
-}
-
-pub async fn run_pg_restore(
-    connection: &StoredConnection,
-    data_base64: &str,
-    format: &str,
-    clean: bool,
-) -> Result<PgRestoreResult, String> {
-    match connection.engine().storage_class() {
-        StorageClass::Relational => {
-            relational::run_pg_restore(connection, data_base64, format, clean).await
-        }
-        StorageClass::KeyValue => Err(not_applicable(connection, "PostgreSQL restore")),
     }
 }
 

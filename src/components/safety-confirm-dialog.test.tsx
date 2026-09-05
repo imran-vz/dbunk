@@ -88,7 +88,7 @@ describe("SafetyConfirmDialog", () => {
         connection: staging,
         subject: {
           kind: "command",
-          command: "run_pg_restore",
+          command: "start_pg_restore",
           destructive: true,
         },
       });

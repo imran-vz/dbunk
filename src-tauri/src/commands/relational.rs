@@ -15,9 +15,8 @@ use crate::{
     ImportRowsResult, InsertRowPayload, InsertRowResult, LoadDatabaseOverviewStatsPayload,
     LoadRelationStatsPayload, LoadSchemaRelationshipsPayload, LoadServerDetailsPayload,
     LoadTableDataPayload, LoadTableSchemaRelationshipsPayload, LoadTableStructurePayload,
-    MutationStatus, PgAdminSnapshot, PgBackendActionPayload, PgBackendActionResult, PgDumpPayload,
-    PgDumpResult, PgMaintenancePayload, PgRestorePayload, PgRestoreResult,
-    PollMutationStatusPayload, PositionRow, QueryHistoryEntry, QueryResult,
+    MutationStatus, PgAdminSnapshot, PgBackendActionPayload, PgBackendActionResult,
+    PgMaintenancePayload, PollMutationStatusPayload, PositionRow, QueryHistoryEntry, QueryResult,
     RefreshMaterializedViewPayload, RelationInfo, RunQueryPayload, SaveSchemaMapPositionPayload,
     SaveSchemaMapPrefsPayload, SavedQuery, SchemaExplorer, SchemaMapPrefs, SchemaMapScopePayload,
     SchemaRelationships, SeedTablePayload, SeedTableResult, ServerDetails, TableDataResult,
@@ -295,63 +294,6 @@ pub async fn export_ddl(
     with_active_connection(state.inner(), &connection_id, |connection| async move {
         dispatch::export_ddl(&connection, &scope, schema.as_deref(), table.as_deref()).await
     })
-    .await
-}
-
-#[tauri::command]
-pub async fn run_pg_dump(
-    state: State<'_, AppState>,
-    payload: PgDumpPayload,
-) -> Result<PgDumpResult, String> {
-    let PgDumpPayload {
-        connection_id,
-        scope,
-        schema,
-        table,
-        format,
-    } = payload;
-    with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::run_pg_dump(
-            &connection,
-            &scope,
-            schema.as_deref(),
-            table.as_deref(),
-            &format,
-        )
-        .await
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn run_pg_restore(
-    state: State<'_, AppState>,
-    payload: PgRestorePayload,
-) -> Result<PgRestoreResult, String> {
-    run_pg_restore_inner(state.inner(), payload).await
-}
-
-pub(crate) async fn run_pg_restore_inner(
-    state: &AppState,
-    payload: PgRestorePayload,
-) -> Result<PgRestoreResult, String> {
-    let PgRestorePayload {
-        connection_id,
-        data_base64,
-        format,
-        clean,
-        confirmed,
-    } = payload;
-    with_gated_active_connection(
-        state,
-        &connection_id,
-        "run_pg_restore",
-        confirmed,
-        |_| WriteIntent::Restore,
-        |connection| async move {
-            dispatch::run_pg_restore(&connection, &data_base64, &format, clean).await
-        },
-    )
     .await
 }
 
@@ -887,7 +829,6 @@ mod tests {
     enum LegacyCommand {
         RunQuery,
         ExecuteDdl,
-        RunPgRestore,
         RefreshMaterializedView,
         RunPgMaintenance,
         CommitCellEdits,
@@ -900,10 +841,9 @@ mod tests {
     }
 
     impl LegacyCommand {
-        const ALL: [Self; 12] = [
+        const ALL: [Self; 11] = [
             Self::RunQuery,
             Self::ExecuteDdl,
-            Self::RunPgRestore,
             Self::RefreshMaterializedView,
             Self::RunPgMaintenance,
             Self::CommitCellEdits,
@@ -919,7 +859,6 @@ mod tests {
             match self {
                 Self::RunQuery => "run_query",
                 Self::ExecuteDdl => "execute_ddl",
-                Self::RunPgRestore => "run_pg_restore",
                 Self::RefreshMaterializedView => "refresh_materialized_view",
                 Self::RunPgMaintenance => "run_pg_maintenance",
                 Self::CommitCellEdits => "commit_cell_edits",
@@ -958,18 +897,6 @@ mod tests {
                     ExecuteDdlPayload {
                         connection_id: connection_id.into(),
                         sql: "CREATE TABLE command_gate_probe (id INTEGER)".into(),
-                        confirmed,
-                    },
-                )
-                .await
-                .map(|_| ()),
-                Self::RunPgRestore => run_pg_restore_inner(
-                    state,
-                    PgRestorePayload {
-                        connection_id: connection_id.into(),
-                        data_base64: String::new(),
-                        format: "plain".into(),
-                        clean: false,
                         confirmed,
                     },
                 )
