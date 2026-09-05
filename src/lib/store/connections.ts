@@ -19,6 +19,7 @@ import { requestConfirm } from "@/lib/confirm";
 import { syntheticReachableDiagnosis } from "@/lib/connection-diagnosis";
 import { storageClassFor } from "@/lib/engine-policy";
 import { formatLatencyMs } from "@/lib/format";
+import { preparePgToolFence } from "@/lib/pg-tool-jobs/lifecycle";
 import { fetchRedisAclSelf } from "@/lib/redis/api";
 import { closeResultMutationForConnection } from "@/lib/result-mutation-client";
 import { errorToMessage, isTauri, tauriInvoke } from "@/lib/tauri";
@@ -174,7 +175,9 @@ export type ConnectionsSlice = {
    */
   loadConnections: () => Promise<boolean>;
   addConnection: (connection: Connection) => Promise<void>;
-  updateConnection: (connection: Connection) => Promise<void>;
+  updateConnection: (
+    connection: Connection,
+  ) => Promise<"saved" | "cancelled" | "failed">;
   /**
    * Organization-only update (folder / favorite / color) through the
    * credential-free backend path — safe for one-click toggles where
@@ -328,26 +331,28 @@ export const createConnectionsSlice: StateCreator<
   },
 
   updateConnection: async (connection) => {
-    if (!isTauri()) {
-      set((state) => ({
-        connections: state.connections.map((c) =>
-          c.id === connection.id ? connection : c,
-        ),
-      }));
-      return;
-    }
+    const finish = await preparePgToolFence("Save connection", connection.id);
+    if (!finish) return "cancelled";
     try {
+      if (!isTauri()) {
+        set((state) => ({
+          connections: state.connections.map((c) =>
+            c.id === connection.id ? connection : c,
+          ),
+        }));
+        return "saved";
+      }
       const stored = await tauriInvoke<StoredConnection[]>("save_connection", {
         connection: toStoredConnection(connection),
       });
-      // Same merge rule as every other full-list return: runtime
-      // fields survive, everything stored (including `lastActivityAt`,
-      // which the backend owns) comes from the response.
       set((state) => ({
         connections: mergeStoredConnections(stored, state.connections),
       }));
-    } catch (error) {
-      console.error("Failed to update connection", error);
+      return "saved";
+    } catch {
+      return "failed";
+    } finally {
+      finish();
     }
   },
 
@@ -437,7 +442,18 @@ export const createConnectionsSlice: StateCreator<
     ) {
       return;
     }
-    const epoch = (stateAtStart.connectionEpochs[connectionId] ?? 0) + 1;
+    const finish = await preparePgToolFence("Delete connection", connectionId);
+    if (!finish) return;
+    const confirmedState = get();
+    if (
+      confirmedState.connectionTransitionIds.includes(connectionId) ||
+      confirmedState.pgObjectDdlApplying[connectionId] ||
+      !confirmedState.connections.some((c) => c.id === connectionId)
+    ) {
+      finish();
+      return;
+    }
+    const epoch = (confirmedState.connectionEpochs[connectionId] ?? 0) + 1;
     set((state) => ({
       connectionEpochs: { ...state.connectionEpochs, [connectionId]: epoch },
       connectionTransitionIds: [...state.connectionTransitionIds, connectionId],
@@ -506,6 +522,8 @@ export const createConnectionsSlice: StateCreator<
             }
           : {},
       );
+    } finally {
+      finish();
     }
   },
 
@@ -865,79 +883,85 @@ export const createConnectionsSlice: StateCreator<
       return;
     }
 
-    // Confirmation is asynchronous, so recheck before claiming the lifetime.
-    const confirmedState = get();
-    if (
-      confirmedState.connectionTransitionIds.includes(connectionId) ||
-      confirmedState.pgObjectDdlApplying[connectionId] ||
-      !confirmedState.connections.some(
+    const finish = await preparePgToolFence("Disconnect", connectionId);
+    if (!finish) return;
+    try {
+      // Confirmation is asynchronous, so recheck before claiming the lifetime.
+      const confirmedState = get();
+      if (
+        confirmedState.connectionTransitionIds.includes(connectionId) ||
+        confirmedState.pgObjectDdlApplying[connectionId] ||
+        !confirmedState.connections.some(
+          (connection) => connection.id === connectionId,
+        )
+      ) {
+        return;
+      }
+      const epoch = (confirmedState.connectionEpochs[connectionId] ?? 0) + 1;
+      const connectionName = confirmedState.connections.find(
         (connection) => connection.id === connectionId,
-      )
-    ) {
-      return;
-    }
-    const epoch = (confirmedState.connectionEpochs[connectionId] ?? 0) + 1;
-    const connectionName = confirmedState.connections.find(
-      (connection) => connection.id === connectionId,
-    )?.name;
+      )?.name;
 
-    const teardownBackend = isTauri()
-      ? async () => {
-          try {
-            await tauriInvoke("disconnect_connection", {
-              payload: { connectionId },
-            });
-          } catch (error) {
-            console.error("Failed to disconnect backend connection", error);
+      const teardownBackend = isTauri()
+        ? async () => {
+            try {
+              await tauriInvoke("disconnect_connection", {
+                payload: { connectionId },
+              });
+            } catch (error) {
+              console.error("Failed to disconnect backend connection", error);
+            }
           }
-        }
-      : undefined;
-    // Status changes before cache invalidation. Otherwise a mounted object
-    // viewer can observe an empty cache while still Connected and start a new
-    // description request in the freshly incremented generation.
-    set((current) => ({
-      connectionEpochs: {
-        ...current.connectionEpochs,
-        [connectionId]: epoch,
-      },
-      connectionTransitionIds: [
-        ...current.connectionTransitionIds,
-        connectionId,
-      ],
-      connections: applyConnectionUpdate(current.connections, connectionId, {
-        status: "Disconnected",
-        latency: "--",
-        errorMessage: undefined,
-      }),
-    }));
-    await teardownConnectionWorkspace(get(), connectionId, teardownBackend);
-
-    set((state) => {
-      if (state.connectionEpochs[connectionId] !== epoch) return {};
-      const { [connectionId]: _droppedTab, ...remainingTabs } =
-        state.connectionOverviewTab;
-      const {
-        [connectionId]: _droppedSchemaMapSchema,
-        ...remainingSchemaMapSchemas
-      } = state.connectionSchemaMapSchema;
-      return {
-        connections: applyConnectionUpdate(state.connections, connectionId, {
+        : undefined;
+      // Status changes before cache invalidation. Otherwise a mounted object
+      // viewer can observe an empty cache while still Connected and start a new
+      // description request in the freshly incremented generation.
+      set((current) => ({
+        connectionEpochs: {
+          ...current.connectionEpochs,
+          [connectionId]: epoch,
+        },
+        connectionTransitionIds: [
+          ...current.connectionTransitionIds,
+          connectionId,
+        ],
+        connections: applyConnectionUpdate(current.connections, connectionId, {
           status: "Disconnected",
           latency: "--",
           errorMessage: undefined,
         }),
-        connectionOverviewTab: remainingTabs,
-        connectionSchemaMapSchema: remainingSchemaMapSchemas,
-        connectionTransitionIds: state.connectionTransitionIds.filter(
-          (id) => id !== connectionId,
-        ),
-      };
-    });
-    get().appendConsoleEvent({
-      severity: "info",
-      source: "connection",
-      message: `Disconnected from ${connectionName ?? connectionId}`,
-      connectionId,
-    });
+      }));
+      await teardownConnectionWorkspace(get(), connectionId, teardownBackend);
+
+      set((state) => {
+        if (state.connectionEpochs[connectionId] !== epoch) return {};
+        const { [connectionId]: _droppedTab, ...remainingTabs } =
+          state.connectionOverviewTab;
+        const {
+          [connectionId]: _droppedSchemaMapSchema,
+          ...remainingSchemaMapSchemas
+        } = state.connectionSchemaMapSchema;
+        return {
+          connections: applyConnectionUpdate(state.connections, connectionId, {
+            status: "Disconnected",
+            latency: "--",
+            errorMessage: undefined,
+          }),
+          connectionOverviewTab: remainingTabs,
+          connectionSchemaMapSchema: remainingSchemaMapSchemas,
+          connectionTransitionIds: state.connectionTransitionIds.filter(
+            (id) => id !== connectionId,
+          ),
+        };
+      });
+      get().appendConsoleEvent({
+        severity: "info",
+        source: "connection",
+        message: `Disconnected from ${connectionName ?? connectionId}`,
+        connectionId,
+      });
+    } finally {
+      finish();
+    }
   },
 });

@@ -91,7 +91,7 @@ Have: per-table or selection export through the data grid.
 - ❌ Parquet
 - ✅ Table-to-table copy (`copy_table_rows` over `import_rows`)
 - ✅ Save export config as re-runnable task (`export-tasks.ts`)
-- 🟡 File-backed PostgreSQL backup/restore backend: typed cancellable jobs, safe archive publication, restore policy, and teardown fencing (Plan 018). Dark until Plan 019 adds UI activation.
+- 🟡 File-backed PostgreSQL backup/restore backend: typed cancellable jobs, safe archive publication, restore policy, and teardown fencing (Plan 018). Plan 019 adds global and table-context UI, native file selection, restore review and job history; native UI verification remains open.
 - 🟡 Compression / split / encoding — gzip + encoding picker + NULL token shipped; split-file not yet
 
 ### 7. Data import
