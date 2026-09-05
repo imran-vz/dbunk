@@ -110,7 +110,6 @@ mod tests {
                 },
             ),
             ("execute_ddl", WriteIntent::Ddl),
-            ("run_pg_restore", WriteIntent::Restore),
             ("refresh_materialized_view", WriteIntent::RefreshMatView),
             ("run_pg_maintenance", WriteIntent::Maintenance),
             ("commit_cell_edits", WriteIntent::RowMutation),

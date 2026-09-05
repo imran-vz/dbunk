@@ -646,10 +646,18 @@ round-trip SQL parser.
 - `src-tauri/src/postgres/ddl.rs:53-221` generates relation-oriented DDL rather
   than a complete database definition.
 
+**Plan 018 backend progress:** File-backed PostgreSQL Tool Jobs provide typed
+polling, bounded concurrency/history/stderr, cancellation, non-overwriting archive
+publication, safety-gated restore with success-only audit, and teardown fencing.
+The legacy PostgreSQL base64 contract is removed. This backend is **dark until
+Plan 019** adds UI activation; it does not establish user-facing parity.
+Owner/privilege options and client/server negotiation remain follow-ups.
+Plan 020 owns bounded table import/export.
+
 **Missing pieces:**
 
-- File-to-database and database-to-file streaming.
-- Backpressure, cancellation, progress, and bounded memory.
+- Table file-to-database and database-to-file streaming (Plan 020).
+- Backpressure, cancellation, progress, and bounded memory for table transfers.
 - Delimiter, quote, escape, encoding, locale, and date/time controls.
 - Error-row or reject-file output.
 - Transform expressions and source-to-destination column mapping.
@@ -660,8 +668,8 @@ round-trip SQL parser.
 - Correct MySQL and SQLite import targets or explicit capability hiding.
 - Complete generated PostgreSQL database DDL for routines, sequences, types,
   triggers, policies, grants, comments, extensions, roles, and tablespaces.
-- Saved backup/restore profiles, background progress, history, validation, and
-  scheduling.
+- Backup/restore UI activation (Plan 019), saved profiles, persistent history,
+  and scheduling. In-memory polling and native validation exist in the dark backend.
 - Equivalent native backup integrations for accepted non-PostgreSQL engines.
 
 **Target outcome:** Large transfers remain bounded and cancelable, capability

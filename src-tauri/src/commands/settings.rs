@@ -88,13 +88,19 @@ pub async fn configure_credential_storage(
     state: State<'_, AppState>,
     payload: ConfigureCredentialStoragePayload,
 ) -> Result<AppSettingsSnapshot, String> {
-    credentials::configure(
-        &state.inner().pool,
-        payload.mode,
-        payload.password.as_deref(),
-    )
-    .await?;
+    configure_credential_storage_inner(state.inner(), payload).await?;
     load_app_settings(state).await
+}
+
+pub(crate) async fn configure_credential_storage_inner(
+    state: &AppState,
+    payload: ConfigureCredentialStoragePayload,
+) -> Result<(), String> {
+    crate::socket_lifecycle::with_global_fence(
+        state,
+        credentials::configure(&state.pool, payload.mode, payload.password.as_deref()),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -111,32 +117,43 @@ pub async fn change_credential_storage(
     state: State<'_, AppState>,
     payload: ChangeCredentialStoragePayload,
 ) -> Result<AppSettingsSnapshot, String> {
+    change_credential_storage_inner(state.inner(), payload).await?;
+    load_app_settings(state).await
+}
+
+pub(crate) async fn change_credential_storage_inner(
+    state: &AppState,
+    payload: ChangeCredentialStoragePayload,
+) -> Result<(), String> {
     if !payload.confirm {
         return Err("Credential storage change must be confirmed".to_string());
     }
-    let current = super::current_credential_mode(state.inner()).await?;
-    if current == payload.mode {
-        return load_app_settings(state).await;
-    }
-    credentials::change_mode(
-        &state.inner().pool,
-        current,
-        payload.mode,
-        payload.password.as_deref(),
-    )
-    .await?;
-    load_app_settings(state).await
+    crate::socket_lifecycle::with_global_fence(state, async {
+        let current = super::current_credential_mode(state).await?;
+        if current == payload.mode {
+            return Ok(());
+        }
+        credentials::change_mode(
+            &state.pool,
+            current,
+            payload.mode,
+            payload.password.as_deref(),
+        )
+        .await
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn reset_credential_storage(
     state: State<'_, AppState>,
 ) -> Result<AppSettingsSnapshot, String> {
-    crate::socket_lifecycle::with_global_fence(state.inner(), async {
-        credentials::reset(&state.inner().pool).await
-    })
-    .await?;
+    reset_credential_storage_inner(state.inner()).await?;
     load_app_settings(state).await
+}
+
+pub(crate) async fn reset_credential_storage_inner(state: &AppState) -> Result<(), String> {
+    crate::socket_lifecycle::with_global_fence(state, credentials::reset(&state.pool)).await
 }
 
 // ---------------------------------------------------------------------------

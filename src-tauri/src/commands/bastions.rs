@@ -29,13 +29,21 @@ pub async fn save_bastion_server(
     state: State<'_, AppState>,
     payload: SaveBastionServerPayload,
 ) -> Result<Vec<PublicBastionServer>, String> {
-    let state = state.inner();
+    save_bastion_server_inner(state.inner(), payload).await
+}
+
+pub(crate) async fn save_bastion_server_inner(
+    state: &AppState,
+    payload: SaveBastionServerPayload,
+) -> Result<Vec<PublicBastionServer>, String> {
     let mode = current_credential_mode(state).await?;
     validate_bastion_payload(&payload)?;
 
-    let connection_ids =
-        storage::bastions::connection_ids_referencing_bastion(&state.pool, &payload.id).await?;
-    let save_result = socket_lifecycle::with_connection_ids_fence(state, &connection_ids, async {
+    // Close admission before discovering references: a concurrent connection save
+    // can add another reference while this mutation is in flight.
+    let save_result = socket_lifecycle::with_global_fence(state, async {
+        let connection_ids =
+            storage::bastions::connection_ids_referencing_bastion(&state.pool, &payload.id).await?;
         let existing =
             storage::bastions::read_bastion_server_by_id(&state.pool, &payload.id).await?;
         // Serialize this read-modify-write with `credentials::upsert` /
@@ -94,26 +102,33 @@ pub async fn delete_bastion_server(
     state: State<'_, AppState>,
     payload: BastionServerPayload,
 ) -> Result<Vec<PublicBastionServer>, String> {
-    let state = state.inner();
+    delete_bastion_server_inner(state.inner(), &payload.bastion_server_id).await
+}
+
+pub(crate) async fn delete_bastion_server_inner(
+    state: &AppState,
+    bastion_server_id: &str,
+) -> Result<Vec<PublicBastionServer>, String> {
     let mode = current_credential_mode(state).await?;
-    let refs = storage::bastions::count_connections_referencing_bastion(
-        &state.pool,
-        &payload.bastion_server_id,
-    )
+    socket_lifecycle::with_global_fence(state, async {
+        let refs = storage::bastions::count_connections_referencing_bastion(
+            &state.pool,
+            bastion_server_id,
+        )
+        .await?;
+        if refs > 0 {
+            return Err(format!(
+                "Cannot delete Bastion Server while {refs} Connection(s) reference it"
+            ));
+        }
+        if !storage::bastions::delete_bastion_server(&state.pool, bastion_server_id).await? {
+            return Err(format!("Bastion Server '{}' not found", bastion_server_id));
+        }
+        credentials::delete_bastion_secrets(&state.pool, mode, bastion_server_id).await?;
+        tunnel::drop_bastion(bastion_server_id);
+        Ok::<_, String>(())
+    })
     .await?;
-    if refs > 0 {
-        return Err(format!(
-            "Cannot delete Bastion Server while {refs} Connection(s) reference it"
-        ));
-    }
-    if !storage::bastions::delete_bastion_server(&state.pool, &payload.bastion_server_id).await? {
-        return Err(format!(
-            "Bastion Server '{}' not found",
-            payload.bastion_server_id
-        ));
-    }
-    credentials::delete_bastion_secrets(&state.pool, mode, &payload.bastion_server_id).await?;
-    tunnel::drop_bastion(&payload.bastion_server_id);
     public_bastion_servers(state, mode).await
 }
 
@@ -122,21 +137,25 @@ pub async fn reset_bastion_host_key(
     state: State<'_, AppState>,
     payload: BastionServerPayload,
 ) -> Result<Vec<PublicBastionServer>, String> {
-    let state = state.inner();
+    reset_bastion_host_key_inner(state.inner(), &payload.bastion_server_id).await
+}
+
+pub(crate) async fn reset_bastion_host_key_inner(
+    state: &AppState,
+    bastion_server_id: &str,
+) -> Result<Vec<PublicBastionServer>, String> {
     let mode = current_credential_mode(state).await?;
-    let connection_ids = storage::bastions::connection_ids_referencing_bastion(
-        &state.pool,
-        &payload.bastion_server_id,
-    )
-    .await?;
-    let reset_result = socket_lifecycle::with_connection_ids_fence(state, &connection_ids, async {
+    let reset_result = socket_lifecycle::with_global_fence(state, async {
+        let connection_ids =
+            storage::bastions::connection_ids_referencing_bastion(&state.pool, bastion_server_id)
+                .await?;
         let result = storage::bastions::update_bastion_host_key_fingerprint(
             &state.pool,
-            &payload.bastion_server_id,
+            bastion_server_id,
             None,
         )
         .await;
-        socket_lifecycle::invalidate_bastion_caches(&payload.bastion_server_id, &connection_ids);
+        socket_lifecycle::invalidate_bastion_caches(bastion_server_id, &connection_ids);
         result
     })
     .await;

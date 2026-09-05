@@ -1,76 +1,13 @@
-//! DDL execution, DDL export, pg_dump, pg_restore, materialized view refresh.
+//! DDL execution, DDL export, and materialized view refresh.
 
 use std::collections::BTreeSet;
-use std::ops::{Deref, DerefMut};
-use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use sqlx::{Executor, Row};
 
-use crate::{
-    quote_double, ExecuteDdlResult, ExportDdlResult, PgDumpResult, PgRestoreResult,
-    StoredConnection,
-};
+use crate::{quote_double, ExecuteDdlResult, ExportDdlResult, StoredConnection};
 
-use super::{connect, pg_connection};
-
-struct PgToolCommand {
-    command: Command,
-    _tls_material: super::tls::LibpqTlsMaterial,
-}
-
-impl Deref for PgToolCommand {
-    type Target = Command;
-
-    fn deref(&self) -> &Self::Target {
-        &self.command
-    }
-}
-
-impl DerefMut for PgToolCommand {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.command
-    }
-}
-
-fn pg_tool_command(connection: &StoredConnection, binary: &str) -> Result<PgToolCommand, String> {
-    let connection = pg_connection(connection)?;
-    let mut command = Command::new(binary);
-    let port = connection.effective_port();
-    // `--host` and the `PGSSL*` / `PGHOSTADDR` environment come from the
-    // shared TLS resolver (ADR-0025) so libpq verifies exactly what the
-    // in-process drivers verify.
-    let tls = super::tls::ResolvedTls::from_postgres(connection);
-    let tls_material = super::tls::apply_to_command(&tls, &connection.host, &mut command)
-        .map_err(|error| error.to_string())?;
-    command
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--username")
-        .arg(&connection.user)
-        .arg("--dbname")
-        .arg(&connection.database)
-        // Stored credentials are authoritative. Never let a libpq tool fall
-        // back to an interactive password prompt in the desktop process.
-        .arg("--no-password")
-        .env("PGPASSWORD", &connection.password)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    Ok(PgToolCommand {
-        command,
-        _tls_material: tls_material,
-    })
-}
-
-fn command_error(binary: &str, output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.is_empty() {
-        format!("{binary} exited with status {}", output.status)
-    } else {
-        stderr
-    }
-}
+use super::connect;
 
 pub(crate) async fn export_relation_ddl(
     conn: &mut sqlx::postgres::PgConnection,
@@ -346,109 +283,6 @@ pub async fn export_ddl(
     };
     Ok(ExportDdlResult {
         sql,
-        runtime_ms: start.elapsed().as_millis() as u64,
-    })
-}
-
-pub async fn run_pg_dump(
-    connection: &StoredConnection,
-    scope: &str,
-    schema: Option<&str>,
-    table: Option<&str>,
-    format: &str,
-) -> Result<PgDumpResult, String> {
-    let start = Instant::now();
-    let mut command = pg_tool_command(connection, "pg_dump")?;
-    let extension = match format {
-        "plain" => {
-            command.arg("--format").arg("plain");
-            "sql"
-        }
-        "custom" => {
-            command.arg("--format").arg("custom");
-            "dump"
-        }
-        _ => return Err("pg_dump format must be plain or custom".to_string()),
-    };
-    match scope {
-        "database" => {}
-        "schema" => {
-            let schema = schema.ok_or_else(|| "schema dump requires a schema".to_string())?;
-            command.arg("--schema").arg(schema);
-        }
-        "table" => {
-            let schema = schema.ok_or_else(|| "table dump requires a schema".to_string())?;
-            let table = table.ok_or_else(|| "table dump requires a table".to_string())?;
-            command
-                .arg("--table")
-                .arg(format!("{}.{}", quote_double(schema), quote_double(table)));
-        }
-        _ => return Err("unsupported pg_dump scope".to_string()),
-    }
-    let output = command.output().map_err(|error| {
-        format!("failed to run pg_dump; make sure PostgreSQL client tools are installed: {error}")
-    })?;
-    if !output.status.success() {
-        return Err(command_error("pg_dump", &output));
-    }
-    Ok(PgDumpResult {
-        data_base64: B64.encode(output.stdout),
-        extension: extension.to_string(),
-        runtime_ms: start.elapsed().as_millis() as u64,
-    })
-}
-
-pub async fn run_pg_restore(
-    connection: &StoredConnection,
-    data_base64: &str,
-    format: &str,
-    clean: bool,
-) -> Result<PgRestoreResult, String> {
-    let start = Instant::now();
-    let data = B64
-        .decode(data_base64)
-        .map_err(|error| format!("restore payload is not valid base64: {error}"))?;
-    let output = if format == "plain" {
-        let mut command = pg_tool_command(connection, "psql")?;
-        if clean {
-            command.arg("--single-transaction");
-        }
-        command.stdin(Stdio::piped());
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("failed to run psql: {error}"))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            use std::io::Write;
-            stdin.write_all(&data).map_err(|error| error.to_string())?;
-        }
-        child
-            .wait_with_output()
-            .map_err(|error| format!("failed to wait for psql: {error}"))?
-    } else if format == "custom" {
-        let input = tempfile::NamedTempFile::new().map_err(|error| error.to_string())?;
-        std::fs::write(input.path(), data).map_err(|error| error.to_string())?;
-        let mut command = pg_tool_command(connection, "pg_restore")?;
-        if clean {
-            command.arg("--clean").arg("--if-exists");
-        }
-        command.arg(input.path());
-        command.output().map_err(|error| {
-            format!("failed to run pg_restore; make sure PostgreSQL client tools are installed: {error}")
-        })?
-    } else {
-        return Err("restore format must be plain or custom".to_string());
-    };
-    if !output.status.success() {
-        return Err(command_error(
-            if format == "plain" {
-                "psql"
-            } else {
-                "pg_restore"
-            },
-            &output,
-        ));
-    }
-    Ok(PgRestoreResult {
         runtime_ms: start.elapsed().as_millis() as u64,
     })
 }
