@@ -49,6 +49,7 @@ pub(crate) struct AppState {
     result_mutations: result_mutation::ResultMutationManager,
     table_browse: table_browse::TableBrowseManager,
     pg_tool_jobs: postgres::backup::PgToolJobManager,
+    pg_transfers: postgres::transfer::TransferManager,
 }
 
 #[cfg(test)]
@@ -73,6 +74,7 @@ pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
         result_mutations: result_mutation::ResultMutationManager::new(),
         table_browse: table_browse::TableBrowseManager::new(),
         pg_tool_jobs: postgres::backup::PgToolJobManager::new(),
+        pg_transfers: postgres::transfer::TransferManager::new(),
         pool,
         paths,
     };
@@ -237,13 +239,15 @@ async fn close_socket_managers_for_exit(
     table_browse: table_browse::TableBrowseManager,
     result_mutations: result_mutation::ResultMutationManager,
     pg_tool_jobs: postgres::backup::PgToolJobManager,
+    pg_transfers: postgres::transfer::TransferManager,
 ) {
     let _ = tokio::time::timeout(EXIT_SOCKET_CLOSE_TIMEOUT, async {
         tokio::join!(
             query_sessions.close_all(),
             table_browse.close_all(),
             result_mutations.close_all(),
-            pg_tool_jobs.close_all()
+            pg_tool_jobs.close_all(),
+            pg_transfers.close_all()
         )
     })
     .await;
@@ -282,6 +286,8 @@ pub fn run() {
             result_mutations.start_monitor();
             let pg_tool_jobs = postgres::backup::PgToolJobManager::new();
             pg_tool_jobs.start_monitor();
+            let pg_transfers = postgres::transfer::TransferManager::new();
+            pg_transfers.start_monitor();
             app.manage(AppState {
                 pool,
                 paths,
@@ -289,6 +295,7 @@ pub fn run() {
                 result_mutations,
                 table_browse,
                 pg_tool_jobs,
+                pg_transfers,
             });
             Ok(())
         })
@@ -403,6 +410,15 @@ pub fn run() {
             commands::relational::execute_ddl,
             commands::relational::export_ddl,
             commands::pg_backup::start_pg_backup,
+            commands::pg_transfer::inspect_pg_transfer,
+            commands::pg_transfer::release_pg_transfer_inspection,
+            commands::pg_transfer::start_pg_csv_import,
+            commands::pg_transfer::start_pg_csv_export,
+            commands::pg_transfer::get_pg_transfer_job,
+            commands::pg_transfer::list_pg_transfer_jobs,
+            commands::pg_transfer::cancel_pg_transfer_job,
+            commands::pg_transfer::release_pg_transfer_job,
+            commands::pg_transfer::pick_pg_transfer_file,
             commands::pg_backup::pick_pg_tool_file,
             commands::pg_backup::start_pg_restore,
             commands::pg_backup::get_pg_tool_job,
@@ -503,12 +519,14 @@ pub fn run() {
                 let table_browse = handle.state::<AppState>().table_browse.clone();
                 let result_mutations = handle.state::<AppState>().result_mutations.clone();
                 let pg_tool_jobs = handle.state::<AppState>().pg_tool_jobs.clone();
+                let pg_transfers = handle.state::<AppState>().pg_transfers.clone();
                 tauri::async_runtime::spawn(async move {
                     close_socket_managers_for_exit(
                         manager,
                         table_browse,
                         result_mutations,
                         pg_tool_jobs,
+                        pg_transfers,
                     )
                     .await;
                     handle.exit(code.unwrap_or(0));

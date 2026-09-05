@@ -13,6 +13,8 @@ vi.mock("@/lib/table-browse-client", () => ({
 
 import type { PgToolJob } from "@/lib/pg-tool-jobs/client";
 import { refreshAfterPgRestore } from "@/lib/pg-tool-jobs/restore-refresh";
+import type { PgTransferJob } from "@/lib/pg-transfer/client";
+import { refreshAfterPgCsvImport } from "@/lib/pg-transfer/refresh";
 import { type Connection, useAppStore } from "@/lib/store";
 import { tableMutationDraftScope } from "@/lib/store";
 import type { BrowseTableResult } from "@/lib/table-browse";
@@ -54,6 +56,23 @@ const restoreJob = {
   toolVersion: null,
   failure: null,
 } satisfies PgToolJob;
+
+const importJob = {
+  jobId: "import-1",
+  connectionId: connection.id,
+  schema: "public",
+  table: "users",
+  direction: "import",
+  fileName: "users.csv",
+  phase: "completed",
+  startedAt: "now",
+  finishedAt: "now",
+  totalBytes: 1,
+  bytesProcessed: 1,
+  rowsProcessed: 1,
+  rowsCommitted: 1,
+  failure: null,
+} satisfies PgTransferJob;
 
 const browseResult = (requestId: number): BrowseTableResult => ({
   requestId,
@@ -231,5 +250,43 @@ describe("refreshAfterPgRestore", () => {
     await completion;
 
     expect(mockedCount).not.toHaveBeenCalled();
+  });
+});
+
+describe("refreshAfterPgCsvImport", () => {
+  it("preserves staged edits while fencing their stale source", async () => {
+    const handle = useAppStore.getState().openMutationDraft({
+      owner: { kind: "table", tabId: "tab-1" },
+      connectionId: connection.id,
+      source: { kind: "relation", schema: "public", table: "users" },
+    });
+    if (!handle) throw new Error("Expected mutation draft handle");
+    useAppStore.getState().stageMutationDraftInsert(handle.scope, {
+      table: { schema: "public", table: "users" },
+      values: [{ column: "name", value: "Ada" }],
+    });
+
+    await refreshAfterPgCsvImport(importJob);
+
+    expect(useAppStore.getState().mutationDrafts[handle.scope]).toMatchObject({
+      sourceInvalidated: true,
+      changeOrder: [expect.any(String)],
+      preview: { state: "idle" },
+    });
+  });
+
+  it("warns against a blind retry after an unknown commit outcome", async () => {
+    await refreshAfterPgCsvImport({
+      ...importJob,
+      phase: "outcomeUnknown",
+      rowsCommitted: null,
+      failure: { kind: "outcomeUnknown" },
+    });
+
+    expect(useAppStore.getState().appendConsoleEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Inspect the target before retrying"),
+      }),
+    );
   });
 });

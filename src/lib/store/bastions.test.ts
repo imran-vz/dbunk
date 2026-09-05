@@ -3,6 +3,7 @@ import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { pgToolClient } from "@/lib/pg-tool-jobs/client";
+import { pgTransferClient } from "@/lib/pg-transfer/client";
 
 vi.mock("@/lib/tauri", () => ({
   isTauri: vi.fn(() => true),
@@ -25,6 +26,7 @@ const initialStoreState = useAppStore.getState();
 
 beforeEach(() => {
   vi.spyOn(pgToolClient, "list").mockResolvedValue([]);
+  vi.spyOn(pgTransferClient, "list").mockResolvedValue([]);
   mockedIsTauri.mockReturnValue(true);
   mockedInvoke.mockReset();
   useAppStore.setState(initialStoreState, true);

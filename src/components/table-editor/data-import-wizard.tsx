@@ -18,6 +18,7 @@ type DataImportWizardProps = {
   columns: ColumnInfo[];
   engine: string;
   isWriting: boolean;
+  acceptedKinds?: "all" | "xlsx";
   onClose: () => void;
   onImportRows: (payload: {
     columns: string[];
@@ -38,12 +39,15 @@ export function DataImportWizard({
   columns,
   engine,
   isWriting,
+  acceptedKinds = "all",
   onClose,
   onImportRows,
 }: DataImportWizardProps) {
   const [sheets, setSheets] = useState<ParsedImportSheet[]>([]);
   const [sheetIndex, setSheetIndex] = useState(0);
-  const [fileKind, setFileKind] = useState<"csv" | "xlsx">("csv");
+  const [fileKind, setFileKind] = useState<"csv" | "xlsx">(
+    acceptedKinds === "xlsx" ? "xlsx" : "csv",
+  );
   const [mapping, setMapping] = useState<ColumnMapping[]>([]);
   const [nullToken, setNullToken] = useState("\\N");
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +72,11 @@ export function DataImportWizard({
     setError(null);
     try {
       const isXlsx = /\.xlsx$/i.test(file.name);
+      if (acceptedKinds === "xlsx" && !isXlsx) {
+        throw new Error(
+          "PostgreSQL CSV files use the native Transfer tab. Choose an XLSX file here.",
+        );
+      }
       setFileKind(isXlsx ? "xlsx" : "csv");
       const parsed = isXlsx
         ? await parseXlsxSheets(await file.arrayBuffer())
@@ -106,9 +115,13 @@ export function DataImportWizard({
     <div className="border-b border-border-subtle bg-surface-window px-3 py-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold">Import data</div>
+          <div className="text-sm font-semibold">
+            {acceptedKinds === "xlsx" ? "Import XLSX" : "Import data"}
+          </div>
           <div className="text-xs text-text-muted">
-            CSV or XLSX into the current table
+            {acceptedKinds === "xlsx"
+              ? "XLSX into the current table"
+              : "CSV or XLSX into the current table"}
           </div>
         </div>
         <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
@@ -120,7 +133,11 @@ export function DataImportWizard({
         <Input
           type="file"
           aria-label="Import file"
-          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          accept={
+            acceptedKinds === "xlsx"
+              ? ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              : ".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          }
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void loadFile(file);

@@ -20,6 +20,8 @@ import { TabShortcuts } from "@/components/workbench/tab-shortcuts";
 import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
 import { pgToolObserver } from "@/lib/pg-tool-jobs/observer";
 import { refreshAfterPgRestore } from "@/lib/pg-tool-jobs/restore-refresh";
+import { pgTransferObserver } from "@/lib/pg-transfer/observer";
+import { refreshAfterPgCsvImport } from "@/lib/pg-transfer/refresh";
 import { startSessionPersistence } from "@/lib/session-persistence";
 import { useAppStore } from "@/lib/store";
 import { isTauri } from "@/lib/tauri";
@@ -203,9 +205,16 @@ export function AppShell() {
   useForegroundHealthCheck(appSettings?.credentialState, runHealthChecks);
   useEffect(() => {
     if (!isTauri() || appSettings?.credentialState !== "ready") return;
-    return pgToolObserver.mount((job) => {
+    const stopTools = pgToolObserver.mount((job) => {
       void refreshAfterPgRestore(job);
     });
+    const stopTransfers = pgTransferObserver.mount((job) => {
+      void refreshAfterPgCsvImport(job);
+    });
+    return () => {
+      stopTools();
+      stopTransfers();
+    };
   }, [appSettings?.credentialState]);
 
   if (

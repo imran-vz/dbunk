@@ -93,6 +93,7 @@ import {
 } from "@/lib/store";
 import { defaultTableGridPrefs } from "@/lib/table-browse";
 import { tauriInvoke } from "@/lib/tauri";
+import { resetUiStateForTests } from "@/lib/ui-state";
 
 const mockedInvoke = vi.mocked(tauriInvoke);
 const mockedSupportsResultMutations = vi.mocked(supportsResultMutations);
@@ -122,6 +123,7 @@ const seed = (
 };
 
 beforeEach(() => {
+  resetUiStateForTests();
   useAppStore.setState(initialStoreState, true);
   mockedInvoke.mockReset();
   mockedSupportsResultMutations.mockReturnValue(false);
@@ -1196,18 +1198,28 @@ describe("TableEditorPanel server browse", () => {
     expect(useAppStore.getState().tableBrowses["tab-1"]?.exactCount).toBeNull();
   });
 
-  it("refreshes imported browse data without refreshing the descriptor", async () => {
+  it("keeps PostgreSQL XLSX import on the buffered path", async () => {
     seedBrowse({
       exactCount: { requestId: 1, kind: "exact", value: 128 },
     });
     render(<TableEditorPanel tab={tableTab} />);
-    fireEvent.click(screen.getByRole("button", { name: "Import data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Table actions" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Import XLSX…" }),
+    );
+    mockedInvoke.mockResolvedValueOnce([
+      {
+        name: "Users",
+        columns: ["id", "email"],
+        rows: [["2", "grace@example.com"]],
+      },
+    ]);
     fireEvent.change(screen.getByLabelText("Import file"), {
       target: {
         files: [
           {
-            name: "users.csv",
-            text: async () => "id,email\n2,grace@example.com",
+            name: "users.xlsx",
+            arrayBuffer: async () => new ArrayBuffer(4),
           } as File,
         ],
       },
@@ -1226,6 +1238,66 @@ describe("TableEditorPanel server browse", () => {
       }),
     );
     expect(useAppStore.getState().tableBrowses["tab-1"]?.exactCount).toBeNull();
+  });
+
+  it("routes PostgreSQL CSV import to Transfer and keeps XLSX separate", async () => {
+    seedBrowse();
+    render(<TableEditorPanel tab={tableTab} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Import data" }));
+    expect(screen.getByTestId("pg-transfer-workspace")).toBeTruthy();
+    expect(screen.queryByLabelText("Import file")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Table actions" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Import XLSX…" }),
+    );
+    expect(screen.getByLabelText("Import file").getAttribute("accept")).toBe(
+      ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+  });
+
+  it("routes a supported PostgreSQL whole-table CSV export to Transfer", async () => {
+    seedBrowse();
+    render(<TableEditorPanel tab={tableTab} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Export whole table" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Export CSV" }),
+    ).toBeTruthy();
+    expect(
+      (screen.getByLabelText("CSV destination") as HTMLInputElement).value,
+    ).toBe("No file selected");
+    expect(
+      mockedInvoke.mock.calls.some(
+        ([command]) => command === "load_table_data",
+      ),
+    ).toBe(false);
+  });
+
+  it("routes each saved PostgreSQL CSV task run to a fresh destination", async () => {
+    seedBrowse();
+    render(<TableEditorPanel tab={tableTab} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Save export task" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Run saved export task" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Export CSV" }),
+    ).toBeTruthy();
+    expect(
+      (screen.getByLabelText("CSV destination") as HTMLInputElement).value,
+    ).toBe("No file selected");
   });
 
   it("refreshes seeded browse data without refreshing the descriptor", async () => {

@@ -93,6 +93,7 @@ interface TableEditorBodyProps {
   onExpandGrid?: () => void;
   expanded?: boolean;
   reviewPanel?: React.ReactNode;
+  transferPanel?: React.ReactNode;
 }
 
 export function TableEditorBody({
@@ -139,6 +140,7 @@ export function TableEditorBody({
   onExpandGrid,
   expanded,
   reviewPanel,
+  transferPanel,
 }: TableEditorBodyProps) {
   const columns = useMemo(() => data?.columns ?? [], [data?.columns]);
   const rows = data?.rows ?? [];
@@ -238,6 +240,8 @@ export function TableEditorBody({
               schema={schema}
               tableName={tableName}
             />
+          ) : activeSubTab === "transfer" ? (
+            transferPanel
           ) : (
             <RelationsSubTab
               connectionId={connectionId}

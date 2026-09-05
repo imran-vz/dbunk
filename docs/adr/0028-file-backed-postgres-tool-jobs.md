@@ -155,8 +155,8 @@ includes `close_all` in the existing three-second join. Normal native children
 are killed and cleaned within that budget; forced exit retains the hard-crash
 partial limitation above.
 
-Plan 019 owns user activation and warnings; native UI verification remains
-open in its execution record. The app uses bounded polling, invalidates pending
+Plan 019 completed user activation and warnings at `ab33968`, confirmed by
+Imran on 2026-09-05. The app uses bounded polling, invalidates pending
 restore reviews before lifecycle changes, and refreshes database metadata once
 per observed completed restore. Staged edits remain preserved but cannot apply
 after their source is invalidated. Plan 020 owns bounded table import/export

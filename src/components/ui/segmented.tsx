@@ -41,7 +41,7 @@ export function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.id)}
             className={cn(
-              "flex h-full items-center gap-1.5 rounded-sm px-2 text-xs font-medium transition-colors [&_svg:not([class*='size-'])]:size-3.5",
+              "flex h-full items-center gap-1.5 whitespace-nowrap rounded-sm px-2 text-xs font-medium transition-colors [&_svg:not([class*='size-'])]:size-3.5",
               active
                 ? "bg-surface-panel-elevated text-foreground"
                 : "text-text-muted hover:text-foreground",
