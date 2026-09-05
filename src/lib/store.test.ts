@@ -2,6 +2,8 @@
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pgToolClient } from "@/lib/pg-tool-jobs/client";
+
 const { mockedRequestConfirm } = vi.hoisted(() => ({
   mockedRequestConfirm: vi.fn(() => Promise.resolve(true)),
 }));
@@ -118,6 +120,7 @@ const emptyPgObjectCatalog = () => ({
 });
 
 beforeEach(() => {
+  vi.spyOn(pgToolClient, "list").mockResolvedValue([]);
   mockedIsTauri.mockReturnValue(true);
   mockedChannelsAvailable.mockReturnValue(false);
   mockedInvoke.mockReset();
@@ -1134,7 +1137,11 @@ describe("connectConnection error feedback", () => {
     );
 
     const disconnect = useAppStore.getState().disconnectConnection("conn-1");
-    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().connections[0]?.status).toBe(
+        "Disconnected",
+      ),
+    );
     resolveCatalog(emptyPgObjectCatalog());
     await Promise.all([connect, disconnect]);
 
@@ -1368,6 +1375,42 @@ describe("disconnectConnection cleanup", () => {
     expect(closeSessions).toHaveBeenCalledWith("conn-1");
   });
 
+  it("claims the current connection epoch after the async delete warning", async () => {
+    let finishInspection: (jobs: []) => void = () => undefined;
+    vi.mocked(pgToolClient.list).mockReturnValueOnce(
+      new Promise<[]>((resolve) => {
+        finishInspection = resolve;
+      }),
+    );
+    let finishSessions: () => void = () => undefined;
+    useAppStore.setState({
+      closeQuerySessionsForConnection: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishSessions = resolve;
+          }),
+      ),
+      connections: [connectedPostgres("conn-1", "Primary")],
+      connectionEpochs: { "conn-1": 3 },
+    });
+    mockedInvoke.mockResolvedValueOnce([]);
+
+    const deletion = useAppStore.getState().deleteConnection("conn-1");
+    await vi.waitFor(() => expect(pgToolClient.list).toHaveBeenCalledOnce());
+    useAppStore.setState({ connectionEpochs: { "conn-1": 8 } });
+    finishInspection([]);
+
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().connectionTransitionIds).toContain(
+        "conn-1",
+      ),
+    );
+    expect(useAppStore.getState().connectionEpochs["conn-1"]).toBe(9);
+
+    finishSessions();
+    await deletion;
+  });
+
   it("refuses disconnect and delete while object DDL is applying", async () => {
     const closeSessions = vi.fn(() => Promise.resolve());
     useAppStore.setState({
@@ -1407,7 +1450,11 @@ describe("disconnectConnection cleanup", () => {
 
     const disconnect = useAppStore.getState().disconnectConnection("conn-1");
 
-    expect(useAppStore.getState().connections[0]?.status).toBe("Disconnected");
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().connections[0]?.status).toBe(
+        "Disconnected",
+      ),
+    );
     expect(useAppStore.getState().pgObjectCatalog["conn-1"]).toEqual({
       status: "idle",
       generation: 5,
@@ -1431,6 +1478,11 @@ describe("disconnectConnection cleanup", () => {
     mockedInvoke.mockResolvedValue(undefined);
 
     const disconnect = useAppStore.getState().disconnectConnection("conn-1");
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().connectionTransitionIds).toContain(
+        "conn-1",
+      ),
+    );
     const reconnect = useAppStore.getState().connectConnection("conn-1");
 
     expect(useAppStore.getState().connectionTransitionIds).toContain("conn-1");

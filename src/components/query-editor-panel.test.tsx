@@ -216,6 +216,7 @@ vi.mock("@monaco-editor/react", () => ({
 
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { StatusBarItem } from "@/components/status-bar";
+import { refreshAfterPgRestore } from "@/lib/pg-tool-jobs/restore-refresh";
 import type { AnalyzeResultSetResult } from "@/lib/result-mutation";
 import {
   queryMutationDraftScope,
@@ -413,6 +414,32 @@ function seedUsersAnalysisDraft() {
   if (!handle) throw new Error("Expected mutation draft handle");
   store.setMutationDraftAnalysis(handle, analyzedUsersResult);
   return handle.scope;
+}
+
+function invalidateQueryMutationDraftSource(
+  scope: ReturnType<typeof seedUsersUpdateDraft>,
+) {
+  useAppStore.setState((state) => {
+    const draft = state.mutationDrafts[scope];
+    if (!draft) return state;
+    const generation = draft.generation + 1;
+    return {
+      mutationDrafts: {
+        ...state.mutationDrafts,
+        [scope]: {
+          ...draft,
+          generation,
+          analysis: null,
+          sourceInvalidated: true,
+          preview: { state: "idle" },
+        },
+      },
+      mutationDraftGenerations: {
+        ...state.mutationDraftGenerations,
+        [scope]: generation,
+      },
+    };
+  });
 }
 
 function resolveUsersDraftApply(
@@ -1408,6 +1435,309 @@ describe("QueryEditorPanel result mutations", () => {
     );
     fireEvent.click(cell);
     expect(screen.queryByDisplayValue("Ada")).toBeNull();
+  });
+
+  it("locks restore-invalidated result edits while preserving review and discard", () => {
+    seedPersistentQuery();
+    const scope = seedUsersUpdateDraft();
+    invalidateQueryMutationDraftSource(scope);
+    mockedInvoke.mockClear();
+
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+      "Restore completed",
+    );
+    const cell = screen.getByRole("button", { name: "Ada" });
+    expect(cell.getAttribute("title")).toContain(
+      "Review or discard staged changes",
+    );
+    fireEvent.click(cell);
+    expect(screen.queryByDisplayValue("Ada")).toBeNull();
+    expect(
+      mockedInvoke.mock.calls.some(
+        ([command]) => command === "analyze_result_set",
+      ),
+    ).toBe(false);
+
+    const review = screen.getByRole("button", { name: /Review & save/i });
+    const discard = screen.getByRole("button", { name: /^Discard$/i });
+    expect((review as HTMLButtonElement).disabled).toBe(false);
+    expect((discard as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(review);
+    expect(
+      screen.getByRole("complementary", { name: "Mutation review" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/staged edits are preserved but stale/i),
+    ).toBeTruthy();
+  });
+
+  it("rejects result analysis that finishes after restore invalidation", async () => {
+    seedPersistentQuery();
+    let resolveAnalysis:
+      | ((analysis: AnalyzeResultSetResult) => void)
+      | undefined;
+    mockedInvoke.mockImplementation((command) =>
+      command === "analyze_result_set"
+        ? new Promise((resolve) => {
+            resolveAnalysis = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+    await waitFor(() => expect(resolveAnalysis).toBeTypeOf("function"));
+    const scope = queryMutationDraftScope("tab-1", "execution-1", 0);
+    const refresh = refreshAfterPgRestore({
+      jobId: "restore-1",
+      connectionId: "conn-1",
+      kind: "restore",
+      format: "custom",
+      fileName: "restore.dump",
+      phase: "completed",
+      startedAt: "now",
+      finishedAt: "now",
+      bytesProcessed: null,
+      totalBytes: 1,
+      toolVersion: null,
+      failure: null,
+    });
+    await act(async () => {
+      resolveAnalysis?.(analyzedUsersResult);
+      await refresh;
+    });
+
+    expect(useAppStore.getState().mutationDrafts[scope]).toBeUndefined();
+    expect(screen.getByTestId("query-mutation-status").textContent).toContain(
+      "Select a cell to analyze",
+    );
+  });
+
+  it("keeps newer virtual-key authoring open when an older load settles after restore", async () => {
+    seedPersistentQuery();
+    const keylessAnalysis: AnalyzeResultSetResult = {
+      ...analyzedUsersResult,
+      tables: [
+        {
+          ...analyzedUsersResult.tables[0]!,
+          identity: { kind: "none", columns: [] },
+          identityProjected: false,
+          identityProjectionIndexes: [],
+        },
+      ],
+    };
+    const newerKeylessAnalysis = { ...keylessAnalysis, analysisId: 12 };
+    let analysisCalls = 0;
+    const resolveVirtualKeys: Array<(value: null) => void> = [];
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "analyze_result_set") {
+        analysisCalls += 1;
+        return Promise.resolve(
+          analysisCalls === 1 ? keylessAnalysis : newerKeylessAnalysis,
+        );
+      }
+      if (command === "load_virtual_key") {
+        return new Promise((resolve) => {
+          resolveVirtualKeys.push(resolve);
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+    const chooseButton = await screen.findByRole("button", {
+      name: "Choose virtual key",
+    });
+    fireEvent.click(chooseButton);
+
+    await act(async () => {
+      await refreshAfterPgRestore({
+        jobId: "restore-2",
+        connectionId: "conn-1",
+        kind: "restore",
+        format: "custom",
+        fileName: "restore.dump",
+        phase: "completed",
+        startedAt: "now",
+        finishedAt: "now",
+        bytesProcessed: null,
+        totalBytes: 1,
+        toolVersion: null,
+        failure: null,
+      });
+    });
+
+    expect(screen.queryByTestId("query-virtual-key-editor")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+    const newerChooseButton = await screen.findByRole("button", {
+      name: "Choose virtual key",
+    });
+    fireEvent.click(newerChooseButton);
+
+    await act(async () => {
+      resolveVirtualKeys[0]?.(null);
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Hide virtual key" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "name" })).toBeTruthy();
+    expect(analysisCalls).toBe(2);
+
+    await act(async () => {
+      resolveVirtualKeys[1]?.(null);
+      await Promise.resolve();
+    });
+  });
+
+  it("retains a pending virtual-key load while another result is active", async () => {
+    seedPersistentQuery([
+      {
+        index: 0,
+        columns: ["id", "name", "generated_slug"],
+        rowChunks: [[["1", "Ada", "ada"]]],
+        rowCount: 1,
+        partial: false,
+        completed: true,
+      },
+      {
+        index: 1,
+        columns: ["count"],
+        rowChunks: [[["1"]]],
+        rowCount: 1,
+        partial: false,
+        completed: true,
+      },
+    ]);
+    const keylessAnalysis: AnalyzeResultSetResult = {
+      ...analyzedUsersResult,
+      tables: [
+        {
+          ...analyzedUsersResult.tables[0]!,
+          identity: { kind: "none", columns: [] },
+          identityProjected: false,
+          identityProjectionIndexes: [],
+        },
+      ],
+    };
+    let resolveVirtualKey:
+      | ((value: { version: number; columns: string[] }) => void)
+      | undefined;
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "analyze_result_set") {
+        return Promise.resolve(keylessAnalysis);
+      }
+      if (command === "load_virtual_key") {
+        return new Promise((resolve) => {
+          resolveVirtualKey = resolve;
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+    await waitFor(() => expect(resolveVirtualKey).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: /^2 · 1 row/ }));
+
+    await act(async () => {
+      resolveVirtualKey?.({ version: 1, columns: ["name"] });
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^1 · 1 row/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose virtual key" }),
+    );
+    expect(
+      (screen.getByRole("checkbox", { name: "name" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Clear virtual key" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps a newer virtual-key save busy when an older save settles after restore", async () => {
+    seedPersistentQuery();
+    const keylessAnalysis: AnalyzeResultSetResult = {
+      ...analyzedUsersResult,
+      tables: [
+        {
+          ...analyzedUsersResult.tables[0]!,
+          identity: { kind: "none", columns: [] },
+          identityProjected: false,
+          identityProjectionIndexes: [],
+        },
+      ],
+    };
+    const analyses = [keylessAnalysis, { ...keylessAnalysis, analysisId: 12 }];
+    const resolveSaves: Array<(value: undefined) => void> = [];
+    mockedInvoke.mockImplementation((command) => {
+      if (command === "analyze_result_set") {
+        return Promise.resolve(analyses.shift() ?? keylessAnalysis);
+      }
+      if (command === "load_virtual_key") return Promise.resolve(null);
+      if (command === "save_virtual_key") {
+        return new Promise((resolve) => {
+          resolveSaves.push(resolve);
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    render(<QueryEditorPanel tab={queryTab} isClient />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose virtual key" }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "name" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save virtual key" }));
+    await waitFor(() => expect(resolveSaves).toHaveLength(1));
+
+    await act(async () => {
+      await refreshAfterPgRestore({
+        jobId: "restore-3",
+        connectionId: "conn-1",
+        kind: "restore",
+        format: "custom",
+        fileName: "restore.dump",
+        phase: "completed",
+        startedAt: "now",
+        finishedAt: "now",
+        bytesProcessed: null,
+        totalBytes: 1,
+        toolVersion: null,
+        failure: null,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ada" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose virtual key" }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "name" }));
+    const newerSave = screen.getByRole("button", { name: "Save virtual key" });
+    fireEvent.click(newerSave);
+    await waitFor(() => expect(resolveSaves).toHaveLength(2));
+
+    await act(async () => {
+      resolveSaves[0]?.(undefined);
+      await Promise.resolve();
+    });
+
+    expect((newerSave as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(newerSave);
+    expect(resolveSaves).toHaveLength(2);
+
+    await act(async () => {
+      resolveSaves[1]?.(undefined);
+      await Promise.resolve();
+    });
   });
 
   it("analyzes lazily from the exact execution SQL, gates columns, and preserves NULLs", async () => {

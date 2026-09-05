@@ -30,7 +30,10 @@ import { buildStatusItems } from "@/components/table-editor/status-items";
 import { useRowDetailsVisibility } from "@/components/table-editor/use-row-details-visibility";
 import { useRowSelection } from "@/components/table-editor/use-row-selection";
 import { useTableExportFilename } from "@/components/table-editor/use-table-export-filename";
-import { useTableSession } from "@/components/table-editor/use-table-session";
+import {
+  type MutationAnalysisHandle,
+  useTableSession,
+} from "@/components/table-editor/use-table-session";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -143,6 +146,7 @@ export function TableEditorPanel({
     mutationAnalysisState,
     mutationStatusCopy,
     mutationLocked,
+    mutationSourceInvalidated,
     editableMutationColumns,
     insertableMutationColumns,
     virtualKeyColumns,
@@ -178,6 +182,12 @@ export function TableEditorPanel({
   >();
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [isVirtualKeyOpen, setIsVirtualKeyOpen] = useState(false);
+  const [addRowAnalysisHandle, setAddRowAnalysisHandle] =
+    useState<MutationAnalysisHandle | null>(null);
+  const [bulkEditAnalysisHandle, setBulkEditAnalysisHandle] =
+    useState<MutationAnalysisHandle | null>(null);
+  const [virtualKeyAnalysisHandle, setVirtualKeyAnalysisHandle] =
+    useState<MutationAnalysisHandle | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isCopyOpen, setIsCopyOpen] = useState(false);
@@ -201,10 +211,56 @@ export function TableEditorPanel({
     setInlineDrilldown(null);
     setLastOutcome(null);
     setIsAddRowOpen(false);
+    setAddRowAnalysisHandle(null);
     setIsBulkEditOpen(false);
+    setBulkEditAnalysisHandle(null);
     setIsVirtualKeyOpen(false);
+    setVirtualKeyAnalysisHandle(null);
     setReviewOpen(false);
   }, [tableName]);
+
+  useEffect(() => {
+    if (
+      addRowAnalysisHandle &&
+      !tableSession.isMutationAnalysisHandleCurrent(addRowAnalysisHandle)
+    ) {
+      setIsAddRowOpen(false);
+      setAddRowInitialValues(undefined);
+      setAddRowAnalysisHandle(null);
+    }
+    if (
+      bulkEditAnalysisHandle &&
+      !tableSession.isMutationAnalysisHandleCurrent(bulkEditAnalysisHandle)
+    ) {
+      setIsBulkEditOpen(false);
+      setBulkEditAnalysisHandle(null);
+    }
+    if (
+      virtualKeyAnalysisHandle &&
+      !tableSession.isMutationAnalysisHandleCurrent(virtualKeyAnalysisHandle)
+    ) {
+      setIsVirtualKeyOpen(false);
+      setVirtualKeyAnalysisHandle(null);
+    }
+  }, [
+    addRowAnalysisHandle,
+    bulkEditAnalysisHandle,
+    mutationDraft,
+    tableSession,
+    virtualKeyAnalysisHandle,
+  ]);
+
+  useEffect(() => {
+    if (!mutationSourceInvalidated) return;
+    setIsAddRowOpen(false);
+    setAddRowInitialValues(undefined);
+    setAddRowAnalysisHandle(null);
+    setIsBulkEditOpen(false);
+    setBulkEditAnalysisHandle(null);
+    setIsVirtualKeyOpen(false);
+    setVirtualKeyAnalysisHandle(null);
+    setIsImportOpen(false);
+  }, [mutationSourceInvalidated]);
 
   useEffect(() => {
     if (!inlineDrilldown) return;
@@ -255,10 +311,20 @@ export function TableEditorPanel({
 
   const handleSubmitAddRow = async (values: InsertRowPayloadEntry[]) => {
     if (mutationEnabled) {
+      if (
+        !addRowAnalysisHandle ||
+        !tableSession.isMutationAnalysisHandleCurrent(addRowAnalysisHandle)
+      ) {
+        setIsAddRowOpen(false);
+        setAddRowInitialValues(undefined);
+        setAddRowAnalysisHandle(null);
+        return;
+      }
       const staged = await tableSession.stageInsert(values, addRowSource);
       if (staged) {
         setIsAddRowOpen(false);
         setAddRowInitialValues(undefined);
+        setAddRowAnalysisHandle(null);
       }
       return;
     }
@@ -362,6 +428,9 @@ export function TableEditorPanel({
     if (mutationEnabled) {
       const analysis = await tableSession.ensureMutationAnalysis();
       if (!analysis) return;
+      const handle = tableSession.captureMutationAnalysisHandle(analysis);
+      if (!handle) return;
+      setAddRowAnalysisHandle(handle);
     }
     setAddRowSource("new");
     setAddRowInitialValues(undefined);
@@ -374,6 +443,9 @@ export function TableEditorPanel({
       selection.selectedIndex,
     );
     if (!values) return;
+    const handle = tableSession.captureMutationAnalysisHandle();
+    if (!handle) return;
+    setAddRowAnalysisHandle(handle);
     setAddRowSource("duplicate");
     setAddRowInitialValues(values);
     setIsAddRowOpen(true);
@@ -792,6 +864,19 @@ export function TableEditorPanel({
           onRunMaintenance={handleRunMaintenance}
           showSeedAction={SEEDABLE_ENGINES.has(connection?.engine ?? "")}
           onOpenSeedTable={() => setIsSeedOpen(true)}
+          onOpenBackupRestore={
+            connection?.engine === "PostgreSQL"
+              ? (operation) =>
+                  useAppStore.getState().openWorkspaceTab({
+                    kind: "pg-tools",
+                    connectionId: connection.id,
+                    schema: tab.schema,
+                    table: tab.table ?? tab.label,
+                    label: `${operation === "backup" ? "Backup" : "Restore"} · ${tab.schema}.${tab.table ?? tab.label}`,
+                    toolOperation: operation,
+                  })
+              : undefined
+          }
         />
       ) : null}
 
@@ -821,7 +906,17 @@ export function TableEditorPanel({
           savedColumns={virtualKeyColumns}
           open={isVirtualKeyOpen}
           busy={mutationAnalysisState.state === "loading"}
-          onOpenChange={setIsVirtualKeyOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setIsVirtualKeyOpen(false);
+              setVirtualKeyAnalysisHandle(null);
+              return;
+            }
+            const handle = tableSession.captureMutationAnalysisHandle();
+            if (!handle) return;
+            setVirtualKeyAnalysisHandle(handle);
+            setIsVirtualKeyOpen(true);
+          }}
           onSave={tableSession.saveMutationVirtualKey}
           onClear={tableSession.clearMutationVirtualKey}
         />
@@ -845,6 +940,7 @@ export function TableEditorPanel({
           onClose={() => {
             setIsAddRowOpen(false);
             setAddRowInitialValues(undefined);
+            setAddRowAnalysisHandle(null);
           }}
         >
           <AddRowForm
@@ -869,6 +965,7 @@ export function TableEditorPanel({
             onClose={() => {
               setIsAddRowOpen(false);
               setAddRowInitialValues(undefined);
+              setAddRowAnalysisHandle(null);
             }}
           />
         </FormDialog>
@@ -944,13 +1041,20 @@ export function TableEditorPanel({
           void handleDeleteSelected();
         }}
         onDuplicateSelected={
-          mutationEnabled ? () => void handleDuplicateSelected() : undefined
+          mutationEnabled && !mutationSourceInvalidated
+            ? () => void handleDuplicateSelected()
+            : undefined
         }
         onBulkEditSelected={
-          mutationEnabled
+          mutationEnabled && !mutationSourceInvalidated
             ? () => {
                 void tableSession.ensureMutationAnalysis().then((analysis) => {
-                  if (analysis) setIsBulkEditOpen(true);
+                  if (!analysis) return;
+                  const handle =
+                    tableSession.captureMutationAnalysisHandle(analysis);
+                  if (!handle) return;
+                  setBulkEditAnalysisHandle(handle);
+                  setIsBulkEditOpen(true);
                 });
               }
             : undefined
@@ -1005,14 +1109,30 @@ export function TableEditorPanel({
                 columns={editableMutationColumns}
                 selectedCount={selection.selectedCount}
                 isWriting={mutationLocked}
-                onClose={() => setIsBulkEditOpen(false)}
+                onClose={() => {
+                  setIsBulkEditOpen(false);
+                  setBulkEditAnalysisHandle(null);
+                }}
                 onSubmit={async (column, value) => {
+                  if (
+                    !bulkEditAnalysisHandle ||
+                    !tableSession.isMutationAnalysisHandleCurrent(
+                      bulkEditAnalysisHandle,
+                    )
+                  ) {
+                    setIsBulkEditOpen(false);
+                    setBulkEditAnalysisHandle(null);
+                    return;
+                  }
                   const count = await tableSession.stageBulkEdit(
                     selection.selectedIndices,
                     column,
                     value,
                   );
-                  if (count > 0) setIsBulkEditOpen(false);
+                  if (count > 0) {
+                    setIsBulkEditOpen(false);
+                    setBulkEditAnalysisHandle(null);
+                  }
                 }}
               />
             </MutationReviewAside>

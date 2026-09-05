@@ -22,6 +22,7 @@ import {
   type EditOutcome,
   isConnectedStatus,
   type MutationDraft,
+  type MutationDraftHandle,
   type TableDataState,
   type TableRef,
   tableMutationDraftScope,
@@ -52,6 +53,30 @@ type MutationAnalysisState =
   | { state: "idle" }
   | { state: "loading" }
   | { state: "error"; message: string };
+
+export type MutationAnalysisHandle = MutationDraftHandle & {
+  analysisId: number;
+};
+
+const mutationDraftMatchesHandle = (handle: MutationDraftHandle): boolean => {
+  const draft = useAppStore.getState().mutationDrafts[handle.scope];
+  return Boolean(
+    draft && draft.generation === handle.generation && !draft.sourceInvalidated,
+  );
+};
+
+const mutationAnalysisMatchesHandle = (
+  handle: MutationAnalysisHandle,
+  analysis?: AnalyzeResultSetResult,
+): boolean => {
+  const draft = useAppStore.getState().mutationDrafts[handle.scope];
+  return Boolean(
+    draft &&
+    draft.generation === handle.generation &&
+    draft.analysis?.analysisId === handle.analysisId &&
+    (!analysis || draft.analysis.snapshot === analysis),
+  );
+};
 
 const mutationErrorCopy = (error: ResultMutationError): string => {
   switch (error.kind) {
@@ -396,8 +421,10 @@ export function useTableSession(tab: WorkspaceTab) {
       force = false,
     ): Promise<AnalyzeResultSetResult | null> => {
       if (policyReadOnlyCopy || !mutationEnabled || !ref) return null;
-      if (!force && mutationDraft?.analysis) {
-        return mutationDraft.analysis.snapshot;
+      const currentDraft = useAppStore.getState().mutationDrafts[mutationScope];
+      if (currentDraft?.sourceInvalidated) return null;
+      if (!force && currentDraft?.analysis) {
+        return currentDraft.analysis.snapshot;
       }
       if (analysisRequest.current) return null;
       const token = Symbol(mutationScope);
@@ -433,9 +460,23 @@ export function useTableSession(tab: WorkspaceTab) {
       });
       if (analysisRequest.current !== token) return null;
       analysisRequest.current = null;
-      if (result.kind === "ok") {
-        setMutationDraftAnalysis(handle, result.value);
+      if (!mutationDraftMatchesHandle(handle)) {
         setMutationAnalysisState({ state: "idle" });
+        return null;
+      }
+      if (result.kind === "ok") {
+        if (!setMutationDraftAnalysis(handle, result.value)) {
+          setMutationAnalysisState({ state: "idle" });
+          return null;
+        }
+        setMutationAnalysisState({ state: "idle" });
+        const analysisHandle: MutationAnalysisHandle = {
+          ...handle,
+          analysisId: result.value.analysisId,
+        };
+        if (!mutationAnalysisMatchesHandle(analysisHandle, result.value)) {
+          return null;
+        }
         const analyzed = analyzedRelation(result.value, ref);
         if (
           analyzed &&
@@ -446,11 +487,16 @@ export function useTableSession(tab: WorkspaceTab) {
             schema: ref.schema,
             table: ref.table,
           });
+          if (!mutationAnalysisMatchesHandle(analysisHandle, result.value)) {
+            return null;
+          }
           if (key.kind === "ok") setVirtualKeyColumns(key.value?.columns ?? []);
         } else if (analyzed?.identity.kind === "virtualKey") {
           setVirtualKeyColumns(analyzed.identity.columns);
         }
-        return result.value;
+        return mutationAnalysisMatchesHandle(analysisHandle, result.value)
+          ? result.value
+          : null;
       }
       if (result.kind === "superseded" || result.kind === "cancelled") {
         setMutationAnalysisState({ state: "idle" });
@@ -463,7 +509,6 @@ export function useTableSession(tab: WorkspaceTab) {
       return null;
     },
     [
-      mutationDraft?.analysis,
       mutationEnabled,
       mutationScope,
       openMutationDraft,
@@ -689,10 +734,33 @@ export function useTableSession(tab: WorkspaceTab) {
       return fn(ref, ...args);
     };
 
-  const currentMutationAnalysis = useCallback(
-    () =>
-      useAppStore.getState().mutationDrafts[mutationScope]?.analysis
-        ?.snapshot ?? null,
+  const currentMutationAnalysis = useCallback(() => {
+    const draft = useAppStore.getState().mutationDrafts[mutationScope];
+    return draft?.sourceInvalidated
+      ? null
+      : (draft?.analysis?.snapshot ?? null);
+  }, [mutationScope]);
+
+  const captureMutationAnalysisHandle = useCallback(
+    (
+      analysis?: AnalyzeResultSetResult | null,
+    ): MutationAnalysisHandle | null => {
+      const draft = useAppStore.getState().mutationDrafts[mutationScope];
+      const storedAnalysis = draft?.analysis;
+      if (
+        !draft ||
+        draft.sourceInvalidated ||
+        !storedAnalysis ||
+        (analysis && storedAnalysis.snapshot !== analysis)
+      ) {
+        return null;
+      }
+      return {
+        scope: mutationScope,
+        generation: draft.generation,
+        analysisId: storedAnalysis.analysisId,
+      };
+    },
     [mutationScope],
   );
 
@@ -923,12 +991,15 @@ export function useTableSession(tab: WorkspaceTab) {
   const saveMutationVirtualKey = useCallback(
     async (columns: string[]): Promise<boolean> => {
       if (!mutationEnabled || !ref || columns.length === 0) return false;
+      const handle = captureMutationAnalysisHandle();
+      if (!handle || !mutationAnalysisMatchesHandle(handle)) return false;
       const result = await saveVirtualKey({
         connectionId: ref.connectionId,
         schema: ref.schema,
         table: ref.table,
         columns,
       });
+      if (!mutationAnalysisMatchesHandle(handle)) return false;
       if (result.kind !== "ok") {
         if (result.kind === "error") {
           setMutationAnalysisState({
@@ -941,20 +1012,23 @@ export function useTableSession(tab: WorkspaceTab) {
       setVirtualKeyColumns(columns);
       return (await analyzeMutation(true, true)) !== null;
     },
-    [analyzeMutation, mutationEnabled, ref],
+    [analyzeMutation, captureMutationAnalysisHandle, mutationEnabled, ref],
   );
 
   const clearMutationVirtualKey = useCallback(async (): Promise<boolean> => {
     if (!mutationEnabled || !ref) return false;
+    const handle = captureMutationAnalysisHandle();
+    if (!handle || !mutationAnalysisMatchesHandle(handle)) return false;
     const result = await clearVirtualKey({
       connectionId: ref.connectionId,
       schema: ref.schema,
       table: ref.table,
     });
+    if (!mutationAnalysisMatchesHandle(handle)) return false;
     if (result.kind !== "ok") return false;
     setVirtualKeyColumns([]);
     return (await analyzeMutation(true, true)) !== null;
-  }, [analyzeMutation, mutationEnabled, ref]);
+  }, [analyzeMutation, captureMutationAnalysisHandle, mutationEnabled, ref]);
 
   const serverBrowse: ServerBrowseGridModel | undefined =
     browseEnabled && browse
@@ -1043,6 +1117,7 @@ export function useTableSession(tab: WorkspaceTab) {
       ? browseIdentityReadOnlyCopy(identityKind)
       : undefined);
   const mutationLocked = mutationDraft?.apply.state === "applying";
+  const mutationSourceInvalidated = Boolean(mutationDraft?.sourceInvalidated);
   const resolvedMutationEdits = useMemo(
     () => mutationGridEdits(mutationDraft, browseColumns),
     [browseColumns, mutationDraft],
@@ -1075,6 +1150,9 @@ export function useTableSession(tab: WorkspaceTab) {
   );
   const mutationStatusCopy = (() => {
     if (!mutationEnabled) return undefined;
+    if (mutationSourceInvalidated) {
+      return "Restore completed. Review or discard staged changes from the previous database state.";
+    }
     if (policyReadOnlyCopy) return policyReadOnlyCopy;
     if (mutationAnalysisState.state === "loading") {
       return "Analyzing relation editability…";
@@ -1101,6 +1179,7 @@ export function useTableSession(tab: WorkspaceTab) {
     return "Staged editing ready. Changes apply only after review.";
   })();
   const mutationReadOnly = Boolean(
+    mutationSourceInvalidated ||
     policyReadOnlyCopy ||
     (mutationAnalysis &&
       (!mutationTable ||
@@ -1115,10 +1194,12 @@ export function useTableSession(tab: WorkspaceTab) {
         isWriting: mutationLocked,
         canAddRow:
           Boolean(structure) &&
+          !mutationSourceInvalidated &&
           !policyReadOnlyCopy &&
           !mutationLocked &&
           (mutationTable ? mutationTable.insertable.allowed : true),
         canDeleteRows:
+          !mutationSourceInvalidated &&
           !policyReadOnlyCopy &&
           !mutationLocked &&
           (mutationTable
@@ -1127,6 +1208,7 @@ export function useTableSession(tab: WorkspaceTab) {
               mutationTable.identityProjected
             : true),
         canEditCells:
+          !mutationSourceInvalidated &&
           !policyReadOnlyCopy &&
           !mutationLocked &&
           editableMutationColumns.length > 0,
@@ -1137,6 +1219,7 @@ export function useTableSession(tab: WorkspaceTab) {
     colIndex: number,
   ): string | undefined => {
     if (!mutationEnabled) return undefined;
+    if (mutationSourceInvalidated) return mutationStatusCopy;
     if (policyReadOnlyCopy) return policyReadOnlyCopy;
     if (rowIndex >= rawBrowseRows.length) {
       return "Edit staged inserts from the add-row form.";
@@ -1209,6 +1292,7 @@ export function useTableSession(tab: WorkspaceTab) {
     mutationAnalysisState,
     mutationStatusCopy,
     mutationLocked,
+    mutationSourceInvalidated,
     editableMutationColumns,
     insertableMutationColumns,
     virtualKeyColumns,
@@ -1220,6 +1304,8 @@ export function useTableSession(tab: WorkspaceTab) {
           !mutationTable.identityProjected),
       ),
     ensureMutationAnalysis: analyzeMutation,
+    captureMutationAnalysisHandle,
+    isMutationAnalysisHandleCurrent: mutationAnalysisMatchesHandle,
     getCellReadOnlyReason: getMutationCellReadOnlyReason,
     getRowState: getMutationRowState,
     refresh: async () => {

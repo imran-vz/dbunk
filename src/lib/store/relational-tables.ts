@@ -1056,6 +1056,11 @@ export const createRelationalTablesSlice: StateCreator<
       return;
     }
     const key = tableStructureKey(connectionId, schema, table);
+    const catalogGeneration =
+      get().pgObjectCatalog[connectionId]?.generation ?? 0;
+    const isCurrent = () =>
+      (get().pgObjectCatalog[connectionId]?.generation ?? 0) ===
+      catalogGeneration;
     set((state) => ({
       tableStructureStatus: {
         ...state.tableStructureStatus,
@@ -1077,6 +1082,7 @@ export const createRelationalTablesSlice: StateCreator<
           payload: { connectionId, schema, table },
         }),
       );
+      if (!isCurrent()) return;
       set((state) => ({
         tableStructure: {
           ...state.tableStructure,
@@ -1090,6 +1096,7 @@ export const createRelationalTablesSlice: StateCreator<
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load table structure", error);
+      if (!isCurrent()) return;
       set((state) => ({
         tableStructureStatus: {
           ...state.tableStructureStatus,
@@ -1104,6 +1111,11 @@ export const createRelationalTablesSlice: StateCreator<
       return;
     }
     const key = schemaRelationshipsKey(connectionId, schema);
+    const catalogGeneration =
+      get().pgObjectCatalog[connectionId]?.generation ?? 0;
+    const isCurrent = () =>
+      (get().pgObjectCatalog[connectionId]?.generation ?? 0) ===
+      catalogGeneration;
     set((state) => ({
       schemaRelationshipsStatus: {
         ...state.schemaRelationshipsStatus,
@@ -1126,6 +1138,7 @@ export const createRelationalTablesSlice: StateCreator<
       }>("load_schema_relationships", {
         payload: { connectionId, schema },
       });
+      if (!isCurrent()) return;
       set((state) => ({
         schemaRelationships: {
           ...state.schemaRelationships,
@@ -1142,6 +1155,7 @@ export const createRelationalTablesSlice: StateCreator<
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load schema relationships", error);
+      if (!isCurrent()) return;
       set((state) => ({
         schemaRelationshipsStatus: {
           ...state.schemaRelationshipsStatus,
@@ -1155,6 +1169,9 @@ export const createRelationalTablesSlice: StateCreator<
     if (!connectionId) {
       return;
     }
+    const generation = get().pgObjectCatalog[connectionId]?.generation ?? 0;
+    const isCurrent = () =>
+      (get().pgObjectCatalog[connectionId]?.generation ?? 0) === generation;
     const scope = tableSchemaMapScope(schema, table);
     const key = schemaRelationshipsKey(connectionId, scope);
     const current = get().schemaRelationshipsStatus[key];
@@ -1183,6 +1200,7 @@ export const createRelationalTablesSlice: StateCreator<
       }>("load_table_schema_relationships", {
         payload: { connectionId, schema, table },
       });
+      if (!isCurrent()) return;
       set((state) => ({
         schemaRelationships: {
           ...state.schemaRelationships,
@@ -1197,6 +1215,7 @@ export const createRelationalTablesSlice: StateCreator<
         },
       }));
     } catch (error) {
+      if (!isCurrent()) return;
       const message = errorToMessage(error);
       console.error("Failed to load table schema relationships", error);
       set((state) => ({
@@ -1470,6 +1489,11 @@ export const createRelationalTablesSlice: StateCreator<
     if (!connectionId) {
       return;
     }
+    const catalogGeneration =
+      get().pgObjectCatalog[connectionId]?.generation ?? 0;
+    const isCurrent = () =>
+      (get().pgObjectCatalog[connectionId]?.generation ?? 0) ===
+      catalogGeneration;
     set((state) => ({
       databaseOverviewStatsStatus: {
         ...state.databaseOverviewStatsStatus,
@@ -1490,6 +1514,7 @@ export const createRelationalTablesSlice: StateCreator<
         "load_database_overview_stats",
         { payload: { connectionId } },
       );
+      if (!isCurrent()) return;
       set((state) => ({
         databaseOverviewStats: {
           ...state.databaseOverviewStats,
@@ -1503,6 +1528,7 @@ export const createRelationalTablesSlice: StateCreator<
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load database overview stats", error);
+      if (!isCurrent()) return;
       set((state) => ({
         databaseOverviewStatsStatus: {
           ...state.databaseOverviewStatsStatus,
@@ -1516,6 +1542,11 @@ export const createRelationalTablesSlice: StateCreator<
     if (!connectionId) {
       return;
     }
+    const catalogGeneration =
+      get().pgObjectCatalog[connectionId]?.generation ?? 0;
+    const isCurrent = () =>
+      (get().pgObjectCatalog[connectionId]?.generation ?? 0) ===
+      catalogGeneration;
     set((state) => ({
       relationStatsStatus: {
         ...state.relationStatsStatus,
@@ -1535,6 +1566,7 @@ export const createRelationalTablesSlice: StateCreator<
       const result = await tauriInvoke<RelationInfo[]>("load_relation_stats", {
         payload: { connectionId },
       });
+      if (!isCurrent()) return;
       set((state) => ({
         relationStats: {
           ...state.relationStats,
@@ -1548,6 +1580,7 @@ export const createRelationalTablesSlice: StateCreator<
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load relation stats", error);
+      if (!isCurrent()) return;
       set((state) => ({
         relationStatsStatus: {
           ...state.relationStatsStatus,
@@ -1561,6 +1594,11 @@ export const createRelationalTablesSlice: StateCreator<
     if (!connectionId) {
       return;
     }
+    const catalogGeneration =
+      get().pgObjectCatalog[connectionId]?.generation ?? 0;
+    const isCurrent = () =>
+      (get().pgObjectCatalog[connectionId]?.generation ?? 0) ===
+      catalogGeneration;
     set((state) => ({
       serverDetailsStatus: {
         ...state.serverDetailsStatus,
@@ -1580,6 +1618,7 @@ export const createRelationalTablesSlice: StateCreator<
       const result = await tauriInvoke<ServerDetails>("load_server_details", {
         payload: { connectionId },
       });
+      if (!isCurrent()) return;
       set((state) => ({
         serverDetails: {
           ...state.serverDetails,
@@ -1593,6 +1632,7 @@ export const createRelationalTablesSlice: StateCreator<
     } catch (error) {
       const message = errorToMessage(error);
       console.error("Failed to load server details", error);
+      if (!isCurrent()) return;
       set((state) => ({
         serverDetailsStatus: {
           ...state.serverDetailsStatus,
