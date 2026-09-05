@@ -649,18 +649,23 @@ round-trip SQL parser.
 **Plan 018 backend progress: DONE at `de3272b` (2026-09-05).** File-backed PostgreSQL Tool Jobs provide typed
 polling, bounded concurrency/history/stderr, cancellation, non-overwriting archive
 publication, safety-gated restore with success-only audit, and teardown fencing.
-The legacy PostgreSQL base64 contract is removed. Plan 019 now implements global and table-context UI activation, with native
-dialog verification still open; this does not establish full transfer parity.
+The legacy PostgreSQL base64 contract is removed. Plan 019 is DONE at `ab33968`, confirmed by Imran on 2026-09-05. Global and
+table-context UI, native dialogs, safety review, and session job history are
+activated; this does not establish full transfer parity.
 Owner/privilege options and client/server negotiation remain follow-ups.
-Plan 020 owns bounded table import/export.
+Plan 020 is in implementation with design A selected for bounded PostgreSQL CSV
+import/export. Native streaming, indexed mapping, dialect/NULL settings,
+progress, cancellation, safe publication and the table Transfer sub-tab are
+implemented. Automated and explicit live checks pass, including a 32/512 MiB
+native memory plateau. Fresh review passed. Native file dialogs and native
+renderer memory validation remain; this is not a full transfer-parity claim.
 
 **Missing pieces:**
 
-- Table file-to-database and database-to-file streaming (Plan 020).
-- Backpressure, cancellation, progress, and bounded memory for table transfers.
-- Delimiter, quote, escape, encoding, locale, and date/time controls.
+- Native manual validation for Plan 020, and streaming beyond PostgreSQL CSV.
+- Alternative encodings, richer locale/date/time controls and format coverage.
 - Error-row or reject-file output.
-- Transform expressions and source-to-destination column mapping.
+- Transform expressions and richer typed mapping.
 - Upsert/merge, truncate-first, batch tuning, and resumability.
 - JSON, XML, and SQL import.
 - XML and Parquet export, consistent with ADR 0017.
@@ -668,8 +673,8 @@ Plan 020 owns bounded table import/export.
 - Correct MySQL and SQLite import targets or explicit capability hiding.
 - Complete generated PostgreSQL database DDL for routines, sequences, types,
   triggers, policies, grants, comments, extensions, roles, and tablespaces.
-- Complete native UI verification for Plan 019, saved profiles, persistent
-  history, and scheduling. Plan 019 uses session-only polling history.
+- Saved profiles, persistent history, and scheduling. Plan 019 uses
+  session-only polling history.
 - Equivalent native backup integrations for accepted non-PostgreSQL engines.
 
 **Target outcome:** Large transfers remain bounded and cancelable, capability

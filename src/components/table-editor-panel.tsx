@@ -8,6 +8,8 @@ import {
   MutationReviewAside,
   MutationReviewPanel,
 } from "@/components/mutation-review";
+import type { PgTransferIntent } from "@/components/pg-transfer/use-transfer-form";
+import { PgTransferWorkspace } from "@/components/pg-transfer/workspace";
 import {
   SchemaRelationshipMap,
   type SchemaRelationshipMapHandle,
@@ -77,6 +79,7 @@ import {
 } from "@/lib/export-tasks";
 import type { InsertRowPayloadEntry } from "@/lib/insert-row-form";
 import { invokeWithSafetyConfirmation } from "@/lib/invoke-with-safety-confirmation";
+import { routeWholeTableExport } from "@/lib/pg-transfer/export-routing";
 import { DEFAULT_SCHEMA_MAP_PREFS } from "@/lib/schema-graph";
 import type {
   SeedColumnSpecPayload,
@@ -190,6 +193,8 @@ export function TableEditorPanel({
     useState<MutationAnalysisHandle | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [transferIntent, setTransferIntent] = useState<PgTransferIntent>();
+  const transferIntentSequence = useRef(0);
   const [isCopyOpen, setIsCopyOpen] = useState(false);
   const [isSeedOpen, setIsSeedOpen] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
@@ -217,6 +222,7 @@ export function TableEditorPanel({
     setIsVirtualKeyOpen(false);
     setVirtualKeyAnalysisHandle(null);
     setReviewOpen(false);
+    setTransferIntent(undefined);
   }, [tableName]);
 
   useEffect(() => {
@@ -478,6 +484,22 @@ export function TableEditorPanel({
     nullAs: string;
   }) => {
     setTableExportError(null);
+    const route = routeWholeTableExport(connection?.engine, options);
+    if (route.kind === "refused") {
+      setTableExportError(route.message);
+      toast.error(route.message);
+      return;
+    }
+    if (route.kind === "nativeCsv") {
+      setTransferIntent({
+        id: ++transferIntentSequence.current,
+        direction: "export",
+        options: route.options,
+      });
+      setActiveSubTab("transfer");
+      return;
+    }
+    if (route.warning) toast.warning(route.warning);
     try {
       const table = await loadWholeTableForExport({
         connectionId: tab.connectionId,
@@ -864,6 +886,11 @@ export function TableEditorPanel({
           onRunMaintenance={handleRunMaintenance}
           showSeedAction={SEEDABLE_ENGINES.has(connection?.engine ?? "")}
           onOpenSeedTable={() => setIsSeedOpen(true)}
+          onOpenXlsxImport={
+            connection?.engine === "PostgreSQL"
+              ? () => setIsImportOpen(true)
+              : undefined
+          }
           onOpenBackupRestore={
             connection?.engine === "PostgreSQL"
               ? (operation) =>
@@ -890,7 +917,7 @@ export function TableEditorPanel({
         onDismissOutcome={() => setLastOutcome(null)}
       />
 
-      {mutationEnabled && mutationStatusCopy ? (
+      {mutationEnabled && activeSubTab !== "transfer" && mutationStatusCopy ? (
         <output
           data-testid="table-mutation-status"
           className="border-b border-border-subtle bg-surface-window px-3 py-1.5 text-2xs text-text-secondary"
@@ -977,6 +1004,7 @@ export function TableEditorPanel({
             columns={structure.columns}
             engine={connection.engine}
             isWriting={caps.isWriting}
+            acceptedKinds={connection.engine === "PostgreSQL" ? "xlsx" : "all"}
             onClose={() => setIsImportOpen(false)}
             onImportRows={handleImportRows}
           />
@@ -1016,7 +1044,17 @@ export function TableEditorPanel({
         exportFilenameBase={exportFilenameBase}
         onRefresh={onRefresh}
         onOpenAddRow={() => void handleOpenAddRow()}
-        onOpenImport={() => setIsImportOpen(true)}
+        onOpenImport={() => {
+          if (connection?.engine === "PostgreSQL") {
+            setTransferIntent({
+              id: ++transferIntentSequence.current,
+              direction: "import",
+            });
+            setActiveSubTab("transfer");
+          } else {
+            setIsImportOpen(true);
+          }
+        }}
         onOpenSql={() => openQueryForTable(tab.schema, tab.table ?? "")}
         onOpenTable={openTableTab}
         onSubTabChange={setActiveSubTab}
@@ -1154,6 +1192,16 @@ export function TableEditorPanel({
                 onRefresh={tableSession.refreshData}
               />
             </MutationReviewAside>
+          ) : null
+        }
+        transferPanel={
+          connection?.engine === "PostgreSQL" ? (
+            <PgTransferWorkspace
+              connection={connection}
+              schema={tab.schema}
+              table={tab.table ?? ""}
+              intent={transferIntent}
+            />
           ) : null
         }
       />

@@ -32,6 +32,7 @@ pub(crate) mod sql_class;
 pub(crate) mod sql_lex;
 mod table_relationships;
 pub(crate) mod tls;
+pub(crate) mod transfer;
 
 use sqlx::postgres::PgRow;
 use sqlx::Row;

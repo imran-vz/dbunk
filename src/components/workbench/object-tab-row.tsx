@@ -46,6 +46,7 @@ export type TableSection =
   | "indexes"
   | "relations"
   | "schema-map"
+  | "transfer"
   | "specialized";
 
 interface ObjectTabRowProps {
@@ -510,9 +511,11 @@ function ObjectTab({
 export function TableSectionToggle({
   value,
   onChange,
+  showTransfer = false,
 }: {
   value: TableSection;
   onChange: (next: TableSection) => void;
+  showTransfer?: boolean;
 }) {
   return (
     <Segmented<TableSection>
@@ -524,6 +527,9 @@ export function TableSectionToggle({
         { id: "indexes", label: "Keys", icon: <IconKey /> },
         { id: "relations", label: "Relations" },
         { id: "schema-map", label: "Schema Map" },
+        ...(showTransfer
+          ? ([{ id: "transfer", label: "Transfer" }] as const)
+          : []),
         { id: "specialized", label: "Specialized" },
       ]}
     />
