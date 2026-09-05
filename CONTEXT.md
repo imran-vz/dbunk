@@ -619,5 +619,16 @@ bounds process output and terminal history; and joins connection teardown before
 tunnel/pool invalidation. Backup publishes a complete non-overwriting archive.
 Restore is authorized before admission and audited only after success. Plan 019
 activates these jobs through global and table-context workspaces; table Restore
-reviews the database target. Native dialog verification remains open in the plan.
+reviews the database target. Plan 019 is complete at `ab33968`.
 See ADR-0028.
+
+## PostgreSQL Transfer Job
+
+A bounded native CSV import or whole-table CSV export, separate from a
+PostgreSQL Tool Job. A short-lived inspection token freezes the relation,
+file identity, CSV settings and bounded sample for review. Import maps source
+column indices and appends in one transaction; export publishes a complete new
+file without replacement. The table Transfer sub-tab owns setup, while the
+native manager and app observer retain running jobs after the tab closes.
+Lost COMMIT acknowledgement is an unknown outcome requiring target inspection.
+Plan 020 is in progress; see ADR-0029.

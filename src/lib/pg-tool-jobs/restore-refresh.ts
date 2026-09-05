@@ -9,7 +9,22 @@ import type { PgToolJob } from "./client";
 
 /** Completion is irreversible; metadata refresh failures never relabel job success. */
 export async function refreshAfterPgRestore(job: PgToolJob): Promise<void> {
-  const connectionId = job.connectionId;
+  return refreshAfterPgExternalWrite({
+    connectionId: job.connectionId,
+    operation: "Restore",
+  });
+}
+
+/**
+ * Invalidate connection-wide database views after an external PostgreSQL write.
+ * Staged mutation drafts stay present but are fenced from applying stale source data.
+ */
+export async function refreshAfterPgExternalWrite(params: {
+  connectionId: string;
+  operation: string;
+  warning?: string;
+}): Promise<void> {
+  const { connectionId } = params;
   const state = useAppStore.getState();
   const browsesToRefresh = Object.values(state.tableBrowses)
     .filter((browse) => browse.connectionId === connectionId)
@@ -85,7 +100,17 @@ export async function refreshAfterPgRestore(job: PgToolJob): Promise<void> {
   const connection = useAppStore
     .getState()
     .connections.find((c) => c.id === connectionId);
-  if (!connection || !isConnectedStatus(connection.status)) return;
+  if (!connection || !isConnectedStatus(connection.status)) {
+    if (params.warning) {
+      useAppStore.getState().appendConsoleEvent({
+        severity: "warning",
+        source: "connection",
+        connectionId,
+        message: params.warning,
+      });
+    }
+    return;
+  }
   const latest = useAppStore.getState();
   const refreshes = [
     latest.loadPgObjectCatalog(connectionId).then(() => {}),
@@ -144,13 +169,19 @@ export async function refreshAfterPgRestore(job: PgToolJob): Promise<void> {
             tableStructureKey(connectionId, b.schema, b.table)
           ]?.state === "error"),
     );
-  if (failed)
+  if (failed || params.warning)
     result.appendConsoleEvent({
       severity: "warning",
       source: "connection",
       connectionId,
-      message:
-        "Restore completed. Some database metadata could not refresh; refresh the affected view.",
+      message: [
+        params.warning,
+        failed
+          ? `${params.operation} finished. Some database data or metadata could not refresh; refresh the affected view.`
+          : null,
+      ]
+        .filter((message): message is string => Boolean(message))
+        .join(" "),
     });
 }
 

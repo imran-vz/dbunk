@@ -15,6 +15,7 @@ export type SubTab =
   | "indexes"
   | "relations"
   | "schema-map"
+  | "transfer"
   | "specialized";
 
 export const SUB_TABS: ReadonlyArray<{ id: SubTab; label: string }> = [
@@ -23,6 +24,7 @@ export const SUB_TABS: ReadonlyArray<{ id: SubTab; label: string }> = [
   { id: "indexes", label: "Indexes" },
   { id: "relations", label: "Relations" },
   { id: "schema-map", label: "Schema Map" },
+  { id: "transfer", label: "Transfer" },
   { id: "specialized", label: "Specialized" },
 ];
 
@@ -41,6 +43,7 @@ interface TableEditorHeaderProps {
   /** Table Seeding is engine-gated (PostgreSQL-first, ADR-0020). */
   showSeedAction: boolean;
   onOpenSeedTable: () => void;
+  onOpenXlsxImport?: () => void;
   onOpenBackupRestore?: (operation: "backup" | "restore") => void;
 }
 
@@ -58,6 +61,7 @@ export function TableEditorHeader({
   onRunMaintenance,
   showSeedAction,
   onOpenSeedTable,
+  onOpenXlsxImport,
   onOpenBackupRestore,
 }: TableEditorHeaderProps) {
   const actions = (
@@ -106,6 +110,11 @@ export function TableEditorHeader({
           <DropdownMenuItem onClick={onOpenCopyTable}>
             Copy to table…
           </DropdownMenuItem>
+          {onOpenXlsxImport ? (
+            <DropdownMenuItem onClick={onOpenXlsxImport}>
+              Import XLSX…
+            </DropdownMenuItem>
+          ) : null}
           {showSeedAction ? (
             <DropdownMenuItem onClick={onOpenSeedTable}>
               Seed table…

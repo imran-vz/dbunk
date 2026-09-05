@@ -4,6 +4,7 @@
 //! blocked, then release the fence even if the caller panics.
 
 use crate::postgres::backup::PgToolJobManager;
+use crate::postgres::transfer::TransferManager;
 use crate::query_session::QuerySessionManager;
 use crate::result_mutation::ResultMutationManager;
 use crate::table_browse::TableBrowseManager;
@@ -95,12 +96,14 @@ pub(crate) async fn with_connection_ids_fence<T>(
         let table_browse = state.table_browse.clone();
         let result_mutations = state.result_mutations.clone();
         let pg_tool_jobs = state.pg_tool_jobs.clone();
+        let pg_transfers = state.pg_transfers.clone();
         async move {
             tokio::join!(
                 query_sessions.begin_connection_teardown(connection_id),
                 table_browse.begin_connection_teardown(connection_id),
                 result_mutations.begin_connection_teardown(connection_id),
                 pg_tool_jobs.begin_connection_teardown(connection_id),
+                pg_transfers.begin_connection_teardown(connection_id),
             )
         }
     }))
@@ -110,6 +113,7 @@ pub(crate) async fn with_connection_ids_fence<T>(
         state.table_browse.clone(),
         state.result_mutations.clone(),
         state.pg_tool_jobs.clone(),
+        state.pg_transfers.clone(),
         connection_ids.to_vec(),
     );
     let result = work.await;
@@ -126,12 +130,14 @@ pub(crate) async fn with_global_fence<T>(
         state.table_browse.begin_global_teardown(),
         state.result_mutations.begin_global_teardown(),
         state.pg_tool_jobs.begin_global_teardown(),
+        state.pg_transfers.begin_global_teardown(),
     );
     let mut guard = FenceGuard::global(
         state.query_sessions.clone(),
         state.table_browse.clone(),
         state.result_mutations.clone(),
         state.pg_tool_jobs.clone(),
+        state.pg_transfers.clone(),
     );
     let result = work.await;
     guard.release().await;
@@ -167,6 +173,7 @@ struct FenceGuard {
     table_browse: TableBrowseManager,
     result_mutations: ResultMutationManager,
     pg_tool_jobs: PgToolJobManager,
+    pg_transfers: TransferManager,
     kind: Option<FenceKind>,
 }
 
@@ -181,6 +188,7 @@ impl FenceGuard {
         table_browse: TableBrowseManager,
         result_mutations: ResultMutationManager,
         pg_tool_jobs: PgToolJobManager,
+        pg_transfers: TransferManager,
         connection_ids: Vec<String>,
     ) -> Self {
         Self {
@@ -188,6 +196,7 @@ impl FenceGuard {
             table_browse,
             result_mutations,
             pg_tool_jobs,
+            pg_transfers,
             kind: Some(FenceKind::Connections(connection_ids)),
         }
     }
@@ -197,12 +206,14 @@ impl FenceGuard {
         table_browse: TableBrowseManager,
         result_mutations: ResultMutationManager,
         pg_tool_jobs: PgToolJobManager,
+        pg_transfers: TransferManager,
     ) -> Self {
         Self {
             query_sessions,
             table_browse,
             result_mutations,
             pg_tool_jobs,
+            pg_transfers,
             kind: Some(FenceKind::Global),
         }
     }
@@ -216,6 +227,7 @@ impl FenceGuard {
             &self.table_browse,
             &self.result_mutations,
             &self.pg_tool_jobs,
+            &self.pg_transfers,
             kind,
         )
         .await;
@@ -231,12 +243,14 @@ impl Drop for FenceGuard {
         let table_browse = self.table_browse.clone();
         let result_mutations = self.result_mutations.clone();
         let pg_tool_jobs = self.pg_tool_jobs.clone();
+        let pg_transfers = self.pg_transfers.clone();
         tokio::spawn(async move {
             release_fence(
                 &query_sessions,
                 &table_browse,
                 &result_mutations,
                 &pg_tool_jobs,
+                &pg_transfers,
                 kind,
             )
             .await;
@@ -249,6 +263,7 @@ async fn release_fence(
     table_browse: &TableBrowseManager,
     result_mutations: &ResultMutationManager,
     pg_tool_jobs: &PgToolJobManager,
+    pg_transfers: &TransferManager,
     kind: FenceKind,
 ) {
     match kind {
@@ -259,6 +274,7 @@ async fn release_fence(
                     table_browse.end_connection_teardown(&connection_id),
                     result_mutations.end_connection_teardown(&connection_id),
                     pg_tool_jobs.end_connection_teardown(&connection_id),
+                    pg_transfers.end_connection_teardown(&connection_id),
                 );
             }
         }
@@ -268,6 +284,7 @@ async fn release_fence(
                 table_browse.end_global_teardown(),
                 result_mutations.end_global_teardown(),
                 pg_tool_jobs.end_global_teardown(),
+                pg_transfers.end_global_teardown(),
             );
         }
     }
@@ -338,6 +355,31 @@ mod tests {
             for id in &ids {
                 assert!(state.pg_tool_jobs.admission(id).is_ok());
             }
+        }
+    }
+    #[tokio::test]
+    async fn csv_transfers_join_the_canonical_connection_and_global_fences() {
+        let (_dir, state) = crate::test_app_state().await;
+        for global in [false, true] {
+            let stopped = Arc::new(AtomicBool::new(false));
+            crate::postgres::transfer::manager::tests::start_waiting(
+                &state.pg_transfers,
+                "csv-fence",
+                stopped.clone(),
+            );
+            let invalidation = async {
+                assert!(stopped.load(Ordering::SeqCst));
+                assert!(matches!(
+                    state.pg_transfers.admission("csv-fence"),
+                    Err(crate::postgres::transfer::protocol::TransferError::ConnectionClosing)
+                ));
+            };
+            if global {
+                with_global_fence(&state, invalidation).await;
+            } else {
+                with_connection_fence(&state, "csv-fence", invalidation).await;
+            }
+            assert!(state.pg_transfers.admission("csv-fence").is_ok());
         }
     }
 }

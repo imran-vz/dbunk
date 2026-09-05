@@ -14,6 +14,7 @@ pub(crate) mod pg_backup;
 pub(crate) mod pg_objects;
 #[cfg(test)]
 mod pg_objects_live_tests;
+pub(crate) mod pg_transfer;
 pub(crate) mod query_session;
 pub(crate) mod relational;
 pub(crate) mod result_mutation;

@@ -315,11 +315,19 @@ export function RelationalWorkbench({
     if (settingsView || !activeTab) return null;
     if (activeTab.kind === "table") {
       return (
-        <TableSectionToggle value={tableSubTab} onChange={setTableSubTab} />
+        <TableSectionToggle
+          value={tableSubTab}
+          onChange={setTableSubTab}
+          showTransfer={
+            connections.find(
+              (connection) => connection.id === activeTab.connectionId,
+            )?.engine === "PostgreSQL"
+          }
+        />
       );
     }
     return null;
-  }, [activeTab, setTableSubTab, settingsView, tableSubTab]);
+  }, [activeTab, connections, setTableSubTab, settingsView, tableSubTab]);
 
   const renderMainPane = () => {
     if (settingsView) {

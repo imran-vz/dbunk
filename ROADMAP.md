@@ -91,7 +91,8 @@ Have: per-table or selection export through the data grid.
 - ❌ Parquet
 - ✅ Table-to-table copy (`copy_table_rows` over `import_rows`)
 - ✅ Save export config as re-runnable task (`export-tasks.ts`)
-- 🟡 File-backed PostgreSQL backup/restore backend: typed cancellable jobs, safe archive publication, restore policy, and teardown fencing (Plan 018). Plan 019 adds global and table-context UI, native file selection, restore review and job history; native UI verification remains open.
+- ✅ File-backed PostgreSQL backup/restore: typed cancellable jobs, safe archive publication, restore policy, teardown fencing, global and table-context UI, native file selection, restore review and session job history (Plans 018–019, completed at `ab33968`).
+- 🟡 Bounded PostgreSQL CSV import/export: Plan 020 implements the table Transfer sub-tab (A), native streaming, progress, cancellation, CSV settings, mapping and safe file publication. Automated/live checks and fresh review pass; native manual gates remain.
 - 🟡 Compression / split / encoding — gzip + encoding picker + NULL token shipped; split-file not yet
 
 ### 7. Data import
@@ -100,8 +101,8 @@ Have: CSV / XLSX import wizard with column mapping.
 - ✅ CSV → existing table with column-mapping wizard
 - ✅ XLSX → table (uses the `xlsx` package)
 - ❌ XML → table
-- 🟡 Multi-sheet imports, header detection, date-format / NULL-token configuration — XLSX picks the first sheet today; richer multi-sheet + date-format options pending
-- ✅ `COPY FROM` streaming (Postgres fast-path bulk load)
+- 🟡 Multi-sheet imports, header detection and date-format configuration — XLSX picks the first sheet today; richer multi-sheet + date-format options pending. Plan 020 adds explicit CSV header/dialect/NULL settings with ISO dates and UTC.
+- 🟡 Plan 020 routes PostgreSQL CSV through bounded file-backed COPY jobs. XLSX and other engines retain their buffered paths; final native manual validation remains.
 
 ### 8. Other Postgres-shaped tooling
 - ✅ Create table designer — live typed preview and reviewed apply

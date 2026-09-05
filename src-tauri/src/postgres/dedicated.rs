@@ -60,12 +60,54 @@ pub(crate) struct DedicatedConnection {
     pub client: Arc<Client>,
     pub cancel: tokio_postgres::CancelToken,
     pub tls: TlsConfig,
-    _driver: tokio::task::JoinHandle<()>,
+    _driver: DriverTask,
+}
+
+struct DriverTask(Option<tokio::task::JoinHandle<()>>);
+
+impl DriverTask {
+    async fn join(mut self) {
+        let Some(task) = self.0.as_mut() else {
+            return;
+        };
+        if tokio::time::timeout(Duration::from_secs(2), &mut *task)
+            .await
+            .is_err()
+        {
+            task.abort();
+            let _ = (&mut *task).await;
+        }
+        self.0.take();
+    }
+}
+
+impl Drop for DriverTask {
+    fn drop(&mut self) {
+        if let Some(task) = self.0.take() {
+            task.abort();
+        }
+    }
 }
 
 impl DedicatedConnection {
     pub(crate) fn is_closed(&self) -> bool {
         self.client.is_closed()
+    }
+
+    /// Drops the last owned client before joining its socket driver. If the
+    /// connection owner itself is aborted, `DriverTask` aborts the driver so a
+    /// detached PostgreSQL socket cannot outlive the owning job.
+    pub(crate) async fn close(self) {
+        let Self {
+            client,
+            cancel,
+            tls,
+            _driver,
+        } = self;
+        drop(client);
+        drop(cancel);
+        drop(tls);
+        _driver.join().await;
     }
 }
 
@@ -107,6 +149,9 @@ pub(crate) async fn connect(
             (client, driver)
         }
     };
+    // From this point every early return aborts the socket driver instead of
+    // detaching it while post-connect session options are applied.
+    let driver = DriverTask(Some(driver));
     let statements = driver_option_sql(&spec.driver_options, spec.safety_policy.read_only);
     if !statements.is_empty() {
         client

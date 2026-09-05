@@ -151,9 +151,10 @@
     color-scheme: dark;
 }
 
-/* Backup/restore follows its selected true-black direction in dark mode while
- * retaining the active theme's semantic surfaces in light mode. */
-.dark .pg-tool-workspace {
+/* Native PostgreSQL file workspaces use the selected true-black direction in
+ * dark mode while retaining the active theme's surfaces in light mode. */
+.dark .pg-tool-workspace,
+.dark .pg-transfer-workspace {
     --surface-app: #000000;
     --foreground: #ffffff;
 }
