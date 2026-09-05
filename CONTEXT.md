@@ -610,3 +610,12 @@ manually). For the current table list, read the migrations in
 - **Query Outcome** — terminal status, omission totals, typed truncation
   reasons, structured database error, and observer-derived transaction state.
   Transaction truth is never inferred from SQL text.
+
+## PostgreSQL Tool Job
+
+An in-memory, file-backed PostgreSQL backup or restore owned by the native
+`PgToolJobManager`. It exposes typed admission, polling, cancellation, and release;
+bounds process output and terminal history; and joins connection teardown before
+tunnel/pool invalidation. Backup publishes a complete non-overwriting archive.
+Restore is authorized before admission and audited only after success. This backend
+is dark until Plan 019 adds UI activation. See ADR-0028.

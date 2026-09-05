@@ -1270,20 +1270,6 @@ pub(crate) struct ExportDdlResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgDumpResult {
-    pub data_base64: String,
-    pub extension: String,
-    pub runtime_ms: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PgRestoreResult {
-    pub runtime_ms: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct CopyTableResult {
     pub runtime_ms: u64,
     pub rows_copied: u64,
@@ -1716,28 +1702,6 @@ pub(crate) struct ExportDdlPayload {
     pub scope: String,
     pub schema: Option<String>,
     pub table: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PgDumpPayload {
-    pub connection_id: String,
-    pub scope: String,
-    pub schema: Option<String>,
-    pub table: Option<String>,
-    pub format: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PgRestorePayload {
-    pub connection_id: String,
-    pub data_base64: String,
-    pub format: String,
-    #[serde(default)]
-    pub clean: bool,
-    #[serde(default)]
-    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]

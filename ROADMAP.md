@@ -91,7 +91,7 @@ Have: per-table or selection export through the data grid.
 - ❌ Parquet
 - ✅ Table-to-table copy (`copy_table_rows` over `import_rows`)
 - ✅ Save export config as re-runnable task (`export-tasks.ts`)
-- ✅ `pg_dump` / `pg_restore` integration (spawns real binaries)
+- 🟡 File-backed PostgreSQL backup/restore backend: typed cancellable jobs, safe archive publication, restore policy, and teardown fencing (Plan 018). Dark until Plan 019 adds UI activation.
 - 🟡 Compression / split / encoding — gzip + encoding picker + NULL token shipped; split-file not yet
 
 ### 7. Data import

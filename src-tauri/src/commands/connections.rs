@@ -52,25 +52,25 @@ pub async fn delete_connection(
     state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<Vec<StoredConnection>, String> {
-    let state = state.inner();
+    delete_connection_inner(state.inner(), &payload.connection_id).await
+}
+
+pub(crate) async fn delete_connection_inner(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<Vec<StoredConnection>, String> {
     let mode = current_credential_mode(state).await?;
-    let delete_result =
-        socket_lifecycle::with_connection_fence(state, &payload.connection_id, async {
-            if !storage::delete_connection(&state.pool, &payload.connection_id).await? {
-                return Err(format!("Connection '{}' not found", payload.connection_id));
-            }
-            if let Err(error) =
-                crate::credentials::delete(&state.pool, mode, &payload.connection_id).await
-            {
-                log::warn!(
-                    "Failed to delete credential for {}: {error}",
-                    payload.connection_id
-                );
-            }
-            socket_lifecycle::invalidate_connection_caches(&payload.connection_id, None);
-            Ok(())
-        })
-        .await;
+    let delete_result = socket_lifecycle::with_connection_fence(state, connection_id, async {
+        if !storage::delete_connection(&state.pool, connection_id).await? {
+            return Err(format!("Connection '{connection_id}' not found"));
+        }
+        if let Err(error) = crate::credentials::delete(&state.pool, mode, connection_id).await {
+            log::warn!("Failed to delete credential for {}: {error}", connection_id);
+        }
+        socket_lifecycle::invalidate_connection_caches(connection_id, None);
+        Ok(())
+    })
+    .await;
     delete_result?;
     public_connections(state).await
 }
@@ -198,8 +198,15 @@ pub async fn disconnect_connection(
     state: State<'_, AppState>,
     payload: ConnectionPayload,
 ) -> Result<(), String> {
-    socket_lifecycle::with_connection_fence(state.inner(), &payload.connection_id, async {
-        socket_lifecycle::invalidate_connection_caches(&payload.connection_id, None);
+    disconnect_connection_inner(state.inner(), &payload.connection_id).await
+}
+
+pub(crate) async fn disconnect_connection_inner(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<(), String> {
+    socket_lifecycle::with_connection_fence(state, connection_id, async {
+        socket_lifecycle::invalidate_connection_caches(connection_id, None);
     })
     .await;
     Ok(())

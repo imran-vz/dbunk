@@ -6,12 +6,13 @@
 //! - `mutations` — cell edits, inserts, deletes, imports
 //! - `schema` — table structure and schema relationship introspection
 //! - `relationship_metadata` — pure cardinality/junction/trigger classification
-//! - `ddl` — DDL execution, export, pg_dump/pg_restore, materialized views
+//! - `ddl` — DDL execution, export, materialized views
 //! - `objects` — typed object catalog, descriptions, and drop impact
 //! - `object_ddl` — typed object operations and deterministic SQL generation
 //! - `admin` — server details, overview stats, session/lock snapshots, maintenance
 
 mod admin;
+pub(crate) mod backup;
 pub(crate) mod connect_error;
 pub(crate) mod connect_spec;
 mod ddl;
@@ -35,7 +36,7 @@ pub(crate) mod tls;
 use sqlx::postgres::PgRow;
 use sqlx::Row;
 
-use crate::{bytes_to_hex, StoredConnection};
+use crate::bytes_to_hex;
 
 // ---------------------------------------------------------------------------
 // Re-exports — the external interface stays flat (`crate::postgres::*`)
@@ -45,7 +46,7 @@ pub use admin::{
     cancel_backend, load_admin_snapshot, load_database_overview_stats, load_relation_stats,
     load_server_details, run_maintenance, terminate_backend,
 };
-pub use ddl::{execute_ddl, export_ddl, refresh_materialized_view, run_pg_dump, run_pg_restore};
+pub use ddl::{execute_ddl, export_ddl, refresh_materialized_view};
 pub use mutations::{commit_cell_edits, copy_import_rows, delete_rows, import_rows, insert_row};
 pub use pool::drop_pool;
 pub use query::run_query;
@@ -59,14 +60,6 @@ pub use table_relationships::fetch_table_schema_relationships;
 
 /// Acquire a connection from the cached pool.
 pub(crate) use pool::connect;
-
-/// Narrow a `StoredConnection` to its PostgreSQL variant.
-fn pg_connection(connection: &StoredConnection) -> Result<&crate::PgStoredConnection, String> {
-    let StoredConnection::PostgreSQL(connection) = connection else {
-        return Err("PostgreSQL native tooling requires a PostgreSQL connection".to_string());
-    };
-    Ok(connection)
-}
 
 // ---------------------------------------------------------------------------
 // Row → string coercion
