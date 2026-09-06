@@ -1,5 +1,4 @@
-//! Bounded PG16 catalog capture. The job manager (Step 5) will own admission,
-//! endpoint resolution/generations and this future. Nothing registers commands.
+//! Bounded PG16 catalog capture under the comparison job admission deadline.
 mod data;
 mod queries;
 #[cfg(test)]
@@ -22,15 +21,31 @@ const CAPTURE_SCRATCH: usize = 32 * 1024 * 1024;
 const TABLE_BATCH: usize = 32;
 const CLEANUP_GRACE: Duration = Duration::from_secs(5);
 
+#[derive(Clone)]
 pub struct CaptureControl {
     deadline: Instant,
     cancel: watch::Receiver<bool>,
+    drivers: dedicated::DriverJoins,
 }
 
 impl CaptureControl {
     /// The owner supplies its original admission deadline, including resolution.
     pub fn new(deadline: Instant, cancel: watch::Receiver<bool>) -> Self {
-        Self { deadline, cancel }
+        Self {
+            deadline,
+            cancel,
+            drivers: dedicated::DriverJoins::default(),
+        }
+    }
+
+    pub(crate) async fn join_drivers(&self) {
+        self.drivers.drain().await;
+    }
+
+    /// Stops all current drivers and latches cleanup for any driver that races
+    /// with grace expiry during post-connect setup.
+    pub(crate) fn abort_drivers(&self) {
+        self.drivers.abort_all();
     }
 
     pub fn check(&self) -> Result<(), CompareError> {
@@ -43,7 +58,7 @@ impl CaptureControl {
         }
     }
 
-    async fn wait<T>(&self, future: impl Future<Output = T>) -> Result<T, CompareError> {
+    pub(crate) async fn wait<T>(&self, future: impl Future<Output = T>) -> Result<T, CompareError> {
         self.check()?;
         let mut cancel = self.cancel.clone();
         tokio::select! {
@@ -72,7 +87,6 @@ impl CaptureControl {
 /// Uses exactly one resolved native transport for one stored connection. Two
 /// same-connection schemas share discovery, pre-snapshot locks and transaction.
 /// Independent connections call this separately and retain independent times.
-#[allow(dead_code)] // Dark entry point until Plan 021 Step 5 registers its owner.
 pub(crate) async fn capture_resolved(
     spec: &ResolvedPostgresConnectSpec,
     endpoints: &[(Side, &Endpoint)],
@@ -83,7 +97,11 @@ pub(crate) async fn capture_resolved(
     let budget = budget.result_scope();
     let _scratch = budget.scratch(CAPTURE_SCRATCH)?;
     let connection = control
-        .wait(dedicated::connect(spec, dedicated::NoticeSink::Ignore))
+        .wait(dedicated::connect_tracked(
+            spec,
+            dedicated::NoticeSink::Ignore,
+            Some(&control.drivers),
+        ))
         .await?
         .map_err(|_| CompareError::Unavailable)?;
     let result = capture(

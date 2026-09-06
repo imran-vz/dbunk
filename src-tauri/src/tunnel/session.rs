@@ -1,5 +1,4 @@
 use std::{
-    io,
     net::{TcpStream, ToSocketAddrs},
     path::Path,
     process::{Child, Command, Stdio},
@@ -21,6 +20,8 @@ use super::{
 };
 use crate::{BastionAuthMethod, BastionServer};
 
+mod proxy_io;
+
 pub(super) struct ResolvedBastion {
     pub(super) server: BastionServer,
     pub(super) password: Option<String>,
@@ -38,6 +39,7 @@ pub(super) struct RouteSession {
     keepalive_stop: Arc<AtomicBool>,
     intermediate_hops: Vec<RouteHop>,
     proxy_command: Option<ProxyCommandHandle>,
+    keepalive_workers: Vec<thread::JoinHandle<()>>,
     closed: bool,
 }
 
@@ -52,13 +54,19 @@ impl RouteSession {
         }
         self.closed = true;
         self.keepalive_stop.store(true, Ordering::SeqCst);
+        for worker in &self.keepalive_workers {
+            worker.thread().unpark();
+        }
         let _ = self.final_session.disconnect(None, reason, None);
-        for hop in self.intermediate_hops.iter().rev() {
+        for hop in self.intermediate_hops.iter_mut().rev() {
             hop.bridge_to_next.shutdown();
             let _ = hop.session.disconnect(None, reason, None);
         }
-        if let Some(proxy_command) = &self.proxy_command {
+        if let Some(proxy_command) = &mut self.proxy_command {
             proxy_command.shutdown();
+        }
+        for worker in self.keepalive_workers.drain(..) {
+            let _ = worker.join();
         }
     }
 }
@@ -69,10 +77,31 @@ impl Drop for RouteSession {
     }
 }
 
+#[cfg(test)]
+pub(super) fn disconnected_route_session() -> RouteSession {
+    RouteSession {
+        final_session: Session::new().expect("test SSH session"),
+        keepalive_stop: Arc::new(AtomicBool::new(false)),
+        intermediate_hops: Vec::new(),
+        proxy_command: None,
+        keepalive_workers: Vec::new(),
+        closed: false,
+    }
+}
+
 pub(super) fn connect_route_session(
     bastions: &[ResolvedBastion],
     route: &SshRoute,
 ) -> Result<(RouteSession, Vec<(String, String)>), String> {
+    connect_route_session_checked(bastions, route, &|| Ok(()))
+}
+
+pub(super) fn connect_route_session_checked(
+    bastions: &[ResolvedBastion],
+    route: &SshRoute,
+    check: &(dyn Fn() -> Result<(), String> + Send + Sync),
+) -> Result<(RouteSession, Vec<(String, String)>), String> {
+    check()?;
     let Some(first) = bastions.first() else {
         return Err("SSH tunnel route has no Bastion Servers".to_string());
     };
@@ -88,13 +117,15 @@ pub(super) fn connect_route_session(
     } else {
         connect_tcp_with_timeout(&first.server.host, first_port)?
     };
+    check()?;
     let mut session =
         connect_bastion_session(first, first_stream, route, &mut accepted_fingerprints)?;
 
     for bastion in bastions.iter().skip(1) {
+        check()?;
         let port = defaulted_ssh_port(bastion.server.port);
         let (stream, handle) =
-            spawn_channel_bridge(session.clone(), bastion.server.host.clone(), port)?;
+            spawn_channel_bridge(session.clone(), bastion.server.host.clone(), port, check)?;
         intermediate_hops.push(RouteHop {
             session,
             bridge_to_next: handle,
@@ -102,6 +133,7 @@ pub(super) fn connect_route_session(
         session = connect_bastion_session(bastion, stream, route, &mut accepted_fingerprints)?;
     }
 
+    check()?;
     let route_session = route_session_for_route(session, route, intermediate_hops, proxy_command);
     Ok((route_session, accepted_fingerprints))
 }
@@ -183,22 +215,28 @@ struct ProxyCommandTransport {
 struct ProxyCommandHandle {
     child: Arc<Mutex<Child>>,
     stop: Arc<AtomicBool>,
+    bridge: TcpStream,
+    workers: Vec<thread::JoinHandle<()>>,
 }
 
 impl ProxyCommandHandle {
-    fn shutdown(&self) {
+    fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
-        let Ok(mut child) = self.child.lock() else {
-            return;
-        };
-        match child.try_wait() {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-            Err(error) => log::warn!("SSH proxy command status check failed: {error}"),
+        let _ = self.bridge.shutdown(std::net::Shutdown::Both);
+        for worker in &self.workers {
+            worker.thread().unpark();
         }
+        if let Ok(mut child) = self.child.lock() {
+            match child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                Err(error) => log::warn!("SSH proxy command status check failed: {error}"),
+            }
+        }
+        proxy_io::join_workers(&mut self.workers);
     }
 }
 
@@ -215,14 +253,32 @@ fn connect_proxy_command(
 ) -> Result<ProxyCommandTransport, String> {
     let expanded_command = expand_proxy_command(command, host, port);
     let (client, bridge) = connected_tcp_pair()?;
+    // Clone before spawning the child so setup failures cannot leak a process.
+    let mut to_child = bridge
+        .try_clone()
+        .map_err(|error| format!("Failed to clone SSH proxy bridge: {error}"))?;
+    let mut from_child = bridge
+        .try_clone()
+        .map_err(|error| format!("Failed to clone SSH proxy bridge: {error}"))?;
     let mut child_command = proxy_shell_command(&expanded_command);
-    let mut child = child_command
+    let child = child_command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("Failed to start SSH proxy command: {error}"))?;
 
+    // Own the child immediately, including every fallible setup path below.
+    let mut handle = ProxyCommandHandle {
+        child: Arc::new(Mutex::new(child)),
+        stop: Arc::new(AtomicBool::new(false)),
+        bridge,
+        workers: Vec::new(),
+    };
+    let mut child = handle
+        .child
+        .lock()
+        .map_err(|error| format!("Failed to access SSH proxy command: {error}"))?;
     let mut child_stdin = child
         .stdin
         .take()
@@ -231,25 +287,31 @@ fn connect_proxy_command(
         .stdout
         .take()
         .ok_or_else(|| "SSH proxy command stdout is unavailable".to_string())?;
-    let mut to_child = bridge
-        .try_clone()
-        .map_err(|error| format!("Failed to clone SSH proxy bridge: {error}"))?;
-    let mut from_child = bridge;
+    drop(child);
+    #[cfg(unix)]
+    {
+        proxy_io::set_nonblocking(&child_stdin)
+            .and_then(|()| proxy_io::set_nonblocking(&child_stdout))
+            .and_then(|()| to_child.set_nonblocking(true))
+            .map_err(|error| format!("Failed to configure SSH proxy pipes: {error}"))?;
+    }
 
-    thread::spawn(move || {
-        let _ = io::copy(&mut to_child, &mut child_stdin);
-    });
-    thread::spawn(move || {
-        let _ = io::copy(&mut child_stdout, &mut from_child);
-    });
-
-    let child = Arc::new(Mutex::new(child));
-    let stop = Arc::new(AtomicBool::new(false));
-    spawn_proxy_reaper(child.clone(), stop.clone());
+    let stop = handle.stop.clone();
+    handle.workers.push(thread::spawn(move || {
+        let _ = proxy_io::copy(&mut to_child, &mut child_stdin, &stop);
+    }));
+    let stop = handle.stop.clone();
+    handle.workers.push(thread::spawn(move || {
+        let _ = proxy_io::copy(&mut child_stdout, &mut from_child, &stop);
+    }));
+    handle.workers.push(spawn_proxy_reaper(
+        handle.child.clone(),
+        handle.stop.clone(),
+    ));
 
     Ok(ProxyCommandTransport {
         stream: client,
-        handle: ProxyCommandHandle { child, stop },
+        handle,
     })
 }
 
@@ -290,7 +352,7 @@ fn proxy_shell_command(command: &str) -> Command {
     }
 }
 
-fn spawn_proxy_reaper(child: Arc<Mutex<Child>>, stop: Arc<AtomicBool>) {
+fn spawn_proxy_reaper(child: Arc<Mutex<Child>>, stop: Arc<AtomicBool>) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         while !stop.load(Ordering::SeqCst) {
             let status = {
@@ -306,14 +368,14 @@ fn spawn_proxy_reaper(child: Arc<Mutex<Child>>, stop: Arc<AtomicBool>) {
                     }
                     return;
                 }
-                Ok(None) => thread::sleep(Duration::from_millis(100)),
+                Ok(None) => thread::park_timeout(Duration::from_millis(100)),
                 Err(error) => {
                     log::warn!("SSH proxy command wait failed: {error}");
                     return;
                 }
             }
         }
-    });
+    })
 }
 
 fn route_session_for_route(
@@ -323,10 +385,19 @@ fn route_session_for_route(
     proxy_command: Option<ProxyCommandHandle>,
 ) -> RouteSession {
     let keepalive_stop = Arc::new(AtomicBool::new(false));
+    let mut keepalive_workers = Vec::new();
     if let Some(interval) = route.keepalive_interval_seconds {
-        spawn_keepalive_loop(final_session.clone(), interval, keepalive_stop.clone());
+        keepalive_workers.push(spawn_keepalive_loop(
+            final_session.clone(),
+            interval,
+            keepalive_stop.clone(),
+        ));
         for hop in &intermediate_hops {
-            spawn_keepalive_loop(hop.session.clone(), interval, keepalive_stop.clone());
+            keepalive_workers.push(spawn_keepalive_loop(
+                hop.session.clone(),
+                interval,
+                keepalive_stop.clone(),
+            ));
         }
     }
     RouteSession {
@@ -334,15 +405,20 @@ fn route_session_for_route(
         keepalive_stop,
         intermediate_hops,
         proxy_command,
+        keepalive_workers,
         closed: false,
     }
 }
 
-fn spawn_keepalive_loop(session: Session, interval_seconds: u32, stop: Arc<AtomicBool>) {
+fn spawn_keepalive_loop(
+    session: Session,
+    interval_seconds: u32,
+    stop: Arc<AtomicBool>,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut sleep_for = Duration::from_secs(u64::from(interval_seconds));
         while !stop.load(Ordering::SeqCst) {
-            thread::sleep(sleep_for);
+            thread::park_timeout(sleep_for);
             if stop.load(Ordering::SeqCst) {
                 break;
             }
@@ -356,7 +432,7 @@ fn spawn_keepalive_loop(session: Session, interval_seconds: u32, stop: Arc<Atomi
                 }
             }
         }
-    });
+    })
 }
 
 fn host_key_fingerprint(session: &Session) -> Result<String, String> {
@@ -430,6 +506,83 @@ impl ssh2::KeyboardInteractivePrompt for PasswordPrompter {
 #[cfg(test)]
 mod tests {
     use super::expand_proxy_command;
+
+    #[cfg(unix)]
+    use {
+        super::{connect_proxy_command, ProxyCommandTransport},
+        std::{
+            io::{Read, Write},
+            time::{Duration, Instant},
+        },
+    };
+
+    #[cfg(unix)]
+    fn proxy_with_pipe_holding_descendant() -> ProxyCommandTransport {
+        // FD 3 preserves stdin because shells otherwise give background jobs
+        // /dev/null. The finite sleep also bounds failures of this regression.
+        let mut transport = connect_proxy_command(
+            "exec 3<&0; sleep 3 <&3 & printf 'ready\\n'; wait",
+            "unused",
+            22,
+        )
+        .expect("start local proxy command");
+        transport
+            .stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut ready = [0; 6];
+        transport.stream.read_exact(&mut ready).unwrap();
+        assert_eq!(&ready, b"ready\n");
+        transport
+    }
+
+    #[cfg(unix)]
+    fn assert_proxy_shutdown_completes(transport: &mut ProxyCommandTransport) {
+        let start = Instant::now();
+        transport.handle.shutdown();
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "proxy cleanup waited for a descendant holding the pipes: {:?}",
+            start.elapsed()
+        );
+        assert!(transport.handle.workers.is_empty());
+        assert!(transport
+            .handle
+            .child
+            .lock()
+            .unwrap()
+            .try_wait()
+            .unwrap()
+            .is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proxy_shutdown_cancels_read_when_descendant_keeps_stdout_open() {
+        let mut transport = proxy_with_pipe_holding_descendant();
+        assert_proxy_shutdown_completes(&mut transport);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proxy_shutdown_cancels_backpressured_write_to_descendant_stdin() {
+        let mut transport = proxy_with_pipe_holding_descendant();
+        transport.stream.set_nonblocking(true).unwrap();
+        let buffer = [1; 65536];
+        let mut sent = 0;
+        loop {
+            match transport.stream.write(&buffer) {
+                Ok(count) => sent += count,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("fill proxy input: {error}"),
+            }
+            assert!(sent < 64 * 1024 * 1024, "proxy input did not backpressure");
+        }
+        assert!(sent > 0);
+        // Allow the worker to reach the full child pipe before cancellation.
+        std::thread::sleep(Duration::from_millis(100));
+        assert_proxy_shutdown_completes(&mut transport);
+    }
 
     #[test]
     fn proxy_command_expands_host_port_and_percent_escape() {

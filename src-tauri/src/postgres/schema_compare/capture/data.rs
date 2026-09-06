@@ -17,6 +17,8 @@ pub struct CapturedEndpoint {
     _base: Reservation,
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExcludedCount {
     pub category: ExcludedCategory,
     pub count: u32,

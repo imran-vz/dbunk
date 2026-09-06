@@ -644,6 +644,8 @@ logical namespace; raw expressions are never rewritten. Types, collations and
 other excluded definitions remain outside coverage even when referenced.
 
 Plan 021 currently provides the capture proof and typed native/client foundation,
-including bounded value chunks, native catalog capture and deterministic structural
-diff results. Backend-owned jobs and
-product activation are not yet integrated. See ADR-0030.
+including bounded value chunks, native catalog capture, deterministic structural
+diff results and backend-owned comparison jobs. Jobs reserve both endpoints before
+resolution and own cancellation, result retention and reads independently of any
+future UI tab. Product activation and full native runtime validation remain separate.
+See ADR-0030.

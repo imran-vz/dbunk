@@ -115,7 +115,7 @@ Have: CSV / XLSX import wizard with column mapping.
 - ✅ Postgres `array` cell editor — list editor in the data grid; writes a PG array literal back into pending edits
 - ✅ `json` / `jsonb` tree editor — modal editor with `JSON.parse` validation + Pretty print; writes into pending edits
 - ✅ PostGIS / geometry visualization — WKT modal editor with sanity validation; writes into pending edits
-- ❌ Schema compare: the former prototype was removed during workspace consolidation. [Plan 021](plans/021-bounded-postgres-schema-comparison.md) has bounded native capture and deterministic structural diff; jobs and UI remain unintegrated. Migration SQL follows separately.
+- ❌ Schema compare: the former prototype was removed during workspace consolidation. [Plan 021](plans/021-bounded-postgres-schema-comparison.md) has bounded native capture, deterministic structural diff and backend-owned jobs with typed commands; UI activation and native runtime validation remain separate. Migration SQL follows separately.
 - ❌ Data compare: the former sampled prototype was removed; bounded comparison remains PAR-008 follow-up.
 - ✅ Mock data generator (column-aware INSERTs from real `tableStructure`)
 
