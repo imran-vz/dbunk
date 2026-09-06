@@ -4,6 +4,10 @@ Ephemeral Docker fixtures for exercising Dbunk against PostgreSQL, ClickHouse,
 and Redis/Redis Stack. Each service starts with a clean in-memory data directory
 and reseeds from its own fixture files on container creation.
 
+Plan 021's [schema comparison capture gate](./schema-compare/README.md) runs
+separately in its own disposable PostgreSQL container. It does not use these
+shared compose services.
+
 ## Run
 
 ```sh
