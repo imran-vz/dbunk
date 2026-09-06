@@ -266,3 +266,16 @@ the target's integer default and column comment then produces exactly two known
 changed fields on that table without hiding the incomparable fields. The result
 retains the verified shared-transaction marker and releases its allocation after
 reads complete. This passed on the PG16.15 version recorded above.
+
+
+## Native Step 5 coverage
+
+`native.py` explicitly runs all three native comparison tests in its newly owned
+PG16 fixture. The manager test uses temporary app storage and starts a real
+same-connection schema comparison through native admission and resolution. It
+checks phase counts, changed defaults, shared-transaction metadata and field pages.
+A real connection edit invokes the canonical fence, makes retained reads unavailable
+and preserves a page's serializer lease until acknowledgement. All three passed
+on PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2), aarch64, on 2026-09-06; the fixture
+container was removed. Native WebView allocation, independent servers/minors and
+the wider failure/load matrix remain Step 6.

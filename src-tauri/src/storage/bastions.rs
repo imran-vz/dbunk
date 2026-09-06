@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqliteExecutor, SqlitePool};
 
 use crate::{BastionAuthMethod, BastionServer, SshTunnelConfig};
 
@@ -144,8 +144,8 @@ pub async fn connection_ids_referencing_bastion(
     Ok(ids)
 }
 
-pub async fn update_bastion_host_key_fingerprint(
-    pool: &SqlitePool,
+pub async fn update_bastion_host_key_fingerprint<'e>(
+    executor: impl SqliteExecutor<'e>,
     bastion_id: &str,
     fingerprint: Option<&str>,
 ) -> Result<(), String> {
@@ -157,7 +157,7 @@ pub async fn update_bastion_host_key_fingerprint(
     .bind(fingerprint)
     .bind(now())
     .bind(bastion_id)
-    .execute(pool)
+    .execute(executor)
     .await
     .map_err(|error| error.to_string())?;
     Ok(())

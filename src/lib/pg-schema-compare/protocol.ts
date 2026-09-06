@@ -13,7 +13,9 @@ const bytes = (limit: number) =>
       (text) => text.length <= limit && encoder.encode(text).length <= limit,
       "UTF-8 byte limit exceeded",
     );
-const identifier = bytes(63).refine((text) => text.length > 0);
+const identifier = bytes(63).refine(
+  (text) => text.length > 0 && !text.includes("\0"),
+);
 const id = bytes(128).refine((text) => text.length > 0);
 const count = z.number().int().nonnegative().max(100_000);
 
@@ -341,6 +343,10 @@ export const schemaCompareError = z.discriminatedUnion("kind", [
     side: z.enum(["source", "target"]),
     version: bytes(128),
   }),
+  z.object({
+    kind: z.literal("unsupportedEngine"),
+    side: z.enum(["source", "target"]),
+  }),
   z.object({ kind: z.literal("unavailable") }),
   z.object({ kind: z.literal("invalidRequest") }),
   z.object({ kind: z.literal("captureChanged") }),
@@ -384,46 +390,44 @@ export const schemaCompareCaptureMetadata = z.object({
   serverVersionNum: z.number().int().nonnegative().max(4_294_967_295),
   capturedAt: bytes(64),
 });
+const schemaCompareExcludedCategory = z.enum([
+  "otherRelations",
+  "routines",
+  "sequences",
+  "typesAndDomains",
+  "policies",
+  "grants",
+  "triggers",
+  "rules",
+  "extensions",
+  "databaseObjects",
+  "identitySequenceConfiguration",
+  "storageSecurityOwnershipReplication",
+  "indexPlacementClusteringReplicaIdentity",
+]);
+export const schemaCompareEligibility = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("eligible") }),
+  z.object({
+    kind: z.literal("excluded"),
+    reason: z.enum([
+      "partitioned",
+      "inherited",
+      "foreign",
+      "extensionOwned",
+      "otherKind",
+    ]),
+  }),
+]);
 export const schemaCompareCoverage = z.object({
   scope: z.literal(SCHEMA_COMPARE_SCOPE),
   normalizationVersion: z.literal(SCHEMA_COMPARE_NORMALIZATION_VERSION),
   excludedRelations: count,
   incomparableFields: count,
-  excludedCategories: z
-    .array(
-      z.enum([
-        "otherRelations",
-        "routines",
-        "sequences",
-        "typesAndDomains",
-        "policies",
-        "grants",
-        "triggers",
-        "rules",
-        "extensions",
-        "databaseObjects",
-        "identitySequenceConfiguration",
-        "storageSecurityOwnershipReplication",
-        "indexPlacementClusteringReplicaIdentity",
-      ]),
-    )
-    .max(13),
+  excludedCategories: z.array(schemaCompareExcludedCategory).max(13),
 });
 export const schemaCompareInventoryEntry = z.object({
   identity: schemaCompareRelationIdentity,
-  eligibility: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("eligible") }),
-    z.object({
-      kind: z.literal("excluded"),
-      reason: z.enum([
-        "partitioned",
-        "inherited",
-        "foreign",
-        "extensionOwned",
-        "otherKind",
-      ]),
-    }),
-  ]),
+  eligibility: schemaCompareEligibility,
 });
 export const schemaCompareOperatorSignature = z.object({
   operator: schemaCompareQualifiedName,
@@ -449,3 +453,75 @@ export const schemaCompareMetadata = z.object({
   coverage: schemaCompareCoverage,
 });
 export type SchemaCompareMetadata = z.infer<typeof schemaCompareMetadata>;
+
+export const schemaCompareStartRequest = z.object({
+  requestId: id,
+  source: schemaCompareEndpoint,
+  target: schemaCompareEndpoint,
+});
+export type SchemaCompareStartRequest = z.infer<
+  typeof schemaCompareStartRequest
+>;
+export const schemaCompareResultRequest = z.object({
+  identity: schemaCompareResultIdentity,
+  source: schemaCompareEndpoint,
+  target: schemaCompareEndpoint,
+});
+export type SchemaCompareResultRequest = z.infer<
+  typeof schemaCompareResultRequest
+>;
+export const schemaCompareReadRequest = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("metadata") }),
+  z.object({ kind: z.literal("objects"), offset: count }),
+  z.object({
+    kind: z.literal("fields"),
+    object: schemaCompareRelationIdentity,
+    offset: count,
+  }),
+  z.object({
+    kind: z.literal("eligibility"),
+    object: schemaCompareRelationIdentity,
+    side: z.enum(["source", "target"]),
+  }),
+  z.object({
+    kind: z.literal("value"),
+    value: schemaCompareValueRef,
+    offset: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(256 * 1024),
+  }),
+]);
+export type SchemaCompareReadRequest = z.infer<typeof schemaCompareReadRequest>;
+const excludedCount = z.object({
+  category: schemaCompareExcludedCategory,
+  count,
+  complete: z.boolean(),
+});
+export const schemaCompareMetadataPage = z.object({
+  responseId: id,
+  identity: schemaCompareResultIdentity,
+  detail: z.object({
+    metadata: schemaCompareMetadata,
+    kind: z.enum([
+      "equal",
+      "changed",
+      "sourceOnly",
+      "targetOnly",
+      "notComparable",
+    ]),
+    objectCount: count,
+    sourceExcludedCounts: z.array(excludedCount).max(13),
+    targetExcludedCounts: z.array(excludedCount).max(13),
+  }),
+});
+export const schemaCompareEligibilityPage = z.object({
+  responseId: id,
+  identity: schemaCompareResultIdentity,
+  detail: z.object({
+    object: schemaCompareRelationIdentity,
+    side: z.enum(["source", "target"]),
+    eligibility: schemaCompareEligibility,
+  }),
+});
