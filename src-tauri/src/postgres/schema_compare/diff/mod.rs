@@ -144,7 +144,6 @@ impl Comparison {
 
     /// Returns the captured eligibility for one exact observed relation side.
     /// This native detail remains bound to the immutable result and its TTL.
-    #[allow(dead_code)] // Plan 021 Step 5 will expose this through the job owner.
     pub(crate) fn relation_eligibility(
         &self,
         identity: &ResultIdentity,
@@ -162,7 +161,11 @@ impl Comparison {
             .ok_or(CompareError::Unavailable)
     }
 
-    fn validate_read(&self, identity: &ResultIdentity, now: Instant) -> Result<(), CompareError> {
+    pub(crate) fn validate_read(
+        &self,
+        identity: &ResultIdentity,
+        now: Instant,
+    ) -> Result<(), CompareError> {
         if *identity != self.metadata.identity
             || now.saturating_duration_since(self.created) >= RESULT_TTL
         {

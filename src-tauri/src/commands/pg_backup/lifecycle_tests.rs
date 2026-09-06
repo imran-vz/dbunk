@@ -398,6 +398,7 @@ async fn exit_close_join_waits_for_job_termination_within_the_existing_budget() 
         state.result_mutations.clone(),
         pg_tool_jobs.clone(),
         state.pg_transfers.clone(),
+        state.pg_schema_compare.clone(),
     ));
 
     first.wait_for_cancellation().await;

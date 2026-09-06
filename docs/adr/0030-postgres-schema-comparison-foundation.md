@@ -1,8 +1,8 @@
 # ADR-0030: PostgreSQL schema comparison foundation
 
 **Status**: Accepted for the Plan 021 foundation (2026-09-06). Native catalog
-capture and structural diff are implemented; job commands are not yet integrated
-and no comparison UI is active.
+capture, structural diff and native job commands are implemented. No comparison
+UI is active; native runtime/IPC allocation validation remains Step 6.
 
 ## Problem
 
@@ -229,3 +229,95 @@ and expiry; field reads also validate the exact observed relation identity.
 Serializer leases retain the existing acknowledgement/handoff contract. Native
 job admission/teardown and dispatch remain Step 5, and native IPC/RSS validation
 remains Step 6.
+
+
+## Native job ownership (Step 5, 2026-09-06)
+
+The comparison manager owns at most two resolving/running jobs globally and one
+job involving each connection. Both endpoints and the original 60-second deadline
+are reserved atomically before credentials or transport resolution. Same-connection
+schemas share one native capture; independent connections are read sequentially
+within that original deadline. Status reports phases and observed inventory counts.
+The native start/list/status/cancel/release/read/acknowledge commands are registered;
+the typed client has no product-component integration.
+
+The client creates a request ID from a Unix-millisecond timestamp and random nonce.
+New admission accepts an ID less than one minute old (up to five seconds of future
+clock tolerance). Replaying a retained ID returns the same job, or `unavailable`
+after its result is released, invalidated or evicted. A changed endpoint payload
+with the same ID is invalid. The 64-entry request ledger retains IDs for ten minutes
+and refuses new admission when full. Connection-fence storage retains at most
+four bounded identifiers; oversized identifiers or further concurrent scopes
+fall back to a global admission fence without retaining the input. The timestamp
+prevents a retry from creating
+a second job after its ledger entry expires. The client never automatically retries
+an uncertain start and can reconcile its unchanged ID through list/start.
+
+Two terminal results are retained for at most ten minutes; expiry and release
+return `unavailable` rather than an empty comparison. Result reads bind job/result
+identity to both exact endpoints. Metadata and per-side eligibility use the same
+capped serializer as object/field pages and value chunks. Native dispatch moves
+pre-encoded JSON into Tauri's response without serializing the string again.
+Serializer leases remain in the manager until the receiving document acknowledges,
+its replacement document commits, or its native window is destroyed. A committed
+replacement retires the previous document's replies and issues a fresh token
+atomically. The registry is managed before Tauri creates configured windows, so
+the first commit is observed even before application setup completes. Read and
+acknowledgement commands validate that token with the trusted window label under
+the same lock as handoff. The client fetches the current token before each read
+and never retries a stale read automatically. At most four live window transports
+are retained. Result invalidation does not free an in-flight lease.
+A fulfilled client invoke acknowledges even a malformed response; uncertain
+transport rejections do not acknowledge. Runtime allocation measurements remain
+Step 6 and are not established by these ownership tests.
+
+This commit boundary relies on the locked Wry 0.55.1 desktop implementations of
+`PageLoadEvent::Started`: macOS forwards `didCommitNavigation`, Linux forwards
+WebKitGTK `LoadEvent::Committed`, and Windows forwards WebView2 `ContentLoading`.
+These indicate new main-document content, rather than a provisional navigation
+attempt. WebView2 explicitly excludes fragment and `history.pushState` navigation
+from `ContentLoading`. Failed or cancelled provisional loads leave the old token
+and replies intact. `PageLoadEvent::Finished` is ignored: Windows and Linux can
+report completion after errors without replacing the document, and a delayed or
+duplicate completion must not reclaim a current reply. Recheck these mappings
+when upgrading Wry. Platform references: [WebView2 navigation events](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/navigation-events),
+[WebView2 ContentLoading](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2?view=webview2-1.0.3800.47#add_contentloading),
+[WebKitGTK load events](https://webkitgtk.org/reference/webkit2gtk/2.42.4/enum.LoadEvent.html),
+and [WebKit committed navigation](https://developer.apple.com/documentation/webkit/webpage/navigationevent/committed).
+
+A supervisor owns the real worker join, independent of the start command lifetime.
+Blocking credential/SSH calls and CPU comparison run off the async runtime.
+Cancellation and result publication compete under the manager lock. A cancelled
+or generation-invalidated worker cannot publish success. Dedicated driver joins
+survive cancellation during post-connect setup. SSH setup checks cancellation
+between stages and around publication. Cancellable async bastion/credential
+storage reads and pool acquisition for post-join fingerprint writes also check
+cancellation and the original deadline while pending. Once a fingerprint UPDATE
+is dispatched, setup awaits it unconditionally: dropping its SQLx future would
+leave the SQLite worker able to overwrite a later trust reset after teardown.
+The actual spawned SSH setup worker likewise remains unconditionally joined.
+Comparison forwarding routes use unique
+job-owned keys and an OS-assigned local port, preserving stored connection settings
+and any ordinary route already occupying a configured fixed port. Rollback guards
+remove only their exact publications; pending setup leases also protect shared
+sessions. Owned accept, stream, bridge, keepalive and proxy workers are stopped and
+joined outside the tunnel-cache lock before the job releases admission. Proxy
+pipe reads and writes are cancellable even if a shell descendant retains a pipe:
+Unix uses nonblocking descriptors with bounded polling; Windows cancels the owned
+threads' synchronous I/O before joining. A
+five-second cleanup grace aborts tracked drivers and prevents late driver
+registrations from escaping cleanup, but cannot make an already-running OS
+blocking call stop. The job remains
+cancelling and retains admission and setup scratch until that worker actually joins.
+A further 32 MiB setup/transport scratch reservation survives these joins; capture
+and result storage retain their existing separate reservations.
+
+Connection edits/deletion/reconnect, credential/bastion/global invalidation and
+application exit include the manager in the canonical socket fence. Either endpoint
+invalidates the job's results before resource changes, and the fence waits for
+worker/driver completion. App exit waits for comparison joins rather than allowing
+the pre-existing three-second timeout for other managers to detach comparison work.
+Tauri 2.11.2 ignores `prevent_exit` for restart requests, so restart cleanup waits
+inside the original callback before returning to Tauri. A restart arriving during
+an ordinary exit waits for that same cleanup to finish. Repeated ordinary exits
+are prevented while cleanup is pending and allowed once it has finished.

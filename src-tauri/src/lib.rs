@@ -51,6 +51,7 @@ pub(crate) struct AppState {
     table_browse: table_browse::TableBrowseManager,
     pg_tool_jobs: postgres::backup::PgToolJobManager,
     pg_transfers: postgres::transfer::TransferManager,
+    pg_schema_compare: postgres::schema_compare::manager::CompareManager,
 }
 
 #[cfg(test)]
@@ -76,6 +77,7 @@ pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
         table_browse: table_browse::TableBrowseManager::new(),
         pg_tool_jobs: postgres::backup::PgToolJobManager::new(),
         pg_transfers: postgres::transfer::TransferManager::new(),
+        pg_schema_compare: postgres::schema_compare::manager::CompareManager::new(),
         pool,
         paths,
     };
@@ -235,14 +237,60 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
 const EXIT_SOCKET_CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
+#[derive(Default)]
+struct ExitCleanupState {
+    started: std::sync::atomic::AtomicBool,
+    finished: std::sync::Mutex<bool>,
+    completion: std::sync::Condvar,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ExitRequestAction {
+    BeginCleanup,
+    PreventExit,
+    WaitForCleanup,
+    AllowExit,
+}
+
+impl ExitCleanupState {
+    fn request(&self, restarting: bool) -> ExitRequestAction {
+        if !self.started.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return ExitRequestAction::BeginCleanup;
+        }
+        if *self.finished.lock().unwrap() {
+            return ExitRequestAction::AllowExit;
+        }
+        if restarting {
+            ExitRequestAction::WaitForCleanup
+        } else {
+            ExitRequestAction::PreventExit
+        }
+    }
+
+    fn finish(&self) {
+        *self.finished.lock().unwrap() = true;
+        self.completion.notify_all();
+    }
+
+    fn wait(&self) {
+        let mut finished = self.finished.lock().unwrap();
+        while !*finished {
+            finished = self.completion.wait(finished).unwrap();
+        }
+    }
+}
+
 async fn close_socket_managers_for_exit(
     query_sessions: query_session::QuerySessionManager,
     table_browse: table_browse::TableBrowseManager,
     result_mutations: result_mutation::ResultMutationManager,
     pg_tool_jobs: postgres::backup::PgToolJobManager,
     pg_transfers: postgres::transfer::TransferManager,
+    pg_schema_compare: postgres::schema_compare::manager::CompareManager,
 ) {
-    let _ = tokio::time::timeout(EXIT_SOCKET_CLOSE_TIMEOUT, async {
+    // Comparison teardown retains admission through real worker/driver joins.
+    let comparison_close = pg_schema_compare.close_all();
+    let existing_close = tokio::time::timeout(EXIT_SOCKET_CLOSE_TIMEOUT, async {
         tokio::join!(
             query_sessions.close_all(),
             table_browse.close_all(),
@@ -250,8 +298,8 @@ async fn close_socket_managers_for_exit(
             pg_tool_jobs.close_all(),
             pg_transfers.close_all()
         )
-    })
-    .await;
+    });
+    let _ = tokio::join!(comparison_close, existing_close);
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +314,8 @@ pub fn run() {
     postgres::tls::prepare_sqlx_environment();
     dispatch::ensure_sqlx_drivers();
     let app = tauri::Builder::default()
+        // Configured windows can commit their first document before setup runs.
+        .manage(postgres::schema_compare::manager::CompareManager::new())
         .plugin(build_log_plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -289,6 +339,11 @@ pub fn run() {
             pg_tool_jobs.start_monitor();
             let pg_transfers = postgres::transfer::TransferManager::new();
             pg_transfers.start_monitor();
+            let pg_schema_compare = app
+                .state::<postgres::schema_compare::manager::CompareManager>()
+                .inner()
+                .clone();
+            pg_schema_compare.start_monitor();
             app.manage(AppState {
                 pool,
                 paths,
@@ -297,8 +352,14 @@ pub fn run() {
                 table_browse,
                 pg_tool_jobs,
                 pg_transfers,
+                pg_schema_compare,
             });
             Ok(())
+        })
+        .on_page_load(|webview, payload| {
+            webview
+                .state::<postgres::schema_compare::manager::CompareManager>()
+                .transport_page_load(webview.label(), payload.event());
         })
         .on_window_event(|window, event| {
             let manager = window.state::<AppState>().query_sessions.clone();
@@ -311,6 +372,10 @@ pub fn run() {
                     });
                 }
                 tauri::WindowEvent::Destroyed => {
+                    window
+                        .state::<AppState>()
+                        .pg_schema_compare
+                        .transport_destroyed(&label);
                     tauri::async_runtime::spawn(async move {
                         manager.close_window(&label).await;
                     });
@@ -411,6 +476,14 @@ pub fn run() {
             commands::relational::execute_ddl,
             commands::relational::export_ddl,
             commands::pg_backup::start_pg_backup,
+            commands::pg_schema_compare::start_pg_schema_compare,
+            commands::pg_schema_compare::list_pg_schema_compares,
+            commands::pg_schema_compare::get_pg_schema_compare,
+            commands::pg_schema_compare::cancel_pg_schema_compare,
+            commands::pg_schema_compare::release_pg_schema_compare,
+            commands::pg_schema_compare::read_pg_schema_compare,
+            commands::pg_schema_compare::get_pg_schema_compare_transport,
+            commands::pg_schema_compare::acknowledge_pg_schema_compare,
             commands::pg_transfer::inspect_pg_transfer,
             commands::pg_transfer::release_pg_transfer_inspection,
             commands::pg_transfer::start_pg_csv_import,
@@ -507,32 +580,141 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
-    let exiting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let exit_cleanup = std::sync::Arc::new(ExitCleanupState::default());
     app.run(move |handle, event| {
         if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
-            if code == Some(tauri::RESTART_EXIT_CODE) {
-                return;
-            }
-            if !exiting.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                api.prevent_exit();
-                let handle = handle.clone();
-                let manager = handle.state::<AppState>().query_sessions.clone();
-                let table_browse = handle.state::<AppState>().table_browse.clone();
-                let result_mutations = handle.state::<AppState>().result_mutations.clone();
-                let pg_tool_jobs = handle.state::<AppState>().pg_tool_jobs.clone();
-                let pg_transfers = handle.state::<AppState>().pg_transfers.clone();
-                tauri::async_runtime::spawn(async move {
-                    close_socket_managers_for_exit(
+            let restarting = code == Some(tauri::RESTART_EXIT_CODE);
+            match exit_cleanup.request(restarting) {
+                ExitRequestAction::BeginCleanup => {
+                    let handle = handle.clone();
+                    let manager = handle.state::<AppState>().query_sessions.clone();
+                    let table_browse = handle.state::<AppState>().table_browse.clone();
+                    let result_mutations = handle.state::<AppState>().result_mutations.clone();
+                    let pg_tool_jobs = handle.state::<AppState>().pg_tool_jobs.clone();
+                    let pg_transfers = handle.state::<AppState>().pg_transfers.clone();
+                    let pg_schema_compare = handle.state::<AppState>().pg_schema_compare.clone();
+                    let close = close_socket_managers_for_exit(
                         manager,
                         table_browse,
                         result_mutations,
                         pg_tool_jobs,
                         pg_transfers,
-                    )
-                    .await;
-                    handle.exit(code.unwrap_or(0));
-                });
+                        pg_schema_compare,
+                    );
+                    if restarting {
+                        // Tauri deliberately ignores prevent_exit for restart. Keep
+                        // this callback open until cleanup finishes, then let the
+                        // original request preserve restart_on_exit semantics.
+                        tauri::async_runtime::block_on(close);
+                        exit_cleanup.finish();
+                    } else {
+                        api.prevent_exit();
+                        let exit_cleanup = exit_cleanup.clone();
+                        tauri::async_runtime::spawn(async move {
+                            close.await;
+                            exit_cleanup.finish();
+                            handle.exit(code.unwrap_or(0));
+                        });
+                    }
+                }
+                ExitRequestAction::PreventExit => api.prevent_exit(),
+                ExitRequestAction::WaitForCleanup => {
+                    // A restart can race an ordinary exit whose async cleanup still
+                    // owns native jobs. Tauri cannot prevent this request, so hold
+                    // it until that existing cleanup has completed.
+                    exit_cleanup.wait();
+                }
+                ExitRequestAction::AllowExit => {}
             }
         }
     });
+}
+
+#[cfg(test)]
+mod exit_lifecycle_tests {
+    use super::*;
+    use crate::postgres::schema_compare::{
+        manager::JobContext,
+        protocol::{Endpoint, StartRequest},
+    };
+
+    #[tokio::test]
+    async fn exit_cleanup_waits_for_active_comparison_termination() {
+        let (_directory, state) = test_app_state().await;
+        let manager = state.pg_schema_compare.clone();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (stopped, done) = tokio::sync::oneshot::channel();
+        let request = StartRequest {
+            request_id: format!("{}:exit", chrono::Utc::now().timestamp_millis()),
+            source: Endpoint {
+                connection_id: "source".into(),
+                schema: "public".into(),
+            },
+            target: Endpoint {
+                connection_id: "target".into(),
+                schema: "public".into(),
+            },
+        };
+        manager
+            .start(request, move |ctx: JobContext| async move {
+                struct Stopped(Option<tokio::sync::oneshot::Sender<()>>);
+                impl Drop for Stopped {
+                    fn drop(&mut self) {
+                        let _ = self.0.take().unwrap().send(());
+                    }
+                }
+                let _stopped = Stopped(Some(stopped));
+                started.send(()).unwrap();
+                match ctx.control.wait(std::future::pending::<()>()).await {
+                    Err(error) => Err(error),
+                    Ok(()) => unreachable!("pending comparison completed"),
+                }
+            })
+            .unwrap();
+        ready.await.unwrap();
+
+        close_socket_managers_for_exit(
+            state.query_sessions,
+            state.table_browse,
+            state.result_mutations,
+            state.pg_tool_jobs,
+            state.pg_transfers,
+            state.pg_schema_compare,
+        )
+        .await;
+
+        done.await
+            .expect("comparison worker terminated before exit cleanup returned");
+        assert!(manager.list().is_empty());
+    }
+
+    #[test]
+    fn repeated_restart_waits_for_cleanup_already_in_progress() {
+        let state = std::sync::Arc::new(ExitCleanupState::default());
+        assert_eq!(state.request(false), ExitRequestAction::BeginCleanup);
+        assert_eq!(state.request(true), ExitRequestAction::WaitForCleanup);
+        let (entered, ready) = std::sync::mpsc::channel();
+        let waiter = {
+            let state = state.clone();
+            std::thread::spawn(move || {
+                entered.send(()).unwrap();
+                state.wait();
+            })
+        };
+        ready.recv().unwrap();
+        assert!(!waiter.is_finished());
+        state.finish();
+        waiter.join().unwrap();
+    }
+
+    #[test]
+    fn repeated_ordinary_exit_is_prevented_until_cleanup_finishes() {
+        let state = ExitCleanupState::default();
+        assert_eq!(state.request(false), ExitRequestAction::BeginCleanup);
+        assert_eq!(state.request(false), ExitRequestAction::PreventExit);
+
+        state.finish();
+
+        assert_eq!(state.request(false), ExitRequestAction::AllowExit);
+    }
 }

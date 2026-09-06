@@ -4,7 +4,7 @@
 - Planned against: `7745946efcc9f975b88f6468690923f2ec30cae3`, 2026-09-05.
 - Depends on: Plans 013–017 (catalog and typed DDL), with Plan 020's completed
   lifecycle work as the current baseline.
-- Execution status: see [README.md](./README.md). Implementation started 2026-09-05; through Step 4, verified and reviewed. See the execution record below.
+- Execution status: see [README.md](./README.md). Implementation started 2026-09-05; through Step 5. The foundation through Step 4 is committed at `502674e`; Step 5 is verified and uncommitted. Step 6 is next. See the execution record below.
 - Visual brief: [next-parity-item.html](./next-parity-item.html).
 
 ## Outcome
@@ -602,3 +602,178 @@ Validation:
 Step 5 is next: native job ownership, admission, lifecycle and dispatch. UI,
 production/shared databases and daily-driver channels remain untouched. No commit,
 push or PR is authorized by this step; the changes remain uncommitted.
+
+### Thermo-nuclear review follow-up (2026-09-06)
+
+The foundation through Step 4 and the review fix are now committed at `502674e`.
+The audit found one P2 correctness issue: inherited `quote_all_identifiers`
+settings could make identical CHECK/index expressions appear changed and make
+supported defaults incomparable. Capture now sets it to `off` locally within
+the comparison transaction. Required identifier quotes and literal contents are
+preserved. The ADR and native fixture documentation describe this behavior.
+
+Validation after the fix:
+
+- The new native quoting test failed before the fix and passed afterward. It
+  captures with opposite connection settings and verifies an equal structural
+  result, including supported defaults and CHECK/index expressions.
+- `pnpm format`, `pnpm lint`, `pnpm typecheck`, `just fmt`, `just lint` and
+  `just test`: passed. Rust used `/tmp/dbunk-plan021-target`; 574 tests passed
+  and 53 opt-in tests were ignored by the default suite.
+- `python3 infrastructure/test-db/schema-compare/native.py`: both native tests
+  passed on PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2), aarch64. The disposable
+  container was removed.
+- The full frontend suite passed during the audit: 124 files, 1,446 tests.
+  It was not repeated for the subsequent Rust-only fix.
+
+Plan 021 remains in progress through Step 4. Step 5 is next: native job
+ownership, admission, lifecycle and dispatch. Runtime/IPC allocation validation
+remains Step 6; comparison UI activation is a separate slice.
+
+
+### Native job ownership and lifecycle, Step 5 (2026-09-06)
+
+Implemented comparison admission, native execution, phase/count status, cancellation,
+result release and endpoint-bound metadata/object/field/value/eligibility reads.
+The native dispatch and typed client are connected without activating product UI.
+Both endpoint reservations and a single deadline precede credential/tunnel setup;
+same-connection schemas share capture and independent connections use sequential
+readers. Canonical connection/global fences and app exit invalidate results and
+wait for real worker and dedicated-driver joins.
+
+Caller IDs contain a timestamp and random nonce. New IDs are accepted for one
+minute; 64 request records retain reconciliation for ten minutes and return busy
+when full. Released or evicted jobs cannot be recreated by a retained ID, and
+expired IDs cannot become new work. Two terminal results retain the existing
+10-minute TTL. Page serializers remain owned through native IPC handoff until
+document acknowledgement, committed replacement document, or
+window destruction, including after release.
+
+Blocking OS setup cannot be forcibly stopped by Tokio. Grace expiry requests abort
+and keeps the job cancelling with its reservations until its actual join completes.
+Dedicated-driver joins remain tracked when a connect future is cancelled during
+session setup; grace expiry aborts existing and late-registered drivers.
+Comparison-owned ephemeral SSH routes use an OS-assigned local port. Publication
+guards preserve shared and pending setup leases while rolling back new resources,
+and owned tunnel workers are joined before admission is released. The tested setup/transport scratch reservation is 32 MiB per active
+job in addition to existing capture/result accounting; the global ceiling remains
+256 MiB. Full native runtime allocation evidence remains Step 6.
+
+Validation before independent review:
+
+- `pnpm format`, `pnpm lint`, `pnpm typecheck`: passed.
+- Full frontend suite: 125 files, 1,451 tests passed.
+- `just fmt`, `just lint`, `just test`: passed using
+  `/tmp/dbunk-plan021-target`; Rust: 583 passed, 54 opt-in tests ignored.
+- `python3 infrastructure/test-db/schema-compare/native.py`: all three native
+  tests passed on PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2), aarch64. This
+  explicitly ran the new opt-in manager test, exercising native start/capture/diff,
+  metadata/field reads and result invalidation after a real connection edit.
+  The owned `dbunk-schema-compare-native-15a0c11632f2` container was removed.
+- Focused tests cover admission collisions and deduplication, cancellation versus
+  late success, either-endpoint/global fences, deadline and cleanup-grace expiry,
+  retained capacity until join, worker panic, history/TTL limits, page ownership,
+  endpoint binding and tracked-driver cleanup.
+
+Independent review found a Tauri monitor-startup regression, an SSH setup
+cancellation ownership gap, missing driver abort at cleanup-grace expiry, a
+restart-exit cleanup bypass and unbounded connection-fence records. Two fresh fix
+agents resolved all five findings. New tests cover monitor startup outside Tokio,
+late driver registration after abort, repeated exit/restart cleanup, SSH publication
+rollback and concurrent setup leases, plus the four-record fence limit and the
+64 KiB control-memory bound. Forward workers also reap completed stream handles
+and check cancellation while opening direct channels.
+
+Post-fix verification passed again: all frontend format/lint/type checks and the
+full 125-file, 1,451-test suite; `just fmt`, `just lint`, and `just test` with
+591 Rust tests passed and 54 default opt-in tests ignored. All three native
+PG16.15 tests passed explicitly again; the owned
+`dbunk-schema-compare-native-8373ab4780fe` container was removed. A fresh final
+review found two further issues: duplicate SSH-session cleanup held the global
+tunnel lock, and repeated ordinary exit requests could bypass pending cleanup.
+A fresh fix agent moved duplicate cleanup outside the lock and added a pending/
+finished exit decision used by the actual event callback. Deterministic regression
+tests cover both. All required checks passed again: 593 Rust tests, 1,451 frontend
+tests, and all three disposable PG16.15 native tests. The final owned fixture,
+`dbunk-schema-compare-native-2dc40f7c9759`, was removed. The corrected tree is
+reviewed by a fresh final reviewer, who found no actionable findings. Step 5 is
+complete; Step 6 is next.
+Step 6 remains native failure/load/IPC validation;
+comparison UI activation remains a separate slice. No commit, push, PR, production
+or daily-driver channel was touched.
+
+### Thermo-nuclear review fixes, Step 5 (2026-09-06)
+
+The requested GPT-6 audit found two issues: ProxyCommand shutdown could block on
+a descendant retaining a pipe, and a document reload could abandon both global
+response serializer slots. Proxy pipe pumps now use cancellable reads and writes,
+including backpressure, before joining all owned workers. Unix uses nonblocking
+descriptors and bounded polling; Windows uses synchronous-I/O cancellation on
+owned thread handles. Fallible proxy setup also retains ownership of the child.
+
+Native response ownership now includes a bounded document token registry. A
+committed replacement document retires old replies and creates a new token.
+The locked Wry desktop implementations expose this through page-load `Started`
+(macOS `didCommitNavigation`, Linux `Committed`, Windows `ContentLoading`).
+Failed or cancelled provisional navigation preserves the live document's token
+and replies; `Finished` is ignored, including unmatched or duplicate completions.
+The registry is managed before configured windows are created, so their first
+commit cannot be missed while application setup is pending.
+Every read obtains the current token,
+and native reads/acknowledgements reject stale tokens under the handoff lock.
+Window destruction removes the transport. No product UI was activated.
+
+Verification passed: `pnpm format`, `pnpm lint`, `pnpm typecheck`, all 1,452 frontend
+tests, and isolated `just fmt`, `just lint`, `just test` with 597 Rust tests passed
+and 54 default opt-in tests ignored. All three native PG16.15 fixtures passed
+explicitly; `dbunk-schema-compare-native-d5e30ccfeea0` was removed. Focused tests
+cover descendant-held stdout, backpressured stdin, reload reclamation, stale
+read/acknowledgement rejection, bounded transports, and current-token client reads.
+An unrelated DDL-dialog timing assertion failed on the first full frontend run;
+its isolated rerun and the subsequent full suite passed without changes to it.
+Windows-specific compilation/execution remains unverified on this macOS host.
+The isolated build initially ran out of disk space; removing only its disposable
+incremental cache allowed verification to complete. Changes remain uncommitted.
+
+Fresh follow-up review corrected the document lifecycle boundary: completion is
+not evidence of replacement after a cancelled or failed navigation. The shared
+native page-load handler now retires replies only on the verified desktop commit
+callbacks described above. Its focused test preserves both live leases and a
+legitimate acknowledgement through unmatched/duplicate completion, reclaims both
+leases on replacement commit, and rejects late old-document reads and
+acknowledgements. Delayed completion cannot retire a new-document lease or recreate
+a destroyed transport. The manager is registered before initial window creation.
+Follow-up `just fmt`, `git diff --check`, and the isolated manager suite passed
+(13 passed, one owned PostgreSQL fixture ignored). Final `just fmt`, `just lint`,
+and `just test` passed again with 597 Rust tests and 54 default opt-in tests
+ignored. All three native PG16.15 tests passed again, and the owned
+`dbunk-schema-compare-native-185d3027c94d` container was removed. The frontend
+remained unchanged after its passing format/lint/typecheck and 1,452-test run.
+
+A subsequent fresh review found an avoidable cancellation wait in nested SSH
+resolution: an exhausted local SQLite pool could hold bastion loading or post-join
+fingerprint persistence until its acquisition timeout. Bastion reads and pool
+acquisition now observe the same cancellation/deadline check while pending.
+Focused review demonstrated that dropping a dispatched fingerprint UPDATE can
+leave SQLx's SQLite worker running after setup returns and overwrite a subsequent
+host-key reset. The write is therefore awaited unconditionally after acquisition,
+with cancellation checked again before session publication. The spawned SSH
+worker is also still joined unconditionally.
+
+The focused tunnel suite now covers cancellation and deadline expiry with all five
+local pool connections held, cancellation before fingerprint connection
+acquisition, and a dispatched UPDATE blocked by a real temporary SQLite write
+transaction. The latter keeps setup pending through cancellation until the write
+finishes, rejects session publication, then verifies a subsequent host-key reset
+persists after both SQLite workers drain. It fails against the previous
+cancellable-UPDATE implementation at the expected ownership assertion and passes
+with the fix. All eight focused tunnel tests pass.
+
+Final verification after the write-ownership correction passed: `just fmt`,
+`just lint`, and `just test` with 601 Rust tests passed and 54 default opt-in
+tests ignored. All three native PG16.15 tests passed explicitly, and
+`dbunk-schema-compare-native-0f74a33263cb` was removed. The unchanged frontend
+retains its passing format/lint/typecheck and 1,452-test results.
+The fresh final GPT-6 review found no actionable findings in the corrected
+ownership paths and their callers. Both original review findings and all
+follow-up findings are resolved. Step 6 remains next; changes are uncommitted.

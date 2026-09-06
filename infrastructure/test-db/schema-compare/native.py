@@ -37,7 +37,7 @@ def main():
         env = dict(os.environ, DBUNK_SCHEMA_COMPARE_TEST_PORT=port,
                    CARGO_TARGET_DIR='/tmp/dbunk-plan021-target')
         subprocess.run(['cargo', 'test', '--manifest-path', str(ROOT / 'src-tauri/Cargo.toml'),
-                        'schema_compare::capture::tests::native_capture', '--', '--ignored', '--nocapture'],
+                        'schema_compare::', '--', '--ignored', '--nocapture'],
                        cwd=ROOT, env=env, check=True, timeout=900)
     finally:
         if created:

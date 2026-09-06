@@ -233,6 +233,7 @@ pub enum CompareError {
     Busy,
     LimitExceeded { limit: Limit },
     UnsupportedVersion { side: Side, version: String },
+    UnsupportedEngine { side: Side },
     Unavailable,
     InvalidRequest,
     CaptureChanged,
@@ -381,4 +382,72 @@ mod tests {
         assert_eq!(failed["failure"]["kind"], "captureChanged");
         assert!(failed.get("resultId").is_none());
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StartRequest {
+    pub request_id: String,
+    pub source: Endpoint,
+    pub target: Endpoint,
+}
+impl StartRequest {
+    /// Timestamped caller IDs make an evicted/expired start fail closed. A
+    /// retry may reconcile retained history, but cannot create work again after
+    /// the ten-minute request ledger has forgotten it.
+    pub(crate) fn fresh(&self) -> bool {
+        let Some((millis, nonce)) = self.request_id.split_once(':') else {
+            return false;
+        };
+        let Ok(millis) = millis.parse::<i64>() else {
+            return false;
+        };
+        let age = chrono::Utc::now().timestamp_millis().saturating_sub(millis);
+        !nonce.is_empty() && (-5_000..60_000).contains(&age)
+    }
+    pub(crate) fn validate(&self) -> Result<(), CompareError> {
+        if self.request_id.is_empty()
+            || self.request_id.len() > 128
+            || [&self.source, &self.target].iter().any(|e| {
+                e.connection_id.is_empty()
+                    || e.connection_id.len() > 128
+                    || e.schema.is_empty()
+                    || e.schema.len() > 63
+                    || e.schema.contains('\0')
+            })
+        {
+            return Err(CompareError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
+
+/// Every result read binds the immutable result to both exact schema endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResultRequest {
+    pub identity: ResultIdentity,
+    pub source: Endpoint,
+    pub target: Endpoint,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ReadRequest {
+    Metadata,
+    Objects {
+        offset: u32,
+    },
+    Fields {
+        object: RelationIdentity,
+        offset: u32,
+    },
+    Eligibility {
+        object: RelationIdentity,
+        side: Side,
+    },
+    Value {
+        value: super::values::ValueRef,
+        offset: u32,
+    },
 }

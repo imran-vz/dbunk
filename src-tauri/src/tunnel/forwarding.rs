@@ -17,11 +17,15 @@ const MAX_BUFFERED_BYTES: usize = 256 * 1024;
 
 pub(super) struct BridgeHandle {
     stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 impl BridgeHandle {
-    pub(super) fn shutdown(&self) {
+    pub(super) fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -37,24 +41,36 @@ pub(super) fn spawn_forward_accept_loop(
     session: Session,
     remote_host: String,
     remote_port: u16,
-) {
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
+        let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
         while !stop.load(Ordering::SeqCst) {
+            let mut index = 0;
+            while index < workers.len() {
+                if workers[index].is_finished() {
+                    let worker = workers.swap_remove(index);
+                    let _ = worker.join();
+                } else {
+                    index += 1;
+                }
+            }
             match listener.accept() {
                 Ok((stream, local_addr)) => {
                     let session = session.clone();
                     let remote_host = remote_host.clone();
-                    thread::spawn(move || {
+                    let stream_stop = stop.clone();
+                    workers.push(thread::spawn(move || {
                         if let Err(error) = handle_forward_stream(
                             stream,
                             session,
                             &remote_host,
                             remote_port,
                             local_addr,
+                            &stream_stop,
                         ) {
                             log::warn!("SSH forward stream closed with error: {error}");
                         }
-                    });
+                    }));
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(PUMP_IDLE_SLEEP);
@@ -65,20 +81,31 @@ pub(super) fn spawn_forward_accept_loop(
                 }
             }
         }
-    });
+        for worker in workers {
+            let _ = worker.join();
+        }
+    })
 }
 
 pub(super) fn spawn_channel_bridge(
     session: Session,
     remote_host: String,
     remote_port: u16,
+    check: &(dyn Fn() -> Result<(), String> + Send + Sync),
 ) -> Result<(TcpStream, BridgeHandle), String> {
     let (client, bridge) = connected_tcp_pair()?;
     let local_addr = bridge.local_addr().map_err(|error| error.to_string())?;
-    let mut channel = open_direct_channel(&session, &remote_host, remote_port, local_addr)?;
+    let mut channel = open_direct_channel(
+        &session,
+        &remote_host,
+        remote_port,
+        local_addr,
+        None,
+        Some(check),
+    )?;
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = stop.clone();
-    thread::spawn(move || {
+    let worker = thread::spawn(move || {
         let mut bridge = bridge;
         if let Err(error) = bridge.set_nonblocking(true) {
             log::warn!("SSH jump bridge failed to switch to nonblocking mode: {error}");
@@ -88,7 +115,13 @@ pub(super) fn spawn_channel_bridge(
             log::warn!("SSH jump bridge closed with error: {error}");
         }
     });
-    Ok((client, BridgeHandle { stop }))
+    Ok((
+        client,
+        BridgeHandle {
+            stop,
+            worker: Some(worker),
+        },
+    ))
 }
 
 pub(super) fn connected_tcp_pair() -> Result<(TcpStream, TcpStream), String> {
@@ -111,12 +144,20 @@ fn handle_forward_stream(
     remote_host: &str,
     remote_port: u16,
     local_addr: SocketAddr,
+    stop: &AtomicBool,
 ) -> Result<(), String> {
     stream
         .set_nonblocking(true)
         .map_err(|error| error.to_string())?;
-    let mut channel = open_direct_channel(&session, remote_host, remote_port, local_addr)?;
-    pump_nonblocking(&mut stream, &mut channel, None)
+    let mut channel = open_direct_channel(
+        &session,
+        remote_host,
+        remote_port,
+        local_addr,
+        Some(stop),
+        None,
+    )?;
+    pump_nonblocking(&mut stream, &mut channel, Some(stop))
 }
 
 fn open_direct_channel(
@@ -124,9 +165,17 @@ fn open_direct_channel(
     remote_host: &str,
     remote_port: u16,
     local_addr: SocketAddr,
+    stop: Option<&AtomicBool>,
+    check: Option<&(dyn Fn() -> Result<(), String> + Send + Sync)>,
 ) -> Result<ssh2::Channel, String> {
     let started = Instant::now();
     loop {
+        if stop.is_some_and(|stop| stop.load(Ordering::SeqCst)) {
+            return Err("SSH direct-tcpip channel setup stopped".to_string());
+        }
+        if let Some(check) = check {
+            check()?;
+        }
         match session.channel_direct_tcpip(
             remote_host,
             remote_port,
