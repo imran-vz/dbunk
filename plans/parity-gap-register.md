@@ -579,6 +579,13 @@ consolidation and has not yet been replaced.
   deleted by the workspace consolidation (`8411dbf`); there is no active
   schema/data comparison surface in the current tree.
 
+**Foundation in progress (2026-09-06), through Step 4:** [Plan 021](./021-bounded-postgres-schema-comparison.md)
+implements a typed foundation, bounded native capture and deterministic structural
+diff for ordinary PostgreSQL table definitions across two explicit schema endpoints.
+Job integration remains subsequent work. No comparison functionality
+has shipped. UI activation, wider object coverage, migration SQL and row-data
+comparison remain follow-ups. See the [visual brief](./next-parity-item.html).
+
 **Missing pieces:**
 
 - Cross-connection source and destination selection.
@@ -639,10 +646,12 @@ round-trip SQL parser.
   XLSX exports.
 - `src/components/table-editor/data-import-wizard.tsx:35-158` supports CSV and
   multi-sheet XLSX import.
-- `src/components/table-editor-panel.tsx:768-805` accumulates whole-table export
-  pages in frontend memory.
-- `src-tauri/src/postgres/mutations.rs:287-323` rebuilds a complete CSV payload
-  before PostgreSQL COPY.
+- `src/components/table-editor-panel.tsx` routes eligible PostgreSQL CSV to
+  the native Transfer workspace; `loadWholeTableForExport` retains buffering
+  for other whole-table formats.
+- `src-tauri/src/postgres/transfer/` streams PostgreSQL CSV with bounded jobs;
+  `src-tauri/src/postgres/mutations.rs` retains buffered COPY for legacy imports
+  and table-to-table copy.
 - `src-tauri/src/postgres/ddl.rs:53-221` generates relation-oriented DDL rather
   than a complete database definition.
 
@@ -653,16 +662,20 @@ The legacy PostgreSQL base64 contract is removed. Plan 019 is DONE at `ab33968`,
 table-context UI, native dialogs, safety review, and session job history are
 activated; this does not establish full transfer parity.
 Owner/privilege options and client/server negotiation remain follow-ups.
-Plan 020 is in implementation with design A selected for bounded PostgreSQL CSV
-import/export. Native streaming, indexed mapping, dialect/NULL settings,
-progress, cancellation, safe publication and the table Transfer sub-tab are
-implemented. Automated and explicit live checks pass, including a 32/512 MiB
-native memory plateau. Fresh review passed. Native file dialogs and native
-renderer memory validation remain; this is not a full transfer-parity claim.
+
+**Plan 020: DONE at `7745946` (2026-09-05), confirmed by Imran.**
+Bounded PostgreSQL CSV import/export is active in the table Transfer sub-tab
+(selected mock A): native streaming, indexed mapping, dialect/NULL settings,
+progress, cancellation and safe publication. The committed execution record
+contains passing automated/live checks, a 32/512 MiB native memory plateau and
+fresh review, alongside the native validation limitations known at commit time.
+Completion follows operator confirmation; this update does not claim to rerun
+those checks or establish full transfer parity.
 
 **Missing pieces:**
 
-- Native manual validation for Plan 020, and streaming beyond PostgreSQL CSV.
+- Streaming beyond PostgreSQL CSV, including remaining buffered whole-table
+  formats and table-to-table copy.
 - Alternative encodings, richer locale/date/time controls and format coverage.
 - Error-row or reject-file output.
 - Transform expressions and richer typed mapping.
@@ -907,10 +920,13 @@ Parity work should reuse rather than replace these credible foundations:
 7. `PAR-007`: catalog, viewers, schema-level lifecycle, and the structure
    editor delivered by Plans 013–015; the table designer, routine, trigger,
    row-level security, and privilege backend by Plan 016 through `6b573f1`.
-   Plan 017 activation completed its native manual pass and is review-ready.
-8. `PAR-008` through `PAR-011`: compare, diagrams/query design, transfer, and
-   administration.
-9. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
+   Plan 017 activation is DONE at `25d36f1`.
+8. `PAR-010`: file-backed backup/restore and bounded PostgreSQL CSV delivered
+   by Plans 018–020 through `7745946`; wider transfer scope stays tracked.
+9. `PAR-008`: Plan 021 has a typed foundation, bounded native capture and structural
+   diff; job integration remains. UI activation and migration/data comparison remain separate follow-ups.
+10. `PAR-009` and `PAR-011`: diagrams/query design and administration.
+11. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
    parity only after the daily-driver foundation is stable.
 
 ## Official competitor references

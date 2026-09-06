@@ -92,17 +92,17 @@ Have: per-table or selection export through the data grid.
 - ✅ Table-to-table copy (`copy_table_rows` over `import_rows`)
 - ✅ Save export config as re-runnable task (`export-tasks.ts`)
 - ✅ File-backed PostgreSQL backup/restore: typed cancellable jobs, safe archive publication, restore policy, teardown fencing, global and table-context UI, native file selection, restore review and session job history (Plans 018–019, completed at `ab33968`).
-- 🟡 Bounded PostgreSQL CSV import/export: Plan 020 implements the table Transfer sub-tab (A), native streaming, progress, cancellation, CSV settings, mapping and safe file publication. Automated/live checks and fresh review pass; native manual gates remain.
+- ✅ Bounded PostgreSQL CSV import/export: Plan 020 completed at `7745946`, confirmed by Imran on 2026-09-05. Table Transfer sub-tab (A), native streaming, progress, cancellation, CSV settings, mapping and safe file publication. UTF-8 CSV only; this does not establish full transfer parity.
 - 🟡 Compression / split / encoding — gzip + encoding picker + NULL token shipped; split-file not yet
 
 ### 7. Data import
 Have: CSV / XLSX import wizard with column mapping.
 
 - ✅ CSV → existing table with column-mapping wizard
-- ✅ XLSX → table (uses the `xlsx` package)
+- ✅ XLSX → table (native parser with sheet selection; buffered import)
 - ❌ XML → table
-- 🟡 Multi-sheet imports, header detection and date-format configuration — XLSX picks the first sheet today; richer multi-sheet + date-format options pending. Plan 020 adds explicit CSV header/dialect/NULL settings with ISO dates and UTC.
-- 🟡 Plan 020 routes PostgreSQL CSV through bounded file-backed COPY jobs. XLSX and other engines retain their buffered paths; final native manual validation remains.
+- 🟡 Header detection and date-format configuration: XLSX supports sheet selection. Plan 020 adds explicit CSV header/dialect/NULL settings with ISO dates and UTC; richer date/locale controls remain pending.
+- ✅ PostgreSQL CSV uses bounded file-backed COPY jobs (Plan 020, `7745946`). XLSX and other engines retain their buffered paths.
 
 ### 8. Other Postgres-shaped tooling
 - ✅ Create table designer — live typed preview and reviewed apply
@@ -115,8 +115,8 @@ Have: CSV / XLSX import wizard with column mapping.
 - ✅ Postgres `array` cell editor — list editor in the data grid; writes a PG array literal back into pending edits
 - ✅ `json` / `jsonb` tree editor — modal editor with `JSON.parse` validation + Pretty print; writes into pending edits
 - ✅ PostGIS / geometry visualization — WKT modal editor with sanity validation; writes into pending edits
-- ✅ Schema compare (two schemas → diff)
-- ✅ Data compare (two tables → diff, sampled)
+- ❌ Schema compare: the former prototype was removed during workspace consolidation. [Plan 021](plans/021-bounded-postgres-schema-comparison.md) has bounded native capture and deterministic structural diff; jobs and UI remain unintegrated. Migration SQL follows separately.
+- ❌ Data compare: the former sampled prototype was removed; bounded comparison remains PAR-008 follow-up.
 - ✅ Mock data generator (column-aware INSERTs from real `tableStructure`)
 
 ---

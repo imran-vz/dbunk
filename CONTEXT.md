@@ -631,4 +631,19 @@ column indices and appends in one transaction; export publishes a complete new
 file without replacement. The table Transfer sub-tab owns setup, while the
 native manager and app observer retain running jobs after the tab closes.
 Lost COMMIT acknowledgement is an unknown outcome requiring target inspection.
-Plan 020 is in progress; see ADR-0029.
+Plan 020 is complete at `7745946`; see ADR-0029.
+
+
+## PostgreSQL Schema Comparison
+
+A **PostgreSQL Schema Comparison** compares the supported ordinary-table
+projection between two explicit Connection/schema endpoints on PostgreSQL 16.
+It distinguishes directional absence, known changes, equality within scope and
+not-comparable fields. Structured references to the selected schemas share a
+logical namespace; raw expressions are never rewritten. Types, collations and
+other excluded definitions remain outside coverage even when referenced.
+
+Plan 021 currently provides the capture proof and typed native/client foundation,
+including bounded value chunks, native catalog capture and deterministic structural
+diff results. Backend-owned jobs and
+product activation are not yet integrated. See ADR-0030.

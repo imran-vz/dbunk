@@ -7,6 +7,7 @@ mod docker;
 mod keychain;
 mod managed;
 mod postgres;
+pub use postgres::schema_compare;
 mod query_session;
 mod redis;
 mod result_mutation;

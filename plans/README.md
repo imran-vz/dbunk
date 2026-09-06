@@ -31,7 +31,8 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 017                                                   | Table designer, routine editor, and table security activation                  |       P1 |      L | 016        | DONE: 25d36f1 (selected mock: A)               |
 | 018 | File-backed PostgreSQL backup and restore foundation (dark)                    |       P1 |      L | 017        | DONE: de3272b                     |
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
-| [020](./020-bounded-postgres-csv-transfer.md) | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | IN PROGRESS: through Step 6 (A; reviewed, native manual gates pending) |
+| 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
+| [021](./021-bounded-postgres-schema-comparison.md) | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | IN PROGRESS: through Step 4 |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -40,11 +41,27 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently active: Plan 020 implementation.**
-Plan 019 is DONE at `ab33968`, confirmed by Imran on 2026-09-05.
-Plan 020 moves PostgreSQL CSV import and whole-table CSV export into bounded,
-file-backed native jobs. A selected: table Transfer sub-tab.
-[Review Plan 020 options](https://dbunk-plan-020-review.imran-vz.chatgpt.site) · [Local source](./mocks/csv-transfer/index.html).
+**Currently active: Plan 021 implementation, through Step 4; Step 5 is next.**
+Plan 020 is DONE at `7745946`, confirmed by Imran on 2026-09-05.
+Completion is recorded from operator confirmation; the historical execution
+record at that SHA retains the automated/live results and the native validation
+limitations known at commit time. This status update does not claim new tests.
+The completed plan body is retired per the register convention.
+
+Plan 021 starts PAR-008 with a bounded, read-only PostgreSQL schema comparison
+backend for ordinary table definitions on PostgreSQL 16 endpoints. The GPT-6
+critique is incorporated; capture/deparser feasibility is the first implementation
+gate, followed by normalization/byte contracts and the native job manager.
+Implementation was authorized on 2026-09-05. The disposable PG16.15 harness
+reproduced mixed deparser reads and a hidden dependency in a built-in array
+constant. The conservative scalar recognizer and discovery/lock fixtures now
+resolve that gate for a limited projection. Typed contracts, normalization,
+value paging, allocation/response ownership primitives and bounded native catalog
+capture and deterministic structural diff are implemented.
+[Gate evidence and field matrix](../infrastructure/test-db/schema-compare/README.md).
+Manager integration and runtime validation remain Steps 5–6. UI activation, migration SQL and data
+comparison remain subsequent slices.
+[Visual planning brief](./next-parity-item.html) · [Implementation draft](./021-bounded-postgres-schema-comparison.md).
 
 ## Planning rules
 

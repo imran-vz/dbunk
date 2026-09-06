@@ -1,500 +1,91 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>dbunk next parity item</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #000;
-        --fg: #fff;
-        --muted: #9a9a9a;
-        --line: #292929;
-        --accent: #61f4b0;
-        --warn: #ffd166;
-        --danger: #ff7b7b;
-        --mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
-        --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font-family: var(--sans);
-        font-size: 14px;
-        line-height: 1.5;
-      }
-
-      main {
-        width: min(1180px, calc(100% - 40px));
-        margin: 0 auto;
-        padding: 52px 0 80px;
-      }
-
-      header {
-        display: grid;
-        grid-template-columns: minmax(0, 1.4fr) minmax(250px, 0.6fr);
-        gap: 40px;
-        align-items: end;
-        padding-bottom: 26px;
-        border-bottom: 1px solid var(--line);
-      }
-
-      h1,
-      h2,
-      h3,
-      p {
-        margin-top: 0;
-      }
-
-      h1 {
-        max-width: 820px;
-        margin-bottom: 14px;
-        font-size: clamp(2.1rem, 5vw, 4.5rem);
-        line-height: 0.98;
-        letter-spacing: -0.055em;
-      }
-
-      h2 {
-        margin-bottom: 18px;
-        font-size: 1rem;
-        letter-spacing: 0.01em;
-      }
-
-      h3 {
-        margin-bottom: 4px;
-        font-size: 0.96rem;
-      }
-
-      .lede {
-        max-width: 700px;
-        margin-bottom: 0;
-        color: #d8d8d8;
-        font-size: 1rem;
-      }
-
-      .meta {
-        display: grid;
-        gap: 8px;
-        color: var(--muted);
-        font-family: var(--mono);
-        font-size: 0.76rem;
-      }
-
-      .meta strong {
-        color: var(--fg);
-        font-weight: 500;
-      }
-
-      section {
-        padding: 30px 0;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .decision {
-        display: grid;
-        grid-template-columns: 150px minmax(0, 1fr);
-        gap: 28px;
-      }
-
-      .label {
-        color: var(--accent);
-        font-family: var(--mono);
-        font-size: 0.73rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .decision-copy strong {
-        display: block;
-        margin-bottom: 8px;
-        font-size: clamp(1.35rem, 3vw, 2.2rem);
-        line-height: 1.15;
-        letter-spacing: -0.025em;
-      }
-
-      .decision-copy p {
-        max-width: 820px;
-        margin-bottom: 0;
-        color: #c7c7c7;
-      }
-
-      .table-wrap {
-        overflow-x: auto;
-      }
-
-      table {
-        width: 100%;
-        min-width: 880px;
-        border-collapse: collapse;
-      }
-
-      th,
-      td {
-        padding: 12px 14px 12px 0;
-        border-bottom: 1px solid var(--line);
-        text-align: left;
-        vertical-align: top;
-      }
-
-      th {
-        color: var(--muted);
-        font-family: var(--mono);
-        font-size: 0.7rem;
-        font-weight: 500;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-      }
-
-      td:first-child {
-        color: var(--muted);
-        font-family: var(--mono);
-      }
-
-      tr.recommended td {
-        color: var(--fg);
-        background: linear-gradient(90deg, rgba(97, 244, 176, 0.09), transparent 76%);
-      }
-
-      tr.recommended td:first-child,
-      tr.recommended .signal {
-        color: var(--accent);
-      }
-
-      .signal {
-        color: var(--warn);
-        font-family: var(--mono);
-        font-size: 0.75rem;
-      }
-
-      .muted {
-        color: var(--muted);
-      }
-
-      .sequence {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 0;
-        border-top: 1px solid var(--line);
-      }
-
-      .step {
-        min-width: 0;
-        padding: 20px 24px 4px 0;
-      }
-
-      .step + .step {
-        padding-left: 24px;
-        border-left: 1px solid var(--line);
-      }
-
-      .step-number {
-        display: block;
-        margin-bottom: 14px;
-        color: var(--accent);
-        font-family: var(--mono);
-        font-size: 0.75rem;
-      }
-
-      .step p,
-      .step ul {
-        color: #bcbcbc;
-      }
-
-      ul {
-        margin: 10px 0 0;
-        padding-left: 18px;
-      }
-
-      li + li {
-        margin-top: 5px;
-      }
-
-      code {
-        color: #d7ffeb;
-        font-family: var(--mono);
-        font-size: 0.88em;
-      }
-
-      .boundary {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 36px;
-      }
-
-      .boundary h3 {
-        font-family: var(--mono);
-        font-size: 0.8rem;
-        text-transform: uppercase;
-      }
-
-      .in h3 {
-        color: var(--accent);
-      }
-
-      .out h3 {
-        color: var(--danger);
-      }
-
-      .evidence {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px 36px;
-      }
-
-      .evidence div {
-        padding-top: 12px;
-        border-top: 1px solid var(--line);
-      }
-
-      .evidence p {
-        margin-bottom: 0;
-        color: var(--muted);
-      }
-
-      footer {
-        display: flex;
-        justify-content: space-between;
-        gap: 24px;
-        padding-top: 30px;
-        color: var(--muted);
-        font-family: var(--mono);
-        font-size: 0.75rem;
-      }
-
-      @media (max-width: 760px) {
-        main {
-          width: min(100% - 28px, 1180px);
-          padding-top: 30px;
-        }
-
-        header,
-        .decision,
-        .boundary,
-        .evidence {
-          grid-template-columns: 1fr;
-        }
-
-        .sequence {
-          grid-template-columns: 1fr;
-        }
-
-        .step + .step {
-          padding-left: 0;
-          border-top: 1px solid var(--line);
-          border-left: 0;
-        }
-
-        footer {
-          flex-direction: column;
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        *,
-        *::before,
-        *::after {
-          scroll-behavior: auto !important;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <header>
-        <div>
-          <h1>Choose the next parity arc by failure cost.</h1>
-          <p class="lede">
-            Plans 001 through 017 closed the daily-driver foundations. The next
-            decision is among four real gaps, but one already has hidden backend
-            work and an unsafe large-file boundary.
-          </p>
-        </div>
-        <div class="meta">
-          <span>Audit commit <strong>25d36f1</strong></span>
-          <span>Open GitHub issues <strong>0</strong></span>
-          <span>Active numbered plan <strong>none</strong></span>
-          <span>Decision scope <strong>PAR-008 to PAR-011</strong></span>
-        </div>
-      </header>
-
-      <section class="decision">
-        <div class="label">Recommendation</div>
-        <div class="decision-copy">
-          <strong>PAR-010: file-backed PostgreSQL backup and restore</strong>
-          <p>
-            Start with a dark backend plan. Existing native-tool commands capture
-            full dumps in process memory, base64 them across IPC, and have no
-            cancellation. Their former UI was deleted. Fixing that boundary before
-            reactivation is the highest-leverage match for dbunk's reliability-first
-            priority.
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <h2>Vetted options</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Parity arc</th>
-                <th>Current truth</th>
-                <th>User value</th>
-                <th>Effort</th>
-                <th>Risk</th>
-                <th>Why now or later</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="recommended">
-                <td>01</td>
-                <td><strong>PAR-010 backup / restore</strong></td>
-                <td>Backend-only and memory-heavy</td>
-                <td class="signal">Very high</td>
-                <td>L</td>
-                <td>High</td>
-                <td>Reliability blocker with reusable job/file substrate</td>
-              </tr>
-              <tr>
-                <td>02</td>
-                <td><strong>PAR-008 schema diff / migration</strong></td>
-                <td>Absent after prototype deletion</td>
-                <td class="signal">Very high</td>
-                <td>XL</td>
-                <td>High</td>
-                <td>Natural follow-on to typed DDL, but needs two large plans</td>
-              </tr>
-              <tr>
-                <td>03</td>
-                <td><strong>PAR-011 production triage</strong></td>
-                <td>Basic snapshot is unbounded and all-or-nothing</td>
-                <td class="signal">High</td>
-                <td>M + L</td>
-                <td>Medium</td>
-                <td>Bound the current admin surface before adding metrics</td>
-              </tr>
-              <tr>
-                <td>04</td>
-                <td><strong>PAR-009 visual query builder</strong></td>
-                <td>Accepted ADR, no implementation</td>
-                <td class="signal">Medium-high</td>
-                <td>L</td>
-                <td>Medium</td>
-                <td>Contained one-way design, but less urgent than data safety</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Proposed PAR-010 sequence</h2>
-        <div class="sequence">
-          <article class="step">
-            <span class="step-number">PLAN 018 · DARK BACKEND</span>
-            <h3>File jobs and native-tool execution</h3>
-            <ul>
-              <li>Async <code>pg_dump</code>, <code>psql</code>, and <code>pg_restore</code></li>
-              <li>Direct file paths, never dump bytes over IPC</li>
-              <li>Job IDs, progress phases, cancellation, deadlines</li>
-              <li>Tool/version preflight and typed errors</li>
-              <li>Partial-output and child-process cleanup</li>
-            </ul>
-          </article>
-          <article class="step">
-            <span class="step-number">PLAN 019 · ACTIVATION</span>
-            <h3>Reviewed backup and restore UI</h3>
-            <ul>
-              <li>Three static mocks before component work</li>
-              <li>PostgreSQL-only capability disclosure</li>
-              <li>Backup progress, cancel, success, and failure states</li>
-              <li>Restore preview and production confirmation</li>
-              <li>History without credentials or command-line secrets</li>
-            </ul>
-          </article>
-          <article class="step">
-            <span class="step-number">PLAN 020 · TRANSFER</span>
-            <h3>Bounded CSV import and export</h3>
-            <ul>
-              <li>Reuse the job/file lifecycle</li>
-              <li>PostgreSQL <code>COPY TO/FROM</code> with backpressure</li>
-              <li>Progress, cancellation, reject reporting</li>
-              <li>Explicit dialect, encoding, NULL, and transaction policy</li>
-              <li>Keep visible-row exports in memory</li>
-            </ul>
-          </article>
-        </div>
-      </section>
-
-      <section>
-        <h2>Plan 018 boundary</h2>
-        <div class="boundary">
-          <div class="in">
-            <h3>In</h3>
-            <ul>
-              <li>PostgreSQL native backup and restore only</li>
-              <li>Plain and custom dump formats</li>
-              <li>Existing TLS, tunnel, credential, and driver resolution</li>
-              <li>Backend safety policy for restore</li>
-              <li>Unit, process-fixture, and disposable PostgreSQL tests</li>
-            </ul>
-          </div>
-          <div class="out">
-            <h3>Out</h3>
-            <ul>
-              <li>No production or daily-driver channel changes</li>
-              <li>No UI until Plan 019 and mock selection</li>
-              <li>No MySQL, SQLite, ClickHouse, or Redis backup parity</li>
-              <li>No scheduler or generalized task engine</li>
-              <li>No Parquet, XML, or generated database-DDL expansion</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2>Evidence that changes the ordering</h2>
-        <div class="evidence">
-          <div>
-            <code>src-tauri/src/postgres/ddl.rs:353-454</code>
-            <p>Native tools use synchronous process execution and buffer output.</p>
-          </div>
-          <div>
-            <code>src-tauri/src/types.rs:1271-1283</code>
-            <p>Backup data crosses the frontend boundary as base64.</p>
-          </div>
-          <div>
-            <code>src/components/app-shell/activity-rail.tsx:27-53</code>
-            <p>No current rail or settings surface exposes backup and restore.</p>
-          </div>
-          <div>
-            <code>src/components/table-editor-panel.tsx:1318-1355</code>
-            <p>Whole-table export still accumulates every row in renderer memory.</p>
-          </div>
-          <div>
-            <code>plans/parity-gap-register.md:571-600</code>
-            <p>Schema comparison is genuinely absent and remains the next net-new arc.</p>
-          </div>
-          <div>
-            <code>src-tauri/src/postgres/admin.rs:193-294</code>
-            <p>Admin sections are fetched without row caps in one failure domain.</p>
-          </div>
-        </div>
-      </section>
-
-      <footer>
-        <span>Decision requested: accept PAR-010, or choose PAR-008 / 009 / 011.</span>
-        <span>Planning artifact only. No source implementation changed.</span>
-      </footer>
-    </main>
-  </body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dbunk · Plan 021 · Schema comparison</title>
+<style>
+:root{color-scheme:dark;--bg:#000;--text:#fff;--muted:#b4b4b4;--line:#333;--accent:#eab308;--good:#94d7a4;--measure:76ch}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}main{max-width:1200px;padding:44px 36px 72px;margin:auto}a{color:var(--accent);text-underline-offset:4px}a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:5px}header{border-bottom:1px solid var(--line);padding-bottom:26px}nav{display:flex;gap:24px;flex-wrap:wrap;font-size:13px;margin-bottom:28px}h1{font:600 clamp(27px,4vw,43px)/1.15 ui-monospace,SFMono-Regular,monospace;letter-spacing:-1.4px;max-width:25ch;margin:0 0 18px}h2{font-size:21px;line-height:1.3;margin:0 0 20px}h3{font-size:15px;margin:0 0 8px}p{max-width:var(--measure);margin:10px 0}section{padding:28px 0;border-bottom:1px solid var(--line)}.meta{color:var(--muted);font-size:12px}.lead{font-size:17px;max-width:72ch}.good{color:var(--good)}.accent{color:var(--accent)}.progress{display:grid;grid-template-columns:70px 1fr;gap:8px 20px;align-items:baseline}.progress strong{font-size:19px}.flow{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;margin-top:20px}.endpoint{border-top:2px solid var(--accent);padding-top:14px}.result{grid-column:1/-1;border-top:1px solid var(--line);margin-top:20px;padding-top:18px}.path{font-size:12px;overflow-wrap:anywhere}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:12px 14px 12px 0;text-align:left;vertical-align:top}th{color:var(--muted);font-weight:400}td:first-child{width:24%}code{overflow-wrap:anywhere}.split{display:grid;grid-template-columns:1fr 1fr;gap:32px}ul,ol{padding-left:22px;margin:8px 0}li{padding:4px 0}.steps{list-style:none;padding:0;counter-reset:steps}.steps li{counter-increment:steps;display:grid;grid-template-columns:40px 1fr;gap:14px;padding:16px 0;border-top:1px solid var(--line)}.steps li::before{content:counter(steps,decimal-leading-zero);color:var(--accent)}.steps p{margin:3px 0;color:var(--muted)}details{padding:14px 0;border-top:1px solid var(--line)}summary{cursor:pointer;font-weight:600}details p{color:var(--muted)}footer{padding-top:24px;font-size:12px;color:var(--muted)}.example td:not(:first-child){width:28%}.note{border-left:2px solid var(--accent);padding-left:16px;margin-top:20px}
+@media(max-width:660px){main{padding:24px 18px 48px}.flow,.split{grid-template-columns:1fr;gap:22px}.result{margin-top:0}.progress{grid-template-columns:54px 1fr;gap:10px}.lead{font-size:15px}table{min-width:570px}nav{gap:12px 20px}h1{letter-spacing:-.8px}}
+@media print{main{padding:0}details>*{display:block}a{color:inherit}section{break-inside:avoid}body{font-size:11px}.table-scroll{overflow:visible}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<nav aria-label="Plan navigation"><a href="#progress">Progress</a><a href="#contract">Comparison contract</a><a href="#sequence">Sequence</a><a href="021-bounded-postgres-schema-comparison.md">Full implementation draft</a></nav>
+<h1>021 / Trust the diff before generating a migration.</h1>
+<p class="lead">Next: a bounded, read-only PostgreSQL schema comparison backend. Compare ordinary table definitions across two PostgreSQL 16 schema endpoints, with explicit coverage and field-level differences.</p>
+<p class="meta">Critique revised · Planning draft · PAR-008 · P1 / L · 05 Sep 2026 · Baseline 7745946</p>
+</header>
+<section id="progress">
+<h2>020 complete. Comparison is next.</h2>
+<div class="progress">
+<strong class="good">020</strong><div>Bounded PostgreSQL CSV import/export <span class="good">DONE · 7745946</span><p class="meta">Confirmed by Imran. Native jobs, mapping, cancellation and safe publication. Existing validation details remain in git history; no new native checks are claimed.</p></div>
+<strong class="accent">021</strong><div>Read-only schema comparison foundation <span class="accent">DRAFT</span><p class="meta">No product implementation started. The former comparison prototype was removed during workspace consolidation.</p></div>
+<strong>Later</strong><div>Comparison UI → wider object coverage → reviewed migrations<p class="meta">Proposed sequence. Data comparison remains a separate PAR-008 slice.</p></div>
+</div>
+</section>
+<section id="contract">
+<h2>Two endpoints. An inspectable result.</h2>
+<div class="flow">
+<div class="endpoint"><h3>Source / reference</h3><p>Connection + schema</p><p class="meta">Capture supported table facts in a read-only transaction. Preserve identifiers, order and expression text.</p></div>
+<div class="endpoint"><h3>Target / compared endpoint</h3><p>Connection + schema</p><p class="meta">Same stored connection: share one snapshot. Different connections: independent captures with explicit timestamps.</p></div>
+<div class="result"><h3>Stable identity → normalized facts → bounded difference pages</h3><p>Source only · Target only · Changed · Equal · Not comparable</p><p class="note">“Equal” means equal within the declared table projection. Missing permissions, truncated metadata or unsafe normalization must never become a clean diff.</p></div>
+</div>
+<h3 style="margin-top:24px">Illustrative field differences, not a product mock</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Example field differences"><table class="example"><thead><tr><th>Identity / field</th><th>Source</th><th>Target</th><th>Result</th></tr></thead><tbody>
+<tr><td>orders.total / type</td><td>numeric(12,2)</td><td>numeric(10,2)</td><td class="accent">Changed</td></tr>
+<tr><td>orders.id / nullable</td><td>false</td><td>false</td><td class="good">Equal</td></tr>
+<tr><td>orders / relation kind</td><td>Ordinary table</td><td>Partitioned table</td><td>Not comparable</td></tr>
+<tr><td>orders / trigger definitions</td><td>Excluded category</td><td>Excluded category</td><td>Outside coverage</td></tr>
+</tbody></table></div>
+</section>
+<section>
+<h2>The first slice has a narrow claim.</h2>
+<div class="split"><div><h3>Compare table definitions</h3><ul><li>Ordinary tables and visible column order</li><li>Type references, defaults, identity mode, nullability, collation</li><li>Constraint/index facts, including null uniqueness and FK delete-column subsets</li><li>Comments and table persistence</li><li>Typed differences and coverage exclusions</li><li>Cross-connection capture, cancel and cleanup</li></ul></div><div><h3>Keep subsequent work separate</h3><ul><li>Product UI requires published mock selection</li><li>Views, routines, sequences and type definitions, including identity sequence settings</li><li>Security, grants, triggers and partitions</li><li>Rename detection and migration generation</li><li>Apply, synchronization and data comparison</li><li>Other PostgreSQL majors, engines and scheduling</li></ul></div></div>
+</section>
+<section>
+<h2>Limits are part of the contract.</h2>
+<p class="meta">Proposed starting values. Verify with fixtures before accepting final limits.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Proposed comparison limits"><table><thead><tr><th>Boundary</th><th>Draft limit</th><th>When exceeded</th></tr></thead><tbody>
+<tr><td>Admission</td><td>2 active/resolving jobs; 1 per participating connection</td><td>Refuse admission; reserve both endpoints atomically</td></tr>
+<tr><td>Each endpoint</td><td>2,000 inventory entries; 1,000 tables; 50,000 child facts; 16 MiB definitions</td><td>Typed limit error; no partial absence claims</td></tr>
+<tr><td>Single field / result</td><td>256 KiB raw field / 32 MiB retained result</td><td>Guard before driver allocation and retention</td></tr>
+<tr><td>IPC page</td><td>100 summaries / 1 MiB; one 64 KiB UTF-8 value chunk per detail response</td><td>Bound JSON escaping and envelopes; reference large values</td></tr>
+<tr><td>Runtime</td><td>60 s from admission, including resolution; 10 s statement; 2 s lock ceiling</td><td>Cancel and join; separate 5 s cleanup grace, retain capacity until stopped</td></tr>
+<tr><td>Global allocation</td><td>256 MiB; 2 serializers with 8 MiB scratch each</td><td>Reserve before allocation; excess page requests return busy</td></tr>
+<tr><td>Retention</td><td>2 terminal results; 10-minute TTL</td><td>Expired results become unavailable</td></tr>
+</tbody></table></div>
+<p class="note">Raw UTF-8, retained allocations and escaped JSON have separate budgets. A 256 KiB field can expand beyond a 1 MiB page, so values are chunked. Runtime/allocator overhead is measured separately.</p>
+</section>
+<section id="sequence">
+<h2>Implementation sequence</h2>
+<ol class="steps">
+<li><div><strong>Prove capture and deparser behavior</strong><p>Disposable PG16 interleaving fixtures for rename, drop and index changes. Establish lock/snapshot ordering or explicit not-comparable fields. Stop if the remaining comparison is not useful.</p></div></li>
+<li><div><strong>Protocol + normalization + byte accounting</strong><p>Closed PG16 field checklist, counterpart inventory, immutable value references and UTF-8 chunks. Test worst-case JSON expansion and concurrent page requests.</p></div></li>
+<li><div><strong>Bounded catalog capture</strong><p>Implement the proven capture sequence. Enforce PG16/PG16, permissions, complete inventory and definition limits.</p></div></li>
+<li><div><strong>Deterministic structural diff</strong><p>Compare facts using portable identity. Preserve unsafe expressions as not comparable.</p></div></li>
+<li><div><strong>Native jobs + typed client</strong><p>Start the deadline at admission, including credentials and tunnels. Reconcile uncertain starts and fence both endpoints through cleanup.</p></div></li>
+<li><div><strong>Failure + boundedness validation</strong><p>Disposable PostgreSQL fixtures, concurrent DDL, TLS, cancellation, cap boundaries and memory measurements.</p></div></li>
+<li><div><strong>Backend handoff</strong><p>Required checks, contract tests and accurate progress docs. Then plan the UI with several static alternatives.</p></div></li>
+</ol>
+</section>
+<section>
+<h2>Decisions that prevent misleading results</h2>
+<details open><summary>No automatic semantic SQL rewriting</summary><p>Map structured schema references only. Never replace schema names inside literals or deparsed expressions. OIDs are local lookup keys, not cross-database identity. Same named custom types do not prove equal type definitions.</p></details>
+<details open><summary>No global snapshot promise</summary><p>A repeatable-read transaction alone does not prove deparser consistency. Step 1 must handle successful mixed-metadata reads, including rename races. Unproven fields become not comparable; failed required capture aborts.</p></details>
+<details open><summary>Read-only is not a server-code sandbox</summary><p>The comparator never executes captured expressions as SQL, scans user rows or issues DDL/DML. Metadata rendering can invoke installed type output or access-method support code. The fixture must verify this boundary.</p></details>
+<details open><summary>Excluded does not mean absent</summary><p>Inventory relation names and kinds before filtering. An ordinary source table and a same-named target view or partitioned table produce an excluded-counterpart result, never a missing-table claim.</p></details>
+</section>
+<section>
+<h2>Evidence and acceptance</h2>
+<p class="path">Catalog: src-tauri/src/postgres/objects.rs<br>Typed DDL: src-tauri/src/postgres/object_ddl/<br>Transport: src-tauri/src/postgres/dedicated.rs<br>Lifecycle reference: src-tauri/src/postgres/transfer/manager.rs</p>
+<p>Pass format, lint, typecheck, frontend contracts and Rust checks. Explicitly exercise disposable integration fixtures. Prove missing metadata cannot yield false equality and memory stays within the combined budget.</p>
+<p class="meta">Transaction semantics: <a href="https://www.postgresql.org/docs/16/transaction-iso.html">PostgreSQL isolation</a> · <a href="https://www.postgresql.org/docs/16/sql-set-transaction.html">SET TRANSACTION</a>. These references do not establish cross-server atomicity. <a href="https://raw.githubusercontent.com/postgres/postgres/REL_16_STABLE/src/backend/utils/adt/ruleutils.c">PG16 deparser source</a> motivates the feasibility gate.</p>
+</section>
+<footer><a href="README.md">Plan register</a> · <a href="021-bounded-postgres-schema-comparison.md">Full draft, steps and stop conditions</a><p>Planning artifact. True black, dense comparison tables and expandable rationale. No product UI or database changed.</p></footer>
+</main>
+</body>
 </html>

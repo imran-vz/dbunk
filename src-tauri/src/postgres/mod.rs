@@ -27,6 +27,7 @@ mod query;
 mod relationship_metadata;
 pub(crate) mod row_budget;
 mod schema;
+pub mod schema_compare;
 mod seed;
 pub(crate) mod sql_class;
 pub(crate) mod sql_lex;

@@ -16,7 +16,7 @@ Phases are ordered by user-facing pain first, then by dependency.
 | 6 | Object navigator depth | ✅ shipped | Materialized views, functions, sequences, extensions, roles, tablespaces, etc. |
 | 7 | Admin tools | ✅ shipped | Sessions, locks, pending transactions, VACUUM/ANALYZE actions |
 | 8 | SQL editor depth | ✅ shipped | EXPLAIN visualizer, snippets, bind vars (debugger as stretch) |
-| 9 | Compare + generate | ✅ shipped | Schema compare, data compare, mock data — depends on Phase 6 coverage |
+| 9 | Compare + generate | 🟡 partial | Mock data remains; comparison prototypes were removed. Plan 021 drafts the replacement backend. |
 | 10 | Specialized editors | ✅ shipped | GRANT/RLS/index/FK/trigger UIs, array & JSON cell editors, PostGIS |
 
 Phases 1–4 cover the three pain points named explicitly when setting the parity goal.
@@ -156,18 +156,17 @@ What landed:
 - EXPLAIN action runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` for the current statement and renders the Explain tab as a plan tree with cost, row, timing, loop, and buffer metrics, with text fallback for non-JSON results.
 - Editor run hook now exposes current-statement and explicit-SQL execution so advanced toolbar actions share the same outcome/history path.
 
-## Phase 9 — Compare + generate — ✅ shipped
-Cross-cutting tools that depend on Phase 6's object coverage.
+## Phase 9 — Compare + generate — 🟡 partial
 
-- Schema compare (two schemas → diff + migration SQL)
-- Data compare (two tables → diff)
-- Mock data generator
+Mock data generation remains available. The former Compare overview tab,
+schema-name comparison and first-100-row data comparison prototypes were removed
+during workspace consolidation (`8411dbf`). They are not shipped capabilities in
+the current app.
 
-What landed:
-- New Compare overview tab.
-- Schema compare uses the enriched Phase 6 schema explorer to diff visible tables, views, materialized views, sequences, and functions between two schemas.
-- Data compare loads the first 100 rows from two chosen tables through the existing paged table-data command and reports column and sampled row differences.
-- Mock data generator emits ready-to-run INSERT statements for a selected table name.
+[Plan 021](../../plans/021-bounded-postgres-schema-comparison.md) begins replacement
+planning with bounded, read-only PostgreSQL table-definition comparison. UI
+activation, broader definition coverage, migration SQL and bounded data comparison
+remain PAR-008 work. Current execution status lives in `plans/README.md`.
 
 ## Phase 10 — Specialized editors — ✅ shipped
 Final polish — object-creation UIs and cell-level editors for Postgres-shaped data.
