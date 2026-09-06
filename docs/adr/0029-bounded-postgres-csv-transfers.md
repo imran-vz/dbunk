@@ -1,6 +1,6 @@
 # ADR-0029: Bounded PostgreSQL CSV transfers
 
-**Status**: In progress (Plan 020, selected mock A)
+**Status**: Accepted and implemented (Plan 020, `7745946`, selected mock A; completion confirmed 2026-09-05)
 
 ## Decision
 
