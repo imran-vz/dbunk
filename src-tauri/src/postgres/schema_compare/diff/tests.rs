@@ -721,3 +721,322 @@ fn field_merge_checks_cancellation_between_units() {
     assert_eq!(result, Err(CompareError::Cancelled));
     assert_eq!(visited, 1);
 }
+
+/// One fact per supported field in the closed V1 checklist. Every path must be
+/// reported equal when both sides agree and changed when the target differs,
+/// including external references, defaults, identity/generated facts,
+/// constraint-owned index properties, NULLS NOT DISTINCT, FK delete-column
+/// subsets and invalid-index state.
+#[test]
+fn closed_field_checklist_compares_every_supported_path_in_both_directions() {
+    let budget = Budget::default().result_scope();
+    let now = Instant::now();
+    let external = |schema: &str, name: &str| {
+        CapturedValue::Reference(QualifiedName {
+            namespace: Namespace::External {
+                schema: schema.into(),
+            },
+            name: name.into(),
+        })
+    };
+    let selected = |name: &str| {
+        CapturedValue::Reference(QualifiedName {
+            namespace: Namespace::Selected,
+            name: name.into(),
+        })
+    };
+    let names =
+        |values: &[&str]| CapturedValue::Names(values.iter().map(|v| (*v).into()).collect());
+    let operator = |name: &str| OperatorSignature {
+        operator: QualifiedName {
+            namespace: Namespace::External {
+                schema: "pg_catalog".into(),
+            },
+            name: name.into(),
+        },
+        left_type: Some(QualifiedName {
+            namespace: Namespace::External {
+                schema: "pg_catalog".into(),
+            },
+            name: "int4".into(),
+        }),
+        right_type: None,
+    };
+    let column = |field| path("quantity", field);
+    let constraint = |field| FieldPath::Constraint {
+        name: "fk".into(),
+        field,
+    };
+    let owned_index = |field| FieldPath::Index {
+        name: "uq".into(),
+        owner: Some("uq".into()),
+        field,
+    };
+    let key = |field| FieldPath::IndexKey {
+        name: "uq".into(),
+        owner: Some("uq".into()),
+        position: 0,
+        field,
+    };
+    let checklist = |target: bool| -> Vec<(FieldPath, CapturedValue)> {
+        let t = |a: &str, b: &str| text(if target { b } else { a });
+        let flag = |a: bool| CapturedValue::Boolean(if target { !a } else { a });
+        vec![
+            (
+                FieldPath::Table {
+                    field: TableField::Persistence,
+                },
+                t("permanent", "unlogged"),
+            ),
+            (comment(), t("source comment", "target comment")),
+            (
+                column(ColumnField::Position),
+                CapturedValue::Integer(if target { 2 } else { 1 }),
+            ),
+            (
+                column(ColumnField::Type),
+                if target {
+                    external("pg_catalog", "int8")
+                } else {
+                    external("pg_catalog", "int4")
+                },
+            ),
+            (
+                column(ColumnField::TypeModifier),
+                CapturedValue::Integer(if target { 655366 } else { -1 }),
+            ),
+            (
+                column(ColumnField::ArrayDimensions),
+                CapturedValue::Integer(if target { 1 } else { 0 }),
+            ),
+            (column(ColumnField::Nullable), flag(true)),
+            (
+                column(ColumnField::Default),
+                expression(if target { "8" } else { "7" }),
+            ),
+            (column(ColumnField::GeneratedKind), t("none", "stored")),
+            (
+                column(ColumnField::GeneratedExpression),
+                expression(if target {
+                    "(quantity + 2)"
+                } else {
+                    "(quantity + 1)"
+                }),
+            ),
+            (column(ColumnField::Identity), t("always", "byDefault")),
+            (
+                column(ColumnField::Collation),
+                if target {
+                    selected("local_collation")
+                } else {
+                    external("pg_catalog", "C")
+                },
+            ),
+            (column(ColumnField::Comment), t("a", "b")),
+            (constraint(ConstraintField::Kind), t("foreignKey", "check")),
+            (
+                constraint(ConstraintField::Keys),
+                if target {
+                    names(&["id", "tenant"])
+                } else {
+                    names(&["tenant", "id"])
+                },
+            ),
+            (
+                constraint(ConstraintField::ReferencedTable),
+                if target {
+                    selected("parents")
+                } else {
+                    external("ext", "parents")
+                },
+            ),
+            (
+                constraint(ConstraintField::ReferencedKeys),
+                if target {
+                    names(&["id"])
+                } else {
+                    names(&["tenant", "id"])
+                },
+            ),
+            (constraint(ConstraintField::UpdateAction), t("c", "a")),
+            (constraint(ConstraintField::DeleteAction), t("n", "c")),
+            (
+                constraint(ConstraintField::DeleteColumns),
+                if target {
+                    CapturedValue::Null
+                } else {
+                    names(&["id"])
+                },
+            ),
+            (constraint(ConstraintField::MatchMode), t("s", "f")),
+            (constraint(ConstraintField::Deferrable), flag(true)),
+            (constraint(ConstraintField::InitiallyDeferred), flag(false)),
+            (constraint(ConstraintField::Validated), flag(true)),
+            (constraint(ConstraintField::NoInherit), flag(false)),
+            (
+                constraint(ConstraintField::Expression),
+                expression(if target {
+                    "(quantity > 1)"
+                } else {
+                    "(quantity > 0)"
+                }),
+            ),
+            (
+                constraint(ConstraintField::EqualityOperators),
+                CapturedValue::Operators(vec![operator(if target { "<>" } else { "=" })]),
+            ),
+            (
+                constraint(ConstraintField::ExclusionOperators),
+                CapturedValue::Operators(vec![operator(if target { "&&" } else { "=" })]),
+            ),
+            (owned_index(IndexField::AccessMethod), t("btree", "hash")),
+            (owned_index(IndexField::Unique), flag(true)),
+            (owned_index(IndexField::NullsNotDistinct), flag(false)),
+            (owned_index(IndexField::Immediate), flag(true)),
+            (
+                owned_index(IndexField::KeyCount),
+                CapturedValue::Integer(if target { 2 } else { 1 }),
+            ),
+            (
+                owned_index(IndexField::IncludedColumns),
+                if target { names(&["id"]) } else { names(&[]) },
+            ),
+            (
+                owned_index(IndexField::Predicate),
+                expression(if target {
+                    "(quantity > 1)"
+                } else {
+                    "(quantity > 0)"
+                }),
+            ),
+            (
+                owned_index(IndexField::RelationOptions),
+                if target {
+                    names(&["fillfactor=70"])
+                } else {
+                    names(&[])
+                },
+            ),
+            (owned_index(IndexField::Valid), flag(true)),
+            (owned_index(IndexField::Ready), flag(true)),
+            (owned_index(IndexField::Live), flag(true)),
+            (key(IndexKeyField::Kind), t("column", "expression")),
+            (key(IndexKeyField::Column), t("quantity", "amount")),
+            (
+                key(IndexKeyField::Expression),
+                expression(if target {
+                    "(quantity + 2)"
+                } else {
+                    "(quantity + 1)"
+                }),
+            ),
+            (
+                key(IndexKeyField::SortOptions),
+                if target {
+                    names(&["descending", "nullsFirst"])
+                } else {
+                    names(&["ascending", "nullsLast"])
+                },
+            ),
+            (
+                key(IndexKeyField::Opclass),
+                if target {
+                    external("pg_catalog", "text_pattern_ops")
+                } else {
+                    external("pg_catalog", "int4_ops")
+                },
+            ),
+            (
+                key(IndexKeyField::OpclassOptions),
+                if target {
+                    names(&["deduplicate_items=off"])
+                } else {
+                    names(&[])
+                },
+            ),
+            (
+                key(IndexKeyField::Collation),
+                if target {
+                    external("pg_catalog", "C")
+                } else {
+                    CapturedValue::Null
+                },
+            ),
+        ]
+    };
+    let total = checklist(false).len();
+    assert_eq!(total, 2 + 11 + 15 + 11 + 7);
+
+    let make = |oid, side, target| {
+        fixture(
+            &budget,
+            side,
+            160015,
+            vec![TestRelation {
+                oid,
+                entry: InventoryEntry {
+                    identity: relation("orders"),
+                    eligibility: Eligibility::Eligible,
+                },
+                fields: checklist(target),
+            }],
+        )
+    };
+
+    // Same facts on both sides, with different local OIDs and schema names,
+    // compare equal on every path, including external and selected references.
+    let equal = compare(
+        id(),
+        make(1, Side::Source, false),
+        make(99, Side::Target, false),
+        &control(),
+        now,
+    )
+    .unwrap();
+    assert_eq!(equal.kind(), DifferenceKind::Equal);
+    let page = fields(&equal, "orders", now);
+    assert_eq!(page["items"].as_array().unwrap().len(), total);
+    assert!(page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|f| f["kind"] == "equal"));
+    drop(equal);
+
+    for reverse in [false, true] {
+        let (source, target) = if reverse {
+            (make(5, Side::Source, true), make(6, Side::Target, false))
+        } else {
+            (make(5, Side::Source, false), make(6, Side::Target, true))
+        };
+        let changed = compare(id(), source, target, &control(), now).unwrap();
+        assert_eq!(changed.kind(), DifferenceKind::Changed);
+        let object = &objects(&changed, now)["items"][0];
+        assert_eq!(object["changedFields"], total);
+        assert_eq!(object["incomparableFields"], 0);
+        let page = fields(&changed, "orders", now);
+        let items = page["items"].as_array().unwrap();
+        assert_eq!(items.len(), total);
+        for item in items {
+            assert_eq!(item["kind"], "changed", "{}", item["path"]);
+            assert_ne!(
+                raw(&changed, &item["source"], now)["text"],
+                raw(&changed, &item["target"], now)["text"],
+                "{}",
+                item["path"]
+            );
+        }
+        let delete_columns = items
+            .iter()
+            .find(|f| f["path"]["field"] == "deleteColumns")
+            .unwrap();
+        let (with_subset, without) = if reverse {
+            (&delete_columns["target"], &delete_columns["source"])
+        } else {
+            (&delete_columns["source"], &delete_columns["target"])
+        };
+        assert_eq!(with_subset["valueKind"], "orderedNames");
+        assert_eq!(without["valueKind"], "null");
+    }
+    assert_eq!(budget.used(), 0);
+}

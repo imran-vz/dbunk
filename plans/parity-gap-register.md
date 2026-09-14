@@ -579,14 +579,17 @@ consolidation and has not yet been replaced.
   deleted by the workspace consolidation (`8411dbf`); there is no active
   schema/data comparison surface in the current tree.
 
-**Foundation in progress (2026-09-06), through Step 5:** [Plan 021](./021-bounded-postgres-schema-comparison.md)
+**Foundation in progress (2026-09-14), through Step 6:** [Plan 021](./021-bounded-postgres-schema-comparison.md)
 implements a typed foundation, bounded native capture, deterministic structural
 diff and backend-owned jobs for ordinary PostgreSQL table definitions across two
 explicit schema endpoints. Native commands and the typed client provide admission,
 status, bounded reads, cancellation and release, with endpoint/global lifecycle fences.
-The foundation and verified identifier-quoting review fix are committed at
-`502674e`. Step 5 is verified and uncommitted; runtime validation is next
-(Step 6). No comparison product surface has shipped. UI activation, wider object coverage, migration SQL and row-data
+The foundation is committed at `502674e` and job ownership at `265c0c1`. Step 6's
+failure and boundedness validation is verified and uncommitted: independent
+databases, a second PG16 minor, PG17 refusal, TLS verification failure, teardown
+and backend loss during capture, concurrent DDL, unusual types and a native
+memory/limit profile all pass in owned disposable fixtures. No comparison product
+surface has shipped. UI activation, wider object coverage, migration SQL and row-data
 comparison remain follow-ups. See the [visual brief](./next-parity-item.html).
 
 **Missing pieces:**
@@ -926,9 +929,10 @@ Parity work should reuse rather than replace these credible foundations:
    Plan 017 activation is DONE at `25d36f1`.
 8. `PAR-010`: file-backed backup/restore and bounded PostgreSQL CSV delivered
    by Plans 018–020 through `7745946`; wider transfer scope stays tracked.
-9. `PAR-008`: Plan 021 has a typed foundation, bounded native capture and structural
-   diff with native job integration; runtime validation remains. UI activation and
-   migration/data comparison remain separate follow-ups.
+9. `PAR-008`: Plan 021 has a typed foundation, bounded native capture, structural
+   diff, native job integration and failure/boundedness validation; completion
+   handoff (Step 7) remains. UI activation and migration/data comparison remain
+   separate follow-ups.
 10. `PAR-009` and `PAR-011`: diagrams/query design and administration.
 11. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
    parity only after the daily-driver foundation is stable.

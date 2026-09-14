@@ -219,12 +219,14 @@ command wiring and runtime RSS remain later gates.
 python3 infrastructure/test-db/schema-compare/native.py
 ```
 
-This runner creates and prints a random `dbunk-schema-compare-native-*` PG16
-container, publishes only a random loopback port and keeps database data in
-tmpfs. It accepts no DSN or existing container and removes only the container it
-successfully created. Native build output uses `/tmp/dbunk-plan021-target`.
+This runner creates and prints random `dbunk-schema-compare-native-*`
+containers, publishes only random loopback ports and keeps database data in
+tmpfs. It accepts no DSN or existing container and removes only the containers
+it successfully created. Native build output uses `/tmp/dbunk-plan021-target`.
 Readiness checks TCP so the image's temporary initialization server cannot be
 mistaken for the final server. It does not use the shared compose database.
+Since Step 6 it owns four containers (see below) and runs the memory profile in
+a separate single-threaded cargo invocation.
 
 The Rust opt-in tests exercise the actual resolved dedicated connection and
 catalog reader on PostgreSQL **16.15 (Debian 16.15-1.pgdg13+2), aarch64**:
@@ -279,3 +281,30 @@ and preserves a page's serializer lease until acknowledgement. All three passed
 on PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2), aarch64, on 2026-09-06; the fixture
 container was removed. Native WebView allocation, independent servers/minors and
 the wider failure/load matrix remain Step 6.
+
+
+## Native Step 6 coverage (2026-09-14)
+
+`native.py` now owns four disposable servers: `postgres:16` (PostgreSQL 16.15,
+Debian), `postgres:16.14` (Debian), `postgres:17` (17.11, Debian) and a TLS
+image built from `infrastructure/test-db/postgres-tls` (PostgreSQL 16.14,
+Alpine) with throwaway certificates generated on the host by `gen-certs.sh`
+into the gitignored `certs` directory; the TLS container mounts those
+certificates and an empty init directory, so no shared fixture SQL runs. Ports
+reach the tests through `DBUNK_SCHEMA_COMPARE_TEST_PORT`, `_MINOR_PORT`,
+`_OTHER_PORT`, `_TLS_PORT` and the CA path through `DBUNK_SCHEMA_COMPARE_TLS_CA`.
+
+The `manager::validation` tests cover: independent databases and a second PG16
+minor through real stored connections, PG17 refusal by side, missing schema and
+missing SELECT through the manager, `verify-full` failure against an untrusted
+issuer with trusted-CA and `require` controls, connection-fence teardown and
+plain cancellation during the pre-snapshot lock wait, `pg_terminate_backend`
+during capture, a DDL event-trigger and user-table scan audit, one dedicated
+backend per comparison, a column rename and a table drop committed during the
+lock wait, unusual collations/types/arrays, identity sequence configuration,
+NULLS NOT DISTINCT, FK delete-column subsets, an invalid concurrent index, and
+the memory/limit profile at 10/100/300 realistic tables, 1,000 and 1,001
+one-column tables and exactly 50,000 and 50,011 facts. The measured table and
+the transport page change it motivated are recorded in the plan's Step 6
+record and ADR-0030. All eight native tests and the profile passed on
+2026-09-14; the owned containers were removed.

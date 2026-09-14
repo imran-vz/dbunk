@@ -22,6 +22,7 @@ pub const TABLE_ENTRIES: usize = 1_000;
 
 struct Counters {
     used: AtomicUsize,
+    peak: AtomicUsize,
     serializers: AtomicUsize,
     limit: usize,
 }
@@ -40,6 +41,7 @@ impl Budget {
         Self(
             Arc::new(Counters {
                 used: AtomicUsize::new(0),
+                peak: AtomicUsize::new(0),
                 serializers: AtomicUsize::new(0),
                 limit,
             }),
@@ -49,6 +51,17 @@ impl Budget {
 
     pub fn used(&self) -> usize {
         self.0.used.load(Ordering::Acquire)
+    }
+
+    /// Highest reserved total observed since creation or the last reset. This
+    /// is accounting evidence for the runtime measurements, not a limit.
+    pub fn peak(&self) -> usize {
+        self.0.peak.load(Ordering::Acquire)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_peak(&self) {
+        self.0.peak.store(self.used(), Ordering::Release);
     }
 
     /// Share this scope across the values, inventory and diff owned by one
@@ -76,7 +89,8 @@ impl Budget {
     /// Reserve before requesting an allocation. Charge owned capacities and
     /// containers; allocator-internal overhead is measured separately as RSS.
     pub fn reserve(&self, bytes: usize) -> Result<Reservation, CompareError> {
-        self.0
+        let previous = self
+            .0
             .used
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                 used.checked_add(bytes).filter(|next| *next <= self.0.limit)
@@ -84,6 +98,7 @@ impl Budget {
             .map_err(|_| CompareError::LimitExceeded {
                 limit: Limit::Allocation,
             })?;
+        self.0.peak.fetch_max(previous + bytes, Ordering::AcqRel);
         if let Some(scope) = &self.1 {
             if scope
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
@@ -238,5 +253,51 @@ mod tests {
             );
         });
         assert_eq!(budget.used(), 0);
+    }
+
+    #[test]
+    fn two_jobs_two_results_and_two_serializers_fit_the_global_ceiling_with_a_known_margin() {
+        // Manager setup/transport scratch and native capture scratch are each
+        // 32 MiB per active job; see manager::start_with_timing and
+        // capture::CAPTURE_SCRATCH. Retained results share RESULT_BYTES each.
+        const JOB_SCRATCH: usize = 2 * 32 * 1024 * 1024;
+        const WORST_CASE: usize = 2 * (JOB_SCRATCH + RESULT_BYTES) + 2 * SERIALIZER_SCRATCH;
+        const MARGIN: usize = GLOBAL_BYTES - CONTROL_BYTES - WORST_CASE;
+        assert_eq!(WORST_CASE, 208 * 1024 * 1024);
+
+        let budget = Budget::default();
+        let mut held = Vec::new();
+        let mut results = Vec::new();
+        for _ in 0..2 {
+            held.push(budget.scratch(JOB_SCRATCH / 2).unwrap());
+            held.push(budget.scratch(JOB_SCRATCH / 2).unwrap());
+            let result = budget.result_scope();
+            held.push(result.reserve(RESULT_BYTES).unwrap());
+            results.push(result);
+        }
+        let serializers = [budget.serializer().unwrap(), budget.serializer().unwrap()];
+        assert_eq!(budget.used(), WORST_CASE);
+        assert!(matches!(budget.serializer(), Err(CompareError::Busy)));
+        // Each retained result is already at its own cap while global room remains.
+        assert!(matches!(
+            results[0].reserve(1),
+            Err(CompareError::LimitExceeded {
+                limit: Limit::ResultBytes
+            })
+        ));
+        let margin = budget.reserve(MARGIN).unwrap();
+        assert!(matches!(
+            budget.reserve(1),
+            Err(CompareError::LimitExceeded {
+                limit: Limit::Allocation
+            })
+        ));
+        assert_eq!(budget.peak(), GLOBAL_BYTES - CONTROL_BYTES);
+        drop(margin);
+        drop(serializers);
+        drop(held);
+        assert_eq!(budget.used(), 0);
+        budget.reset_peak();
+        assert_eq!(budget.peak(), 0);
     }
 }
