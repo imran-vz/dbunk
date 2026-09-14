@@ -4,7 +4,7 @@
 - Planned against: `7745946efcc9f975b88f6468690923f2ec30cae3`, 2026-09-05.
 - Depends on: Plans 013–017 (catalog and typed DDL), with Plan 020's completed
   lifecycle work as the current baseline.
-- Execution status: see [README.md](./README.md). Implementation started 2026-09-05; through Step 5. The foundation through Step 4 is committed at `502674e`; Step 5 is verified and uncommitted. Step 6 is next. See the execution record below.
+- Execution status: see [README.md](./README.md). Implementation started 2026-09-05; through Step 6. The foundation through Step 4 is committed at `502674e` and Step 5 at `265c0c1`; Step 6 is verified and uncommitted. Step 7 is next. See the execution record below.
 - Visual brief: [next-parity-item.html](./next-parity-item.html).
 
 ## Outcome
@@ -777,3 +777,132 @@ retains its passing format/lint/typecheck and 1,452-test results.
 The fresh final GPT-6 review found no actionable findings in the corrected
 ownership paths and their callers. Both original review findings and all
 follow-up findings are resolved. Step 6 remains next; changes are uncommitted.
+
+
+### Failure and boundedness validation, Step 6 (2026-09-14)
+
+Imran asked to finish the schema comparison validation. Step 6 adds tests
+through the real manager, resolver and native reader; no product UI, command
+contract or supported field checklist changed. One capture transport constant
+changed with fixture evidence, recorded below.
+
+Default-suite additions (`src-tauri/src/postgres/schema_compare`):
+
+- `diff/tests.rs`: one fact for every supported path in the closed checklist
+  (2 table, 11 column, 15 constraint, 11 index and 7 index-key fields) compares
+  equal with different local OIDs and schema names, and changed on every path in
+  both directions, including external and selected references, defaults,
+  identity/generated facts, constraint-owned index properties, NULLS NOT
+  DISTINCT, FK delete-column subsets and invalid-index state.
+- `budget.rs`: two jobs' setup and capture scratch, two retained results at
+  their 32 MiB cap and two 8 MiB serializer leases total 208 MiB. The remaining
+  48 MiB less the 64 KiB control headroom is reservable; one more byte is an
+  allocation refusal, a third serializer is busy and each result scope refuses
+  its own cap independently. `Budget::peak()` now records the highest reserved
+  total for the runtime measurements; it is not a limit.
+- `manager/validation.rs`: cancellation while credential/connection resolution
+  waits on an exhausted local SQLite pool terminates without opening a socket;
+  cancellation and the admission deadline both close a silent PostgreSQL
+  handshake on a connection with no configured connect timeout; cancellation
+  while SSH setup is blocked in a bastion handshake keeps the job cancelling
+  with its admission held until the blocked worker joins, then ends cancelled.
+
+Native matrix, run by `infrastructure/test-db/schema-compare/native.py` in
+owned disposable containers on this aarch64 macOS host:
+
+| Fixture | Server |
+| --- | --- |
+| Primary | PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) |
+| Second minor | PostgreSQL 16.14 (Debian 16.14-1.pgdg13+1) |
+| Other major | PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) |
+| TLS | PostgreSQL 16.14 (Alpine), built from `infrastructure/test-db/postgres-tls` with host-generated throwaway certificates |
+
+- Independent databases on one server compare with independent transactions
+  and distinct capture times; supported expressions stay comparable and the
+  result is equal. PG16.15 against PG16.14 compares every structured fact and
+  marks each rendered expression `renderingVersionDifference` with identical raw
+  text on both sides; nothing is reported changed. PG17.11 as source or target
+  fails with `unsupportedVersion` naming that side and its version. A missing
+  schema and a role without table SELECT fail closed.
+- `verify-full` against the fixture's untrusted issuer fails before any catalog
+  read and retains nothing; the same mode with the fixture CA trusted, and
+  `require`, complete an equal comparison, so the failure is verification.
+- Teardown of an endpoint through the canonical connection fence while the
+  reader waits for its pre-snapshot lock invalidates the job, waits for the
+  driver join and returns admission; plain cancellation in the same wait
+  terminates in single-digit milliseconds. Terminating the reader's backend with
+  `pg_terminate_backend` is a failed job, never a completed result. Each
+  comparison uses exactly one client backend beyond the fixture session and
+  closes it. A `ddl_command_start` event trigger recorded no DDL and
+  `pg_stat_user_tables` recorded no user-table scans across a successful, a
+  fenced, a cancelled and a terminated comparison.
+- A column rename committed while the reader waits for its lock is observed
+  completely: 27 changed fields (11 source-only and 11 target-only column facts,
+  the CHECK key list and expression, the expression-index key and predicate and
+  the plain key) with no target value containing the old name. A table dropped
+  during the same wait fails that attempt and the single fresh retry reports
+  the table source-only from a complete target inventory.
+- A schema with a local collation, enum, domain, composite, range, arrays of an
+  external enum and of `numeric(10,2)`, `varchar(20) COLLATE "C"`, an external
+  FK, identity ALWAYS and a stored generated column compares with zero changed
+  fields; selected-schema references map to one namespace and external ones
+  keep their schema. Array columns retain the element typmod (655366). An enum
+  default is `externalDependency`; `now()` and a domain-typed generated
+  expression are `expressionOutsideSubset`. The composite relation and the
+  identity-owned sequence are disclosed as excluded counterparts. Changing the
+  identity sequence increment and restart value produces no change. NULLS NOT
+  DISTINCT and an FK delete-column subset are exact known changes; a failed
+  `CREATE UNIQUE INDEX CONCURRENTLY` leaves an invalid same-named index that
+  reports `valid` (and `ready`) changed rather than absence.
+
+Memory and limit profile (`native_memory_profile_with_increasing_schema_size_and_exact_limits`,
+one test thread, Rust test process only). Peak budget is the manager's
+reserved accounting; max RSS is process-wide `ru_maxrss` after each job and is
+therefore monotonic:
+
+| shape | tables | facts/side | outcome | peak budget MiB | max RSS MiB | seconds |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| baseline | 0 | 0 | before any job | 0.0 | 26.5 | 0.00 |
+| realistic | 10 | 1,630 | completed (equal) | 78.3 | 38.6 | 0.28 |
+| realistic | 100 | 16,300 | completed (equal) | 78.6 | 46.4 | 1.83 |
+| realistic | 300 | 48,900 | completed (equal) | 79.1 | 64.5 | 3.53 |
+| narrow | 1,000 | 13,000 | completed (equal) | 78.4 | 66.1 | 1.01 |
+| narrow | 1,001 | 13,013 | failed `limitExceeded`/`tables` | 64.0 | 66.3 | 0.01 |
+| exact | 250 | 50,000 | completed (equal) | 78.7 | 72.6 | 3.09 |
+| exact+1 | 250 | 50,011 | failed `limitExceeded`/`childFacts` | 70.9 | 72.6 | 1.47 |
+| concurrent | 2 x 100 | 2 x 16,300 | two results + two pages | 157.0 | 81.7 | - |
+
+A realistic table (eight columns, PK, CHECK, a two-key partial index, two
+comments) yields 163 facts, so the 50,000 child-fact cap binds at about 306 such
+tables per endpoint, before the 1,000-table cap. Two concurrent jobs, two
+retained results and two in-flight pages peaked at 157 MiB of the 256 MiB
+ceiling; a third page was busy. The table cap refused during discovery (64 MiB:
+setup and capture scratch only) and the child-fact cap refused during capture
+retention (70.9 MiB). Every job released to zero after result release.
+
+Finding and change: with 64-row transport pages the cap-sized capture took
+28.5 s of the 60 s job deadline (300 realistic tables 29.7 s), because every
+page re-runs its 32-table group's catalog joins and deparses. Materializing the
+facts CTE did not help. `BATCH_ROWS` is now 1,024 under the unchanged 2 MiB
+running byte bound; the same capture takes 3.1 s with identical budget peaks and
+about 4 MiB more RSS. The 256 KiB field-cap and oversize-refusal fixtures pass
+unchanged. The ADR and fixture record describe the new page bound.
+
+Not established here: WebView-side IPC allocation cannot be measured without a
+product surface and remains for the activation slice; Windows-specific paths are
+unverified on this host; only the Docker images above were exercised.
+
+Validation:
+
+- `pnpm format`, `pnpm lint`, `pnpm typecheck`: passed.
+- Full frontend suite: 125 files, 1,452 tests passed.
+- `just fmt`, `git diff --check`, `just lint`, `just test` with
+  `/tmp/dbunk-plan021-target`: passed; Rust: 606 passed, 60 opt-in tests
+  ignored by the default suite (six of them are the new native tests, all run
+  explicitly below).
+- `python3 infrastructure/test-db/schema-compare/native.py`: all eight native
+  tests and the memory profile passed on the four servers above; every owned
+  `dbunk-schema-compare-native-*` container was removed.
+
+Step 7 is next: completion review and handoff. No commit, push, PR, production
+database or daily-driver channel was touched; changes remain uncommitted.

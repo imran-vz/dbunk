@@ -1,8 +1,10 @@
 # ADR-0030: PostgreSQL schema comparison foundation
 
-**Status**: Accepted for the Plan 021 foundation (2026-09-06). Native catalog
-capture, structural diff and native job commands are implemented. No comparison
-UI is active; native runtime/IPC allocation validation remains Step 6.
+**Status**: Accepted for the Plan 021 foundation (2026-09-06, validation
+2026-09-14). Native catalog capture, structural diff and native job commands
+are implemented and validated against owned PG16.15, PG16.14, PG17.11 and TLS
+fixtures. No comparison UI is active; WebView-side allocation measurement waits
+for the activation slice.
 
 ## Problem
 
@@ -155,8 +157,8 @@ flags become explicit sort/null-order names; unknown method/flag semantics remai
 incomparable. Required NULL deparses abort capture.
 
 Field SQL measures UTF-8 bytes before returning text and guards each field at
-256 KiB. A transport batch contains at most 64 fields and 2 MiB including
-conservative row overhead. A running byte sum returns only a bounded prefix;
+256 KiB. A transport batch contains at most 1,024 fields and 2 MiB including
+conservative row overhead (originally 64 fields; see the Step 6 section). A running byte sum returns only a bounded prefix;
 the next offset resumes the same immutable snapshot. Oversize values cross as
 an error flag with NULL payload. A 32 MiB global scratch reservation precedes
 native capture and covers bounded driver/decoder buffers and transfer into
@@ -321,3 +323,39 @@ Tauri 2.11.2 ignores `prevent_exit` for restart requests, so restart cleanup wai
 inside the original callback before returning to Tauri. A restart arriving during
 an ordinary exit waits for that same cleanup to finish. Repeated ordinary exits
 are prevented while cleanup is pending and allowed once it has finished.
+
+
+## Failure and boundedness validation (Step 6, 2026-09-14)
+
+Cancellation and the admission deadline are validated through the real runner
+at every resolution phase: a storage/credential read blocked on the local pool,
+a PostgreSQL handshake with no configured connect timeout, and SSH setup blocked
+in a bastion handshake. The blocked SSH worker keeps its admission until it
+actually joins; grace expiry never fabricates completion. TLS `verify-full`
+against an untrusted issuer fails before any catalog read; the same mode with
+the trusted fixture CA completes.
+
+Native fixtures show that a connection fence or plain cancellation during the
+pre-snapshot lock wait terminates in milliseconds and closes the single dedicated
+backend, that losing that backend is a failed job rather than a result, and
+that comparison sessions execute no DDL (event trigger) and scan no user tables
+(`pg_stat_user_tables`). A rename committed during the lock wait is observed
+completely on the post-rename snapshot; a drop during the wait is retried once
+and reported from a complete inventory. Independent databases keep independent
+capture times; PG16.14 against PG16.15 compares structured facts and marks
+rendered expressions `renderingVersionDifference`; PG17 is refused by side.
+
+The Rust-process profile at the declared limits peaks near 79 MiB of reserved
+accounting per job (32 MiB setup scratch, 32 MiB capture scratch and the
+retained captures/result) and 157 MiB with two concurrent jobs, two retained
+results and two in-flight pages, inside the 256 MiB ceiling; process RSS grew
+from 26.5 MiB to 81.7 MiB across the profile. The 50,000 child-fact cap binds
+at roughly 306 realistic eight-column tables, before the 1,000-table cap.
+
+Transport pages were 64 rows. Because each page re-runs its 32-table group's
+catalog joins and deparses, a cap-sized capture took 28.5 s of the 60 s job
+deadline. Pages now carry up to 1,024 rows under the unchanged 2 MiB running
+byte bound, the 256 KiB field guard and the 32 MiB capture scratch; the same
+capture takes about 3 s. Server-side work per page and retained accounting are
+unchanged. Measurements are from Docker images on an aarch64 macOS host; Windows
+paths and WebView-side IPC allocation remain unmeasured.

@@ -4,6 +4,8 @@ mod reads;
 mod runner;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod validation;
 
 use super::{
     budget::Budget,

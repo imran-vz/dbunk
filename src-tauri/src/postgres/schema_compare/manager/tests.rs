@@ -5,7 +5,7 @@ use tauri::webview::PageLoadEvent;
 
 static REQUEST_TIME: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
 
-fn request(id: &str, source: &str, target: &str) -> StartRequest {
+pub(super) fn request(id: &str, source: &str, target: &str) -> StartRequest {
     StartRequest {
         request_id: format!(
             "{}:{id}",
@@ -21,7 +21,7 @@ fn request(id: &str, source: &str, target: &str) -> StartRequest {
         },
     }
 }
-async fn empty(ctx: JobContext) -> Result<Comparison, CompareError> {
+pub(super) async fn empty(ctx: JobContext) -> Result<Comparison, CompareError> {
     let source = test_support::fixture(
         &ctx.budget,
         &ctx.request.source.connection_id,
@@ -41,7 +41,7 @@ async fn empty(ctx: JobContext) -> Result<Comparison, CompareError> {
     }
     diff::compare(ctx.identity, source, target, &ctx.control, Instant::now())
 }
-async fn finished(manager: &CompareManager, id: &str) -> Status {
+pub(super) async fn finished(manager: &CompareManager, id: &str) -> Status {
     let mut done = manager
         .inner
         .lock()

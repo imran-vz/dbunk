@@ -647,5 +647,6 @@ Plan 021 currently provides the capture proof and typed native/client foundation
 including bounded value chunks, native catalog capture, deterministic structural
 diff results and backend-owned comparison jobs. Jobs reserve both endpoints before
 resolution and own cancellation, result retention and reads independently of any
-future UI tab. Product activation and full native runtime validation remain separate.
-See ADR-0030.
+future UI tab. Failure, limit and Rust-process allocation behavior is validated
+against owned disposable PG16.15, PG16.14, PG17.11 and TLS fixtures. Product
+activation and WebView-side allocation measurement remain separate. See ADR-0030.
