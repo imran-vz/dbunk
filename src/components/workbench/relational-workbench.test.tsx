@@ -16,6 +16,11 @@ vi.mock("@/components/pg-tool-jobs/workspace", () => ({
     </output>
   ),
 }));
+vi.mock("@/components/pg-schema-compare/workspace", () => ({
+  SchemaCompareWorkspace: ({ connection }: { connection: { id: string } }) => (
+    <output data-testid="schema-compare-target">{connection.id}</output>
+  ),
+}));
 vi.mock("@/components/ui/panel", () => ({
   Panel: ({ children }: { children: ReactNode }) => <aside>{children}</aside>,
   useLayoutPressure: () => undefined,
@@ -140,25 +145,48 @@ describe("relational workbench PostgreSQL tool routing", () => {
     );
   });
 
-  it("normalizes a persisted PostgreSQL-only rail for another engine", async () => {
-    localStorage.setItem("dbunk.workbench.rail", "pg-tools");
+  it("opens the schema comparison workspace for the active PostgreSQL connection", () => {
+    localStorage.setItem("dbunk.workbench.rail", "schema-compare");
+    const active = postgres("active");
     useAppStore.setState({
-      connections: [mysql],
-      activeConnectionId: mysql.id,
+      connections: [active],
+      activeConnectionId: active.id,
       activeTabId: "",
       workspaceTabs: [],
     });
 
     renderWorkbench();
 
-    await waitFor(() =>
-      expect(screen.getByTestId("workbench-shell").dataset.activeRail).toBe(
-        "tables",
-      ),
+    expect(screen.getByTestId("schema-compare-target").textContent).toBe(
+      "active",
     );
-    expect(
-      screen.getByTestId("workbench-shell").dataset.railItems,
-    ).not.toContain("pg-tools");
-    expect(localStorage.getItem("dbunk.workbench.rail")).toBe("tables");
+    expect(screen.getByTestId("workbench-shell").dataset.railItems).toContain(
+      "schema-compare",
+    );
   });
+
+  it.each(["pg-tools", "schema-compare"])(
+    "normalizes the persisted PostgreSQL-only %s rail for another engine",
+    async (rail) => {
+      localStorage.setItem("dbunk.workbench.rail", rail);
+      useAppStore.setState({
+        connections: [mysql],
+        activeConnectionId: mysql.id,
+        activeTabId: "",
+        workspaceTabs: [],
+      });
+
+      renderWorkbench();
+
+      await waitFor(() =>
+        expect(screen.getByTestId("workbench-shell").dataset.activeRail).toBe(
+          "tables",
+        ),
+      );
+      expect(
+        screen.getByTestId("workbench-shell").dataset.railItems,
+      ).not.toContain(rail);
+      expect(localStorage.getItem("dbunk.workbench.rail")).toBe("tables");
+    },
+  );
 });

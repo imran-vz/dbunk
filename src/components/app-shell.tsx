@@ -18,6 +18,7 @@ import { KeyValueWorkbench } from "@/components/workbench/keyvalue-workbench";
 import { RelationalWorkbench } from "@/components/workbench/relational-workbench";
 import { TabShortcuts } from "@/components/workbench/tab-shortcuts";
 import { isKeyValueConnection } from "@/components/workbench/workbench-policy";
+import { pgSchemaCompareObserver } from "@/lib/pg-schema-compare/observer";
 import { pgToolObserver } from "@/lib/pg-tool-jobs/observer";
 import { refreshAfterPgRestore } from "@/lib/pg-tool-jobs/restore-refresh";
 import { pgTransferObserver } from "@/lib/pg-transfer/observer";
@@ -211,9 +212,12 @@ export function AppShell() {
     const stopTransfers = pgTransferObserver.mount((job) => {
       void refreshAfterPgCsvImport(job);
     });
+    // Comparison results are immutable captures: no completion refresh.
+    const stopComparisons = pgSchemaCompareObserver.mount();
     return () => {
       stopTools();
       stopTransfers();
+      stopComparisons();
     };
   }, [appSettings?.credentialState]);
 

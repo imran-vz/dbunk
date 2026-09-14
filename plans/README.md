@@ -32,7 +32,8 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 018 | File-backed PostgreSQL backup and restore foundation (dark)                    |       P1 |      L | 017        | DONE: de3272b                     |
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
-| [021](./021-bounded-postgres-schema-comparison.md) | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | READY FOR REVIEW: review complete 2026-09-14, awaiting commit SHA for DONE |
+| 021 | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | DONE: 9312b41 |
+| [022](./022-postgres-schema-comparison-activation.md) | PostgreSQL schema comparison activation | P1 | L | 021 | IN PROGRESS: through Step 4 (selected mock A); frontend checks pass, Step 5 native/WebView fixture gate not yet run |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -41,47 +42,30 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently active: Plan 021 is reviewed and complete; only the DONE commit is outstanding.**
-The foundation is committed at `502674e`, the Step 5 job ownership at
-`265c0c1` and the Step 6 failure and boundedness validation at `5d04118`:
-resolution-phase cancellation tests, a closed field-checklist test, the
-combined budget ceiling test, and an owned four-container fixture matrix
-(PG16.15, PG16.14, PG17.11 and a TLS-enabled PG16.14) covering independent
-databases, a second minor, major refusal, TLS verification failure, teardown
-and backend loss during capture, concurrent DDL, unusual types/collations,
-identity sequences, invalid indexes and a native memory/limit profile. The
-profile found that 64-row transport pages made a cap-sized capture take about
-28 s; pages now carry up to 1,024 rows under the unchanged 2 MiB bound and the
-same capture takes about 3 s. Step 7 reran every required check and the native
-matrix on 2026-09-14 and inspected the full diff against scope; see the
-[Step 7 record](./021-bounded-postgres-schema-comparison.md#completion-and-handoff-step-7-2026-09-14).
-The two-axis code review ran on 2026-09-14 and Imran confirmed it done; its
-actionable findings are fixed and re-verified, see the
-[review fixes record](./021-bounded-postgres-schema-comparison.md#review-fixes-step-7-2026-09-14).
-The Step 7 record and review fixes are uncommitted; `DONE: <completion SHA>`
-is recorded once they are committed, and the plan body is then retired.
+**Currently executing: Plan 022, PostgreSQL schema comparison activation.**
+Plan 022 brings Plan 021's read-only comparison into the workbench. Imran
+selected **A: Object inspector** on 2026-09-14. The observer, bounded reader,
+workbench rail destination and Object inspector workspace are implemented with
+focused tests, and format/lint/typecheck pass. The native/WebView fixture and
+memory gate has not run; the plan's execution record lists the blocked
+scenarios. It is not ready for review until that gate is recorded.
+[Plan 022](./022-postgres-schema-comparison-activation.md) ·
+[Published brief and mocks](https://dbunk-schema-compare-plan-022.imran-vz.chatgpt.site) ·
+[Local artifact](./mocks/schema-compare/index.html).
+
+Plan 021 is DONE at `9312b41`. Its completion record and reviewed fixes were
+committed on 2026-09-14. The completed plan body is retired; the
+[historical execution record](https://github.com/imran-vz/dbunk/blob/9312b41ab2d2c92f48b54d2b3229332bf74641a2/plans/021-bounded-postgres-schema-comparison.md) retains the checks,
+fixture matrix, performance measurements and remaining validation limits.
+This bookkeeping update records that commit and does not claim new runtime tests.
+The delivered backend covers ordinary-table definitions on PostgreSQL 16,
+with bounded capture, structural differences, typed jobs, cancellation and
+explicit coverage. UI activation and WebView memory validation are Plan 022;
+wider object coverage, migration SQL and data comparison remain later slices.
 
 Plan 020 is DONE at `7745946`, confirmed by Imran on 2026-09-05.
-Completion is recorded from operator confirmation; the historical execution
-record at that SHA retains the automated/live results and the native validation
-limitations known at commit time. This status update does not claim new tests.
-The completed plan body is retired per the register convention.
-
-Plan 021 starts PAR-008 with a bounded, read-only PostgreSQL schema comparison
-backend for ordinary table definitions on PostgreSQL 16 endpoints. The GPT-6
-critique is incorporated; capture/deparser feasibility is the first implementation
-gate, followed by normalization/byte contracts and the native job manager.
-Implementation was authorized on 2026-09-05. The disposable PG16.15 harness
-reproduced mixed deparser reads and a hidden dependency in a built-in array
-constant. The conservative scalar recognizer and discovery/lock fixtures now
-resolve that gate for a limited projection. Typed contracts, normalization,
-value paging, allocation/response ownership primitives and bounded native catalog
-capture, deterministic structural diff and native job integration are implemented.
-[Gate evidence and field matrix](../infrastructure/test-db/schema-compare/README.md).
-Native failure/load validation and Rust-process allocation measurements are
-recorded in Step 6; WebView-side IPC measurement waits for the product surface.
-UI activation, migration SQL and data comparison remain subsequent slices.
-[Visual planning brief](./next-parity-item.html) · [Implementation draft](./021-bounded-postgres-schema-comparison.md).
+Its historical execution record retains the automated/live results and native
+validation limitations known at completion.
 
 ## Planning rules
 

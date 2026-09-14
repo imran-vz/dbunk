@@ -14,6 +14,7 @@ import {
   RoutineEditorDialog,
 } from "@/components/object-ddl";
 import { ObjectViewer } from "@/components/object-viewer";
+import { SchemaCompareWorkspace } from "@/components/pg-schema-compare/workspace";
 import { PgToolWorkspace } from "@/components/pg-tool-jobs/workspace";
 import { QueryEditorPanel } from "@/components/query-editor-panel";
 import type { StatusBarItem } from "@/components/status-bar";
@@ -29,6 +30,7 @@ import {
 } from "@/components/workbench/object-tab-row";
 import {
   firstRelationalConnection,
+  isPostgresOnlyRail,
   relationalRailForTab,
 } from "@/components/workbench/workbench-policy";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
@@ -199,7 +201,8 @@ export function RelationalWorkbench({
     ? (schemaExplorer[activeConnection.id] ?? [])
     : [];
   const isPostgres = activeConnection?.engine === "PostgreSQL";
-  const effectiveRail = !isPostgres && rail === "pg-tools" ? "tables" : rail;
+  const effectiveRail =
+    !isPostgres && isPostgresOnlyRail(rail) ? "tables" : rail;
   useEffect(() => {
     if (effectiveRail !== rail) {
       setRail(effectiveRail);
@@ -352,6 +355,14 @@ export function RelationalWorkbench({
       : effectiveRail === "pg-tools"
         ? activeConnection
         : undefined;
+    if (
+      effectiveRail === "schema-compare" &&
+      activeConnection.engine === "PostgreSQL"
+    ) {
+      // The comparison owns its endpoints; the active connection only seeds
+      // Source on first open and never retargets an accepted job.
+      return <SchemaCompareWorkspace connection={activeConnection} />;
+    }
     if (pgToolConnection?.engine === "PostgreSQL") {
       return (
         <PgToolWorkspace
@@ -572,7 +583,7 @@ export function RelationalWorkbench({
         onPointerDown={onPointerDown}
         onDoubleClick={onDoubleClick}
         railItems={RELATIONAL_RAIL_ITEMS.filter(
-          (item) => item.id !== "pg-tools" || isPostgres,
+          (item) => !isPostgresOnlyRail(item.id) || isPostgres,
         )}
         activeRail={settingsView ? "tables" : effectiveRail}
         onRailChange={handleRailChange}

@@ -1,5 +1,10 @@
+import type { WorkbenchRailId } from "@/components/app-shell/activity-rail";
 import { storageClassFor } from "@/lib/engine-policy";
 import type { Connection, WorkspaceTab } from "@/lib/store";
+
+/** Native PostgreSQL tool surfaces; hidden and normalized away for other engines. */
+export const isPostgresOnlyRail = (rail: WorkbenchRailId): boolean =>
+  rail === "pg-tools" || rail === "schema-compare";
 
 /** Relational object/table tabs belong to Tables; SQL editors to Queries. */
 export const relationalRailForTab = (
