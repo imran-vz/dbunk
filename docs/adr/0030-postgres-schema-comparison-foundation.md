@@ -3,8 +3,11 @@
 **Status**: Accepted for the Plan 021 foundation (2026-09-06, validation
 2026-09-14). Native catalog capture, structural diff and native job commands
 are implemented and validated against owned PG16.15, PG16.14, PG17.11 and TLS
-fixtures. No comparison UI is active; WebView-side allocation measurement waits
-for the activation slice.
+fixtures. Plan 022 (2026-09-14) activates the comparison through the typed
+client behind a PostgreSQL-only workbench rail item with an application-owned
+observer and an epoch-fenced bounded reader, preserving this scope and
+normalization version 1. WebView-side allocation measurement and the native
+fixture scenarios for the activated view have not yet been run.
 
 ## Problem
 

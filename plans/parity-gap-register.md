@@ -59,7 +59,7 @@ implementation's blast radius, not the severity of the missing capability.
 | PAR-005 | Workspace persistence and global navigation | Partial | P0 | L | Medium | High |
 | PAR-006 | Connection security and organization | Partial | P1 | L | High | High |
 | PAR-007 | PostgreSQL object lifecycle management | Partial | P1 | XL | Medium | High |
-| PAR-008 | Schema and data comparison with migration | Missing | P1 | XL | High | High |
+| PAR-008 | Schema and data comparison with migration | Partial | P1 | XL | High | High |
 | PAR-009 | Diagram editing and visual query building | Partial | P1 | L | Medium | High |
 | PAR-010 | Transfer, DDL export, backup, and restore | Partial | P1 | XL | High | High |
 | PAR-011 | PostgreSQL administration and observability | Partial | P1 | XL | Medium | High |
@@ -570,38 +570,46 @@ inspectable.
 
 ### PAR-008: Schema and data comparison with migration
 
-**Current state:** Missing. The former prototype was removed during workspace
-consolidation and has not yet been replaced.
+**Current state:** Partial. Plan 021's read-only PostgreSQL schema comparison
+backend is complete at `9312b41`. Plan 022's Object inspector surface is
+implemented in the working tree with frontend verification; its native and
+WebView validation gate has not run.
+
+**Progress (2026-09-14):** Plan 021 delivered the ordinary-table definition
+projection for PostgreSQL 16 endpoints: bounded native capture, deterministic
+field-level structural differences, explicit coverage, backend-owned jobs,
+status, bounded reads, cancellation and release with endpoint/global lifecycle
+fences. The completion record and review fixes are committed at `9312b41`.
+[Historical Plan 021](https://github.com/imran-vz/dbunk/blob/9312b41ab2d2c92f48b54d2b3229332bf74641a2/plans/021-bounded-postgres-schema-comparison.md) preserves the owned native
+fixture matrix, performance measurements, review fixes and verification record.
+WebView allocation remains unmeasured; this status update claims no new tests.
+
+**Current slice:** [Plan 022](./022-postgres-schema-comparison-activation.md)
+activates source/target selection, paged object and field inspection, coverage
+and job lifecycle in the real workbench. The selected Object inspector
+reference is available in the [visual brief](./mocks/schema-compare/index.html).
+Imran selected **A: Object inspector** on 2026-09-14. On the same day the
+comparison observer, bounded reader, `schema-compare` rail destination and
+workspace were implemented with focused Vitest suites; the isolated native
+fixture and WebView memory gate remains blocked and unrecorded. Broader object
+coverage, migration SQL and row-data comparison remain separate follow-ups.
 
 **Evidence:**
 
-- The former `src/components/workspace-overview/compare-tab.tsx` prototype was
-  deleted by the workspace consolidation (`8411dbf`); there is no active
-  schema/data comparison surface in the current tree.
-
-**Foundation complete and reviewed (2026-09-14), awaiting the DONE commit:** [Plan 021](./021-bounded-postgres-schema-comparison.md)
-implements a typed foundation, bounded native capture, deterministic structural
-diff and backend-owned jobs for ordinary PostgreSQL table definitions across two
-explicit schema endpoints. Native commands and the typed client provide admission,
-status, bounded reads, cancellation and release, with endpoint/global lifecycle fences.
-The foundation is committed at `502674e`, job ownership at `265c0c1` and the
-failure and boundedness validation at `5d04118`: independent databases, a second
-PG16 minor, PG17 refusal, TLS verification failure, teardown and backend loss
-during capture, concurrent DDL, unusual types and a native memory/limit profile
-all pass in owned disposable fixtures. The Step 7 handoff reran every required
-check and the native matrix, and the two-axis code review's actionable findings
-(exit-cleanup panic path, blocking tunnel joins on runtime workers, test-only
-code in production builds, a missing reconnect test) are fixed and re-verified.
-The review fixes are uncommitted; the row moves to `DONE` with that commit. No
-comparison product surface has shipped. UI activation, wider object coverage, migration SQL and row-data
-comparison remain follow-ups. See the [visual brief](./next-parity-item.html).
+- `src-tauri/src/postgres/schema_compare/` owns capture, normalization, diff,
+  bounded storage, paging and native job lifecycle.
+- `src-tauri/src/commands/pg_schema_compare.rs` exposes typed native commands.
+- `src/lib/pg-schema-compare/client.ts` and `protocol.ts` provide validated
+  reads and transport acknowledgements; `observer.ts` and `reader.ts` own
+  job observation and bounded, epoch-fenced result reads.
+- `src/components/pg-schema-compare/` renders the Object inspector workspace
+  behind the PostgreSQL-only `schema-compare` rail item.
 
 **Missing pieces:**
 
-- Cross-connection source and destination selection.
-- Complete normalized metadata snapshots.
-- Definition comparison for columns, constraints, indexes, views, routines,
-  policies, grants, comments, and dependencies.
+- User-facing source/target selection, field inspection, coverage and job controls.
+- Broader normalized definitions beyond the delivered ordinary-table projection:
+  views, routines, types, policies, grants and dependency definitions.
 - Rename detection with explicit user confirmation.
 - Dependency-ordered migration SQL.
 - Selective include/exclude, SQL review, export, and apply.
@@ -933,10 +941,11 @@ Parity work should reuse rather than replace these credible foundations:
    Plan 017 activation is DONE at `25d36f1`.
 8. `PAR-010`: file-backed backup/restore and bounded PostgreSQL CSV delivered
    by Plans 018–020 through `7745946`; wider transfer scope stays tracked.
-9. `PAR-008`: Plan 021 has a typed foundation, bounded native capture, structural
-   diff, native job integration and failure/boundedness validation; its Step 7
-   handoff and code review are complete, with the DONE commit outstanding. UI
-   activation and migration/data comparison remain separate follow-ups.
+9. `PAR-008`: Plan 021's bounded schema comparison foundation is DONE at
+   `9312b41`. Plan 022 (read-only UI activation, mock A Object inspector) is
+   implemented with frontend verification; its native/WebView boundedness
+   validation has not run. Wider coverage,
+   migration SQL and data comparison remain separate follow-ups.
 10. `PAR-009` and `PAR-011`: diagrams/query design and administration.
 11. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise
    parity only after the daily-driver foundation is stable.

@@ -163,10 +163,13 @@ schema-name comparison and first-100-row data comparison prototypes were removed
 during workspace consolidation (`8411dbf`). They are not shipped capabilities in
 the current app.
 
-[Plan 021](../../plans/021-bounded-postgres-schema-comparison.md) begins replacement
-planning with bounded, read-only PostgreSQL table-definition comparison. UI
-activation, broader definition coverage, migration SQL and bounded data comparison
-remain PAR-008 work. Current execution status lives in `plans/README.md`.
+[Plan 021](https://github.com/imran-vz/dbunk/blob/9312b41ab2d2c92f48b54d2b3229332bf74641a2/plans/021-bounded-postgres-schema-comparison.md) delivered bounded, read-only PostgreSQL 16
+ordinary-table definition comparison at `9312b41`.
+[Plan 022](../../plans/022-postgres-schema-comparison-activation.md) implements
+the Object inspector workbench surface; its native/WebView memory validation is
+still pending. Broader definition coverage,
+migration SQL and bounded data comparison remain PAR-008 work.
+Current execution status lives in `plans/README.md`.
 
 ## Phase 10 — Specialized editors — ✅ shipped
 Final polish — object-creation UIs and cell-level editors for Postgres-shaped data.

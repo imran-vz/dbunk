@@ -648,5 +648,8 @@ including bounded value chunks, native catalog capture, deterministic structural
 diff results and backend-owned comparison jobs. Jobs reserve both endpoints before
 resolution and own cancellation, result retention and reads independently of any
 future UI tab. Failure, limit and Rust-process allocation behavior is validated
-against owned disposable PG16.15, PG16.14, PG17.11 and TLS fixtures. Product
-activation and WebView-side allocation measurement remain separate. See ADR-0030.
+against owned disposable PG16.15, PG16.14, PG17.11 and TLS fixtures. Plan 022
+activates it in the workbench as the Object inspector: a PostgreSQL-only
+Schema compare rail destination with explicit endpoints, an application-owned
+job observer and a bounded, epoch-fenced result reader. WebView-side allocation
+measurement for the activated view remains pending. See ADR-0030.

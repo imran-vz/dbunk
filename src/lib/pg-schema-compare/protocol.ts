@@ -57,6 +57,9 @@ export const schemaCompareRelationIdentity = z.object({
   ]),
   name: identifier,
 });
+export type SchemaCompareRelationIdentity = z.infer<
+  typeof schemaCompareRelationIdentity
+>;
 
 export const schemaCompareFieldPath = z.discriminatedUnion("kind", [
   z.object({
@@ -266,6 +269,9 @@ export const schemaCompareObjectSummary = summaryUnion(
   schemaCompareRelationIdentity,
   schemaCompareRelationIdentity,
 );
+export type SchemaCompareObjectSummary = z.infer<
+  typeof schemaCompareObjectSummary
+>;
 const pageMetadata = {
   responseId: id,
   identity: schemaCompareResultIdentity,
