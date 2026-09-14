@@ -2,90 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dbunk · Plan 021 · Schema comparison</title>
-<style>
-:root{color-scheme:dark;--bg:#000;--text:#fff;--muted:#b4b4b4;--line:#333;--accent:#eab308;--good:#94d7a4;--measure:76ch}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}main{max-width:1200px;padding:44px 36px 72px;margin:auto}a{color:var(--accent);text-underline-offset:4px}a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:5px}header{border-bottom:1px solid var(--line);padding-bottom:26px}nav{display:flex;gap:24px;flex-wrap:wrap;font-size:13px;margin-bottom:28px}h1{font:600 clamp(27px,4vw,43px)/1.15 ui-monospace,SFMono-Regular,monospace;letter-spacing:-1.4px;max-width:25ch;margin:0 0 18px}h2{font-size:21px;line-height:1.3;margin:0 0 20px}h3{font-size:15px;margin:0 0 8px}p{max-width:var(--measure);margin:10px 0}section{padding:28px 0;border-bottom:1px solid var(--line)}.meta{color:var(--muted);font-size:12px}.lead{font-size:17px;max-width:72ch}.good{color:var(--good)}.accent{color:var(--accent)}.progress{display:grid;grid-template-columns:70px 1fr;gap:8px 20px;align-items:baseline}.progress strong{font-size:19px}.flow{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;margin-top:20px}.endpoint{border-top:2px solid var(--accent);padding-top:14px}.result{grid-column:1/-1;border-top:1px solid var(--line);margin-top:20px;padding-top:18px}.path{font-size:12px;overflow-wrap:anywhere}.table-scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:12px 14px 12px 0;text-align:left;vertical-align:top}th{color:var(--muted);font-weight:400}td:first-child{width:24%}code{overflow-wrap:anywhere}.split{display:grid;grid-template-columns:1fr 1fr;gap:32px}ul,ol{padding-left:22px;margin:8px 0}li{padding:4px 0}.steps{list-style:none;padding:0;counter-reset:steps}.steps li{counter-increment:steps;display:grid;grid-template-columns:40px 1fr;gap:14px;padding:16px 0;border-top:1px solid var(--line)}.steps li::before{content:counter(steps,decimal-leading-zero);color:var(--accent)}.steps p{margin:3px 0;color:var(--muted)}details{padding:14px 0;border-top:1px solid var(--line)}summary{cursor:pointer;font-weight:600}details p{color:var(--muted)}footer{padding-top:24px;font-size:12px;color:var(--muted)}.example td:not(:first-child){width:28%}.note{border-left:2px solid var(--accent);padding-left:16px;margin-top:20px}
-@media(max-width:660px){main{padding:24px 18px 48px}.flow,.split{grid-template-columns:1fr;gap:22px}.result{margin-top:0}.progress{grid-template-columns:54px 1fr;gap:10px}.lead{font-size:15px}table{min-width:570px}nav{gap:12px 20px}h1{letter-spacing:-.8px}}
-@media print{main{padding:0}details>*{display:block}a{color:inherit}section{break-inside:avoid}body{font-size:11px}.table-scroll{overflow:visible}}
-</style>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0;url=mocks/schema-compare/index.html#plan">
+<title>dbunk · Next parity item</title>
+<style>body{background:#000;color:#fff;font:14px/1.5 system-ui,sans-serif;padding:24px}a{color:#f5a623}</style>
 </head>
-<body>
-<main>
-<header>
-<nav aria-label="Plan navigation"><a href="#progress">Progress</a><a href="#contract">Comparison contract</a><a href="#sequence">Sequence</a><a href="021-bounded-postgres-schema-comparison.md">Full implementation draft</a></nav>
-<h1>021 / Trust the diff before generating a migration.</h1>
-<p class="lead">Next: a bounded, read-only PostgreSQL schema comparison backend. Compare ordinary table definitions across two PostgreSQL 16 schema endpoints, with explicit coverage and field-level differences.</p>
-<p class="meta">Critique revised · Planning draft · PAR-008 · P1 / L · 05 Sep 2026 · Baseline 7745946</p>
-</header>
-<section id="progress">
-<h2>020 complete. Comparison is next.</h2>
-<div class="progress">
-<strong class="good">020</strong><div>Bounded PostgreSQL CSV import/export <span class="good">DONE · 7745946</span><p class="meta">Confirmed by Imran. Native jobs, mapping, cancellation and safe publication. Existing validation details remain in git history; no new native checks are claimed.</p></div>
-<strong class="accent">021</strong><div>Read-only schema comparison foundation <span class="accent">DRAFT</span><p class="meta">No product implementation started. The former comparison prototype was removed during workspace consolidation.</p></div>
-<strong>Later</strong><div>Comparison UI → wider object coverage → reviewed migrations<p class="meta">Proposed sequence. Data comparison remains a separate PAR-008 slice.</p></div>
-</div>
-</section>
-<section id="contract">
-<h2>Two endpoints. An inspectable result.</h2>
-<div class="flow">
-<div class="endpoint"><h3>Source / reference</h3><p>Connection + schema</p><p class="meta">Capture supported table facts in a read-only transaction. Preserve identifiers, order and expression text.</p></div>
-<div class="endpoint"><h3>Target / compared endpoint</h3><p>Connection + schema</p><p class="meta">Same stored connection: share one snapshot. Different connections: independent captures with explicit timestamps.</p></div>
-<div class="result"><h3>Stable identity → normalized facts → bounded difference pages</h3><p>Source only · Target only · Changed · Equal · Not comparable</p><p class="note">“Equal” means equal within the declared table projection. Missing permissions, truncated metadata or unsafe normalization must never become a clean diff.</p></div>
-</div>
-<h3 style="margin-top:24px">Illustrative field differences, not a product mock</h3>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Example field differences"><table class="example"><thead><tr><th>Identity / field</th><th>Source</th><th>Target</th><th>Result</th></tr></thead><tbody>
-<tr><td>orders.total / type</td><td>numeric(12,2)</td><td>numeric(10,2)</td><td class="accent">Changed</td></tr>
-<tr><td>orders.id / nullable</td><td>false</td><td>false</td><td class="good">Equal</td></tr>
-<tr><td>orders / relation kind</td><td>Ordinary table</td><td>Partitioned table</td><td>Not comparable</td></tr>
-<tr><td>orders / trigger definitions</td><td>Excluded category</td><td>Excluded category</td><td>Outside coverage</td></tr>
-</tbody></table></div>
-</section>
-<section>
-<h2>The first slice has a narrow claim.</h2>
-<div class="split"><div><h3>Compare table definitions</h3><ul><li>Ordinary tables and visible column order</li><li>Type references, defaults, identity mode, nullability, collation</li><li>Constraint/index facts, including null uniqueness and FK delete-column subsets</li><li>Comments and table persistence</li><li>Typed differences and coverage exclusions</li><li>Cross-connection capture, cancel and cleanup</li></ul></div><div><h3>Keep subsequent work separate</h3><ul><li>Product UI requires published mock selection</li><li>Views, routines, sequences and type definitions, including identity sequence settings</li><li>Security, grants, triggers and partitions</li><li>Rename detection and migration generation</li><li>Apply, synchronization and data comparison</li><li>Other PostgreSQL majors, engines and scheduling</li></ul></div></div>
-</section>
-<section>
-<h2>Limits are part of the contract.</h2>
-<p class="meta">Proposed starting values. Verify with fixtures before accepting final limits.</p>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Proposed comparison limits"><table><thead><tr><th>Boundary</th><th>Draft limit</th><th>When exceeded</th></tr></thead><tbody>
-<tr><td>Admission</td><td>2 active/resolving jobs; 1 per participating connection</td><td>Refuse admission; reserve both endpoints atomically</td></tr>
-<tr><td>Each endpoint</td><td>2,000 inventory entries; 1,000 tables; 50,000 child facts; 16 MiB definitions</td><td>Typed limit error; no partial absence claims</td></tr>
-<tr><td>Single field / result</td><td>256 KiB raw field / 32 MiB retained result</td><td>Guard before driver allocation and retention</td></tr>
-<tr><td>IPC page</td><td>100 summaries / 1 MiB; one 64 KiB UTF-8 value chunk per detail response</td><td>Bound JSON escaping and envelopes; reference large values</td></tr>
-<tr><td>Runtime</td><td>60 s from admission, including resolution; 10 s statement; 2 s lock ceiling</td><td>Cancel and join; separate 5 s cleanup grace, retain capacity until stopped</td></tr>
-<tr><td>Global allocation</td><td>256 MiB; 2 serializers with 8 MiB scratch each</td><td>Reserve before allocation; excess page requests return busy</td></tr>
-<tr><td>Retention</td><td>2 terminal results; 10-minute TTL</td><td>Expired results become unavailable</td></tr>
-</tbody></table></div>
-<p class="note">Raw UTF-8, retained allocations and escaped JSON have separate budgets. A 256 KiB field can expand beyond a 1 MiB page, so values are chunked. Runtime/allocator overhead is measured separately.</p>
-</section>
-<section id="sequence">
-<h2>Implementation sequence</h2>
-<ol class="steps">
-<li><div><strong>Prove capture and deparser behavior</strong><p>Disposable PG16 interleaving fixtures for rename, drop and index changes. Establish lock/snapshot ordering or explicit not-comparable fields. Stop if the remaining comparison is not useful.</p></div></li>
-<li><div><strong>Protocol + normalization + byte accounting</strong><p>Closed PG16 field checklist, counterpart inventory, immutable value references and UTF-8 chunks. Test worst-case JSON expansion and concurrent page requests.</p></div></li>
-<li><div><strong>Bounded catalog capture</strong><p>Implement the proven capture sequence. Enforce PG16/PG16, permissions, complete inventory and definition limits.</p></div></li>
-<li><div><strong>Deterministic structural diff</strong><p>Compare facts using portable identity. Preserve unsafe expressions as not comparable.</p></div></li>
-<li><div><strong>Native jobs + typed client</strong><p>Start the deadline at admission, including credentials and tunnels. Reconcile uncertain starts and fence both endpoints through cleanup.</p></div></li>
-<li><div><strong>Failure + boundedness validation</strong><p>Disposable PostgreSQL fixtures, concurrent DDL, TLS, cancellation, cap boundaries and memory measurements.</p></div></li>
-<li><div><strong>Backend handoff</strong><p>Required checks, contract tests and accurate progress docs. Then plan the UI with several static alternatives.</p></div></li>
-</ol>
-</section>
-<section>
-<h2>Decisions that prevent misleading results</h2>
-<details open><summary>No automatic semantic SQL rewriting</summary><p>Map structured schema references only. Never replace schema names inside literals or deparsed expressions. OIDs are local lookup keys, not cross-database identity. Same named custom types do not prove equal type definitions.</p></details>
-<details open><summary>No global snapshot promise</summary><p>A repeatable-read transaction alone does not prove deparser consistency. Step 1 must handle successful mixed-metadata reads, including rename races. Unproven fields become not comparable; failed required capture aborts.</p></details>
-<details open><summary>Read-only is not a server-code sandbox</summary><p>The comparator never executes captured expressions as SQL, scans user rows or issues DDL/DML. Metadata rendering can invoke installed type output or access-method support code. The fixture must verify this boundary.</p></details>
-<details open><summary>Excluded does not mean absent</summary><p>Inventory relation names and kinds before filtering. An ordinary source table and a same-named target view or partitioned table produce an excluded-counterpart result, never a missing-table claim.</p></details>
-</section>
-<section>
-<h2>Evidence and acceptance</h2>
-<p class="path">Catalog: src-tauri/src/postgres/objects.rs<br>Typed DDL: src-tauri/src/postgres/object_ddl/<br>Transport: src-tauri/src/postgres/dedicated.rs<br>Lifecycle reference: src-tauri/src/postgres/transfer/manager.rs</p>
-<p>Pass format, lint, typecheck, frontend contracts and Rust checks. Explicitly exercise disposable integration fixtures. Prove missing metadata cannot yield false equality and memory stays within the combined budget.</p>
-<p class="meta">Transaction semantics: <a href="https://www.postgresql.org/docs/16/transaction-iso.html">PostgreSQL isolation</a> · <a href="https://www.postgresql.org/docs/16/sql-set-transaction.html">SET TRANSACTION</a>. These references do not establish cross-server atomicity. <a href="https://raw.githubusercontent.com/postgres/postgres/REL_16_STABLE/src/backend/utils/adt/ruleutils.c">PG16 deparser source</a> motivates the feasibility gate.</p>
-</section>
-<footer><a href="README.md">Plan register</a> · <a href="021-bounded-postgres-schema-comparison.md">Full draft, steps and stop conditions</a><p>Planning artifact. True black, dense comparison tables and expandable rationale. No product UI or database changed.</p></footer>
-</main>
-</body>
+<body><p>Plan 021 is complete. <a href="mocks/schema-compare/index.html#plan">Open Plan 022: schema comparison activation and layout options.</a></p></body>
 </html>

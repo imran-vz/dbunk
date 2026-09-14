@@ -1,6 +1,7 @@
 import {
   IconBroadcast,
   IconArchive,
+  IconArrowsDiff,
   IconChartBar,
   IconHistory,
   IconKey,
@@ -33,7 +34,8 @@ export type WorkbenchRailId =
   | "schema-map"
   | "admin"
   | "overview"
-  | "pg-tools";
+  | "pg-tools"
+  | "schema-compare";
 
 export type KeyValueRailId = "keys" | "cli" | "pubsub" | "server";
 
@@ -53,6 +55,7 @@ export const RELATIONAL_RAIL_ITEMS: ReadonlyArray<RailItem<WorkbenchRailId>> = [
   { id: "admin", icon: IconChartBar, label: "Admin" },
   { id: "overview", icon: IconLayoutDashboard, label: "Overview" },
   { id: "pg-tools", icon: IconArchive, label: "Backup / Restore" },
+  { id: "schema-compare", icon: IconArrowsDiff, label: "Schema compare" },
 ];
 
 export const KEYVALUE_RAIL_ITEMS: ReadonlyArray<RailItem<KeyValueRailId>> = [
