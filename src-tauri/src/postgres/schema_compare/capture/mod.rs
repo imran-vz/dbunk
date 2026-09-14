@@ -13,7 +13,10 @@ use std::{future::Future, time::Duration};
 use tokio::{sync::watch, time::Instant};
 use tokio_postgres::{types::ToSql, Client, Row};
 
-const BATCH_ROWS: i64 = 64;
+// Each page re-runs its table group's catalog joins and deparses. Step 6
+// measured 28.5 s for a cap-sized capture at 64 rows and 3.1 s at 1,024 rows;
+// BATCH_BYTES still bounds every page's raw transport size.
+const BATCH_ROWS: i64 = 1024;
 const BATCH_BYTES: i64 = 2 * 1024 * 1024;
 // Covers bounded driver response buffers, row envelopes, JSON decoder scratch,
 // query/parameter storage and transfer into retained, separately charged fields.

@@ -32,7 +32,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 018 | File-backed PostgreSQL backup and restore foundation (dark)                    |       P1 |      L | 017        | DONE: de3272b                     |
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
-| [021](./021-bounded-postgres-schema-comparison.md) | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | IN PROGRESS: through Step 5 |
+| [021](./021-bounded-postgres-schema-comparison.md) | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | IN PROGRESS: through Step 6 |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -41,14 +41,19 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently active: Plan 021 implementation, through Step 5; Step 6 is next.**
-The foundation and identifier-quoting review fix are committed at `502674e`.
-Step 5 adds native job ownership, lifecycle fencing, paged commands and a typed
-client. It is verified and uncommitted; a fresh final review found no actionable
-findings. All required checks passed, including 593 Rust tests, 1,451 frontend
-tests and all three disposable native PG16.15 tests.
-The thermo-nuclear review's P2 finding is resolved and verified; see the
-[review follow-up](./021-bounded-postgres-schema-comparison.md#thermo-nuclear-review-follow-up-2026-09-06).
+**Currently active: Plan 021 implementation, through Step 6; Step 7 is next.**
+The foundation is committed at `502674e` and the Step 5 job ownership at
+`265c0c1`. Step 6 adds the failure and boundedness validation: resolution-phase
+cancellation tests, a closed field-checklist test, the combined budget ceiling
+test, and an owned four-container fixture matrix (PG16.15, PG16.14, PG17.11 and
+a TLS-enabled PG16.14) covering independent databases, a second minor, major
+refusal, TLS verification failure, teardown and backend loss during capture,
+concurrent DDL, unusual types/collations, identity sequences, invalid indexes
+and a native memory/limit profile. The profile found that 64-row transport pages
+made a cap-sized capture take about 28 s; pages now carry up to 1,024 rows under
+the unchanged 2 MiB bound and the same capture takes about 3 s. Step 6 is
+verified and uncommitted; see the
+[Step 6 record](./021-bounded-postgres-schema-comparison.md#failure-and-boundedness-validation-step-6-2026-09-14).
 
 Plan 020 is DONE at `7745946`, confirmed by Imran on 2026-09-05.
 Completion is recorded from operator confirmation; the historical execution
@@ -67,8 +72,9 @@ resolve that gate for a limited projection. Typed contracts, normalization,
 value paging, allocation/response ownership primitives and bounded native catalog
 capture, deterministic structural diff and native job integration are implemented.
 [Gate evidence and field matrix](../infrastructure/test-db/schema-compare/README.md).
-Native runtime, failure/load and IPC allocation validation remain Step 6. UI activation, migration SQL and data
-comparison remain subsequent slices.
+Native failure/load validation and Rust-process allocation measurements are
+recorded in Step 6; WebView-side IPC measurement waits for the product surface.
+UI activation, migration SQL and data comparison remain subsequent slices.
 [Visual planning brief](./next-parity-item.html) · [Implementation draft](./021-bounded-postgres-schema-comparison.md).
 
 ## Planning rules
