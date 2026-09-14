@@ -17,7 +17,6 @@ pub enum ValueKind {
     Integer,
     QualifiedName,
     OrderedNames,
-    OrderedReferences,
     OperatorSignatures,
 }
 
@@ -175,7 +174,6 @@ impl Values {
             Fact::Integer(_) => ValueKind::Integer,
             Fact::Reference(_) => ValueKind::QualifiedName,
             Fact::Names(_) => ValueKind::OrderedNames,
-            Fact::References(_) => ValueKind::OrderedReferences,
             Fact::Operators(_) => ValueKind::OperatorSignatures,
             Fact::Text(_) | Fact::NotComparable { .. } => return Err(CompareError::InvalidRequest),
         };
@@ -191,7 +189,6 @@ impl Values {
             Fact::Integer(value) => serde_json::to_writer(&mut writer, &value),
             Fact::Reference(value) => serde_json::to_writer(&mut writer, value),
             Fact::Names(value) => serde_json::to_writer(&mut writer, value),
-            Fact::References(value) => serde_json::to_writer(&mut writer, value),
             Fact::Operators(value) => serde_json::to_writer(&mut writer, value),
             _ => return Err(CompareError::InvalidRequest),
         };
@@ -259,6 +256,7 @@ pub struct EncodedPage {
     response_id: Box<str>,
 }
 
+#[cfg(test)]
 impl EncodedPage {
     pub fn as_str(&self) -> &str {
         &self.json
@@ -308,10 +306,7 @@ pub(crate) fn encode(
 }
 
 pub(crate) fn validate_response_id(response_id: &str) -> Result<(), CompareError> {
-    if response_id.is_empty() || response_id.len() > 128 {
-        return Err(CompareError::InvalidRequest);
-    }
-    Ok(())
+    validate_id(response_id)
 }
 
 struct InFlight {
@@ -336,9 +331,7 @@ impl ResponseOwnership {
         page: EncodedPage,
         send: impl FnOnce(String),
     ) -> Result<(), CompareError> {
-        if session.is_empty() || session.len() > 128 {
-            return Err(CompareError::InvalidRequest);
-        }
+        validate_id(session)?;
         if self
             .slots
             .iter()

@@ -4,7 +4,7 @@
 - Planned against: `7745946efcc9f975b88f6468690923f2ec30cae3`, 2026-09-05.
 - Depends on: Plans 013–017 (catalog and typed DDL), with Plan 020's completed
   lifecycle work as the current baseline.
-- Execution status: see [README.md](./README.md). Implementation started 2026-09-05; through Step 6. The foundation through Step 4 is committed at `502674e` and Step 5 at `265c0c1`; Step 6 is verified and uncommitted. Step 7 is next. See the execution record below.
+- Execution status: see [README.md](./README.md). Implementation started 2026-09-05; all seven steps are done and the code review completed on 2026-09-14 with its actionable findings fixed. The foundation through Step 4 is committed at `502674e`, Step 5 at `265c0c1` and Step 6 at `5d04118`; the Step 7 handoff record and review fixes are uncommitted, so `DONE` awaits that commit. See the execution record below.
 - Visual brief: [next-parity-item.html](./next-parity-item.html).
 
 ## Outcome
@@ -906,3 +906,122 @@ Validation:
 
 Step 7 is next: completion review and handoff. No commit, push, PR, production
 database or daily-driver channel was touched; changes remain uncommitted.
+
+
+### Completion and handoff, Step 7 (2026-09-14)
+
+Imran asked to finish the schema comparison validation. Step 6 was already
+committed at `5d04118`; this step is the completion review and handoff and
+changes only plan status and records. No product code, command contract,
+fixture or supported field checklist changed.
+
+Checks rerun on the committed tree (no source edits, `cargo fmt` produced no
+diff, `git diff --check` clean):
+
+- `pnpm format`, `pnpm lint`, `pnpm typecheck`: passed.
+- `pnpm test`: 125 files, 1,452 tests passed, including the
+  `src/lib/pg-schema-compare` client and protocol contract tests.
+- `just fmt`, `just lint` (clippy, all targets, warnings denied), `just test`
+  with `CARGO_TARGET_DIR=/tmp/dbunk-plan021-target`: 606 passed, 60 opt-in
+  tests ignored by the default suite.
+- `python3 infrastructure/test-db/schema-compare/native.py`: all eight native
+  tests and the memory profile passed on freshly created PG16.15 (Debian),
+  PG16.14 (Debian), PG17.11 (Debian) and TLS PG16.14 (Alpine) containers; all
+  four owned `dbunk-schema-compare-native-*` containers were removed. Teardown
+  and cancellation during the lock wait terminated in about 2 ms and 1 ms. The
+  profile reproduced the Step 6 table within noise: 78.3 to 79.1 MiB peak
+  budget for a single job, 157.1 MiB for two concurrent jobs with two retained
+  results and two pages, 64.0 MiB at the table-cap refusal, 70.9 MiB at the
+  child-fact refusal, and 3.0 to 3.2 s for the cap-sized captures.
+
+Scope inspection of `git diff 7745946..HEAD` (58 files): new modules under
+`src-tauri/src/postgres/schema_compare/`, `src-tauri/src/commands/pg_schema_compare.rs`,
+`src/lib/pg-schema-compare/` and the fixture harness are the delivered scope.
+Pre-existing files change only to include the comparison manager in the
+canonical connection/global fences, app exit and restart cleanup, to make the
+dedicated driver and SSH setup cancellable with the joins described in the Step
+5 records and ADR-0030, to let the bastion fingerprint update run on any SQLite
+executor, and to add the `libc`/`windows-sys` dependencies for cancellable
+proxy pipe I/O plus the `serialize-to-javascript` dev dependency for the IPC
+fixture. Documentation-only changes retire the Plan 020 body, correct the
+stale Phase 9 shipped claim and ADR-0029 status, and describe Plan 021 in the
+roadmap, register, glossary and fixture README. No debugging output, TODOs,
+commented-out code or test-only code compiled into non-test builds was found.
+
+Review notes on pre-existing paths for the reviewer; none changed in this
+step:
+
+- Restart requests previously returned from the exit callback without any
+  cleanup. Since the Step 5 review fix, a restart blocks the callback on the
+  same cleanup as an ordinary exit: the existing managers close under their
+  three-second timeout and the comparison manager waits for real joins
+  (`src-tauri/src/lib.rs`, `close_socket_managers_for_exit`). ADR-0030 records
+  the comparison wait; this note records that restart now also closes the
+  other managers.
+- If the spawned ordinary-exit cleanup task panicked, `ExitCleanupState::finish`
+  would never run, so the app would not exit and a later restart request would
+  wait on the condition variable indefinitely. The pre-existing code also never
+  exited after such a panic; the indefinite restart wait is new. A drop guard
+  that finishes the state on unwind would close this.
+- `tunnel::drop_connection` and `drop_bastion` now join owned accept, stream,
+  keepalive and proxy workers instead of only setting stop flags. They are
+  called synchronously from the async connection/bastion command handlers and
+  the connection fence, so those joins run on a Tokio worker thread. Workers
+  observe stop flags with cancellable I/O and bounded polling, and in-flight
+  forwarded streams on ordinary tunnels are now aborted at teardown rather
+  than drained.
+- The Windows proxy worker join loop in `tunnel/session/proxy_io.rs` polls
+  without an upper bound after cancelling synchronous I/O; Windows remains
+  unverified on this host.
+- `pub use postgres::schema_compare` at the crate root re-exports the module
+  although no crate-external user exists in the repository; it can become
+  crate-private during activation.
+
+Handoff state: the register row is `READY FOR REVIEW`. Delivered behavior is
+described in ADR-0030, the glossary's PostgreSQL Schema Comparison entry, the
+roadmap's schema compare line (still marked absent as a UI) and PAR-008.
+WebView-side IPC allocation, Windows paths and any non-Docker server remain
+unmeasured. UI activation needs the user's published mock selection; migration
+SQL and data comparison remain separate plans. No commit, push, PR, production
+database or daily-driver channel was touched; the status and record changes
+are uncommitted.
+
+### Review fixes, Step 7 (2026-09-14)
+
+Imran ran the two-axis code review of `7745946...HEAD` and asked to start
+fixing. Changes, all within the comparison lifecycle scope:
+
+- `src-tauri/src/lib.rs`: `run_exit_cleanup` spawns the manager close future
+  and always calls `ExitCleanupState::finish`, with a test that a panicking
+  close path still lets a restart proceed. The crate-root re-export of
+  `schema_compare` is removed and the module is crate-private.
+- `src-tauri/src/tunnel.rs`: `drop_connection_async`/`drop_bastion_async` run
+  the joins on the blocking pool for the connection, bastion and disconnect
+  commands; `join_without_starving_runtime` wraps every synchronous join so a
+  destructor reached on a multi-threaded Tokio worker uses `block_in_place`.
+  Tests cover both runtime flavours. The `SessionLease::commit` alias is gone.
+- `schema_compare`: `valid_id`/`validate_id`, `is_supported_major`,
+  `FieldPath::name_bytes` and the manager's `CLEANUP_GRACE` replace the
+  duplicated checks; `Budget` has named fields; test-only entry points in
+  `normalize`, `pages`, `values`, `budget`, `capture::data` and `protocol` are
+  `#[cfg(test)]`; the never-constructed `Fact::References` and the
+  `orderedReferences` value kind are removed from Rust and TypeScript; the
+  TypeScript field/object summary unions come from one `summaryUnion` builder;
+  the protocol test module sits at the end of its file.
+- `manager/tests.rs`: `reconnect_through_the_disconnect_command_cancels_a_late_worker_and_admits_a_fresh_job`.
+- ADR-0030 records the deferred constraint-owned index fold, the exact
+  excluded-count coverage and these fixes.
+
+Not changed: the Windows proxy join loop bound (unverifiable here), the client
+factory pattern in `client.ts` (kept for test injection), the larger merge and
+enum consolidations the review listed as judgement calls, and commit structure.
+
+Review closure (2026-09-14): Imran confirmed the code review done after the
+fixes above. Final verification on the fixed tree: `pnpm format`, `pnpm lint`,
+`pnpm typecheck` and `pnpm test` (1,452 tests); `just fmt`, `git diff --check`,
+`just lint` and `just test` (610 passed, 60 opt-in ignored); `native.py` on
+fresh PG16.15, PG16.14, PG17.11 and TLS PG16.14 containers (eight native tests
+and the memory profile, containers removed). The remaining review notes stay
+open by decision: the unbounded Windows proxy join loop, the `client.ts`
+factory pattern, the larger merge/enum consolidations and commit structure.
+Plan status is complete pending the commit that supplies the DONE SHA.

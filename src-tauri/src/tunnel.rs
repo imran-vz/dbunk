@@ -91,10 +91,6 @@ impl SessionLease {
         self.session.clone()
     }
 
-    fn commit(&mut self) {
-        self.release();
-    }
-
     fn release(&mut self) {
         let Some((session_key, publication_id)) = self.publication.take() else {
             return;
@@ -191,6 +187,23 @@ pub(crate) async fn resolve_connection_checked(
     rewrite_connection_endpoint(connection, &endpoint)
 }
 
+/// Command-path variant: runs the worker joins on the blocking pool so an
+/// async connection edit, delete or disconnect never occupies a runtime worker.
+pub async fn drop_connection_async(connection_id: &str) {
+    let connection_id = connection_id.to_string();
+    if let Err(error) = tokio::task::spawn_blocking(move || drop_connection(&connection_id)).await {
+        log::warn!("SSH tunnel teardown worker failed: {error}");
+    }
+}
+
+/// Command-path variant of [`drop_bastion`]; see [`drop_connection_async`].
+pub async fn drop_bastion_async(bastion_id: &str) {
+    let bastion_id = bastion_id.to_string();
+    if let Err(error) = tokio::task::spawn_blocking(move || drop_bastion(&bastion_id)).await {
+        log::warn!("SSH bastion teardown worker failed: {error}");
+    }
+}
+
 pub fn drop_connection(connection_id: &str) {
     let (forward, sessions) = {
         let mut runtime = RUNTIME.lock().expect("ssh tunnel runtime poisoned");
@@ -246,7 +259,7 @@ pub async fn test_bastion(
         )
         .await?;
     }
-    route_session.shutdown("dbunk test complete");
+    join_without_starving_runtime(move || route_session.shutdown("dbunk test complete"));
     Ok(TestBastionResult {
         latency_ms: started.elapsed().as_millis() as u64,
     })
@@ -343,7 +356,7 @@ fn publish_forward(
     // and a newly shared session already referenced by another forward, remain.
     check()?;
     publication.commit();
-    session.commit();
+    session.release();
     Ok(endpoint)
 }
 
@@ -527,11 +540,27 @@ fn shutdown_resources(
     forwards: impl IntoIterator<Item = ForwardState>,
     sessions: Vec<CachedSession>,
 ) {
-    for forward in forwards {
-        forward.shutdown();
-    }
-    for mut session in sessions {
-        session.route.shutdown("dbunk ssh session closed");
+    join_without_starving_runtime(move || {
+        for forward in forwards {
+            forward.shutdown();
+        }
+        for mut session in sessions {
+            session.route.shutdown("dbunk ssh session closed");
+        }
+    });
+}
+
+/// Worker joins are synchronous because route guards drop from ordinary
+/// destructors. On a multi-threaded Tokio worker, hand the worker's other
+/// tasks to another thread for the duration of the join so teardown under
+/// load cannot stall unrelated commands. Elsewhere (blocking pool threads,
+/// current-thread test runtimes, plain threads) the join runs directly.
+fn join_without_starving_runtime(work: impl FnOnce()) {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(work)
+        }
+        _ => work(),
     }
 }
 
@@ -572,7 +601,9 @@ fn release_session_lease(session_key: &SshSessionKey, publication_id: uuid::Uuid
             .flatten()
     };
     if let Some(mut session) = session {
-        session.route.shutdown("dbunk cancelled ssh setup closed");
+        join_without_starving_runtime(move || {
+            session.route.shutdown("dbunk cancelled ssh setup closed");
+        });
     }
 }
 
@@ -963,7 +994,7 @@ mod tests {
                 worker: None,
             },
         );
-        new_session.commit();
+        new_session.release();
 
         {
             let mut runtime = RUNTIME.lock().unwrap();
@@ -1004,5 +1035,77 @@ mod tests {
         assert!(!existing_stop.load(Ordering::SeqCst));
         drop(runtime);
         drop_connection("existing");
+    }
+
+    fn insert_forward_with_worker(
+        route_key: &str,
+        stop: Arc<AtomicBool>,
+        worker: std::thread::JoinHandle<()>,
+    ) {
+        let ssh_route = ssh_route("join-bastion");
+        RUNTIME.lock().unwrap().forwards.insert(
+            route_key.to_string(),
+            ForwardState {
+                publication_id: uuid::Uuid::new_v4(),
+                bastion_ids: ssh_route.bastion_ids,
+                session_key: ssh_route.session_key,
+                endpoint: LocalEndpoint {
+                    host: "127.0.0.1".into(),
+                    port: 1,
+                },
+                stop,
+                worker: Some(worker),
+            },
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[serial_test::serial]
+    async fn teardown_join_on_the_only_runtime_worker_does_not_stall_other_tasks() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        // A forward worker that ignores its stop flag until explicitly released
+        // stands in for a pump blocked in I/O.
+        let worker = std::thread::spawn(move || released.recv().unwrap());
+        insert_forward_with_worker("join-worker", stop.clone(), worker);
+        let teardown = tokio::spawn(async { drop_connection("join-worker") });
+        let watchdog = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(1));
+            let _ = release.send(());
+        });
+
+        // With a single worker thread, a join that blocked the runtime would
+        // hold this task until the watchdog releases the forward worker.
+        let started = Instant::now();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "runtime stalled behind the tunnel teardown join"
+        );
+        assert!(stop.load(Ordering::SeqCst));
+        assert!(!RUNTIME.lock().unwrap().forwards.contains_key("join-worker"));
+
+        watchdog.join().unwrap();
+        teardown.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn teardown_join_runs_directly_on_a_current_thread_runtime() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = stop.clone();
+        let worker = std::thread::spawn(move || {
+            while !worker_stop.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        insert_forward_with_worker("join-current", stop.clone(), worker);
+        drop_connection_async("join-current").await;
+        assert!(stop.load(Ordering::SeqCst));
+        assert!(!RUNTIME
+            .lock()
+            .unwrap()
+            .forwards
+            .contains_key("join-current"));
     }
 }

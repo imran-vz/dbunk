@@ -75,7 +75,10 @@ comparison borrow immutable captures and sort their own bounded index arrays.
 They must receive complete, validated facts from capture, not partial query rows.
 Index keys use positional field paths so mixed column/expression keys and each
 key's optional collation, opclass options and sort facts remain aligned without
-sentinel values. Field/object summaries are tagged by difference kind, requiring
+sentinel values. A constraint-owned index keeps its own index path carrying the
+owning constraint name; its facts are compared alongside the constraint rather
+than folded into the constraint's field list, which is a presentation choice
+left to activation. Field/object summaries are tagged by difference kind, requiring
 the valid observed sides and an incomparability reason. Status is also tagged by
 phase: only completed states carry a result ID, and only failed states carry an
 error. Capture metadata retains both the display version and numeric
@@ -173,7 +176,8 @@ seconds. Error cleanup allows three seconds for cancellation/rollback and the
 existing dedicated driver up to two seconds to close, abort and join. Worker
 abort/resolution fences and admission release are still the manager's task.
 Routines, types, policies, triggers, rules and extensions have capped excluded
-counts with an explicit completeness flag. Other exclusions remain categories.
+counts with an explicit completeness flag. Grants, database-level objects and
+the other exclusions remain categories without counts.
 
 The disposable native PG16.15 fixture exercises the real driver/SQL/decoder,
 including same-database mappings, field details, exact limits, permission failure,
@@ -359,3 +363,32 @@ byte bound, the 256 KiB field guard and the 32 MiB capture scratch; the same
 capture takes about 3 s. Server-side work per page and retained accounting are
 unchanged. Measurements are from Docker images on an aarch64 macOS host; Windows
 paths and WebView-side IPC allocation remain unmeasured.
+
+
+## Review fixes (Step 7, 2026-09-14)
+
+The two-axis review of the Plan 021 diff led to these changes:
+
+- Exit cleanup runs on its own task; a panic inside any manager's close path
+  still marks cleanup finished, so a restart request arriving during an
+  ordinary exit can no longer wait on the cleanup condition variable forever.
+- SSH tunnel teardown joins still happen synchronously, because route guards
+  drop from ordinary destructors, but they no longer occupy an async runtime
+  worker. The connection, bastion and disconnect commands invalidate caches on
+  the blocking pool, and any join reached from a multi-threaded Tokio worker
+  hands that worker's other tasks to another thread for its duration.
+- The `schema_compare` module is crate-private. Helpers that only tests use
+  (pure field comparison and inventory matching entry points, whole-slice
+  paging, budget accounting reads, value-page accessors) compile only under
+  test. The unused `orderedReferences` value kind is removed from both the
+  native and TypeScript vocabularies; no capture produced it.
+- Identifier bounds, the PostgreSQL 16 major check, field-path byte accounting
+  and the cleanup grace are single definitions shared by capture, diff, values
+  and the manager.
+- A reconnect test drives the real disconnect command against a worker that
+  ignores cancellation: the fence waits for its join, its late success cannot
+  publish, and a fresh job admits afterwards.
+
+Still open for the reviewer: the Windows proxy join loop remains unbounded and
+unverified on this host, and the tunnel changes still alter teardown for every
+tunnelled connection (in-flight forwarded streams abort rather than drain).

@@ -6,9 +6,11 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
-use super::{budget::*, protocol::*};
+use super::{budget::*, manager::CLEANUP_GRACE, protocol::*};
 use crate::postgres::{connect_spec::ResolvedPostgresConnectSpec, dedicated};
-pub use data::{CapturedEndpoint, CapturedField, CapturedValue, ExcludedCount};
+#[cfg(test)]
+pub(crate) use data::CapturedValue;
+pub use data::{CapturedEndpoint, CapturedField, ExcludedCount};
 use std::{future::Future, time::Duration};
 use tokio::{sync::watch, time::Instant};
 use tokio_postgres::{types::ToSql, Client, Row};
@@ -22,7 +24,9 @@ const BATCH_BYTES: i64 = 2 * 1024 * 1024;
 // query/parameter storage and transfer into retained, separately charged fields.
 const CAPTURE_SCRATCH: usize = 32 * 1024 * 1024;
 const TABLE_BATCH: usize = 32;
-const CLEANUP_GRACE: Duration = Duration::from_secs(5);
+// Error cleanup shares the manager's cleanup grace: cancellation and rollback
+// get the grace less the time reserved for the dedicated driver to close.
+const DRIVER_CLOSE_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct CaptureControl {
@@ -117,7 +121,7 @@ pub(crate) async fn capture_resolved(
     .await;
     // The connection stays owned throughout cancellation/rollback. Closing
     // joins (or aborts and joins) the dedicated driver before returning capacity.
-    let cleanup_deadline = Instant::now() + CLEANUP_GRACE - Duration::from_secs(2);
+    let cleanup_deadline = Instant::now() + (CLEANUP_GRACE - DRIVER_CLOSE_GRACE);
     if result.is_err() {
         let _ = tokio::time::timeout_at(
             cleanup_deadline,
@@ -142,8 +146,7 @@ fn validate_endpoints(
         || endpoints.len() > 2
         || endpoints.iter().any(|(_, e)| {
             e.connection_id != connection_id
-                || e.connection_id.is_empty()
-                || e.connection_id.len() > 128
+                || !valid_id(&e.connection_id)
                 || e.schema.is_empty()
                 || e.schema.len() > 63
                 || e.schema.contains('\0')
@@ -219,7 +222,7 @@ async fn capture(
     let display: &str = version[0]
         .try_get(1)
         .map_err(|_| CompareError::Unavailable)?;
-    if number / 10_000 != 16 {
+    if !u32::try_from(number).is_ok_and(is_supported_major) {
         return Err(CompareError::UnsupportedVersion {
             side: endpoints[0].0,
             version: display.into(),

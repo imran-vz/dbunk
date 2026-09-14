@@ -39,7 +39,7 @@ pub(crate) async fn save_connection_inner(
     let save_result = socket_lifecycle::with_connection_fence(state, &connection_id, async {
         storage::upsert_connection(&state.pool, &connection).await?;
         crate::credentials::upsert(&state.pool, mode, &connection).await?;
-        socket_lifecycle::invalidate_connection_caches(&connection_id, Some(engine));
+        socket_lifecycle::invalidate_connection_caches(&connection_id, Some(engine)).await;
         Ok::<_, String>(())
     })
     .await;
@@ -67,7 +67,7 @@ pub(crate) async fn delete_connection_inner(
         if let Err(error) = crate::credentials::delete(&state.pool, mode, connection_id).await {
             log::warn!("Failed to delete credential for {}: {error}", connection_id);
         }
-        socket_lifecycle::invalidate_connection_caches(connection_id, None);
+        socket_lifecycle::invalidate_connection_caches(connection_id, None).await;
         Ok(())
     })
     .await;
@@ -206,7 +206,7 @@ pub(crate) async fn disconnect_connection_inner(
     connection_id: &str,
 ) -> Result<(), String> {
     socket_lifecycle::with_connection_fence(state, connection_id, async {
-        socket_lifecycle::invalidate_connection_caches(connection_id, None);
+        socket_lifecycle::invalidate_connection_caches(connection_id, None).await;
     })
     .await;
     Ok(())

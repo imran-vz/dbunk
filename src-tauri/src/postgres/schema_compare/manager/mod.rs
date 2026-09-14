@@ -22,7 +22,7 @@ use std::{
 use tokio::sync::watch;
 
 pub(crate) const JOB_DEADLINE: Duration = Duration::from_secs(60);
-const CLEANUP_GRACE: Duration = Duration::from_secs(5);
+pub(crate) const CLEANUP_GRACE: Duration = Duration::from_secs(5);
 const MAX_ACTIVE: usize = 2;
 const MAX_TERMINAL: usize = 2;
 const MAX_REQUESTS: usize = 64;

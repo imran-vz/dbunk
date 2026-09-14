@@ -115,13 +115,7 @@ fn reference_bytes(v: &QualifiedName) -> usize {
 }
 
 fn path_bytes(path: &FieldPath) -> usize {
-    match path {
-        FieldPath::Table { .. } => 0,
-        FieldPath::Column { name, .. } | FieldPath::Constraint { name, .. } => name.capacity(),
-        FieldPath::Index { name, owner, .. } | FieldPath::IndexKey { name, owner, .. } => {
-            name.capacity() + owner.as_ref().map_or(0, String::capacity)
-        }
-    }
+    path.name_bytes(String::capacity)
 }
 
 #[derive(Deserialize)]
@@ -231,6 +225,7 @@ impl CapturedEndpoint {
             .map(|i| &self.inventory[i])
     }
 
+    #[cfg(test)]
     pub fn retained_bytes(&self) -> usize {
         self.retained_bytes
     }

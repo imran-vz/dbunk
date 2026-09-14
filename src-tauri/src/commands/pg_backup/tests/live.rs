@@ -170,7 +170,7 @@ async fn disposable_postgres_plain_custom_clean_and_cancellation_round_trip() {
     }).catch_unwind().await;
     state.pg_tool_jobs.close_all().await;
     for db in [&source_db, &target_db] {
-        crate::socket_lifecycle::invalidate_connection_caches(db, None);
+        crate::socket_lifecycle::invalidate_connection_caches(db, None).await;
         admin
             .execute(format!("DROP DATABASE {} WITH (FORCE)", crate::quote_double(db)).as_str())
             .await
