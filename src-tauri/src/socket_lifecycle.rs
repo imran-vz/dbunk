@@ -150,10 +150,16 @@ pub(crate) async fn with_global_fence<T>(
     result
 }
 
-pub(crate) fn invalidate_connection_caches(connection_id: &str, engine: Option<DatabaseEngine>) {
+/// Tunnel teardown joins forward workers; it runs on the blocking pool so the
+/// async command that edits, deletes or disconnects a connection keeps its
+/// runtime worker free.
+pub(crate) async fn invalidate_connection_caches(
+    connection_id: &str,
+    engine: Option<DatabaseEngine>,
+) {
     #[cfg(test)]
     observe_cache_invalidation(CacheInvalidation::Connection(connection_id.to_string()));
-    tunnel::drop_connection(connection_id);
+    tunnel::drop_connection_async(connection_id).await;
     match engine {
         Some(DatabaseEngine::PostgreSQL) => postgres::drop_pool(connection_id),
         Some(DatabaseEngine::Redis) => redis::connection::drop_cached(connection_id),
@@ -165,12 +171,12 @@ pub(crate) fn invalidate_connection_caches(connection_id: &str, engine: Option<D
     }
 }
 
-pub(crate) fn invalidate_bastion_caches(bastion_id: &str, connection_ids: &[String]) {
+pub(crate) async fn invalidate_bastion_caches(bastion_id: &str, connection_ids: &[String]) {
     #[cfg(test)]
     observe_cache_invalidation(CacheInvalidation::Bastion(bastion_id.to_string()));
-    tunnel::drop_bastion(bastion_id);
+    tunnel::drop_bastion_async(bastion_id).await;
     for connection_id in connection_ids {
-        invalidate_connection_caches(connection_id, None);
+        invalidate_connection_caches(connection_id, None).await;
     }
 }
 

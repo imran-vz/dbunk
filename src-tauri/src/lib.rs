@@ -7,7 +7,6 @@ mod docker;
 mod keychain;
 mod managed;
 mod postgres;
-pub use postgres::schema_compare;
 mod query_session;
 mod redis;
 mod result_mutation;
@@ -300,6 +299,19 @@ async fn close_socket_managers_for_exit(
         )
     });
     let _ = tokio::join!(comparison_close, existing_close);
+}
+
+/// Runs exit cleanup on its own task so a panic inside any manager's close
+/// path cannot skip `finish`; otherwise a restart request arriving during an
+/// ordinary exit would wait on the cleanup condition variable forever.
+async fn run_exit_cleanup(
+    close: impl std::future::Future<Output = ()> + Send + 'static,
+    exit_cleanup: &ExitCleanupState,
+) {
+    if let Err(error) = tauri::async_runtime::spawn(close).await {
+        log::error!("exit cleanup task failed: {error}");
+    }
+    exit_cleanup.finish();
 }
 
 // ---------------------------------------------------------------------------
@@ -605,14 +617,12 @@ pub fn run() {
                         // Tauri deliberately ignores prevent_exit for restart. Keep
                         // this callback open until cleanup finishes, then let the
                         // original request preserve restart_on_exit semantics.
-                        tauri::async_runtime::block_on(close);
-                        exit_cleanup.finish();
+                        tauri::async_runtime::block_on(run_exit_cleanup(close, &exit_cleanup));
                     } else {
                         api.prevent_exit();
                         let exit_cleanup = exit_cleanup.clone();
                         tauri::async_runtime::spawn(async move {
-                            close.await;
-                            exit_cleanup.finish();
+                            run_exit_cleanup(close, &exit_cleanup).await;
                             handle.exit(code.unwrap_or(0));
                         });
                     }
@@ -704,6 +714,22 @@ mod exit_lifecycle_tests {
         ready.recv().unwrap();
         assert!(!waiter.is_finished());
         state.finish();
+        waiter.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn cleanup_panic_still_finishes_so_a_restart_cannot_wait_forever() {
+        let state = std::sync::Arc::new(ExitCleanupState::default());
+        assert_eq!(state.request(false), ExitRequestAction::BeginCleanup);
+        assert_eq!(state.request(true), ExitRequestAction::WaitForCleanup);
+
+        run_exit_cleanup(async { panic!("manager close path panicked") }, &state).await;
+
+        assert_eq!(state.request(true), ExitRequestAction::AllowExit);
+        let waiter = {
+            let state = state.clone();
+            std::thread::spawn(move || state.wait())
+        };
         waiter.join().unwrap();
     }
 

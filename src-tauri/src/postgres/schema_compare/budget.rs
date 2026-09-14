@@ -28,7 +28,12 @@ struct Counters {
 }
 
 #[derive(Clone)]
-pub struct Budget(Arc<Counters>, Option<Arc<AtomicUsize>>);
+pub struct Budget {
+    counters: Arc<Counters>,
+    /// Present only for a result scope: the combined retained bytes of one
+    /// result's values, inventory and diff.
+    result_scope: Option<Arc<AtomicUsize>>,
+}
 
 impl Default for Budget {
     fn default() -> Self {
@@ -38,75 +43,87 @@ impl Default for Budget {
 
 impl Budget {
     pub fn new(limit: usize) -> Self {
-        Self(
-            Arc::new(Counters {
+        Self {
+            counters: Arc::new(Counters {
                 used: AtomicUsize::new(0),
                 peak: AtomicUsize::new(0),
                 serializers: AtomicUsize::new(0),
                 limit,
             }),
-            None,
-        )
+            result_scope: None,
+        }
     }
 
+    #[cfg(test)]
     pub fn used(&self) -> usize {
-        self.0.used.load(Ordering::Acquire)
+        self.counters.used.load(Ordering::Acquire)
     }
 
     /// Highest reserved total observed since creation or the last reset. This
     /// is accounting evidence for the runtime measurements, not a limit.
+    #[cfg(test)]
     pub fn peak(&self) -> usize {
-        self.0.peak.load(Ordering::Acquire)
+        self.counters.peak.load(Ordering::Acquire)
     }
 
     #[cfg(test)]
     pub(crate) fn reset_peak(&self) {
-        self.0.peak.store(self.used(), Ordering::Release);
+        self.counters.peak.store(self.used(), Ordering::Release);
     }
 
     /// Share this scope across the values, inventory and diff owned by one
     /// result. Their combined retained allocation, not each component alone,
     /// is capped at 32 MiB while also consuming the global budget.
     pub fn result_scope(&self) -> Self {
-        if self.1.is_some() {
+        if self.result_scope.is_some() {
             self.clone()
         } else {
-            Self(self.0.clone(), Some(Arc::new(AtomicUsize::new(0))))
+            Self {
+                counters: self.counters.clone(),
+                result_scope: Some(Arc::new(AtomicUsize::new(0))),
+            }
         }
     }
 
     /// Capture and diff must retain the same result counter, not merely the
     /// same global allocator. A fresh scope cannot reset a result's budget.
     pub(crate) fn same_result_scope(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-            && matches!((&self.1, &other.1), (Some(a), Some(b)) if Arc::ptr_eq(a, b))
+        Arc::ptr_eq(&self.counters, &other.counters)
+            && matches!((&self.result_scope, &other.result_scope), (Some(a), Some(b)) if Arc::ptr_eq(a, b))
     }
 
     pub fn scratch(&self, bytes: usize) -> Result<Reservation, CompareError> {
-        Self(self.0.clone(), None).reserve(bytes)
+        Self {
+            counters: self.counters.clone(),
+            result_scope: None,
+        }
+        .reserve(bytes)
     }
 
     /// Reserve before requesting an allocation. Charge owned capacities and
     /// containers; allocator-internal overhead is measured separately as RSS.
     pub fn reserve(&self, bytes: usize) -> Result<Reservation, CompareError> {
         let previous = self
-            .0
+            .counters
             .used
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
-                used.checked_add(bytes).filter(|next| *next <= self.0.limit)
+                used.checked_add(bytes)
+                    .filter(|next| *next <= self.counters.limit)
             })
             .map_err(|_| CompareError::LimitExceeded {
                 limit: Limit::Allocation,
             })?;
-        self.0.peak.fetch_max(previous + bytes, Ordering::AcqRel);
-        if let Some(scope) = &self.1 {
+        self.counters
+            .peak
+            .fetch_max(previous + bytes, Ordering::AcqRel);
+        if let Some(scope) = &self.result_scope {
             if scope
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                     used.checked_add(bytes).filter(|next| *next <= RESULT_BYTES)
                 })
                 .is_err()
             {
-                self.0.used.fetch_sub(bytes, Ordering::AcqRel);
+                self.counters.used.fetch_sub(bytes, Ordering::AcqRel);
                 return Err(CompareError::LimitExceeded {
                     limit: Limit::ResultBytes,
                 });
@@ -121,7 +138,7 @@ impl Budget {
     /// No waiter queue. The returned lease must survive serialization and
     /// transport handoff; dropping it inside IpcResponse::body is too early.
     pub fn serializer(&self) -> Result<SerializerLease, CompareError> {
-        self.0
+        self.counters
             .serializers
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < 2).then_some(n + 1)
@@ -130,7 +147,7 @@ impl Budget {
         match self.scratch(SERIALIZER_SCRATCH) {
             Ok(reservation) => Ok(SerializerLease { reservation }),
             Err(error) => {
-                self.0.serializers.fetch_sub(1, Ordering::AcqRel);
+                self.counters.serializers.fetch_sub(1, Ordering::AcqRel);
                 Err(error)
             }
         }
@@ -144,8 +161,11 @@ pub struct Reservation {
 
 impl Drop for Reservation {
     fn drop(&mut self) {
-        self.budget.0.used.fetch_sub(self.bytes, Ordering::AcqRel);
-        if let Some(scope) = &self.budget.1 {
+        self.budget
+            .counters
+            .used
+            .fetch_sub(self.bytes, Ordering::AcqRel);
+        if let Some(scope) = &self.budget.result_scope {
             scope.fetch_sub(self.bytes, Ordering::AcqRel);
         }
     }
@@ -159,7 +179,7 @@ impl Drop for SerializerLease {
     fn drop(&mut self) {
         self.reservation
             .budget
-            .0
+            .counters
             .serializers
             .fetch_sub(1, Ordering::AcqRel);
     }

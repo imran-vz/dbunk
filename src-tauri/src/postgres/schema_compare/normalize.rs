@@ -24,7 +24,6 @@ pub enum Fact<'a> {
     Text(&'a str),
     Reference(&'a QualifiedName),
     Names(&'a [String]),
-    References(&'a [QualifiedName]),
     Operators(&'a [OperatorSignature]),
     NotComparable {
         reason: IncomparableReason,
@@ -32,6 +31,7 @@ pub enum Fact<'a> {
     },
 }
 
+#[cfg(test)]
 pub struct FieldFact<'a> {
     pub path: &'a FieldPath,
     pub fact: Fact<'a>,
@@ -44,11 +44,13 @@ pub struct FieldDifference<'a> {
     pub target: Option<Fact<'a>>,
 }
 
+#[cfg(test)]
 pub struct FieldDifferences<'a> {
     fields: Vec<FieldDifference<'a>>,
     _reservation: Reservation,
 }
 
+#[cfg(test)]
 impl<'a> FieldDifferences<'a> {
     pub fn fields(&self) -> &[FieldDifference<'a>] {
         &self.fields
@@ -76,6 +78,10 @@ impl<'a> FieldDifferences<'a> {
     }
 }
 
+/// Pure field comparison over caller-built facts. Production comparison runs
+/// through `diff::build` on captured endpoints; this remains the Step 2
+/// contract fixture entry point.
+#[cfg(test)]
 pub fn compare_fields<'a>(
     source: &'a [FieldFact<'a>],
     target: &'a [FieldFact<'a>],
@@ -84,6 +90,7 @@ pub fn compare_fields<'a>(
     compare_fields_checked(source, target, budget, || Ok(()))
 }
 
+#[cfg(test)]
 pub(crate) fn compare_fields_checked<'a>(
     source: &'a [FieldFact<'a>],
     target: &'a [FieldFact<'a>],
@@ -203,6 +210,7 @@ impl<'a> ObjectMatches<'a> {
 
 /// Both inventories must have passed schema-existence and completeness checks.
 /// Eligible pairs are marked Matched, never Equal, until definitions are compared.
+#[cfg(test)]
 pub fn match_inventory<'a>(
     source: &'a [InventoryEntry],
     target: &'a [InventoryEntry],

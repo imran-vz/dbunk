@@ -32,7 +32,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 018 | File-backed PostgreSQL backup and restore foundation (dark)                    |       P1 |      L | 017        | DONE: de3272b                     |
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
-| [021](./021-bounded-postgres-schema-comparison.md) | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | IN PROGRESS: through Step 6 |
+| [021](./021-bounded-postgres-schema-comparison.md) | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | READY FOR REVIEW: review complete 2026-09-14, awaiting commit SHA for DONE |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -41,19 +41,25 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently active: Plan 021 implementation, through Step 6; Step 7 is next.**
-The foundation is committed at `502674e` and the Step 5 job ownership at
-`265c0c1`. Step 6 adds the failure and boundedness validation: resolution-phase
-cancellation tests, a closed field-checklist test, the combined budget ceiling
-test, and an owned four-container fixture matrix (PG16.15, PG16.14, PG17.11 and
-a TLS-enabled PG16.14) covering independent databases, a second minor, major
-refusal, TLS verification failure, teardown and backend loss during capture,
-concurrent DDL, unusual types/collations, identity sequences, invalid indexes
-and a native memory/limit profile. The profile found that 64-row transport pages
-made a cap-sized capture take about 28 s; pages now carry up to 1,024 rows under
-the unchanged 2 MiB bound and the same capture takes about 3 s. Step 6 is
-verified and uncommitted; see the
-[Step 6 record](./021-bounded-postgres-schema-comparison.md#failure-and-boundedness-validation-step-6-2026-09-14).
+**Currently active: Plan 021 is reviewed and complete; only the DONE commit is outstanding.**
+The foundation is committed at `502674e`, the Step 5 job ownership at
+`265c0c1` and the Step 6 failure and boundedness validation at `5d04118`:
+resolution-phase cancellation tests, a closed field-checklist test, the
+combined budget ceiling test, and an owned four-container fixture matrix
+(PG16.15, PG16.14, PG17.11 and a TLS-enabled PG16.14) covering independent
+databases, a second minor, major refusal, TLS verification failure, teardown
+and backend loss during capture, concurrent DDL, unusual types/collations,
+identity sequences, invalid indexes and a native memory/limit profile. The
+profile found that 64-row transport pages made a cap-sized capture take about
+28 s; pages now carry up to 1,024 rows under the unchanged 2 MiB bound and the
+same capture takes about 3 s. Step 7 reran every required check and the native
+matrix on 2026-09-14 and inspected the full diff against scope; see the
+[Step 7 record](./021-bounded-postgres-schema-comparison.md#completion-and-handoff-step-7-2026-09-14).
+The two-axis code review ran on 2026-09-14 and Imran confirmed it done; its
+actionable findings are fixed and re-verified, see the
+[review fixes record](./021-bounded-postgres-schema-comparison.md#review-fixes-step-7-2026-09-14).
+The Step 7 record and review fixes are uncommitted; `DONE: <completion SHA>`
+is recorded once they are committed, and the plan body is then retired.
 
 Plan 020 is DONE at `7745946`, confirmed by Imran on 2026-09-05.
 Completion is recorded from operator confirmation; the historical execution

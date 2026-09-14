@@ -107,8 +107,9 @@ struct Page<'a, T> {
     items: &'a [T],
 }
 
-/// Caller lends summaries of one immutable result; page serialization does
-/// not clone fields or definitions. End-of-list is distinct from bad offsets.
+/// Test-only paging over a complete summary slice. The manager pages through
+/// `object_window`/`field_window` from its own bounded projection.
+#[cfg(test)]
 fn summaries<T: Serialize>(
     identity: &ResultIdentity,
     response_id: &str,
@@ -207,6 +208,7 @@ pub(crate) fn field_window(
     )
 }
 
+#[cfg(test)]
 pub fn object_summaries(
     identity: &ResultIdentity,
     response_id: &str,
@@ -217,6 +219,7 @@ pub fn object_summaries(
     summaries(identity, response_id, all, offset, budget, |_| Ok(()))
 }
 
+#[cfg(test)]
 pub fn field_summaries(
     identity: &ResultIdentity,
     response_id: &str,

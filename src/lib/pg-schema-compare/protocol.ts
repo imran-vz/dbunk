@@ -152,7 +152,6 @@ export const schemaCompareValueRef = z.object({
     "integer",
     "qualifiedName",
     "orderedNames",
-    "orderedReferences",
     "operatorSignatures",
   ]),
 });
@@ -212,101 +211,61 @@ const sourceValueRef = schemaCompareValueRef.extend({
 const targetValueRef = schemaCompareValueRef.extend({
   side: z.literal("target"),
 });
-const fieldSummary = { path: schemaCompareFieldPath };
-export const schemaCompareFieldSummary = z.union([
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("equal"),
-    source: sourceValueRef,
-    target: targetValueRef,
-  }),
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("changed"),
-    source: sourceValueRef,
-    target: targetValueRef,
-  }),
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("sourceOnly"),
-    source: sourceValueRef,
-  }),
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("targetOnly"),
-    target: targetValueRef,
-  }),
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("notComparable"),
-    reason: incomparableReason,
-    source: sourceValueRef,
-    target: targetValueRef,
-  }),
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("notComparable"),
-    reason: incomparableReason,
-    source: sourceValueRef,
-  }),
-  z.strictObject({
-    ...fieldSummary,
-    kind: z.literal("notComparable"),
-    reason: incomparableReason,
-    target: targetValueRef,
-  }),
-]);
+/**
+ * The native `SummaryDifference` tag with its valid observed sides: equal and
+ * changed require both sides, directional absence exactly one, and a
+ * not-comparable summary carries its reason with whichever sides were seen.
+ * Field and object summaries share this shape over their own base fields and
+ * side references.
+ */
+function summaryUnion<
+  Base extends Record<string, z.ZodTypeAny>,
+  Source extends z.ZodTypeAny,
+  Target extends z.ZodTypeAny,
+>(base: Base, source: Source, target: Target) {
+  return z.union([
+    z.strictObject({ ...base, kind: z.literal("equal"), source, target }),
+    z.strictObject({ ...base, kind: z.literal("changed"), source, target }),
+    z.strictObject({ ...base, kind: z.literal("sourceOnly"), source }),
+    z.strictObject({ ...base, kind: z.literal("targetOnly"), target }),
+    z.strictObject({
+      ...base,
+      kind: z.literal("notComparable"),
+      reason: incomparableReason,
+      source,
+      target,
+    }),
+    z.strictObject({
+      ...base,
+      kind: z.literal("notComparable"),
+      reason: incomparableReason,
+      source,
+    }),
+    z.strictObject({
+      ...base,
+      kind: z.literal("notComparable"),
+      reason: incomparableReason,
+      target,
+    }),
+  ]);
+}
+export const schemaCompareFieldSummary = summaryUnion(
+  { path: schemaCompareFieldPath },
+  sourceValueRef,
+  targetValueRef,
+);
 export type SchemaCompareFieldSummary = z.infer<
   typeof schemaCompareFieldSummary
 >;
-const objectCounts = {
-  fieldCount: count,
-  changedFields: count,
-  incomparableFields: count,
-};
-export const schemaCompareObjectSummary = z.union([
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("equal"),
-    source: schemaCompareRelationIdentity,
-    target: schemaCompareRelationIdentity,
-  }),
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("changed"),
-    source: schemaCompareRelationIdentity,
-    target: schemaCompareRelationIdentity,
-  }),
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("sourceOnly"),
-    source: schemaCompareRelationIdentity,
-  }),
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("targetOnly"),
-    target: schemaCompareRelationIdentity,
-  }),
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("notComparable"),
-    reason: incomparableReason,
-    source: schemaCompareRelationIdentity,
-    target: schemaCompareRelationIdentity,
-  }),
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("notComparable"),
-    reason: incomparableReason,
-    source: schemaCompareRelationIdentity,
-  }),
-  z.strictObject({
-    ...objectCounts,
-    kind: z.literal("notComparable"),
-    reason: incomparableReason,
-    target: schemaCompareRelationIdentity,
-  }),
-]);
+export const schemaCompareObjectSummary = summaryUnion(
+  {
+    fieldCount: count,
+    changedFields: count,
+    incomparableFields: count,
+  },
+  schemaCompareRelationIdentity,
+  schemaCompareRelationIdentity,
+);
 const pageMetadata = {
   responseId: id,
   identity: schemaCompareResultIdentity,
