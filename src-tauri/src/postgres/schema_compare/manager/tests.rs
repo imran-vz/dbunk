@@ -253,6 +253,63 @@ async fn either_endpoint_and_global_fences_wait_before_resource_invalidation() {
 }
 
 #[tokio::test]
+async fn reconnect_through_the_disconnect_command_cancels_a_late_worker_and_admits_a_fresh_job() {
+    let (_dir, state) = crate::test_app_state().await;
+    let manager = state.pg_schema_compare.clone();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let status = manager
+        .start(
+            request("reconnect", "a", "b"),
+            move |ctx: JobContext| async move {
+                // A reader that ignores cancellation and reports success only after
+                // the connection has been torn down and re-established.
+                released.await.unwrap();
+                empty(ctx).await
+            },
+        )
+        .unwrap();
+
+    // Disconnect is the first half of a reconnect. Its fence cancels the job
+    // and waits for the real worker join instead of trusting the grace timer.
+    let disconnect = crate::commands::connections::disconnect_connection_inner(&state, "a");
+    tokio::pin!(disconnect);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut disconnect)
+            .await
+            .is_err(),
+        "the connection fence must wait for the running worker"
+    );
+    // The invalidated job is already unavailable to readers, but its admission
+    // and scratch stay reserved until the worker really joins.
+    assert_eq!(manager.get(&status.job_id), Err(CompareError::Unavailable));
+    assert!(manager.budget.used() > 0);
+
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), &mut disconnect)
+        .await
+        .expect("disconnect completes once the worker joins")
+        .unwrap();
+    assert_eq!(manager.get(&status.job_id), Err(CompareError::Unavailable));
+    assert_eq!(manager.budget.used(), 0);
+
+    // Reconnecting admits a fresh job on the same connection; replaying the
+    // pre-reconnect request ID cannot resurrect the cancelled one.
+    let next = manager
+        .start(request("after-reconnect", "a", "b"), empty)
+        .unwrap();
+    assert!(matches!(
+        finished(&manager, &next.job_id).await.state,
+        StatusState::Completed { .. }
+    ));
+    assert_eq!(
+        manager
+            .start(request("reconnect", "a", "b"), empty)
+            .unwrap_err(),
+        CompareError::Unavailable
+    );
+}
+
+#[tokio::test]
 async fn terminal_retention_release_and_ttl_never_turn_missing_results_into_empty() {
     let manager = CompareManager::new();
     let mut ids = Vec::new();

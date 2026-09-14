@@ -89,7 +89,7 @@ pub(crate) async fn save_bastion_server_inner(
             }
             return Err(format!("Failed to save Bastion secrets: {error}"));
         }
-        socket_lifecycle::invalidate_bastion_caches(&payload.id, &connection_ids);
+        socket_lifecycle::invalidate_bastion_caches(&payload.id, &connection_ids).await;
         Ok(())
     })
     .await;
@@ -125,7 +125,7 @@ pub(crate) async fn delete_bastion_server_inner(
             return Err(format!("Bastion Server '{}' not found", bastion_server_id));
         }
         credentials::delete_bastion_secrets(&state.pool, mode, bastion_server_id).await?;
-        tunnel::drop_bastion(bastion_server_id);
+        tunnel::drop_bastion_async(bastion_server_id).await;
         Ok::<_, String>(())
     })
     .await?;
@@ -155,7 +155,7 @@ pub(crate) async fn reset_bastion_host_key_inner(
             None,
         )
         .await;
-        socket_lifecycle::invalidate_bastion_caches(bastion_server_id, &connection_ids);
+        socket_lifecycle::invalidate_bastion_caches(bastion_server_id, &connection_ids).await;
         result
     })
     .await;

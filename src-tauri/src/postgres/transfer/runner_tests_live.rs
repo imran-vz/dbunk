@@ -138,7 +138,8 @@ async fn cleanup(state: &AppState, admin: &mut sqlx::PgConnection, id: &str) {
         crate::socket_lifecycle::invalidate_connection_caches(
             id,
             Some(crate::DatabaseEngine::PostgreSQL),
-        );
+        )
+        .await;
     })
     .await;
     admin

@@ -203,7 +203,7 @@ fn validate_captures(
     target: &CapturedEndpoint,
 ) -> Result<SnapshotConsistency, CompareError> {
     for (side, capture) in [(Side::Source, source), (Side::Target, target)] {
-        if capture.metadata.server_version_num / 10_000 != 16 {
+        if !is_supported_major(capture.metadata.server_version_num) {
             return Err(CompareError::UnsupportedVersion {
                 side,
                 version: capture.metadata.server_version.clone(),
@@ -415,13 +415,7 @@ fn aggregate_kind(current: DifferenceKind, next: DifferenceKind) -> DifferenceKi
 }
 
 fn path_bytes(path: &FieldPath) -> usize {
-    match path {
-        FieldPath::Table { .. } => 0,
-        FieldPath::Column { name, .. } | FieldPath::Constraint { name, .. } => name.len(),
-        FieldPath::Index { name, owner, .. } | FieldPath::IndexKey { name, owner, .. } => {
-            name.len() + owner.as_ref().map_or(0, String::len)
-        }
-    }
+    path.name_bytes(String::len)
 }
 
 fn metadata_bytes(capture: &CapturedEndpoint) -> usize {

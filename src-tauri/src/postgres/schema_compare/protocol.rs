@@ -19,14 +19,32 @@ pub struct ResultIdentity {
 
 impl ResultIdentity {
     pub fn validate(&self) -> Result<(), CompareError> {
-        if [&self.job_id, &self.result_id]
-            .iter()
-            .any(|s| s.is_empty() || s.len() > 128)
-        {
-            return Err(CompareError::InvalidRequest);
-        }
-        Ok(())
+        validate_id(&self.job_id)?;
+        validate_id(&self.result_id)
     }
+}
+
+/// Bound for every caller-supplied opaque identifier: job, result, request,
+/// response, transport session and connection IDs.
+pub(crate) const MAX_ID_BYTES: usize = 128;
+
+pub(crate) fn valid_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= MAX_ID_BYTES
+}
+
+pub(crate) fn validate_id(id: &str) -> Result<(), CompareError> {
+    if valid_id(id) {
+        Ok(())
+    } else {
+        Err(CompareError::InvalidRequest)
+    }
+}
+
+/// The comparison projection is defined for PostgreSQL 16 only; both the
+/// native reader and the diff refuse any other major before version-sensitive
+/// work.
+pub(crate) fn is_supported_major(server_version_num: u32) -> bool {
+    server_version_num / 10_000 == 16
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +114,7 @@ pub struct QualifiedName {
 }
 
 impl QualifiedName {
+    #[cfg(test)]
     pub fn in_endpoint(endpoint: &Endpoint, schema: &str, name: &str) -> Self {
         Self {
             namespace: if schema == endpoint.schema {
@@ -206,6 +225,20 @@ pub enum FieldPath {
         position: u16,
         field: IndexKeyField,
     },
+}
+
+impl FieldPath {
+    /// Bytes of the identifier strings a path owns, measured by `measure`
+    /// (`String::capacity` for retained accounting, `String::len` for clones).
+    pub(crate) fn name_bytes(&self, measure: fn(&String) -> usize) -> usize {
+        match self {
+            FieldPath::Table { .. } => 0,
+            FieldPath::Column { name, .. } | FieldPath::Constraint { name, .. } => measure(name),
+            FieldPath::Index { name, owner, .. } | FieldPath::IndexKey { name, owner, .. } => {
+                measure(name) + owner.as_ref().map_or(0, measure)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -342,6 +375,72 @@ pub struct Status {
     pub state: StatusState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StartRequest {
+    pub request_id: String,
+    pub source: Endpoint,
+    pub target: Endpoint,
+}
+impl StartRequest {
+    /// Timestamped caller IDs make an evicted/expired start fail closed. A
+    /// retry may reconcile retained history, but cannot create work again after
+    /// the ten-minute request ledger has forgotten it.
+    pub(crate) fn fresh(&self) -> bool {
+        let Some((millis, nonce)) = self.request_id.split_once(':') else {
+            return false;
+        };
+        let Ok(millis) = millis.parse::<i64>() else {
+            return false;
+        };
+        let age = chrono::Utc::now().timestamp_millis().saturating_sub(millis);
+        !nonce.is_empty() && (-5_000..60_000).contains(&age)
+    }
+    pub(crate) fn validate(&self) -> Result<(), CompareError> {
+        if !valid_id(&self.request_id)
+            || [&self.source, &self.target].iter().any(|e| {
+                !valid_id(&e.connection_id)
+                    || e.schema.is_empty()
+                    || e.schema.len() > 63
+                    || e.schema.contains('\0')
+            })
+        {
+            return Err(CompareError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
+
+/// Every result read binds the immutable result to both exact schema endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResultRequest {
+    pub identity: ResultIdentity,
+    pub source: Endpoint,
+    pub target: Endpoint,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ReadRequest {
+    Metadata,
+    Objects {
+        offset: u32,
+    },
+    Fields {
+        object: RelationIdentity,
+        offset: u32,
+    },
+    Eligibility {
+        object: RelationIdentity,
+        side: Side,
+    },
+    Value {
+        value: super::values::ValueRef,
+        offset: u32,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,72 +481,4 @@ mod tests {
         assert_eq!(failed["failure"]["kind"], "captureChanged");
         assert!(failed.get("resultId").is_none());
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct StartRequest {
-    pub request_id: String,
-    pub source: Endpoint,
-    pub target: Endpoint,
-}
-impl StartRequest {
-    /// Timestamped caller IDs make an evicted/expired start fail closed. A
-    /// retry may reconcile retained history, but cannot create work again after
-    /// the ten-minute request ledger has forgotten it.
-    pub(crate) fn fresh(&self) -> bool {
-        let Some((millis, nonce)) = self.request_id.split_once(':') else {
-            return false;
-        };
-        let Ok(millis) = millis.parse::<i64>() else {
-            return false;
-        };
-        let age = chrono::Utc::now().timestamp_millis().saturating_sub(millis);
-        !nonce.is_empty() && (-5_000..60_000).contains(&age)
-    }
-    pub(crate) fn validate(&self) -> Result<(), CompareError> {
-        if self.request_id.is_empty()
-            || self.request_id.len() > 128
-            || [&self.source, &self.target].iter().any(|e| {
-                e.connection_id.is_empty()
-                    || e.connection_id.len() > 128
-                    || e.schema.is_empty()
-                    || e.schema.len() > 63
-                    || e.schema.contains('\0')
-            })
-        {
-            return Err(CompareError::InvalidRequest);
-        }
-        Ok(())
-    }
-}
-
-/// Every result read binds the immutable result to both exact schema endpoints.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ResultRequest {
-    pub identity: ResultIdentity,
-    pub source: Endpoint,
-    pub target: Endpoint,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ReadRequest {
-    Metadata,
-    Objects {
-        offset: u32,
-    },
-    Fields {
-        object: RelationIdentity,
-        offset: u32,
-    },
-    Eligibility {
-        object: RelationIdentity,
-        side: Side,
-    },
-    Value {
-        value: super::values::ValueRef,
-        offset: u32,
-    },
 }
