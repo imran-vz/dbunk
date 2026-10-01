@@ -90,6 +90,8 @@ fn execute_payload(
         execution_id: execution_id.into(),
         sql,
         confirmed,
+        parameters: None,
+        row_limit: None,
     }
 }
 

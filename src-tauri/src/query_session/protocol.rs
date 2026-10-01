@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::postgres::sql_class::StatementClassSummary;
+use crate::postgres::sql_params::{ParameterRejectionReason, ParameterValue, PlanRefusal};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -89,6 +90,33 @@ pub(crate) enum QuerySessionError {
         severity: Option<String>,
         position: Option<u32>,
     },
+    /// Returned before the policy check; nothing was sent to the server.
+    ParametersRejected {
+        reason: ParameterRejectionReason,
+        names: Vec<String>,
+    },
+    InvalidRowLimit,
+}
+
+impl From<PlanRefusal> for QuerySessionError {
+    fn from(refusal: PlanRefusal) -> Self {
+        match refusal {
+            PlanRefusal::Parameters(rejection) => Self::ParametersRejected {
+                reason: rejection.reason,
+                names: rejection.names,
+            },
+            PlanRefusal::InvalidRowLimit => Self::InvalidRowLimit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum RowLimitOutcome {
+    /// The server stopped at the limit and more rows exist.
+    Stopped,
+    /// Every row was read and the limit withheld some.
+    Drained,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +150,21 @@ pub(crate) struct ExecutePayload {
     pub sql: String,
     #[serde(default)]
     pub confirmed: bool,
+    /// Present, even when empty, puts the execution in parameter mode.
+    #[serde(default)]
+    pub parameters: Option<Vec<ParameterValue>>,
+    #[serde(default)]
+    pub row_limit: Option<i64>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DescribeParametersPayload {
+    pub sql: String,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DescribeParametersResult {
+    pub names: Vec<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -207,6 +250,7 @@ pub(crate) enum QueryEvent {
         result_set_index: u32,
         row_count: u64,
         partial: bool,
+        limit: Option<RowLimitOutcome>,
     },
     Notice {
         severity: String,
@@ -221,6 +265,7 @@ pub(crate) enum QueryEvent {
         omitted_metadata_bytes: u64,
         truncation_reasons: Vec<String>,
         error: Option<QueryDatabaseError>,
+        refusal: Option<String>,
     },
     SessionLost {
         reason: String,
@@ -270,6 +315,116 @@ mod tests {
         }))
         .unwrap();
         assert!(!payload.confirmed);
+        assert!(payload.parameters.is_none());
+        assert!(payload.row_limit.is_none());
+    }
+
+    #[test]
+    fn execute_payload_distinguishes_parameter_mode_and_redacts_values() {
+        let payload: ExecutePayload = serde_json::from_value(serde_json::json!({
+            "sessionId": "s",
+            "executionId": "e",
+            "sql": "SELECT :a, :b",
+            "parameters": [
+                { "name": "a", "value": "hunter2-secret" },
+                { "name": "b", "value": null }
+            ],
+            "rowLimit": 200
+        }))
+        .unwrap();
+        let parameters = payload.parameters.as_deref().expect("parameter mode");
+        assert_eq!(parameters[0].value.as_deref(), Some("hunter2-secret"));
+        assert_eq!(parameters[1].value, None);
+        assert_eq!(payload.row_limit, Some(200));
+        let rendered = format!("{payload:?}");
+        assert!(!rendered.contains("hunter2-secret"), "{rendered}");
+
+        let empty: ExecutePayload = serde_json::from_value(serde_json::json!({
+            "sessionId": "s",
+            "executionId": "e",
+            "sql": "SELECT 1",
+            "parameters": []
+        }))
+        .unwrap();
+        assert_eq!(empty.parameters.map(|parameters| parameters.len()), Some(0));
+    }
+
+    #[test]
+    fn refusals_and_new_event_fields_have_stable_wire_shapes() {
+        let refusal = serde_json::to_value(QuerySessionError::from(PlanRefusal::Parameters(
+            crate::postgres::sql_params::ParameterRejection {
+                reason: ParameterRejectionReason::MissingValue,
+                names: vec!["a".into()],
+            },
+        )))
+        .unwrap();
+        assert_eq!(
+            refusal,
+            serde_json::json!({
+                "kind": "parametersRejected",
+                "reason": "missingValue",
+                "names": ["a"]
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(QuerySessionError::from(PlanRefusal::InvalidRowLimit)).unwrap(),
+            serde_json::json!({ "kind": "invalidRowLimit" })
+        );
+        for (reason, wire) in [
+            (ParameterRejectionReason::Unlexable, "unlexable"),
+            (
+                ParameterRejectionReason::MultipleStatements,
+                "multipleStatements",
+            ),
+            (
+                ParameterRejectionReason::PositionalPlaceholder,
+                "positionalPlaceholder",
+            ),
+            (ParameterRejectionReason::DuplicateName, "duplicateName"),
+            (ParameterRejectionReason::NameTooLong, "nameTooLong"),
+            (
+                ParameterRejectionReason::TooManyParameters,
+                "tooManyParameters",
+            ),
+            (ParameterRejectionReason::ValueTooLarge, "valueTooLarge"),
+        ] {
+            assert_eq!(serde_json::to_value(reason).unwrap(), wire);
+        }
+
+        let completed = |limit| {
+            serde_json::to_value(QueryEvent::ResultSetCompleted {
+                result_set_index: 0,
+                row_count: 3,
+                partial: false,
+                limit,
+            })
+            .unwrap()
+        };
+        // The field is always present; `null` means the limit withheld nothing.
+        assert_eq!(completed(None)["limit"], serde_json::Value::Null);
+        assert_eq!(
+            completed(Some(RowLimitOutcome::Stopped))["limit"],
+            "stopped"
+        );
+        assert_eq!(
+            completed(Some(RowLimitOutcome::Drained))["limit"],
+            "drained"
+        );
+
+        let terminal = serde_json::to_value(QueryEvent::ExecutionCompleted {
+            status: "failed".into(),
+            transaction: QueryTransactionSnapshot::default(),
+            omitted_rows: 0,
+            omitted_result_sets: 0,
+            omitted_notices: 0,
+            omitted_metadata_bytes: 0,
+            truncation_reasons: Vec::new(),
+            error: None,
+            refusal: Some("parametersReturnRows".into()),
+        })
+        .unwrap();
+        assert_eq!(terminal["refusal"], "parametersReturnRows");
+        assert_eq!(terminal["error"], serde_json::Value::Null);
     }
     #[test]
     fn nullable_column_names_keep_positions() {
@@ -292,6 +447,7 @@ mod tests {
             result_set_index: 2,
             row_count: 7,
             partial: true,
+            limit: None,
         };
         let value = serde_json::to_value(event).unwrap();
         assert_eq!(value["kind"], "resultSetCompleted");

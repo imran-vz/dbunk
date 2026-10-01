@@ -31,6 +31,7 @@ pub(crate) mod schema_compare;
 mod seed;
 pub(crate) mod sql_class;
 pub(crate) mod sql_lex;
+pub(crate) mod sql_params;
 mod table_relationships;
 pub(crate) mod tls;
 pub(crate) mod transfer;

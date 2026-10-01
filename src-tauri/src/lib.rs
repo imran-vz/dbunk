@@ -209,6 +209,11 @@ fn apply_window_traffic_light_position(_window: &tauri::Window) -> Result<(), St
 /// runs) and the webview console (visible in browser DevTools so
 /// frontend developers see backend logs too). Release builds also
 /// rotate to a file under the per-OS app log directory.
+/// tokio-postgres logs bound parameter values at Debug. Query Session
+/// parameter values must never reach a log (ADR-0031), so this stays at Warn
+/// or stricter whatever the crate's own level is.
+pub(crate) const TOKIO_POSTGRES_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Warn;
+
 fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     use tauri_plugin_log::{Target, TargetKind};
 
@@ -230,7 +235,7 @@ fn build_log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .targets(targets)
         .level(log::LevelFilter::Warn)
         .level_for("dbunk_lib", crate_level)
-        .level_for("tokio_postgres", log::LevelFilter::Warn)
+        .level_for("tokio_postgres", TOKIO_POSTGRES_LOG_LEVEL)
         .build()
 }
 
@@ -458,6 +463,7 @@ pub fn run() {
             commands::query_session::register_query_session_owner,
             commands::query_session::open_query_session,
             commands::query_session::execute_query_session,
+            commands::query_session::describe_query_parameters,
             commands::query_session::ack_query_session_events,
             commands::query_session::heartbeat_query_sessions,
             commands::query_session::cancel_query_execution,

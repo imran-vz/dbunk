@@ -601,9 +601,19 @@ manually). For the current table list, read the migrations in
   It reuses the query-session connect spec, TLS, driver options, and
   CancelToken machinery but not the simple-query session actor, because
   bind parameters require the extended query protocol.
-- **Query Execution** — one simple-query request in a Query Session. It can
-  produce multiple Result Sets and notices, and settles after its terminal
-  event is acknowledged through the bounded credit protocol.
+- **Query Execution** — one admitted run of SQL text in a Query Session. Its
+  shape is chosen before anything is sent and never changes afterwards
+  (ADR-0031): a Script is one simple-query request and may hold many
+  statements; a Cursor read is one statement declared as a server-side cursor,
+  with bound parameters, a row limit, or both; a Bound command is one
+  parameterized statement that returns no rows. The cursor and bound shapes
+  are reachable only through optional payload fields that no frontend caller
+  sends yet. An execution can produce multiple Result Sets and notices, and
+  settles after its terminal event is acknowledged through the bounded credit
+  protocol. A Script's rows flow from the socket under that credit; a Cursor
+  read is fetched and cleaned up first, then delivered. A
+  requested Stop that the server answers with 57014 settles as `cancelled`; a
+  57014 nobody requested, such as a statement timeout, settles as `failed`.
 - **Result Set** — an ordered PostgreSQL protocol result boundary, including
   zero-row column metadata. Retained data is bounded independently from a
   DataRow transiently decoded by the driver.

@@ -2,6 +2,9 @@
 
 **Status**: Accepted (Plan 001, `PAR-001`) — TLS policy superseded by ADR-0025
 
+Extended by ADR-0031: execution shapes beyond one simple-query request, the
+`cancelled` outcome, and the credit loop repair.
+
 ## Decision
 
 Query tabs use a dedicated tokio-postgres 0.7.18 actor connection. SQLx remains

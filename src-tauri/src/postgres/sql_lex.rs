@@ -11,40 +11,62 @@ pub(crate) enum SqlToken {
     Opaque,
 }
 
+/// A token with the byte range it was lexed from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpannedToken {
+    pub(crate) token: SqlToken,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
 pub(crate) fn lex_sql(sql: &str) -> Result<Vec<SqlToken>, ()> {
+    Ok(lex_sql_spanned(sql)?
+        .into_iter()
+        .map(|spanned| spanned.token)
+        .collect())
+}
+
+/// The one scan behind every caller, so a classifier and a span-reading
+/// caller can never disagree about where a string or comment ends.
+pub(crate) fn lex_sql_spanned(sql: &str) -> Result<Vec<SpannedToken>, ()> {
     let bytes = sql.as_bytes();
     let mut tokens = Vec::new();
     let mut index = 0usize;
     while index < bytes.len() {
-        match bytes[index] {
-            byte if byte.is_ascii_whitespace() => index += 1,
+        let start = index;
+        let token = match bytes[index] {
+            byte if byte.is_ascii_whitespace() => {
+                index += 1;
+                continue;
+            }
             b'-' if bytes.get(index + 1) == Some(&b'-') => {
                 index += 2;
                 while index < bytes.len() && bytes[index] != b'\n' {
                     index += 1;
                 }
+                continue;
             }
             b'/' if bytes.get(index + 1) == Some(&b'*') => {
                 index = lex_block_comment(bytes, index + 2)?;
+                continue;
             }
             b'\'' => {
                 index = lex_single_quote(bytes, index + 1, false)?;
-                tokens.push(SqlToken::Opaque);
+                SqlToken::Opaque
             }
             b'"' => {
                 let (value, next) = lex_quoted_identifier(sql, index + 1)?;
-                tokens.push(SqlToken::Identifier(SqlIdentifier {
+                index = next;
+                SqlToken::Identifier(SqlIdentifier {
                     value,
                     quoted: true,
-                }));
-                index = next;
+                })
             }
             b'$' => {
                 index = lex_dollar(bytes, index)?;
-                tokens.push(SqlToken::Opaque);
+                SqlToken::Opaque
             }
             byte if is_identifier_start(byte) => {
-                let start = index;
                 index += 1;
                 while index < bytes.len() && is_identifier_continue(bytes[index]) {
                     index += 1;
@@ -52,24 +74,29 @@ pub(crate) fn lex_sql(sql: &str) -> Result<Vec<SqlToken>, ()> {
                 let value = &sql[start..index];
                 if value.eq_ignore_ascii_case("e") && bytes.get(index) == Some(&b'\'') {
                     index = lex_single_quote(bytes, index + 1, true)?;
-                    tokens.push(SqlToken::Opaque);
+                    SqlToken::Opaque
                 } else {
-                    tokens.push(SqlToken::Identifier(SqlIdentifier {
+                    SqlToken::Identifier(SqlIdentifier {
                         value: value.into(),
                         quoted: false,
-                    }));
+                    })
                 }
             }
             byte @ (b'(' | b')' | b'[' | b']' | b',' | b'.' | b';' | b'*') => {
-                tokens.push(SqlToken::Symbol(char::from(byte)));
                 index += 1;
+                SqlToken::Symbol(char::from(byte))
             }
             byte if byte.is_ascii() => {
-                tokens.push(SqlToken::Opaque);
                 index += 1;
+                SqlToken::Opaque
             }
             _ => return Err(()),
-        }
+        };
+        tokens.push(SpannedToken {
+            token,
+            start,
+            end: index,
+        });
     }
     Ok(tokens)
 }
@@ -222,6 +249,36 @@ mod tests {
         assert!(lex_sql(r"'abc\'").is_err());
         // E strings always escape.
         assert!(lex_sql(r"E'a\'b'").is_ok());
+    }
+
+    #[test]
+    fn spans_cover_each_token_and_skip_comments_and_whitespace() {
+        let sql = "SELECT 'é' /* c */ , \"q\"\"x\" -- tail\n $1 $t$ ; $t$ e'\\''";
+        let spans = lex_sql_spanned(sql).expect("spanned scan");
+        let texts = spans
+            .iter()
+            .map(|spanned| &sql[spanned.start..spanned.end])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            texts,
+            [
+                "SELECT",
+                "'é'",
+                ",",
+                "\"q\"\"x\"",
+                "$1",
+                "$t$ ; $t$",
+                "e'\\''"
+            ]
+        );
+        assert_eq!(
+            spans
+                .iter()
+                .map(|spanned| spanned.token.clone())
+                .collect::<Vec<_>>(),
+            lex_sql(sql).expect("projection")
+        );
+        assert!(lex_sql_spanned("SELECT é").is_err());
     }
 
     #[test]

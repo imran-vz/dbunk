@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::sql_lex::{lex_sql, SqlIdentifier, SqlToken};
+use super::sql_lex::{lex_sql_spanned, SpannedToken, SqlIdentifier, SqlToken};
 
 struct ReadEscalation {
     identifier: &'static str,
@@ -124,38 +124,92 @@ impl StatementClass {
 }
 
 pub(crate) fn classify_script(sql: &str) -> Vec<StatementClass> {
-    let Ok(tokens) = lex_sql(sql) else {
-        return vec![StatementClass::Unknown];
-    };
-    let Ok(statements) = split_statements(tokens) else {
-        return vec![StatementClass::Unknown];
-    };
-    statements
-        .iter()
-        .map(|statement| classify_statement(statement))
-        .collect()
+    match describe_script(sql) {
+        Ok(statements) => statements
+            .into_iter()
+            .map(|statement| statement.class)
+            .collect(),
+        Err(()) => vec![StatementClass::Unknown],
+    }
 }
 
-fn split_statements(tokens: Vec<SqlToken>) -> Result<Vec<Vec<SqlToken>>, ()> {
+/// What a caller needs to know about one statement beyond its class.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StatementFacts {
+    pub(crate) class: StatementClass,
+    /// Byte range from the statement's first token to its last, so it holds
+    /// no separating semicolon, surrounding whitespace, or outer comment.
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    /// The unquoted head keyword, uppercased.
+    pub(crate) head: Option<String>,
+    /// `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, or `FOR KEY SHARE` at
+    /// any depth.
+    pub(crate) row_locking: bool,
+    /// A native `$n` placeholder outside strings and comments.
+    pub(crate) native_placeholder: bool,
+}
+
+/// Splits a script and describes each statement. Fails when the script does
+/// not lex or its parentheses do not balance.
+pub(crate) fn describe_script(sql: &str) -> Result<Vec<StatementFacts>, ()> {
+    let statements = split_statements(lex_sql_spanned(sql)?)?;
+    Ok(statements
+        .into_iter()
+        .map(|statement| {
+            let native_placeholder = statement.iter().any(|spanned| {
+                let text = &sql.as_bytes()[spanned.start..spanned.end];
+                spanned.token == SqlToken::Opaque
+                    && text.first() == Some(&b'$')
+                    && text.get(1).is_some_and(u8::is_ascii_digit)
+            });
+            let start = statement.first().map_or(0, |spanned| spanned.start);
+            let end = statement.last().map_or(0, |spanned| spanned.end);
+            let tokens = statement
+                .into_iter()
+                .map(|spanned| spanned.token)
+                .collect::<Vec<_>>();
+            StatementFacts {
+                class: classify_statement(&tokens),
+                start,
+                end,
+                head: tokens
+                    .first()
+                    .and_then(identifier)
+                    .filter(|head| !head.quoted)
+                    .map(|head| head.value.to_ascii_uppercase()),
+                row_locking: tokens.windows(2).any(|pair| {
+                    is_keyword(&pair[0], "for")
+                        && ["update", "no", "share", "key"]
+                            .iter()
+                            .any(|keyword| is_keyword(&pair[1], keyword))
+                }),
+                native_placeholder,
+            }
+        })
+        .collect())
+}
+
+fn split_statements(tokens: Vec<SpannedToken>) -> Result<Vec<Vec<SpannedToken>>, ()> {
     let mut statements = Vec::new();
     let mut statement = Vec::new();
     let mut depth = 0usize;
-    for token in tokens {
-        match token {
+    for spanned in tokens {
+        match spanned.token {
             SqlToken::Symbol('(') => {
                 depth += 1;
-                statement.push(token);
+                statement.push(spanned);
             }
             SqlToken::Symbol(')') => {
                 depth = depth.checked_sub(1).ok_or(())?;
-                statement.push(token);
+                statement.push(spanned);
             }
             SqlToken::Symbol(';') if depth == 0 => {
                 if !statement.is_empty() {
                     statements.push(std::mem::take(&mut statement));
                 }
             }
-            _ => statement.push(token),
+            _ => statement.push(spanned),
         }
     }
     if depth != 0 {
