@@ -33,7 +33,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
 | 021 | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | DONE: 9312b41 |
-| [022](./022-postgres-schema-comparison-activation.md) | PostgreSQL schema comparison activation | P1 | L | 021 | IN PROGRESS: through Step 4 (selected mock A); frontend checks pass, Step 5 native/WebView fixture gate not yet run |
+| [022](./022-postgres-schema-comparison-activation.md) | PostgreSQL schema comparison activation | P1 | L | 021 | READY FOR REVIEW (selected mock A); native/WebView fixture gate run 2026-10-01 |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -42,13 +42,17 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Currently executing: Plan 022, PostgreSQL schema comparison activation.**
+**Ready for review: Plan 022, PostgreSQL schema comparison activation.**
 Plan 022 brings Plan 021's read-only comparison into the workbench. Imran
 selected **A: Object inspector** on 2026-09-14. The observer, bounded reader,
-workbench rail destination and Object inspector workspace are implemented with
-focused tests, and format/lint/typecheck pass. The native/WebView fixture and
-memory gate has not run; the plan's execution record lists the blocked
-scenarios. It is not ready for review until that gate is recorded.
+workbench rail destination and Object inspector workspace were implemented
+with focused tests that day. The native/WebView fixture and memory gate ran on
+2026-10-01 against owned PostgreSQL 16.15, 16.14 and 17.11 fixtures and an SSH
+bastion: 117 scripted checks pass on a production frontend bundle in the real
+desktop WebView. The plan's execution record lists the scenarios, measurements,
+the one message repaired and the limits of that evidence (one platform, a debug
+native build, no screen capture or physical key input). DONE needs a separately
+authorized completion commit.
 [Plan 022](./022-postgres-schema-comparison-activation.md) ·
 [Published brief and mocks](https://dbunk-schema-compare-plan-022.imran-vz.chatgpt.site) ·
 [Local artifact](./mocks/schema-compare/index.html).
