@@ -33,7 +33,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
 | 021 | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | DONE: 9312b41 |
-| [022](./022-postgres-schema-comparison-activation.md) | PostgreSQL schema comparison activation | P1 | L | 021 | READY FOR REVIEW (selected mock A); native/WebView fixture gate run 2026-10-01 |
+| 022 | PostgreSQL schema comparison activation | P1 | L | 021 | DONE: d3ff88a (selected mock: A) |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -42,18 +42,19 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**Ready for review: Plan 022, PostgreSQL schema comparison activation.**
-Plan 022 brings Plan 021's read-only comparison into the workbench. Imran
-selected **A: Object inspector** on 2026-09-14. The observer, bounded reader,
-workbench rail destination and Object inspector workspace were implemented
-with focused tests that day. The native/WebView fixture and memory gate ran on
+**No plan is executing.** The next slice has not been selected; candidates
+are in [parity-gap-register.md](./parity-gap-register.md).
+
+Plan 022 is DONE at `d3ff88a`, confirmed by Imran on 2026-10-01. It brought Plan
+021's read-only comparison into the workbench as the Object inspector (mock A,
+selected 2026-09-14). The native/WebView fixture and memory gate ran on
 2026-10-01 against owned PostgreSQL 16.15, 16.14 and 17.11 fixtures and an SSH
 bastion: 117 scripted checks pass on a production frontend bundle in the real
-desktop WebView. The plan's execution record lists the scenarios, measurements,
-the one message repaired and the limits of that evidence (one platform, a debug
-native build, no screen capture or physical key input). DONE needs a separately
-authorized completion commit.
-[Plan 022](./022-postgres-schema-comparison-activation.md) ·
+desktop WebView. The completed plan body is retired; the
+[historical execution record](https://github.com/imran-vz/dbunk/blob/d3ff88a37f6addece889aa0083b190ac4ad8337f/plans/022-postgres-schema-comparison-activation.md) retains the scenarios, measurements, the
+one message repaired and the limits of that evidence (one platform, a debug
+native build, no screen capture or physical key input). This bookkeeping
+update records that commit and does not claim new runtime tests.
 [Published brief and mocks](https://dbunk-schema-compare-plan-022.imran-vz.chatgpt.site) ·
 [Local artifact](./mocks/schema-compare/index.html).
 
@@ -64,7 +65,7 @@ fixture matrix, performance measurements and remaining validation limits.
 This bookkeeping update records that commit and does not claim new runtime tests.
 The delivered backend covers ordinary-table definitions on PostgreSQL 16,
 with bounded capture, structural differences, typed jobs, cancellation and
-explicit coverage. UI activation and WebView memory validation are Plan 022;
+explicit coverage. UI activation and WebView memory validation were Plan 022;
 wider object coverage, migration SQL and data comparison remain later slices.
 
 Plan 020 is DONE at `7745946`, confirmed by Imran on 2026-09-05.
