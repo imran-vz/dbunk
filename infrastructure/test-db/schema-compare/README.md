@@ -308,3 +308,59 @@ one-column tables and exactly 50,000 and 50,011 facts. The measured table and
 the transport page change it motivated are recorded in the plan's Step 6
 record and ADR-0030. All eight native tests and the profile passed on
 2026-09-14; the owned containers were removed.
+
+
+## Plan 022 WebView walkthrough (2026-10-01)
+
+`webview-driver/` drives the real desktop app, not a browser mock. It owns
+every resource it touches and accepts no DSN or existing container.
+
+```sh
+D=infrastructure/test-db/schema-compare/webview-driver
+python3 $D/fixtures.py up          # PG 16, 16.14, 17 and an SSH bastion
+pnpm vite build --config $D/vite.config.ts && mv .output /tmp/dbunk-plan022-gate/dist
+DBUNK_DEV_CONFIG_DIR=/tmp/dbunk-plan022-gate/config \
+CARGO_TARGET_DIR=/tmp/dbunk-plan022-gate/target \
+  pnpm tauri dev --config $D/tauri.walkthrough.json \
+  --config '{"build":{"beforeDevCommand":"python3 '$D'/serve.py /tmp/dbunk-plan022-gate/dist/public 3000"}}'
+python3 $D/walkthrough.py          # every scenario; or name scenarios
+python3 $D/walkthrough.py expiry   # opt-in, waits out the ten-minute TTL
+python3 $D/fixtures.py down
+```
+
+- `fixtures.py` creates `dbunk-plan022-gate-*` containers on random loopback
+  ports with tmpfs data, seeds `base.sql` everywhere and `bulk.sql` on the
+  primary, and records names and ports in `/tmp/dbunk-plan022-gate/fixtures.json`.
+  `down` removes only the containers recorded there.
+- `tauri.walkthrough.json` gives the build its own identifier and adds window
+  permissions the walkthrough needs (focus, minimize, resize). It is never used
+  by `pnpm dev` or a release build.
+- `vite.config.ts` adds an evaluation bridge and exposes the app's own module
+  instances. Omit the build and the second `--config` to run against the dev
+  server instead. Measure memory and timing on the production bundle only: a
+  development React build keeps one User Timing entry per component render, and
+  entries for `FieldMatrix` and `ValuePane` carry tens of kilobytes each.
+- `walkthrough.py` clicks and reads the rendered workspace through `helpers.js`,
+  holds locks and runs DDL through `docker exec`, samples process memory, and
+  writes `/tmp/dbunk-plan022-gate/report.json`.
+
+Constraints found while running it:
+
+- The window must be visible. A hidden WebView stops observing by design and
+  macOS suspends its content process. The script focuses the window, which
+  switches the active desktop Space.
+- `DBUNK_DEV_CONFIG_DIR` isolates the SQLite store only. Onboarding and
+  credential reset clear the shared `dbunk` keychain entry whatever the config
+  directory is. `walkthrough.py` refuses to onboard when that entry exists.
+- WebView storage is not isolated either. An unbundled dev binary keeps its
+  WebKit data under `~/Library/WebKit/dbunk` whatever its identifier, so the
+  theme and density pre-paint mirrors in localStorage are shared with every
+  `pnpm dev` run. The layout scenario restores the values it found.
+- Harness waits must not read `innerText` of a pane holding a 64 KiB value:
+  doing so on every poll forces layout and copies the text, and showed up as
+  seconds-long stalls and gigabytes of WebContent growth that the app does not
+  cause.
+- macOS denied window capture and synthetic input, so styling is checked from
+  computed styles and geometry, and keyboard access structurally.
+
+Results are recorded in Plan 022's execution record.

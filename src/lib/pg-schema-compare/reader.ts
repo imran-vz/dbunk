@@ -357,7 +357,10 @@ export function createSchemaCompareReader(
       if (!value || !chunk) return;
       const next = turnPage(
         direction,
-        { offset: chunk.offset, nextOffset: chunk.complete ? null : chunk.nextOffset },
+        {
+          offset: chunk.offset,
+          nextOffset: chunk.complete ? null : chunk.nextOffset,
+        },
         previousValueOffsets[side],
       );
       if (!next) return;

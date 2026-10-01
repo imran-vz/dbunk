@@ -1,0 +1,12 @@
+# Plan 022 walkthrough only: a throwaway SSH bastion for the tunnel teardown
+# scenario. Password login for one unprivileged user; never published beyond
+# loopback by fixtures.py.
+FROM postgres:16
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-server \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd \
+ && useradd --create-home tunnel \
+ && echo 'tunnel:tunnel' | chpasswd \
+ && printf 'PasswordAuthentication yes\nAllowTcpForwarding yes\nPermitRootLogin no\n' > /etc/ssh/sshd_config.d/fixture.conf
+ENTRYPOINT ["/usr/sbin/sshd", "-D", "-e"]

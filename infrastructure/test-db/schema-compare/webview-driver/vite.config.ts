@@ -4,7 +4,11 @@
 // `pnpm dev` or any build; run it explicitly:
 //   pnpm vite dev --port 3000 --config infrastructure/test-db/schema-compare/webview-driver/vite.config.ts
 // then `curl -s localhost:3000/__dbunk/eval --data-binary '<js expression>'`.
+// `vite build` with this config produces a production bundle that carries the
+// same bridge; serve.py serves it. Memory and timing are measured there,
+// because a development React build retains a User Timing entry per render.
 import type { IncomingMessage } from "node:http";
+
 import { defineConfig, type Plugin, type UserConfig } from "vite";
 
 import base from "../../../../vite.config";
@@ -13,6 +17,18 @@ const VIRTUAL = "virtual:dbunk-driver";
 const RESOLVED = "\0" + VIRTUAL;
 
 const clientModule = `
+// The app's own module instances, for the walkthrough helpers. Lazy, so the
+// driver never changes the order in which application modules evaluate.
+if (typeof window !== "undefined") {
+  window.__dbunkModules = async () => ({
+    store: (await import("/src/lib/store/index.ts")).useAppStore,
+    observer: (await import("/src/lib/pg-schema-compare/observer.ts")).pgSchemaCompareObserver,
+    form: (await import("/src/components/pg-schema-compare/use-compare-form.ts")).schemaCompareForm,
+    client: (await import("/src/lib/pg-schema-compare/client.ts")).schemaCompareClient,
+    forms: await import("/src/components/connection-form/form-utils.ts"),
+    density: await import("/src/lib/density.ts"),
+  });
+}
 const run = async (expr) => {
   try {
     let value = (0, eval)(expr);
@@ -105,7 +121,11 @@ function driver(): Plugin {
             resolve({ id, ok: false, error: `timeout after ${timeoutMs}ms` });
           }, timeoutMs);
           pending.set(id, { resolve, timer });
-          server.ws.send({ type: "custom", event: "dbunk:eval", data: { id, expr } });
+          server.ws.send({
+            type: "custom",
+            event: "dbunk:eval",
+            data: { id, expr },
+          });
         });
         response.setHeader("content-type", "application/json");
         response.end(JSON.stringify(result));

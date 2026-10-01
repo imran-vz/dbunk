@@ -6,8 +6,9 @@ are implemented and validated against owned PG16.15, PG16.14, PG17.11 and TLS
 fixtures. Plan 022 (2026-09-14) activates the comparison through the typed
 client behind a PostgreSQL-only workbench rail item with an application-owned
 observer and an epoch-fenced bounded reader, preserving this scope and
-normalization version 1. WebView-side allocation measurement and the native
-fixture scenarios for the activated view have not yet been run.
+normalization version 1. The native fixture scenarios and WebView-side process
+memory for the activated view were measured on 2026-10-01 (macOS only); see
+"Activated view validation" below.
 
 ## Problem
 
@@ -365,7 +366,29 @@ deadline. Pages now carry up to 1,024 rows under the unchanged 2 MiB running
 byte bound, the 256 KiB field guard and the 32 MiB capture scratch; the same
 capture takes about 3 s. Server-side work per page and retained accounting are
 unchanged. Measurements are from Docker images on an aarch64 macOS host; Windows
-paths and WebView-side IPC allocation remain unmeasured.
+paths remain unmeasured.
+
+### Activated view validation (Plan 022, 2026-10-01)
+
+The read contract above was exercised from the real WKWebView on macOS 27.0.1
+(Apple M4 Pro) with a production frontend bundle and a debug native build, over
+owned PostgreSQL 16.15, 16.14 and 17.11 fixtures. Every `read_pg_schema_compare`
+response was followed by its acknowledgement, with at most one read outstanding
+and one unacknowledged response at any time across 934 reads in the paging
+loops. The largest response was 76,945 bytes (a 64 KiB value chunk), and chunk
+cuts followed code point boundaries (65,535 and 65,533 byte chunks on pure
+three- and four-byte text) with SHA-256 equal to the database value.
+
+The native process footprint moved from 37.7 MiB to 47.3 MiB with two retained
+results and returned to 37.0 MiB after release. The WebContent process footprint
+rose from 275 MiB to between 306 and 389 MiB over 48 navigation cycles, with no
+monotonic trend inside either loop, and fell to 176 MiB after the jobs were
+dismissed and the view closed. A
+separate 120-cycle large-value run rose from 171 MiB to a 425 MiB plateau, then
+declined to 334 MiB, and fell to 162 MiB after cleanup. WKWebView exposes
+neither a JavaScript heap size nor a way to force collection, so these are
+process footprints with allocator noise, not post-collection heap sizes.
+Windows, Linux and release-profile native builds remain unmeasured.
 
 
 ## Review fixes (Step 7, 2026-09-14)
