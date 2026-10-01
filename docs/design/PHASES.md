@@ -165,9 +165,9 @@ the current app.
 
 [Plan 021](https://github.com/imran-vz/dbunk/blob/9312b41ab2d2c92f48b54d2b3229332bf74641a2/plans/021-bounded-postgres-schema-comparison.md) delivered bounded, read-only PostgreSQL 16
 ordinary-table definition comparison at `9312b41`.
-[Plan 022](https://github.com/imran-vz/dbunk/blob/d3ff88a37f6addece889aa0083b190ac4ad8337f/plans/022-postgres-schema-comparison-activation.md) delivered
+[Plan 022](https://github.com/imran-vz/dbunk/blob/db2dae24c504248d62f15f772bf82e4c8d1f5ff2/plans/022-postgres-schema-comparison-activation.md) delivered
 the Object inspector workbench surface and its native/WebView memory validation
-at `d3ff88a`. Broader definition coverage,
+at `db2dae2`. Broader definition coverage,
 migration SQL and bounded data comparison remain PAR-008 work.
 Current execution status lives in `plans/README.md`.
 
