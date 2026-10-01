@@ -363,4 +363,4 @@ Constraints found while running it:
 - macOS denied window capture and synthetic input, so styling is checked from
   computed styles and geometry, and keyboard access structurally.
 
-Results are recorded in Plan 022's execution record.
+Results are recorded in [Plan 022's execution record](https://github.com/imran-vz/dbunk/blob/d3ff88a37f6addece889aa0083b190ac4ad8337f/plans/022-postgres-schema-comparison-activation.md).
