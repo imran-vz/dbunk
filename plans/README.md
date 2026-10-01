@@ -34,6 +34,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
 | 021 | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | DONE: 9312b41 |
 | 022 | PostgreSQL schema comparison activation | P1 | L | 021 | DONE: db2dae2 (selected mock: A) |
+| [023](./023-query-session-bound-parameters-and-row-limit.md) | Bound parameters and row-limited reads in PostgreSQL Query Sessions (dark) | P0 | L | 001, 002, 007 | READY FOR REVIEW |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -42,8 +43,32 @@ Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
 
-**No plan is executing.** The next slice has not been selected; candidates
-are in [parity-gap-register.md](./parity-gap-register.md).
+**Plan 023 is READY FOR REVIEW** (PAR-001 follow-ons, chosen by Imran on
+2026-10-01, authored against `49c50e8`, now `677a7e8` on `main` with an
+identical tree). All seven steps are complete and uncommitted. The backend is
+dark: no frontend caller sends `parameters` or `rowLimit`.
+
+- Delivered: named-parameter scan and `$k` rewrite with a position map, the
+  shape planner, the cursor read with a row limit, the bound command, the
+  `cancelled` outcome, the credit-loop repair, `describe_query_parameters`,
+  ADR-0031.
+- Evidence, 2026-10-01, disposable fixtures, macOS only: `just fmt`, `just
+  lint`, `just test` (651 passed, 79 ignored), `pnpm format`, `pnpm lint`,
+  `pnpm typecheck`, `pnpm test` (1,488 passed); 29 live tests on PostgreSQL
+  16.14 and the TLS fixture; 19 of 19 fixture-port tests on PostgreSQL
+  17.10. The Script shape's event sequence is unchanged apart from two new
+  null fields.
+- Two decisions made by Imran during validation: the `FETCH` is read eagerly
+  so frontend credit never holds the wrapper transaction open, and the
+  server's type-inference limit (`:x IS NULL` needs a cast) is a known limit
+  for the activation plan, not a STOP.
+- Not run: an SSH-tunnel route (no fixture), PostgreSQL 18, platforms other
+  than macOS, the `ackTimeout` expiry end to end.
+
+The [plan's execution record](./023-query-session-bound-parameters-and-row-limit.md)
+lists every departure from the plan as written, and ADR-0031 holds the
+measurements. Other candidates are in
+[parity-gap-register.md](./parity-gap-register.md).
 
 Plan 022 is DONE at `db2dae2`, confirmed by Imran on 2026-10-01. It brought Plan
 021's read-only comparison into the workbench as the Object inspector (mock A,

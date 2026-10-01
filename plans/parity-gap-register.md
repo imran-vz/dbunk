@@ -99,16 +99,41 @@ remaining items below are complete.
   `transaction-controls.tsx` expose multiple results, output/notices,
   cancellation outcomes, and manual transaction recovery.
 
+**Progress (2026-10-01):** [Plan 023](./023-query-session-bound-parameters-and-row-limit.md)
+is `READY FOR REVIEW` and uncommitted. It delivers the dark backend for
+driver-bound parameters and the per-execution row limit through a server-side
+cursor, settles a requested Stop as `cancelled`, and repairs the credit-loop
+leak. Both defects were reproduced against the disposable PostgreSQL 16.14
+fixture before the fix. ADR-0031 records the decision, the measurements, and
+the known costs. No frontend caller sends the new fields yet.
+
 **Remaining pieces:**
 
-- Configurable maximum-row policy per execution, separate from hard retained
-  result limits.
-- Script policies to stop, continue, or prompt after a statement error.
-- Command tags. The current public driver exposes affected-row counts but not
-  tags.
-- Driver-bound parameters. Current bind-variable support is literal SQL
-  substitution.
-- Savepoint controls.
+- Maximum-row policy per execution. Backend delivered in Plan 023 (dark): a
+  row-limited read of a 3M-row table took about 10 ms and 45 KB instead of
+  1.25 s and 670 MB. A visible control needs an activation plan.
+- Driver-bound parameters. Backend delivered in Plan 023 (dark). The editor
+  keeps literal substitution (`src/lib/bind-variables.ts`) until activation.
+  Open after Plan 023: parameters with `RETURNING` or `EXPLAIN` (the pinned
+  driver returns extended-protocol results in binary only), and how to present
+  the server's type-inference limit (`:x IS NULL OR col = :x` needs
+  `:x::text IS NULL`).
+- Cancellation outcome. Delivered in Plan 023: a requested Stop answered with
+  57014 settles as `cancelled`. The frontend then records no history entry for
+  it; whether it should is left to the activation plan.
+- Session close with unacknowledged rows. Fixed in Plan 023.
+- History row count. The backend's per-result `rowCount` already includes rows
+  dropped by retention caps, and `src/lib/store/query-sessions.ts` adds
+  `omittedRows` again, so a truncated execution records an inflated count.
+  Found by code reading on 2026-10-01. Frontend fix, left for the activation
+  plan after Plan 023.
+- Script policies to stop, continue, or prompt after a statement error. A
+  script is one simple-protocol request today, so this needs backend statement
+  splitting and a per-statement event model. Unplanned.
+- Savepoint controls. Unplanned.
+- Command tags. tokio-postgres 0.7.18, the latest release as of 2026-10-01,
+  parses the tag and returns only the row count. Blocked on an upstream change
+  or a fork.
 
 **Target outcome:** A query tab owns a typed session descriptor and, while
 connected, a backend session handle. Executions have IDs and explicit state;
@@ -187,29 +212,46 @@ non-writable, explicit draft-loss policy (budget release never drops a
 draft; re-run and close confirm), and a review-integrity rule that apply
 never runs DML differing from the previewed statements.
 
-**Evidence:**
+**Reconciliation (2026-10-01):** Plans 005 and 006 are DONE at `d98f8a1` and
+`4e52c8a` (`plans/README.md`). The progress note above predates their
+completion, and the lists below were still the audit-time text. They are
+regrouped here from the plan summaries in this section and in the planning
+sequence; this pass re-read no mutation code except where stated.
 
-- `src/lib/store/edit-strategies.ts:95-193` supports safe PostgreSQL table-row
+**Evidence at the audit commit (`24432fb`, now historical):**
+
+- `src/lib/store/edit-strategies.ts:95-193` supported safe PostgreSQL table-row
   identity from primary or non-null unique keys.
-- `src/components/query-editor/toolbar.tsx:115-124` renders a query-result Save
-  control without a save handler.
-- PostgreSQL table mutation code supports parameterized transactional writes,
-  but the query editor has no equivalent mutation lifecycle.
+- `src/components/query-editor/toolbar.tsx:115-124` rendered a query-result Save
+  control without a save handler. The control now opens the staged review
+  ("Review & save").
+- The query editor had no mutation lifecycle.
 
-**Missing pieces:**
+**Delivered by Plans 005 and 006, per their recorded scope:**
 
 - Updatability analysis for arbitrary result sets.
-- Safe editing of eligible single-table and join results.
 - Virtual-key selection and persistence.
-- Bulk edit, duplicate row, batch paste, and multi-row delete.
 - Generated-column and identity-column awareness.
 - Generated DML preview before commit.
 - Per-change inclusion, exclusion, and revert.
 - Conflict detection when source rows change between fetch and save.
-- Transactional apply with a clear partial-failure policy.
-- Deep editors and Quick Look for JSON, XML, arrays, BLOB/bytea, images, and
-  spatial values.
-- Configurable copy formats for cells, rows, and result sets.
+- Transactional all-or-nothing apply.
+- Editing of eligible single-table results. Join results allow per-table
+  updates and reject insert and delete (`result_mutation/builder.rs` test
+  `join_snapshot_rejects_insert_and_delete_but_keeps_per_table_updates`).
+
+**Remaining or partial, checked by file search on 2026-10-01:**
+
+- Deep editors: JSON, array, and geometry editors exist
+  (`src/components/table-editor/specialized-editors.tsx`, ADR-0014). No XML,
+  BLOB/bytea, or image editor or Quick Look was found.
+- Copy formats: a TSV, CSV, JSON, INSERT, and Markdown copy menu exists
+  (`src/components/data-grid/grid-model.ts`, `query-editor/results-view.tsx`).
+  Whether that meets the "configurable" target was not assessed.
+- Batch paste: no implementation found.
+
+**Not re-verified in this pass:** bulk edit, duplicate row, and multi-row
+delete. Treat their status as unknown until checked against the code.
 
 **Target outcome:** Eligible query and table results share one typed pending
 mutation model. Users can inspect generated parameterized DML, commit it
@@ -340,30 +382,40 @@ objects with overload-safe Object Viewer targets, shared object caps, and
 per-kind badges (`src/lib/open-anything.ts`,
 `src/components/command-palette/command-palette.tsx`).
 
-**Evidence:**
+**Reconciliation (2026-10-01):** the evidence and list below were the
+audit-time text and contradicted the progress notes above. They are regrouped
+from those notes; this pass re-read no navigation code.
 
-- `src/lib/store/workspace-tabs.ts:88-89` initializes workspace tabs and the
+**Evidence at the audit commit (`24432fb`, now historical):**
+
+- `src/lib/store/workspace-tabs.ts:88-89` initialized workspace tabs and the
   active tab empty.
-- `src/components/command-palette/command-palette.tsx:26-100` searches only a
+- `src/components/command-palette/command-palette.tsx:26-100` searched only a
   capped portion of loaded store data.
-- `src/components/connection-actions.tsx:18-55` exposes connect, disconnect,
+- `src/components/connection-actions.tsx:18-55` exposed connect, disconnect,
   edit, and delete only.
 
-**Missing pieces:**
+**Delivered, per the progress notes above:**
 
-- Autosave and restore for tabs, unsaved SQL, caret/selection, and layout.
-- Restoration that distinguishes durable tab descriptors from ephemeral server
-  sessions and transactions.
+- Autosave and restore for tabs, unsaved SQL, and caret/selection.
+- Restoration that keeps durable tab descriptors apart from live sessions and
+  transactions, with no auto-connect.
+- Global Open Anything across connections, schemas, objects, commands, saved
+  queries, history, and open tabs.
+- Connection folders, colors, favorites, and recency ordering.
+- Duplicate connection, secret-free Copy URI, and URI import.
+
+**Still open, per Plan 009's reconciliation:**
+
 - SQL files, folders, recent files, and external-change handling.
 - Split editors, split results, and multiple windows.
-- Global Open Anything across connections, schemas, objects, actions, and
-  saved queries.
-- Complete metadata search and optional data search.
-- Deep links to connections, objects, tables, and saved queries.
-- Connection folders, groups, tags, colors, favorites, and recent targets.
-- Duplicate connection, copy URI/DSN, URI import, and encrypted profile
-  exchange.
-- Predictable reconnect and tab rehydration after failure or restart.
+- Offline metadata search of disconnected connections, and data search.
+- OS deep links to connections, objects, tables, and saved queries.
+- Encrypted profile exchange.
+- Keyvalue tab restore and per-tab browse-state persistence.
+
+**Not re-verified in this pass:** connection tags, layout restore beyond tabs
+and navigator expansion, and reconnect behavior after a failure.
 
 **Target outcome:** Restarting dbunk restores the user's durable workspace
 without falsely restoring live connections, transactions, or running queries.
@@ -922,8 +974,10 @@ Parity work should reuse rather than replace these credible foundations:
 
 ## Recommended planning sequence
 
-1. `PAR-001`: query-session foundation delivered by Plans 001 and 002;
-   remaining execution follow-ons stay tracked above.
+1. `PAR-001`: query-session foundation delivered by Plans 001 and 002.
+   Plan 023 (bound parameters, row limit, cancellation outcome; dark backend)
+   is `READY FOR REVIEW`; its editor activation is the next slice. Script policy, savepoints, and command tags stay
+   tracked above.
 2. `PAR-002`: server-backed table browsing delivered by Plans 003 and 004
    through commit `ecefce8`.
 3. `PAR-003`: editable query results and generated DML review delivered by

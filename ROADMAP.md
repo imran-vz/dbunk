@@ -74,7 +74,7 @@ Today: schemas → tables + views + the items below.
 - ✅ Basic SQL completion (`src/lib/sql-completions.ts`)
 - ✅ EXPLAIN / EXPLAIN ANALYZE plan visualizer (tree + cost, JSON + text)
 - ✅ SQL templates / snippets library (toolbar dropdown)
-- ✅ Bind variables / parameterized executions (`src/lib/bind-variables.ts`)
+- 🟡 Bind variables — `:name` values are substituted into the SQL text as literals (`src/lib/bind-variables.ts`); the match is not string-, comment-, or slice-aware. The backend for driver-bound parameters is built in [Plan 023](plans/023-query-session-bound-parameters-and-row-limit.md) (dark, ready for review); the editor switches over in a later activation plan.
 - ❌ PL/pgSQL debugger (breakpoints, step, variable inspect)
 - ❌ Visual query builder
 - ✅ SQL formatting (Format toolbar button + Cmd/Ctrl+Shift+F via `sql-formatter`)
@@ -158,9 +158,10 @@ and the ADRs cited). Treat each bullet as the seed for its own design pass.
 
 - **Empty / loading / error state polish** — surface-specific empty states,
   skeleton loaders, inline error + retry on every data-bound view.
-- **Query editor transaction status footer** — per-connection transaction
-  state surfaced as `Auto-commit ON / In transaction / Failed transaction`
-  with commit/rollback controls.
+- **Query editor transaction status for other engines** — PostgreSQL query
+  tabs have server-derived transaction state with commit/rollback controls
+  (Plan 002, `src/components/query-editor/transaction-controls.tsx`). Other
+  engines still have none.
 - **Reserved store slices** — `keyvalue-pubsub.ts` (no-op until Pub/Sub
   auto-reconnect) and parts of `keyvalue-workspace.ts` (watched keys,
   per-session DB switcher) are documented placeholders awaiting their

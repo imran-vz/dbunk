@@ -66,8 +66,12 @@ pub(crate) async fn execute_query_session_inner(
         .query_sessions
         .execute(
             &payload.session_id,
-            payload.execution_id,
-            payload.sql,
+            crate::query_session::ExecutionRequest {
+                execution_id: payload.execution_id,
+                sql: payload.sql,
+                parameters: payload.parameters,
+                row_limit: payload.row_limit,
+            },
             window_label,
             crate::query_session::ExecutionSafety {
                 policy: &policy,
@@ -91,6 +95,26 @@ pub(crate) async fn execute_query_session_inner(
             },
         )
         .await
+}
+/// Pure: the same scan execution binds with, and no database access.
+#[tauri::command]
+pub fn describe_query_parameters(
+    payload: DescribeParametersPayload,
+) -> Result<DescribeParametersResult, QuerySessionError> {
+    describe_query_parameters_inner(&payload.sql)
+}
+
+pub(crate) fn describe_query_parameters_inner(
+    sql: &str,
+) -> Result<DescribeParametersResult, QuerySessionError> {
+    use crate::postgres::sql_params::{scan_parameters, ParameterRejectionReason};
+    let scan = scan_parameters(sql).map_err(|()| QuerySessionError::ParametersRejected {
+        reason: ParameterRejectionReason::Unlexable,
+        names: Vec::new(),
+    })?;
+    Ok(DescribeParametersResult {
+        names: scan.names().to_vec(),
+    })
 }
 #[tauri::command]
 pub async fn ack_query_session_events(
