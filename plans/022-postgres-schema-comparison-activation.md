@@ -4,8 +4,9 @@
 - Planned against: `9312b41ab2d2c92f48b54d2b3229332bf74641a2`, 2026-09-14.
 - Depends on: Plan 021, completed at `9312b41`.
 - Execution status: see [README.md](./README.md). Steps 1–4 and the frontend
-  half of Step 5 are implemented and verified on 2026-09-14; the native/WebView
-  fixture gate has not run. See the execution record at the end of this plan.
+  half of Step 5 were implemented and verified on 2026-09-14. The native/WebView
+  fixture gate ran on 2026-10-01 and the plan is ready for review. See the
+  execution records at the end of this plan.
 - Visual reference: [Object inspector mock and plan](./mocks/schema-compare/index.html).
 - Published review: [private brief and mocks](https://dbunk-schema-compare-plan-022.imran-vz.chatgpt.site).
 - Selected mock: **A, Object inspector**, chosen by Imran on 2026-09-14.
@@ -316,17 +317,10 @@ gained two type-only exports (`SchemaCompareRelationIdentity`,
   fields, directional absence, excluded counterparts, incomplete counts,
   no-comparable-fields and equality labels.
 
-**Blocked: native and WebView validation (Step 5, second half)**
+**Native and WebView validation (Step 5, second half)**
 
-The isolated native build against owned disposable PG16.15/PG16.14/PG17.11
-fixtures, the concurrent DDL / cancel / disconnect / reload scenarios, the
-cap-sized page and multibyte value runs, and the native RSS and WebView memory
-measurements were not run in this session: they need the desktop app driven
-interactively against fixture databases, which this environment could not do.
-The jsdom suites establish frontend behavior only; they do not establish IPC
-acknowledgement timing, renderer allocations or memory boundedness. Keyboard,
-narrow-width, density and light/dark checks in the real app are likewise
-pending. The plan stays incomplete until that gate is run and recorded.
+Not run on 2026-09-14: that session could not drive the desktop app against
+fixture databases. It ran on 2026-10-01; see the record at the end of this plan.
 
 **Review fixes (2026-09-14, two-axis code review against `9312b41`)**
 
@@ -352,3 +346,99 @@ pending. The plan stays incomplete until that gate is run and recorded.
 - Tests added: reader transport loss and reopen, workspace rerun endpoints and
   connection removal, field matrix excluded-side labels. The duplicate
   pg-tools rail normalization test was removed in favour of the `it.each`.
+
+## Native and WebView validation record (2026-10-01)
+
+Run against `3431c0e` plus this working tree. No Rust, wire-contract or
+connection-lifecycle change was needed.
+
+**Target.** An isolated debug native build (`DBUNK_DEV_CONFIG_DIR` under
+`/tmp/dbunk-plan022-gate`, identifier `codes.imran.dbunk.plan022gate`, its own
+cargo target) in the real WKWebView on macOS 27.0.1, Apple M4 Pro. Endpoints
+were newly created, loopback-only, tmpfs containers removed afterwards:
+PostgreSQL 16.15, 16.14 and 17.11 (Debian, aarch64) and an SSH bastion. No
+production database, shared compose fixture or installed app data was used. The
+harness is `infrastructure/test-db/schema-compare/webview-driver/`
+(`fixtures.py`, `walkthrough.py`, `helpers.js`); it clicks and reads the
+rendered workspace through an evaluation bridge.
+
+**Result.** 117 scripted checks pass with the production frontend bundle. An
+earlier pass against the Vite dev server covered the scenarios up to the
+paging loops with the same outcomes.
+
+| Scenario | Observed |
+| --- | --- |
+| Same-connection schemas | Completes in about 1 s; "one transaction on the same connection" is stated; changed, equal, source-only, target-only and not-comparable objects match the fixture; an incomparable `now()` default sits beside 25 known changes with its reason; a missing side reads **Absent**, an observed NULL reads **NULL**; an excluded counterpart shows per-side eligibility and never **Absent**; captured `<img onerror>` and `<script>` text renders as text. |
+| Independent PG16 databases | Completes; "Independent captures. This is not a single cross-database snapshot." is shown; the changed default is found. |
+| PG16.15 against PG16.14 | Completes; both versions shown; rendered expressions are not comparable with the version reason; structured facts compare. |
+| PG17 endpoint | Refused on either side with the side, `17.11` and the PG16 boundary; no result. |
+| Limits and absence | 1,001 tables: "The table count limit was exceeded. No complete result was produced." A missing schema, an empty pair and a views-only pair each read truthfully; none is called equal. A blank schema name is refused before native admission; three rapid Compare presses admit one job. |
+| Cancel and busy | With a table locked, the job shows phase text and counts; a second start on the same endpoint is refused with the busy message; Cancel passes through **Cancelling…** to cancelled; the waiting backend is gone while the lock is still held. |
+| Concurrent DDL | A rename, a new table and a drop committed inside the lock wait: the comparison completes from the post-commit state only. A table locked past both two-second lock waits fails as `captureChanged` after about 5 s; **Run again** resubmits the same endpoints and completes. |
+| Disconnect, edit, delete | Disconnecting, editing or deleting an endpoint connection drops every retained page at once and shows the unavailable state; an active job ends and leaves no backend on either endpoint; a fresh comparison works after reconnect. |
+| Tunnel teardown | Killing the SSH sessions under an active job fails it as unreadable with no result and no backend left. The earlier completed capture stays readable as captured. Disconnecting the tunnelled connection invalidates its result. |
+| Document reload | Both native jobs (one completed, one waiting on a lock) are reconciled after reload with nothing selected automatically; the active job finishes; the earlier result reads with a new transport token. |
+| View switching | Twenty leave-and-return rounds during object reads and thirty rapid selections: no error or stale page, only the last selection is read and shown, every delivered read acknowledged. |
+| Visibility | Minimized: one reconciliation after start, then no observation for 5 s while the native job completes. On return the list is read within 5 ms and the result opens within about 30 ms. |
+| Result expiry | After the ten-minute lifetime the job is gone from the native list, the view reads unavailable and holds no pages. |
+| Cap-sized pages and values | 1,000 tables per side page as `1–100 of 1000`; a 400-column table pages 100 fields at a time. A 262,144-byte comment and pure three- and four-byte comments page in chunks of at most 65,536 bytes, cut on code point boundaries (65,535 and 65,533 bytes), with no replacement character and SHA-256 equal to the database value. |
+| Layout, density, themes | 1200, 900 and 700 px wide: no page overflow, endpoints, Compare and the job list stay reachable, selection and page survive. The object list is 260 px beside the inspector and stacks above it at 700 px. Text stays 12 px at every width and density; rows are 22/24/28 px. Dark is `#000` with white text. All 121 visible controls are native, named and focusable. |
+
+**Boundedness.** Two 24-cycle loops (object, field and value paging, and job
+switches; about 15 interactions per cycle) made 934 reads. At most one read
+was outstanding and one response unacknowledged at any moment; every read was
+acknowledged; the largest response was 76,945 bytes. The rendered view held
+100 object rows, 100 field rows and two value blocks at most, with identical
+DOM node counts each cycle.
+
+| Process footprint (RSS), MiB | Before | Two results | Paging loop | Value loop | After dismiss and close |
+| --- | --- | --- | --- | --- | --- |
+| Native | 37.7 (184) | 47.0 (193) | 46.4–47.2 (193) | 46.4–47.3 (193) | 37.0 (184) |
+| WebContent | 275 (571) | 276 (572) | 306–324 (584–627) | 374–389 (632) | 176 (631) |
+
+A separate 120-cycle value run moved the WebContent footprint 171, 409, 425,
+418, 402, 337, 334 MiB at twenty-cycle marks and 162 MiB after cleanup, so it
+plateaus and declines rather than growing with use. Interactions settled in
+28–33 ms for paging, 84 ms (93 ms worst) for opening a 64 KiB value pair and
+at most 70 ms for a chunk turn. No animation frame gap exceeded 35 ms.
+
+**Findings**
+
+- Repaired: `captureChanged` text. Native folds a catalog race and a lock wait
+  that timed out twice into one kind, so "Definitions changed" alone was wrong
+  for a table that was only locked. The message now names both.
+- Repaired: `workspace.tsx` and `reader.ts` failed `pnpm format` at HEAD;
+  whitespace only.
+- Not a product defect: against the dev server the WebContent process grew by
+  about 14 MiB per cycle (348 MiB to 2.0 GiB RSS in 120 cycles). React 19.2's
+  development build keeps a User Timing entry per component render, and those
+  for `FieldMatrix` and `ValuePane` carry 22–33 kB each. Clearing the entries
+  returned the footprint to its baseline, and the production bundle shows no
+  such growth. Memory and timing above are from the production bundle.
+- Not a product defect: early stalls of 0.5–1.6 s on value turns came from the
+  harness reading `innerText` of a 100,000-character pane on every poll.
+- Observed, unchanged: native reports `excludedCounterpart` for an object
+  excluded on both sides; the per-side eligibility lines state it correctly.
+- Observed, unchanged: light-theme text from shared tokens measures 4.14:1
+  (accent on selection), 4.16–4.63:1 (muted) and 3.17:1 (`text-warning`, the
+  **Changed** badge). Names and values are 13.98:1; dark mode is 5.04:1 or
+  better throughout. These tokens are app-wide.
+- Observed, unchanged: `DBUNK_DEV_CONFIG_DIR` does not isolate the keychain
+  entry or WebView storage. The harness guards the first and restores the
+  second; a native fix is outside this plan.
+
+**Limits of this evidence**
+
+- One platform. Windows, Linux and a release-profile native build are
+  unmeasured.
+- macOS denied window capture and synthetic input. Styling was checked from
+  computed styles and geometry, not pixels. Keyboard access was checked
+  structurally (native controls, names, focusability, focus styles, document
+  order), not by pressing keys.
+- WKWebView exposes no JavaScript heap size and no way to force collection.
+  The figures are process footprints with allocator noise; `vmmap` sampling
+  briefly pauses the process and delayed a few observation calls.
+- App lock was not exercised: the fixture profile uses plain SQLite credential
+  storage.
+- The last harness edit, restoring the theme and density found at start, was
+  made after the final run and has not been executed.

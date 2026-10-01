@@ -311,7 +311,9 @@ export function SchemaCompareWorkspace({
                 }
                 onSelect={(field) => reader.selectField(field)}
                 onPage={(direction) => reader.fieldPage(direction)}
-                onChunk={(side, direction) => reader.valueChunk(side, direction)}
+                onChunk={(side, direction) =>
+                  reader.valueChunk(side, direction)
+                }
               />
             ) : (
               <p className="flex-1 p-(--pad-panel) text-xs text-text-muted">

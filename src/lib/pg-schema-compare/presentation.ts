@@ -253,7 +253,8 @@ export function formatSchemaCompareFailure(failure: SchemaCompareFailure) {
     case "invalidRequest":
       return "The request was rejected as invalid. Check both connections and schema names.";
     case "captureChanged":
-      return "Definitions changed while they were being read. Run a new comparison to capture the current state.";
+      // Native folds a catalog race and a lock wait that timed out twice.
+      return "Definitions changed, or a table stayed locked by another session, while they were being read. Run a new comparison to capture the current state.";
     case "cancelled":
       return "Comparison cancelled. No result was produced.";
     case "deadlineExceeded":
