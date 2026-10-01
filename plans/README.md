@@ -33,7 +33,7 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 019 | PostgreSQL backup and restore activation | P1 | L | 018 | DONE: ab33968 (selected mocks: A + C) |
 | 020 | Bounded PostgreSQL CSV import and export | P1 | L | 018, 019 | DONE: 7745946 (selected mock: A) |
 | 021 | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | DONE: 9312b41 |
-| 022 | PostgreSQL schema comparison activation | P1 | L | 021 | DONE: d3ff88a (selected mock: A) |
+| 022 | PostgreSQL schema comparison activation | P1 | L | 021 | DONE: db2dae2 (selected mock: A) |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -45,13 +45,13 @@ Executors update their own status row after each completed step and mark
 **No plan is executing.** The next slice has not been selected; candidates
 are in [parity-gap-register.md](./parity-gap-register.md).
 
-Plan 022 is DONE at `d3ff88a`, confirmed by Imran on 2026-10-01. It brought Plan
+Plan 022 is DONE at `db2dae2`, confirmed by Imran on 2026-10-01. It brought Plan
 021's read-only comparison into the workbench as the Object inspector (mock A,
 selected 2026-09-14). The native/WebView fixture and memory gate ran on
 2026-10-01 against owned PostgreSQL 16.15, 16.14 and 17.11 fixtures and an SSH
 bastion: 117 scripted checks pass on a production frontend bundle in the real
 desktop WebView. The completed plan body is retired; the
-[historical execution record](https://github.com/imran-vz/dbunk/blob/d3ff88a37f6addece889aa0083b190ac4ad8337f/plans/022-postgres-schema-comparison-activation.md) retains the scenarios, measurements, the
+[historical execution record](https://github.com/imran-vz/dbunk/blob/db2dae24c504248d62f15f772bf82e4c8d1f5ff2/plans/022-postgres-schema-comparison-activation.md) retains the scenarios, measurements, the
 one message repaired and the limits of that evidence (one platform, a debug
 native build, no screen capture or physical key input). This bookkeeping
 update records that commit and does not claim new runtime tests.
