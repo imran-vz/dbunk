@@ -571,9 +571,8 @@ inspectable.
 ### PAR-008: Schema and data comparison with migration
 
 **Current state:** Partial. Plan 021's read-only PostgreSQL schema comparison
-backend is complete at `9312b41`. Plan 022's Object inspector surface is
-implemented with frontend verification, and its native and WebView validation
-gate ran on 2026-10-01; the plan is ready for review.
+backend is complete at `9312b41`. Plan 022's Object inspector surface, with
+its native and WebView validation gate, is complete at `d3ff88a`.
 
 **Progress (2026-09-14):** Plan 021 delivered the ordinary-table definition
 projection for PostgreSQL 16 endpoints: bounded native capture, deterministic
@@ -584,7 +583,7 @@ fences. The completion record and review fixes are committed at `9312b41`.
 fixture matrix, performance measurements, review fixes and verification record.
 WebView allocation remains unmeasured; this status update claims no new tests.
 
-**Current slice:** [Plan 022](./022-postgres-schema-comparison-activation.md)
+**Progress (2026-10-01):** [Historical Plan 022](https://github.com/imran-vz/dbunk/blob/d3ff88a37f6addece889aa0083b190ac4ad8337f/plans/022-postgres-schema-comparison-activation.md)
 activates source/target selection, paged object and field inspection, coverage
 and job lifecycle in the real workbench. The selected Object inspector
 reference is available in the [visual brief](./mocks/schema-compare/index.html).
@@ -592,9 +591,10 @@ Imran selected **A: Object inspector** on 2026-09-14. On the same day the
 comparison observer, bounded reader, `schema-compare` rail destination and
 workspace were implemented with focused Vitest suites. The isolated native
 fixture and WebView memory gate ran on 2026-10-01 on macOS with a debug native
-build: 117 scripted checks pass in the real WebView, and the plan's execution
-record holds the measurements and limits. Broader object coverage, migration
-SQL and row-data comparison remain separate follow-ups.
+build: 117 scripted checks pass in the real WebView, and the historical
+execution record holds the measurements and limits. Plan 022 is DONE at
+`d3ff88a`. Broader object coverage, migration SQL and row-data comparison remain
+separate follow-ups.
 
 **Evidence:**
 
@@ -943,9 +943,9 @@ Parity work should reuse rather than replace these credible foundations:
 8. `PAR-010`: file-backed backup/restore and bounded PostgreSQL CSV delivered
    by Plans 018–020 through `7745946`; wider transfer scope stays tracked.
 9. `PAR-008`: Plan 021's bounded schema comparison foundation is DONE at
-   `9312b41`. Plan 022 (read-only UI activation, mock A Object inspector) is
-   implemented and its native/WebView boundedness validation ran on
-   2026-10-01; it is ready for review. Wider coverage,
+   `9312b41`. Plan 022 (read-only UI activation, mock A Object inspector),
+   including its native/WebView boundedness validation, is DONE at
+   `d3ff88a`. Wider coverage,
    migration SQL and data comparison remain separate follow-ups.
 10. `PAR-009` and `PAR-011`: diagrams/query design and administration.
 11. Revisit platform, automation, non-PostgreSQL breadth, and literal enterprise

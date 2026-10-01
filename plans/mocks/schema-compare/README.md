@@ -1,7 +1,7 @@
 # Plan 022 comparison mocks
 
 [Published private brief and mocks](https://dbunk-schema-compare-plan-022.imran-vz.chatgpt.site) ·
-[Implementation draft](../../022-postgres-schema-comparison-activation.md)
+[Completed plan](https://github.com/imran-vz/dbunk/blob/d3ff88a37f6addece889aa0083b190ac4ad8337f/plans/022-postgres-schema-comparison-activation.md)
 
 **Selected: A, Object inspector**, chosen by Imran on 2026-09-14. The unused
 matrix and stacked-review layouts have been removed, including their styles,
