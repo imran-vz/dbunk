@@ -276,12 +276,9 @@ mod tests {
     async fn apply_command_core_refusal_and_failure_never_audit() {
         let (_directory, state) = crate::test_app_state().await;
         let connection_id = "strict-apply-command";
-        crate::commands::connections::save_connection_inner(
-            &state,
-            strict_connection(connection_id),
-        )
-        .await
-        .expect("save strict connection");
+        crate::connections::save(&state, strict_connection(connection_id))
+            .await
+            .expect("save strict connection");
 
         let result = apply_result_mutations_inner(
             &state,

@@ -1,0 +1,2 @@
+PASS: unguarded exit=0; samples_written=True
+PASS: guarded exit=2; samples_written=False

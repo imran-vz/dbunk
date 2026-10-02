@@ -1,0 +1,48 @@
+VERIFY offered session session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=1
+VERIFY drain-held
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=4
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=5
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=6
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=7
+VERIFY cancel-ok f63c8b6f-f864-4a79-a70f-d9ed7ac5425b
+VERIFY cancel-ok f63c8b6f-f864-4a79-a70f-d9ed7ac5425b
+VERIFY drain-released
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=8
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=9
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=10
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=11
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=12
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=13
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=14
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=15
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=16
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=17
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=18
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=19
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=20
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=21
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=22
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=23
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=24
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=25
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=26
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=27
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=28
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=29
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=30
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=31
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=32
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=33
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=34
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=35
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=36
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=37
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=38
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=39
+VERIFY offered terminal session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=41
+Native retained bytes: 779405
+VERIFY offered rows session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=44
+VERIFY offered terminal session=e6b88349-9a4b-4e69-9eb8-c3eaa4fa8f89 sequence=46
+Native retained bytes: 93
+VERIFY closing
+Native queue released: high_water_bytes=90342 remaining_bytes=0

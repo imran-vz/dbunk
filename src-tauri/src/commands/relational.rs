@@ -1073,13 +1073,13 @@ mod tests {
     async fn every_legacy_command_core_refuses_before_dispatch_and_confirmed_reaches_dispatch() {
         let (_directory, state) = crate::test_app_state().await;
         let connection_id = "legacy-command-strict";
-        crate::commands::connections::save_connection_inner(
+        crate::connections::save(
             &state,
             mysql_connection(SOURCE_ID, Environment::Development),
         )
         .await
         .expect("save source");
-        crate::commands::connections::save_connection_inner(
+        crate::connections::save(
             &state,
             mysql_connection(connection_id, Environment::Production),
         )
@@ -1119,7 +1119,7 @@ mod tests {
     async fn cancel_command_core_remains_ungated() {
         let (_directory, state) = crate::test_app_state().await;
         let connection_id = "cancel-command-strict";
-        crate::commands::connections::save_connection_inner(
+        crate::connections::save(
             &state,
             mysql_connection(connection_id, Environment::Production),
         )

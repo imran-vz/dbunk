@@ -6,6 +6,7 @@ use super::{
     tests::{empty, request},
     *,
 };
+use crate::host::DocumentLoad;
 use crate::postgres::{
     connect_spec::ResolvedPostgresConnectSpec,
     dedicated,
@@ -18,7 +19,6 @@ use crate::{AppState, StoredConnection};
 use crate::{BastionAuthMethod, BastionServer, PgStoredConnection, PgTlsMode, PgTlsOptions};
 use serde_json::Value;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tauri::webview::PageLoadEvent;
 use tokio::io::AsyncReadExt;
 
 const PRIMARY_PORT: &str = "DBUNK_SCHEMA_COMPARE_TEST_PORT";
@@ -38,7 +38,7 @@ fn env_port(name: &str) -> u16 {
 
 fn stored(id: &str, port: u16, database: &str) -> PgStoredConnection {
     let StoredConnection::PostgreSQL(mut pg) =
-        crate::commands::pg_objects::tests::connection(id, crate::SafeMode::Strict, false)
+        crate::app::test_postgres_connection(id, crate::SafeMode::Strict, false)
     else {
         panic!("fixture connection is PostgreSQL")
     };
@@ -150,7 +150,7 @@ struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     fn new(manager: &'a CompareManager) -> Self {
-        manager.transport_page_load(WINDOW, PageLoadEvent::Started);
+        manager.transport_document_load(WINDOW, DocumentLoad::Started);
         Self {
             manager,
             transport: manager.transport(WINDOW).unwrap(),

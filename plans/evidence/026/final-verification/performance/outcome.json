@@ -1,0 +1,7 @@
+{
+  "result": "discarded",
+  "reason": "Another application covered the scroll target; foreground was not guarded during typing/idle.",
+  "forced_process_cleanup": true,
+  "profile_removed_after_pid_exit": true,
+  "native_shutdown_pass": false
+}

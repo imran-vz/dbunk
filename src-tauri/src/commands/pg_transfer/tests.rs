@@ -53,7 +53,7 @@ async fn terminal(state: &AppState, id: &str) -> Snapshot {
 async fn import_policy_is_rechecked_and_only_acknowledged_success_is_audited() {
     let (_dir, state) = crate::test_app_state().await;
     let id = "csv-policy";
-    crate::commands::connections::save_connection_inner(
+    crate::connections::save(
         &state,
         crate::commands::pg_objects::tests::connection(id, SafeMode::Strict, false),
     )
@@ -114,7 +114,7 @@ async fn import_policy_is_rechecked_and_only_acknowledged_success_is_audited() {
             .len(),
         1
     );
-    crate::commands::connections::save_connection_inner(
+    crate::connections::save(
         &state,
         crate::commands::pg_objects::tests::connection(id, SafeMode::Disabled, true),
     )
@@ -157,15 +157,13 @@ async fn saved_connection_edits_invalidate_review_and_confirmation_retry() {
     let (_dir, state) = crate::test_app_state().await;
     let id = "csv-edit";
     let connection = crate::commands::pg_objects::tests::connection(id, SafeMode::Strict, false);
-    crate::commands::connections::save_connection_inner(&state, connection)
-        .await
-        .unwrap();
+    crate::connections::save(&state, connection).await.unwrap();
     let token = review(&state, id, Direction::Import);
     assert!(matches!(
         start_with(&state, token.clone(), import(), false, successful).await,
         Err(TransferError::PolicyNeedsConfirmation { .. })
     ));
-    crate::commands::connections::save_connection_inner(
+    crate::connections::save(
         &state,
         crate::commands::pg_objects::tests::connection(id, SafeMode::Strict, true),
     )

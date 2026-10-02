@@ -1,0 +1,9 @@
+python3 tools/native/launch.py --verify
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.43s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Isolated profile: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-stage03-4k0mmvqn
+Evidence: /Users/imran/projects/Code/dbunk/tools/native/.state/evidence/299c8157-cd23-41fd-914f-1b6c894f3fa4
+Native PID: 65523
+PASS: native AX workflow and PostgreSQL teardown baseline

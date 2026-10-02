@@ -1,0 +1,5 @@
+VERIFY offered session session=1d937930-8976-4f04-87a4-1f1fce9b34c1 sequence=1
+VERIFY offered rows session=1d937930-8976-4f04-87a4-1f1fce9b34c1 sequence=4
+VERIFY offered rows session=1d937930-8976-4f04-87a4-1f1fce9b34c1 sequence=5
+VERIFY closing
+Native queue released: high_water_bytes=2549 remaining_bytes=0

@@ -1,0 +1,28 @@
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 36s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+Window performance: PID 53015; owned fixture 2283820d-33ec-4c4c-ae03-7051092bd410
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance/footprint-many.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance/latency-1.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance/latency-2.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance/latency-3.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance/idle.json
+measure: another window covers the scroll point; nothing was posted
+FAILED: retained marked profile /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-stage03-u0ob2b8b
+Traceback (most recent call last):
+  File "/Users/imran/projects/Code/dbunk/tools/native/verify_window.py", line 201, in <module>
+    if __name__ == "__main__":
+        ^^^^^^
+  File "/Users/imran/projects/Code/dbunk/tools/native/verify_window.py", line 193, in main
+    if args.mode == "performance":
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/imran/projects/Code/dbunk/tools/native/verify_window.py", line 167, in performance
+    target = evidence / f"scroll-{fixture_name}-{direction}-{run}.json"
+  File "/Users/imran/projects/Code/dbunk/tools/native/verify_window.py", line 151, in measure
+    def measure(*args):
+        ^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/Users/imran/projects/Code/dbunk/tools/measure/.build/release/measure', 'scroll', '--at', '0.6,0.8', '--seconds', '5', '--delta', '-20', '--hz', '240', '--out', '/Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance/scroll-many-down-1.json', '--pid', '53015']' returned non-zero exit status 2.

@@ -522,6 +522,20 @@ manually). For the current table list, read the migrations in
   camelCase via serde rename rules. The Tauri command itself owns payload
   validation and activity tracking; it delegates engine-aware work to
   **Engine Dispatch**.
+- **Host** — the desktop shell that runs the backend. It supplies a Tokio
+  runtime handle, an **Event Sink** per stream and lifecycle inputs (window
+  label, focus, document replacement, teardown), and calls **Services**.
+  Tauri is the only host today; nothing below `commands` and `tauri_host`
+  names it, and a build with `--no-default-features` proves that (ADR-0032).
+- **Event Sink** — how the backend delivers one stream's typed events to the
+  **Host** (`src-tauri/src/host.rs`). Synchronous and non-blocking; a refused
+  event means the stream is lost. The Tauri host wraps an IPC channel and
+  serializes inside the sink.
+- **Service** — host-neutral functions over `&AppState` that own connection
+  resolution, the safety policy and the audit for one family, so a **Host**
+  cannot skip them. Extracted so far: `query_session::service` and
+  `connections`. For those families the **Tauri command** is a one-line
+  adapter; for the rest it still holds this logic.
 - **Engine Dispatch** — the `dispatch` module
   (`src-tauri/src/dispatch/mod.rs`) routes engine-aware operations to
   the right per-engine implementation. Public functions open with one

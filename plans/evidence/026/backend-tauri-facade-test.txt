@@ -1,0 +1,22 @@
+$ cargo test --manifest-path src-tauri/Cargo.toml --features isolated-profile backend::
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.84s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-fb431fc4a7166efa)
+
+running 7 tests
+test backend::selection::tests::selection_and_script_preserve_original_text ... ok
+test backend::selection::tests::respects_postgres_quoting_comments_and_utf8 ... ok
+test backend::tests::profile_symlinks_are_rejected_before_database_access ... ok
+test backend::tests::shutdown_joins_admitted_work_even_when_the_caller_is_cancelled ... ok
+test backend::tests::existing_non_plain_credential_mode_is_never_hydrated ... ok
+test backend::tests::isolated_profile_rejects_foreign_files_and_remembers_layout ... ok
+test backend::tests::closing_during_stalled_connect_aborts_and_joins_the_owned_socket ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 743 filtered out; finished in 3.20s
+
+     Running unittests src/main.rs (src-tauri/target/debug/deps/dbunk-672c6f6201a2549a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

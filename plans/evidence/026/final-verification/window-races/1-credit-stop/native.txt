@@ -1,0 +1,62 @@
+VERIFY offered session session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=1
+VERIFY drain-held
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=4
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=5
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=6
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=7
+VERIFY cancel-ok 2b5e0499-064e-4354-b71f-64aacd0efd07
+VERIFY cancel-ok 2b5e0499-064e-4354-b71f-64aacd0efd07
+VERIFY drain-released
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=8
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=9
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=10
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=11
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=12
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=13
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=14
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=15
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=16
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=17
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=18
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=19
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=20
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=21
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=22
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=23
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=24
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=25
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=26
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=27
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=28
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=29
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=30
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=31
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=32
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=33
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=34
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=35
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=36
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=37
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=38
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=39
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=40
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=41
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=42
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=43
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=44
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=45
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=46
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=47
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=48
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=49
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=50
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=51
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=52
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=53
+VERIFY offered terminal session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=55
+Native retained bytes: 1108965
+VERIFY offered rows session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=58
+VERIFY offered terminal session=a63de5f1-f56d-44b5-94ec-621540f152cc sequence=60
+Native retained bytes: 93
+VERIFY closing
+Native queue released: high_water_bytes=90342 remaining_bytes=0

@@ -396,36 +396,9 @@ fn postgres_position_to_byte_offset(sql: &str, position: usize) -> Option<u32> {
 pub(crate) mod tests {
     use super::*;
     use crate::postgres::object_ddl::*;
-    use crate::{
-        ConnectionOrganization, Environment, PgStoredConnection, SafeMode, SshTunnelConfig,
-        StoredConnection,
-    };
+    use crate::{SafeMode, StoredConnection};
 
-    pub(crate) fn connection(id: &str, safe_mode: SafeMode, read_only: bool) -> StoredConnection {
-        let port = std::env::var("DBUNK_OBJECT_TEST_PORT")
-            .ok()
-            .and_then(|port| port.parse().ok())
-            .unwrap_or(15432);
-        StoredConnection::PostgreSQL(PgStoredConnection {
-            organization: ConnectionOrganization::default(),
-            id: id.into(),
-            name: "Object DDL policy".into(),
-            database: "dbunk_demo".into(),
-            host: "127.0.0.1".into(),
-            port,
-            user: "dbunk".into(),
-            password: "dbunk".into(),
-            role: "read/write".into(),
-            environment: Environment::Development,
-            safe_mode,
-            read_only,
-            last_activity_at: None,
-            ssl: port == 15433,
-            tls_options: None,
-            driver_options: None,
-            ssh_tunnel: SshTunnelConfig::default(),
-        })
-    }
+    pub(crate) use crate::app::test_postgres_connection as connection;
 
     fn ops() -> Vec<PgObjectOp> {
         vec![PgObjectOp::CreateSchema(CreateSchemaOp {
@@ -533,12 +506,9 @@ pub(crate) mod tests {
                 "policyNeedsConfirmation",
             ),
         ] {
-            crate::commands::connections::save_connection_inner(
-                &state,
-                connection(connection_id, safe_mode, read_only),
-            )
-            .await
-            .expect("save policy connection");
+            crate::connections::save(&state, connection(connection_id, safe_mode, read_only))
+                .await
+                .expect("save policy connection");
             let result = apply_object_ddl_inner(
                 &state,
                 ApplyObjectDdlPayload {

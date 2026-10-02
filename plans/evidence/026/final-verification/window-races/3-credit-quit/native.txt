@@ -1,0 +1,8 @@
+VERIFY offered session session=ed43c66f-2497-4e4e-a3cf-b59bc700d7bf sequence=1
+VERIFY drain-held
+VERIFY offered rows session=ed43c66f-2497-4e4e-a3cf-b59bc700d7bf sequence=4
+VERIFY offered rows session=ed43c66f-2497-4e4e-a3cf-b59bc700d7bf sequence=5
+VERIFY offered rows session=ed43c66f-2497-4e4e-a3cf-b59bc700d7bf sequence=6
+VERIFY offered rows session=ed43c66f-2497-4e4e-a3cf-b59bc700d7bf sequence=7
+VERIFY closing
+Native queue released: high_water_bytes=90342 remaining_bytes=0

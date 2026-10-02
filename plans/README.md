@@ -8,6 +8,24 @@ Executors must read a plan completely, honor its STOP conditions, and update
 its status here when work finishes. Completed plan bodies are deleted once
 recorded `DONE` — the completion SHA below is the pointer into git history.
 
+## Desktop migration proposal
+
+Separate from the parity audit. This is a decision document, not an executable
+plan: it has no plan number, effort or steps, and its status is outside the
+status values below. Each stage becomes a numbered plan in the table that
+follows before it is executed.
+
+| Proposal | Scope | Status |
+| --- | --- | --- |
+| [GPUI migration](./gpui-migration.html) | macOS first; current feature parity before replacing Tauri | APPROVED TO START by Imran on 2026-10-02. Stage 00 decided the same day: reason is architecture with no performance gain required, margins 30% and 10%, licence GPL-3.0-or-later (path Z, Zed's editor), feature rule backend-first with baseline `102568b`. Stage 01 is Plan 024; the first slice of stage 02 is Plan 025. Both are READY FOR REVIEW pending completion commits. **Stage 01 gate CLOSED: PASS / continue, 2026-10-02**, under Imran's request to finish and close it. All four criteria are met: text geometry and editor/results/cell-editor keyboard focus are verified; remaining full-application work is costed in the [gate review](./evidence/024/stage01-gate.md). Imran confirmed VoiceOver complete on 2026-10-02. No accessibility waiver or daily-driver cutover is approved. Stage 03 is [Plan 026](./026-native-postgres-workflow.md), with A + B + C selected by Imran on 2026-10-02 and a user-facing layout switcher. Stages 04 to 07 are not planned. |
+
+The stage 01 closure activates the stage 00 backend-first rule: React receives
+correctness, safety and data-loss fixes only; new capability lands dark in the
+core and its UI is built natively. The parity baseline remains `102568b`.
+Plan 024 stays `READY FOR REVIEW` until a separately authorized completion
+commit supplies its SHA. The gate itself is closed; Plan 025 remains a separate
+review.
+
 ## Execution order and status
 
 | Plan                                                  | Title                                                            | Priority | Effort | Depends on | Status                                         |
@@ -35,6 +53,9 @@ recorded `DONE` — the completion SHA below is the pointer into git history.
 | 021 | Bounded PostgreSQL schema comparison foundation (dark) | P1 | L | 013–017, 020 | DONE: 9312b41 |
 | 022 | PostgreSQL schema comparison activation | P1 | L | 021 | DONE: db2dae2 (selected mock: A) |
 | [023](./023-query-session-bound-parameters-and-row-limit.md) | Bound parameters and row-limited reads in PostgreSQL Query Sessions (dark) | P0 | L | 001, 002, 007 | READY FOR REVIEW |
+| [024](./024-gpui-baseline-and-spike.md) | Tauri baseline, external measurement harness and GPUI spike (migration stage 01) | P1 | L | Migration stage 00 | READY FOR REVIEW: stage 01 gate CLOSED, PASS / continue on 2026-10-02; all four criteria met ([review](./evidence/024/stage01-gate.md)); completion SHA pending an authorized commit |
+| [025](./025-shared-core-query-session-extraction.md) | Host-neutral core seam and Query Session service extraction (migration stage 02, first slice) | P1 | L | Migration stage 00 | READY FOR REVIEW |
+| [026](./026-native-postgres-workflow.md) | First working native PostgreSQL workflow (migration stage 03) | P1 | L | Stage 01 gate closed; 025 implementation | READY FOR REVIEW: all five steps verified; 27 actual-window race runs, guarded real-result release performance and final release AX workflow pass ([final evidence](./evidence/026/implementation-review.md#final-verification)). Human VoiceOver PASS; A + B + C retained. Completion SHA pending an authorized commit |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.

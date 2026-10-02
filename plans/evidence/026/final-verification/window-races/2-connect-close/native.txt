@@ -1,0 +1,4 @@
+VERIFY open-pending 1
+VERIFY offered session session=d458c024-296d-4182-8db6-77b22ebc923e sequence=1
+VERIFY closing
+Native queue released: high_water_bytes=303 remaining_bytes=0

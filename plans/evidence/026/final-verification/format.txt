@@ -1,0 +1,5 @@
+$ oxfmt --check "**/*.{json,js,jsx,ts,tsx,mjs,mts}"
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 15ms on 449 files using 14 threads.

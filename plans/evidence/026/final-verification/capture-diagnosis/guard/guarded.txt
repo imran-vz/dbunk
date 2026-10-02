@@ -1,0 +1,1 @@
+measure: target lost foreground or is obscured; run discarded

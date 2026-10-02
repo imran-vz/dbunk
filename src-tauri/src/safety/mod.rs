@@ -1,3 +1,4 @@
+pub(crate) mod gate;
 pub(crate) mod policy;
 
 #[cfg(test)]

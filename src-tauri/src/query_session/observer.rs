@@ -18,13 +18,14 @@ pub(crate) struct Observer {
 }
 
 impl Observer {
-    pub(crate) async fn connect(
+    pub(crate) async fn connect_tracked(
         spec: &ResolvedPostgresConnectSpec,
+        tracked: Option<&crate::postgres::dedicated::DriverJoins>,
     ) -> Result<Arc<Self>, QuerySessionError> {
-        let connection = postgres::connect(spec).await?;
+        let connection = postgres::connect_tracked(spec, tracked).await?;
         let client = connection.client.clone();
         let (requests, mut receiver) = mpsc::channel::<Request>(128);
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             while let Some(first) = receiver.recv().await {
                 tokio::time::sleep(Duration::from_millis(5)).await;
                 let mut batch = vec![first];
@@ -58,6 +59,9 @@ impl Observer {
                 }
             }
         });
+        if let Some(tracked) = tracked {
+            tracked.track_task(task);
+        }
         Ok(Arc::new(Self {
             _connection: connection,
             requests,

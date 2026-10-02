@@ -34,17 +34,26 @@ impl std::ops::Deref for SessionConnection {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn connect(
     spec: &ResolvedPostgresConnectSpec,
 ) -> Result<SessionConnection, QuerySessionError> {
+    connect_tracked(spec, None).await
+}
+
+pub(crate) async fn connect_tracked(
+    spec: &ResolvedPostgresConnectSpec,
+    tracked: Option<&dedicated::DriverJoins>,
+) -> Result<SessionConnection, QuerySessionError> {
     let (notice_tx, notice_rx) = mpsc::channel(500);
     let dropped_notices = Arc::new(AtomicU32::new(0));
-    let inner = dedicated::connect(
+    let inner = dedicated::connect_tracked(
         spec,
         NoticeSink::Bounded {
             tx: notice_tx,
             dropped: dropped_notices.clone(),
         },
+        tracked,
     )
     .await
     .map_err(map_dedicated)?;
@@ -241,6 +250,7 @@ impl ToSql for TextParameter<'_> {
 /// the driver: when the actor pauses, the driver and the TCP socket pause. A
 /// cursor read finishes its FETCH and its cleanup first and only then hands
 /// its rows over, so credit never holds a transaction open.
+#[cfg(test)]
 pub(crate) fn execute_plan(
     client: Arc<Client>,
     notices: Arc<Mutex<mpsc::Receiver<Notice>>>,
@@ -248,8 +258,19 @@ pub(crate) fn execute_plan(
     entry: TransactionEntry,
     control: Arc<dyn ExecutionControl>,
 ) -> mpsc::Receiver<DriverEvent> {
+    execute_plan_tracked(client, notices, plan, entry, control, None)
+}
+
+pub(crate) fn execute_plan_tracked(
+    client: Arc<Client>,
+    notices: Arc<Mutex<mpsc::Receiver<Notice>>>,
+    plan: ExecutionPlan,
+    entry: TransactionEntry,
+    control: Arc<dyn ExecutionControl>,
+    tracked: Option<&dedicated::DriverJoins>,
+) -> mpsc::Receiver<DriverEvent> {
     let (sender, receiver) = mpsc::channel(1);
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         let mut notices = notices.lock().await;
         let mut run = Run {
             client: &client,
@@ -281,6 +302,9 @@ pub(crate) fn execute_plan(
             run.reducer.finish(outcome).await;
         }
     });
+    if let Some(tracked) = tracked {
+        tracked.track_task(task);
+    }
     receiver
 }
 

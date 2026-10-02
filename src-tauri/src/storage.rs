@@ -10,7 +10,6 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Row, SqlitePool,
 };
-use tauri::{path::BaseDirectory, AppHandle, Manager};
 
 use crate::result_mutation::protocol::VirtualKey;
 use crate::table_browse::protocol::TableGridPrefs;
@@ -435,8 +434,14 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn from_app(app: &AppHandle) -> Result<Self, String> {
-        let config_dir = resolve_config_dir(app)?;
+    /// The config directory for this process: the isolation override when
+    /// one applies, otherwise the host's platform default. The default is a
+    /// closure because only the host knows its platform directories.
+    pub fn resolve(host_default: impl FnOnce() -> Result<PathBuf, String>) -> Result<Self, String> {
+        let config_dir = match isolated_config_dir(std::env::var_os(CONFIG_DIR_OVERRIDE))? {
+            Some(directory) => directory,
+            None => host_default()?,
+        };
         Ok(Self { config_dir })
     }
 
@@ -458,29 +463,23 @@ impl Paths {
     }
 }
 
-fn resolve_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    // Explicit debug-only isolation for native fixture walkthroughs. Release
-    // builds always use the normal directory, regardless of environment.
-    #[cfg(debug_assertions)]
-    if let Some(directory) = std::env::var_os("DBUNK_DEV_CONFIG_DIR") {
-        let directory = PathBuf::from(directory);
-        if !directory.is_absolute() {
-            return Err("DBUNK_DEV_CONFIG_DIR must be absolute".to_string());
-        }
-        return Ok(directory);
+const CONFIG_DIR_OVERRIDE: &str = "DBUNK_DEV_CONFIG_DIR";
+
+/// Explicit isolation for native fixture walkthroughs and measurement builds.
+/// Honored in debug builds and in builds with the `isolated-profile` feature,
+/// which no release artefact enables: a released app always uses the normal
+/// directory, regardless of environment.
+fn isolated_config_dir(requested: Option<std::ffi::OsString>) -> Result<Option<PathBuf>, String> {
+    if !cfg!(any(debug_assertions, feature = "isolated-profile")) {
+        return Ok(None);
     }
-    #[cfg(target_os = "windows")]
-    {
-        app.path()
-            .resolve("dbunk", BaseDirectory::AppData)
-            .map_err(|error| error.to_string())
+    let Some(directory) = requested.map(PathBuf::from) else {
+        return Ok(None);
+    };
+    if !directory.is_absolute() {
+        return Err(format!("{CONFIG_DIR_OVERRIDE} must be absolute"));
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        app.path()
-            .resolve(".config/dbunk", BaseDirectory::Home)
-            .map_err(|error| error.to_string())
-    }
+    Ok(Some(directory))
 }
 
 pub async fn open_pool(paths: &Paths) -> Result<SqlitePool, String> {
@@ -2039,6 +2038,28 @@ pub async fn delete_saved_redis_command(pool: &SqlitePool, id: &str) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_dir_override_is_optional_and_must_be_absolute() {
+        let absolute = std::env::temp_dir().join("dbunk-fixture");
+        assert_eq!(isolated_config_dir(None), Ok(None));
+        if cfg!(any(debug_assertions, feature = "isolated-profile")) {
+            assert_eq!(
+                isolated_config_dir(Some(absolute.clone().into_os_string())),
+                Ok(Some(absolute))
+            );
+            assert!(isolated_config_dir(Some("relative/dir".into()))
+                .unwrap_err()
+                .contains("must be absolute"));
+        } else {
+            // An optimized build without the feature ignores the variable.
+            assert_eq!(
+                isolated_config_dir(Some(absolute.into_os_string())),
+                Ok(None)
+            );
+            assert_eq!(isolated_config_dir(Some("relative/dir".into())), Ok(None));
+        }
+    }
     use crate::{BastionAuthMethod, BastionServer};
     use tempfile::tempdir;
 

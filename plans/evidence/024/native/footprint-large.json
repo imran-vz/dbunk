@@ -1,0 +1,34 @@
+{
+  "cpuMillis" : 86.953166999999993,
+  "cpuPercentOfOneCore" : 1.7214717067027896,
+  "environment" : {
+    "displayMaxHz" : 120,
+    "displayPoints" : [
+      1728,
+      1117
+    ],
+    "displayScale" : 2,
+    "lowPowerMode" : false,
+    "model" : "Mac16,7",
+    "os" : "Version 27.0.1 (Build 26A434)",
+    "power" : "Now drawing from 'AC Power'",
+    "recordedAt" : "2026-10-01T23:29:33Z",
+    "thermalState" : 0
+  },
+  "footprintMiB" : {
+    "count" : 5,
+    "max" : 299.70429229736328,
+    "mean" : 296.70429229736328,
+    "min" : 294.70429229736328,
+    "p50" : 294.70429229736328,
+    "p95" : 299.70429229736328,
+    "p99" : 299.70429229736328
+  },
+  "lastSampleByProcessMiB" : {
+    "dbunk-gpui-spike (27809)" : 294.70429229736328
+  },
+  "metric" : "process-tree footprint (MiB) and CPU",
+  "pid" : 27809,
+  "process" : "dbunk-gpui-spike",
+  "seconds" : 5
+}

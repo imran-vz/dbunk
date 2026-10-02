@@ -1,0 +1,6 @@
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: cold native startup reaches Ready with Run enabled without wake input
+PASS: identity-checked cold startup exposes readable SQL and a ready session without editing or focus input

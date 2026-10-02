@@ -1,0 +1,218 @@
+[
+  {
+    "scenario": "1-connect-close",
+    "shutdown_ms": 56.105166,
+    "queue_peak_bytes": 303,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-credit-close",
+    "shutdown_ms": 65.707333,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-credit-quit",
+    "shutdown_ms": 174.389917,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-credit-stop",
+    "shutdown_ms": 55.119209,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-metadata-failure",
+    "shutdown_ms": 57.79425,
+    "queue_peak_bytes": 1167,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-reconnect-close",
+    "shutdown_ms": 59.126916,
+    "queue_peak_bytes": 310,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-saturated-close",
+    "shutdown_ms": 57.079625,
+    "queue_peak_bytes": 45394,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-saturated-replace",
+    "shutdown_ms": 57.978959,
+    "queue_peak_bytes": 45394,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "1-streaming-close",
+    "shutdown_ms": 58.666583,
+    "queue_peak_bytes": 2549,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-connect-close",
+    "shutdown_ms": 52.758,
+    "queue_peak_bytes": 303,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-credit-close",
+    "shutdown_ms": 61.0755,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-credit-quit",
+    "shutdown_ms": 175.551459,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-credit-stop",
+    "shutdown_ms": 57.247292,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-metadata-failure",
+    "shutdown_ms": 59.043708,
+    "queue_peak_bytes": 1167,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-reconnect-close",
+    "shutdown_ms": 56.191167,
+    "queue_peak_bytes": 310,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-saturated-close",
+    "shutdown_ms": 58.567708,
+    "queue_peak_bytes": 45394,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-saturated-replace",
+    "shutdown_ms": 57.236791,
+    "queue_peak_bytes": 45394,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "2-streaming-close",
+    "shutdown_ms": 61.198958,
+    "queue_peak_bytes": 2549,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-connect-close",
+    "shutdown_ms": 56.929375,
+    "queue_peak_bytes": 303,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-credit-close",
+    "shutdown_ms": 61.835,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-credit-quit",
+    "shutdown_ms": 170.934833,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-credit-stop",
+    "shutdown_ms": 57.711583,
+    "queue_peak_bytes": 90342,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-metadata-failure",
+    "shutdown_ms": 58.905458,
+    "queue_peak_bytes": 1167,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-reconnect-close",
+    "shutdown_ms": 58.535333,
+    "queue_peak_bytes": 310,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-saturated-close",
+    "shutdown_ms": 60.632083,
+    "queue_peak_bytes": 45394,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-saturated-replace",
+    "shutdown_ms": 58.418584,
+    "queue_peak_bytes": 45394,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  },
+  {
+    "scenario": "3-streaming-close",
+    "shutdown_ms": 58.203791,
+    "queue_peak_bytes": 4840,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,21 @@
+Native retained bytes: 262
+Native retained bytes: 75
+Native retained bytes: 75
+Native retained bytes: 150
+Native retained bytes: 0
+Native retained bytes: 0
+Native retained bytes: 93
+Native retained bytes: 93
+Native retained bytes: 75
+Native retained bytes: 73
+Native retained bytes: 59
+Native retained bytes: 145
+Native retained bytes: 1048650
+Native retained bytes: 124
+Native retained bytes: 0
+Native queue high-water bytes: 1049175
+Native queue released: high_water_bytes=1049175 remaining_bytes=0
+Native retained bytes: 75
+Native retained bytes: 31966
+Native retained bytes: 69
+Native queue released: high_water_bytes=5426 remaining_bytes=0

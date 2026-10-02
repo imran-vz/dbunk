@@ -5,13 +5,13 @@ use crate::postgres::sql_params::{ParameterRejectionReason, ParameterValue, Plan
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum QueryTransactionMode {
+pub enum QueryTransactionMode {
     Autocommit,
     Manual,
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum QueryTransactionStatus {
+pub enum QueryTransactionStatus {
     Idle,
     Active,
     Failed,
@@ -19,7 +19,7 @@ pub(crate) enum QueryTransactionStatus {
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum QueryTransactionIsolation {
+pub enum QueryTransactionIsolation {
     ReadCommitted,
     RepeatableRead,
     Serializable,
@@ -27,7 +27,7 @@ pub(crate) enum QueryTransactionIsolation {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QueryTransactionSnapshot {
+pub struct QueryTransactionSnapshot {
     pub mode: QueryTransactionMode,
     pub status: QueryTransactionStatus,
     pub manual_isolation: QueryTransactionIsolation,
@@ -48,7 +48,7 @@ impl Default for QueryTransactionSnapshot {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum QuerySessionError {
+pub enum QuerySessionError {
     UnsupportedEngine,
     ConnectionClosing,
     SessionLimitReached {
@@ -112,7 +112,7 @@ impl From<PlanRefusal> for QuerySessionError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum RowLimitOutcome {
+pub enum RowLimitOutcome {
     /// The server stopped at the limit and more rows exist.
     Stopped,
     /// Every row was read and the limit withheld some.
@@ -121,17 +121,17 @@ pub(crate) enum RowLimitOutcome {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RegisterOwnerPayload {
+pub struct RegisterOwnerPayload {
     pub owner_id: String,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RegisterOwnerResult {
+pub struct RegisterOwnerResult {
     pub replaced_session_count: usize,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct OpenSessionPayload {
+pub struct OpenSessionPayload {
     pub owner_id: String,
     pub session_id: String,
     pub tab_id: String,
@@ -139,12 +139,12 @@ pub(crate) struct OpenSessionPayload {
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SessionPayload {
+pub struct SessionPayload {
     pub session_id: String,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ExecutePayload {
+pub struct ExecutePayload {
     pub session_id: String,
     pub execution_id: String,
     pub sql: String,
@@ -158,23 +158,23 @@ pub(crate) struct ExecutePayload {
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DescribeParametersPayload {
+pub struct DescribeParametersPayload {
     pub sql: String,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DescribeParametersResult {
+pub struct DescribeParametersResult {
     pub names: Vec<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ExecutionPayload {
+pub struct ExecutionPayload {
     pub session_id: String,
     pub execution_id: String,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AckPayload {
+pub struct AckPayload {
     pub session_id: String,
     pub execution_id: String,
     pub ack_through_sequence: u64,
@@ -182,41 +182,41 @@ pub(crate) struct AckPayload {
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct HeartbeatPayload {
+pub struct HeartbeatPayload {
     pub owner_id: String,
     pub session_ids: Vec<String>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct HeartbeatResult {
+pub struct HeartbeatResult {
     pub refreshed_session_ids: Vec<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SetModePayload {
+pub struct SetModePayload {
     pub session_id: String,
     pub mode: QueryTransactionMode,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SetIsolationPayload {
+pub struct SetIsolationPayload {
     pub session_id: String,
     pub manual_isolation: QueryTransactionIsolation,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AcceptedResult {
+pub struct AcceptedResult {
     pub accepted: bool,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CancelResult {
+pub struct CancelResult {
     pub requested: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QueryEventEnvelope {
+pub struct QueryEventEnvelope {
     pub session_id: String,
     pub tab_id: String,
     pub connection_id: String,
@@ -233,7 +233,7 @@ pub(crate) struct QueryEventEnvelope {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum QueryEvent {
+pub enum QueryEvent {
     SessionState {
         transaction: QueryTransactionSnapshot,
     },
@@ -275,7 +275,7 @@ pub(crate) enum QueryEvent {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QueryDatabaseError {
+pub struct QueryDatabaseError {
     pub code: Option<String>,
     pub message: String,
     pub severity: Option<String>,

@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:17.6
+    labels:
+      dev.dbunk.fixture: native-stage03
+      dev.dbunk.fixture.instance: ${DBUNK_NATIVE_FIXTURE_INSTANCE:?use fixture.py up}
+    ports:
+      - "127.0.0.1:15432:5432"
+    environment:
+      POSTGRES_DB: dbunk_demo
+      POSTGRES_USER: dbunk
+      POSTGRES_PASSWORD: dbunk
+      PGDATA: /var/lib/postgresql/data/pgdata
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbunk -d dbunk_demo"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    restart: "no"
+networks:
+  default:
+    labels:
+      dev.dbunk.fixture.instance: ${DBUNK_NATIVE_FIXTURE_INSTANCE:?use fixture.py up}

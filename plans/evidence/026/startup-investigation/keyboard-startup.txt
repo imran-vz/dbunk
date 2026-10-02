@@ -1,0 +1,7 @@
+FAIL: keyboard edits publish exact Unicode text
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed

@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::oneshot;
 
-use crate::commands::{bastions, connections, settings};
+use crate::commands::{bastions, settings};
+use crate::connections;
 use crate::postgres::backup::{
     manager::JobContext,
     protocol::{PgBackupFormat, PgBackupScope, PgToolJobError, StartPgBackupPayload},
@@ -175,9 +176,8 @@ async fn disconnect_waits_for_job_termination_before_cache_invalidation() {
         socket_lifecycle::observe_cache_invalidations([expected.clone()]);
 
     let command_state = state.clone();
-    let command = tokio::spawn(async move {
-        connections::disconnect_connection_inner(&command_state, "disconnect").await
-    });
+    let command =
+        tokio::spawn(async move { connections::disconnect(&command_state, "disconnect").await });
 
     job.wait_for_cancellation().await;
     assert!(!command.is_finished());
@@ -194,7 +194,7 @@ async fn disconnect_waits_for_job_termination_before_cache_invalidation() {
 #[serial_test::serial]
 async fn delete_waits_for_job_termination_before_record_and_cache_removal() {
     let (_directory, state) = crate::test_app_state().await;
-    connections::save_connection_inner(&state, pg_connection("delete", None))
+    connections::save(&state, pg_connection("delete", None))
         .await
         .expect("save connection");
     let state = Arc::new(state);
@@ -204,9 +204,7 @@ async fn delete_waits_for_job_termination_before_record_and_cache_removal() {
         socket_lifecycle::observe_cache_invalidations([expected.clone()]);
 
     let command_state = state.clone();
-    let command = tokio::spawn(async move {
-        connections::delete_connection_inner(&command_state, "delete").await
-    });
+    let command = tokio::spawn(async move { connections::delete(&command_state, "delete").await });
 
     job.wait_for_cancellation().await;
     assert!(!command.is_finished());
@@ -238,7 +236,7 @@ async fn delete_waits_for_job_termination_before_record_and_cache_removal() {
 async fn credential_reset_waits_for_all_jobs_then_reopens_global_admission() {
     let (_directory, state) = crate::test_app_state().await;
     for connection_id in ["reset-a", "reset-b"] {
-        connections::save_connection_inner(&state, pg_connection(connection_id, None))
+        connections::save(&state, pg_connection(connection_id, None))
             .await
             .expect("save connection");
     }
@@ -308,7 +306,7 @@ async fn bastion_save_and_host_key_reset_wait_for_referencing_job_termination() 
     )
     .await
     .expect("set host key");
-    connections::save_connection_inner(&state, pg_connection("through-bastion", Some("bastion")))
+    connections::save(&state, pg_connection("through-bastion", Some("bastion")))
         .await
         .expect("save tunneled connection");
     let state = Arc::new(state);
@@ -333,7 +331,7 @@ async fn bastion_save_and_host_key_reset_wait_for_referencing_job_termination() 
     assert_admission_blocked(&state, "through-bastion");
     // A connection added during the wait was absent from the old reference set.
     // It must still be unable to start work before the Bastion changes.
-    connections::save_connection_inner(&state, pg_connection("new-during-save", Some("bastion")))
+    connections::save(&state, pg_connection("new-during-save", Some("bastion")))
         .await
         .expect("add concurrent Bastion reference");
     assert_admission_blocked(&state, "new-during-save");
@@ -362,7 +360,7 @@ async fn bastion_save_and_host_key_reset_wait_for_referencing_job_termination() 
     reset_job.wait_for_cancellation().await;
     assert!(!reset.is_finished());
     assert_admission_blocked(&state, "through-bastion");
-    connections::save_connection_inner(&state, pg_connection("new-during-reset", Some("bastion")))
+    connections::save(&state, pg_connection("new-during-reset", Some("bastion")))
         .await
         .expect("add concurrent host-key reset reference");
     assert_admission_blocked(&state, "new-during-reset");
@@ -427,7 +425,7 @@ async fn exit_close_join_waits_for_job_termination_within_the_existing_budget() 
 async fn credential_configuration_and_migration_wait_for_jobs_before_changing_storage() {
     for migrate in [false, true] {
         let (_directory, state) = crate::test_app_state().await;
-        connections::save_connection_inner(&state, pg_connection("credential-change", None))
+        connections::save(&state, pg_connection("credential-change", None))
             .await
             .unwrap();
         let state = Arc::new(state);
@@ -467,9 +465,7 @@ async fn credential_configuration_and_migration_wait_for_jobs_before_changing_st
         job.terminate().await;
         command.await.unwrap().unwrap();
         assert_eq!(
-            crate::commands::current_credential_mode(&state)
-                .await
-                .unwrap(),
+            crate::app::current_credential_mode(&state).await.unwrap(),
             if migrate {
                 CredentialStorageMode::Keychain
             } else {
@@ -503,7 +499,7 @@ async fn bastion_delete_closes_admission_before_checking_new_references() {
         bastions::delete_bastion_server_inner(&command_state, "delete-bastion").await
     });
     job.wait_for_cancellation().await;
-    connections::save_connection_inner(
+    connections::save(
         &state,
         pg_connection("new-before-delete", Some("delete-bastion")),
     )

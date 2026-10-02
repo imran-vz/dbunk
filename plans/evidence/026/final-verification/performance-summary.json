@@ -1,0 +1,58 @@
+{
+  "typing_samples": 900,
+  "typing_p50_ms_median": 30.3605205,
+  "typing_p95_ms_median": 37.382995799999996,
+  "typing_p95_ms_range": [
+    37.1882455,
+    37.830729149999996
+  ],
+  "missed": 0,
+  "idle_cpu_percent_one_core": 3.333916862307324,
+  "idle_footprint_mib": {
+    "count": 30,
+    "max": 289.5167922973633,
+    "mean": 289.50220896402993,
+    "min": 289.4855422973633,
+    "p50": 289.5011672973633,
+    "p95": 289.5167922973633,
+    "p99": 289.5167922973633
+  },
+  "scroll_runs": 12,
+  "scroll_p95_ms_range": [
+    9.66745,
+    10.2486455
+  ],
+  "long_frames": 0,
+  "scroll_intervals": 6080,
+  "fixture_footprints_mib": {
+    "many": 270.0948715209961,
+    "wide": 348.6105651855469,
+    "large": 319.79808807373047
+  },
+  "queue_peak_bytes": 788433,
+  "teardown": {
+    "exit_code": 0,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410"
+  },
+  "environment": {
+    "displayMaxHz": 120,
+    "displayPoints": [
+      1728,
+      1117
+    ],
+    "displayScale": 2,
+    "lowPowerMode": false,
+    "model": "Mac16,7",
+    "os": "Version 27.0.1 (Build 26A434)",
+    "power": "Now drawing from 'Battery Power'",
+    "recordedAt": "2026-10-02T11:12:40Z",
+    "thermalState": 0
+  },
+  "retained_encoded_bytes_before_terminal_metadata": [
+    1048626,
+    6915863,
+    26224498
+  ]
+}

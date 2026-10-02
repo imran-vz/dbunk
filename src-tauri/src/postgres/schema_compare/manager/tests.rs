@@ -1,7 +1,7 @@
 use super::*;
+use crate::host::DocumentLoad;
 use crate::postgres::schema_compare::{capture::test_support, diff};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tauri::webview::PageLoadEvent;
 
 static REQUEST_TIME: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
 
@@ -65,9 +65,11 @@ async fn waiting(ctx: JobContext) -> Result<Comparison, CompareError> {
 
 #[test]
 fn start_monitor_is_callable_outside_a_tokio_runtime() {
-    // setup() invokes this synchronously on the main thread. A bare
+    // A host's setup invokes this synchronously on its main thread. A bare
     // tokio::spawn here panics and prevents the app from starting.
-    CompareManager::new().start_monitor();
+    let runtime = crate::host::test_runtime();
+    assert!(tokio::runtime::Handle::try_current().is_err());
+    CompareManager::new().start_monitor(runtime.handle());
 }
 
 #[tokio::test]
@@ -271,7 +273,7 @@ async fn reconnect_through_the_disconnect_command_cancels_a_late_worker_and_admi
 
     // Disconnect is the first half of a reconnect. Its fence cancels the job
     // and waits for the real worker join instead of trusting the grace timer.
-    let disconnect = crate::commands::connections::disconnect_connection_inner(&state, "a");
+    let disconnect = crate::connections::disconnect(&state, "a");
     tokio::pin!(disconnect);
     assert!(
         tokio::time::timeout(Duration::from_millis(100), &mut disconnect)
@@ -355,7 +357,7 @@ async fn pages_bind_endpoints_and_keep_two_leases_until_the_receiving_transport_
         source: status.source,
         target: status.target,
     };
-    manager.transport_page_load("webview", PageLoadEvent::Started);
+    manager.transport_document_load("webview", DocumentLoad::Started);
     let transport = manager.transport("webview").unwrap();
     let sent = AtomicUsize::new(0);
     for id in ["first", "second"] {
@@ -450,7 +452,7 @@ async fn reload_reclaims_abandoned_replies_and_rejects_late_document_work() {
         source: status.source,
         target: status.target,
     };
-    manager.transport_page_load("webview", PageLoadEvent::Started);
+    manager.transport_document_load("webview", DocumentLoad::Started);
     let old = manager.transport("webview").unwrap();
     let baseline = manager.budget.used();
     for id in ["one", "two"] {
@@ -466,7 +468,7 @@ async fn reload_reclaims_abandoned_replies_and_rejects_late_document_work() {
     // A failed/cancelled provisional load can finish without a committed
     // replacement. Unmatched or duplicate completions cannot free live replies.
     for _ in 0..2 {
-        manager.transport_page_load("webview", PageLoadEvent::Finished);
+        manager.transport_document_load("webview", DocumentLoad::Finished);
         assert_eq!(manager.transport("webview").unwrap(), old);
         assert_eq!(
             manager.budget.used(),
@@ -501,7 +503,7 @@ async fn reload_reclaims_abandoned_replies_and_rejects_late_document_work() {
         .unwrap();
 
     // Started is the desktop document-commit callback, not a provisional start.
-    manager.transport_page_load("webview", PageLoadEvent::Started);
+    manager.transport_document_load("webview", DocumentLoad::Started);
     let new = manager.transport("webview").unwrap();
     assert_ne!(new, old);
     assert_eq!(manager.budget.used(), baseline);
@@ -528,7 +530,7 @@ async fn reload_reclaims_abandoned_replies_and_rejects_late_document_work() {
         )
         .unwrap();
     // A delayed completion from either load must also preserve the new reply.
-    manager.transport_page_load("webview", PageLoadEvent::Finished);
+    manager.transport_document_load("webview", DocumentLoad::Finished);
     assert_eq!(manager.transport("webview").unwrap(), new);
     assert_eq!(
         manager.budget.used(),
@@ -554,9 +556,9 @@ async fn reload_reclaims_abandoned_replies_and_rejects_late_document_work() {
         ),
         Err(CompareError::Unavailable)
     );
-    manager.transport_page_load("webview", PageLoadEvent::Finished);
+    manager.transport_document_load("webview", DocumentLoad::Finished);
     assert_eq!(manager.transport("webview"), Err(CompareError::Unavailable));
-    manager.transport_page_load("webview", PageLoadEvent::Started);
+    manager.transport_document_load("webview", DocumentLoad::Started);
     assert_ne!(manager.transport("webview").unwrap(), new);
 }
 
@@ -564,12 +566,12 @@ async fn reload_reclaims_abandoned_replies_and_rejects_late_document_work() {
 fn document_transport_registry_is_bounded_and_reclaims_destroyed_windows() {
     let manager = CompareManager::new();
     for index in 0..MAX_TRANSPORTS {
-        manager.transport_page_load(&format!("window-{index}"), PageLoadEvent::Started);
+        manager.transport_document_load(&format!("window-{index}"), DocumentLoad::Started);
     }
-    manager.transport_page_load("extra", PageLoadEvent::Started);
+    manager.transport_document_load("extra", DocumentLoad::Started);
     assert_eq!(manager.transport("extra"), Err(CompareError::Unavailable));
     manager.transport_destroyed("window-0");
-    manager.transport_page_load("extra", PageLoadEvent::Started);
+    manager.transport_document_load("extra", DocumentLoad::Started);
     assert!(manager.transport("extra").is_ok());
     assert_eq!(
         manager.inner.lock().unwrap().transports.len(),
@@ -663,11 +665,7 @@ async fn native_manager_capture_pages_and_connection_edit_invalidation() {
     use crate::postgres::{connect_spec::ResolvedPostgresConnectSpec, dedicated};
     let (_dir, state) = crate::test_app_state().await;
     let crate::StoredConnection::PostgreSQL(mut pg) =
-        crate::commands::pg_objects::tests::connection(
-            "manager-native",
-            crate::SafeMode::Strict,
-            false,
-        )
+        crate::app::test_postgres_connection("manager-native", crate::SafeMode::Strict, false)
     else {
         panic!()
     };
@@ -715,7 +713,7 @@ async fn native_manager_capture_pages_and_connection_edit_invalidation() {
     };
     state
         .pg_schema_compare
-        .transport_page_load("native", PageLoadEvent::Started);
+        .transport_document_load("native", DocumentLoad::Started);
     let transport = state.pg_schema_compare.transport("native").unwrap();
     state
         .pg_schema_compare
@@ -765,12 +763,9 @@ async fn native_manager_capture_pages_and_connection_edit_invalidation() {
         .any(|f| f["path"]["field"] == "default" && f["kind"] == "changed"));
     // Real connection edit uses the canonical fence before changing local settings.
     pg.name = "edited fixture".into();
-    crate::commands::connections::save_connection_inner(
-        &state,
-        crate::StoredConnection::PostgreSQL(pg),
-    )
-    .await
-    .unwrap();
+    crate::connections::save(&state, crate::StoredConnection::PostgreSQL(pg))
+        .await
+        .unwrap();
     assert_eq!(
         state.pg_schema_compare.get(&status.job_id),
         Err(CompareError::Unavailable)

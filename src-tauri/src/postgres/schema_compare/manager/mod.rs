@@ -404,11 +404,11 @@ impl CompareManager {
         let mut s = self.inner.lock().unwrap();
         s.global.closing = s.global.closing.saturating_sub(1);
     }
-    pub(crate) fn start_monitor(&self) {
+    pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
         let weak = Arc::downgrade(&self.inner);
-        // Tauri setup calls this on the main thread without an ambient Tokio
-        // context, so the monitor must use Tauri's global runtime.
-        tauri::async_runtime::spawn(async move {
+        // Host setup calls this on the main thread without an ambient Tokio
+        // context, so the monitor must use the host's runtime handle.
+        runtime.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(30));
             loop {
                 tick.tick().await;

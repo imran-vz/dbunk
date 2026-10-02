@@ -1,0 +1,16 @@
+FAIL: script failure 1
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: probe SQL
+PASS: AX selection reaches editor at 46:0
+PASS: run available 0
+PASS: statement failure 0
+PASS: cleared old failure 0
+PASS: script failure 0
+PASS: run available 1
+PASS: statement failure 1
+PASS: cleared old failure 1
+STATE status=<missing> runnable=false active=false keyboard=false error=<missing> SQL=SELECT 'é😀', pg_sleep(0.75);
+SELECT * FROM missing_stage03_table;

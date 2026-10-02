@@ -125,12 +125,9 @@ async fn setup(port: u16) -> (tempfile::TempDir, AppState, sqlx::PgConnection, S
         .execute(format!("CREATE DATABASE {}", crate::quote_double(&id)).as_str())
         .await
         .unwrap();
-    crate::commands::connections::save_connection_inner(
-        &state,
-        StoredConnection::PostgreSQL(stored(&id, port)),
-    )
-    .await
-    .unwrap();
+    crate::connections::save(&state, StoredConnection::PostgreSQL(stored(&id, port)))
+        .await
+        .unwrap();
     (profile, state, admin, id)
 }
 async fn cleanup(state: &AppState, admin: &mut sqlx::PgConnection, id: &str) {
@@ -532,12 +529,9 @@ async fn live_csv_verified_tls_and_driver_read_only() {
             statement_timeout_ms: Some(3000),
             ..Default::default()
         });
-        crate::commands::connections::save_connection_inner(
-            &state,
-            StoredConnection::PostgreSQL(connection.clone()),
-        )
-        .await
-        .unwrap();
+        crate::connections::save(&state, StoredConnection::PostgreSQL(connection.clone()))
+            .await
+            .unwrap();
         let files = tempfile::tempdir().unwrap();
         let path = files.path().join("tls.csv");
         let out = export(&state, &id, "tls_probe", &path, CsvOptions::default()).await;

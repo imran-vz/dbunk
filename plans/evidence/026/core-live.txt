@@ -1,0 +1,44 @@
+$ python3 tools/native/fixture.py check
+Verified dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+PostgreSQL backend baseline before tests: 0
+$ cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile query_session_actor_live -- --ignored --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 17 tests
+test query_session::tests::query_session_actor_live_a_refused_first_event_fails_the_open_and_releases_the_backend ... ok
+test query_session::tests::query_session_actor_live_a_refused_terminal_event_retires_the_session ... ok
+test query_session::tests::query_session_actor_live_a_sink_that_closes_mid_stream_retires_the_session ... ok
+test query_session::tests::query_session_actor_live_an_unfocused_window_keeps_its_lease ... ok
+test query_session::tests::query_session_actor_live_close_at_any_moment_releases_the_backend ... close-at-any-moment: 0 of 40 executions settled before the close
+ok
+test query_session::tests::query_session_actor_live_close_mid_fetch_releases_the_backend ... ok
+test query_session::tests::query_session_actor_live_close_with_withheld_acks_releases_the_backend ... ok
+test query_session::tests::query_session_actor_live_connection_drop_mid_fetch_loses_the_session ... ok
+test query_session::tests::query_session_actor_live_global_teardown_closes_sessions_before_it_returns ... ok
+test query_session::tests::query_session_actor_live_owner_replacement_closes_the_old_owners_sessions ... ok
+test query_session::tests::query_session_actor_live_read_only_and_timeouts_on_the_new_shapes ... ok
+test query_session::tests::query_session_actor_live_row_limit_is_truthful_at_the_boundary ... ok
+test query_session::tests::query_session_actor_live_statement_timeout_settles_failed ... ok
+test query_session::tests::query_session_actor_live_stop_at_any_moment_settles_once_and_idle ... stop-at-any-moment outcomes: {"cancelled, requested=true": 26, "completed, requested=false": 274}
+ok
+test query_session::tests::query_session_actor_live_stop_settles_cancelled_once ... ok
+test query_session::tests::query_session_actor_live_user_transactions_are_never_committed_or_left_with_a_cursor ... ok
+test query_session::tests::query_session_actor_live_wrapper_always_leaves_the_session_idle ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 694 filtered out; finished in 23.48s
+
+query_session_actor_live exit status: 0
+$ cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile safety::live -- --ignored --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 2 tests
+test safety::live::safety_live_query_command_core_enforces_policy_and_records_audit ... ok
+test safety::live::safety_live_read_only_guc_covers_pooled_dedicated_and_policy_flip ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.57s
+
+safety::live exit status: 0
+PostgreSQL backend count after tests: 0 (baseline restored)
+Fixture identity checked before and during all baseline counts; only owned loopback fixture used.

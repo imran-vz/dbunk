@@ -1,0 +1,34 @@
+{
+  "cpuMillis" : 1012.518458,
+  "cpuPercentOfOneCore" : 3.3339168623073241,
+  "environment" : {
+    "displayMaxHz" : 120,
+    "displayPoints" : [
+      1728,
+      1117
+    ],
+    "displayScale" : 2,
+    "lowPowerMode" : false,
+    "model" : "Mac16,7",
+    "os" : "Version 27.0.1 (Build 26A434)",
+    "power" : "Now drawing from 'Battery Power'",
+    "recordedAt" : "2026-10-02T11:12:40Z",
+    "thermalState" : 0
+  },
+  "footprintMiB" : {
+    "count" : 30,
+    "max" : 289.51679229736328,
+    "mean" : 289.50220896402993,
+    "min" : 289.48554229736328,
+    "p50" : 289.50116729736328,
+    "p95" : 289.51679229736328,
+    "p99" : 289.51679229736328
+  },
+  "lastSampleByProcessMiB" : {
+    "dbunk-native (62598)" : 289.50116729736328
+  },
+  "metric" : "process-tree footprint (MiB) and CPU",
+  "pid" : 62598,
+  "process" : "dbunk-native",
+  "seconds" : 30
+}

@@ -9,7 +9,7 @@ async fn object_ddl_apply_live_covers_groups_errors_residue_lock_and_audit() {
     let (_directory, state) = crate::test_app_state().await;
     let connection_id = "object-ddl-live";
     let connection = connection(connection_id, SafeMode::Strict, false);
-    crate::commands::connections::save_connection_inner(&state, connection.clone())
+    crate::connections::save(&state, connection.clone())
         .await
         .expect("save live connection");
     let mut setup = crate::postgres::connect(&connection)

@@ -122,7 +122,7 @@ async fn disposable_postgres_plain_custom_clean_and_cancellation_round_trip() {
     }
     let result = std::panic::AssertUnwindSafe(async {
         for db in [&source_db, &target_db] {
-            crate::commands::connections::save_connection_inner(&state, StoredConnection::PostgreSQL(fixture(db))).await.unwrap();
+            crate::connections::save(&state, StoredConnection::PostgreSQL(fixture(db))).await.unwrap();
         }
         let mut source = connect(&source_db).await;
         let mut target = connect(&target_db).await;

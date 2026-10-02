@@ -1,0 +1,99 @@
+cd apps/native && cargo +1.98.1 test --locked
+   Compiling aws-lc-sys v0.42.0
+   Compiling libz-sys v1.1.29
+   Compiling libssh2-sys v0.3.3
+   Compiling ssh2 v0.9.6
+   Compiling aws-lc-rs v1.17.1
+   Compiling rustls-webpki v0.103.13
+   Compiling rustls v0.23.40
+   Compiling tokio-rustls v0.26.4
+   Compiling tungstenite v0.28.0
+   Compiling rustls-platform-verifier v0.7.0
+   Compiling sqlx-core v0.8.6
+   Compiling http_client_tls v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling yawc v0.4.2
+   Compiling hyper-rustls v0.27.10
+   Compiling tokio-postgres-rustls v0.14.0
+   Compiling redis v0.27.6
+   Compiling reqwest v0.12.28
+   Compiling async-tungstenite v0.33.0
+   Compiling rpc v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling cloud_api_client v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling sqlx-sqlite v0.8.6
+   Compiling sqlx-mysql v0.8.6
+   Compiling sqlx-postgres v0.8.6
+   Compiling language v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling remote v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling sqlx v0.8.6
+   Compiling worktree v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling buffer_diff v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling prettier v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling markdown v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling language_detection v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling multi_buffer v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling client v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling dap v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling edit_prediction_types v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling extension v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling snippet_provider v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling project v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling agent_settings v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling workspace v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling breadcrumbs v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling editor v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.07s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/dbunk_native-772a36ec0cbab884)
+
+running 39 tests
+test live_tests::native_background_beyond_lease_and_refocus_stay_usable ... ignored, requires verified owned fixture; exercises background beyond the real 120-second lease
+test live_tests::native_foreground_heartbeats_do_not_prevent_ack_timeout ... ignored, requires verified owned fixture; exercises the real 120-second ACK lease
+test live_tests::native_full_queue_retires_and_explicit_reconnect_restores_queries ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_idle_and_active_owned_socket_loss_require_reconnect ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_retention_refusal_drains_terminal_ack_and_preserves_session ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_select_error_and_terminal_ack_allow_next_run ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_shutdown_during_sleep_joins_and_is_idempotent ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_shutdown_with_streaming_credit_held_joins ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_stop_with_four_batches_of_held_credit_resumes_and_finishes ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test diagnostics::tests::end_of_input_is_an_empty_range_at_the_executed_end ... ok
+test diagnostics::tests::invalid_missing_and_stale_positions_do_not_mark_sql ... ok
+test accessible_editor::tests::rejects_unknown_nodes_and_out_of_range_positions ... ok
+test accessible_editor::tests::long_combining_clusters_preserve_every_byte ... ok
+test accessible_editor::tests::display_splits_preserve_unicode_offsets_and_ignore_interior_grapheme_breaks ... ok
+test accessible_editor::tests::unicode_positions_round_trip_at_every_selectable_boundary ... ok
+test mailbox::tests::retired_consumer_releases_bytes_and_cannot_affect_a_new_mailbox ... ok
+test mailbox::tests::oversize_and_closed_consumer_fail_without_retry ... ok
+test mailbox::tests::byte_budget_applies_even_before_count_capacity ... ok
+test mailbox::tests::saturation_has_an_independent_failure_and_releases_permits ... ok
+test mailbox::tests::first_failure_is_sticky_and_fences_other_producers ... ok
+test controller::tests::disconnected_controls_still_coalesce_layout_preference ... ok
+test mailbox::tests::escaped_notice_and_command_errors_use_encoded_byte_budget ... ok
+test mailbox::tests::full_queue_reports_initial_row_and_terminal_failures_out_of_band ... ok
+test controller::tests::actual_cleanup_error_is_not_swallowed_by_shutdown ... ok
+test results::tests::an_unretained_column_set_never_leaves_unrenderable_rows ... ok
+test results::tests::metadata_and_notices_share_budget_and_refuse_further_rows ... ok
+test results::tests::display_prefix_is_utf8_safe_but_exact_value_remains_available ... ok
+test mailbox::tests::slow_consumer_preserves_order_and_coalesces_wakes_with_bounded_bytes ... ok
+test results::tests::terminal_preserves_error_position_and_omission_details ... ok
+test results::tests::budget_accepts_partial_batch_and_keeps_draining_to_one_terminal ... ok
+test stream::tests::gap_and_retirement_are_sticky ... ok
+test stream::tests::stale_sessions_generations_and_executions_cannot_change_current_results ... ok
+test diagnostics::tests::unicode_prefix_and_later_script_statement_use_character_positions ... ok
+test results::tests::preserves_null_empty_numeric_and_unicode_across_result_sets ... ok
+test diagnostics::tests::recovery_fallback_keeps_combining_sequence_intact ... ok
+test diagnostics::tests::maps_selected_duplicate_without_searching ... ok
+test controller::tests::cancelled_waiter_leaves_termination_join_owned_by_host ... ok
+test controller::tests::failed_reconnect_cleanup_never_becomes_success_after_abort_join ... ok
+test results::tests::row_count_limit_refuses_retention_but_records_server_completion ... ok
+
+test result: ok. 30 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+python3 -m unittest discover -s tools/native -p 'test_*.py'
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.003s
+
+OK

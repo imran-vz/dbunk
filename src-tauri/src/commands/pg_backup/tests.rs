@@ -31,9 +31,7 @@ async fn typed_restore_policy_admission_and_success_only_effects() {
     for mode in [SafeMode::Strict, SafeMode::Protected] {
         let id = format!("policy-{mode:?}");
         let connection = crate::commands::pg_objects::tests::connection(&id, mode, false);
-        crate::commands::connections::save_connection_inner(&state, connection)
-            .await
-            .unwrap();
+        crate::connections::save(&state, connection).await.unwrap();
         assert!(matches!(
             start_with(&state, restore(&id, source.path(), false), successful).await,
             Err(PgToolJobError::PolicyNeedsConfirmation { .. })
@@ -99,7 +97,7 @@ async fn typed_restore_policy_admission_and_success_only_effects() {
         );
     }
     let id = "readonly";
-    crate::commands::connections::save_connection_inner(
+    crate::connections::save(
         &state,
         crate::commands::pg_objects::tests::connection(id, SafeMode::Disabled, true),
     )
@@ -143,9 +141,7 @@ async fn missing_and_unsupported_connections_never_admit() {
     let mut value = serde_json::to_value(pg).unwrap();
     value["engine"] = "MySQL".into();
     let connection: StoredConnection = serde_json::from_value(value).unwrap();
-    crate::commands::connections::save_connection_inner(&state, connection)
-        .await
-        .unwrap();
+    crate::connections::save(&state, connection).await.unwrap();
     assert_eq!(
         start_with(
             &state,
@@ -165,7 +161,7 @@ async fn cosmetic_connection_save_cancels_job_before_edit_and_reopens_admission(
     let (_dir, state) = crate::test_app_state().await;
     let mut connection =
         crate::commands::pg_objects::tests::connection("rename", SafeMode::Disabled, false);
-    crate::commands::connections::save_connection_inner(&state, connection.clone())
+    crate::connections::save(&state, connection.clone())
         .await
         .unwrap();
     let source = tempfile::NamedTempFile::new().unwrap();
@@ -183,9 +179,7 @@ async fn cosmetic_connection_save_cancels_job_before_edit_and_reopens_admission(
     if let StoredConnection::PostgreSQL(pg) = &mut connection {
         pg.name = "Renamed".into();
     }
-    crate::commands::connections::save_connection_inner(&state, connection)
-        .await
-        .unwrap();
+    crate::connections::save(&state, connection).await.unwrap();
     assert_eq!(
         state.pg_tool_jobs.get(&job.job_id).unwrap().phase,
         PgToolJobPhase::Cancelled

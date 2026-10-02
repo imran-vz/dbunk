@@ -1,0 +1,90 @@
+Window repro: PID 56978; owned fixture 2283820d-33ec-4c4c-ae03-7051092bd410
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: metrics SQL reaches the real editor
+PASS: metrics execution is admitted
+PASS: metrics query completes with a visible result and terminal ACK
+PASS: metrics SQL editor owns focus
+Metrics fixture: many; expected source rows: 10000
+Observed result: Result 1 · 10000 rows
+AX omission observations: none exposed; consult visible diagnostics and capture
+PASS: metrics ready with real fixture results, accessibility active and SQL editor focused
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/capture-diagnosis/repro/scroll-0.json
+active=true
+pid=56978 owner=dbunk-native bounds={
+    Height = 932;
+    Width = 1440;
+    X = "-1641";
+    Y = 125;
+}
+pid=92904 owner=IINA bounds={
+    Height = 32;
+    Width = 1728;
+    X = 7;
+    Y = 33;
+}
+pid=92904 owner=IINA bounds={
+    Height = 1084;
+    Width = 1728;
+    X = 7;
+    Y = 33;
+}
+pid=85546 owner=T3 Code (Nightly) bounds={
+    Height = 1084;
+    Width = 1728;
+    X = "-1785";
+    Y = 33;
+}
+pid=78981 owner=Transmission bounds={
+    Height = 230;
+    Width = 610;
+    X = "-1458";
+    Y = 332;
+}
+pid=54453 owner=‎WhatsApp bounds={
+    Height = 1084;
+    Width = 1728;
+    X = "-1785";
+    Y = 33;
+}
+pid=7587 owner=Zen bounds={
+    Height = 1084;
+    Width = 1728;
+    X = "-1785";
+    Y = 33;
+}
+SCROLL EXIT 0
+measure: another window covers the scroll point; nothing was posted
+active=false
+pid=92904 owner=IINA bounds={
+    Height = 32;
+    Width = 1728;
+    X = 0;
+    Y = 33;
+}
+pid=92904 owner=IINA bounds={
+    Height = 1084;
+    Width = 1728;
+    X = 0;
+    Y = 33;
+}
+SCROLL EXIT 2
+measure: the pointer left the target window; run discarded
+active=false
+pid=92904 owner=IINA bounds={
+    Height = 32;
+    Width = 1728;
+    X = 0;
+    Y = 33;
+}
+pid=92904 owner=IINA bounds={
+    Height = 1084;
+    Width = 1728;
+    X = 0;
+    Y = 33;
+}
+SCROLL EXIT 2

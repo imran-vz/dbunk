@@ -1,0 +1,28 @@
+Stage 01 geometry/focus verification, 2026-10-02
+Base commit: 102568b8003461c9821fb84fc0957ccd3e4d0b13
+Working-tree changes are uncommitted.
+
+SHA-256:
+e99edc5bacd4f4029146ab5b78c1b1f61f5445bec58b16249edaecbf927cacaf  spikes/gpui-path-z/target/release/dbunk-gpui-spike
+c0b4060d3daf6e0a7199c72d70cff4910eb5e8ae9318f3eac607ee05608a326f  spikes/gpui-path-z/Cargo.lock
+c3dafa08fd49621c12df49670141661e20fe2f0cb8f64fd709f61da883074c65  spikes/gpui-path-z/src/accessible_editor.rs
+7aaac058377c81ac8c9f64038162c46cf3327e3be61267bbaf6ea8bb2183d5dd  spikes/gpui-path-z/src/main.rs
+c627c1674972cbe0139fd0abcbb49a63ad8d9a22f9e175c8e200d426382c0d9c  spikes/gpui-path-z/src/grid.rs
+4ff86950620919122671889570c8805823041976f283ff2b8b33bdc60ffc1571  tools/measure/editor-accessibility.swift
+
+Passed: pnpm format; pnpm lint; pnpm typecheck; just fmt; just lint; just test
+Backend, no default features: 633 passed, 70 ignored
+Backend, default features: 657 passed, 85 ignored
+Passed: native cargo fmt --check; cargo clippy --release --locked --all-targets -- -D warnings
+Passed: native cargo test --release --locked (4 tests); cargo build --release --locked
+Passed: swiftc tools/measure/editor-accessibility.swift -o /tmp/dbunk-editor-ax
+Ignored backend tests require external fixtures and were not enabled.
+Known upstream warning: block v0.1.6 future incompatibility.
+
+Final AX runtime verification: /tmp/dbunk-editor-ax 16826 (passed)
+Final performance repeat target: dbunk-gpui-spike PID 19303, fresh 2,000-line fixture
+Initial final-build timing attempt: PID 16985, retained in performance/attempt-1
+Final repeat: p95 32.8 / 33.9 / 32.7 ms; 900 captured keys; none missed
+Final idle: 3.4% of one core, 260.0 MiB median footprint
+Foreground log: stayed true throughout typing; last ~4 s of idle interrupted
+Idle CPU follow-up is diagnostic only; original baseline idle evidence retained

@@ -20,7 +20,7 @@ pub(crate) const MAX_ROW_LIMIT: i64 = 10_000;
 /// One supplied parameter. `Debug` never prints the value.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ParameterValue {
+pub struct ParameterValue {
     pub name: String,
     pub value: Option<String>,
 }
@@ -47,7 +47,7 @@ impl fmt::Debug for BoundValues {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ParameterRejectionReason {
+pub enum ParameterRejectionReason {
     Unlexable,
     MultipleStatements,
     PositionalPlaceholder,

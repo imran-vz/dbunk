@@ -1,0 +1,5 @@
+2026-10-02T06:54:07Z targetFrontmost=true
+2026-10-02T06:56:47Z targetFrontmost=false
+2026-10-02T06:56:51Z targetFrontmost=true
+2026-10-02T06:56:52Z targetFrontmost=false
+Monitor complete
