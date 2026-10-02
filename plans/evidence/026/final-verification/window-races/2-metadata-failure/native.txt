@@ -1,0 +1,7 @@
+VERIFY offered session session=47ecd535-6dd7-4e0a-9d92-abe5babbd66e sequence=1
+VERIFY drain-held
+VERIFY queue-rejected Some(Full)
+VERIFY drain-released
+Native queue high-water bytes: 1167
+Native queue released: high_water_bytes=1167 remaining_bytes=0
+VERIFY closing

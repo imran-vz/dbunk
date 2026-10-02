@@ -3,6 +3,7 @@
 use tauri::State;
 
 use crate::dispatch;
+use crate::host::{SharedSink, SinkClosed};
 use crate::redis;
 use crate::storage;
 use crate::{AppState, ConnectionPayload, RedisCliHistoryEntry, SavedRedisCommand};
@@ -382,9 +383,18 @@ pub async fn redis_pubsub_start(
     state: State<'_, AppState>,
     payload: redis::pubsub::StartSessionPayload,
 ) -> Result<redis::pubsub::StartSessionResult, String> {
+    use tauri::Emitter;
     let connection_id = payload.connection_id.clone();
+    let events: SharedSink<redis::pubsub::PubsubEvent> =
+        std::sync::Arc::new(move |event: redis::pubsub::PubsubEvent| {
+            app.emit(redis::pubsub::PUBSUB_EVENT, event)
+                .map_err(|error| {
+                    log::warn!("pubsub emit failed: {error}");
+                    SinkClosed
+                })
+        });
     with_active_connection(state.inner(), &connection_id, |connection| async move {
-        dispatch::keyvalue::pubsub_start(&app, &connection, &payload).await
+        dispatch::keyvalue::pubsub_start(events, &connection, &payload).await
     })
     .await
 }

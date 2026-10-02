@@ -1,0 +1,14 @@
+VERIFY offered session session=37ce146b-4bc3-45e7-83ce-b86c66958bd4 sequence=1
+VERIFY drain-held
+VERIFY offered rows session=37ce146b-4bc3-45e7-83ce-b86c66958bd4 sequence=4
+VERIFY offered rows session=37ce146b-4bc3-45e7-83ce-b86c66958bd4 sequence=5
+VERIFY queue-rejected Some(Full)
+VERIFY drain-released
+VERIFY view-replaced
+Native queue released: high_water_bytes=45394 remaining_bytes=0
+VERIFY offered session session=731e3418-3985-4c92-8c30-6702ef1e0a3d sequence=1
+VERIFY offered rows session=731e3418-3985-4c92-8c30-6702ef1e0a3d sequence=4
+VERIFY offered terminal session=731e3418-3985-4c92-8c30-6702ef1e0a3d sequence=6
+Native retained bytes: 93
+VERIFY closing
+Native queue released: high_water_bytes=914 remaining_bytes=0

@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/dbunk_native-9e70264c7437568f)
+
+running 1 test
+Native queue released: high_water_bytes=27966 remaining_bytes=0
+test live_tests::native_retention_refusal_drains_terminal_ack_and_preserves_session ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.27s
+

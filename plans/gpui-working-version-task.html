@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dbunk · First working GPUI version</title>
+<style>
+:root{color-scheme:dark;--bg:#000;--fg:#fff;--muted:#bdbdbd;--line:#333;--accent:#acd2ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,-apple-system,sans-serif}main{max-width:1040px;margin:auto;padding:36px 28px 64px}h1{font-size:clamp(28px,5vw,44px);letter-spacing:-.04em;line-height:1.12;margin:10px 0 18px}h2{font-size:21px;margin:0 0 14px}h3{font-size:17px;margin:0 0 6px}p{margin:0 0 12px;max-width:85ch}header,section{padding-bottom:24px;border-bottom:1px solid var(--line);margin-bottom:24px}.meta{font-size:12px;color:var(--muted)}.lead{font-size:19px}.path{display:grid;grid-template-columns:repeat(4,1fr);margin:22px 0 0;border-top:1px solid var(--line)}.path div{padding:12px 14px 0 0}.path b{display:block;font-size:13px;color:var(--accent)}.step{display:grid;grid-template-columns:32px 1fr;gap:14px;margin:20px 0}.num{font:18px ui-monospace,monospace;color:var(--accent)}ul{padding-left:20px;margin:8px 0}li{margin:6px 0}code{font:13px ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere}a{color:var(--accent);text-underline-offset:3px}a:focus-visible{outline:2px solid white;outline-offset:4px}.gate{border-left:2px solid var(--accent);padding-left:16px}.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px 28px}.checks p{padding:10px 0;border-top:1px solid var(--line);margin:0}.checks strong{display:block}footer{font-size:13px;color:var(--muted)}@media(max-width:640px){main{padding:24px 18px 44px}.path,.checks{grid-template-columns:1fr 1fr}.path div{padding-bottom:10px}.step{grid-template-columns:24px 1fr;gap:10px}}@media(max-width:420px){.checks{grid-template-columns:1fr}}@media print{body{background:#fff;color:#000}.meta,footer{color:#444}.num,.path b,a{color:#174b78}main{padding:0}.step,.checks p{break-inside:avoid}}
+</style>
+</head>
+<body><main>
+<header>
+<p class="meta">dbunk / implementation task · Draft · 02 Oct 2026 · baseline 102568b + reviewed working tree</p>
+<h1>Build the first working<br>GPUI PostgreSQL client</h1>
+<p class="lead">Launch a native window, connect to a disposable PostgreSQL database, run real SQL, inspect results and errors, and stop a running query.</p>
+<p>Target: an internal macOS Apple Silicon development version. The native spike currently uses synthetic rows; this task connects its useful parts to the tested backend.</p>
+<div class="path" aria-label="End-to-end flow"><div><b>01 / Connect</b>Isolated fixture profile</div><div><b>02 / Execute</b>Existing Query Session service</div><div><b>03 / Inspect</b>Real results and errors</div><div><b>04 / Stop</b>Cancellation and cleanup</div></div>
+</header>
+<section>
+<h2>Editor accessibility gate</h2>
+<p class="gate">The SQL editor now has an application-owned accessibility adapter using the pinned GPUI APIs. It exposes text, primary selection, focus and shaped highlight geometry without a fork. Geometry, scrolling, resize and keyboard focus through editor/results/cell-editor pass the external macOS checks. Imran confirmed VoiceOver validation complete on 02 Oct 2026. <strong>Stage 01 gate closed: PASS / continue.</strong> See the <a href="evidence/024/stage01-gate.md">review and costed remaining work</a>. No accessibility exception is used.</p>
+<p>For any new layout or controls, first publish distinct static mocks and wait for the selected direction, as required by AGENTS.md. The task draft itself does not authorize implementation or cutover.</p>
+</section>
+<section>
+<h2>Implementation</h2>
+<article class="step"><div class="num">1</div><div><h3>Expose the smallest safe backend API</h3><p>Build on Plan 025. Export a narrow host-facing surface for startup, connections, Query Session operations, event types and shutdown. Keep storage pools, drivers and manager internals private. Connection hydration, safety enforcement and auditing must remain inside the services.</p><p>A native crate can depend on the existing backend with <code>default-features = false</code>. Completing every service extraction or moving everything into <code>crates/dbunk-core</code> is not a prerequisite for this slice.</p></div></article>
+<article class="step"><div class="num">2</div><div><h3>Create the native host and connect it to PostgreSQL</h3><p>Add a separately runnable native application using the spike’s pinned GPUI/Zed dependencies. Own a multi-thread Tokio runtime, start the core monitors, register the window/session owner, and open a fixture connection through the connection service.</p><p>Provide a reproducible setup command for an isolated profile with plain SQLite fixture credentials. Use the disposable PostgreSQL service on <code>127.0.0.1:15432</code>. Never fall back to the daily-driver profile or keychain.</p></div></article>
+<article class="step"><div class="num">3</div><div><h3>Replace synthetic batches with the real event stream</h3><p>Bridge the core’s typed events into GPUI using a bounded queue. For this first version, preserve the existing sequence, ACK and credit protocol. Acknowledge after consuming the event into the bounded result model. Keep database work off the UI thread.</p><p>Fence updates by owner, session, generation and execution. Queue saturation or delivery failure must fail explicitly and release the session, with no silent drops or unlimited buffering. Closing the window must cancel work and await backend cleanup.</p></div></article>
+<article class="step"><div class="num">4</div><div><h3>Finish the query workflow</h3><p>Show the connection state, SQL editor, Run and Stop controls, results and a clear terminal status. Support multiple result sets, zero-row metadata, command results, notices, database errors and truncation information. Preserve NULLs and exact values in display/copy.</p><p>Use the existing SQL statement-boundary logic rather than splitting on every semicolon. Verify execution at the end of a statement, including a trailing semicolon, strings, comments and dollar quotes. After a connection failure, allow an explicit reconnect and a new run.</p><p>Keep result cells read-only in this slice. The spike’s staged-edit probe is not a mutation workflow. If retained in the development build, correct its copy and accessibility values so both reflect the displayed staged value.</p></div></article>
+<article class="step"><div class="num">5</div><div><h3>Verify and deliver a reproducible launch</h3><p>Add a documented <code>just dev-native</code> command or equivalent, with the required toolchain and fixture setup. Exercise the real GPUI-to-core-to-PostgreSQL path, not only the existing backend tests. Record commands, results and remaining limitations.</p><p>Run <code>pnpm format</code>, <code>pnpm lint</code>, <code>pnpm typecheck</code>, <code>pnpm test</code>, <code>just fmt</code>, <code>just lint</code> and <code>just test</code>. Include the new native crate in formatting, lint and focused test commands. Keep both backend feature configurations passing.</p></div></article>
+</section>
+<section>
+<h2>Done when these pass</h2>
+<div class="checks">
+<p><strong>Launch and connect</strong>A documented command opens the native app on an isolated fixture profile and visibly connects to PostgreSQL.</p>
+<p><strong>Real results</strong>Run a simple query, a multi-statement script, a zero-row result and the wide/large fixtures. Results, metadata and retention limits match the core.</p>
+<p><strong>Errors and recovery</strong>Invalid SQL shows the backend error. Lost connections are visible. Explicit reconnect allows another query without old results arriving late.</p>
+<p><strong>Stop under load</strong>Cancel <code>SELECT pg_sleep(30)</code> and a streaming query, including a slow or full consumer queue. Each execution settles once.</p>
+<p><strong>Safe teardown</strong>Replace an owner or close the window mid-stream. Tasks and fixture database sessions are released, with no updates to the retired view.</p>
+<p><strong>Safety preserved</strong>Read-only and Safe Mode refusals still happen before dispatch. The native host cannot bypass the service policy through the public API.</p>
+</div>
+</section>
+<section>
+<h2>Later work</h2>
+<p>Connection-management UI, saved workspaces, schema browsing, table mutations, schema maps, backup/restore, transfers, schema comparison, Redis and other engines, full feature parity, signed installers and daily-driver cutover.</p>
+<p>This task delivers one working native query workflow. A daily-driver replacement still requires the remaining migration stages.</p>
+</section>
+<footer>Sources: <a href="024-gpui-baseline-and-spike.md">Plan 024</a> · <a href="025-shared-core-query-session-extraction.md">Plan 025</a> · <a href="gpui-migration.html#sequence">Migration sequence</a> · <a href="../docs/adr/0032-host-neutral-backend-seam.md">ADR-0032</a>. Stage 01 is closed; this implementation task remains a draft, not authorization for a new host or cutover.</footer>
+</main></body>
+</html>

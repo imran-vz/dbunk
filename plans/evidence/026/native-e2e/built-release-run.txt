@@ -1,0 +1,4 @@
+profile=/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-stage03-mwampn39
+evidence=/Users/imran/projects/Code/dbunk/tools/native/.state/evidence/5010c473-493e-4ee6-b10e-284df05b2437
+pid=54928
+PASS: full native AX query workflow and PostgreSQL teardown

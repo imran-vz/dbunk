@@ -1,6 +1,7 @@
 pub(crate) mod observer;
 pub(crate) mod postgres;
 pub(crate) mod protocol;
+pub(crate) mod service;
 
 use futures_util::future::BoxFuture;
 use sqlx::SqlitePool;
@@ -8,9 +9,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::ipc::Channel;
 use tokio::sync::{watch, Mutex, Notify};
 
+use crate::host::SharedSink;
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::postgres::sql_params::{plan_execution, ExecutionPlan, ParameterValue};
 use observer::Observer;
@@ -59,7 +60,7 @@ struct Outbox {
     tab_id: String,
     connection_id: String,
     generation: u64,
-    channel: Channel<QueryEventEnvelope>,
+    sink: SharedSink<QueryEventEnvelope>,
     sequence: Mutex<u64>,
     credit: Mutex<Credit>,
     credit_changed: Notify,
@@ -71,14 +72,14 @@ impl Outbox {
         tab_id: String,
         connection_id: String,
         generation: u64,
-        channel: Channel<QueryEventEnvelope>,
+        sink: SharedSink<QueryEventEnvelope>,
     ) -> Self {
         Self {
             id,
             tab_id,
             connection_id,
             generation,
-            channel,
+            sink,
             sequence: Mutex::new(0),
             credit: Mutex::new(Credit {
                 outstanding: VecDeque::new(),
@@ -252,6 +253,7 @@ struct ManagerState {
 pub(crate) struct QuerySessionManager {
     inner: Arc<Mutex<ManagerState>>,
     pool: SqlitePool,
+    native_tasks: Option<crate::postgres::dedicated::DriverJoins>,
 }
 
 pub(crate) type ExecutionSuccessHook = Box<
@@ -288,20 +290,55 @@ impl QuerySessionManager {
         Self {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             pool,
+            native_tasks: None,
         }
     }
-    pub(crate) fn start_monitor(&self) {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn with_native_tasks(
+        mut self,
+        tasks: crate::postgres::dedicated::DriverJoins,
+    ) -> Self {
+        self.native_tasks = Some(tasks);
+        self
+    }
+    pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
+        self.spawn_monitor(runtime);
+    }
+    pub(crate) fn spawn_monitor(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> tokio::task::JoinHandle<()> {
         let manager = self.clone();
-        // Spawn via Tauri's global runtime: setup() calls this from the
-        // main thread with no ambient Tokio context, where tokio::spawn
-        // would panic.
-        tauri::async_runtime::spawn(async move {
+        runtime.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(10));
             loop {
                 tick.tick().await;
                 manager.expire_stalled().await;
             }
-        });
+        })
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn session_alive(
+        &self,
+        window: &str,
+        id: &str,
+    ) -> Result<bool, QuerySessionError> {
+        Ok(!self.bound(id, window).await?.connection.is_closed())
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn retire_window(&self, window: &str) {
+        self.inner.lock().await.owners.remove(window);
+        self.close_window(window).await;
+    }
+    /// Called only after native opens/workers have been joined or aborted.
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn clear_native_reservations(&self) {
+        let mut state = self.inner.lock().await;
+        state.owners.clear();
+        state.opening.clear();
+        state.observer_opening.clear();
+        state.observers.clear();
+        state.sessions.clear();
     }
     async fn expire_stalled(&self) {
         let sessions = self
@@ -376,7 +413,7 @@ impl QuerySessionManager {
         &self,
         window: &str,
         payload: OpenSessionPayload,
-        channel: Channel<QueryEventEnvelope>,
+        sink: SharedSink<QueryEventEnvelope>,
         spec: ResolvedPostgresConnectSpec,
     ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
         {
@@ -393,7 +430,7 @@ impl QuerySessionManager {
                 return Err(error);
             }
         };
-        let connection = match postgres::connect(&spec).await {
+        let connection = match postgres::connect_tracked(&spec, self.native_tasks.as_ref()).await {
             Ok(connection) => connection,
             Err(error) => {
                 self.release_opening(&payload.session_id).await;
@@ -421,7 +458,7 @@ impl QuerySessionManager {
                     payload.tab_id,
                     payload.connection_id,
                     generation,
-                    channel,
+                    sink,
                 ),
                 owner_id: payload.owner_id,
                 window_label: window.into(),
@@ -482,7 +519,7 @@ impl QuerySessionManager {
                 continue;
             }
 
-            let result = Observer::connect(spec)
+            let result = Observer::connect_tracked(spec, self.native_tasks.as_ref())
                 .await
                 .map(|observer| Arc::new(Mutex::new(observer)));
             let mut state = self.inner.lock().await;
@@ -605,7 +642,7 @@ impl QuerySessionManager {
         credit.begin(execution_id.clone());
         drop(credit);
         drop(sequence);
-        tokio::spawn(run_execution(
+        let task = tokio::spawn(run_execution(
             self.clone(),
             session,
             execution_id,
@@ -617,6 +654,9 @@ impl QuerySessionManager {
                 authorization,
             }),
         ));
+        if let Some(tracked) = &self.native_tasks {
+            tracked.track_task(task);
+        }
         Ok(AcceptedResult { accepted: true })
     }
     pub(crate) async fn ack(
@@ -681,7 +721,7 @@ impl QuerySessionManager {
         let session = self.bound(id, window).await?;
         observe_session(&session).await;
         if session.transaction.lock().await.status == QueryTransactionStatus::Unknown {
-            let replacement = Observer::connect(&spec).await?;
+            let replacement = Observer::connect_tracked(&spec, self.native_tasks.as_ref()).await?;
             *session.observer.lock().await = replacement;
             observe_session(&session).await;
         }
@@ -822,15 +862,16 @@ impl QuerySessionManager {
             state.observers.retain(|id, _| live.contains(id));
             sessions
         };
-        let _ = tokio::time::timeout(
-            Duration::from_secs(3),
-            futures_util::future::join_all(
-                sessions
-                    .into_iter()
-                    .map(|session| close_session(session, false)),
-            ),
-        )
-        .await;
+        let close = futures_util::future::join_all(
+            sessions
+                .into_iter()
+                .map(|session| close_session(session, false)),
+        );
+        if self.native_tasks.is_some() {
+            close.await;
+        } else {
+            let _ = tokio::time::timeout(Duration::from_secs(3), close).await;
+        }
     }
     pub(crate) async fn set_focused(&self, window: &str, focused: bool) {
         let sessions = self
@@ -928,12 +969,13 @@ async fn run_execution(
         }
         _ => postgres::TransactionEntry::Inside,
     };
-    let mut events = postgres::execute_plan(
+    let mut events = postgres::execute_plan_tracked(
         session.connection.client.clone(),
         session.connection.notices.clone(),
         plan,
         entry,
         session.clone(),
+        manager.native_tasks.as_ref(),
     );
     let mut terminal = None;
     while let Some(event) = events.recv().await {
@@ -1161,7 +1203,7 @@ async fn send_with_credit(
             .outstanding
             .push_back((current, bytes));
         if session
-            .channel
+            .sink
             .send(QueryEventEnvelope {
                 session_id: session.id.clone(),
                 tab_id: session.tab_id.clone(),
@@ -1187,7 +1229,7 @@ async fn send_with_credit(
     Ok(sequence)
 }
 async fn send_terminal(
-    session: &Session,
+    session: &Outbox,
     execution_id: String,
     event: QueryEvent,
 ) -> Result<u64, ()> {
@@ -1200,7 +1242,7 @@ async fn send_terminal(
         let current = *sequence;
         session.credit.lock().await.terminal_sequence = Some(current);
         if session
-            .channel
+            .sink
             .send(QueryEventEnvelope {
                 session_id: session.id.clone(),
                 tab_id: session.tab_id.clone(),
@@ -1221,7 +1263,7 @@ async fn send_terminal(
     Ok(sequence)
 }
 async fn send(
-    session: &Session,
+    session: &Outbox,
     execution_id: Option<String>,
     requires_ack: bool,
     event: QueryEvent,
@@ -1233,7 +1275,7 @@ async fn send(
     *sequence += 1;
     let current = *sequence;
     session
-        .channel
+        .sink
         .send(QueryEventEnvelope {
             session_id: session.id.clone(),
             tab_id: session.tab_id.clone(),
@@ -1278,7 +1320,7 @@ async fn close_session(session: Arc<Session>, emit: bool) {
     if emit {
         let mut sequence = session.sequence.lock().await;
         *sequence += 1;
-        let _ = session.channel.send(QueryEventEnvelope {
+        let _ = session.sink.send(QueryEventEnvelope {
             session_id: session.id.clone(),
             tab_id: session.tab_id.clone(),
             connection_id: session.connection_id.clone(),
@@ -1457,29 +1499,20 @@ mod tests {
 
     #[test]
     fn start_monitor_is_callable_outside_a_tokio_runtime() {
-        // Regression: setup() calls this on the main thread with no Tokio
-        // runtime context; a bare tokio::spawn panics with "no reactor
+        // Regression: a host's setup calls this on its main thread with no
+        // Tokio runtime context; a bare tokio::spawn panics with "no reactor
         // running" and aborts app startup. The pool mirrors the real call
-        // site (created under tauri::async_runtime::block_on), so build it
-        // inside a scratch runtime and drop that context before the call.
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("scratch runtime");
+        // site (created under the host's block_on), so build it inside the
+        // runtime and leave that context before the call.
+        let runtime = crate::host::test_runtime();
         let manager = runtime.block_on(async { manager() });
-        drop(runtime);
-        manager.start_monitor();
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        manager.start_monitor(runtime.handle());
     }
 
     fn outbox() -> (Arc<Outbox>, Events) {
-        let (channel, events) = recording_channel();
-        let outbox = Outbox::new(
-            "session".into(),
-            "tab".into(),
-            "connection".into(),
-            0,
-            channel,
-        );
+        let (sink, events) = recording_sink();
+        let outbox = Outbox::new("session".into(), "tab".into(), "connection".into(), 0, sink);
         (Arc::new(outbox), events)
     }
 
@@ -1662,6 +1695,125 @@ mod tests {
         assert!(outbox.request_cancel("second").await);
     }
 
+    #[tokio::test]
+    async fn a_closed_sink_fails_the_send_and_leaves_no_credit_behind() {
+        let (sink, events) = closing_sink(0);
+        let outbox = Outbox::new("session".into(), "tab".into(), "connection".into(), 0, sink);
+        outbox.credit.lock().await.begin("execution".into());
+
+        assert_eq!(
+            send(
+                &outbox,
+                Some("execution".into()),
+                false,
+                QueryEvent::ExecutionStarted
+            )
+            .await,
+            Err(())
+        );
+        // A row batch that was never delivered must not hold a credit slot:
+        // nothing would ever acknowledge it.
+        assert_eq!(
+            send_with_credit(&outbox, "execution".into(), batch()).await,
+            Err(())
+        );
+        assert!(outbox.credit.lock().await.outstanding.is_empty());
+        // Nor may a terminal that was never delivered stay ackable.
+        assert_eq!(
+            send_terminal(&outbox, "execution".into(), QueryEvent::SessionClosed).await,
+            Err(())
+        );
+        assert_eq!(outbox.credit.lock().await.terminal_sequence, None);
+        assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_stop_is_accepted_while_the_credit_window_is_full() {
+        let (outbox, events) = outbox();
+        outbox.credit.lock().await.begin("execution".into());
+        let sender = outbox.clone();
+        let execution = tokio::spawn(async move {
+            let mut last = 0;
+            for _ in 0..5 {
+                last = send_with_credit(&sender, "execution".into(), batch()).await?;
+            }
+            Ok::<u64, ()>(last)
+        });
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(kinds(&events, "rowBatch").len(), 4);
+        assert!(!execution.is_finished());
+
+        // The consumer is not acknowledging, and the Stop still lands: the
+        // parked sender holds no lock the request needs, and the driver sees
+        // the flag at its next checkpoint.
+        let requested =
+            tokio::time::timeout(Duration::from_secs(1), outbox.request_cancel("execution"))
+                .await
+                .expect("a parked sender does not block a Stop");
+        assert!(requested);
+        assert_eq!(outbox.checkpoint().await, postgres::Checkpoint::Stop);
+        // A Stop is not credit: the parked batch stays parked.
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!execution.is_finished());
+        assert_eq!(kinds(&events, "rowBatch").len(), 4);
+
+        // One acknowledged batch frees one slot, no more.
+        outbox.acknowledge(&ack(1)).await.unwrap();
+        let delivered = tokio::time::timeout(Duration::from_secs(1), execution)
+            .await
+            .expect("the freed slot admits the parked batch")
+            .unwrap();
+        assert_eq!(delivered, Ok(5));
+        assert_eq!(kinds(&events, "rowBatch").len(), 5);
+    }
+
+    #[tokio::test]
+    async fn teardown_refuses_opens_before_any_connection_is_made() {
+        let manager = manager();
+        manager.register_owner("window", "owner".into()).await;
+        // The spec points at nothing: a refused open never reaches it.
+        let mut spec = live_spec(None);
+        spec.port = 1;
+        let open = |session: &'static str, connection: &'static str| {
+            let manager = manager.clone();
+            let spec = spec.clone();
+            async move {
+                manager
+                    .open(
+                        "window",
+                        payload(session, connection),
+                        recording_sink().0,
+                        spec,
+                    )
+                    .await
+            }
+        };
+
+        manager.begin_connection_teardown("closing").await;
+        assert!(matches!(
+            open("a", "closing").await,
+            Err(QuerySessionError::ConnectionClosing)
+        ));
+        manager.end_connection_teardown("closing").await;
+
+        manager.begin_global_teardown().await;
+        assert!(matches!(
+            open("b", "other").await,
+            Err(QuerySessionError::ConnectionClosing)
+        ));
+        manager.end_global_teardown().await;
+
+        let state = manager.inner.lock().await;
+        assert!(state.opening.is_empty());
+        assert!(manager
+            .check_admission(&state, "window", &payload("c", "closing"))
+            .is_ok());
+    }
+
     #[test]
     fn a_probe_that_started_earlier_cannot_overwrite_a_later_one() {
         let order = ProbeOrder::default();
@@ -1804,8 +1956,8 @@ mod tests {
 
     #[test]
     fn describe_reports_the_names_execution_binds_in_the_same_order() {
-        use crate::commands::query_session::describe_query_parameters_inner as describe;
         use crate::postgres::sql_params::ExecutionShape;
+        use service::describe_parameters as describe;
         let sql = "SELECT :b, ':skip', :a::int, x[1:n], ARRAY[:c] FROM t WHERE y = :b -- :d";
         let names = describe(sql).expect("describe").names;
         assert_eq!(names, ["b", "a", "c"]);
@@ -1834,18 +1986,33 @@ mod tests {
 
     type Events = Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
 
-    fn recording_channel() -> (Channel<QueryEventEnvelope>, Events) {
+    /// Records each envelope as the JSON a serializing host would put on the
+    /// wire, so assertions read the same field names the frontend does.
+    fn recording_sink() -> (SharedSink<QueryEventEnvelope>, Events) {
         let events = Events::default();
-        let sink = events.clone();
-        let channel = Channel::new(move |body| {
-            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
-                sink.lock()
-                    .unwrap()
-                    .push(serde_json::from_str(&json).expect("event JSON"));
-            }
+        let recorded = events.clone();
+        let sink: SharedSink<QueryEventEnvelope> = Arc::new(move |envelope: QueryEventEnvelope| {
+            recorded
+                .lock()
+                .unwrap()
+                .push(serde_json::to_value(&envelope).expect("event JSON"));
             Ok(())
         });
-        (channel, events)
+        (sink, events)
+    }
+
+    /// A host whose consumer goes away: the first `accepted` events are
+    /// recorded, every later one is refused.
+    fn closing_sink(accepted: usize) -> (SharedSink<QueryEventEnvelope>, Events) {
+        let (recording, events) = recording_sink();
+        let delivered = AtomicU64::new(0);
+        let sink: SharedSink<QueryEventEnvelope> = Arc::new(move |envelope: QueryEventEnvelope| {
+            if delivered.fetch_add(1, Ordering::SeqCst) >= accepted as u64 {
+                return Err(crate::host::SinkClosed);
+            }
+            recording.send(envelope)
+        });
+        (sink, events)
     }
 
     fn kinds(events: &Events, kind: &str) -> Vec<serde_json::Value> {
@@ -1896,16 +2063,18 @@ mod tests {
         }
 
         async fn open_spec(session_id: &str, spec: ResolvedPostgresConnectSpec) -> Self {
+            Self::open_sink(session_id, spec, recording_sink()).await
+        }
+
+        async fn open_sink(
+            session_id: &str,
+            spec: ResolvedPostgresConnectSpec,
+            (sink, events): (SharedSink<QueryEventEnvelope>, Events),
+        ) -> Self {
             let manager = manager();
             manager.register_owner(LIVE_WINDOW, "owner".into()).await;
-            let (channel, events) = recording_channel();
             manager
-                .open(
-                    LIVE_WINDOW,
-                    payload(session_id, "live-15432"),
-                    channel,
-                    spec,
-                )
+                .open(LIVE_WINDOW, payload(session_id, "live-15432"), sink, spec)
                 .await
                 .expect("open live session");
             let pid = manager.inner.lock().await.sessions[session_id]
@@ -2831,5 +3000,203 @@ mod tests {
         assert_eq!(lost["event"]["reason"], "connectionLost");
         assert!(kinds(&live.events, "executionCompleted").is_empty());
         assert!(live.manager.inner.lock().await.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn query_session_actor_live_a_sink_that_closes_mid_stream_retires_the_session() {
+        // SessionState, ExecutionStarted, ResultSetStarted and one row batch
+        // are delivered; the second batch is refused.
+        let live = Live::open_sink("sink-closed", live_spec(None), closing_sink(4)).await;
+        live.execute(
+            "stream",
+            "SELECT repeat('x', 1000) FROM generate_series(1, 200000)",
+        )
+        .await;
+
+        live.backend("true", 0).await;
+        assert!(live.manager.inner.lock().await.sessions.is_empty());
+        assert_eq!(kinds(&live.events, "rowBatch").len(), 1);
+        assert!(kinds(&live.events, "executionCompleted").is_empty());
+        assert_eq!(live.events.lock().unwrap().len(), 4);
+        assert!(matches!(
+            live.execute_with("next", "SELECT 1", None, None).await,
+            Err(QuerySessionError::SessionNotFound)
+        ));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn query_session_actor_live_owner_replacement_closes_the_old_owners_sessions() {
+        let live = Live::open("replaced", None).await;
+        live.settle("first", "SELECT 1", None, None).await;
+        let delivered = live.events.lock().unwrap().len();
+
+        // The same owner registering again is a no-op.
+        let same = live
+            .manager
+            .register_owner(LIVE_WINDOW, "owner".into())
+            .await;
+        assert_eq!(same.replaced_session_count, 0);
+        live.backend("true", 1).await;
+
+        // A new owner for the window (a reloaded document, a rebuilt view)
+        // retires everything the old one held.
+        let replaced = live
+            .manager
+            .register_owner(LIVE_WINDOW, "next-owner".into())
+            .await;
+        assert_eq!(replaced.replaced_session_count, 1);
+        live.backend("true", 0).await;
+        assert!(matches!(
+            live.execute_with("after", "SELECT 1", None, None).await,
+            Err(QuerySessionError::SessionNotFound)
+        ));
+        // Nothing reaches the old owner's sink, not even a close notice.
+        assert_eq!(live.events.lock().unwrap().len(), delivered);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn query_session_actor_live_an_unfocused_window_keeps_its_lease() {
+        let live = Live::open("lease", None).await;
+        let expire_liveness = || async {
+            let session = live.manager.inner.lock().await.sessions["lease"].clone();
+            *session.last_liveness.lock().await = Instant::now()
+                .checked_sub(LEASE)
+                .expect("the clock is older than one lease");
+        };
+
+        // A window in the background stops heartbeating; that is not a lost
+        // owner.
+        live.manager.set_focused(LIVE_WINDOW, false).await;
+        expire_liveness().await;
+        live.manager.expire_stalled().await;
+        assert!(live
+            .manager
+            .inner
+            .lock()
+            .await
+            .sessions
+            .contains_key("lease"));
+
+        // Refocus renews the lease before the monitor can see the stale one.
+        live.manager.set_focused(LIVE_WINDOW, true).await;
+        live.manager.expire_stalled().await;
+        assert!(live
+            .manager
+            .inner
+            .lock()
+            .await
+            .sessions
+            .contains_key("lease"));
+        assert!(kinds(&live.events, "sessionLost").is_empty());
+
+        // A focused window that stops heartbeating is a lost owner.
+        expire_liveness().await;
+        live.manager.expire_stalled().await;
+        assert!(live.manager.inner.lock().await.sessions.is_empty());
+        let lost = kinds(&live.events, "sessionLost");
+        assert_eq!(lost.len(), 1);
+        assert_eq!(lost[0]["event"]["reason"], "ownerTimeout");
+        live.backend("true", 0).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn query_session_actor_live_global_teardown_closes_sessions_before_it_returns() {
+        let live = Live::open("shutdown", None).await;
+        live.execute("running", "SELECT pg_sleep(30)").await;
+        live.backend("state = 'active' AND query LIKE '%pg_sleep%'", 1)
+            .await;
+
+        let session = live.manager.inner.lock().await.sessions["shutdown"].clone();
+
+        live.manager.begin_global_teardown().await;
+
+        // Teardown awaited the close: the session is already marked closed
+        // and its cancel request already sent when the call returns. A close
+        // that was only scheduled would still read open here.
+        assert!(*session.closed.lock().await);
+        assert!(live.manager.inner.lock().await.sessions.is_empty());
+        drop(session);
+        // The execution task then lets go of the session and the socket goes.
+        live.backend("true", 0).await;
+        assert!(matches!(
+            live.manager
+                .open(
+                    LIVE_WINDOW,
+                    payload("late", "live-15432"),
+                    recording_sink().0,
+                    live_spec(None),
+                )
+                .await,
+            Err(QuerySessionError::ConnectionClosing)
+        ));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn query_session_actor_live_a_refused_first_event_fails_the_open_and_releases_the_backend(
+    ) {
+        // This test's sessions are the only ones on the `postgres` database,
+        // so its backends can be counted while other live tests run.
+        let mut spec = live_spec(None);
+        spec.database = "postgres".into();
+        let admin = postgres::connect(&live_spec(None))
+            .await
+            .expect("admin connection");
+        let backends = || async {
+            admin
+                .client
+                .query_one(
+                    "SELECT count(*) FROM pg_stat_activity WHERE datname = 'postgres'",
+                    &[],
+                )
+                .await
+                .expect("read pg_stat_activity")
+                .get::<_, i64>(0)
+        };
+        assert_eq!(backends().await, 0);
+        let manager = manager();
+        manager.register_owner(LIVE_WINDOW, "owner".into()).await;
+        let (sink, events) = closing_sink(0);
+
+        let opened = manager
+            .open(LIVE_WINDOW, payload("refused", "live-15432"), sink, spec)
+            .await;
+
+        assert!(matches!(opened, Err(QuerySessionError::ConnectionLost)));
+        assert!(events.lock().unwrap().is_empty());
+        let state = manager.inner.lock().await;
+        assert!(state.sessions.is_empty());
+        assert!(state.opening.is_empty());
+        assert!(state.observers.is_empty());
+        drop(state);
+        tokio::time::timeout(LIVE_WAIT, async {
+            while backends().await != 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the session and observer backends are released");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn query_session_actor_live_a_refused_terminal_event_retires_the_session() {
+        // SessionState, ExecutionStarted, ResultSetStarted and
+        // ResultSetCompleted are delivered. No row batch needs an ACK, so the
+        // next event is the terminal one, and it is refused.
+        let live = Live::open_sink("terminal-refused", live_spec(None), closing_sink(4)).await;
+        live.execute("empty", "SELECT 1 WHERE false").await;
+
+        live.backend("true", 0).await;
+        assert!(live.manager.inner.lock().await.sessions.is_empty());
+        assert!(kinds(&live.events, "executionCompleted").is_empty());
+        assert_eq!(
+            live.events.lock().unwrap().last().unwrap()["event"]["kind"],
+            "resultSetCompleted"
+        );
     }
 }

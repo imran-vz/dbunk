@@ -1,0 +1,14 @@
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: metrics SQL reaches the real editor
+PASS: metrics execution is admitted
+PASS: metrics query completes with a visible result and terminal ACK
+PASS: metrics SQL editor owns focus
+Metrics fixture: large; expected source rows: 400
+Observed result: Result 1 · 400 rows
+AX omission observations: none exposed; consult visible diagnostics and capture
+PASS: metrics ready with real fixture results, accessibility active and SQL editor focused

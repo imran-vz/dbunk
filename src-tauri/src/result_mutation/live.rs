@@ -1941,6 +1941,8 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
     cleanup_schema(&admin, &schema).await;
 }
 
+// Applies through the mutation command core, which is not extracted yet.
+#[cfg(feature = "tauri-host")]
 #[tokio::test]
 #[serial_test::serial]
 #[ignore = "requires pnpm db:postgres"]
@@ -1967,7 +1969,7 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
         driver_options: None,
         ssh_tunnel: crate::SshTunnelConfig::default(),
     });
-    crate::commands::connections::save_connection_inner(&state, strict_connection.clone())
+    crate::connections::save(&state, strict_connection.clone())
         .await
         .expect("save strict connection through command core");
     let default_spec = ResolvedPostgresConnectSpec::from_connection(&strict_connection)

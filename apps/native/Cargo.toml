@@ -1,0 +1,79 @@
+# Separate native development host for Plan 026. Never linked into Tauri.
+[workspace]
+
+[package]
+name = "dbunk-native"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+description = "Native PostgreSQL fixture workspace"
+
+[features]
+# Explicit opt-in for the actual-window race harness. Absent from normal builds.
+fixture-verification = []
+
+[dependencies]
+dbunk_lib = { package = "dbunk", path = "../../src-tauri", default-features = false, features = ["isolated-profile"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+async-channel = "2"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c", default-features = false, features = ["font-kit"] }
+# `runtime_shaders` compiles the Metal shaders at launch. Without it the build
+# needs Xcode's separately downloaded Metal Toolchain component
+# (`xcodebuild -downloadComponent MetalToolchain`), which this machine lacks.
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c", features = ["font-kit", "runtime_shaders"] }
+editor = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+assets = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+language = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+release_channel = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+settings = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+theme = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+theme_settings = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+# Zed's dev builds read `assets/` from the nearest ancestor of the executable
+# that has a `.git`, which here is dbunk's own checkout. `debug-embed` embeds
+# them in dev builds too, as release builds always do.
+util = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c", features = ["debug-embed"] }
+project = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+text = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+multi_buffer = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+clock = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+collections = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+lsp = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+markdown = { git = "https://github.com/zed-industries/zed", rev = "506beb34de3f433707b7ebe8d8ad2d80f856af6c" }
+anyhow = "1"
+semver = "1"
+# SQL grammar (MIT). Zed ships SQL as a WebAssembly extension, which this
+# spike does not load; the grammar is compiled in natively here.
+tree-sitter-sequel = "0.3.11"
+tree-sitter-json = "0.24"
+unicode-segmentation = "1"
+
+# Zed's root manifest patches these for its own workspace. A Git dependency
+# does not inherit `[patch]`, so the ones its closure needs are repeated here
+# at the same revisions.
+[patch.crates-io]
+tree-sitter-language = { git = "https://github.com/tree-sitter/tree-sitter", rev = "43623ec9bf0eaaf7113285c46e8a09018f181b18" }
+async-process = { git = "https://github.com/zed-industries/async-process.git", rev = "0b6d6713570af61806e1e5cb40e0f757cb93fd9d" }
+async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
+calloop = { git = "https://github.com/zed-industries/calloop" }
+notify = { git = "https://github.com/zed-industries/notify", rev = "d842f16b2716bd60f09caf3ae3a894237ab38f54" }
+notify-types = { git = "https://github.com/zed-industries/notify", rev = "d842f16b2716bd60f09caf3ae3a894237ab38f54" }
+
+[profile.dev]
+split-debuginfo = "unpacked"
+debug = "limited"
+codegen-units = 16
+
+[profile.dev.build-override]
+codegen-units = 16
+split-debuginfo = "unpacked"
+debug = "limited"
+
+[profile.release]
+debug = "limited"
+lto = "thin"
+codegen-units = 1

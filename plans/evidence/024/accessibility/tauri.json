@@ -1,0 +1,47 @@
+{
+  "elements" : 1446,
+  "elementsWithAName" : 761,
+  "environment" : {
+    "displayMaxHz" : 120,
+    "displayPoints" : [
+      1728,
+      1117
+    ],
+    "displayScale" : 2,
+    "lowPowerMode" : false,
+    "model" : "Mac16,7",
+    "os" : "Version 27.0.1 (Build 26A434)",
+    "power" : "Now drawing from 'AC Power'",
+    "recordedAt" : "2026-10-01T23:16:22Z",
+    "thermalState" : 0
+  },
+  "pid" : 84597,
+  "process" : "dbunk-bridge",
+  "roles" : {
+    "AXApplication" : 1,
+    "AXButton" : 577,
+    "AXCell" : 525,
+    "AXCheckBox" : 20,
+    "AXColumn" : 15,
+    "AXGroup" : 29,
+    "AXHeading" : 1,
+    "AXHelpTag" : 1,
+    "AXMenu" : 12,
+    "AXMenuBar" : 1,
+    "AXMenuBarItem" : 7,
+    "AXMenuItem" : 147,
+    "AXPopUpButton" : 19,
+    "AXRadioButton" : 1,
+    "AXRow" : 17,
+    "AXScrollArea" : 1,
+    "AXSplitter" : 3,
+    "AXStaticText" : 63,
+    "AXTabGroup" : 1,
+    "AXTable" : 1,
+    "AXTextArea" : 1,
+    "AXTextField" : 1,
+    "AXWebArea" : 1,
+    "AXWindow" : 1
+  },
+  "truncated" : false
+}

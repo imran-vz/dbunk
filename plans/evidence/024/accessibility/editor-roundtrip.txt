@@ -1,0 +1,27 @@
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: keyboard edits publish exact Unicode text
+PASS: text edits notify assistive clients
+PASS: caret uses UTF-16 offsets at trailing newline
+PASS: character count, caret line and line reading
+PASS: AX selection reaches editor at 9:2
+PASS: selected Unicode text is exact
+PASS: typing replaces the real AX-selected range
+PASS: undo restores accessible text
+PASS: AX selection reaches editor at 0:0
+PASS: keyboard caret movement updates AX
+PASS: selection changes notify assistive clients
+PASS: keyboard selection updates AX
+PASS: AX selection reaches editor at 2:0
+PASS: backward keyboard selection updates AX
+PASS: selection direction survives publication
+PASS: AX selection reaches editor at 11:0
+PASS: character boundaries match Zed movement
+PASS: AX selection reaches editor at 11:2
+PASS: combining sequence stays intact
+PASS: AX selection reaches editor at 0:26
+PASS: empty editor retains readable value and caret
+PASS: undo from empty restores text runs
+PASS: editor accessibility round trip

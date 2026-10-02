@@ -1,0 +1,5 @@
+VERIFY offered session session=d69b4c6d-956e-414d-995c-ba95593ccd04 sequence=1
+VERIFY offered rows session=d69b4c6d-956e-414d-995c-ba95593ccd04 sequence=4
+VERIFY offered rows session=d69b4c6d-956e-414d-995c-ba95593ccd04 sequence=5
+VERIFY closing
+Native queue released: high_water_bytes=4840 remaining_bytes=0

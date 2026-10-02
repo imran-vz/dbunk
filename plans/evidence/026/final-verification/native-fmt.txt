@@ -1,0 +1,1 @@
+cd apps/native && cargo +1.98.1 fmt --check

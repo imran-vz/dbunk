@@ -591,7 +591,7 @@ impl PgTlsMode {
 /// the actor error unions and the diagnosis report (ADR-0025).
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum TlsFailureKind {
+pub enum TlsFailureKind {
     /// The server answered the SSLRequest with `N` under a mode that
     /// requires encryption.
     ServerRefusedTls,

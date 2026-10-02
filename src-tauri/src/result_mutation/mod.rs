@@ -101,12 +101,12 @@ impl ResultMutationManager {
         }
     }
 
-    pub(crate) fn start_monitor(&self) {
+    pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
         let manager = self.clone();
-        // Spawn via Tauri's global runtime: setup() calls this from the
+        // Spawn on the host's runtime handle: hosts call this from their
         // main thread with no ambient Tokio context, where tokio::spawn
         // would panic.
-        tauri::async_runtime::spawn(async move {
+        runtime.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(30));
             loop {
                 tick.tick().await;
@@ -1293,10 +1293,12 @@ mod tests {
 
     #[test]
     fn start_monitor_is_callable_outside_a_tokio_runtime() {
-        // Regression: setup() calls this on the main thread with no Tokio
-        // runtime context; a bare tokio::spawn panics with "no reactor
+        // Regression: a host's setup calls this on its main thread with no
+        // Tokio runtime context; a bare tokio::spawn panics with "no reactor
         // running" and aborts app startup.
-        ResultMutationManager::new().start_monitor();
+        let runtime = crate::host::test_runtime();
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        ResultMutationManager::new().start_monitor(runtime.handle());
     }
 
     #[test]

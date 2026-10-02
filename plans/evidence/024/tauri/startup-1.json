@@ -1,0 +1,65 @@
+{
+  "environment" : {
+    "displayMaxHz" : 120,
+    "displayPoints" : [
+      1728,
+      1117
+    ],
+    "displayScale" : 2,
+    "lowPowerMode" : false,
+    "model" : "Mac16,7",
+    "os" : "Version 27.0.1 (Build 26A434)",
+    "power" : "Now drawing from 'AC Power'",
+    "recordedAt" : "2026-10-01T23:22:28Z",
+    "thermalState" : 0
+  },
+  "executable" : "\/tmp\/dbunk-plan024\/bin\/dbunk-packaged",
+  "firstLargePaintMs" : 231.57387499999999,
+  "framesObserved" : 56,
+  "largePaintCoverage" : [
+    0.98560000000000003,
+    0.10666666666666667,
+    0.1056,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.067199999999999996,
+    0.98560000000000003,
+    0.57279999999999998,
+    0.18773333333333334,
+    0.18773333333333334,
+    0.18773333333333334
+  ],
+  "largePaints" : 16,
+  "largePaintThreshold" : "a frame that changes at least 5% of the window",
+  "largePaintTimesMs" : [
+    231.57387499999999,
+    239.907208,
+    248.2405,
+    256.57387499999999,
+    264.90720800000003,
+    273.24054100000001,
+    281.57383299999998,
+    289.90716600000002,
+    306.57387499999999,
+    314.90720800000003,
+    331.57387499999999,
+    356.573916,
+    939.90754100000004,
+    1956.5747080000001,
+    2006.574791,
+    3006.5754160000001
+  ],
+  "lastLargePaintMs" : 3006.5754160000001,
+  "metric" : "startup (ms from spawn)",
+  "window" : {
+    "heightPoints" : 800,
+    "id" : 6111,
+    "widthPoints" : 1200
+  },
+  "windowOnScreenMs" : 222.04237499999999
+}

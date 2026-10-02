@@ -1,0 +1,7 @@
+Building for production...
+[1 / 1]
+[2 / 3] measure-product
+[3 / 4] measure-product
+[6 / 8] measure-product
+[7 / 8] measure-product
+Build complete! (3.62 sec)

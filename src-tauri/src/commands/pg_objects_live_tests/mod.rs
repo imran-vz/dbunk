@@ -36,7 +36,7 @@ pub(super) async fn run_sql(connection: &StoredConnection, sql: &str) {
 pub(super) async fn live_state(id: &str) -> (tempfile::TempDir, AppState, StoredConnection) {
     let (directory, state) = crate::test_app_state().await;
     let connection = connection(id, SafeMode::Disabled, false);
-    crate::commands::connections::save_connection_inner(&state, connection.clone())
+    crate::connections::save(&state, connection.clone())
         .await
         .expect("save live connection");
     (directory, state, connection)

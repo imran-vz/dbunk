@@ -4,15 +4,14 @@
 //!   returns sheets as `Vec<Vec<String>>`. The frontend sends the file
 //!   as a base64 blob; we decode, parse, and return structured sheets.
 //! - **Export**: `rust_xlsxwriter` builds a proper `.xlsx` file from
-//!   columns + rows and returns raw bytes to the frontend via
-//!   Tauri's IPC response.
+//!   columns + rows and returns raw bytes; the host hands them to its
+//!   UI (the Tauri commands are in `commands/xlsx.rs`).
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use calamine::{open_workbook_from_rs, Reader, Xlsx};
 use rust_xlsxwriter::Workbook;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use tauri::ipc::Response;
 
 // ---------------------------------------------------------------------------
 // Import (read)
@@ -35,8 +34,7 @@ pub struct ParseXlsxPayload {
 
 /// Parse an XLSX file (sent as base64) into sheets with auto-detected
 /// headers. Returns one `ParsedSheet` per worksheet.
-#[tauri::command]
-pub async fn parse_xlsx(payload: ParseXlsxPayload) -> Result<Vec<ParsedSheet>, String> {
+pub fn parse_xlsx(payload: &ParseXlsxPayload) -> Result<Vec<ParsedSheet>, String> {
     let bytes = B64
         .decode(&payload.data_base64)
         .map_err(|e| format!("Invalid base64: {e}"))?;
@@ -161,16 +159,8 @@ fn default_sheet_name() -> String {
     "Export".to_string()
 }
 
-/// Build an XLSX file from columns + rows and return raw bytes.
-#[tauri::command]
-pub async fn export_xlsx(payload: ExportXlsxPayload) -> Result<Response, String> {
-    let buffer = build_xlsx_buffer(&payload)?;
-    Ok(Response::new(buffer))
-}
-
-/// Core XLSX construction logic, returns the raw xlsx bytes.
-/// Factored out so it's testable without a Tauri runtime.
-fn build_xlsx_buffer(payload: &ExportXlsxPayload) -> Result<Vec<u8>, String> {
+/// Build an XLSX file from columns + rows and return the raw xlsx bytes.
+pub fn build_xlsx_buffer(payload: &ExportXlsxPayload) -> Result<Vec<u8>, String> {
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
     worksheet
@@ -264,8 +254,8 @@ mod tests {
         assert_eq!(&bytes[0..4], b"PK\x03\x04");
     }
 
-    #[tokio::test]
-    async fn parse_xlsx_from_exported() {
+    #[test]
+    fn parse_xlsx_from_exported() {
         // Export then re-import to test the roundtrip
         let export_payload = ExportXlsxPayload {
             columns: vec!["id".into(), "name".into()],
@@ -280,7 +270,7 @@ mod tests {
         let parse_payload = ParseXlsxPayload {
             data_base64: B64.encode(&bytes),
         };
-        let sheets = parse_xlsx(parse_payload).await.unwrap();
+        let sheets = parse_xlsx(&parse_payload).unwrap();
         assert_eq!(sheets.len(), 1);
         assert_eq!(sheets[0].name, "Sheet1");
         assert_eq!(sheets[0].columns, vec!["id", "name"]);

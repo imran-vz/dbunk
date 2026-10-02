@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dbunk · Editor accessibility gate</title>
+<style>
+:root{color-scheme:dark;font:16px/1.6 system-ui;background:#000;color:#fff}body{max-width:880px;margin:0 auto;padding:32px 24px}h1{font-size:32px;line-height:1.2}h2{font-size:20px;margin-top:32px}section{border-top:1px solid #444;margin-top:28px}a{color:#acd2ff}a:focus-visible{outline:2px solid white}code{overflow-wrap:anywhere}li{margin:12px 0}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #444;padding:12px 12px 12px 0}@media(max-width:540px){body{padding:20px 16px}h1{font-size:26px}}@media print{:root{background:white;color:black}}
+</style>
+<h1>Make the SQL editor readable to assistive technology</h1>
+<p>Gate work for the <a href="gpui-working-version-task.html">first working GPUI version</a>. Scope: the isolated native spike and its accessibility evidence. Keep the pinned Zed revision and existing layout.</p>
+<section><h2>Implementation sequence</h2><ol>
+<li><strong>Capture the failure.</strong> Read the running spike through macOS Accessibility. Assert editor text, focus and selection, rather than only the presence of a text-area role.</li>
+<li><strong>Connect the real editor model.</strong> Use GPUI’s public synthetic-child hook to publish AccessKit text runs and the primary selection. Route accessibility selection actions back into Zed’s editor. Update on editor changes; avoid building text data when accessibility is inactive.</li>
+<li><strong>Verify both directions.</strong> Check Unicode offsets, empty text, multiple lines, keyboard editing, undo, caret movement and selection requests through macOS Accessibility.</li>
+<li><strong>Record the remaining gate.</strong> Run focused tests and required repository checks. Preserve the distinction between automated structural evidence and a human VoiceOver listening check.</li>
+</ol></section>
+<section><h2>Evidence required</h2><table><thead><tr><th>Capability</th><th>Pass signal</th></tr></thead><tbody>
+<tr><td>Read</td><td>AXValue matches the SQL document, including Unicode and newlines.</td></tr>
+<tr><td>Follow</td><td>The focused text area reports the caret and selected text after keyboard actions.</td></tr>
+<tr><td>Operate</td><td>An AX selection request changes the real editor selection; typing edits that range.</td></tr>
+<tr><td>Listen</td><td>Human VoiceOver check: enter the editor, read lines, move the caret, select and type, then move to results.</td></tr>
+</tbody></table></section>
+<section><h2>Implemented and verified</h2><p>The SQL editor now exposes its 65,227-character fixture, focus, primary selection and logical lines. The external macOS round trip passes, including Unicode editing, undo and change notifications. Required repository checks and the native crate’s focused checks pass.</p><p>The earlier “requires a fork” assessment missed <code>a11y_synthetic_children</code> and its mutable AccessKit parent node. This implementation uses that public route with the original pinned revision.</p><p><a href="evidence/024/editor-accessibility.md">Implementation evidence</a>: VoiceOver confirmed complete by Imran on 02 Oct 2026. Text geometry, scrolling, soft wrap, resize and editor/results/cell-editor keyboard focus are now verified. <a href="evidence/024/stage01-gate.md">Stage 01 gate closed: PASS / continue</a>, with remaining application work costed and no accessibility waiver.</p></section>
+</html>

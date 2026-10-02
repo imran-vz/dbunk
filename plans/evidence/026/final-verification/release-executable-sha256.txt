@@ -1,0 +1,2 @@
+43749b27c11ddae416f6d48f00c5b22cb2d313a71368e1009ae459edc2670a02  apps/native/target/release/dbunk-native
+ddc605b3dbbf0a486aa4e3ce22e90c783877379f4f7b048979bca164cdde0cd9  tools/measure/.build/release/measure

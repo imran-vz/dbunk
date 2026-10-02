@@ -1,0 +1,4 @@
+Native retained bytes: 1048626
+Native retained bytes: 6915863
+Native retained bytes: 26224498
+Native queue released: high_water_bytes=788433 remaining_bytes=0

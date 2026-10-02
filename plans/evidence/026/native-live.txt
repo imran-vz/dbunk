@@ -1,0 +1,32 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-9e70264c7437568f)
+
+running 8 tests
+test live_tests::native_background_beyond_lease_and_refocus_stay_usable ... Native live background lease: leaving the unfocused session idle for 135 seconds
+Native queue released: high_water_bytes=497 remaining_bytes=0
+ok
+test live_tests::native_foreground_heartbeats_do_not_prevent_ack_timeout ... Native live ACK lease: holding consumption for 125 seconds with foreground heartbeats
+Native queue released: high_water_bytes=214887 remaining_bytes=0
+Native queue released: high_water_bytes=496 remaining_bytes=0
+ok
+test live_tests::native_full_queue_retires_and_explicit_reconnect_restores_queries ... Native queue released: high_water_bytes=303 remaining_bytes=0
+Native queue released: high_water_bytes=2311 remaining_bytes=0
+Native queue released: high_water_bytes=905 remaining_bytes=0
+ok
+test live_tests::native_idle_and_active_owned_socket_loss_require_reconnect ... Native queue released: high_water_bytes=637 remaining_bytes=0
+Native queue released: high_water_bytes=1224 remaining_bytes=0
+Native queue released: high_water_bytes=496 remaining_bytes=0
+ok
+test live_tests::native_select_error_and_terminal_ack_allow_next_run ... Native queue released: high_water_bytes=908 remaining_bytes=0
+ok
+test live_tests::native_shutdown_during_sleep_joins_and_is_idempotent ... Native queue released: high_water_bytes=303 remaining_bytes=0
+ok
+test live_tests::native_shutdown_with_streaming_credit_held_joins ... Native queue released: high_water_bytes=53674 remaining_bytes=0
+ok
+test live_tests::native_stop_with_four_batches_of_held_credit_resumes_and_finishes ... Native queue released: high_water_bytes=107902 remaining_bytes=0
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 301.74s
+

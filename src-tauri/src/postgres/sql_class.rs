@@ -72,7 +72,7 @@ pub(crate) enum StatementClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum StatementClassKind {
+pub enum StatementClassKind {
     Read,
     Dml,
     Ddl,
@@ -83,11 +83,11 @@ pub(crate) enum StatementClassKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct StatementClassSummary {
-    pub(crate) index: usize,
-    pub(crate) class: StatementClassKind,
-    pub(crate) unbounded: bool,
-    pub(crate) destructive: bool,
+pub struct StatementClassSummary {
+    pub index: usize,
+    pub class: StatementClassKind,
+    pub unbounded: bool,
+    pub destructive: bool,
 }
 
 impl StatementClass {

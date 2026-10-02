@@ -1,0 +1,35 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.44s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+Window performance-guarded: PID 62598; owned fixture 2283820d-33ec-4c4c-ae03-7051092bd410
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/footprint-many.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/latency-1.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/latency-2.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/latency-3.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/idle.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-many-down-1.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-many-down-2.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-many-down-3.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/footprint-wide.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-wide-down-1.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-wide-down-2.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-wide-down-3.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-wide-right-1.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-wide-right-2.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-wide-right-3.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/footprint-large.json
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-large-down-1.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-large-down-2.json
+wrote /dev/null
+wrote /Users/imran/projects/Code/dbunk/plans/evidence/026/final-verification/performance-guarded/scroll-large-down-3.json
+wrote /dev/null

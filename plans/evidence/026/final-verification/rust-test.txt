@@ -1,0 +1,1519 @@
+cargo test --manifest-path src-tauri/Cargo.toml --no-default-features
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.61s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-5e8b8637e34b5038)
+
+running 704 tests
+test app::tests::exit_cleanup_waits_for_active_comparison_termination ... ok
+test clickhouse::seed_tests::bulk_insert_emits_one_statement_with_every_row_as_literals ... ok
+test clickhouse::seed_tests::bulk_insert_escapes_quotes_in_generated_values ... ok
+test clickhouse::seed_tests::bulk_insert_pads_short_rows_with_null ... ok
+test clickhouse::seed_tests::ch_seed_live_end_to_end ... ignored, requires the infrastructure/test-db clickhouse container
+test clickhouse::seed_tests::seeding_more_rows_than_one_block_is_refused ... ok
+test clickhouse::tests::build_alter_delete_handles_null_identity ... ok
+test clickhouse::tests::build_alter_delete_renders_where_clause ... ok
+test clickhouse::tests::build_alter_update_emits_is_null_for_null_identity ... ok
+test clickhouse::tests::build_alter_update_renders_set_and_where_with_literals ... ok
+test clickhouse::tests::build_alter_update_supports_setting_null_value ... ok
+test clickhouse::tests::build_insert_emits_backtick_qualified_table_with_literal_values ... ok
+test clickhouse::tests::build_insert_quotes_identifiers_and_escapes_quotes_in_values ... ok
+test clickhouse::tests::ch_literal_quotes_strings_and_passes_null_through ... ok
+test clickhouse::tests::database_defaults_to_literal_default_when_blank ... ok
+test clickhouse::tests::database_preserves_user_value ... ok
+test clickhouse::tests::escape_doubles_single_quotes ... ok
+test clickhouse::tests::parse_csv_list_splits_and_trims ... ok
+test clickhouse::tests::parse_response_extracts_columns_rows_and_runtime ... ok
+test clickhouse::tests::parse_response_falls_back_to_data_length_when_rows_missing ... ok
+test clickhouse::tests::parse_response_handles_null_and_nested_values ... ok
+test clickhouse::tests::parse_response_returns_empty_for_missing_meta_and_data ... ok
+test clickhouse::tests::split_statements_drops_empty_segments ... ok
+test clickhouse::tests::split_statements_returns_empty_for_blank_input ... ok
+test clickhouse::tests::url_includes_database_query_param_when_set ... ok
+test clickhouse::tests::url_normalizes_path_without_leading_slash ... ok
+test clickhouse::tests::url_omits_database_param_when_blank ... ok
+test clickhouse::tests::url_passes_through_explicit_scheme ... ok
+test clickhouse::tests::url_respects_explicit_port ... ok
+test clickhouse::tests::url_uses_8123_when_port_is_zero_and_https_off ... ok
+test clickhouse::tests::url_uses_8443_when_port_is_zero_and_https_on ... ok
+test clickhouse::tests::url_uses_custom_path_when_set ... ok
+test connections::tests::duplicate_copies_credential_in_encrypted_mode ... ok
+test connections::tests::duplicate_copies_record_and_credential_without_favorite_or_activity ... ok
+test connections::tests::duplicate_missing_source_refuses ... ok
+test connections::tests::duplicate_twice_suffixes_the_name ... ok
+test connections::tests::locked_encrypted_store_blocks_pg_duplicate_but_not_sqlite ... ok
+test connections::tests::next_copy_name_suffixes_until_free ... ok
+test connections::tests::organization_update_changes_columns_and_never_touches_credentials ... ok
+test credentials::tests::bastion_secret_namespace_does_not_collide_with_database_password ... ok
+test credentials::tests::bastion_secret_patch_prunes_inactive_auth_and_clears_passphrase ... ok
+test credentials::tests::change_mode_encrypted_to_plain_preserves_credentials ... ok
+test credentials::tests::change_mode_plain_to_encrypted_preserves_credentials ... ok
+test credentials::tests::encrypted_read_fails_when_locked ... ok
+test credentials::tests::encrypted_sqlite_round_trip ... ok
+test credentials::tests::hydration_is_bound_to_endpoint_identity_and_transport ... ok
+test credentials::tests::hydration_treats_default_and_explicit_postgres_ports_as_the_same_destination ... ok
+test credentials::tests::plain_sqlite_round_trip ... ok
+test credentials::tests::upsert_empty_password_deletes_stale_credential ... ok
+test credentials::tests::write_all_to_plain_preserves_rows_after_topology_cleanup ... ok
+test diagnosis::tests::a_confirmed_handshake_is_recorded_with_its_own_timing ... ok
+test diagnosis::tests::a_failure_blocks_every_later_stage_and_names_the_stage ... ok
+test diagnosis::tests::a_late_tls_error_keeps_the_handshake_timing_and_blocks_startup_stages ... ok
+test diagnosis::tests::diagnosis_live_bad_host_lands_on_dns ... ignored, requires network DNS
+test diagnosis::tests::diagnosis_live_client_certificate_authenticates_and_encrypted_key_is_refused ... ignored, requires pnpm db:postgres-tls
+test diagnosis::tests::diagnosis_live_closed_port_lands_on_tcp ... ignored, requires nothing listening on 15499
+test diagnosis::tests::diagnosis_live_missing_database_lands_on_database ... ignored, requires pnpm db:postgres
+test diagnosis::tests::diagnosis_live_prefer_against_plaintext_reports_not_encrypted ... ignored, requires pnpm db:postgres
+test diagnosis::tests::diagnosis_live_verify_ca_without_ca_is_untrusted_and_wrong_name_mismatches ... ignored, requires pnpm db:postgres-tls
+test diagnosis::tests::diagnosis_live_verify_full_with_ca_verifies_everything ... ignored, requires pnpm db:postgres-tls
+test diagnosis::tests::diagnosis_live_wrong_password_lands_on_authentication ... ignored, requires pnpm db:postgres
+test diagnosis::tests::known_transport_warnings_survive_a_later_authentication_failure ... ok
+test diagnosis::tests::payload_decodes_the_frontend_wire_shape ... ok
+test diagnosis::tests::tls_detail_derives_verification_flags_from_the_mode ... ok
+test diagnosis::tests::warnings_dedupe_and_reachable_carries_latency ... ok
+test diagnosis::tests::wire_shape_uses_kebab_free_camel_case_tags ... ok
+test dispatch::introspect::tests::non_postgres_structures_report_no_table_security ... ok
+test dispatch::relational::tests::connection_refused_explains_what_to_check ... ok
+test dispatch::relational::tests::dns_failure_text_is_recognised ... ok
+test dispatch::relational::tests::mysql_dsn_percent_encodes_url_components ... ok
+test dispatch::relational::tests::paged_select_orders_by_primary_key ... ok
+test dispatch::relational::tests::paged_select_skips_nullable_unique_index ... ok
+test dispatch::relational::tests::paged_select_uses_smallest_non_nullable_unique_index ... ok
+test dispatch::relational::tests::port_zero_is_omitted_from_endpoint ... ok
+test dispatch::relational::tests::postgres_dsn_downgrades_tunneled_verify_full_to_verify_ca ... ok
+test dispatch::relational::tests::postgres_dsn_options_do_not_inherit_credentials_tls_or_options ... 
+running 1 test
+test dispatch::relational::tests::postgres_dsn_options_do_not_inherit_credentials_tls_or_options ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 703 filtered out; finished in 0.00s
+
+ok
+test dispatch::relational::tests::postgres_dsn_percent_encodes_url_components ... ok
+test dispatch::relational::tests::sqlx_any_zero_row_query_preserves_column_names ... ok
+test dispatch::relational::tests::timed_out_mentions_firewall ... ok
+test dispatch::relational::tests::unknown_io_error_falls_back_with_endpoint_context ... ok
+test dispatch::seed::mysql_live_tests::mysql_seed_live_end_to_end ... ignored, requires the infrastructure/test-db mysql container
+test dispatch::seed::sqlite_live_tests::a_rejected_batch_rolls_the_whole_run_back ... ok
+test dispatch::seed::sqlite_live_tests::per_column_specs_override_the_generator ... ok
+test dispatch::seed::sqlite_live_tests::seeds_parent_then_child_without_orphans ... ok
+test dispatch::seed::sqlite_live_tests::the_same_seed_reproduces_the_same_rows ... ok
+test dispatch::seed::sqlite_live_tests::unique_sequences_start_above_the_rows_already_there ... ok
+test dispatch::seed::tests::bulk_insert_backticks_mysql_identifiers_and_repeats_placeholders ... ok
+test dispatch::seed::tests::bulk_insert_double_quotes_sqlite_identifiers ... ok
+test dispatch::seed::tests::bulk_insert_pads_short_rows_with_null ... ok
+test dispatch::seed::tests::sqlite_chunk_stays_under_the_oldest_variable_ceiling ... ok
+test dispatch::tests::storage_class_is_stable_per_engine ... ok
+test host::tests::a_closed_sink_reports_it_to_the_sender ... ok
+test host::tests::a_closure_is_a_sink_and_keeps_call_order ... ok
+test managed::live_tests::managed_live_provision_lifecycle ... ignored, requires a running Docker daemon; pulls postgres:16 if absent
+test managed::tests::connection_string_shapes_per_engine ... ok
+test managed::tests::pick_port_skips_claimed_ports ... ok
+test managed::tests::slugify_produces_safe_identifiers ... ok
+test postgres::backup::runner::tests::all_postgres_tools_require_the_patched_client_floor ... ok
+test postgres::backup::runner::tests::connection_database_is_one_escaped_conninfo_value ... ok
+test postgres::backup::runner::tests::diagnostic_never_returns_credentials_paths_or_database_output ... ok
+test postgres::backup::runner::tests::plain_stream_preserves_copy_data_and_fails_closed_on_extra_guards ... ok
+test postgres::backup::runner::tests::plain_stream_removes_only_a_canonical_pg_dump_guard_pair ... ok
+test postgres::backup::runner::tests::postgres_client_floor_rejects_wrong_tool_banners ... ok
+test postgres::backup::runner::tests::preflight_and_list_never_use_connection_arguments ... ok
+test postgres::backup::runner::tests::source_stream_failure_keeps_stdin_open_until_process_cleanup ... ok
+test postgres::backup::runner::tests::successful_reap_status_preserves_irreversible_restore_success ... 
+running 1 test
+test postgres::backup::tests::native_child_helper ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 703 filtered out; finished in 0.00s
+
+ok
+test postgres::backup::tests::admission_limits_listing_cancel_release_and_fences ... ok
+test postgres::backup::tests::argument_contract_and_literal_pg_dump_patterns ... ok
+test postgres::backup::tests::binary_resolution_orders_path_fallbacks_then_bare_name ... ok
+test postgres::backup::tests::detached_reapers_have_a_separate_bounded_capacity ... ok
+test postgres::backup::tests::failed_cancelled_and_panicking_workers_do_not_record_success ... ok
+test postgres::backup::tests::final_publication_and_cancel_have_one_winner ... ok
+test postgres::backup::tests::native_child_failure_spawn_failure_timeout_and_cancel_clean_partials ... ok
+test postgres::backup::tests::native_child_helper ... ignored, native subprocess helper, invoked only by the process tests
+test postgres::backup::tests::observed_restore_success_wins_a_concurrent_cancellation ... ok
+test postgres::backup::tests::pending_reservations_are_bounded_cancelled_and_do_not_grow_scopes ... ok
+test postgres::backup::tests::publication_does_not_hold_manager_lock_or_publish_late_cancellation ... ok
+test postgres::backup::tests::reap_timeout_releases_slots_but_detached_cleanup_waits_for_exit ... ok
+test postgres::backup::tests::stalled_completion_attempt_is_bounded_and_runs_exactly_once ... ok
+test postgres::backup::tests::stalled_preflight_and_finalization_are_aborted_at_the_teardown_bound ... ok
+test postgres::backup::tests::stderr_drain_is_bounded_while_producer_exceeds_pipe_capacity ... ok
+test postgres::backup::tests::teardown_watchdog_preserves_in_flight_reap_timeout_and_cleanup_owner ... ok
+test postgres::backup::tests::terminal_cap_expiry_and_exactly_once_success_effects ... ok
+test postgres::backup::tests::terminal_success_is_published_only_after_completion_is_releasable ... ok
+test postgres::backup::tests::transitions_reject_illegal_and_late_updates ... ok
+test postgres::backup::tests::validation_and_atomic_publication_never_overwrite ... ok
+test postgres::backup::tests::wire_names_and_all_variants_round_trip ... ok
+test postgres::connect_error::tests::messages_carry_the_headline_and_detail ... ok
+test postgres::connect_error::tests::rustls_errors_map_to_tls_kinds ... ok
+test postgres::connect_error::tests::sqlstate_wins_over_everything_else ... ok
+test postgres::connect_error::tests::string_shaped_and_io_cases ... ok
+test postgres::connect_spec::tests::absent_or_zero_keepalive_leaves_the_driver_default ... ok
+test postgres::connect_spec::tests::keepalive_seconds_is_applied_to_the_dedicated_driver ... ok
+test postgres::connect_spec::tests::tokio_config_uses_the_tls_server_name_as_host ... ok
+test postgres::connect_spec::tests::zero_port_defaults_to_5432 ... ok
+test postgres::dedicated::live::dedicated_live_client_certificate_authenticates ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::live::dedicated_live_prefer_against_plaintext_server_downgrades ... ignored, requires pnpm db:postgres
+test postgres::dedicated::live::dedicated_live_verify_ca_without_ca_is_untrusted ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::live::dedicated_live_verify_full_with_ca_connects_and_cancels_over_tls ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::live::dedicated_live_verify_full_wrong_server_name_is_mismatch ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::ownership_tests::abort_all_stops_existing_and_late_registered_drivers_before_join_returns ... ok
+test postgres::dedicated::ownership_tests::cancelling_graceful_drain_preserves_abort_and_join_ownership ... ok
+test postgres::dedicated::ownership_tests::tracked_driver_join_survives_cancellation_of_its_connection_owner ... ok
+test postgres::identity::tests::follows_the_shared_identity_precedence ... ok
+test postgres::mutations::tests::delete_emits_where_clause_with_aligned_params ... ok
+test postgres::mutations::tests::delete_quotes_identifiers_with_embedded_quotes ... ok
+test postgres::mutations::tests::delete_renders_null_identity_as_is_null_and_skips_param ... ok
+test postgres::mutations::tests::delete_supports_composite_identity ... ok
+test postgres::mutations::tests::insert_binds_none_for_null_columns ... ok
+test postgres::mutations::tests::insert_emits_columns_in_order_with_aligned_placeholders ... ok
+test postgres::mutations::tests::insert_quotes_identifiers_with_embedded_quotes ... ok
+test postgres::mutations::tests::update_binds_none_for_set_null_value ... ok
+test postgres::mutations::tests::update_emits_set_then_where_with_aligned_params ... ok
+test postgres::mutations::tests::update_keeps_param_indices_when_identity_mixes_null_and_value ... ok
+test postgres::mutations::tests::update_quotes_identifiers_with_embedded_quotes ... ok
+test postgres::mutations::tests::update_renders_null_identity_as_is_null_and_skips_param ... ok
+test postgres::object_ddl::tests::column::add_column_renders_identity ... ok
+test postgres::object_ddl::tests::column::renders_column_operations_and_tagged_defaults ... ok
+test postgres::object_ddl::tests::enum_type::add_enum_value_runs_outside_atomic_groups ... ok
+test postgres::object_ddl::tests::enum_type::renders_views_sequences_and_enums ... ok
+test postgres::object_ddl::tests::fragment::embedded_fragments_cannot_escape_typed_operations ... ok
+test postgres::object_ddl::tests::fragment::fragment_shape_uses_the_shared_lexer_for_dollar_identifiers ... ok
+test postgres::object_ddl::tests::fragment::plain_string_backslashes_are_valid_fragments ... ok
+test postgres::object_ddl::tests::fragment::rejects_every_fragment_boundary_and_invalid_shape ... ok
+test postgres::object_ddl::tests::general::applied_statements_is_read_from_execution_errors ... ok
+test postgres::object_ddl::tests::general::destructive_classification_matches_data_risk ... ok
+test postgres::object_ddl::tests::general::e_literals_escape_apostrophes_and_backslashes_in_every_literal_operation ... ok
+test postgres::object_ddl::tests::general::explicitly_deferred_extension_drop_is_rejected ... ok
+test postgres::object_ddl::tests::general::operations_keep_the_internally_tagged_wire_format ... ok
+test postgres::object_ddl::tests::general::renders_schema_object_and_comment_operations_with_quoting ... ok
+test postgres::object_ddl::tests::general::statement_body_validation_uses_the_renderer_normalized_boundary ... ok
+test postgres::object_ddl::tests::general::wire_shapes_are_camel_case_and_tagged ... ok
+test postgres::object_ddl::tests::index::derived_index_names_are_explicit_and_utf8_safe ... ok
+test postgres::object_ddl::tests::index::groups_transactional_runs_around_concurrent_indexes ... ok
+test postgres::object_ddl::tests::index::index_elements_parenthesize_everything_but_columns_and_calls ... ok
+test postgres::object_ddl::tests::index::renders_constraint_and_index_operations ... ok
+test postgres::object_ddl::tests::policy::policies_render_roles_and_expressions_and_validate_command_shapes ... ok
+test postgres::object_ddl::tests::policy::row_level_security_renders_one_alter_and_flags_disable ... ok
+test postgres::object_ddl::tests::privilege::grants_render_per_kind_targets_and_revokes_are_destructive ... ok
+test postgres::object_ddl::tests::routine::create_function_header_attributes_and_or_replace ... ok
+test postgres::object_ddl::tests::routine::create_function_seals_the_body_in_a_body_derived_dollar_quote ... ok
+test postgres::object_ddl::tests::routine::create_procedure_renders_language_and_security ... ok
+test postgres::object_ddl::tests::routine::routine_signature_fragments_refuse_clause_keywords_and_literals ... ok
+test postgres::object_ddl::tests::table::create_table_renders_columns_and_table_constraints_in_one_statement ... ok
+test postgres::object_ddl::tests::table::create_table_validation_names_the_op_index ... ok
+test postgres::object_ddl::tests::table::designer_batch_groups_atomically_until_a_concurrent_index ... ok
+test postgres::object_ddl::tests::trigger::create_trigger_renders_events_columns_when_and_arguments ... ok
+test postgres::object_ddl::tests::trigger::create_trigger_validation_rules ... ok
+test postgres::object_ddl::tests::trigger::trigger_lifecycle_ops_follow_the_destructiveness_rule ... ok
+test postgres::objects::tests::drop_candidate_query_normalizes_and_bounds_before_expansion ... ok
+test postgres::objects::tests::foreign_data_options_are_reconstructed_with_quoting ... ok
+test postgres::objects::tests::object_catalog_live_lists_typed_capped_fixture_objects ... ignored, requires pnpm db:postgres
+test postgres::objects::tests::object_catalog_rejects_non_postgresql_connections ... ok
+test postgres::objects::tests::object_description_and_drop_impact_live_cover_every_kind ... ignored, requires pnpm db:postgres
+test postgres::objects::tests::routine_facts_serialize_source_and_header_attributes ... ok
+test postgres::objects::tests::sequence_fact_quantities_serialize_as_decimal_strings ... ok
+test postgres::objects::tests::sequence_owner_components_are_quoted_without_parsing_a_display_string ... ok
+test postgres::objects::tests::view_definition_terminator_is_removed_before_reconstruction ... ok
+test postgres::options::tests::options_are_ordered_and_identifiers_are_quoted ... ok
+test postgres::pool::tests::pooled_options_do_not_inherit_postgres_credentials_tls_or_options ... 
+running 1 test
+test postgres::pool::tests::pooled_options_do_not_inherit_postgres_credentials_tls_or_options ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 703 filtered out; finished in 0.00s
+
+ok
+test postgres::relationship_metadata::tests::fk_columns_not_nullable_when_every_column_is_not_null ... ok
+test postgres::relationship_metadata::tests::fk_columns_nullable_is_false_for_empty_fk ... ok
+test postgres::relationship_metadata::tests::fk_columns_nullable_on_metadata_length_mismatch ... ok
+test postgres::relationship_metadata::tests::fk_columns_nullable_when_any_column_is_nullable ... ok
+test postgres::relationship_metadata::tests::identity_covered_alone_by_one_unique_fk_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::junction_detected_for_composite_pk_of_two_fks ... ok
+test postgres::relationship_metadata::tests::junction_detected_for_surrogate_pk_with_unique_pair ... ok
+test postgres::relationship_metadata::tests::junction_excludes_extra_fk_outside_identity_set ... ok
+test postgres::relationship_metadata::tests::junction_participation_is_keyed_by_table_not_constraint_name_alone ... ok
+test postgres::relationship_metadata::tests::junction_requires_identity_fully_covered_by_fk_columns ... ok
+test postgres::relationship_metadata::tests::one_to_one_child_with_second_fk_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::relationship_cardinality_is_one_to_many_for_non_unique_fk_columns ... ok
+test postgres::relationship_metadata::tests::relationship_cardinality_is_one_to_one_for_unique_fk_columns ... ok
+test postgres::relationship_metadata::tests::shared_pk_one_to_one_child_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::table_with_single_fk_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::trigger_decoding_composes_for_a_real_before_update_row_trigger ... ok
+test postgres::relationship_metadata::tests::trigger_enabled_treats_only_disabled_as_off ... ok
+test postgres::relationship_metadata::tests::trigger_events_decode_each_bit_in_stable_order ... ok
+test postgres::relationship_metadata::tests::trigger_orientation_decodes_row_and_statement ... ok
+test postgres::relationship_metadata::tests::trigger_timing_decodes_before_after_and_instead_of ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_exact_match ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_ignores_unrelated_indexes ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_is_false_without_metadata ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_subset_of_composite_fk ... ok
+test postgres::relationship_metadata::tests::unique_set_does_not_cover_superset_of_fk ... ok
+test postgres::row_budget::tests::bound_text_caps_wide_primary_key_values ... ok
+test postgres::row_budget::tests::oversized_rows_shrink_later_cells_first ... ok
+test postgres::row_budget::tests::retained_row_bytes_includes_identity ... ok
+test postgres::row_budget::tests::utf8_truncation_stays_on_boundary ... ok
+test postgres::schema::tests::fk_action_label_maps_every_pg_action_code ... ok
+test postgres::schema::tests::fk_action_label_omits_unknown_codes_rather_than_guessing ... ok
+test postgres::schema::tests::security_catalog_codes_decode_into_closed_sets_or_fail ... ok
+test postgres::schema_compare::budget::tests::allocation_and_serializer_admission_are_atomic_and_release_on_drop ... ok
+test postgres::schema_compare::budget::tests::nested_result_scope_preserves_the_combined_cap_and_rolls_back_global ... ok
+test postgres::schema_compare::budget::tests::one_result_shares_its_cap_across_components_and_failure_rolls_back ... ok
+test postgres::schema_compare::budget::tests::simultaneous_serializers_have_two_winners_without_a_queue ... ok
+test postgres::schema_compare::budget::tests::two_jobs_two_results_and_two_serializers_fit_the_global_ceiling_with_a_known_margin ... ok
+test postgres::schema_compare::capture::tests::cancellation_and_deadline_wrap_pending_work ... ok
+test postgres::schema_compare::capture::tests::endpoints_are_bounded_and_must_share_a_resolved_connection ... ok
+test postgres::schema_compare::capture::tests::native_capture ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::capture::tests::native_capture_normalizes_identifier_quoting ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::capture::tests::retained_capture_refuses_endpoint_and_child_limits_and_releases_budget ... ok
+test postgres::schema_compare::diff::tests::absence_rename_and_excluded_counterparts_are_directional ... ok
+test postgres::schema_compare::diff::tests::cancelled_expired_and_over_budget_builds_release_every_partial_allocation ... ok
+test postgres::schema_compare::diff::tests::changes_incomparability_and_ordered_facts_coexist_without_rewriting_literals ... ok
+test postgres::schema_compare::diff::tests::closed_field_checklist_compares_every_supported_path_in_both_directions ... ok
+test postgres::schema_compare::diff::tests::counterpart_exclusions_retain_the_reason_for_each_requested_side ... ok
+test postgres::schema_compare::diff::tests::different_minor_versions_and_unshared_transactions_cannot_claim_expression_equality ... ok
+test postgres::schema_compare::diff::tests::empty_supported_scope_and_excluded_only_schemas_have_distinct_outcomes ... ok
+test postgres::schema_compare::diff::tests::excluded_relation_eligibility_survives_capture_consumption_and_binds_side ... ok
+test postgres::schema_compare::diff::tests::field_merge_checks_cancellation_between_units ... ok
+test postgres::schema_compare::diff::tests::result_pages_and_chunks_bound_payloads_and_validate_identity_ttl_and_side ... ok
+test postgres::schema_compare::diff::tests::stable_names_paths_and_value_ids_ignore_catalog_order_and_local_oids ... ok
+test postgres::schema_compare::expression::tests::accepts_scalar_projection_without_rewriting_literals ... ok
+test postgres::schema_compare::expression::tests::bounds_work_and_rejects_non_scalar_types ... ok
+test postgres::schema_compare::expression::tests::excludes_hidden_dependencies_and_unproven_syntax ... ok
+test postgres::schema_compare::manager::tests::admission_reserves_both_endpoints_and_reconciles_without_running_twice ... ok
+test postgres::schema_compare::manager::tests::cancellation_wins_against_success_and_holds_capacity_until_real_join ... ok
+test postgres::schema_compare::manager::tests::deadline_includes_resolution_and_grace_expiry_does_not_release_a_running_worker ... ok
+test postgres::schema_compare::manager::tests::document_transport_registry_is_bounded_and_reclaims_destroyed_windows ... ok
+test postgres::schema_compare::manager::tests::either_endpoint_and_global_fences_wait_before_resource_invalidation ... ok
+test postgres::schema_compare::manager::tests::expired_start_ids_cannot_recreate_evicted_jobs_and_request_history_is_bounded ... ok
+test postgres::schema_compare::manager::tests::fence_ledger_is_bounded_and_overflow_fails_closed_globally ... ok
+test postgres::schema_compare::manager::tests::maximum_control_ledger_fits_reserved_headroom ... ok
+test postgres::schema_compare::manager::tests::native_manager_capture_pages_and_connection_edit_invalidation ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::manager::tests::pages_bind_endpoints_and_keep_two_leases_until_the_receiving_transport_acknowledges ... ok
+test postgres::schema_compare::manager::tests::reconnect_through_the_disconnect_command_cancels_a_late_worker_and_admits_a_fresh_job ... ok
+test postgres::schema_compare::manager::tests::reload_reclaims_abandoned_replies_and_rejects_late_document_work ... ok
+test postgres::schema_compare::manager::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test postgres::schema_compare::manager::tests::terminal_retention_release_and_ttl_never_turn_missing_results_into_empty ... ok
+test postgres::schema_compare::manager::tests::worker_panic_is_failed_and_releases_only_after_join ... ok
+test postgres::schema_compare::manager::validation::cancellation_and_deadline_interrupt_a_silent_handshake_without_a_connect_timeout ... ok
+test postgres::schema_compare::manager::validation::cancellation_during_ssh_setup_holds_admission_until_the_blocked_worker_joins ... ok
+test postgres::schema_compare::manager::validation::cancellation_interrupts_storage_resolution_before_any_connection_attempt ... ok
+test postgres::schema_compare::manager::validation::native_concurrent_ddl_during_lock_wait_is_consistent_or_retried ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_independent_databases_second_minor_and_unsupported_major ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_memory_profile_with_increasing_schema_size_and_exact_limits ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_teardown_backend_loss_and_read_only_audit ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_tls_verification_failure_fails_closed ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_unusual_types_collations_identity_sequences_and_invalid_indexes ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::normalize::tests::excluded_counterparts_never_become_directional_absence ... ok
+test postgres::schema_compare::normalize::tests::field_order_is_deterministic_and_changed_does_not_hide_incomparability ... ok
+test postgres::schema_compare::normalize::tests::fk_delete_subsets_and_constraint_owned_index_state_survive_matching ... ok
+test postgres::schema_compare::normalize::tests::inventory_and_table_caps_are_distinct ... ok
+test postgres::schema_compare::normalize::tests::maps_only_structured_selected_schema_references ... ok
+test postgres::schema_compare::normalize::tests::mixed_index_keys_compare_by_ordinal_with_explicit_optional_facts ... ok
+test postgres::schema_compare::pages::tests::field_pages_accept_value_references_bound_to_their_named_sides ... ok
+test postgres::schema_compare::pages::tests::field_pages_reject_value_references_bound_to_the_wrong_side ... ok
+test postgres::schema_compare::pages::tests::incomparable_summary_flattens_its_required_observed_sides ... ok
+test postgres::schema_compare::pages::tests::pages_at_most_one_hundred_summaries_and_rejects_invalid_offsets ... ok
+test postgres::schema_compare::protocol::tests::status_serialization_binds_terminal_payloads_to_their_phase ... ok
+test postgres::schema_compare::values::tests::child_fact_slots_are_bounded_independently_for_each_endpoint ... ok
+test postgres::schema_compare::values::tests::encoded_pages_require_valid_response_ids_and_handoff_uses_the_bound_id ... ok
+test postgres::schema_compare::values::tests::endpoint_and_combined_result_bytes_reject_before_retention ... ok
+test postgres::schema_compare::values::tests::handoff_retains_both_serializer_reservations_until_matching_ack ... ok
+test postgres::schema_compare::values::tests::maximum_control_text_uses_four_independent_bounded_chunks ... ok
+test postgres::schema_compare::values::tests::serialized_json_limit_is_checked_before_buffer_growth ... ok
+test postgres::schema_compare::values::tests::tauri_json_callback_duplication_fits_the_reserved_scratch ... ok
+test postgres::schema_compare::values::tests::utf8_offsets_result_identity_and_expiry_are_checked ... ok
+test postgres::seed::live_tests::seed_live_end_to_end ... ignored, requires the infrastructure/test-db postgres container
+test postgres::sql_class::tests::classifies_every_head_family_and_comments ... ok
+test postgres::sql_class::tests::copy_combines_direction_and_embedded_write_scanning ... ok
+test postgres::sql_class::tests::ddl_destructiveness_is_explicit ... ok
+test postgres::sql_class::tests::explain_only_escalates_when_analyze_executes_the_wrapped_statement ... ok
+test postgres::sql_class::tests::read_denylist_distinguishes_writes_from_destructive_calls ... ok
+test postgres::sql_class::tests::read_denylist_is_token_exact_and_conservatively_matches_columns ... ok
+test postgres::sql_class::tests::read_shaped_writes_drive_the_expected_policy_decisions ... ok
+test postgres::sql_class::tests::scripts_classify_select_into_in_order ... ok
+test postgres::sql_class::tests::scripts_preserve_order_without_splitting_opaque_content ... ok
+test postgres::sql_class::tests::select_into_is_non_destructive_ddl_only_at_statement_depth ... ok
+test postgres::sql_class::tests::unbounded_detection_only_accepts_where_at_the_statement_depth ... ok
+test postgres::sql_class::tests::with_scans_writes_and_unboundedness_at_the_write_depth ... ok
+test postgres::sql_lex::tests::brackets_and_dollar_identifiers_are_lexed_structurally ... ok
+test postgres::sql_lex::tests::plain_string_backslash_is_accepted_when_both_semantics_agree ... ok
+test postgres::sql_lex::tests::plain_string_backslash_is_rejected_when_the_boundary_moves ... ok
+test postgres::sql_lex::tests::spans_cover_each_token_and_skip_comments_and_whitespace ... ok
+test postgres::sql_params::tests::a_parameter_name_cannot_change_what_the_policy_sees ... ok
+test postgres::sql_params::tests::a_ten_parameter_statement_maps_multi_digit_placeholders ... ok
+test postgres::sql_params::tests::binding_limits_hold_at_and_just_past_each_boundary ... ok
+test postgres::sql_params::tests::binding_orders_values_and_ignores_unused_names ... ok
+test postgres::sql_params::tests::binding_refuses_missing_and_duplicate_names ... ok
+test postgres::sql_params::tests::casts_assignments_and_key_value_colons_are_not_parameters ... ok
+test postgres::sql_params::tests::debug_output_never_holds_a_value ... ok
+test postgres::sql_params::tests::names_follow_openers_separators_operators_and_whitespace ... ok
+test postgres::sql_params::tests::names_inside_opaque_regions_are_not_parameters ... ok
+test postgres::sql_params::tests::native_placeholders_are_reported_and_left_alone ... ok
+test postgres::sql_params::tests::positions_translate_around_placeholders_with_multibyte_text_before ... ok
+test postgres::sql_params::tests::repeats_reuse_one_placeholder_in_first_appearance_order ... ok
+test postgres::sql_params::tests::row_limits_outside_the_retention_cap_are_refused_first ... ok
+test postgres::sql_params::tests::server_positions_map_back_through_the_prefix_span_and_placeholders ... ok
+test postgres::sql_params::tests::slices_are_not_parameters_but_constructors_and_parenthesized_subscripts_are ... ok
+test postgres::sql_params::tests::sql_with_names_is_scanned_only_in_parameter_mode ... ok
+test postgres::sql_params::tests::sql_without_names_is_a_script_unless_a_limit_meets_an_eligible_read ... ok
+test postgres::sql_params::tests::unlexable_sql_fails_the_scan ... ok
+test postgres::sql_params::tests::unlexable_sql_is_refused_only_in_parameter_mode ... ok
+test postgres::tls::tests::client_pair_must_be_complete ... ok
+test postgres::tls::tests::command_blocks_libpq_default_tls_material_with_explicit_missing_paths ... ok
+test postgres::tls::tests::command_clears_inherited_connection_and_certificate_overrides ... ok
+test postgres::tls::tests::command_disable_does_not_enable_tls_material ... ok
+test postgres::tls::tests::command_disabled_tls_ignores_stale_client_material ... ok
+test postgres::tls::tests::command_gets_host_hostaddr_and_pgssl_env ... ok
+test postgres::tls::tests::command_isolates_libpq_default_files_and_keeps_home_alive ... ok
+test postgres::tls::tests::command_keeps_missing_tls_material_directory_alive_through_child ... ok
+test postgres::tls::tests::command_only_enables_explicit_crl_isolation_for_verifying_modes ... ok
+test postgres::tls::tests::command_preserves_configured_client_material ... ok
+test postgres::tls::tests::command_validates_client_material_before_spawn ... ok
+test postgres::tls::tests::disable_yields_no_config_and_verifying_modes_build_with_fixture_ca ... ok
+test postgres::tls::tests::dsn_downgrades_tunneled_verify_full_like_pg_options ... ok
+test postgres::tls::tests::dsn_query_renders_mode_and_encoded_paths ... ok
+test postgres::tls::tests::encrypted_keys_are_refused_by_path ... ok
+test postgres::tls::tests::legacy_rows_resolve_through_ssl ... ok
+test postgres::tls::tests::missing_and_malformed_files_name_the_path ... ok
+test postgres::tls::tests::mode_tables ... ok
+test postgres::tls::tests::sqlx_downgrades_verify_full_only_when_the_server_name_differs ... ok
+test postgres::tls::tests::tls_options_win_over_ssl_and_blank_paths_are_none ... ok
+test postgres::transfer::csv_tests::accepts_1600_columns_and_rejects_a_1601st ... ok
+test postgres::transfer::csv_tests::defaults_and_camel_case_options_are_stable ... ok
+test postgres::transfer::csv_tests::encoder_chunks_large_escaped_values_and_round_trips_them ... ok
+test postgres::transfer::csv_tests::enforces_field_limit_before_growing_the_field ... ok
+test postgres::transfer::csv_tests::enforces_record_limit_before_accepting_another_byte ... ok
+test postgres::transfer::csv_tests::handles_a_bom_incrementally_and_rejects_invalid_utf8 ... ok
+test postgres::transfer::csv_tests::header_rows_are_returned_for_the_caller_to_handle ... ok
+test postgres::transfer::csv_tests::invalid_options_return_structural_errors_without_values ... ok
+test postgres::transfer::csv_tests::parses_a_distinct_escape_character ... ok
+test postgres::transfer::csv_tests::parses_one_byte_at_a_time_with_quoted_newlines_and_crlf ... ok
+test postgres::transfer::csv_tests::preserves_null_markers_and_empty_strings_through_encoding ... ok
+test postgres::transfer::csv_tests::rejects_malformed_quotes_and_line_endings_at_the_exact_record ... ok
+test postgres::transfer::csv_tests::reports_preview_pending_state_without_finishing_a_partial_record ... ok
+test postgres::transfer::manager::tests::an_inspection_is_consumed_exactly_once ... ok
+test postgres::transfer::manager::tests::cancellation_cannot_commit_or_run_success_effects ... ok
+test postgres::transfer::manager::tests::fences_invalidate_reviews_and_resolutions_with_nested_scopes ... ok
+test postgres::transfer::manager::tests::finalization_wins_and_completion_effects_precede_terminal ... ok
+test postgres::transfer::manager::tests::global_fence_stops_all_workers_before_returning ... ok
+test postgres::transfer::manager::tests::pending_work_counts_towards_capacity_and_same_connection_limit ... ok
+test postgres::transfer::manager::tests::reviews_have_a_cap_ttl_and_explicit_release ... ok
+test postgres::transfer::manager::tests::teardown_timeout_joins_aborted_worker_before_returning ... ok
+test postgres::transfer::manager::tests::terminal_retention_never_evicts_active_jobs ... ok
+test postgres::transfer::manager::tests::unknown_commit_never_runs_success_audit ... ok
+test postgres::transfer::manager::tests::watchdog_joins_before_releasing_capacity ... ok
+test postgres::transfer::manager::tests::worker_panic_after_commit_claim_is_unknown ... ok
+test postgres::transfer::runner::tests::export_sql_guards_fields_and_records_before_copy_projection ... ok
+test postgres::transfer::runner::tests::import_sql_quotes_identifiers_and_uses_only_validated_options ... ok
+test postgres::transfer::runner::tests::inspection_bounds_retained_header_labels ... ok
+test postgres::transfer::runner::tests::inspection_refuses_a_first_record_that_exceeds_the_inspection_budget ... ok
+test postgres::transfer::runner::tests::inspection_reports_actual_width_error_after_retained_sample_is_full ... ok
+test postgres::transfer::runner::tests::mapping_allows_source_reuse_but_rejects_duplicate_and_unsupported_targets ... ok
+test postgres::transfer::runner::tests::partial_publication_never_replaces_a_destination ... ok
+test postgres::transfer::runner::tests::source_fingerprint_changes_after_an_in_place_write ... ok
+test postgres::transfer::runner::tests::source_symlinks_are_refused ... ok
+test query_session::observer::tests::maps_only_authoritative_idle_states ... ok
+test query_session::postgres::tests::a_failed_request_delivers_retained_rows_and_aborts_the_open_result ... ok
+test query_session::postgres::tests::a_held_completion_is_reported_only_once_cleanup_settles ... ok
+test query_session::postgres::tests::a_probe_row_proves_more_rows_exist_without_being_counted ... ok
+test query_session::postgres::tests::a_retained_limit_drains_every_result_set_and_counts_what_it_withheld ... ok
+test query_session::postgres::tests::notices_share_the_metadata_budget_and_count_limit ... ok
+test query_session::postgres::tests::oversized_rows_shrink_later_cells_first ... ok
+test query_session::postgres::tests::parameter_values_stay_out_of_debug_output_and_driver_logs ... ok
+test query_session::postgres::tests::query_session_live_bound_command_runs_refuses_and_stops ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_cursor_inside_a_user_transaction ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_driver_side_failures_do_not_retire_the_session ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_plaintext_refusal_results_temp_state_and_cancel ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_text_parameters_infer_types_and_stay_data ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_tls_connects_and_cancels ... ignored, requires pnpm db:postgres-tls
+test query_session::postgres::tests::query_session_live_tls_cursor_read_bound_command_and_stop ... ignored, requires pnpm db:postgres-tls
+test query_session::postgres::tests::query_session_live_wrapper_ends_before_anyone_takes_a_row ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_wrapper_exit_rules ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_wrapper_sends_nothing_after_a_close ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::queued_notices_are_drained_before_a_terminal_event ... ok
+test query_session::postgres::tests::script_batches_split_at_the_byte_budget ... ok
+test query_session::postgres::tests::script_keeps_sixty_four_result_sets_and_reports_commands ... ok
+test query_session::postgres::tests::script_rows_keep_the_cell_and_execution_byte_caps ... ok
+test query_session::postgres::tests::script_rows_keep_the_execution_cap_across_result_sets ... ok
+test query_session::postgres::tests::script_rows_keep_the_per_set_cap_and_two_hundred_row_batches ... ok
+test query_session::postgres::tests::text_parameters_are_sent_as_text_and_accept_every_type ... ok
+test query_session::postgres::tests::utf8_truncation_stays_on_boundary ... ok
+test query_session::protocol::tests::completed_result_sets_report_whether_they_are_partial ... ok
+test query_session::protocol::tests::execute_payload_distinguishes_parameter_mode_and_redacts_values ... ok
+test query_session::protocol::tests::nullable_column_names_keep_positions ... ok
+test query_session::protocol::tests::refusals_and_new_event_fields_have_stable_wire_shapes ... ok
+test query_session::protocol::tests::wire_shapes_are_tagged_and_camel_case ... ok
+test query_session::tests::a_closed_sink_fails_the_send_and_leaves_no_credit_behind ... ok
+test query_session::tests::a_probe_that_started_earlier_cannot_overwrite_a_later_one ... ok
+test query_session::tests::a_stop_is_accepted_while_the_credit_window_is_full ... ok
+test query_session::tests::a_stop_only_flags_the_execution_it_names ... ok
+test query_session::tests::admission_constants_match_contract ... ok
+test query_session::tests::an_ack_between_the_credit_check_and_the_wait_is_not_missed ... ok
+test query_session::tests::cleanup_closes_the_cancel_window_and_holds_the_session_open ... ok
+test query_session::tests::closing_with_a_full_credit_window_ends_the_parked_execution ... ok
+test query_session::tests::connection_loss_retires_the_session ... ok
+test query_session::tests::describe_reports_the_names_execution_binds_in_the_same_order ... ok
+test query_session::tests::only_a_requested_stop_turns_57014_into_cancelled ... ok
+test query_session::tests::opening_connections_are_reserved_for_admission ... ok
+test query_session::tests::opening_sessions_are_reserved_for_admission ... ok
+test query_session::tests::parameters_and_row_limit_are_refused_before_policy_and_session_lookup ... ok
+test query_session::tests::policy_is_asserted_before_session_lookup ... ok
+test query_session::tests::query_session_actor_live_a_refused_first_event_fails_the_open_and_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_a_refused_terminal_event_retires_the_session ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_a_sink_that_closes_mid_stream_retires_the_session ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_an_unfocused_window_keeps_its_lease ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_close_at_any_moment_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_close_mid_fetch_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_close_with_withheld_acks_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_connection_drop_mid_fetch_loses_the_session ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_global_teardown_closes_sessions_before_it_returns ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_owner_replacement_closes_the_old_owners_sessions ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_read_only_and_timeouts_on_the_new_shapes ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_row_limit_is_truthful_at_the_boundary ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_statement_timeout_settles_failed ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_stop_at_any_moment_settles_once_and_idle ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_stop_settles_cancelled_once ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_user_transactions_are_never_committed_or_left_with_a_cursor ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_wrapper_always_leaves_the_session_idle ... ignored, requires pnpm db:postgres
+test query_session::tests::read_only_statement_admission_only_accepts_reads ... ok
+test query_session::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test query_session::tests::teardown_refuses_opens_before_any_connection_is_made ... ok
+test redis::capabilities::tests::parses_config_get_returns_value_only ... ok
+test redis::capabilities::tests::parses_info_field_with_crlf ... ok
+test redis::capabilities::tests::parses_module_list_into_name_ver_pairs ... ok
+test redis::capabilities::tests::parses_replication_role_and_slaves ... ok
+test redis::destructive_commands::tests::does_not_match_unrelated_commands ... ok
+test redis::destructive_commands::tests::empty_input_is_not_destructive ... ok
+test redis::destructive_commands::tests::matches_single_word_commands ... ok
+test redis::destructive_commands::tests::matches_two_word_commands ... ok
+test redis::key_inspector::tests::empty_list_returns_none ... ok
+test redis::key_inspector::tests::first_page_targets_tail_window ... ok
+test redis::key_inspector::tests::page_entirely_past_end_returns_none ... ok
+test redis::key_inspector::tests::page_overlapping_head_clamps_to_zero ... ok
+test redis::key_inspector::tests::second_page_targets_next_window ... ok
+test redis::key_ops::tests::parse_role_extracts_master ... ok
+test redis::key_ops::tests::parse_role_extracts_replica ... ok
+test redis::key_ops::tests::parse_role_ignores_section_headers_and_blanks ... ok
+test redis::key_ops::tests::parse_role_missing_returns_none ... ok
+test redis::server_info::acl_tests::detects_allkeys_via_star ... ok
+test redis::server_info::acl_tests::empty_keys_field_means_unrestricted ... ok
+test redis::server_info::acl_tests::missing_keys_field_means_unrestricted ... ok
+test redis::server_info::acl_tests::parses_redis6_string_keys ... ok
+test redis::server_info::acl_tests::parses_redis7_array_keys ... ok
+test redis::url::tests::custom_port_overrides_default ... ok
+test redis::url::tests::db_number_is_path_component ... ok
+test redis::url::tests::defaults_to_port_6379_db_0_no_auth ... ok
+test redis::url::tests::password_only_skips_username ... ok
+test redis::url::tests::percent_encodes_url_significant_chars_in_password ... ok
+test redis::url::tests::plain_with_verify_off_does_not_append_fragment ... ok
+test redis::url::tests::rejects_db_above_15 ... ok
+test redis::url::tests::rejects_empty_host ... ok
+test redis::url::tests::tls_uses_rediss_scheme ... ok
+test redis::url::tests::tls_with_verify_off_appends_insecure_fragment ... ok
+test redis::url::tests::tls_with_verify_on_omits_fragment ... ok
+test redis::url::tests::user_and_password_renders_acl_form ... ok
+test redis::url::tests::username_without_password_is_no_auth ... ok
+test redis::value::tests::array_recursively_serializes ... ok
+test redis::value::tests::int_carries_value ... ok
+test redis::value::tests::map_flattens_to_kv_pairs ... ok
+test redis::value::tests::nil_serializes_to_kind_nil ... ok
+test redis::value::tests::non_utf8_bulk_string_falls_back_to_hex ... ok
+test redis::value::tests::okay_variant_returns_ok ... ok
+test redis::value::tests::status_simplestring_returns_status_kind ... ok
+test redis::value::tests::utf8_bulk_string_uses_utf8_encoding ... ok
+test result_mutation::builder::tests::duplicate_shaped_insert_excludes_generated_columns ... ok
+test result_mutation::builder::tests::identifiers_with_quotes_are_escaped ... ok
+test result_mutation::builder::tests::insert_explicit_null_is_a_bound_parameter ... ok
+test result_mutation::builder::tests::insert_omits_unset_defaultable_and_identity_columns ... ok
+test result_mutation::builder::tests::join_snapshot_rejects_insert_and_delete_but_keeps_per_table_updates ... ok
+test result_mutation::builder::tests::keyed_delete_uses_full_projected_row_guards ... ok
+test result_mutation::builder::tests::never_interpolates_user_values_into_sql ... ok
+test result_mutation::builder::tests::null_guards_use_is_null_without_consuming_a_parameter ... ok
+test result_mutation::builder::tests::rejects_each_non_writable_column_kind ... ok
+test result_mutation::builder::tests::rejects_empty_set_and_identity ... ok
+test result_mutation::builder::tests::rejects_missing_full_row_guard_for_virtual_and_ctid_operations ... ok
+test result_mutation::builder::tests::rejects_null_identity_for_both_keyed_kinds ... ok
+test result_mutation::builder::tests::rejects_plan_table_mismatch ... ok
+test result_mutation::builder::tests::rejects_unknown_columns ... ok
+test result_mutation::builder::tests::update_with_multi_column_identity_preserves_order ... ok
+test result_mutation::builder::tests::update_with_single_identity_has_exact_sql_and_params ... ok
+test result_mutation::builder::tests::virtual_and_ctid_updates_require_and_render_full_row_guards ... ok
+test result_mutation::live::result_mutation_live_analysis_matrix ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_cancel_teardown_rollback_and_recovery ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_catalog_drift_expires_before_dml ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_idle_close_releases_socket_worker_and_capacity ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_preview_apply_conflicts_defaults_and_index_plan ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_virtual_identity_ctid_and_lock_timeout ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_virtual_key_drift_and_analysis_expiry ... ignored, requires pnpm db:postgres
+test result_mutation::postgres::tests::apply_fingerprint_expires_on_oid_and_mutation_relevant_catalog_drift ... ok
+test result_mutation::postgres::tests::catalog_work_is_scoped_and_attributed_to_operation_targets ... ok
+test result_mutation::postgres::tests::every_postgres_system_attnum_is_recognized ... ok
+test result_mutation::postgres::tests::generated_classification_is_non_empty_not_version_specific ... ok
+test result_mutation::postgres::tests::maps_structural_sqlstates_without_message_matching ... ok
+test result_mutation::postgres::tests::range_parser_enumerates_joins_and_repeated_spelling ... ok
+test result_mutation::postgres::tests::range_parser_fails_closed_for_comma_nested_cte_and_function_ranges ... ok
+test result_mutation::postgres::tests::range_parser_ignores_comments_strings_and_dollar_quotes ... ok
+test result_mutation::postgres::tests::range_parser_preserves_quoted_names_and_expression_nesting ... ok
+test result_mutation::postgres::tests::range_variable_check_allows_duplicate_projection_but_rejects_self_join ... ok
+test result_mutation::protocol::tests::analysis_result_covers_all_tagged_shapes ... ok
+test result_mutation::protocol::tests::command_payloads_are_camel_case_and_tagged ... ok
+test result_mutation::protocol::tests::every_error_variant_has_the_stable_wire_shape ... ok
+test result_mutation::protocol::tests::not_analyzable_reason_shapes_are_typed ... ok
+test result_mutation::protocol::tests::payload_round_trip_rejects_untagged_operations ... ok
+test result_mutation::protocol::tests::preview_apply_cancel_and_virtual_key_results_are_camel_case ... ok
+test result_mutation::tests::admission_rejects_the_ninth_executor ... ok
+test result_mutation::tests::admitted_teardown_is_bounded_and_fence_releases_only_at_terminal ... ok
+test result_mutation::tests::analysis_supersession_never_interrupts_apply ... ok
+test result_mutation::tests::apply_is_exclusive_and_snapshot_is_tab_scoped ... ok
+test result_mutation::tests::cancel_bookkeeping_is_scoped_to_tab ... ok
+test result_mutation::tests::cancelled_executor_installation_cannot_spawn_an_unowned_worker ... ok
+test result_mutation::tests::close_idle_removes_executor_stops_worker_and_releases_capacity ... ok
+test result_mutation::tests::commit_admission_linearizes_teardown_outcomes ... ok
+test result_mutation::tests::contract_limits_are_fixed ... ok
+test result_mutation::tests::dropped_apply_waiter_cancels_and_finalizes_owned_state ... ok
+test result_mutation::tests::duplicate_cancel_is_not_scheduled_for_the_same_active_request ... ok
+test result_mutation::tests::global_fence_stays_closed_until_detached_closes_finish ... ok
+test result_mutation::tests::idle_requires_expired_and_quiet_executor ... ok
+test result_mutation::tests::newer_analysis_supersedes_queued_request ... ok
+test result_mutation::tests::policy_refusal_leaves_the_apply_executor_idle ... ok
+test result_mutation::tests::snapshot_cache_evicts_oldest_at_sixteen ... ok
+test result_mutation::tests::snapshot_lookup_updates_lru_recency_and_preserves_tab_owner ... ok
+test result_mutation::tests::stale_apply_ids_do_not_create_or_count_executors ... ok
+test result_mutation::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test result_mutation::tests::structure_invalidation_expires_snapshots_and_advances_generation ... ok
+test result_mutation::tests::teardown_before_commit_admission_cancels_apply ... ok
+test result_mutation::tests::terminal_close_does_not_release_connection_fence_before_lifecycle_end ... ok
+test safety::gate::tests::audit_values_are_class_labels_only ... ok
+test safety::gate::tests::default_policy_is_dark_and_confirmed_does_not_create_an_audit ... ok
+test safety::gate::tests::every_legacy_write_gate_refuses_strict_until_confirmed ... ok
+test safety::gate::tests::read_only_tag_is_exact_and_confirmation_cannot_unlock ... ok
+test safety::live::safety_live_query_command_core_enforces_policy_and_records_audit ... ignored, requires pnpm db:postgres
+test safety::live::safety_live_read_only_guc_covers_pooled_dedicated_and_policy_flip ... ignored, requires pnpm db:postgres
+test safety::policy::tests::authorization_only_audits_a_required_confirmed_override ... ok
+test safety::policy::tests::disabled_is_the_dark_launch_default ... ok
+test safety::policy::tests::inherit_resolution_follows_environment ... ok
+test safety::policy::tests::protected_requires_only_destructive_overrides ... ok
+test safety::policy::tests::read_only_only_admits_proven_reads_and_cancel ... ok
+test safety::policy::tests::scripts_use_the_strictest_statement_and_refusals_expose_classes_only ... ok
+test safety::policy::tests::strict_requires_every_write_but_not_read_transaction_session_or_cancel ... ok
+test seed::plan_tests::an_empty_parent_table_fails_before_any_write ... ok
+test seed::plan_tests::booleans_render_as_digits_outside_postgres ... ok
+test seed::plan_tests::clickhouse_arrays_render_with_bracket_syntax ... ok
+test seed::plan_tests::clickhouse_derived_columns_are_never_inserted ... ok
+test seed::plan_tests::clickhouse_sorting_key_is_not_treated_as_unique ... ok
+test seed::plan_tests::clickhouse_types_unwrap_nullable_and_lowcardinality ... ok
+test seed::plan_tests::enum_columns_become_a_value_list_of_their_declared_members ... ok
+test seed::plan_tests::enum_members_parse_from_both_engine_spellings ... ok
+test seed::plan_tests::fixed_string_length_is_carried_through_to_truncation ... ok
+test seed::plan_tests::mysql_auto_increment_column_is_skipped ... ok
+test seed::plan_tests::mysql_types_drop_modifiers_and_fold_synonyms ... ok
+test seed::plan_tests::only_referenced_foreign_keys_need_a_parent_pool ... ok
+test seed::plan_tests::sqlite_integer_rowid_key_is_skipped_but_composite_key_is_not ... ok
+test seed::plan_tests::sqlite_untyped_column_falls_back_to_text ... ok
+test seed::plan_tests::tiny_integers_stay_inside_a_single_byte ... ok
+test seed::plan_tests::unique_integer_columns_request_a_max_probe_and_start_above_it ... ok
+test seed::tests::chunked_generation_matches_one_shot_generation ... ok
+test seed::tests::classify_prefers_name_inference_when_type_compatible ... ok
+test seed::tests::composite_fk_members_stay_aligned ... ok
+test seed::tests::null_rate_zero_and_one_are_exact ... ok
+test seed::tests::same_seed_generates_identical_rows ... ok
+test seed::tests::skip_columns_are_omitted_from_output ... ok
+test seed::tests::unique_integer_sequences_above_base ... ok
+test seed::tests::unique_text_kinds_never_collide ... ok
+test seed::tests::varchar_length_is_respected ... ok
+test socket_lifecycle::tests::csv_transfers_join_the_canonical_connection_and_global_fences ... ok
+test socket_lifecycle::tests::pg_tools_are_stopped_before_connection_bastion_and_global_invalidation ... ok
+test storage::tests::bastion_and_connection_tunnel_fields_round_trip ... ok
+test storage::tests::bastion_reference_lookup_normalizes_stored_tunnel_ids ... ok
+test storage::tests::clear_virtual_key_rejects_every_non_postgres_engine_without_deleting ... ok
+test storage::tests::config_dir_override_is_optional_and_must_be_absolute ... ok
+test storage::tests::connection_organization_fields_round_trip_for_every_engine ... ok
+test storage::tests::delete_connection_cascades_schema_map_rows ... ok
+test storage::tests::deleting_connection_cascades_virtual_keys ... ok
+test storage::tests::malformed_ssh_jump_chain_is_not_silently_dropped ... ok
+test storage::tests::malformed_ssh_keepalive_interval_is_not_silently_dropped ... ok
+test storage::tests::malformed_tls_options_degrade_to_none_and_other_engines_stay_null ... ok
+test storage::tests::migration_15_defaults_legacy_rows_to_dark_policy ... ok
+test storage::tests::migration_17_defaults_legacy_rows_to_no_organization ... ok
+test storage::tests::migration_18_leaves_legacy_rows_resolving_through_ssl ... ok
+test storage::tests::read_virtual_key_rejects_every_non_postgres_engine ... ok
+test storage::tests::redis_cli_history_round_trip_filters_by_connection ... ok
+test storage::tests::redis_cli_history_trims_to_cap_globally ... ok
+test storage::tests::safety_override_audit_is_scoped_and_cascades ... ok
+test storage::tests::safety_override_audit_trims_to_global_cap ... ok
+test storage::tests::safety_policy_fields_round_trip_for_every_engine ... ok
+test storage::tests::safety_policy_migration_is_applied ... ok
+test storage::tests::schema_map_positions_round_trip_and_reset ... ok
+test storage::tests::schema_map_prefs_default_and_patch_round_trip ... ok
+test storage::tests::table_grid_prefs_round_trip_and_missing_is_null ... ok
+test storage::tests::tls_options_round_trip_and_normalize_ssl ... ok
+test storage::tests::ui_state_rejects_foreign_namespaces ... ok
+test storage::tests::ui_state_round_trip_overwrite_and_prefix_delete ... ok
+test storage::tests::upsert_virtual_key_rejects_every_non_postgres_engine_without_overwriting ... ok
+test storage::tests::virtual_key_migration_is_applied ... ok
+test storage::tests::virtual_key_round_trip_preserves_order_and_clear_removes_it ... ok
+test storage::tests::virtual_key_validation_rejects_invalid_documents ... ok
+test table_browse::builder::tests::count_and_explain_sql_reuse_where_without_limit ... ok
+test table_browse::builder::tests::every_comparison_operator_renders_text_cast ... ok
+test table_browse::builder::tests::foreign_table_identity_is_none ... ok
+test table_browse::builder::tests::generated_sql_never_contains_user_values ... ok
+test table_browse::builder::tests::ilike_operators_escape_metacharacters ... ok
+test table_browse::builder::tests::in_list_and_null_operators ... ok
+test table_browse::builder::tests::keyset_single_and_multi_column_and_ctid ... ok
+test table_browse::builder::tests::offset_fallback_for_user_sort_and_pre14_ctid ... ok
+test table_browse::builder::tests::page_size_clamps_and_fetches_one_extra ... ok
+test table_browse::builder::tests::partitioned_virtual_identity_uses_tableoid_and_ctid ... ok
+test table_browse::builder::tests::raw_and_typed_filters_and_combine ... ok
+test table_browse::builder::tests::sort_nulls_and_identity_tiebreakers ... ok
+test table_browse::builder::tests::unique_index_identity_ties_break_on_name ... ok
+test table_browse::builder::tests::validation_errors ... ok
+test table_browse::executor::tests::cancel_tab_without_in_flight_does_not_queue_protocol_cancel ... ok
+test table_browse::executor::tests::canceled_sqlstate_maps_to_typed_errors ... ok
+test table_browse::executor::tests::complete_job_applies_interrupt_and_clears_inflight_atomically ... ok
+test table_browse::executor::tests::complete_job_treats_a_missing_tab_as_cancelled ... ok
+test table_browse::executor::tests::dummy_spec_does_not_log_secrets ... ok
+test table_browse::executor::tests::in_flight_request_is_marked_for_cancel_when_superseded ... ok
+test table_browse::executor::tests::older_request_id_is_rejected_as_superseded ... ok
+test table_browse::executor::tests::queue_wait_timeout_lookup_is_tab_scoped ... ok
+test table_browse::executor::tests::queued_request_is_dropped_when_a_newer_request_arrives ... ok
+test table_browse::interrupt::tests::interrupt_unconditionally_determines_terminal_result ... ok
+test table_browse::live::table_browse_live_cancel_supersede_truncation_and_teardown ... ignored, requires pnpm db:postgres
+test table_browse::live::table_browse_live_ilike_escape_and_raw_sql_boundaries ... ignored, requires pnpm db:postgres
+test table_browse::live::table_browse_live_keyset_offset_counts_and_structure ... ignored, requires pnpm db:postgres
+test table_browse::live::table_browse_live_tls_connects ... ignored, requires pnpm db:postgres-tls
+test table_browse::live::table_browse_live_typed_filters_casts_and_identity ... ignored, requires pnpm db:postgres
+test table_browse::manager::tests::admission_constants_match_contract ... ok
+test table_browse::manager::tests::admission_rejects_global_closing ... ok
+test table_browse::manager::tests::admission_rejects_ninth_executor ... ok
+test table_browse::manager::tests::close_all_does_not_leave_connection_ids_in_closing ... ok
+test table_browse::manager::tests::connection_teardown_rejects_new_admission ... ok
+test table_browse::manager::tests::global_teardown_rejects_new_admission ... ok
+test table_browse::manager::tests::idle_check_requires_a_quiet_expired_executor ... ok
+test table_browse::manager::tests::idle_close_bookkeeping_uses_last_used_and_busy_flag ... ok
+test table_browse::manager::tests::queue_wait_timeout_error_names_the_operation ... ok
+test table_browse::manager::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test table_browse::postgres::tests::undefined_object_sqlstates_trigger_retry ... ok
+test table_browse::postgres::tests::wide_primary_key_identity_is_capped_and_counted ... ok
+test table_browse::protocol::tests::comparison_filter_requires_value_and_rejects_bag_shape ... ok
+test table_browse::protocol::tests::payload_wire_shape_round_trips ... ok
+test table_browse::protocol::tests::table_grid_prefs_require_version_and_cap_history ... ok
+test table_browse::protocol::tests::wire_shapes_are_tagged_and_camel_case ... ok
+test tunnel::endpoint::tests::remote_endpoint_uses_database_endpoint_seen_from_bastion ... ok
+test tunnel::endpoint::tests::rewrite_carries_the_original_host_as_tls_server_name ... ok
+test tunnel::endpoint::tests::rewrite_connection_endpoint_keeps_redis_tunnel_metadata ... ok
+test tunnel::endpoint::tests::rewrite_preserves_a_user_supplied_server_name ... ok
+test tunnel::endpoint::tests::sqlite_endpoint_rewrite_is_rejected ... ok
+test tunnel::route::tests::route_key_includes_advanced_options ... ok
+test tunnel::route::tests::route_key_preserves_bastion_id_boundaries ... ok
+test tunnel::route::tests::route_normalizes_tunnel_config_before_building_route ... ok
+test tunnel::route::tests::route_rejects_duplicate_jump_hops ... ok
+test tunnel::route::tests::route_rejects_jump_chain_loops ... ok
+test tunnel::session::tests::proxy_command_expands_host_port_and_percent_escape ... ok
+test tunnel::session::tests::proxy_shutdown_cancels_backpressured_write_to_descendant_stdin ... ok
+test tunnel::session::tests::proxy_shutdown_cancels_read_when_descendant_keeps_stdout_open ... ok
+test tunnel::tests::cancellation_after_forward_publication_rolls_back_only_new_resources ... ok
+test tunnel::tests::cancellation_interrupts_bastion_pool_wait_before_ssh_starts ... ok
+test tunnel::tests::cancellation_interrupts_fingerprint_pool_wait_without_publishing_session ... ok
+test tunnel::tests::cancellation_joins_dispatched_fingerprint_write_before_host_key_reset ... ok
+test tunnel::tests::cancelled_session_publication_waits_for_other_pending_setup ... ok
+test tunnel::tests::duplicate_session_cleanup_does_not_block_runtime_lookups ... ok
+test tunnel::tests::ephemeral_route_drop_removes_forward_and_stops_listener ... ok
+test tunnel::tests::original_deadline_interrupts_bastion_pool_wait ... ok
+test tunnel::tests::teardown_join_on_the_only_runtime_worker_does_not_stall_other_tasks ... ok
+test tunnel::tests::teardown_join_runs_directly_on_a_current_thread_runtime ... ok
+test xlsx::tests::detect_header_numeric_first_row ... ok
+test xlsx::tests::detect_header_works ... ok
+test xlsx::tests::export_xlsx_roundtrip ... ok
+test xlsx::tests::normalize_sheet_pads_short_rows ... ok
+test xlsx::tests::normalize_sheet_with_header ... ok
+test xlsx::tests::parse_xlsx_from_exported ... ok
+
+test result: ok. 634 passed; 0 failed; 70 ignored; 0 measured; 0 filtered out; finished in 13.38s
+
+   Doc-tests dbunk_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+cargo test --manifest-path src-tauri/Cargo.toml
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.07s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0a78b43754151df8)
+
+running 743 tests
+test app::tests::exit_cleanup_waits_for_active_comparison_termination ... ok
+test clickhouse::seed_tests::bulk_insert_emits_one_statement_with_every_row_as_literals ... ok
+test clickhouse::seed_tests::bulk_insert_escapes_quotes_in_generated_values ... ok
+test clickhouse::seed_tests::bulk_insert_pads_short_rows_with_null ... ok
+test clickhouse::seed_tests::ch_seed_live_end_to_end ... ignored, requires the infrastructure/test-db clickhouse container
+test clickhouse::seed_tests::seeding_more_rows_than_one_block_is_refused ... ok
+test clickhouse::tests::build_alter_delete_handles_null_identity ... ok
+test clickhouse::tests::build_alter_delete_renders_where_clause ... ok
+test clickhouse::tests::build_alter_update_emits_is_null_for_null_identity ... ok
+test clickhouse::tests::build_alter_update_renders_set_and_where_with_literals ... ok
+test clickhouse::tests::build_alter_update_supports_setting_null_value ... ok
+test clickhouse::tests::build_insert_emits_backtick_qualified_table_with_literal_values ... ok
+test clickhouse::tests::build_insert_quotes_identifiers_and_escapes_quotes_in_values ... ok
+test clickhouse::tests::ch_literal_quotes_strings_and_passes_null_through ... ok
+test clickhouse::tests::database_defaults_to_literal_default_when_blank ... ok
+test clickhouse::tests::database_preserves_user_value ... ok
+test clickhouse::tests::escape_doubles_single_quotes ... ok
+test clickhouse::tests::parse_csv_list_splits_and_trims ... ok
+test clickhouse::tests::parse_response_extracts_columns_rows_and_runtime ... ok
+test clickhouse::tests::parse_response_falls_back_to_data_length_when_rows_missing ... ok
+test clickhouse::tests::parse_response_handles_null_and_nested_values ... ok
+test clickhouse::tests::parse_response_returns_empty_for_missing_meta_and_data ... ok
+test clickhouse::tests::split_statements_drops_empty_segments ... ok
+test clickhouse::tests::split_statements_returns_empty_for_blank_input ... ok
+test clickhouse::tests::url_includes_database_query_param_when_set ... ok
+test clickhouse::tests::url_normalizes_path_without_leading_slash ... ok
+test clickhouse::tests::url_omits_database_param_when_blank ... ok
+test clickhouse::tests::url_passes_through_explicit_scheme ... ok
+test clickhouse::tests::url_respects_explicit_port ... ok
+test clickhouse::tests::url_uses_8123_when_port_is_zero_and_https_off ... ok
+test clickhouse::tests::url_uses_8443_when_port_is_zero_and_https_on ... ok
+test clickhouse::tests::url_uses_custom_path_when_set ... ok
+test commands::pg_backup::tests::cosmetic_connection_save_cancels_job_before_edit_and_reopens_admission ... ok
+test commands::pg_backup::tests::live::disposable_postgres_plain_custom_clean_and_cancellation_round_trip ... ignored, requires disposable PostgreSQL fixture on port 15432 and matching native client tools
+test commands::pg_backup::tests::missing_and_unsupported_connections_never_admit ... ok
+test commands::pg_backup::tests::typed_restore_policy_admission_and_success_only_effects ... ok
+test commands::pg_objects::tests::lock_timeout_preserves_concurrent_index_residue ... ok
+test commands::pg_objects::tests::object_ddl_gate_returns_preview_summaries_and_honors_read_only ... ok
+test commands::pg_objects::tests::object_ddl_preview_does_not_resolve_credentials_or_tunnels ... ok
+test commands::pg_objects::tests::object_ddl_refusals_never_audit ... ok
+test commands::pg_objects::tests::postgres_character_positions_become_zero_based_utf8_byte_offsets ... ok
+test commands::pg_objects_live_tests::apply::object_ddl_apply_live_covers_groups_errors_residue_lock_and_audit ... ignored, requires pnpm db:postgres
+test commands::pg_objects_live_tests::policy::row_security_live_forces_creates_and_drops_policies ... ignored, requires pnpm db:postgres
+test commands::pg_objects_live_tests::privilege::privileges_live_grant_revoke_and_unknown_role ... ignored, requires pnpm db:postgres
+test commands::pg_objects_live_tests::routine::routine_live_replaces_source_and_reports_header_attributes ... ignored, requires pnpm db:postgres
+test commands::pg_objects_live_tests::table::table_designer_live_creates_table_comments_and_concurrent_index ... ignored, requires pnpm db:postgres
+test commands::pg_objects_live_tests::trigger::trigger_live_create_disable_and_drop ... ignored, requires pnpm db:postgres
+test commands::pg_transfer::tests::import_policy_is_rechecked_and_only_acknowledged_success_is_audited ... ok
+test commands::pg_transfer::tests::saved_connection_edits_invalidate_review_and_confirmation_retry ... ok
+test commands::relational::tests::cancel_command_core_remains_ungated ... ok
+test commands::relational::tests::every_legacy_command_core_refuses_before_dispatch_and_confirmed_reaches_dispatch ... ok
+test commands::result_mutation::tests::apply_command_core_refusal_and_failure_never_audit ... ok
+test commands::result_mutation::tests::virtual_key_storage_errors_preserve_the_command_contract ... ok
+test connections::tests::duplicate_copies_credential_in_encrypted_mode ... ok
+test connections::tests::duplicate_copies_record_and_credential_without_favorite_or_activity ... ok
+test connections::tests::duplicate_missing_source_refuses ... ok
+test connections::tests::duplicate_twice_suffixes_the_name ... ok
+test connections::tests::locked_encrypted_store_blocks_pg_duplicate_but_not_sqlite ... ok
+test connections::tests::next_copy_name_suffixes_until_free ... ok
+test connections::tests::organization_update_changes_columns_and_never_touches_credentials ... ok
+test credentials::tests::bastion_secret_namespace_does_not_collide_with_database_password ... ok
+test credentials::tests::bastion_secret_patch_prunes_inactive_auth_and_clears_passphrase ... ok
+test credentials::tests::change_mode_encrypted_to_plain_preserves_credentials ... ok
+test credentials::tests::change_mode_plain_to_encrypted_preserves_credentials ... ok
+test credentials::tests::encrypted_read_fails_when_locked ... ok
+test credentials::tests::encrypted_sqlite_round_trip ... ok
+test credentials::tests::hydration_is_bound_to_endpoint_identity_and_transport ... ok
+test credentials::tests::hydration_treats_default_and_explicit_postgres_ports_as_the_same_destination ... ok
+test credentials::tests::plain_sqlite_round_trip ... ok
+test credentials::tests::upsert_empty_password_deletes_stale_credential ... ok
+test credentials::tests::write_all_to_plain_preserves_rows_after_topology_cleanup ... ok
+test diagnosis::tests::a_confirmed_handshake_is_recorded_with_its_own_timing ... ok
+test diagnosis::tests::a_failure_blocks_every_later_stage_and_names_the_stage ... ok
+test diagnosis::tests::a_late_tls_error_keeps_the_handshake_timing_and_blocks_startup_stages ... ok
+test diagnosis::tests::diagnosis_live_bad_host_lands_on_dns ... ignored, requires network DNS
+test diagnosis::tests::diagnosis_live_client_certificate_authenticates_and_encrypted_key_is_refused ... ignored, requires pnpm db:postgres-tls
+test diagnosis::tests::diagnosis_live_closed_port_lands_on_tcp ... ignored, requires nothing listening on 15499
+test diagnosis::tests::diagnosis_live_missing_database_lands_on_database ... ignored, requires pnpm db:postgres
+test diagnosis::tests::diagnosis_live_prefer_against_plaintext_reports_not_encrypted ... ignored, requires pnpm db:postgres
+test diagnosis::tests::diagnosis_live_verify_ca_without_ca_is_untrusted_and_wrong_name_mismatches ... ignored, requires pnpm db:postgres-tls
+test diagnosis::tests::diagnosis_live_verify_full_with_ca_verifies_everything ... ignored, requires pnpm db:postgres-tls
+test diagnosis::tests::diagnosis_live_wrong_password_lands_on_authentication ... ignored, requires pnpm db:postgres
+test diagnosis::tests::known_transport_warnings_survive_a_later_authentication_failure ... ok
+test diagnosis::tests::payload_decodes_the_frontend_wire_shape ... ok
+test diagnosis::tests::tls_detail_derives_verification_flags_from_the_mode ... ok
+test diagnosis::tests::warnings_dedupe_and_reachable_carries_latency ... ok
+test diagnosis::tests::wire_shape_uses_kebab_free_camel_case_tags ... ok
+test dispatch::introspect::tests::non_postgres_structures_report_no_table_security ... ok
+test dispatch::relational::tests::connection_refused_explains_what_to_check ... ok
+test dispatch::relational::tests::dns_failure_text_is_recognised ... ok
+test dispatch::relational::tests::mysql_dsn_percent_encodes_url_components ... ok
+test dispatch::relational::tests::paged_select_orders_by_primary_key ... ok
+test dispatch::relational::tests::paged_select_skips_nullable_unique_index ... ok
+test dispatch::relational::tests::paged_select_uses_smallest_non_nullable_unique_index ... ok
+test dispatch::relational::tests::port_zero_is_omitted_from_endpoint ... ok
+test dispatch::relational::tests::postgres_dsn_downgrades_tunneled_verify_full_to_verify_ca ... ok
+test dispatch::relational::tests::postgres_dsn_options_do_not_inherit_credentials_tls_or_options ... 
+running 1 test
+test dispatch::relational::tests::postgres_dsn_options_do_not_inherit_credentials_tls_or_options ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 742 filtered out; finished in 0.00s
+
+ok
+test dispatch::relational::tests::postgres_dsn_percent_encodes_url_components ... ok
+test dispatch::relational::tests::sqlx_any_zero_row_query_preserves_column_names ... ok
+test dispatch::relational::tests::timed_out_mentions_firewall ... ok
+test dispatch::relational::tests::unknown_io_error_falls_back_with_endpoint_context ... ok
+test dispatch::seed::mysql_live_tests::mysql_seed_live_end_to_end ... ignored, requires the infrastructure/test-db mysql container
+test dispatch::seed::sqlite_live_tests::a_rejected_batch_rolls_the_whole_run_back ... ok
+test dispatch::seed::sqlite_live_tests::per_column_specs_override_the_generator ... ok
+test dispatch::seed::sqlite_live_tests::seeds_parent_then_child_without_orphans ... ok
+test dispatch::seed::sqlite_live_tests::the_same_seed_reproduces_the_same_rows ... ok
+test dispatch::seed::sqlite_live_tests::unique_sequences_start_above_the_rows_already_there ... ok
+test dispatch::seed::tests::bulk_insert_backticks_mysql_identifiers_and_repeats_placeholders ... ok
+test dispatch::seed::tests::bulk_insert_double_quotes_sqlite_identifiers ... ok
+test dispatch::seed::tests::bulk_insert_pads_short_rows_with_null ... ok
+test dispatch::seed::tests::sqlite_chunk_stays_under_the_oldest_variable_ceiling ... ok
+test dispatch::tests::storage_class_is_stable_per_engine ... ok
+test host::tests::a_closed_sink_reports_it_to_the_sender ... ok
+test host::tests::a_closure_is_a_sink_and_keeps_call_order ... ok
+test managed::live_tests::managed_live_provision_lifecycle ... ignored, requires a running Docker daemon; pulls postgres:16 if absent
+test managed::tests::connection_string_shapes_per_engine ... ok
+test managed::tests::pick_port_skips_claimed_ports ... ok
+test managed::tests::slugify_produces_safe_identifiers ... ok
+test pg_backup_lifecycle_tests::bastion_delete_closes_admission_before_checking_new_references ... ok
+test pg_backup_lifecycle_tests::bastion_save_and_host_key_reset_wait_for_referencing_job_termination ... ok
+test pg_backup_lifecycle_tests::credential_configuration_and_migration_wait_for_jobs_before_changing_storage ... ok
+test pg_backup_lifecycle_tests::credential_reset_waits_for_all_jobs_then_reopens_global_admission ... ok
+test pg_backup_lifecycle_tests::delete_waits_for_job_termination_before_record_and_cache_removal ... ok
+test pg_backup_lifecycle_tests::disconnect_waits_for_job_termination_before_cache_invalidation ... ok
+test pg_backup_lifecycle_tests::exit_close_join_waits_for_job_termination_within_the_existing_budget ... ok
+test postgres::backup::runner::tests::all_postgres_tools_require_the_patched_client_floor ... ok
+test postgres::backup::runner::tests::connection_database_is_one_escaped_conninfo_value ... ok
+test postgres::backup::runner::tests::diagnostic_never_returns_credentials_paths_or_database_output ... ok
+test postgres::backup::runner::tests::plain_stream_preserves_copy_data_and_fails_closed_on_extra_guards ... ok
+test postgres::backup::runner::tests::plain_stream_removes_only_a_canonical_pg_dump_guard_pair ... ok
+test postgres::backup::runner::tests::postgres_client_floor_rejects_wrong_tool_banners ... ok
+test postgres::backup::runner::tests::preflight_and_list_never_use_connection_arguments ... ok
+test postgres::backup::runner::tests::source_stream_failure_keeps_stdin_open_until_process_cleanup ... ok
+test postgres::backup::runner::tests::successful_reap_status_preserves_irreversible_restore_success ... 
+running 1 test
+test postgres::backup::tests::native_child_helper ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 742 filtered out; finished in 0.00s
+
+ok
+test postgres::backup::tests::admission_limits_listing_cancel_release_and_fences ... ok
+test postgres::backup::tests::argument_contract_and_literal_pg_dump_patterns ... ok
+test postgres::backup::tests::binary_resolution_orders_path_fallbacks_then_bare_name ... ok
+test postgres::backup::tests::detached_reapers_have_a_separate_bounded_capacity ... ok
+test postgres::backup::tests::failed_cancelled_and_panicking_workers_do_not_record_success ... ok
+test postgres::backup::tests::final_publication_and_cancel_have_one_winner ... ok
+test postgres::backup::tests::native_child_failure_spawn_failure_timeout_and_cancel_clean_partials ... ok
+test postgres::backup::tests::native_child_helper ... ignored, native subprocess helper, invoked only by the process tests
+test postgres::backup::tests::observed_restore_success_wins_a_concurrent_cancellation ... ok
+test postgres::backup::tests::pending_reservations_are_bounded_cancelled_and_do_not_grow_scopes ... ok
+test postgres::backup::tests::publication_does_not_hold_manager_lock_or_publish_late_cancellation ... ok
+test postgres::backup::tests::reap_timeout_releases_slots_but_detached_cleanup_waits_for_exit ... ok
+test postgres::backup::tests::stalled_completion_attempt_is_bounded_and_runs_exactly_once ... ok
+test postgres::backup::tests::stalled_preflight_and_finalization_are_aborted_at_the_teardown_bound ... ok
+test postgres::backup::tests::stderr_drain_is_bounded_while_producer_exceeds_pipe_capacity ... ok
+test postgres::backup::tests::teardown_watchdog_preserves_in_flight_reap_timeout_and_cleanup_owner ... ok
+test postgres::backup::tests::terminal_cap_expiry_and_exactly_once_success_effects ... ok
+test postgres::backup::tests::terminal_success_is_published_only_after_completion_is_releasable ... ok
+test postgres::backup::tests::transitions_reject_illegal_and_late_updates ... ok
+test postgres::backup::tests::validation_and_atomic_publication_never_overwrite ... ok
+test postgres::backup::tests::wire_names_and_all_variants_round_trip ... ok
+test postgres::connect_error::tests::messages_carry_the_headline_and_detail ... ok
+test postgres::connect_error::tests::rustls_errors_map_to_tls_kinds ... ok
+test postgres::connect_error::tests::sqlstate_wins_over_everything_else ... ok
+test postgres::connect_error::tests::string_shaped_and_io_cases ... ok
+test postgres::connect_spec::tests::absent_or_zero_keepalive_leaves_the_driver_default ... ok
+test postgres::connect_spec::tests::keepalive_seconds_is_applied_to_the_dedicated_driver ... ok
+test postgres::connect_spec::tests::tokio_config_uses_the_tls_server_name_as_host ... ok
+test postgres::connect_spec::tests::zero_port_defaults_to_5432 ... ok
+test postgres::dedicated::live::dedicated_live_client_certificate_authenticates ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::live::dedicated_live_prefer_against_plaintext_server_downgrades ... ignored, requires pnpm db:postgres
+test postgres::dedicated::live::dedicated_live_verify_ca_without_ca_is_untrusted ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::live::dedicated_live_verify_full_with_ca_connects_and_cancels_over_tls ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::live::dedicated_live_verify_full_wrong_server_name_is_mismatch ... ignored, requires pnpm db:postgres-tls
+test postgres::dedicated::ownership_tests::abort_all_stops_existing_and_late_registered_drivers_before_join_returns ... ok
+test postgres::dedicated::ownership_tests::cancelling_graceful_drain_preserves_abort_and_join_ownership ... ok
+test postgres::dedicated::ownership_tests::tracked_driver_join_survives_cancellation_of_its_connection_owner ... ok
+test postgres::identity::tests::follows_the_shared_identity_precedence ... ok
+test postgres::mutations::tests::delete_emits_where_clause_with_aligned_params ... ok
+test postgres::mutations::tests::delete_quotes_identifiers_with_embedded_quotes ... ok
+test postgres::mutations::tests::delete_renders_null_identity_as_is_null_and_skips_param ... ok
+test postgres::mutations::tests::delete_supports_composite_identity ... ok
+test postgres::mutations::tests::insert_binds_none_for_null_columns ... ok
+test postgres::mutations::tests::insert_emits_columns_in_order_with_aligned_placeholders ... ok
+test postgres::mutations::tests::insert_quotes_identifiers_with_embedded_quotes ... ok
+test postgres::mutations::tests::update_binds_none_for_set_null_value ... ok
+test postgres::mutations::tests::update_emits_set_then_where_with_aligned_params ... ok
+test postgres::mutations::tests::update_keeps_param_indices_when_identity_mixes_null_and_value ... ok
+test postgres::mutations::tests::update_quotes_identifiers_with_embedded_quotes ... ok
+test postgres::mutations::tests::update_renders_null_identity_as_is_null_and_skips_param ... ok
+test postgres::object_ddl::tests::column::add_column_renders_identity ... ok
+test postgres::object_ddl::tests::column::renders_column_operations_and_tagged_defaults ... ok
+test postgres::object_ddl::tests::enum_type::add_enum_value_runs_outside_atomic_groups ... ok
+test postgres::object_ddl::tests::enum_type::renders_views_sequences_and_enums ... ok
+test postgres::object_ddl::tests::fragment::embedded_fragments_cannot_escape_typed_operations ... ok
+test postgres::object_ddl::tests::fragment::fragment_shape_uses_the_shared_lexer_for_dollar_identifiers ... ok
+test postgres::object_ddl::tests::fragment::plain_string_backslashes_are_valid_fragments ... ok
+test postgres::object_ddl::tests::fragment::rejects_every_fragment_boundary_and_invalid_shape ... ok
+test postgres::object_ddl::tests::general::applied_statements_is_read_from_execution_errors ... ok
+test postgres::object_ddl::tests::general::destructive_classification_matches_data_risk ... ok
+test postgres::object_ddl::tests::general::e_literals_escape_apostrophes_and_backslashes_in_every_literal_operation ... ok
+test postgres::object_ddl::tests::general::explicitly_deferred_extension_drop_is_rejected ... ok
+test postgres::object_ddl::tests::general::operations_keep_the_internally_tagged_wire_format ... ok
+test postgres::object_ddl::tests::general::renders_schema_object_and_comment_operations_with_quoting ... ok
+test postgres::object_ddl::tests::general::statement_body_validation_uses_the_renderer_normalized_boundary ... ok
+test postgres::object_ddl::tests::general::wire_shapes_are_camel_case_and_tagged ... ok
+test postgres::object_ddl::tests::index::derived_index_names_are_explicit_and_utf8_safe ... ok
+test postgres::object_ddl::tests::index::groups_transactional_runs_around_concurrent_indexes ... ok
+test postgres::object_ddl::tests::index::index_elements_parenthesize_everything_but_columns_and_calls ... ok
+test postgres::object_ddl::tests::index::renders_constraint_and_index_operations ... ok
+test postgres::object_ddl::tests::policy::policies_render_roles_and_expressions_and_validate_command_shapes ... ok
+test postgres::object_ddl::tests::policy::row_level_security_renders_one_alter_and_flags_disable ... ok
+test postgres::object_ddl::tests::privilege::grants_render_per_kind_targets_and_revokes_are_destructive ... ok
+test postgres::object_ddl::tests::routine::create_function_header_attributes_and_or_replace ... ok
+test postgres::object_ddl::tests::routine::create_function_seals_the_body_in_a_body_derived_dollar_quote ... ok
+test postgres::object_ddl::tests::routine::create_procedure_renders_language_and_security ... ok
+test postgres::object_ddl::tests::routine::routine_signature_fragments_refuse_clause_keywords_and_literals ... ok
+test postgres::object_ddl::tests::table::create_table_renders_columns_and_table_constraints_in_one_statement ... ok
+test postgres::object_ddl::tests::table::create_table_validation_names_the_op_index ... ok
+test postgres::object_ddl::tests::table::designer_batch_groups_atomically_until_a_concurrent_index ... ok
+test postgres::object_ddl::tests::trigger::create_trigger_renders_events_columns_when_and_arguments ... ok
+test postgres::object_ddl::tests::trigger::create_trigger_validation_rules ... ok
+test postgres::object_ddl::tests::trigger::trigger_lifecycle_ops_follow_the_destructiveness_rule ... ok
+test postgres::objects::tests::drop_candidate_query_normalizes_and_bounds_before_expansion ... ok
+test postgres::objects::tests::foreign_data_options_are_reconstructed_with_quoting ... ok
+test postgres::objects::tests::object_catalog_live_lists_typed_capped_fixture_objects ... ignored, requires pnpm db:postgres
+test postgres::objects::tests::object_catalog_rejects_non_postgresql_connections ... ok
+test postgres::objects::tests::object_description_and_drop_impact_live_cover_every_kind ... ignored, requires pnpm db:postgres
+test postgres::objects::tests::routine_facts_serialize_source_and_header_attributes ... ok
+test postgres::objects::tests::sequence_fact_quantities_serialize_as_decimal_strings ... ok
+test postgres::objects::tests::sequence_owner_components_are_quoted_without_parsing_a_display_string ... ok
+test postgres::objects::tests::view_definition_terminator_is_removed_before_reconstruction ... ok
+test postgres::options::tests::options_are_ordered_and_identifiers_are_quoted ... ok
+test postgres::pool::tests::pooled_options_do_not_inherit_postgres_credentials_tls_or_options ... 
+running 1 test
+test postgres::pool::tests::pooled_options_do_not_inherit_postgres_credentials_tls_or_options ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 742 filtered out; finished in 0.00s
+
+ok
+test postgres::relationship_metadata::tests::fk_columns_not_nullable_when_every_column_is_not_null ... ok
+test postgres::relationship_metadata::tests::fk_columns_nullable_is_false_for_empty_fk ... ok
+test postgres::relationship_metadata::tests::fk_columns_nullable_on_metadata_length_mismatch ... ok
+test postgres::relationship_metadata::tests::fk_columns_nullable_when_any_column_is_nullable ... ok
+test postgres::relationship_metadata::tests::identity_covered_alone_by_one_unique_fk_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::junction_detected_for_composite_pk_of_two_fks ... ok
+test postgres::relationship_metadata::tests::junction_detected_for_surrogate_pk_with_unique_pair ... ok
+test postgres::relationship_metadata::tests::junction_excludes_extra_fk_outside_identity_set ... ok
+test postgres::relationship_metadata::tests::junction_participation_is_keyed_by_table_not_constraint_name_alone ... ok
+test postgres::relationship_metadata::tests::junction_requires_identity_fully_covered_by_fk_columns ... ok
+test postgres::relationship_metadata::tests::one_to_one_child_with_second_fk_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::relationship_cardinality_is_one_to_many_for_non_unique_fk_columns ... ok
+test postgres::relationship_metadata::tests::relationship_cardinality_is_one_to_one_for_unique_fk_columns ... ok
+test postgres::relationship_metadata::tests::shared_pk_one_to_one_child_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::table_with_single_fk_is_not_a_junction ... ok
+test postgres::relationship_metadata::tests::trigger_decoding_composes_for_a_real_before_update_row_trigger ... ok
+test postgres::relationship_metadata::tests::trigger_enabled_treats_only_disabled_as_off ... ok
+test postgres::relationship_metadata::tests::trigger_events_decode_each_bit_in_stable_order ... ok
+test postgres::relationship_metadata::tests::trigger_orientation_decodes_row_and_statement ... ok
+test postgres::relationship_metadata::tests::trigger_timing_decodes_before_after_and_instead_of ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_exact_match ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_ignores_unrelated_indexes ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_is_false_without_metadata ... ok
+test postgres::relationship_metadata::tests::unique_set_covers_subset_of_composite_fk ... ok
+test postgres::relationship_metadata::tests::unique_set_does_not_cover_superset_of_fk ... ok
+test postgres::row_budget::tests::bound_text_caps_wide_primary_key_values ... ok
+test postgres::row_budget::tests::oversized_rows_shrink_later_cells_first ... ok
+test postgres::row_budget::tests::retained_row_bytes_includes_identity ... ok
+test postgres::row_budget::tests::utf8_truncation_stays_on_boundary ... ok
+test postgres::schema::tests::fk_action_label_maps_every_pg_action_code ... ok
+test postgres::schema::tests::fk_action_label_omits_unknown_codes_rather_than_guessing ... ok
+test postgres::schema::tests::security_catalog_codes_decode_into_closed_sets_or_fail ... ok
+test postgres::schema_compare::budget::tests::allocation_and_serializer_admission_are_atomic_and_release_on_drop ... ok
+test postgres::schema_compare::budget::tests::nested_result_scope_preserves_the_combined_cap_and_rolls_back_global ... ok
+test postgres::schema_compare::budget::tests::one_result_shares_its_cap_across_components_and_failure_rolls_back ... ok
+test postgres::schema_compare::budget::tests::simultaneous_serializers_have_two_winners_without_a_queue ... ok
+test postgres::schema_compare::budget::tests::two_jobs_two_results_and_two_serializers_fit_the_global_ceiling_with_a_known_margin ... ok
+test postgres::schema_compare::capture::tests::cancellation_and_deadline_wrap_pending_work ... ok
+test postgres::schema_compare::capture::tests::endpoints_are_bounded_and_must_share_a_resolved_connection ... ok
+test postgres::schema_compare::capture::tests::native_capture ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::capture::tests::native_capture_normalizes_identifier_quoting ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::capture::tests::retained_capture_refuses_endpoint_and_child_limits_and_releases_budget ... ok
+test postgres::schema_compare::diff::tests::absence_rename_and_excluded_counterparts_are_directional ... ok
+test postgres::schema_compare::diff::tests::cancelled_expired_and_over_budget_builds_release_every_partial_allocation ... ok
+test postgres::schema_compare::diff::tests::changes_incomparability_and_ordered_facts_coexist_without_rewriting_literals ... ok
+test postgres::schema_compare::diff::tests::closed_field_checklist_compares_every_supported_path_in_both_directions ... ok
+test postgres::schema_compare::diff::tests::counterpart_exclusions_retain_the_reason_for_each_requested_side ... ok
+test postgres::schema_compare::diff::tests::different_minor_versions_and_unshared_transactions_cannot_claim_expression_equality ... ok
+test postgres::schema_compare::diff::tests::empty_supported_scope_and_excluded_only_schemas_have_distinct_outcomes ... ok
+test postgres::schema_compare::diff::tests::excluded_relation_eligibility_survives_capture_consumption_and_binds_side ... ok
+test postgres::schema_compare::diff::tests::field_merge_checks_cancellation_between_units ... ok
+test postgres::schema_compare::diff::tests::result_pages_and_chunks_bound_payloads_and_validate_identity_ttl_and_side ... ok
+test postgres::schema_compare::diff::tests::stable_names_paths_and_value_ids_ignore_catalog_order_and_local_oids ... ok
+test postgres::schema_compare::expression::tests::accepts_scalar_projection_without_rewriting_literals ... ok
+test postgres::schema_compare::expression::tests::bounds_work_and_rejects_non_scalar_types ... ok
+test postgres::schema_compare::expression::tests::excludes_hidden_dependencies_and_unproven_syntax ... ok
+test postgres::schema_compare::manager::tests::admission_reserves_both_endpoints_and_reconciles_without_running_twice ... ok
+test postgres::schema_compare::manager::tests::cancellation_wins_against_success_and_holds_capacity_until_real_join ... ok
+test postgres::schema_compare::manager::tests::deadline_includes_resolution_and_grace_expiry_does_not_release_a_running_worker ... ok
+test postgres::schema_compare::manager::tests::document_transport_registry_is_bounded_and_reclaims_destroyed_windows ... ok
+test postgres::schema_compare::manager::tests::either_endpoint_and_global_fences_wait_before_resource_invalidation ... ok
+test postgres::schema_compare::manager::tests::expired_start_ids_cannot_recreate_evicted_jobs_and_request_history_is_bounded ... ok
+test postgres::schema_compare::manager::tests::fence_ledger_is_bounded_and_overflow_fails_closed_globally ... ok
+test postgres::schema_compare::manager::tests::maximum_control_ledger_fits_reserved_headroom ... ok
+test postgres::schema_compare::manager::tests::native_manager_capture_pages_and_connection_edit_invalidation ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::manager::tests::pages_bind_endpoints_and_keep_two_leases_until_the_receiving_transport_acknowledges ... ok
+test postgres::schema_compare::manager::tests::reconnect_through_the_disconnect_command_cancels_a_late_worker_and_admits_a_fresh_job ... ok
+test postgres::schema_compare::manager::tests::reload_reclaims_abandoned_replies_and_rejects_late_document_work ... ok
+test postgres::schema_compare::manager::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test postgres::schema_compare::manager::tests::terminal_retention_release_and_ttl_never_turn_missing_results_into_empty ... ok
+test postgres::schema_compare::manager::tests::worker_panic_is_failed_and_releases_only_after_join ... ok
+test postgres::schema_compare::manager::validation::cancellation_and_deadline_interrupt_a_silent_handshake_without_a_connect_timeout ... ok
+test postgres::schema_compare::manager::validation::cancellation_during_ssh_setup_holds_admission_until_the_blocked_worker_joins ... ok
+test postgres::schema_compare::manager::validation::cancellation_interrupts_storage_resolution_before_any_connection_attempt ... ok
+test postgres::schema_compare::manager::validation::native_concurrent_ddl_during_lock_wait_is_consistent_or_retried ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_independent_databases_second_minor_and_unsupported_major ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_memory_profile_with_increasing_schema_size_and_exact_limits ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_teardown_backend_loss_and_read_only_audit ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_tls_verification_failure_fails_closed ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::manager::validation::native_unusual_types_collations_identity_sequences_and_invalid_indexes ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixtures only
+test postgres::schema_compare::normalize::tests::excluded_counterparts_never_become_directional_absence ... ok
+test postgres::schema_compare::normalize::tests::field_order_is_deterministic_and_changed_does_not_hide_incomparability ... ok
+test postgres::schema_compare::normalize::tests::fk_delete_subsets_and_constraint_owned_index_state_survive_matching ... ok
+test postgres::schema_compare::normalize::tests::inventory_and_table_caps_are_distinct ... ok
+test postgres::schema_compare::normalize::tests::maps_only_structured_selected_schema_references ... ok
+test postgres::schema_compare::normalize::tests::mixed_index_keys_compare_by_ordinal_with_explicit_optional_facts ... ok
+test postgres::schema_compare::pages::tests::field_pages_accept_value_references_bound_to_their_named_sides ... ok
+test postgres::schema_compare::pages::tests::field_pages_reject_value_references_bound_to_the_wrong_side ... ok
+test postgres::schema_compare::pages::tests::incomparable_summary_flattens_its_required_observed_sides ... ok
+test postgres::schema_compare::pages::tests::pages_at_most_one_hundred_summaries_and_rejects_invalid_offsets ... ok
+test postgres::schema_compare::protocol::tests::status_serialization_binds_terminal_payloads_to_their_phase ... ok
+test postgres::schema_compare::values::tests::child_fact_slots_are_bounded_independently_for_each_endpoint ... ok
+test postgres::schema_compare::values::tests::encoded_pages_require_valid_response_ids_and_handoff_uses_the_bound_id ... ok
+test postgres::schema_compare::values::tests::endpoint_and_combined_result_bytes_reject_before_retention ... ok
+test postgres::schema_compare::values::tests::handoff_retains_both_serializer_reservations_until_matching_ack ... ok
+test postgres::schema_compare::values::tests::maximum_control_text_uses_four_independent_bounded_chunks ... ok
+test postgres::schema_compare::values::tests::serialized_json_limit_is_checked_before_buffer_growth ... ok
+test postgres::schema_compare::values::tests::tauri_json_callback_duplication_fits_the_reserved_scratch ... ok
+test postgres::schema_compare::values::tests::utf8_offsets_result_identity_and_expiry_are_checked ... ok
+test postgres::seed::live_tests::seed_live_end_to_end ... ignored, requires the infrastructure/test-db postgres container
+test postgres::sql_class::tests::classifies_every_head_family_and_comments ... ok
+test postgres::sql_class::tests::copy_combines_direction_and_embedded_write_scanning ... ok
+test postgres::sql_class::tests::ddl_destructiveness_is_explicit ... ok
+test postgres::sql_class::tests::explain_only_escalates_when_analyze_executes_the_wrapped_statement ... ok
+test postgres::sql_class::tests::read_denylist_distinguishes_writes_from_destructive_calls ... ok
+test postgres::sql_class::tests::read_denylist_is_token_exact_and_conservatively_matches_columns ... ok
+test postgres::sql_class::tests::read_shaped_writes_drive_the_expected_policy_decisions ... ok
+test postgres::sql_class::tests::scripts_classify_select_into_in_order ... ok
+test postgres::sql_class::tests::scripts_preserve_order_without_splitting_opaque_content ... ok
+test postgres::sql_class::tests::select_into_is_non_destructive_ddl_only_at_statement_depth ... ok
+test postgres::sql_class::tests::unbounded_detection_only_accepts_where_at_the_statement_depth ... ok
+test postgres::sql_class::tests::with_scans_writes_and_unboundedness_at_the_write_depth ... ok
+test postgres::sql_lex::tests::brackets_and_dollar_identifiers_are_lexed_structurally ... ok
+test postgres::sql_lex::tests::plain_string_backslash_is_accepted_when_both_semantics_agree ... ok
+test postgres::sql_lex::tests::plain_string_backslash_is_rejected_when_the_boundary_moves ... ok
+test postgres::sql_lex::tests::spans_cover_each_token_and_skip_comments_and_whitespace ... ok
+test postgres::sql_params::tests::a_parameter_name_cannot_change_what_the_policy_sees ... ok
+test postgres::sql_params::tests::a_ten_parameter_statement_maps_multi_digit_placeholders ... ok
+test postgres::sql_params::tests::binding_limits_hold_at_and_just_past_each_boundary ... ok
+test postgres::sql_params::tests::binding_orders_values_and_ignores_unused_names ... ok
+test postgres::sql_params::tests::binding_refuses_missing_and_duplicate_names ... ok
+test postgres::sql_params::tests::casts_assignments_and_key_value_colons_are_not_parameters ... ok
+test postgres::sql_params::tests::debug_output_never_holds_a_value ... ok
+test postgres::sql_params::tests::names_follow_openers_separators_operators_and_whitespace ... ok
+test postgres::sql_params::tests::names_inside_opaque_regions_are_not_parameters ... ok
+test postgres::sql_params::tests::native_placeholders_are_reported_and_left_alone ... ok
+test postgres::sql_params::tests::positions_translate_around_placeholders_with_multibyte_text_before ... ok
+test postgres::sql_params::tests::repeats_reuse_one_placeholder_in_first_appearance_order ... ok
+test postgres::sql_params::tests::row_limits_outside_the_retention_cap_are_refused_first ... ok
+test postgres::sql_params::tests::server_positions_map_back_through_the_prefix_span_and_placeholders ... ok
+test postgres::sql_params::tests::slices_are_not_parameters_but_constructors_and_parenthesized_subscripts_are ... ok
+test postgres::sql_params::tests::sql_with_names_is_scanned_only_in_parameter_mode ... ok
+test postgres::sql_params::tests::sql_without_names_is_a_script_unless_a_limit_meets_an_eligible_read ... ok
+test postgres::sql_params::tests::unlexable_sql_fails_the_scan ... ok
+test postgres::sql_params::tests::unlexable_sql_is_refused_only_in_parameter_mode ... ok
+test postgres::tls::tests::client_pair_must_be_complete ... ok
+test postgres::tls::tests::command_blocks_libpq_default_tls_material_with_explicit_missing_paths ... ok
+test postgres::tls::tests::command_clears_inherited_connection_and_certificate_overrides ... ok
+test postgres::tls::tests::command_disable_does_not_enable_tls_material ... ok
+test postgres::tls::tests::command_disabled_tls_ignores_stale_client_material ... ok
+test postgres::tls::tests::command_gets_host_hostaddr_and_pgssl_env ... ok
+test postgres::tls::tests::command_isolates_libpq_default_files_and_keeps_home_alive ... ok
+test postgres::tls::tests::command_keeps_missing_tls_material_directory_alive_through_child ... ok
+test postgres::tls::tests::command_only_enables_explicit_crl_isolation_for_verifying_modes ... ok
+test postgres::tls::tests::command_preserves_configured_client_material ... ok
+test postgres::tls::tests::command_validates_client_material_before_spawn ... ok
+test postgres::tls::tests::disable_yields_no_config_and_verifying_modes_build_with_fixture_ca ... ok
+test postgres::tls::tests::dsn_downgrades_tunneled_verify_full_like_pg_options ... ok
+test postgres::tls::tests::dsn_query_renders_mode_and_encoded_paths ... ok
+test postgres::tls::tests::encrypted_keys_are_refused_by_path ... ok
+test postgres::tls::tests::legacy_rows_resolve_through_ssl ... ok
+test postgres::tls::tests::missing_and_malformed_files_name_the_path ... ok
+test postgres::tls::tests::mode_tables ... ok
+test postgres::tls::tests::sqlx_downgrades_verify_full_only_when_the_server_name_differs ... ok
+test postgres::tls::tests::tls_options_win_over_ssl_and_blank_paths_are_none ... ok
+test postgres::transfer::csv_tests::accepts_1600_columns_and_rejects_a_1601st ... ok
+test postgres::transfer::csv_tests::defaults_and_camel_case_options_are_stable ... ok
+test postgres::transfer::csv_tests::encoder_chunks_large_escaped_values_and_round_trips_them ... ok
+test postgres::transfer::csv_tests::enforces_field_limit_before_growing_the_field ... ok
+test postgres::transfer::csv_tests::enforces_record_limit_before_accepting_another_byte ... ok
+test postgres::transfer::csv_tests::handles_a_bom_incrementally_and_rejects_invalid_utf8 ... ok
+test postgres::transfer::csv_tests::header_rows_are_returned_for_the_caller_to_handle ... ok
+test postgres::transfer::csv_tests::invalid_options_return_structural_errors_without_values ... ok
+test postgres::transfer::csv_tests::parses_a_distinct_escape_character ... ok
+test postgres::transfer::csv_tests::parses_one_byte_at_a_time_with_quoted_newlines_and_crlf ... ok
+test postgres::transfer::csv_tests::preserves_null_markers_and_empty_strings_through_encoding ... ok
+test postgres::transfer::csv_tests::rejects_malformed_quotes_and_line_endings_at_the_exact_record ... ok
+test postgres::transfer::csv_tests::reports_preview_pending_state_without_finishing_a_partial_record ... ok
+test postgres::transfer::manager::tests::an_inspection_is_consumed_exactly_once ... ok
+test postgres::transfer::manager::tests::cancellation_cannot_commit_or_run_success_effects ... ok
+test postgres::transfer::manager::tests::fences_invalidate_reviews_and_resolutions_with_nested_scopes ... ok
+test postgres::transfer::manager::tests::finalization_wins_and_completion_effects_precede_terminal ... ok
+test postgres::transfer::manager::tests::global_fence_stops_all_workers_before_returning ... ok
+test postgres::transfer::manager::tests::pending_work_counts_towards_capacity_and_same_connection_limit ... ok
+test postgres::transfer::manager::tests::reviews_have_a_cap_ttl_and_explicit_release ... ok
+test postgres::transfer::manager::tests::teardown_timeout_joins_aborted_worker_before_returning ... ok
+test postgres::transfer::manager::tests::terminal_retention_never_evicts_active_jobs ... ok
+test postgres::transfer::manager::tests::unknown_commit_never_runs_success_audit ... ok
+test postgres::transfer::manager::tests::watchdog_joins_before_releasing_capacity ... ok
+test postgres::transfer::manager::tests::worker_panic_after_commit_claim_is_unknown ... ok
+test postgres::transfer::runner::tests::export_sql_guards_fields_and_records_before_copy_projection ... ok
+test postgres::transfer::runner::tests::import_sql_quotes_identifiers_and_uses_only_validated_options ... ok
+test postgres::transfer::runner::tests::inspection_bounds_retained_header_labels ... ok
+test postgres::transfer::runner::tests::inspection_refuses_a_first_record_that_exceeds_the_inspection_budget ... ok
+test postgres::transfer::runner::tests::inspection_reports_actual_width_error_after_retained_sample_is_full ... ok
+test postgres::transfer::runner::tests::mapping_allows_source_reuse_but_rejects_duplicate_and_unsupported_targets ... ok
+test postgres::transfer::runner::tests::partial_publication_never_replaces_a_destination ... ok
+test postgres::transfer::runner::tests::source_fingerprint_changes_after_an_in_place_write ... ok
+test postgres::transfer::runner::tests::source_symlinks_are_refused ... ok
+test postgres::transfer::runner_tests_live::live_csv_export_uses_canonical_output_and_distinct_limit_errors ... ignored, requires disposable PostgreSQL on 15432; creates and drops a generated database
+test postgres::transfer::runner_tests_live::live_csv_exports_materialized_views_and_foreign_tables ... ignored, requires disposable PostgreSQL on 15432; creates and drops a generated database
+test postgres::transfer::runner_tests_live::live_csv_import_commits_rows_routed_or_suppressed_by_triggers ... ignored, requires disposable PostgreSQL on 15432; creates and drops a generated database
+test postgres::transfer::runner_tests_live::live_csv_import_rejects_default_expression_changed_after_inspection ... ignored, requires disposable PostgreSQL on 15432; creates and drops a generated database
+test postgres::transfer::runner_tests_live::live_csv_memory_plateau ... ignored, resource measurement; disposable PostgreSQL 15432; DBUNK_CSV_MEMORY_MIB=32 or 512
+test postgres::transfer::runner_tests_live::live_csv_roundtrip_atomicity_catalog_files_and_fences ... ignored, requires disposable PostgreSQL on 15432; creates and drops a generated database
+test postgres::transfer::runner_tests_live::live_csv_verified_tls_and_driver_read_only ... ignored, requires disposable TLS PostgreSQL on 15433 and DBUNK_CSV_TLS_ROOT
+test query_session::observer::tests::maps_only_authoritative_idle_states ... ok
+test query_session::postgres::tests::a_failed_request_delivers_retained_rows_and_aborts_the_open_result ... ok
+test query_session::postgres::tests::a_held_completion_is_reported_only_once_cleanup_settles ... ok
+test query_session::postgres::tests::a_probe_row_proves_more_rows_exist_without_being_counted ... ok
+test query_session::postgres::tests::a_retained_limit_drains_every_result_set_and_counts_what_it_withheld ... ok
+test query_session::postgres::tests::notices_share_the_metadata_budget_and_count_limit ... ok
+test query_session::postgres::tests::oversized_rows_shrink_later_cells_first ... ok
+test query_session::postgres::tests::parameter_values_stay_out_of_debug_output_and_driver_logs ... ok
+test query_session::postgres::tests::query_session_live_bound_command_runs_refuses_and_stops ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_cursor_inside_a_user_transaction ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_driver_side_failures_do_not_retire_the_session ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_plaintext_refusal_results_temp_state_and_cancel ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_text_parameters_infer_types_and_stay_data ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_tls_connects_and_cancels ... ignored, requires pnpm db:postgres-tls
+test query_session::postgres::tests::query_session_live_tls_cursor_read_bound_command_and_stop ... ignored, requires pnpm db:postgres-tls
+test query_session::postgres::tests::query_session_live_wrapper_ends_before_anyone_takes_a_row ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_wrapper_exit_rules ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::query_session_live_wrapper_sends_nothing_after_a_close ... ignored, requires pnpm db:postgres
+test query_session::postgres::tests::queued_notices_are_drained_before_a_terminal_event ... ok
+test query_session::postgres::tests::script_batches_split_at_the_byte_budget ... ok
+test query_session::postgres::tests::script_keeps_sixty_four_result_sets_and_reports_commands ... ok
+test query_session::postgres::tests::script_rows_keep_the_cell_and_execution_byte_caps ... ok
+test query_session::postgres::tests::script_rows_keep_the_execution_cap_across_result_sets ... ok
+test query_session::postgres::tests::script_rows_keep_the_per_set_cap_and_two_hundred_row_batches ... ok
+test query_session::postgres::tests::text_parameters_are_sent_as_text_and_accept_every_type ... ok
+test query_session::postgres::tests::utf8_truncation_stays_on_boundary ... ok
+test query_session::protocol::tests::completed_result_sets_report_whether_they_are_partial ... ok
+test query_session::protocol::tests::execute_payload_distinguishes_parameter_mode_and_redacts_values ... ok
+test query_session::protocol::tests::nullable_column_names_keep_positions ... ok
+test query_session::protocol::tests::refusals_and_new_event_fields_have_stable_wire_shapes ... ok
+test query_session::protocol::tests::wire_shapes_are_tagged_and_camel_case ... ok
+test query_session::tests::a_closed_sink_fails_the_send_and_leaves_no_credit_behind ... ok
+test query_session::tests::a_probe_that_started_earlier_cannot_overwrite_a_later_one ... ok
+test query_session::tests::a_stop_is_accepted_while_the_credit_window_is_full ... ok
+test query_session::tests::a_stop_only_flags_the_execution_it_names ... ok
+test query_session::tests::admission_constants_match_contract ... ok
+test query_session::tests::an_ack_between_the_credit_check_and_the_wait_is_not_missed ... ok
+test query_session::tests::cleanup_closes_the_cancel_window_and_holds_the_session_open ... ok
+test query_session::tests::closing_with_a_full_credit_window_ends_the_parked_execution ... ok
+test query_session::tests::connection_loss_retires_the_session ... ok
+test query_session::tests::describe_reports_the_names_execution_binds_in_the_same_order ... ok
+test query_session::tests::only_a_requested_stop_turns_57014_into_cancelled ... ok
+test query_session::tests::opening_connections_are_reserved_for_admission ... ok
+test query_session::tests::opening_sessions_are_reserved_for_admission ... ok
+test query_session::tests::parameters_and_row_limit_are_refused_before_policy_and_session_lookup ... ok
+test query_session::tests::policy_is_asserted_before_session_lookup ... ok
+test query_session::tests::query_session_actor_live_a_refused_first_event_fails_the_open_and_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_a_refused_terminal_event_retires_the_session ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_a_sink_that_closes_mid_stream_retires_the_session ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_an_unfocused_window_keeps_its_lease ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_close_at_any_moment_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_close_mid_fetch_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_close_with_withheld_acks_releases_the_backend ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_connection_drop_mid_fetch_loses_the_session ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_global_teardown_closes_sessions_before_it_returns ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_owner_replacement_closes_the_old_owners_sessions ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_read_only_and_timeouts_on_the_new_shapes ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_row_limit_is_truthful_at_the_boundary ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_statement_timeout_settles_failed ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_stop_at_any_moment_settles_once_and_idle ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_stop_settles_cancelled_once ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_user_transactions_are_never_committed_or_left_with_a_cursor ... ignored, requires pnpm db:postgres
+test query_session::tests::query_session_actor_live_wrapper_always_leaves_the_session_idle ... ignored, requires pnpm db:postgres
+test query_session::tests::read_only_statement_admission_only_accepts_reads ... ok
+test query_session::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test query_session::tests::teardown_refuses_opens_before_any_connection_is_made ... ok
+test redis::capabilities::tests::parses_config_get_returns_value_only ... ok
+test redis::capabilities::tests::parses_info_field_with_crlf ... ok
+test redis::capabilities::tests::parses_module_list_into_name_ver_pairs ... ok
+test redis::capabilities::tests::parses_replication_role_and_slaves ... ok
+test redis::destructive_commands::tests::does_not_match_unrelated_commands ... ok
+test redis::destructive_commands::tests::empty_input_is_not_destructive ... ok
+test redis::destructive_commands::tests::matches_single_word_commands ... ok
+test redis::destructive_commands::tests::matches_two_word_commands ... ok
+test redis::key_inspector::tests::empty_list_returns_none ... ok
+test redis::key_inspector::tests::first_page_targets_tail_window ... ok
+test redis::key_inspector::tests::page_entirely_past_end_returns_none ... ok
+test redis::key_inspector::tests::page_overlapping_head_clamps_to_zero ... ok
+test redis::key_inspector::tests::second_page_targets_next_window ... ok
+test redis::key_ops::tests::parse_role_extracts_master ... ok
+test redis::key_ops::tests::parse_role_extracts_replica ... ok
+test redis::key_ops::tests::parse_role_ignores_section_headers_and_blanks ... ok
+test redis::key_ops::tests::parse_role_missing_returns_none ... ok
+test redis::server_info::acl_tests::detects_allkeys_via_star ... ok
+test redis::server_info::acl_tests::empty_keys_field_means_unrestricted ... ok
+test redis::server_info::acl_tests::missing_keys_field_means_unrestricted ... ok
+test redis::server_info::acl_tests::parses_redis6_string_keys ... ok
+test redis::server_info::acl_tests::parses_redis7_array_keys ... ok
+test redis::url::tests::custom_port_overrides_default ... ok
+test redis::url::tests::db_number_is_path_component ... ok
+test redis::url::tests::defaults_to_port_6379_db_0_no_auth ... ok
+test redis::url::tests::password_only_skips_username ... ok
+test redis::url::tests::percent_encodes_url_significant_chars_in_password ... ok
+test redis::url::tests::plain_with_verify_off_does_not_append_fragment ... ok
+test redis::url::tests::rejects_db_above_15 ... ok
+test redis::url::tests::rejects_empty_host ... ok
+test redis::url::tests::tls_uses_rediss_scheme ... ok
+test redis::url::tests::tls_with_verify_off_appends_insecure_fragment ... ok
+test redis::url::tests::tls_with_verify_on_omits_fragment ... ok
+test redis::url::tests::user_and_password_renders_acl_form ... ok
+test redis::url::tests::username_without_password_is_no_auth ... ok
+test redis::value::tests::array_recursively_serializes ... ok
+test redis::value::tests::int_carries_value ... ok
+test redis::value::tests::map_flattens_to_kv_pairs ... ok
+test redis::value::tests::nil_serializes_to_kind_nil ... ok
+test redis::value::tests::non_utf8_bulk_string_falls_back_to_hex ... ok
+test redis::value::tests::okay_variant_returns_ok ... ok
+test redis::value::tests::status_simplestring_returns_status_kind ... ok
+test redis::value::tests::utf8_bulk_string_uses_utf8_encoding ... ok
+test result_mutation::builder::tests::duplicate_shaped_insert_excludes_generated_columns ... ok
+test result_mutation::builder::tests::identifiers_with_quotes_are_escaped ... ok
+test result_mutation::builder::tests::insert_explicit_null_is_a_bound_parameter ... ok
+test result_mutation::builder::tests::insert_omits_unset_defaultable_and_identity_columns ... ok
+test result_mutation::builder::tests::join_snapshot_rejects_insert_and_delete_but_keeps_per_table_updates ... ok
+test result_mutation::builder::tests::keyed_delete_uses_full_projected_row_guards ... ok
+test result_mutation::builder::tests::never_interpolates_user_values_into_sql ... ok
+test result_mutation::builder::tests::null_guards_use_is_null_without_consuming_a_parameter ... ok
+test result_mutation::builder::tests::rejects_each_non_writable_column_kind ... ok
+test result_mutation::builder::tests::rejects_empty_set_and_identity ... ok
+test result_mutation::builder::tests::rejects_missing_full_row_guard_for_virtual_and_ctid_operations ... ok
+test result_mutation::builder::tests::rejects_null_identity_for_both_keyed_kinds ... ok
+test result_mutation::builder::tests::rejects_plan_table_mismatch ... ok
+test result_mutation::builder::tests::rejects_unknown_columns ... ok
+test result_mutation::builder::tests::update_with_multi_column_identity_preserves_order ... ok
+test result_mutation::builder::tests::update_with_single_identity_has_exact_sql_and_params ... ok
+test result_mutation::builder::tests::virtual_and_ctid_updates_require_and_render_full_row_guards ... ok
+test result_mutation::live::result_mutation_live_analysis_matrix ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_cancel_teardown_rollback_and_recovery ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_catalog_drift_expires_before_dml ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_idle_close_releases_socket_worker_and_capacity ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_preview_apply_conflicts_defaults_and_index_plan ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_virtual_identity_ctid_and_lock_timeout ... ignored, requires pnpm db:postgres
+test result_mutation::live::result_mutation_live_virtual_key_drift_and_analysis_expiry ... ignored, requires pnpm db:postgres
+test result_mutation::live::safety_live_apply_strict_confirmation_and_audit ... ignored, requires pnpm db:postgres
+test result_mutation::postgres::tests::apply_fingerprint_expires_on_oid_and_mutation_relevant_catalog_drift ... ok
+test result_mutation::postgres::tests::catalog_work_is_scoped_and_attributed_to_operation_targets ... ok
+test result_mutation::postgres::tests::every_postgres_system_attnum_is_recognized ... ok
+test result_mutation::postgres::tests::generated_classification_is_non_empty_not_version_specific ... ok
+test result_mutation::postgres::tests::maps_structural_sqlstates_without_message_matching ... ok
+test result_mutation::postgres::tests::range_parser_enumerates_joins_and_repeated_spelling ... ok
+test result_mutation::postgres::tests::range_parser_fails_closed_for_comma_nested_cte_and_function_ranges ... ok
+test result_mutation::postgres::tests::range_parser_ignores_comments_strings_and_dollar_quotes ... ok
+test result_mutation::postgres::tests::range_parser_preserves_quoted_names_and_expression_nesting ... ok
+test result_mutation::postgres::tests::range_variable_check_allows_duplicate_projection_but_rejects_self_join ... ok
+test result_mutation::protocol::tests::analysis_result_covers_all_tagged_shapes ... ok
+test result_mutation::protocol::tests::command_payloads_are_camel_case_and_tagged ... ok
+test result_mutation::protocol::tests::every_error_variant_has_the_stable_wire_shape ... ok
+test result_mutation::protocol::tests::not_analyzable_reason_shapes_are_typed ... ok
+test result_mutation::protocol::tests::payload_round_trip_rejects_untagged_operations ... ok
+test result_mutation::protocol::tests::preview_apply_cancel_and_virtual_key_results_are_camel_case ... ok
+test result_mutation::tests::admission_rejects_the_ninth_executor ... ok
+test result_mutation::tests::admitted_teardown_is_bounded_and_fence_releases_only_at_terminal ... ok
+test result_mutation::tests::analysis_supersession_never_interrupts_apply ... ok
+test result_mutation::tests::apply_is_exclusive_and_snapshot_is_tab_scoped ... ok
+test result_mutation::tests::cancel_bookkeeping_is_scoped_to_tab ... ok
+test result_mutation::tests::cancelled_executor_installation_cannot_spawn_an_unowned_worker ... ok
+test result_mutation::tests::close_idle_removes_executor_stops_worker_and_releases_capacity ... ok
+test result_mutation::tests::commit_admission_linearizes_teardown_outcomes ... ok
+test result_mutation::tests::contract_limits_are_fixed ... ok
+test result_mutation::tests::dropped_apply_waiter_cancels_and_finalizes_owned_state ... ok
+test result_mutation::tests::duplicate_cancel_is_not_scheduled_for_the_same_active_request ... ok
+test result_mutation::tests::global_fence_stays_closed_until_detached_closes_finish ... ok
+test result_mutation::tests::idle_requires_expired_and_quiet_executor ... ok
+test result_mutation::tests::newer_analysis_supersedes_queued_request ... ok
+test result_mutation::tests::policy_refusal_leaves_the_apply_executor_idle ... ok
+test result_mutation::tests::snapshot_cache_evicts_oldest_at_sixteen ... ok
+test result_mutation::tests::snapshot_lookup_updates_lru_recency_and_preserves_tab_owner ... ok
+test result_mutation::tests::stale_apply_ids_do_not_create_or_count_executors ... ok
+test result_mutation::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test result_mutation::tests::structure_invalidation_expires_snapshots_and_advances_generation ... ok
+test result_mutation::tests::teardown_before_commit_admission_cancels_apply ... ok
+test result_mutation::tests::terminal_close_does_not_release_connection_fence_before_lifecycle_end ... ok
+test safety::gate::tests::audit_values_are_class_labels_only ... ok
+test safety::gate::tests::default_policy_is_dark_and_confirmed_does_not_create_an_audit ... ok
+test safety::gate::tests::every_legacy_write_gate_refuses_strict_until_confirmed ... ok
+test safety::gate::tests::read_only_tag_is_exact_and_confirmation_cannot_unlock ... ok
+test safety::live::safety_live_query_command_core_enforces_policy_and_records_audit ... ignored, requires pnpm db:postgres
+test safety::live::safety_live_read_only_guc_covers_pooled_dedicated_and_policy_flip ... ignored, requires pnpm db:postgres
+test safety::policy::tests::authorization_only_audits_a_required_confirmed_override ... ok
+test safety::policy::tests::disabled_is_the_dark_launch_default ... ok
+test safety::policy::tests::inherit_resolution_follows_environment ... ok
+test safety::policy::tests::protected_requires_only_destructive_overrides ... ok
+test safety::policy::tests::read_only_only_admits_proven_reads_and_cancel ... ok
+test safety::policy::tests::scripts_use_the_strictest_statement_and_refusals_expose_classes_only ... ok
+test safety::policy::tests::strict_requires_every_write_but_not_read_transaction_session_or_cancel ... ok
+test seed::plan_tests::an_empty_parent_table_fails_before_any_write ... ok
+test seed::plan_tests::booleans_render_as_digits_outside_postgres ... ok
+test seed::plan_tests::clickhouse_arrays_render_with_bracket_syntax ... ok
+test seed::plan_tests::clickhouse_derived_columns_are_never_inserted ... ok
+test seed::plan_tests::clickhouse_sorting_key_is_not_treated_as_unique ... ok
+test seed::plan_tests::clickhouse_types_unwrap_nullable_and_lowcardinality ... ok
+test seed::plan_tests::enum_columns_become_a_value_list_of_their_declared_members ... ok
+test seed::plan_tests::enum_members_parse_from_both_engine_spellings ... ok
+test seed::plan_tests::fixed_string_length_is_carried_through_to_truncation ... ok
+test seed::plan_tests::mysql_auto_increment_column_is_skipped ... ok
+test seed::plan_tests::mysql_types_drop_modifiers_and_fold_synonyms ... ok
+test seed::plan_tests::only_referenced_foreign_keys_need_a_parent_pool ... ok
+test seed::plan_tests::sqlite_integer_rowid_key_is_skipped_but_composite_key_is_not ... ok
+test seed::plan_tests::sqlite_untyped_column_falls_back_to_text ... ok
+test seed::plan_tests::tiny_integers_stay_inside_a_single_byte ... ok
+test seed::plan_tests::unique_integer_columns_request_a_max_probe_and_start_above_it ... ok
+test seed::tests::chunked_generation_matches_one_shot_generation ... ok
+test seed::tests::classify_prefers_name_inference_when_type_compatible ... ok
+test seed::tests::composite_fk_members_stay_aligned ... ok
+test seed::tests::null_rate_zero_and_one_are_exact ... ok
+test seed::tests::same_seed_generates_identical_rows ... ok
+test seed::tests::skip_columns_are_omitted_from_output ... ok
+test seed::tests::unique_integer_sequences_above_base ... ok
+test seed::tests::unique_text_kinds_never_collide ... ok
+test seed::tests::varchar_length_is_respected ... ok
+test socket_lifecycle::tests::csv_transfers_join_the_canonical_connection_and_global_fences ... ok
+test socket_lifecycle::tests::pg_tools_are_stopped_before_connection_bastion_and_global_invalidation ... ok
+test storage::tests::bastion_and_connection_tunnel_fields_round_trip ... ok
+test storage::tests::bastion_reference_lookup_normalizes_stored_tunnel_ids ... ok
+test storage::tests::clear_virtual_key_rejects_every_non_postgres_engine_without_deleting ... ok
+test storage::tests::config_dir_override_is_optional_and_must_be_absolute ... ok
+test storage::tests::connection_organization_fields_round_trip_for_every_engine ... ok
+test storage::tests::delete_connection_cascades_schema_map_rows ... ok
+test storage::tests::deleting_connection_cascades_virtual_keys ... ok
+test storage::tests::malformed_ssh_jump_chain_is_not_silently_dropped ... ok
+test storage::tests::malformed_ssh_keepalive_interval_is_not_silently_dropped ... ok
+test storage::tests::malformed_tls_options_degrade_to_none_and_other_engines_stay_null ... ok
+test storage::tests::migration_15_defaults_legacy_rows_to_dark_policy ... ok
+test storage::tests::migration_17_defaults_legacy_rows_to_no_organization ... ok
+test storage::tests::migration_18_leaves_legacy_rows_resolving_through_ssl ... ok
+test storage::tests::read_virtual_key_rejects_every_non_postgres_engine ... ok
+test storage::tests::redis_cli_history_round_trip_filters_by_connection ... ok
+test storage::tests::redis_cli_history_trims_to_cap_globally ... ok
+test storage::tests::safety_override_audit_is_scoped_and_cascades ... ok
+test storage::tests::safety_override_audit_trims_to_global_cap ... ok
+test storage::tests::safety_policy_fields_round_trip_for_every_engine ... ok
+test storage::tests::safety_policy_migration_is_applied ... ok
+test storage::tests::schema_map_positions_round_trip_and_reset ... ok
+test storage::tests::schema_map_prefs_default_and_patch_round_trip ... ok
+test storage::tests::table_grid_prefs_round_trip_and_missing_is_null ... ok
+test storage::tests::tls_options_round_trip_and_normalize_ssl ... ok
+test storage::tests::ui_state_rejects_foreign_namespaces ... ok
+test storage::tests::ui_state_round_trip_overwrite_and_prefix_delete ... ok
+test storage::tests::upsert_virtual_key_rejects_every_non_postgres_engine_without_overwriting ... ok
+test storage::tests::virtual_key_migration_is_applied ... ok
+test storage::tests::virtual_key_round_trip_preserves_order_and_clear_removes_it ... ok
+test storage::tests::virtual_key_validation_rejects_invalid_documents ... ok
+test table_browse::builder::tests::count_and_explain_sql_reuse_where_without_limit ... ok
+test table_browse::builder::tests::every_comparison_operator_renders_text_cast ... ok
+test table_browse::builder::tests::foreign_table_identity_is_none ... ok
+test table_browse::builder::tests::generated_sql_never_contains_user_values ... ok
+test table_browse::builder::tests::ilike_operators_escape_metacharacters ... ok
+test table_browse::builder::tests::in_list_and_null_operators ... ok
+test table_browse::builder::tests::keyset_single_and_multi_column_and_ctid ... ok
+test table_browse::builder::tests::offset_fallback_for_user_sort_and_pre14_ctid ... ok
+test table_browse::builder::tests::page_size_clamps_and_fetches_one_extra ... ok
+test table_browse::builder::tests::partitioned_virtual_identity_uses_tableoid_and_ctid ... ok
+test table_browse::builder::tests::raw_and_typed_filters_and_combine ... ok
+test table_browse::builder::tests::sort_nulls_and_identity_tiebreakers ... ok
+test table_browse::builder::tests::unique_index_identity_ties_break_on_name ... ok
+test table_browse::builder::tests::validation_errors ... ok
+test table_browse::executor::tests::cancel_tab_without_in_flight_does_not_queue_protocol_cancel ... ok
+test table_browse::executor::tests::canceled_sqlstate_maps_to_typed_errors ... ok
+test table_browse::executor::tests::complete_job_applies_interrupt_and_clears_inflight_atomically ... ok
+test table_browse::executor::tests::complete_job_treats_a_missing_tab_as_cancelled ... ok
+test table_browse::executor::tests::dummy_spec_does_not_log_secrets ... ok
+test table_browse::executor::tests::in_flight_request_is_marked_for_cancel_when_superseded ... ok
+test table_browse::executor::tests::older_request_id_is_rejected_as_superseded ... ok
+test table_browse::executor::tests::queue_wait_timeout_lookup_is_tab_scoped ... ok
+test table_browse::executor::tests::queued_request_is_dropped_when_a_newer_request_arrives ... ok
+test table_browse::interrupt::tests::interrupt_unconditionally_determines_terminal_result ... ok
+test table_browse::live::table_browse_live_cancel_supersede_truncation_and_teardown ... ignored, requires pnpm db:postgres
+test table_browse::live::table_browse_live_ilike_escape_and_raw_sql_boundaries ... ignored, requires pnpm db:postgres
+test table_browse::live::table_browse_live_keyset_offset_counts_and_structure ... ignored, requires pnpm db:postgres
+test table_browse::live::table_browse_live_tls_connects ... ignored, requires pnpm db:postgres-tls
+test table_browse::live::table_browse_live_typed_filters_casts_and_identity ... ignored, requires pnpm db:postgres
+test table_browse::manager::tests::admission_constants_match_contract ... ok
+test table_browse::manager::tests::admission_rejects_global_closing ... ok
+test table_browse::manager::tests::admission_rejects_ninth_executor ... ok
+test table_browse::manager::tests::close_all_does_not_leave_connection_ids_in_closing ... ok
+test table_browse::manager::tests::connection_teardown_rejects_new_admission ... ok
+test table_browse::manager::tests::global_teardown_rejects_new_admission ... ok
+test table_browse::manager::tests::idle_check_requires_a_quiet_expired_executor ... ok
+test table_browse::manager::tests::idle_close_bookkeeping_uses_last_used_and_busy_flag ... ok
+test table_browse::manager::tests::queue_wait_timeout_error_names_the_operation ... ok
+test table_browse::manager::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test table_browse::postgres::tests::undefined_object_sqlstates_trigger_retry ... ok
+test table_browse::postgres::tests::wide_primary_key_identity_is_capped_and_counted ... ok
+test table_browse::protocol::tests::comparison_filter_requires_value_and_rejects_bag_shape ... ok
+test table_browse::protocol::tests::payload_wire_shape_round_trips ... ok
+test table_browse::protocol::tests::table_grid_prefs_require_version_and_cap_history ... ok
+test table_browse::protocol::tests::wire_shapes_are_tagged_and_camel_case ... ok
+test tauri_host::exit_lifecycle_tests::cleanup_panic_still_finishes_so_a_restart_cannot_wait_forever ... ok
+test tauri_host::exit_lifecycle_tests::repeated_ordinary_exit_is_prevented_until_cleanup_finishes ... ok
+test tauri_host::exit_lifecycle_tests::repeated_restart_waits_for_cleanup_already_in_progress ... ok
+test tunnel::endpoint::tests::remote_endpoint_uses_database_endpoint_seen_from_bastion ... ok
+test tunnel::endpoint::tests::rewrite_carries_the_original_host_as_tls_server_name ... ok
+test tunnel::endpoint::tests::rewrite_connection_endpoint_keeps_redis_tunnel_metadata ... ok
+test tunnel::endpoint::tests::rewrite_preserves_a_user_supplied_server_name ... ok
+test tunnel::endpoint::tests::sqlite_endpoint_rewrite_is_rejected ... ok
+test tunnel::route::tests::route_key_includes_advanced_options ... ok
+test tunnel::route::tests::route_key_preserves_bastion_id_boundaries ... ok
+test tunnel::route::tests::route_normalizes_tunnel_config_before_building_route ... ok
+test tunnel::route::tests::route_rejects_duplicate_jump_hops ... ok
+test tunnel::route::tests::route_rejects_jump_chain_loops ... ok
+test tunnel::session::tests::proxy_command_expands_host_port_and_percent_escape ... ok
+test tunnel::session::tests::proxy_shutdown_cancels_backpressured_write_to_descendant_stdin ... ok
+test tunnel::session::tests::proxy_shutdown_cancels_read_when_descendant_keeps_stdout_open ... ok
+test tunnel::tests::cancellation_after_forward_publication_rolls_back_only_new_resources ... ok
+test tunnel::tests::cancellation_interrupts_bastion_pool_wait_before_ssh_starts ... ok
+test tunnel::tests::cancellation_interrupts_fingerprint_pool_wait_without_publishing_session ... ok
+test tunnel::tests::cancellation_joins_dispatched_fingerprint_write_before_host_key_reset ... ok
+test tunnel::tests::cancelled_session_publication_waits_for_other_pending_setup ... ok
+test tunnel::tests::duplicate_session_cleanup_does_not_block_runtime_lookups ... ok
+test tunnel::tests::ephemeral_route_drop_removes_forward_and_stops_listener ... ok
+test tunnel::tests::original_deadline_interrupts_bastion_pool_wait ... ok
+test tunnel::tests::teardown_join_on_the_only_runtime_worker_does_not_stall_other_tasks ... ok
+test tunnel::tests::teardown_join_runs_directly_on_a_current_thread_runtime ... ok
+test xlsx::tests::detect_header_numeric_first_row ... ok
+test xlsx::tests::detect_header_works ... ok
+test xlsx::tests::export_xlsx_roundtrip ... ok
+test xlsx::tests::normalize_sheet_pads_short_rows ... ok
+test xlsx::tests::normalize_sheet_with_header ... ok
+test xlsx::tests::parse_xlsx_from_exported ... ok
+
+test result: ok. 658 passed; 0 failed; 85 ignored; 0 measured; 0 filtered out; finished in 13.75s
+
+     Running unittests src/main.rs (src-tauri/target/debug/deps/dbunk-b2b9bad2e77ab3fc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dbunk_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,79 @@
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: keyboard edits publish exact Unicode text
+PASS: text edits notify assistive clients
+PASS: caret uses UTF-16 offsets at trailing newline
+PASS: character count, caret line and line reading
+PASS: AX selection reaches editor at 9:2
+PASS: selected Unicode text is exact
+PASS: typing replaces the real AX-selected range
+PASS: undo restores accessible text
+PASS: AX selection reaches editor at 0:0
+PASS: keyboard caret movement updates AX
+PASS: selection changes notify assistive clients
+PASS: keyboard selection updates AX
+PASS: AX selection reaches editor at 2:0
+PASS: backward keyboard selection updates AX
+PASS: selection direction survives publication
+PASS: AX selection reaches editor at 11:0
+PASS: character boundaries match Zed movement
+PASS: AX selection reaches editor at 11:2
+PASS: combining sequence stays intact
+PASS: text geometry at 0:1
+PASS: text geometry at 1:1
+PASS: text geometry at 9:2
+PASS: text geometry at 11:2
+PASS: text geometry at 16:1
+PASS: text geometry at 0:17
+PASS: text geometry at 26:0
+PASS: shaped Unicode, multiline and trailing-caret geometry
+PASS: AX selection reaches editor at 0:0
+PASS: Tab keeps editor focus and indents SQL
+PASS: Shift-Tab keeps editor focus and outdents SQL
+PASS: AX selection reaches editor at 1:1
+PASS: F6 moves editor focus to results
+PASS: Shift-F6 restores editor focus and selection
+PASS: Tab from results returns to editor
+PASS: Shift-Tab from results returns to editor
+PASS: Enter opens an accessible cell editor
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 0:1
+PASS: Tab inside cell editor edits instead of leaving results
+PASS: Shift-Tab inside cell editor restores indentation
+PASS: F6 leaves cell editor for SQL
+PASS: F6 restores the open cell editor
+PASS: Escape returns cell focus to results
+PASS: cell editor can reopen from keyboard
+PASS: staging returns focus to results
+PASS: typing after pane navigation reaches the preserved SQL selection
+PASS: pane navigation leaves SQL undo intact
+PASS: AX selection reaches editor at 0:26
+PASS: empty editor retains readable value and caret
+PASS: text geometry at 0:0
+PASS: undo from empty restores text runs
+PASS: long geometry fixture is loaded
+PASS: AX selection reaches editor at 1079:0
+PASS: text geometry at 1079:1
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 0:1
+PASS: AX selection reaches editor at 1079:0
+PASS: text geometry at 1079:1
+PASS: geometry follows vertical autoscroll
+PASS: wrap fixture is loaded
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 0:1
+PASS: text geometry at 142:1
+PASS: text geometry at 143:1
+PASS: AX selection reaches editor at 143:1
+PASS: soft-wrap geometry and selection
+PASS: resizing recalculates soft-wrap highlight geometry
+PASS: restoring window size restores wrap geometry
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 352:1
+PASS: AX selection reaches editor at 352:0
+PASS: text geometry at 352:1
+PASS: geometry follows horizontal autoscroll
+PASS: geometry checks restore Unicode fixture
+PASS: editor accessibility round trip

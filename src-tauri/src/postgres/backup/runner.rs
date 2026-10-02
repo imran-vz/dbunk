@@ -961,7 +961,7 @@ mod tests {
     #[test]
     fn connection_database_is_one_escaped_conninfo_value() {
         let StoredConnection::PostgreSQL(mut connection) =
-            crate::commands::pg_objects::tests::connection("id", crate::SafeMode::Disabled, false)
+            crate::app::test_postgres_connection("id", crate::SafeMode::Disabled, false)
         else {
             unreachable!()
         };

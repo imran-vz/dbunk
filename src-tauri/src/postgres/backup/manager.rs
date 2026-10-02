@@ -171,9 +171,9 @@ impl PgToolJobManager {
     pub(crate) fn new() -> Self {
         Self::default()
     }
-    pub(crate) fn start_monitor(&self) {
+    pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
         let weak = Arc::downgrade(&self.inner);
-        tauri::async_runtime::spawn(async move {
+        runtime.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(60));
             loop {
                 tick.tick().await;

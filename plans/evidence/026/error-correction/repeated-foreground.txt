@@ -1,0 +1,88 @@
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: probe SQL
+PASS: AX selection reaches editor at 46:0
+PASS: run available 0
+PASS: statement failure 0
+PASS: cleared old failure 0
+PASS: script failure 0
+PASS: run available 1
+PASS: statement failure 1
+PASS: cleared old failure 1
+PASS: script failure 1
+PASS: run available 2
+PASS: statement failure 2
+PASS: cleared old failure 2
+PASS: script failure 2
+PASS: run available 3
+PASS: statement failure 3
+PASS: cleared old failure 3
+PASS: script failure 3
+PASS: run available 4
+PASS: statement failure 4
+PASS: cleared old failure 4
+PASS: script failure 4
+PASS: run available 5
+PASS: statement failure 5
+PASS: cleared old failure 5
+PASS: script failure 5
+PASS: run available 6
+PASS: statement failure 6
+PASS: cleared old failure 6
+PASS: script failure 6
+PASS: run available 7
+PASS: statement failure 7
+PASS: cleared old failure 7
+PASS: script failure 7
+PASS: run available 8
+PASS: statement failure 8
+PASS: cleared old failure 8
+PASS: script failure 8
+PASS: run available 9
+PASS: statement failure 9
+PASS: cleared old failure 9
+PASS: script failure 9
+PASS: run available 10
+PASS: statement failure 10
+PASS: cleared old failure 10
+PASS: script failure 10
+PASS: run available 11
+PASS: statement failure 11
+PASS: cleared old failure 11
+PASS: script failure 11
+PASS: run available 12
+PASS: statement failure 12
+PASS: cleared old failure 12
+PASS: script failure 12
+PASS: run available 13
+PASS: statement failure 13
+PASS: cleared old failure 13
+PASS: script failure 13
+PASS: run available 14
+PASS: statement failure 14
+PASS: cleared old failure 14
+PASS: script failure 14
+PASS: run available 15
+PASS: statement failure 15
+PASS: cleared old failure 15
+PASS: script failure 15
+PASS: run available 16
+PASS: statement failure 16
+PASS: cleared old failure 16
+PASS: script failure 16
+PASS: run available 17
+PASS: statement failure 17
+PASS: cleared old failure 17
+PASS: script failure 17
+PASS: run available 18
+PASS: statement failure 18
+PASS: cleared old failure 18
+PASS: script failure 18
+PASS: run available 19
+PASS: statement failure 19
+PASS: cleared old failure 19
+PASS: script failure 19
+PASS: native exit
+PASS 20 repeated statement/hover/script error cycles

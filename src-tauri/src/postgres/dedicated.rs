@@ -96,10 +96,39 @@ impl DriverJoins {
     }
 
     pub(crate) async fn drain(&self) {
-        let joins = std::mem::take(&mut self.0.lock().unwrap().drivers);
-        for join in joins {
-            join.join.await;
+        loop {
+            // Keep joins registered while awaiting: cancelling a graceful drain
+            // must leave abort-and-join able to establish actual termination.
+            let joins = self
+                .0
+                .lock()
+                .unwrap()
+                .drivers
+                .iter()
+                .map(|driver| driver.join.clone())
+                .collect::<Vec<_>>();
+            if joins.is_empty() {
+                return;
+            }
+            for join in joins {
+                join.await;
+            }
+            self.0
+                .lock()
+                .unwrap()
+                .drivers
+                .retain(|driver| !driver.abort.is_finished());
         }
+    }
+
+    pub(crate) fn track_task(&self, task: tokio::task::JoinHandle<()>) {
+        let abort = task.abort_handle();
+        let join = async move {
+            let _ = task.await;
+        }
+        .boxed()
+        .shared();
+        self.track(abort, join);
     }
 
     fn track(&self, abort: tokio::task::AbortHandle, join: DriverJoin) {
@@ -107,6 +136,7 @@ impl DriverJoins {
         if state.aborted {
             abort.abort();
         }
+        state.drivers.retain(|driver| !driver.abort.is_finished());
         state.drivers.push(TrackedDriver { abort, join });
     }
 }
@@ -592,6 +622,20 @@ mod ownership_tests {
         drop(driver); // the connection future was dropped during setup
         tracked.drain().await;
         done.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelling_graceful_drain_preserves_abort_and_join_ownership() {
+        let tracked = DriverJoins::default();
+        let (driver, ready, done) = pending_driver(&tracked);
+        ready.await.unwrap();
+        let mut drain = Box::pin(tracked.drain());
+        assert!(futures_util::poll!(&mut drain).is_pending());
+        drop(drain);
+        tracked.abort_all();
+        tracked.drain().await;
+        done.await.unwrap();
+        drop(driver);
     }
 
     #[tokio::test]

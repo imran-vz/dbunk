@@ -63,5 +63,38 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
       - run: cargo fmt -- --check
+      # The backend without the Tauri host: nothing below the command layer
+      # may depend on Tauri (ADR-0032).
+      - run: cargo clippy --no-default-features --all-targets -- -D warnings
+      - run: cargo test --no-default-features
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  native:
+    name: Native macOS (pinned GPUI checks)
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/native
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/native
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --locked
+      - run: cargo clippy --release --locked --all-targets -- -D warnings
+      - run: cargo test --release --locked
+      - run: cargo build --release --locked
+      - run: cargo clippy --manifest-path ../../src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+      - run: cargo test --manifest-path ../../src-tauri/Cargo.toml --no-default-features --features isolated-profile
+      - run: cargo test --manifest-path ../../src-tauri/Cargo.toml --features isolated-profile backend::
+      - run: python3 ../../tools/native/dependencies.py
+      - run: python3 -m unittest discover -s ../../tools/native -p 'test_*.py'
+      # Interactive AX, VoiceOver and PostgreSQL E2E remain explicit fixture gates.

@@ -1,6 +1,9 @@
-use super::{find_connection, touch_connection_activity};
+//! Tauri adapters for `query_session::service`. Each command supplies the
+//! window label and, for `open`, wraps the IPC channel as the event sink.
+
 use crate::query_session::protocol::*;
-use crate::{AppState, DatabaseEngine};
+use crate::query_session::service;
+use crate::AppState;
 use tauri::{ipc::Channel, State, Window};
 
 #[tauri::command]
@@ -9,10 +12,7 @@ pub async fn register_query_session_owner(
     window: Window,
     payload: RegisterOwnerPayload,
 ) -> Result<RegisterOwnerResult, QuerySessionError> {
-    Ok(state
-        .query_sessions
-        .register_owner(window.label(), payload.owner_id)
-        .await)
+    Ok(service::register_owner(state.inner(), window.label(), payload).await)
 }
 #[tauri::command]
 pub async fn open_query_session(
@@ -21,22 +21,8 @@ pub async fn open_query_session(
     payload: OpenSessionPayload,
     on_event: Channel<QueryEventEnvelope>,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    let connection = find_connection(state.inner(), &payload.connection_id)
-        .await
-        .map_err(|_| QuerySessionError::ConnectionLost)?;
-    if connection.engine() != DatabaseEngine::PostgreSQL {
-        return Err(QuerySessionError::UnsupportedEngine);
-    }
-    let spec =
-        crate::postgres::connect_spec::ResolvedPostgresConnectSpec::from_connection(&connection)
-            .map_err(|_| QuerySessionError::UnsupportedEngine)?;
-    let connection_id = payload.connection_id.clone();
-    let result = state
-        .query_sessions
-        .open(window.label(), payload, on_event, spec)
-        .await?;
-    touch_connection_activity(state.inner(), &connection_id).await;
-    Ok(result)
+    let sink = super::channel_sink(on_event);
+    service::open(state.inner(), window.label(), payload, sink).await
 }
 #[tauri::command]
 pub async fn execute_query_session(
@@ -44,77 +30,14 @@ pub async fn execute_query_session(
     window: Window,
     payload: ExecutePayload,
 ) -> Result<AcceptedResult, QuerySessionError> {
-    execute_query_session_inner(state.inner(), window.label(), payload).await
-}
-
-pub(crate) async fn execute_query_session_inner(
-    state: &AppState,
-    window_label: &str,
-    payload: ExecutePayload,
-) -> Result<AcceptedResult, QuerySessionError> {
-    let connection_id = state
-        .query_sessions
-        .connection_id(&payload.session_id, window_label)
-        .await?;
-    let connection = find_connection(state, &connection_id)
-        .await
-        .map_err(|_| QuerySessionError::ConnectionLost)?;
-    let policy = super::safety::resolved_policy(&connection);
-    let pool = state.pool.clone();
-    let audit_connection_id = connection_id.clone();
-    state
-        .query_sessions
-        .execute(
-            &payload.session_id,
-            crate::query_session::ExecutionRequest {
-                execution_id: payload.execution_id,
-                sql: payload.sql,
-                parameters: payload.parameters,
-                row_limit: payload.row_limit,
-            },
-            window_label,
-            crate::query_session::ExecutionSafety {
-                policy: &policy,
-                confirmed: payload.confirmed,
-                on_success: Some(Box::new(move |intent, authorization| {
-                    Box::pin(async move {
-                        if matches!(
-                            authorization.audit_disposition(),
-                            crate::safety::policy::AuditDisposition::RequiredAfterSuccess
-                        ) {
-                            super::safety::record_override(
-                                &pool,
-                                &audit_connection_id,
-                                "execute_query_session",
-                                &intent,
-                            )
-                            .await;
-                        }
-                    })
-                })),
-            },
-        )
-        .await
+    service::execute(state.inner(), window.label(), payload).await
 }
 /// Pure: the same scan execution binds with, and no database access.
 #[tauri::command]
 pub fn describe_query_parameters(
     payload: DescribeParametersPayload,
 ) -> Result<DescribeParametersResult, QuerySessionError> {
-    describe_query_parameters_inner(&payload.sql)
-}
-
-pub(crate) fn describe_query_parameters_inner(
-    sql: &str,
-) -> Result<DescribeParametersResult, QuerySessionError> {
-    use crate::postgres::sql_params::{scan_parameters, ParameterRejectionReason};
-    let scan = scan_parameters(sql).map_err(|()| QuerySessionError::ParametersRejected {
-        reason: ParameterRejectionReason::Unlexable,
-        names: Vec::new(),
-    })?;
-    Ok(DescribeParametersResult {
-        names: scan.names().to_vec(),
-    })
+    service::describe_parameters(&payload.sql)
 }
 #[tauri::command]
 pub async fn ack_query_session_events(
@@ -122,7 +45,7 @@ pub async fn ack_query_session_events(
     window: Window,
     payload: AckPayload,
 ) -> Result<(), QuerySessionError> {
-    state.query_sessions.ack(payload, window.label()).await
+    service::ack(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn heartbeat_query_sessions(
@@ -130,10 +53,7 @@ pub async fn heartbeat_query_sessions(
     window: Window,
     payload: HeartbeatPayload,
 ) -> Result<HeartbeatResult, QuerySessionError> {
-    state
-        .query_sessions
-        .heartbeat(window.label(), payload)
-        .await
+    service::heartbeat(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn cancel_query_execution(
@@ -141,7 +61,7 @@ pub async fn cancel_query_execution(
     window: Window,
     payload: ExecutionPayload,
 ) -> Result<CancelResult, QuerySessionError> {
-    state.query_sessions.cancel(payload, window.label()).await
+    service::cancel(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn refresh_query_transaction_state(
@@ -149,20 +69,7 @@ pub async fn refresh_query_transaction_state(
     window: Window,
     payload: SessionPayload,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    let connection_id = state
-        .query_sessions
-        .connection_id(&payload.session_id, window.label())
-        .await?;
-    let connection = find_connection(state.inner(), &connection_id)
-        .await
-        .map_err(|_| QuerySessionError::ConnectionLost)?;
-    let spec =
-        crate::postgres::connect_spec::ResolvedPostgresConnectSpec::from_connection(&connection)
-            .map_err(|_| QuerySessionError::UnsupportedEngine)?;
-    state
-        .query_sessions
-        .refresh(&payload.session_id, window.label(), spec)
-        .await
+    service::refresh_transaction_state(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn set_query_transaction_mode(
@@ -170,10 +77,7 @@ pub async fn set_query_transaction_mode(
     window: Window,
     payload: SetModePayload,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    state
-        .query_sessions
-        .set_mode(&payload.session_id, window.label(), payload.mode)
-        .await
+    service::set_mode(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn set_query_transaction_isolation(
@@ -181,14 +85,7 @@ pub async fn set_query_transaction_isolation(
     window: Window,
     payload: SetIsolationPayload,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    state
-        .query_sessions
-        .set_isolation(
-            &payload.session_id,
-            window.label(),
-            payload.manual_isolation,
-        )
-        .await
+    service::set_isolation(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn commit_query_transaction(
@@ -196,10 +93,7 @@ pub async fn commit_query_transaction(
     window: Window,
     payload: SessionPayload,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    state
-        .query_sessions
-        .transaction_action(&payload.session_id, window.label(), true)
-        .await
+    service::commit(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn rollback_query_transaction(
@@ -207,10 +101,7 @@ pub async fn rollback_query_transaction(
     window: Window,
     payload: SessionPayload,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    state
-        .query_sessions
-        .transaction_action(&payload.session_id, window.label(), false)
-        .await
+    service::rollback(state.inner(), window.label(), payload).await
 }
 #[tauri::command]
 pub async fn close_query_session(
@@ -218,8 +109,5 @@ pub async fn close_query_session(
     window: Window,
     payload: SessionPayload,
 ) -> Result<(), QuerySessionError> {
-    state
-        .query_sessions
-        .close(&payload.session_id, window.label())
-        .await
+    service::close(state.inner(), window.label(), payload).await
 }

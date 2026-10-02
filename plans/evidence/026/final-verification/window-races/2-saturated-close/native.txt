@@ -1,0 +1,7 @@
+VERIFY offered session session=55644095-e149-4e54-844a-3208244f223b sequence=1
+VERIFY drain-held
+VERIFY offered rows session=55644095-e149-4e54-844a-3208244f223b sequence=4
+VERIFY offered rows session=55644095-e149-4e54-844a-3208244f223b sequence=5
+VERIFY queue-rejected Some(Full)
+VERIFY closing
+Native queue released: high_water_bytes=45394 remaining_bytes=0

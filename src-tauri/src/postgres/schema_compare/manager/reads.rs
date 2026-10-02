@@ -1,4 +1,5 @@
 use super::*;
+use crate::host::DocumentLoad;
 use crate::postgres::schema_compare::values::{encode, EncodedPage, ValueRequest};
 use serde::Serialize;
 
@@ -127,8 +128,9 @@ impl CompareManager {
     /// Finished can also report a failed/cancelled navigation with the old document
     /// still alive, so it must never retire replies or rotate its token.
     /// See ADR 0030 for the platform contracts; recheck them when upgrading Wry.
-    pub(crate) fn transport_page_load(&self, window: &str, event: tauri::webview::PageLoadEvent) {
-        if !matches!(event, tauri::webview::PageLoadEvent::Started) {
+    /// The WebView host maps its page-load events onto `DocumentLoad`.
+    pub(crate) fn transport_document_load(&self, window: &str, event: DocumentLoad) {
+        if event != DocumentLoad::Started {
             return;
         }
         let mut s = self.inner.lock().unwrap();

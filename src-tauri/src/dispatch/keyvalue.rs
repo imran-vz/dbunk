@@ -5,6 +5,7 @@
 //! capabilities probe (ping), keyspace SCAN, per-key metadata + per-
 //! type fetchers. Phase 1.3+ adds CLI, pub/sub, server info.
 
+use crate::host::SharedSink;
 use crate::redis::capabilities;
 use crate::redis::cli::{
     self, CloseSessionPayload as CliCloseSessionPayload, RunCommandPayload, RunCommandResult,
@@ -30,7 +31,8 @@ use crate::redis::keyspace::{
 };
 use crate::redis::pubsub::{
     self, CloseSessionPayload, DiscoverChannelsPayload, DiscoverChannelsResult, DrainPayload,
-    DrainResult, PublishPayload, PublishResult, StartSessionPayload, StartSessionResult,
+    DrainResult, PublishPayload, PublishResult, PubsubEvent, StartSessionPayload,
+    StartSessionResult,
 };
 use crate::redis::server_info::{
     self, AclListPayload, AclSelfPayload, ClientListPayload, ConfigPayload, KeyValueOverviewStats,
@@ -200,11 +202,11 @@ pub async fn fetch_latency(connection: &StoredConnection) -> Result<LatencyPaylo
 }
 
 pub async fn pubsub_start(
-    app: &tauri::AppHandle,
+    events: SharedSink<PubsubEvent>,
     connection: &StoredConnection,
     payload: &StartSessionPayload,
 ) -> Result<StartSessionResult, String> {
-    pubsub::start_session(app, as_redis(connection)?, payload).await
+    pubsub::start_session(events, as_redis(connection)?, payload).await
 }
 
 pub async fn pubsub_discover(

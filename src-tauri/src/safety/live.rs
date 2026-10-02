@@ -1,8 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use tauri::ipc::Channel;
-
+use crate::host::SharedSink;
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::postgres::dedicated::{self, NoticeSink};
 use crate::query_session::postgres as session_postgres;
@@ -41,7 +40,7 @@ fn connection(
 }
 
 async fn save(state: &AppState, connection: &StoredConnection) {
-    crate::commands::connections::save_connection_inner(state, connection.clone())
+    crate::connections::save(state, connection.clone())
         .await
         .expect("save connection through command core");
 }
@@ -69,10 +68,10 @@ async fn open_session(
                 tab_id: session_id.into(),
                 connection_id: connection.id().into(),
             },
-            Channel::<QueryEventEnvelope>::new(move |_| {
+            Arc::new(move |_: QueryEventEnvelope| {
                 emitted.fetch_add(1, Ordering::SeqCst);
                 Ok(())
-            }),
+            }) as SharedSink<QueryEventEnvelope>,
             spec,
         )
         .await
@@ -240,7 +239,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
     let strict_sql = format!("UPDATE {schema}.rows SET value = 1 WHERE id = 1");
     let before_refusal = strict_events.load(Ordering::SeqCst);
     assert!(matches!(
-        crate::commands::query_session::execute_query_session_inner(
+        crate::query_session::service::execute(
             &state,
             window,
             execute_payload("strict", "strict-write", strict_sql.clone(), false),
@@ -270,7 +269,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
             .is_none()
     );
 
-    crate::commands::query_session::execute_query_session_inner(
+    crate::query_session::service::execute(
         &state,
         window,
         execute_payload("strict", "strict-write", strict_sql, true),
@@ -301,7 +300,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
     )
     .await;
     let failed_baseline = failed_events.load(Ordering::SeqCst);
-    crate::commands::query_session::execute_query_session_inner(
+    crate::query_session::service::execute(
         &state,
         window,
         execute_payload(
@@ -339,7 +338,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
         bounded_events,
     )
     .await;
-    crate::commands::query_session::execute_query_session_inner(
+    crate::query_session::service::execute(
         &state,
         window,
         execute_payload(
@@ -370,7 +369,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
     let delete_sql = format!("DELETE FROM {schema}.rows");
     let before_delete = delete_events.load(Ordering::SeqCst);
     assert!(matches!(
-        crate::commands::query_session::execute_query_session_inner(
+        crate::query_session::service::execute(
             &state,
             window,
             execute_payload("protected-delete", "delete", delete_sql.clone(), false),
@@ -379,7 +378,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
         Err(QuerySessionError::PolicyNeedsConfirmation { .. })
     ));
     assert_eq!(delete_events.load(Ordering::SeqCst), before_delete);
-    crate::commands::query_session::execute_query_session_inner(
+    crate::query_session::service::execute(
         &state,
         window,
         execute_payload("protected-delete", "delete", delete_sql, true),
@@ -405,7 +404,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
     let drop_sql = format!("DROP TABLE {schema}.drop_me");
     let before_drop = drop_events.load(Ordering::SeqCst);
     assert!(matches!(
-        crate::commands::query_session::execute_query_session_inner(
+        crate::query_session::service::execute(
             &state,
             window,
             execute_payload("protected-drop", "drop", drop_sql.clone(), false),
@@ -414,7 +413,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
         Err(QuerySessionError::PolicyNeedsConfirmation { .. })
     ));
     assert_eq!(drop_events.load(Ordering::SeqCst), before_drop);
-    crate::commands::query_session::execute_query_session_inner(
+    crate::query_session::service::execute(
         &state,
         window,
         execute_payload("protected-drop", "drop", drop_sql, true),
@@ -459,7 +458,7 @@ async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
     .await;
     let before_read_only = read_only_events.load(Ordering::SeqCst);
     assert!(matches!(
-        crate::commands::query_session::execute_query_session_inner(
+        crate::query_session::service::execute(
             &state,
             window,
             execute_payload(

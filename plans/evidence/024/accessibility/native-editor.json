@@ -1,0 +1,32 @@
+{
+  "elements" : 181,
+  "elementsWithAName" : 155,
+  "environment" : {
+    "displayMaxHz" : 120,
+    "displayPoints" : [
+      1728,
+      1117
+    ],
+    "displayScale" : 2,
+    "lowPowerMode" : false,
+    "model" : "Mac16,7",
+    "os" : "Version 27.0.1 (Build 26A434)",
+    "power" : "Now drawing from 'AC Power'",
+    "recordedAt" : "2026-10-02T06:24:30Z",
+    "thermalState" : 0
+  },
+  "pid" : 91920,
+  "process" : "dbunk-gpui-spike",
+  "roles" : {
+    "AXApplication" : 1,
+    "AXButton" : 3,
+    "AXCell" : 152,
+    "AXGroup" : 3,
+    "AXRow" : 18,
+    "AXStaticText" : 1,
+    "AXTable" : 1,
+    "AXTextArea" : 1,
+    "AXWindow" : 1
+  },
+  "truncated" : false
+}

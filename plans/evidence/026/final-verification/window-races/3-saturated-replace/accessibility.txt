@@ -1,0 +1,53 @@
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window session ready
+PASS: native window step ready
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window admits execution
+PASS: window-step SQL reaches editor
+PASS: query running with Run disabled
+PASS: native window step run-credit
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: native window step replace
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window session ready
+PASS: native window step ready
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window admits execution
+PASS: window-step SQL reaches editor
+PASS: new view completes fresh query and terminal ACK
+PASS: only fresh result is exposed
+PASS: native window step recovery
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window shutdown terminates validated process
+Shutdown milliseconds: 58.418584
+PASS: native window step close
