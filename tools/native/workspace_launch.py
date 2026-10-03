@@ -223,6 +223,11 @@ def recheck_fixtures(owned, tls):
         raise RuntimeError("Owned fixture identity changed during launch preparation; refusing to spawn")
 
 
+def fresh_profile_path():
+    """An absent profile path under a new private, canonical temporary parent."""
+    return Path(tempfile.mkdtemp(prefix="dbunk-native-workspace-")).resolve() / "profile"
+
+
 def launch(path, *, bundle=None, out=None, with_tls=False, no_build=False, create_general=False, general_owner=None):
     if sys.platform != "darwin" or platform.machine() != "arm64":
         raise RuntimeError("The native workspace requires Apple Silicon macOS")
@@ -335,7 +340,7 @@ def launch(path, *, bundle=None, out=None, with_tls=False, no_build=False, creat
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("path", type=Path, help="canonical profile path; stage04 fixture mode unless a general-profile option is explicit")
+    parser.add_argument("path", type=Path, nargs="?", help="canonical profile path; stage04 fixture mode unless a general-profile option is explicit; omitted, a fresh temporary stage04 profile is created")
     parser.add_argument("--bundle", type=Path, help="marked package.py app bundle instead of building a CLI executable")
     parser.add_argument("--out", type=Path, help="new evidence directory")
     parser.add_argument("--tls", action="store_true", help="include only the separately verified owned TLS fixture")
@@ -344,6 +349,10 @@ def main():
     general.add_argument("--create-general-profile", action="store_true", help="explicitly create a new general PostgreSQL profile at an absent path")
     general.add_argument("--general-profile-owner", type=Path, metavar="RECEIPT", help="reopen only a general profile matching a prior launcher ownership receipt")
     args = parser.parse_args()
+    if args.path is None:
+        if args.create_general_profile or args.general_profile_owner:
+            parser.error("general-profile options require an explicit path")
+        args.path = fresh_profile_path()
     launch(args.path, bundle=args.bundle, out=args.out, with_tls=args.tls, no_build=args.no_build, create_general=args.create_general_profile, general_owner=args.general_profile_owner)
 
 

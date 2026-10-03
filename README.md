@@ -19,7 +19,8 @@ Release builds are published on the [GitHub Releases page](https://github.com/im
 Requirements: macOS on Apple Silicon, [Rust](https://www.rust-lang.org/tools/install) with the pinned `1.98.1` toolchain, [just](https://github.com/casey/just), Python 3, and `cmake` (needed by a Zed dependency).
 
 ```bash
-just dev-native                 # build and launch against a disposable fixture profile
+just run-native                 # build and open your default profile
+just dev-native                 # workspace window against the owned fixture, fresh profile
 just package-native /tmp/dbunk  # unsigned app bundle in a new directory
 ```
 

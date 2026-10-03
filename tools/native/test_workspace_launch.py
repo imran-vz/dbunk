@@ -293,6 +293,15 @@ class GeneralProfileTests(unittest.TestCase):
             self.assertFalse((output / workspace_launch.GENERAL_RECEIPT).exists())
             self.assertTrue((path / workspace_launch.GENERAL_MARKER).exists())
 
+    def test_fresh_profile_path_is_absent_canonical_and_private(self):
+        path = workspace_launch.fresh_profile_path()
+        try:
+            self.assertFalse(path.exists())
+            self.assertEqual(path, path.resolve())
+            self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+        finally:
+            path.parent.rmdir()
+
     def test_default_fixture_argv_is_unchanged(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
