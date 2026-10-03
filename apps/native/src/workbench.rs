@@ -167,6 +167,8 @@ pub struct Workbench {
     transaction_error: Option<String>,
     connected: bool,
     connecting: bool,
+    /// Why the last session failed; cleared by a new attempt or a normal close.
+    connect_error: Option<String>,
     closing: bool,
     status: String,
     toolbar_focus: Vec<FocusHandle>,
@@ -288,6 +290,7 @@ impl Workbench {
             transaction_error: None,
             connected: false,
             connecting: false,
+            connect_error: None,
             closing: false,
             status: "Connecting".into(),
             toolbar_focus: (0..25).map(|_| cx.focus_handle()).collect(),
@@ -402,10 +405,23 @@ impl Workbench {
     pub fn begin_connect(&mut self, cx: &mut Context<Self>) {
         self.connect(cx);
     }
+    pub fn connection_phase(&self) -> crate::document_view::ConnectionPhase {
+        use crate::document_view::ConnectionPhase;
+        if self.connecting {
+            ConnectionPhase::Connecting
+        } else if self.connected {
+            ConnectionPhase::Connected
+        } else if let Some(error) = &self.connect_error {
+            ConnectionPhase::Failed(error.clone())
+        } else {
+            ConnectionPhase::Idle
+        }
+    }
     pub fn mark_disconnected(&mut self, cx: &mut Context<Self>) {
         self.receiver.take();
         self.events.take();
         self.disconnected("Connection closed".into(), cx);
+        self.connect_error = None;
         cx.notify();
     }
     pub fn set_editable(&mut self, editable: bool, cx: &mut Context<Self>) {
@@ -524,6 +540,7 @@ impl Workbench {
         diagnostics::clear(&self.editor, &self.buffer, cx);
         self.connected = false;
         self.connecting = true;
+        self.connect_error = None;
         self.execution = None;
         if self.document.is_none() {
             self.owner = uuid::Uuid::new_v4().to_string();
@@ -653,6 +670,7 @@ impl Workbench {
         self.execution = None;
         self.stream.retire();
         self.status = format!("Disconnected: {message}");
+        self.connect_error = Some(message);
         if let Some(controls) = &self.controls {
             controls.stop();
         }
@@ -728,6 +746,7 @@ impl Workbench {
                     completion.set_connected(true);
                 }
                 self.connecting = false;
+                self.connect_error = None;
                 self.status = "Ready".into();
                 self.console(
                     crate::console_model::Severity::Info,
@@ -892,6 +911,7 @@ impl Workbench {
                             cx,
                         );
                         self.disconnected("Connection closed".into(), cx);
+                        self.connect_error = None;
                         return;
                     }
                     QueryEvent::Notice { severity, message } => {
