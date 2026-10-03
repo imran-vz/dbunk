@@ -133,6 +133,7 @@ fn form(name: &str) -> DevelopmentPostgresConnection {
         read_only: true,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 async fn completed(backend: &Backend, source: Endpoint, target: Endpoint) -> ResultRequest {

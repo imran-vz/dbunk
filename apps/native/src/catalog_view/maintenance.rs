@@ -28,9 +28,9 @@ impl CatalogView {
                 .is_some_and(|view| view.read(cx).has_changes())
     }
     pub(super) fn open_maintenance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.has_schema_changes(cx) || self.has_table_ddl_changes(cx) {
+        if self.blocked_by_other_lane(super::object_ddl::Lane::Maintenance, cx) {
             self.status =
-                "Finish or reconcile schema/table-change recovery before maintenance".into();
+                "Finish or reconcile the current Objects operation before maintenance".into();
             return;
         }
         if !self.has_maintenance_changes(cx) {
@@ -82,10 +82,7 @@ impl CatalogView {
                 );
             self.maintenance = Some(view);
         }
-        self.show_table_ddl = false;
-        self.show_maintenance = true;
-        self.show_schema = false;
-        self.show_details = false;
+        self.show_lane(super::object_ddl::Lane::Maintenance);
         window.focus(&self.maintenance.as_ref().unwrap().focus_handle(cx), cx);
     }
 }

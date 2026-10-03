@@ -130,6 +130,18 @@ and results; switching tabs preserves them. The workspace drains background tabs
 fairly, shares 16 MiB of event queues and 128 MiB of retained results, and joins
 session work on close. Use the native menus for displayed tab shortcuts.
 
+Under the connection list, the Navigator shows the selected connection's
+schemas and objects. Load objects opens a transient data lane, reads one bounded
+catalog and closes it; the tree is a retained capture until the next explicit
+load. Cmd-Shift-O focuses its filter; arrows, Home/End and type-ahead move,
+Right/Left expand and collapse, and Return opens relations as table documents or
+describes other objects in Objects. Cmd-K opens Open Anything over commands,
+tabs, connections and the Navigator capture (`>` restricts to commands); inside
+the SQL editor it resolves after the editor's chord timeout. Ctrl-` toggles the
+console Dock, which never opens on its own. Cmd-F, Cmd-G and Cmd-Shift-G find
+in the SQL editor. The Window menu has Minimize, Zoom and Full Screen. A normal
+quit saves window geometry; logs go to `~/Library/Logs/dbunk Native/`.
+
 Draft saves debounce for 500 ms and show Saved only after the matching commit.
 If a save fails or exceeds the encoded budget, keep the window open and retry,
 export all current SQL to a new file, or explicitly confirm discard. Forced OS

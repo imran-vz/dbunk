@@ -911,7 +911,7 @@ fn query_updates_resolve_join_origin_and_restore_exact_source_independent_of_edi
     }
     let mut values = row();
     values.extend([Some("2".into()), Some("old other".into()), None]);
-    let (target, name) = crate::query_result::editable_target(&joined, &values, 5).unwrap();
+    let (target, name) = crate::query_result::editable_target(&joined, &values, 5, false).unwrap();
     assert_eq!((target, name.as_str()), (1, "name"));
     let mut draft = MutationDraft::new(joined.clone()).unwrap();
     draft
@@ -954,11 +954,11 @@ fn query_updates_resolve_join_origin_and_restore_exact_source_independent_of_edi
     assert_eq!(identity, &[value("id", Some("2"))]);
     assert_eq!(guards, &[value("name", Some("old other"))]);
     values[5] = Some("雪".into());
-    assert!(crate::query_result::editable_target(&joined, &values, 5).is_err());
+    assert!(crate::query_result::editable_target(&joined, &values, 5, false).is_err());
     values[5] = Some("old other".into());
     values[4] = None;
-    assert!(crate::query_result::editable_target(&joined, &values, 5).is_err());
-    assert!(crate::query_result::editable_target(&joined, &values, 3).is_err());
+    assert!(crate::query_result::editable_target(&joined, &values, 5, false).is_err());
+    assert!(crate::query_result::editable_target(&joined, &values, 3, false).is_err());
 }
 
 #[test]
@@ -975,7 +975,7 @@ fn projected_ctid_query_identity_uses_full_original_guards_without_hidden_browse
     let mut values = row();
     values[0] = Some("(0,7)".into());
     assert_eq!(
-        crate::query_result::editable_target(&analyzed, &values, 1)
+        crate::query_result::editable_target(&analyzed, &values, 1, false)
             .unwrap()
             .0,
         0
@@ -1000,9 +1000,9 @@ fn projected_ctid_query_identity_uses_full_original_guards_without_hidden_browse
     assert_eq!(guards.len(), 4);
     assert!(guards.contains(&value("note", Some("before"))));
     values[0] = None;
-    assert!(crate::query_result::editable_target(&analyzed, &values, 1).is_err());
+    assert!(crate::query_result::editable_target(&analyzed, &values, 1, false).is_err());
     analyzed.tables[0].identity.kind = MutationIdentityKind::VirtualKey;
-    assert!(crate::query_result::editable_target(&analyzed, &values, 1).is_err());
+    assert!(crate::query_result::editable_target(&analyzed, &values, 1, false).is_err());
 }
 
 #[test]

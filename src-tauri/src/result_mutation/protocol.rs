@@ -12,14 +12,32 @@ pub enum AnalyzeSource {
     Statement {
         sql: String,
     },
-    /// Native retained text currently has no execution rendering-context proof.
+    /// Native retained text. Without a context, only schema-qualified targets
+    /// and session-independent text types are admitted.
     NativeStatement {
         sql: String,
+        #[serde(default)]
+        context: Option<NativeAnalysisContext>,
     },
     Relation {
         schema: String,
         table: String,
     },
+}
+
+/// Execution rendering context proven by the query session's reported
+/// parameters. Fields are proofs: absent/false means refuse what needs them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeAnalysisContext {
+    /// Exact reported search_path of an autocommit execution. Analysis
+    /// resolves unqualified range variables under it in a read-only
+    /// transaction; it is never applied to the mutation statements.
+    #[serde(default)]
+    pub search_path: Option<String>,
+    /// DateStyle output was ISO, so date/time text is unambiguous.
+    #[serde(default)]
+    pub iso_dates: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

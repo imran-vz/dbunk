@@ -57,6 +57,7 @@ async fn matrix(backend: &Backend, trusted: String, untrusted: String) -> Result
             ..Default::default()
         },
         driver_options: Default::default(),
+        ssh_tunnel: None,
     };
     let saved = backend
         .save_development_connection(None, form.clone(), "dbunk".into())

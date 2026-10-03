@@ -5,7 +5,8 @@ use crate::postgres::{
     sql_lex::{lex_sql_spanned_bounded, SqlLexError},
     sql_params::{plan_execution, scan_parameters, ParameterValue, MAX_NAME_BYTES, MAX_PARAMETERS},
 };
-use crate::result_mutation::protocol::AnalyzeSource;
+use crate::query_session::protocol::QueryExecutionContext;
+use crate::result_mutation::protocol::{AnalyzeSource, NativeAnalysisContext};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 
@@ -37,7 +38,7 @@ impl fmt::Display for QueryMutationSourceError {
             Self::ParameterNameTooLong => "Query parameter name exceeds 63 bytes",
             Self::ParametersRejected => "Query mutation parameter rewrite was refused",
             Self::ProvenanceMismatch => "Query mutation source does not match its planner rewrite",
-            Self::SessionDependentTarget => "Result editing requires a supported SELECT with every FROM/JOIN table fully schema-qualified outside temporary schemas; execution and analysis use separate session contexts",
+            Self::SessionDependentTarget => "Result editing requires a supported SELECT whose FROM/JOIN tables are outside temporary schemas and are either schema-qualified or resolved by the search_path the server reported for this autocommit execution",
         })
     }
 }
@@ -50,6 +51,9 @@ pub struct QueryMutationSource {
     statement_sql: String,
     parameter_mode: bool,
     parameter_names: Vec<String>,
+    /// Derived from `statement_sql`; recomputed on decode, never stored.
+    #[serde(skip)]
+    qualified: bool,
 }
 impl fmt::Debug for QueryMutationSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -66,12 +70,13 @@ impl QueryMutationSource {
         original_sql: String,
         parameter_mode: bool,
     ) -> Result<Self, QueryMutationSourceError> {
-        let (statement_sql, parameter_names) = planned(&original_sql, parameter_mode)?;
+        let (statement_sql, parameter_names, qualified) = planned(&original_sql, parameter_mode)?;
         Ok(Self {
             original_sql,
             statement_sql,
             parameter_mode,
             parameter_names,
+            qualified,
         })
     }
     pub fn original_sql(&self) -> &str {
@@ -92,17 +97,41 @@ impl QueryMutationSource {
             return Err(QueryMutationSourceError::TooLarge);
         }
         check_names(&self.parameter_names)?;
-        let (statement, names) = planned(&self.original_sql, self.parameter_mode)?;
-        if statement != self.statement_sql || names != self.parameter_names {
+        let (statement, names, qualified) = planned(&self.original_sql, self.parameter_mode)?;
+        if statement != self.statement_sql
+            || names != self.parameter_names
+            || qualified != self.qualified
+        {
             return Err(QueryMutationSourceError::ProvenanceMismatch);
         }
         Ok(())
     }
+    /// Every FROM/JOIN target is schema-qualified, so name resolution does not
+    /// depend on the execution session's search_path.
+    pub fn qualified(&self) -> bool {
+        self.qualified
+    }
     /// Constructors and deserialization already validated this immutable source.
     /// Analysis only needs an owned statement for the dedicated data socket.
-    pub fn analysis_source(&self) -> Result<AnalyzeSource, QueryMutationSourceError> {
+    /// `context` is the matched execution's reported context; restored sources
+    /// have none, so they keep the session-independent subset only.
+    pub fn analysis_source(
+        &self,
+        context: Option<&QueryExecutionContext>,
+    ) -> Result<AnalyzeSource, QueryMutationSourceError> {
+        let search_path = context
+            .and_then(QueryExecutionContext::name_resolution_path)
+            .filter(|_| !self.qualified);
+        if !self.qualified && search_path.is_none() {
+            return Err(QueryMutationSourceError::SessionDependentTarget);
+        }
+        let context = NativeAnalysisContext {
+            search_path: search_path.map(str::to_owned),
+            iso_dates: context.is_some_and(QueryExecutionContext::iso_dates),
+        };
         Ok(AnalyzeSource::NativeStatement {
             sql: self.statement_sql.clone(),
+            context: (context != NativeAnalysisContext::default()).then_some(context),
         })
     }
 }
@@ -117,12 +146,17 @@ impl<'de> Deserialize<'de> for QueryMutationSource {
             parameter_names: Vec<String>,
         }
         let stored = Stored::deserialize(deserializer)?;
-        let source = Self {
+        let mut source = Self {
             original_sql: stored.original_sql,
             statement_sql: stored.statement_sql,
             parameter_mode: stored.parameter_mode,
             parameter_names: stored.parameter_names,
+            qualified: false,
         };
+        source.qualified = crate::result_mutation::query_target_qualification(
+            &source.statement_sql,
+        )
+        .map_err(|()| serde::de::Error::custom(QueryMutationSourceError::SessionDependentTarget))?;
         source.validate().map_err(serde::de::Error::custom)?;
         Ok(source)
     }
@@ -139,7 +173,7 @@ fn check_names(names: &[String]) -> Result<(), QueryMutationSourceError> {
     }
     Ok(())
 }
-fn planned(sql: &str, mode: bool) -> Result<(String, Vec<String>), QueryMutationSourceError> {
+fn planned(sql: &str, mode: bool) -> Result<(String, Vec<String>, bool), QueryMutationSourceError> {
     if sql.len() > MAX_QUERY_SOURCE_BYTES {
         return Err(QueryMutationSourceError::TooLarge);
     }
@@ -185,9 +219,9 @@ fn planned(sql: &str, mode: bool) -> Result<(String, Vec<String>), QueryMutation
     if text.len() > MAX_QUERY_SOURCE_BYTES {
         return Err(QueryMutationSourceError::TooLarge);
     }
-    crate::result_mutation::require_qualified_query_targets(text)
+    let qualified = crate::result_mutation::query_target_qualification(text)
         .map_err(|()| QueryMutationSourceError::SessionDependentTarget)?;
-    Ok((text.to_owned(), names))
+    Ok((text.to_owned(), names, qualified))
 }
 
 #[cfg(test)]

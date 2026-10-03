@@ -2064,3 +2064,137 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
         .await;
     cleanup_schema(&admin, &schema).await;
 }
+
+fn native_payload(
+    connection_id: &str,
+    tab_id: &str,
+    sql: &str,
+    context: Option<NativeAnalysisContext>,
+) -> AnalyzeResultSetPayload {
+    AnalyzeResultSetPayload {
+        connection_id: connection_id.into(),
+        tab_id: tab_id.into(),
+        request_id: 1,
+        source: AnalyzeSource::NativeStatement {
+            sql: sql.into(),
+            context,
+        },
+        refresh_structure: true,
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires pnpm db:postgres"]
+async fn result_mutation_live_native_search_path_dates_and_unique_resolution() {
+    let connection_id = "result-mutation-native-context";
+    let spec = live_spec(connection_id);
+    let admin = session_postgres::connect(&spec).await.expect("admin");
+    let manager = ResultMutationManager::new();
+    let lookup = empty_virtual_keys();
+    let first = unique_schema();
+    let second = unique_schema();
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE SCHEMA {first}; CREATE SCHEMA {second}; \
+             CREATE TABLE {first}.native_path_rows(id int PRIMARY KEY, body text, at timestamptz); \
+             CREATE TABLE {second}.other_rows(id int PRIMARY KEY)"
+        ))
+        .await
+        .expect("fixture");
+    let path = |schemas: &str| {
+        Some(NativeAnalysisContext {
+            search_path: Some(schemas.into()),
+            iso_dates: false,
+        })
+    };
+    let sql = "SELECT id, body FROM native_path_rows";
+    let refused = manager
+        .analyze(
+            spec.clone(),
+            native_payload(connection_id, "no-path", sql, None),
+            lookup.clone(),
+        )
+        .await
+        .expect("refusal is an analysis verdict");
+    assert!(matches!(
+        refused.statement,
+        AnalysisStatement::NotAnalyzable { .. }
+    ));
+    let resolved = manager
+        .analyze(
+            spec.clone(),
+            native_payload(
+                connection_id,
+                "path",
+                sql,
+                path(&format!("{second}, {first}")),
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("captured path analysis");
+    assert_eq!(resolved.statement, AnalysisStatement::Analyzed);
+    assert_eq!(resolved.tables[0].schema, first);
+    // A same-named relation in any reachable path schema refuses, even one the
+    // execution role might have skipped for lack of USAGE.
+    admin
+        .client
+        .batch_execute(&format!(
+            "CREATE TABLE {second}.native_path_rows(id int PRIMARY KEY, body text)"
+        ))
+        .await
+        .expect("shadow");
+    let shadowed = manager
+        .analyze(
+            spec.clone(),
+            native_payload(
+                connection_id,
+                "shadow",
+                sql,
+                path(&format!("{first}, {second}")),
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("shadow verdict");
+    assert!(matches!(
+        shadowed.statement,
+        AnalysisStatement::NotAnalyzable { .. }
+    ));
+    // timestamptz needs a proven ISO DateStyle.
+    let dated = format!("SELECT id, at FROM {first}.native_path_rows");
+    let plain = manager
+        .analyze(
+            spec.clone(),
+            native_payload(connection_id, "plain", &dated, None),
+            lookup.clone(),
+        )
+        .await
+        .expect("plain verdict");
+    assert_eq!(
+        plain.statement,
+        AnalysisStatement::NotAnalyzable {
+            reason: NotAnalyzableReason::SessionDependentTypes
+        }
+    );
+    let iso = manager
+        .analyze(
+            spec.clone(),
+            native_payload(
+                connection_id,
+                "iso",
+                &dated,
+                Some(NativeAnalysisContext {
+                    search_path: None,
+                    iso_dates: true,
+                }),
+            ),
+            lookup.clone(),
+        )
+        .await
+        .expect("iso verdict");
+    assert_eq!(iso.statement, AnalysisStatement::Analyzed);
+    cleanup_schema(&admin, &first).await;
+    cleanup_schema(&admin, &second).await;
+}

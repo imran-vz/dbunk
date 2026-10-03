@@ -27,6 +27,42 @@ pub(super) struct ResolvedBastion {
     pub(super) password: Option<String>,
     pub(super) private_key_content: Option<String>,
     pub(super) passphrase: Option<String>,
+    /// Native profiles never trust a first-seen host key while connecting.
+    /// The key must be captured by an explicit Test and reviewed first.
+    pub(super) require_trusted_host_key: bool,
+}
+
+pub(crate) const HOST_KEY_CHANGED: &str = "SSH host key mismatch";
+pub(crate) const HOST_KEY_UNTRUSTED: &str = "SSH host key not trusted";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HostKeyDecision {
+    Trusted,
+    FirstUse,
+    Untrusted,
+    Changed,
+}
+
+/// Pure trust decision so the policy is testable without an SSH server.
+pub(super) fn host_key_decision(
+    trusted: Option<&str>,
+    observed: &str,
+    require_trusted: bool,
+) -> HostKeyDecision {
+    match trusted {
+        Some(expected) if expected == observed => HostKeyDecision::Trusted,
+        Some(_) => HostKeyDecision::Changed,
+        None if require_trusted => HostKeyDecision::Untrusted,
+        None => HostKeyDecision::FirstUse,
+    }
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(super) struct HostKeyProbe {
+    pub(super) observed: String,
+    /// Present only when the observed key matched the trusted key. Credentials
+    /// are never offered to a host whose key is unknown or changed.
+    pub(super) authentication: Option<Result<(), String>>,
 }
 
 struct RouteHop {
@@ -154,15 +190,23 @@ fn connect_bastion_session(
         .map_err(|error| format!("SSH handshake failed: {error}"))?;
 
     let fingerprint = host_key_fingerprint(&session)?;
-    match bastion.server.host_key_fingerprint.as_deref() {
-        Some(expected) if expected == fingerprint => {}
-        Some(expected) => {
+    let trusted = bastion.server.host_key_fingerprint.as_deref();
+    match host_key_decision(trusted, &fingerprint, bastion.require_trusted_host_key) {
+        HostKeyDecision::Trusted => {}
+        HostKeyDecision::Changed => {
+            let expected = trusted.unwrap_or_default();
             return Err(format!(
-                "SSH host key mismatch for {}:{}. Expected {expected}, got {fingerprint}. Reset host-key trust before reconnecting if this change is expected.",
+                "{HOST_KEY_CHANGED} for {}:{}. Expected {expected}, got {fingerprint}. Reset host-key trust before reconnecting if this change is expected.",
                 bastion.server.host, port
             ));
         }
-        None => {
+        HostKeyDecision::Untrusted => {
+            return Err(format!(
+                "{HOST_KEY_UNTRUSTED} for {}:{} (observed {fingerprint}). Test the Bastion Server and review its fingerprint before connecting.",
+                bastion.server.host, port
+            ));
+        }
+        HostKeyDecision::FirstUse => {
             accepted_fingerprints.push((bastion.server.id.clone(), fingerprint));
         }
     };
@@ -173,6 +217,32 @@ fn connect_bastion_session(
     }
     session.set_blocking(false);
     Ok(session)
+}
+
+#[cfg(feature = "isolated-profile")]
+/// Direct single-hop handshake for an explicit Test. Authentication runs only
+/// when the observed key equals the trusted key; nothing is persisted here.
+pub(super) fn probe_bastion(bastion: &ResolvedBastion) -> Result<HostKeyProbe, String> {
+    let port = defaulted_ssh_port(bastion.server.port);
+    let tcp = connect_tcp_with_timeout(&bastion.server.host, port)?;
+    let mut session = Session::new().map_err(|error| error.to_string())?;
+    session.set_timeout(SSH_CONNECT_TIMEOUT.as_millis() as u32);
+    session.set_tcp_stream(tcp);
+    session
+        .handshake()
+        .map_err(|error| format!("SSH handshake failed: {error}"))?;
+    let observed = host_key_fingerprint(&session)?;
+    let authentication = (host_key_decision(
+        bastion.server.host_key_fingerprint.as_deref(),
+        &observed,
+        true,
+    ) == HostKeyDecision::Trusted)
+        .then(|| authenticate(&session, bastion));
+    let _ = session.disconnect(None, "dbunk host key probe complete", None);
+    Ok(HostKeyProbe {
+        observed,
+        authentication,
+    })
 }
 
 fn defaulted_ssh_port(port: u16) -> u16 {
@@ -506,6 +576,33 @@ impl ssh2::KeyboardInteractivePrompt for PasswordPrompter {
 #[cfg(test)]
 mod tests {
     use super::expand_proxy_command;
+    use super::{host_key_decision, HostKeyDecision};
+
+    #[test]
+    fn native_policy_never_trusts_first_seen_or_changed_host_keys() {
+        assert_eq!(
+            host_key_decision(Some("SHA256:a"), "SHA256:a", true),
+            HostKeyDecision::Trusted
+        );
+        assert_eq!(
+            host_key_decision(Some("SHA256:a"), "SHA256:b", true),
+            HostKeyDecision::Changed
+        );
+        assert_eq!(
+            host_key_decision(Some("SHA256:a"), "SHA256:b", false),
+            HostKeyDecision::Changed,
+            "a changed key is refused under every policy"
+        );
+        assert_eq!(
+            host_key_decision(None, "SHA256:b", true),
+            HostKeyDecision::Untrusted
+        );
+        assert_eq!(
+            host_key_decision(None, "SHA256:b", false),
+            HostKeyDecision::FirstUse,
+            "legacy Tauri trust-on-first-use is unchanged"
+        );
+    }
 
     #[cfg(unix)]
     use {

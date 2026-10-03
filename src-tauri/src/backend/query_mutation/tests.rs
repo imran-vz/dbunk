@@ -17,9 +17,10 @@ fn planner_rewrite_preserves_exact_text_and_parameter_grammar_without_values() {
         source
     );
     assert_eq!(
-        source.analysis_source().unwrap(),
+        source.analysis_source(None).unwrap(),
         AnalyzeSource::NativeStatement {
-            sql: source.statement_sql().into()
+            sql: source.statement_sql().into(),
+            context: None,
         }
     );
     assert!(!format!("{source:?}").contains("secret"));
@@ -149,11 +150,11 @@ fn separate_session_targets_require_all_qualified_non_temp_range_variables() {
         "SELECT * FROM database_name.public.rows",
         "SELECT id FROM public.rows WHERE note='FROM hidden JOIN pg_temp.secret'",
     ] {
-        assert!(QueryMutationSource::new(sql.into(), false).is_ok(), "{sql}");
+        let source = QueryMutationSource::new(sql.into(), false).unwrap();
+        assert!(source.qualified(), "{sql}");
+        assert!(source.analysis_source(None).is_ok(), "{sql}");
     }
     for sql in [
-        "SELECT * FROM rows",
-        "SELECT a.id FROM public.rows a JOIN other b ON a.id=b.id",
         "SELECT * FROM pg_temp.rows",
         "SELECT * FROM pg_temp_123.rows",
         "SELECT * FROM \"pg_temp\".rows",
@@ -162,6 +163,7 @@ fn separate_session_targets_require_all_qualified_non_temp_range_variables() {
         "SELECT * FROM public.f()",
         "SELECT * FROM (SELECT * FROM public.rows) a",
         "WITH a AS (SELECT * FROM public.rows) SELECT * FROM a",
+        "SELECT * FROM pg_temp.rows JOIN public.b ON true",
     ] {
         assert_eq!(
             QueryMutationSource::new(sql.into(), false),
@@ -170,5 +172,97 @@ fn separate_session_targets_require_all_qualified_non_temp_range_variables() {
         );
         let stored = serde_json::json!({ "originalSql":sql, "statementSql":sql, "parameterMode":false, "parameterNames":[] });
         assert!(serde_json::from_value::<QueryMutationSource>(stored).is_err());
+    }
+}
+
+fn context(search_path: Option<&str>, autocommit: bool) -> QueryExecutionContext {
+    QueryExecutionContext {
+        client_encoding: Some("UTF8".into()),
+        date_style: Some("ISO, MDY".into()),
+        interval_style: Some("postgres".into()),
+        search_path: search_path.map(str::to_owned),
+        autocommit,
+    }
+}
+
+#[test]
+fn unqualified_targets_need_a_reported_autocommit_search_path() {
+    for sql in [
+        "SELECT * FROM rows",
+        "SELECT a.id FROM public.rows a JOIN other b ON a.id=b.id",
+    ] {
+        let source = QueryMutationSource::new(sql.into(), false).unwrap();
+        assert!(!source.qualified());
+        // Restored sources and unreported paths stay refused.
+        for refused in [
+            None,
+            Some(context(None, true)),
+            Some(context(Some("\"$user\", public"), false)),
+        ] {
+            assert_eq!(
+                source.analysis_source(refused.as_ref()),
+                Err(QueryMutationSourceError::SessionDependentTarget),
+                "{sql}"
+            );
+        }
+        let reported = context(Some("\"$user\", public"), true);
+        assert_eq!(
+            source.analysis_source(Some(&reported)).unwrap(),
+            AnalyzeSource::NativeStatement {
+                sql: sql.into(),
+                context: Some(NativeAnalysisContext {
+                    search_path: Some("\"$user\", public".into()),
+                    iso_dates: true,
+                }),
+            }
+        );
+        // The derived flag is recomputed on decode, never trusted or stored.
+        let encoded = serde_json::to_value(&source).unwrap();
+        assert!(encoded.get("qualified").is_none());
+        assert_eq!(
+            serde_json::from_value::<QueryMutationSource>(encoded).unwrap(),
+            source
+        );
+    }
+}
+
+#[test]
+fn qualified_sources_never_send_a_search_path_and_only_proven_contexts_mark_iso() {
+    let source = QueryMutationSource::new("SELECT * FROM public.rows".into(), false).unwrap();
+    let AnalyzeSource::NativeStatement { context: sent, .. } = source
+        .analysis_source(Some(&context(Some("evil, public"), true)))
+        .unwrap()
+    else {
+        panic!("native source");
+    };
+    assert_eq!(
+        sent,
+        Some(NativeAnalysisContext {
+            search_path: None,
+            iso_dates: true,
+        })
+    );
+    let mut german = context(None, true);
+    german.date_style = Some("German, DMY".into());
+    assert_eq!(
+        source.analysis_source(Some(&german)).unwrap(),
+        AnalyzeSource::NativeStatement {
+            sql: "SELECT * FROM public.rows".into(),
+            context: None,
+        }
+    );
+    german.date_style = Some("ISOLATED".into());
+    assert!(!german.iso_dates());
+    german.date_style = Some("ISO".into());
+    assert!(german.iso_dates());
+}
+
+#[test]
+fn execution_context_encoding_proof_is_exactly_utf8() {
+    let mut value = context(None, true);
+    assert!(value.utf8());
+    for encoding in [None, Some("LATIN1"), Some("utf8"), Some("SQL_ASCII")] {
+        value.client_encoding = encoding.map(str::to_owned);
+        assert!(!value.utf8(), "{encoding:?}");
     }
 }

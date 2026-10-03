@@ -10,6 +10,7 @@ mod catalog;
 mod catalog_view;
 mod cell_value;
 mod connection_uri;
+mod console_model;
 mod controller;
 mod csv_transfer_model;
 mod csv_transfer_store;
@@ -28,6 +29,8 @@ mod schema_map_model;
 mod schema_map_png;
 mod schema_map_view;
 mod schema_view;
+mod sequence_runtime;
+mod sequence_view;
 // Mutation preparation is exercised before the review UI is activated.
 mod column_widths;
 mod connection_settings_model;
@@ -37,11 +40,14 @@ mod data_model;
 mod ddl_export_model;
 mod ddl_export_view;
 mod diagnostics;
+mod dock_view;
 mod document_view;
 mod export_view;
+mod file_log;
 mod file_runtime;
 mod fk_navigation;
 mod forms;
+mod geometry_preview;
 mod grid;
 mod grid_columns;
 mod launch;
@@ -49,9 +55,15 @@ mod launch;
 mod live_tests;
 mod mailbox;
 mod maintenance_view;
+mod navigator_model;
+mod navigator_view;
+mod object_ddl_model;
+mod object_ddl_view;
 mod object_details;
+mod open_anything;
 mod overview_model;
 mod overview_view;
+mod palette_view;
 mod persistence;
 mod query_library;
 mod query_library_view;
@@ -61,6 +73,7 @@ mod results;
 mod server_details_model;
 mod sql;
 mod sql_completion;
+mod sql_find;
 mod sql_format;
 mod stream;
 mod table_changes;
@@ -80,6 +93,7 @@ mod value_inspector;
 mod verification;
 mod whole_table_export_model;
 mod whole_table_export_view;
+mod window_geometry;
 mod workbench;
 mod workspace;
 
@@ -121,6 +135,9 @@ fn init_editor(cx: &mut App) -> anyhow::Result<()> {
         KeyBinding::new("cmd-enter", RunStatement, Some("Workbench")),
         KeyBinding::new("cmd-shift-enter", RunScript, Some("Workbench")),
         KeyBinding::new("cmd-shift-f", FormatSql, Some("Workbench && Editor")),
+        KeyBinding::new("cmd-f", FindInSql, Some("Workbench && Editor")),
+        KeyBinding::new("cmd-g", FindNext, Some("Workbench && Editor")),
+        KeyBinding::new("cmd-shift-g", FindPrevious, Some("Workbench && Editor")),
         KeyBinding::new("cmd-.", StopQuery, Some("Workbench")),
         KeyBinding::new("cmd-q", Quit, Some("Workbench")),
         KeyBinding::new("f6", SwitchPane, Some("Workbench")),
@@ -254,6 +271,16 @@ fn init_workspace_commands(cx: &mut App) {
         ),
         KeyBinding::new(
             "tab",
+            object_ddl_view::NextControl,
+            Some("ObjectDdl > Editor"),
+        ),
+        KeyBinding::new(
+            "shift-tab",
+            object_ddl_view::PreviousControl,
+            Some("ObjectDdl > Editor"),
+        ),
+        KeyBinding::new(
+            "tab",
             table_structure_view::NextControl,
             Some("TableStructure > Editor"),
         ),
@@ -302,11 +329,17 @@ fn init_workspace_commands(cx: &mut App) {
         KeyBinding::new("cmd-alt-left", MoveTabLeft, Some("NativeWorkspace")),
         KeyBinding::new("cmd-alt-right", MoveTabRight, Some("NativeWorkspace")),
         KeyBinding::new("cmd-n", NewConnection, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-shift-o", FocusNavigator, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-k", OpenAnything, Some("NativeWorkspace")),
+        KeyBinding::new("ctrl-`", ToggleConsole, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-m", MinimizeWindow, Some("NativeWorkspace")),
+        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, Some("NativeWorkspace")),
         KeyBinding::new("cmd-,", CredentialSettings, Some("NativeWorkspace")),
         KeyBinding::new("cmd-q", Quit, Some("NativeWorkspace")),
     ]);
     cx.set_menus([
         Menu::new("dbunk Native").items([
+            MenuItem::action("Open Anything…", OpenAnything),
             MenuItem::action("Credentials…", CredentialSettings),
             MenuItem::action("Quit", Quit),
         ]),
@@ -322,6 +355,9 @@ fn init_workspace_commands(cx: &mut App) {
             MenuItem::action("Run statement", RunStatement),
             MenuItem::action("Run script", RunScript),
             MenuItem::action("Format SQL", FormatSql),
+            MenuItem::action("Find in SQL…", FindInSql),
+            MenuItem::action("Find next", FindNext),
+            MenuItem::action("Find previous", FindPrevious),
             MenuItem::action("Stop query", StopQuery),
             MenuItem::action("Clear results", ClearResults),
             MenuItem::action("Insert snippet: Top rows", InsertTopRows),
@@ -349,8 +385,15 @@ fn init_workspace_commands(cx: &mut App) {
             MenuItem::action("Copy retained selection as HTML", grid::CopyHtml),
             MenuItem::action("Copy retained selection as TXT", grid::CopyTxt),
         ]),
+        Menu::new("Window").items([
+            MenuItem::action("Minimize", MinimizeWindow),
+            MenuItem::action("Zoom", ZoomWindow),
+            MenuItem::action("Toggle Full Screen", ToggleFullScreen),
+        ]),
         Menu::new("Connections").items([
             MenuItem::action("New connection…", NewConnection),
+            MenuItem::action("Filter schemas and objects…", FocusNavigator),
+            MenuItem::action("Toggle console", ToggleConsole),
             MenuItem::action("Disconnect query", Disconnect),
         ]),
     ]);
@@ -361,15 +404,33 @@ fn run() -> anyhow::Result<()> {
         std::env::args_os().skip(1),
         std::env::var_os("DBUNK_NATIVE_VERIFY").is_some(),
     )?;
+    match file_log::install(launch.profile()) {
+        Ok(path) => log::info!(
+            "dbunk-native {} logging to {}",
+            env!("CARGO_PKG_VERSION"),
+            path.display()
+        ),
+        Err(error) => eprintln!("Native file logging unavailable: {error}"),
+    }
     let workspace_mode = launch.workspace();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
         .build()?;
+    if let Some(manifest) = runtime.block_on(launch.import_legacy())? {
+        println!("{manifest}");
+        return Ok(());
+    }
     let backend = runtime.block_on(launch.open())?;
     let layout = runtime
         .block_on(backend.layout())
         .map_err(anyhow::Error::msg)?;
+    // Advisory only: an unreadable record falls back to the default frame.
+    let geometry = if workspace_mode {
+        runtime.block_on(backend.window_geometry()).ok().flatten()
+    } else {
+        None
+    };
     #[cfg(feature = "fixture-verification")]
     verification::initialize()?;
     let host = if workspace_mode {
@@ -389,10 +450,40 @@ fn run() -> anyhow::Result<()> {
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
             if workspace_mode {
                 init_workspace_commands(cx);
+                let primary = cx.primary_display();
+                let mut displays = primary.iter().cloned().collect::<Vec<_>>();
+                displays.extend(cx.displays().into_iter().filter(|display| {
+                    primary
+                        .as_ref()
+                        .is_none_or(|primary| primary.id() != display.id())
+                }));
+                let described = displays
+                    .iter()
+                    .map(|display| {
+                        let size = display.bounds().size;
+                        window_geometry::Display {
+                            uuid: display.uuid().ok().map(|uuid| uuid.to_string()),
+                            width: f32::from(size.width),
+                            height: f32::from(size.height),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let (window_bounds, display_id) =
+                    match window_geometry::restore(geometry.as_ref(), &described) {
+                        Some(placement) => (
+                            WindowBounds::Windowed(Bounds {
+                                origin: gpui::point(px(placement.frame.x), px(placement.frame.y)),
+                                size: size(px(placement.frame.width), px(placement.frame.height)),
+                            }),
+                            Some(displays[placement.display].id()),
+                        ),
+                        None => (WindowBounds::Windowed(bounds), None),
+                    };
                 let window = cx
                     .open_window(
                         WindowOptions {
-                            window_bounds: Some(WindowBounds::Windowed(bounds)),
+                            window_bounds: Some(window_bounds),
+                            display_id,
                             show: false,
                             focus: false,
                             titlebar: Some(gpui::TitlebarOptions {
@@ -469,7 +560,12 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("Native host: {error:#}");
+            // Before the logger is installed, stderr is the only record.
+            if log::max_level() == log::LevelFilter::Off {
+                eprintln!("Native host: {error:#}");
+            } else {
+                log::error!("Native host: {error:#}");
+            }
             ExitCode::FAILURE
         }
     }

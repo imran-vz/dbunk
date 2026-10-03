@@ -86,7 +86,7 @@ async fn table_ddl_exact_restore_is_read_only_and_preserves_empty_comment_intent
                 assert_eq!(load(&pool).await.unwrap().snapshot, Some(expected));
                 assert_eq!(raw(&pool).await, before);
                 let value: serde_json::Value = serde_json::from_str(&before).unwrap();
-                assert_eq!(value["version"], 13);
+                assert_eq!(value["version"], 15);
                 let record = &value["snapshot"]["documents"][0]["tableDdl"];
                 assert_eq!(record["target"]["table"], " rows ");
                 assert_eq!(record["intent"]["comment"], serde_json::json!(comment));
@@ -105,7 +105,7 @@ async fn table_ddl_invalid_recovery_cannot_overwrite_original_record() {
         let mut value = base.clone();
         match defect {
             0 => value["version"] = 12.into(),
-            1 => value["version"] = 14.into(),
+            1 => value["version"] = 16.into(),
             2 => value["snapshot"]["documents"][0]["connectionId"] = serde_json::Value::Null,
             3 => value["snapshot"]["documents"][0]["tool"] = "administration".into(),
             _ => {

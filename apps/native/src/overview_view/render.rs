@@ -66,6 +66,88 @@ impl OverviewView {
             .child(label)
             .into_any_element()
     }
+    fn recent_section(&self, cx: &mut Context<Self>) -> AnyElement {
+        let count = self.recent_count();
+        let summary = if self.recent_loading {
+            "Reading recent queries; previous list retained until the read settles".to_owned()
+        } else {
+            self.recent.as_ref().map_or_else(
+                || {
+                    "Refresh recent queries to read this connection's history from this profile"
+                        .into()
+                },
+                Recent::summary,
+            )
+        };
+        let focus = self.recent_focus.min(count.saturating_sub(1));
+        let rows = self.recent.as_ref().map(|recent| {
+            let revision = recent.revision;
+            recent
+                .entries
+                .iter()
+                .take(count)
+                .enumerate()
+                .map(|(index, entry)| {
+                    let action = Action::OpenRecent(revision, index);
+                    let enabled = self.enabled(action, cx);
+                    let label: SharedString = entry.label.clone().into();
+                    let weak = cx.weak_entity();
+                    div()
+                        .id(("overview-recent-row", index))
+                        .role(Role::Button)
+                        .aria_label(format!(
+                            "Recent query {} of {count}: {label}. Enter or Space opens the SQL as an unexecuted draft",
+                            index + 1
+                        ))
+                        .track_focus(&self.recent_rows[index])
+                        .tab_stop(enabled && index == focus)
+                        .tab_index(0)
+                        .a11y_synthetic_children(move |builder| {
+                            if !enabled {
+                                builder.parent_node().set_disabled();
+                            }
+                        })
+                        .h(px(24.))
+                        .px_2()
+                        .truncate()
+                        .text_color(if enabled { rgb(0xffffff) } else { rgb(0x888888) })
+                        .focus(|style| style.bg(rgb(0x333333)))
+                        // GPUI activates a focused clickable element on
+                        // Enter/Space key-up; no key-down duplicate.
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.activate(action, window, cx)
+                        }))
+                        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                            weak.update(cx, |this, cx| this.activate(action, window, cx))
+                                .ok();
+                        })
+                        .child(label)
+                        .into_any_element()
+                })
+                .collect::<Vec<_>>()
+        });
+        div()
+            .id("overview-recent")
+            .role(Role::Group)
+            .aria_label(format!(
+                "Recent queries for this connection, {count} listed; Up and Down move, Enter or Space opens as a draft"
+            ))
+            .flex()
+            .flex_col()
+            .border_t_1()
+            .border_color(rgb(0x333333))
+            .child(div().px_2().pt_1().text_sm().child("Recent queries"))
+            .child(label("overview-recent-summary", summary))
+            .child(
+                div()
+                    .id("overview-recent-rows")
+                    .max_h(px(200.))
+                    .overflow_y_scroll()
+                    .track_scroll(&self.recent_scroll)
+                    .when_some(rows, |list, rows| list.children(rows)),
+            )
+            .into_any_element()
+    }
     fn rows(&self, cx: &mut Context<Self>) -> AnyElement {
         let count = self
             .capture
@@ -135,6 +217,7 @@ impl Render for OverviewView {
             .capture_action(cx.listener(|this,_:&editor::actions::Cancel,window,cx|{if !this.composing(window,cx){this.activate(Action::Back,window,cx);cx.stop_propagation();}}))
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|this.key(event,window,cx)))
             .child(div().flex().flex_wrap().gap_1().p_2().children(ACTIONS.iter().map(|(action,label)|self.button(*action,(*label).into(),cx))))
+            .child(div().id("overview-connection-header").role(Role::Label).aria_label(format!("Connection: {}",self.header)).px_2().py_1().text_sm().child(format!("Connection: {}",self.header)))
             .child(div().id("overview-scopes").role(Role::TabList).aria_label("Requested overview scope").flex().gap_1().px_2().children(Scope::ALL.iter().enumerate().map(|(index,scope)|self.button(Action::Scope(index),scope.label().into(),cx))))
             .when(self.scope!=Scope::Database,|view|view.when_some(self.fields.first(),|view,field|view.child(div().flex().gap_2().px_2().py_1().child("Schema").child(div().flex_1().child(field.clone())))))
             .when(self.scope==Scope::Relation,|view|view.when_some(self.fields.get(1),|view,field|view.child(div().flex().gap_2().px_2().py_1().child("Relation").child(div().flex_1().child(field.clone())))))
@@ -148,6 +231,7 @@ impl Render for OverviewView {
                     .when(count==0,|view|view.child(div().p_2().child(self.capture.as_ref().map_or("Connect and refresh to capture statistics",|capture|capture.empty_label(self.section)))))
                     .when(count>0,|view|view.child(self.rows(cx))))
                 .child(div().id("overview-selected-details").role(Role::Group).aria_label("Exact selected overview statistics, read only").flex_1().min_w_0().min_h_0().when_some(self.editor.as_ref(),|view,editor|view.child(editor.accessible.clone()))))
+            .child(self.recent_section(cx))
             .child(label("overview-runtime-status",self.status.clone()))
             .when_some(self.message.as_ref(),|view,message|view.child(label("overview-message",message.clone())))
     }

@@ -17,6 +17,8 @@ pub enum AdminEvent {
     Changed,
     PersistApply(u64),
     EditConnection(String),
+    /// Exact recorded SQL to open as a disconnected, unexecuted draft.
+    OpenQuery(crate::query_library_view::OpenQuery),
 }
 impl gpui::EventEmitter<AdminEvent> for AdminView {}
 mod audit;
@@ -123,6 +125,12 @@ pub struct AdminView {
     snapshot: Option<Snapshot>,
     server: Option<ServerCapture>,
     overview: overview::Overview,
+    /// Survives Clear so request generations stay monotonic for this tab.
+    recent: crate::overview_model::recent::Requests,
+    /// Local connection metadata: "name · engine · database".
+    identity: Option<String>,
+    /// Latest workspace health tick for the bound connection, if any.
+    health: Option<String>,
     connection_settings: connection_settings::Settings,
     audit: Audit,
     server_selected: [Option<String>; 3],
@@ -170,6 +178,9 @@ impl AdminView {
             snapshot: None,
             server: None,
             overview: overview::Overview::default(),
+            recent: Default::default(),
+            identity: None,
+            health: None,
             connection_settings: connection_settings::Settings::new(budget.clone(), cx),
             audit: Audit::default(),
             server_selected: Default::default(),
@@ -257,6 +268,9 @@ impl AdminView {
                 .view
                 .update(cx, |view, cx| view.receive(None, None, cx));
             self.connection = Some(id);
+            self.identity = None;
+            self.health = None;
+            self.recent.reset();
             self.audit.clear();
             self.clear_results(cx);
         }

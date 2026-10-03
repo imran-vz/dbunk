@@ -229,7 +229,7 @@ fn within_budget(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError> {
     serde_json::to_writer(
         Count(0),
         &Envelope {
-            version: 13,
+            version: 14,
             snapshot,
         },
     )
@@ -313,6 +313,8 @@ pub fn needs_workspace_export(snapshot: &WorkspaceSnapshot) -> bool {
                 || document.query_changes.is_some()
                 || document.schema_changes.is_some()
                 || document.table_ddl.is_some()
+                || document.schema_alter.is_some()
+                || document.object_ddl.is_some()
                 || document.admin_control.is_some()
                 || document.maintenance.is_some()
         })
@@ -476,6 +478,8 @@ mod tests {
             query_changes: None,
             schema_changes: None,
             table_ddl: None,
+            schema_alter: None,
+            object_ddl: None,
             admin_control: None,
             maintenance: None,
             tool: None,
@@ -517,6 +521,8 @@ mod tests {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 tool: None,

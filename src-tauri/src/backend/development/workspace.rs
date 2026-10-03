@@ -26,6 +26,12 @@ pub use admin_state::{WorkspaceAdminAction, WorkspaceAdminControl};
 #[path = "workspace_table_ddl.rs"]
 mod table_ddl_state;
 pub use table_ddl_state::{WorkspaceTableDdl, WORKSPACE_TABLE_DDL_MAX_BYTES};
+#[path = "workspace_schema_alter.rs"]
+mod schema_alter_state;
+pub use schema_alter_state::{WorkspaceSchemaAlter, WORKSPACE_SCHEMA_ALTER_MAX_BYTES};
+#[path = "workspace_object_ddl.rs"]
+mod object_ddl_state;
+pub use object_ddl_state::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
 #[path = "workspace_schema.rs"]
 mod schema_state;
 #[path = "workspace_table.rs"]
@@ -89,6 +95,11 @@ pub struct WorkspaceDocument {
     pub schema_changes: Option<WorkspaceSchemaChanges>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table_ddl: Option<WorkspaceTableDdl>,
+    /// Version 15. One typed object-DDL review per Objects document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_ddl: Option<WorkspaceObjectDdl>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_alter: Option<WorkspaceSchemaAlter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admin_control: Option<WorkspaceAdminControl>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -339,6 +350,40 @@ fn validate(mut snapshot: WorkspaceSnapshot) -> Result<WorkspaceSnapshot, Worksp
                 || document.query_changes.is_some()
                 || document.admin_control.is_some()
                 || document.saved_query_id.is_some()
+                || document.schema_alter.is_some()
+            {
+                return Err(WorkspaceError::InvalidSnapshot);
+            }
+            ddl.validate()?;
+        }
+        // One Objects review owns a document at a time; the journal is
+        // descriptive recovery and never coexists with another Objects intent.
+        if let Some(alter) = &document.schema_alter {
+            if document.tool != Some(WorkspaceTool::Objects)
+                || document.connection_id.is_none()
+                || document.table.is_some()
+                || document.schema_changes.is_some()
+                || document.object_ddl.is_some()
+                || document.maintenance.is_some()
+                || document.query_changes.is_some()
+                || document.admin_control.is_some()
+                || document.saved_query_id.is_some()
+            {
+                return Err(WorkspaceError::InvalidSnapshot);
+            }
+            alter.validate()?;
+        }
+        if let Some(ddl) = &document.object_ddl {
+            if document.tool != Some(WorkspaceTool::Objects)
+                || document.connection_id.is_none()
+                || document.table.is_some()
+                || document.schema_changes.is_some()
+                || document.table_ddl.is_some()
+                || document.schema_alter.is_some()
+                || document.maintenance.is_some()
+                || document.query_changes.is_some()
+                || document.admin_control.is_some()
+                || document.saved_query_id.is_some()
             {
                 return Err(WorkspaceError::InvalidSnapshot);
             }
@@ -401,6 +446,14 @@ fn validate(mut snapshot: WorkspaceSnapshot) -> Result<WorkspaceSnapshot, Worksp
     Ok(snapshot)
 }
 
+/// Current-version record for an imported snapshot under the native key. Used
+/// only by the legacy importer, which never overwrites an existing record.
+pub(in crate::backend) fn encode_record(
+    snapshot: WorkspaceSnapshot,
+) -> Result<(&'static str, String), WorkspaceError> {
+    Ok((KEY, encode(snapshot)?))
+}
+
 fn encode(snapshot: WorkspaceSnapshot) -> Result<String, WorkspaceError> {
     // Serialization itself is bounded, including JSON escape expansion.
     struct Bounded(Vec<u8>);
@@ -420,7 +473,7 @@ fn encode(snapshot: WorkspaceSnapshot) -> Result<String, WorkspaceError> {
     serde_json::to_writer(
         &mut output,
         &StoredWorkspace {
-            version: 13,
+            version: 15,
             snapshot: validate(snapshot)?,
         },
     )
@@ -434,13 +487,40 @@ fn decode(encoded: &str) -> Result<WorkspaceSnapshot, WorkspaceError> {
         version: u64,
     }
     let version: Version = serde_json::from_str(encoded).map_err(|_| WorkspaceError::Corrupt)?;
-    if !matches!(version.version, 1..=13) {
+    // Version 14 added `schemaAlter`; version 15 added `objectDdl`.
+    if !matches!(version.version, 1..=15) {
         return Err(WorkspaceError::UnsupportedVersion(version.version));
     }
     let raw: serde_json::Value =
         serde_json::from_str(encoded).map_err(|_| WorkspaceError::Corrupt)?;
+    if version.version < 15
+        && raw["snapshot"]["documents"]
+            .as_array()
+            .is_some_and(|documents| {
+                documents.iter().any(|document| {
+                    document
+                        .as_object()
+                        .is_some_and(|fields| fields.contains_key("objectDdl"))
+                })
+            })
+    {
+        return Err(WorkspaceError::Corrupt);
+    }
     // Reject a new field even when null in an older envelope. Loading never
     // upgrades or silently erases a recovery record.
+    if version.version < 14
+        && raw["snapshot"]["documents"]
+            .as_array()
+            .is_some_and(|documents| {
+                documents.iter().any(|document| {
+                    document
+                        .as_object()
+                        .is_some_and(|fields| fields.contains_key("schemaAlter"))
+                })
+            })
+    {
+        return Err(WorkspaceError::Corrupt);
+    }
     if version.version < 13
         && raw["snapshot"]["documents"]
             .as_array()
@@ -716,3 +796,11 @@ mod maintenance_tests;
 #[cfg(test)]
 #[path = "workspace_table_ddl_tests.rs"]
 mod table_ddl_tests;
+
+#[cfg(test)]
+#[path = "workspace_schema_alter_tests.rs"]
+mod schema_alter_tests;
+
+#[cfg(test)]
+#[path = "workspace_object_ddl_tests.rs"]
+mod object_ddl_tests;

@@ -43,6 +43,7 @@ async fn unsaved_probe_edits_require_explicit_credentials_before_hydration() {
         read_only: false,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     };
     let saved = backend
         .save_development_connection(None, form.clone(), "stored-sentinel".into())

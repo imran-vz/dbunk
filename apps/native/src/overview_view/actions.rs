@@ -20,6 +20,12 @@ impl OverviewView {
                     && self.capture.as_ref().is_some_and(Capture::has_next)
             }
             Action::Cancel => self.can_cancel,
+            Action::RefreshRecent => self.recent_enabled && !self.recent_loading,
+            Action::OpenRecent(revision, index) => self.recent.as_ref().is_some_and(|recent| {
+                recent.revision == revision
+                    && index < self.recent_count()
+                    && self.connection.as_deref() == Some(recent.connection.as_str())
+            }),
         }
     }
     pub(super) fn activate(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
@@ -60,6 +66,21 @@ impl OverviewView {
                     cx.emit(OverviewEvent::Next(request));
                 }
             }
+            Action::RefreshRecent => {
+                self.message = None;
+                cx.emit(OverviewEvent::RefreshRecent);
+            }
+            Action::OpenRecent(_, index) => {
+                if let Some(recent) = &self.recent
+                    && let Some(entry) = recent.entries.get(index)
+                {
+                    self.recent_focus = index;
+                    cx.emit(OverviewEvent::OpenRecent {
+                        sql: entry.sql.clone(),
+                        connection: recent.connection.clone(),
+                    });
+                }
+            }
             Action::Scope(index) => {
                 if let Some(scope) = Scope::ALL.get(index).copied() {
                     self.scope = scope;
@@ -95,6 +116,10 @@ impl OverviewView {
             .filter(|(_, (action, _))| self.enabled(*action, cx))
             .map(|(index, _)| self.buttons[index].clone())
             .collect::<Vec<_>>();
+        if self.editable && self.recent_count() > 0 {
+            // Roving tab stop: arrows move within the recent list.
+            handles.push(self.recent_rows[self.recent_focus.min(self.recent_count() - 1)].clone());
+        }
         if self.editable {
             handles.extend(self.scopes.iter().cloned());
             if self.scope != Scope::Database
@@ -139,8 +164,26 @@ impl OverviewView {
         if modifiers.control || modifiers.alt || modifiers.platform {
             return;
         }
+        let recent_focused = self
+            .recent_rows
+            .iter()
+            .take(self.recent_count())
+            .position(|handle| handle.is_focused(window));
         match event.keystroke.key.as_str() {
             "tab" => self.focus_control(modifiers.shift, window, cx),
+            // Enter/Space on a focused recent row activate through on_click
+            // (key-up); only movement is handled here.
+            key @ ("up" | "down" | "pageup" | "pagedown" | "home" | "end")
+                if recent_focused.is_some() =>
+            {
+                let Some(index) = move_index(recent_focused, self.recent_count(), key) else {
+                    return;
+                };
+                self.recent_focus = index;
+                window.focus(&self.recent_rows[index], cx);
+                self.recent_scroll.scroll_to_item(index);
+                cx.notify();
+            }
             "escape" => self.activate(Action::Back, window, cx),
             "enter"
                 if self

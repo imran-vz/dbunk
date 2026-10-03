@@ -9,6 +9,7 @@
 //! ```
 
 pub mod admin;
+pub mod bastions;
 pub mod completion;
 pub mod connection_diagnosis;
 pub mod connection_uri;
@@ -19,8 +20,11 @@ pub mod ddl_export;
 mod development;
 pub mod explain;
 pub mod export_configurations;
+pub mod legacy_import;
 pub mod maintenance;
+pub mod managed_servers;
 mod native_profile;
+pub mod object_ddl;
 pub mod objects;
 pub mod overview;
 pub mod pg_tools;
@@ -32,10 +36,12 @@ pub mod query_library;
 pub mod query_mutation;
 pub mod result_files;
 pub mod safety_audit;
+pub mod schema_alter;
 pub mod schema_comparisons;
 pub mod schema_ddl;
 pub mod schema_map;
 mod selection;
+pub mod sequences;
 pub mod server_details;
 pub mod table_copy;
 pub mod table_ddl;
@@ -60,20 +66,31 @@ pub use crate::postgres::sql_class::{StatementClassKind, StatementClassSummary};
 pub use crate::postgres::sql_params::{ParameterRejectionReason, ParameterValue};
 pub use crate::query_session::protocol::*;
 pub use crate::types::TlsFailureKind;
+pub use bastions::{
+    DevelopmentBastion, DevelopmentBastionAuth, DevelopmentBastionAuthentication,
+    DevelopmentBastionDelete, DevelopmentBastionForm, DevelopmentBastionReference,
+    DevelopmentBastionSecrets, DevelopmentBastionTest, DevelopmentHostKeyStatus,
+    DevelopmentSecretInput,
+};
 pub use development::{
     DevelopmentConnection, DevelopmentConnectionFailure, DevelopmentConnectionOrganization,
     DevelopmentConnectionTest, DevelopmentCredentialState, DevelopmentDriverOptions,
     DevelopmentEnvironment, DevelopmentFixtures, DevelopmentPostgresConnection,
-    DevelopmentSafeMode, DevelopmentSettings, DevelopmentStorageMode, DevelopmentTlsMode,
-    DevelopmentTlsOptions, WorkspaceAdminAction, WorkspaceAdminControl, WorkspaceApplyState,
-    WorkspaceDensity, WorkspaceDocument, WorkspaceError, WorkspaceLoad, WorkspaceMaintenance,
-    WorkspaceMaintenanceAction, WorkspaceMaintenanceKind, WorkspaceMaintenanceState,
-    WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision, WorkspaceSchemaChanges,
-    WorkspaceSelection, WorkspaceSnapshot, WorkspaceStagedChange, WorkspaceTableCopy,
-    WorkspaceTableCopyState, WorkspaceTableDdl, WorkspaceTableSeed, WorkspaceTableSeedState,
-    WorkspaceTableState, WorkspaceTool, NATIVE_WORKSPACE_MAX_BYTES, NATIVE_WORKSPACE_MAX_DOCUMENTS,
-    WORKSPACE_COPY_MAX_JOBS, WORKSPACE_MUTATION_MAX_BYTES, WORKSPACE_MUTATION_MAX_CHANGES,
+    DevelopmentSafeMode, DevelopmentSettings, DevelopmentSshTunnel, DevelopmentStorageMode,
+    DevelopmentTlsMode, DevelopmentTlsOptions, WorkspaceAdminAction, WorkspaceAdminControl,
+    WorkspaceApplyState, WorkspaceDensity, WorkspaceDocument, WorkspaceError, WorkspaceLoad,
+    WorkspaceMaintenance, WorkspaceMaintenanceAction, WorkspaceMaintenanceKind,
+    WorkspaceMaintenanceState, WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision,
+    WorkspaceSchemaAlter, WorkspaceSchemaChanges, WorkspaceSelection, WorkspaceSnapshot,
+    WorkspaceStagedChange, WorkspaceTableCopy, WorkspaceTableCopyState, WorkspaceTableDdl,
+    WorkspaceTableSeed, WorkspaceTableSeedState, WorkspaceTableState, WorkspaceTool,
+    NATIVE_WORKSPACE_MAX_BYTES, NATIVE_WORKSPACE_MAX_DOCUMENTS, WORKSPACE_COPY_MAX_JOBS,
+    WORKSPACE_MUTATION_MAX_BYTES, WORKSPACE_MUTATION_MAX_CHANGES, WORKSPACE_SCHEMA_ALTER_MAX_BYTES,
     WORKSPACE_SEED_MAX_JOBS, WORKSPACE_TABLE_DDL_MAX_BYTES,
+};
+pub use development::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
+pub use legacy_import::{
+    import_legacy_profile, snapshot_legacy_profile, LegacyImportManifest, LegacySnapshotManifest,
 };
 pub use native_profile::NativeProfileKind;
 pub use query_confirmation::{QueryConfirmation, QuerySubmission};
@@ -89,6 +106,21 @@ pub enum Layout {
     Stacked,
     SideBySide,
     ResultsFirst,
+}
+
+/// Last normal-quit window frame: display-local top-left origin and content
+/// size in points, plus the display UUID. Native validates it against
+/// connected displays before use; storage never decides placement.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowGeometry {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub maximized: bool,
+    #[serde(default)]
+    pub display: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -432,6 +464,27 @@ impl Backend {
         .map_err(|error| format!("{error:?}"))?
     }
 
+    /// Unreadable or unknown records read as absent and are left unchanged
+    /// until the next normal quit replaces them.
+    pub async fn window_geometry(&self) -> Result<Option<WindowGeometry>, String> {
+        let value = self
+            .call(move |state| async move {
+                Ok(crate::storage::get_setting(&state.pool, "native.window").await)
+            })
+            .await
+            .map_err(|error| format!("{error:?}"))??;
+        Ok(value.and_then(|value| serde_json::from_str(&value).ok()))
+    }
+
+    pub async fn set_window_geometry(&self, geometry: WindowGeometry) -> Result<(), String> {
+        let encoded = serde_json::to_string(&geometry).map_err(|error| error.to_string())?;
+        self.call(move |state| async move {
+            Ok(crate::storage::set_setting(&state.pool, "native.window", &encoded).await)
+        })
+        .await
+        .map_err(|error| format!("{error:?}"))?
+    }
+
     /// Idempotent teardown barrier: graceful close, then abort-and-join. A
     /// timeout that cannot establish termination is returned as a failed gate.
     pub async fn shutdown(&self) -> Result<(), String> {
@@ -521,6 +574,13 @@ impl Backend {
             self.0.table_copy.drain_until(final_deadline).await?;
             self.0.table_seed.drain_until(final_deadline).await?;
             self.0.schema_comparisons.drain_until(final_deadline).await
+        };
+        let owners = async {
+            let result = owners.await;
+            // Every lane has released its route; stop forwards and SSH
+            // sessions and join their workers before storage closes.
+            crate::tunnel::drop_all_async().await;
+            result
         };
         let result = match owners.await {
             Ok(()) => {
@@ -653,6 +713,16 @@ mod tests {
         );
         backend.set_layout(Layout::SideBySide).await.unwrap();
         assert_eq!(backend.layout().await.unwrap(), Layout::SideBySide);
+        assert_eq!(backend.window_geometry().await.unwrap(), None);
+        let geometry = WindowGeometry {
+            x: -1200.5,
+            y: 40.0,
+            width: 1100.0,
+            height: 700.0,
+            maximized: true,
+            display: Some("37D8832A-2D66-02CA-B9F7-8F30A301B230".into()),
+        };
+        backend.set_window_geometry(geometry.clone()).await.unwrap();
         let connection = crate::app::find_connection(&backend.0.state, &backend.fixture().id)
             .await
             .unwrap();
@@ -673,6 +743,11 @@ mod tests {
         drop(backend);
         let backend = Backend::open_fixture(&path).await.unwrap();
         assert_eq!(backend.layout().await.unwrap(), Layout::SideBySide);
+        assert_eq!(backend.window_geometry().await.unwrap(), Some(geometry));
+        crate::storage::set_setting(&backend.0.state.pool, "native.window", "{\"x\":1}")
+            .await
+            .unwrap();
+        assert_eq!(backend.window_geometry().await.unwrap(), None);
         backend.shutdown().await.unwrap();
     }
 

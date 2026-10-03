@@ -18,6 +18,7 @@ fn record(id: &str) -> DevelopmentConnection {
             read_only: false,
             tls: Default::default(),
             driver_options: Default::default(),
+            ssh_tunnel: None,
         }),
     }
 }

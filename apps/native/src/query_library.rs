@@ -185,6 +185,7 @@ mod tests {
             truncation_reasons: vec![],
             error: None,
             refusal: None,
+            context: None,
         }
     }
     fn capture() -> Capture {

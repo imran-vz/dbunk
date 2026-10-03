@@ -354,6 +354,43 @@ impl Render for TableChanges {
                         .aria_label("WKT prefix check only; database validation is still required")
                         .child("WKT prefix check only; database validation is still required"),
                 );
+                content = content.child(self.button("Copy EWKT", Action::CopyLiteral, true, cx));
+                let edit = self.edit.as_ref().unwrap();
+                if !edit.null && !edit.raw {
+                    let text = edit.editor.read(cx).text(cx);
+                    match crate::geometry_preview::parse(&text) {
+                        Ok(preview) => {
+                            let summary = format!(
+                                "{:?} · {} points · bounds {}",
+                                preview.shape,
+                                preview.points.len(),
+                                preview.bounds
+                            );
+                            content = content
+                                .child(
+                                    div()
+                                        .id("geometry-preview")
+                                        .role(Role::Image)
+                                        .aria_label(format!("Geometry preview: {summary}"))
+                                        .border_1()
+                                        .border_color(rgb(0x444444))
+                                        .child(crate::geometry_preview::render(&preview)),
+                                )
+                                .child(div().text_xs().child(summary));
+                        }
+                        Err(message) => {
+                            content = content.child(
+                                div()
+                                    .id("geometry-preview-refusal")
+                                    .role(Role::Label)
+                                    .aria_label(message)
+                                    .text_xs()
+                                    .text_color(rgb(0xfbbf24))
+                                    .child(message),
+                            );
+                        }
+                    }
+                }
             }
         }
         if self.unrestored.is_some() {

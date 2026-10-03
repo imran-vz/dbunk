@@ -304,6 +304,27 @@ impl ResultGrid {
         self.reveal_selected_column();
         cx.notify();
     }
+    /// Restores one source cell of the current table page; hidden columns refuse.
+    pub fn select_source_cell(
+        &mut self,
+        row: usize,
+        source: usize,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.table.is_none()
+            || row >= self.row_count()
+            || self.views.get(self.model.active).is_none()
+        {
+            return false;
+        }
+        let Some(display) = self.columns.display(source) else {
+            return false;
+        };
+        self.select(row, display, false, cx);
+        self.scroll().scroll_to_item(row, ScrollStrategy::Nearest);
+        self.reveal_selected_column();
+        true
+    }
     pub fn selected_column(&self) -> Option<String> {
         let column = self
             .views

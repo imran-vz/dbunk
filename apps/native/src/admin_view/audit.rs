@@ -6,11 +6,22 @@ use crate::{
     safety_audit_model::Capture,
 };
 
+/// The document's single profile-local lane carries one outstanding read at a
+/// time; library pages carry no request id, so the purpose is recorded here.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum LocalRead {
+    #[default]
+    Audit,
+    /// Recent-queries page for this overview request generation.
+    Recent(u64),
+}
+
 #[derive(Default)]
 pub(super) struct Audit {
     controls: Option<LibraryControls>,
     receiver: Option<async_channel::Receiver<LibraryDelivery>>,
     pub pending: Option<u64>,
+    pub purpose: LocalRead,
     pub capture: Option<Capture>,
     pub selected: Option<i64>,
     pub stale: bool,
@@ -47,27 +58,8 @@ impl AdminView {
         let Some(connection) = self.connection.clone() else {
             return;
         };
-        if self
-            .audit
-            .controls
-            .as_ref()
-            .is_some_and(LibraryControls::is_closed)
-        {
-            self.audit.controls = None;
-            self.audit.receiver = None;
-        }
-        if self.audit.controls.is_none() {
-            match self.host.open_library(self.id.clone(), self.wake.clone()) {
-                Ok((controls, receiver)) => {
-                    self.audit.controls = Some(controls);
-                    self.audit.receiver = Some(receiver);
-                }
-                Err(error) => {
-                    self.status = error.into();
-                    cx.notify();
-                    return;
-                }
-            }
+        if !self.open_local_lane(cx) {
+            return;
         }
         let cursor = if next {
             self.audit.capture.as_ref().and_then(Capture::next_cursor)
@@ -91,6 +83,7 @@ impl AdminView {
         {
             Ok(()) => {
                 self.audit.pending = Some(id);
+                self.audit.purpose = LocalRead::Audit;
                 self.audit.stale = self.audit.capture.is_some();
                 self.status = "Reading retained safety overrides from this profile".into();
             }
@@ -101,6 +94,40 @@ impl AdminView {
         }
         cx.notify();
     }
+    /// Opens the document's profile-local lane once; a closed lane is replaced
+    /// only by this explicit request.
+    pub(super) fn open_local_lane(&mut self, cx: &mut Context<Self>) -> bool {
+        if self
+            .audit
+            .controls
+            .as_ref()
+            .is_some_and(LibraryControls::is_closed)
+        {
+            self.audit.controls = None;
+            self.audit.receiver = None;
+        }
+        if self.audit.controls.is_none() {
+            match self.host.open_library(self.id.clone(), self.wake.clone()) {
+                Ok((controls, receiver)) => {
+                    self.audit.controls = Some(controls);
+                    self.audit.receiver = Some(receiver);
+                }
+                Err(error) => {
+                    self.status = error.into();
+                    cx.notify();
+                    return false;
+                }
+            }
+        }
+        true
+    }
+    pub(super) fn send_local(&mut self, command: LibraryCommand) -> Result<(), &'static str> {
+        self.audit
+            .controls
+            .as_ref()
+            .ok_or("Local library lane is closed")?
+            .send(command)
+    }
     pub(super) fn drain_audit(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(receiver) = &self.audit.receiver else {
             return false;
@@ -110,6 +137,10 @@ impl AdminView {
             Err(async_channel::TryRecvError::Closed) if self.audit.pending.is_some() => {
                 let id = self.audit.pending.take().expect("pending local read");
                 cx.notify();
+                if let LocalRead::Recent(generation) = self.audit.purpose {
+                    self.recent_lane_closed(id, generation, cx);
+                    return true;
+                }
                 if self.read.settle(id) != Reply::Stale {
                     self.status = "Local audit worker closed; previous capture retained. Reopen this tab to retry".into();
                     cx.notify();
@@ -123,6 +154,10 @@ impl AdminView {
         };
         // Even a stale/cancelled read releases the pending control barrier.
         cx.notify();
+        if let LocalRead::Recent(generation) = self.audit.purpose {
+            self.settle_recent(id, generation, delivery.result, cx);
+            return true;
+        }
         let result = match delivery.result {
             Ok(LibraryReply::SafetyAudit(reply_id, result)) if reply_id == id => result,
             Ok(_) => Err("Unexpected reply in local safety audit".into()),

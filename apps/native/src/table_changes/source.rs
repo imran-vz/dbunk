@@ -24,7 +24,6 @@ impl ChangeSource {
                 table: relation.table.clone(),
             }),
             Self::Query { provenance, .. } => provenance
-                .source
                 .analysis_source()
                 .map_err(|error| error.to_string()),
         }

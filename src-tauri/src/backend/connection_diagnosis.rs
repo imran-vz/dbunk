@@ -73,18 +73,84 @@ impl Backend {
                     &state, &authority, id, form, password,
                 )
                 .await?;
+                // C08.a: an SSH route is its own stage. The route guard lives
+                // until the ladder joins its drivers, then joins the forward.
+                let (_route, tunnel, connection) =
+                    route_stage(&state, connection, &mut cancellation).await?;
                 let crate::StoredConnection::PostgreSQL(pg) = connection else {
                     return Err("PostgreSQL connection required".into());
                 };
                 // Keep the same admission and credential snapshot through the
                 // bounded probe; a later save/reset cannot overtake it.
-                crate::diagnosis::native::run(&pg, &drivers, cancellation).await
+                crate::diagnosis::native::run_routed(&pg, tunnel, &drivers, cancellation).await
             }
             .await)
         })
         .await
         .map_err(|_| "Native backend is closing".to_string())?
     }
+}
+
+const ROUTE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+async fn route_stage(
+    state: &crate::app::AppState,
+    connection: crate::StoredConnection,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<
+    (
+        Option<crate::tunnel::EphemeralRoute>,
+        crate::diagnosis::native::TunnelStage,
+        crate::StoredConnection,
+    ),
+    String,
+> {
+    use crate::diagnosis::native::TunnelStage;
+    if !connection.ssh_tunnel().is_some_and(|tunnel| tunnel.enabled) {
+        return Ok((None, TunnelStage::Direct, connection));
+    }
+    let started = std::time::Instant::now();
+    let deadline = tokio::time::Instant::now() + ROUTE_TIMEOUT;
+    let mode = crate::app::current_credential_mode(state).await?;
+    let route = crate::tunnel::EphemeralRoute::new("native-diagnosis");
+    let cancelled = cancellation.clone();
+    // The SSH worker observes this check between hops; the setup future is
+    // awaited (never dropped) so its blocking work is joined.
+    let resolved = crate::tunnel::resolve_connection_checked(
+        &state.credentials,
+        &state.pool,
+        mode,
+        route.key(),
+        &connection,
+        std::sync::Arc::new(move || {
+            if *cancelled.borrow() || cancelled.has_changed().is_err() {
+                Err("Connection diagnosis cancelled".into())
+            } else if tokio::time::Instant::now() >= deadline {
+                Err("The SSH route deadline expired".into())
+            } else {
+                Ok(())
+            }
+        }),
+    )
+    .await;
+    if *cancellation.borrow() || cancellation.has_changed().is_err() {
+        return Err("Connection diagnosis cancelled".into());
+    }
+    Ok(match resolved {
+        Ok(resolved) => (
+            Some(route),
+            TunnelStage::Routed {
+                started,
+                local_endpoint: format!("{}:{}", resolved.host(), resolved.effective_port()),
+            },
+            resolved,
+        ),
+        Err(message) => (
+            Some(route),
+            TunnelStage::Failed { started, message },
+            connection,
+        ),
+    })
 }
 
 #[cfg(test)]

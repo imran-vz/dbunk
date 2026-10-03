@@ -21,6 +21,8 @@ pub(super) fn snapshot() -> WorkspaceSnapshot {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 tool: None,
@@ -40,6 +42,8 @@ pub(super) fn snapshot() -> WorkspaceSnapshot {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 tool: None,
@@ -88,7 +92,7 @@ async fn schema_map_tab_round_trips_only_identity_and_old_workspaces_remain_read
     save(&pool, None, input.clone()).await.unwrap();
     let encoded = raw(&pool).await;
     let mut value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(value["version"], 13);
+    assert_eq!(value["version"], 15);
     assert_eq!(load(&pool).await.unwrap().snapshot, Some(input));
     assert_eq!(raw(&pool).await, encoded);
     for version in 1..=11 {
@@ -144,8 +148,8 @@ async fn corrupt_and_future_records_are_preserved_until_explicit_reset() {
     for (value, expected) in [
         ("broken", WorkspaceError::Corrupt),
         (
-            r#"{"version":14,"snapshot":{"future":"data"}}"#,
-            WorkspaceError::UnsupportedVersion(14),
+            r#"{"version":16,"snapshot":{"future":"data"}}"#,
+            WorkspaceError::UnsupportedVersion(16),
         ),
         (r#"{"version":1,"snapshot":{}}"#, WorkspaceError::Corrupt),
     ] {
@@ -466,7 +470,7 @@ async fn v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_c
     input.documents[0].table = Some(table_state());
     let revision = save(&pool, None, input.clone()).await.unwrap();
     let encoded: serde_json::Value = serde_json::from_str(&raw(&pool).await).unwrap();
-    assert_eq!(encoded["version"], 13);
+    assert_eq!(encoded["version"], 15);
     let table = &encoded["snapshot"]["documents"][0]["table"];
     assert_eq!(table["draft"]["applyState"], "outcomeUnknown");
     assert_eq!(
@@ -495,7 +499,7 @@ async fn v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_c
 }
 
 #[tokio::test]
-async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v13() {
+async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v15() {
     let pool = pool().await;
     let mut value: serde_json::Value = serde_json::from_str(&encode(snapshot()).unwrap()).unwrap();
     value["version"] = 1.into();
@@ -515,7 +519,7 @@ async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v13() 
         .unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&raw(&pool).await).unwrap()["version"],
-        13
+        15
     );
 }
 
@@ -604,6 +608,8 @@ fn tool_documents_round_trip_and_reject_mixed_document_intent() {
         query_changes: None,
         schema_changes: None,
         table_ddl: None,
+        schema_alter: None,
+        object_ddl: None,
         admin_control: None,
         maintenance: None,
         id: "history".into(),
@@ -664,7 +670,7 @@ async fn schema_journal_round_trips_exact_attempt_comment_and_unknown_state_with
         revision = Some(save(&pool, revision, input.clone()).await.unwrap());
         let encoded = raw(&pool).await;
         let json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(json["version"], 13);
+        assert_eq!(json["version"], 15);
         assert_eq!(
             json["snapshot"]["documents"][0]["schemaChanges"]["attemptId"],
             attempt
@@ -693,8 +699,8 @@ async fn old_future_and_corrupt_schema_journals_preserve_their_original_bytes() 
         variants.push((value, WorkspaceError::Corrupt));
     }
     let mut future = base.clone();
-    future["version"] = 14.into();
-    variants.push((future, WorkspaceError::UnsupportedVersion(14)));
+    future["version"] = 16.into();
+    variants.push((future, WorkspaceError::UnsupportedVersion(16)));
     for attempt in [
         "not-a-uuid",
         "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
@@ -803,7 +809,7 @@ async fn backup_restore_tab_persists_only_identity_and_refuses_old_or_extended_r
     let encoded = encode(input.clone()).unwrap();
     assert_eq!(decode(&encoded).unwrap(), input);
     let base: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(base["version"], 13);
+    assert_eq!(base["version"], 15);
     for defect in 0..3 {
         let mut value = base.clone();
         match defect {
@@ -839,7 +845,7 @@ async fn csv_transfer_tab_refuses_persisted_source_samples_or_execution() {
     let encoded = encode(input.clone()).unwrap();
     assert_eq!(decode(&encoded).unwrap(), input);
     let base: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(base["version"], 13);
+    assert_eq!(base["version"], 15);
     for defect in 0..4 {
         let mut value = base.clone();
         match defect {

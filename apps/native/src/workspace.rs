@@ -1,5 +1,11 @@
 //! Selected stage04 persistent Navigator. Documents own editors and results;
 //! the workspace owns focus, fair draining, restoration and acknowledged saves.
+#[path = "workspace_health.rs"]
+mod health;
+#[path = "managed_view.rs"]
+mod managed_view;
+#[path = "workspace_palette.rs"]
+mod palette;
 #[path = "workspace_seed.rs"]
 mod seed_integration;
 
@@ -45,7 +51,13 @@ actions!(
         DiscardDrafts,
         ToggleDensity,
         WidenNavigator,
-        NarrowNavigator
+        NarrowNavigator,
+        FocusNavigator,
+        OpenAnything,
+        ToggleConsole,
+        MinimizeWindow,
+        ZoomWindow,
+        ToggleFullScreen
     ]
 );
 
@@ -70,6 +82,7 @@ enum Operation {
     Library(WorkspaceTool),
     SaveQuery,
     Credentials,
+    Bastions,
     SelectDocument(String),
     SelectConnection(String),
     EditConnection(String),
@@ -85,6 +98,8 @@ enum Operation {
     Discard,
     Density,
     Width(f32),
+    Console,
+    ManagedServers,
 }
 
 pub struct Workspace {
@@ -101,6 +116,16 @@ pub struct Workspace {
     import_changes: crate::csv_transfer_model::ImportChanges,
     _csv_events: Subscription,
     documents: Vec<Document>,
+    navigator: Entity<crate::navigator_view::NavigatorView>,
+    _navigator_events: Subscription,
+    dock: Entity<crate::dock_view::DockView>,
+    _dock_events: Subscription,
+    palette: Option<Entity<crate::palette_view::PaletteView<&'static str>>>,
+    _palette_events: Option<Subscription>,
+    frecency: crate::open_anything::Frecency,
+    health: health::HealthState,
+    health_task: Option<Task<()>>,
+    health_probe: Option<Task<()>>,
     active: Option<String>,
     selected_connection: Option<String>,
     connections: Vec<DevelopmentConnection>,
@@ -125,6 +150,8 @@ pub struct Workspace {
     load_error: Option<WorkspaceError>,
     message: Option<String>,
     dialog: Option<Entity<Form>>,
+    managed: Option<Entity<managed_view::ManagedServersView>>,
+    _managed_events: Option<Subscription>,
     focus: FocusHandle,
     previous_focus: Option<FocusHandle>,
     _dialog_events: Option<Subscription>,
@@ -280,7 +307,82 @@ impl Workspace {
                 }
             },
         );
+        let navigator = cx.new(|cx| {
+            crate::navigator_view::NavigatorView::new(
+                host.clone(),
+                wake.clone(),
+                retained.clone(),
+                window,
+                cx,
+            )
+        });
+        let navigator_events = cx.subscribe_in(
+            &navigator,
+            window,
+            |this, _, event: &crate::navigator_view::NavigatorEvent, window, cx| {
+                if this.closing
+                    || this.busy
+                    || this.loading
+                    || this.dialog.is_some()
+                    || this.palette.is_some()
+                {
+                    return;
+                }
+                this.message = None;
+                match event {
+                    crate::navigator_view::NavigatorEvent::OpenTable {
+                        connection,
+                        schema,
+                        table,
+                    } => {
+                        if !this.restored || this.documents.len() >= 16 {
+                            this.message =
+                                Some("Close a tab before opening another (limit 16)".into());
+                        } else {
+                            this.open_table_on(
+                                connection.clone(),
+                                schema.clone(),
+                                table.clone(),
+                                window,
+                                cx,
+                            );
+                        }
+                    }
+                    crate::navigator_view::NavigatorEvent::Describe {
+                        connection,
+                        reference,
+                    } => {
+                        this.selected_connection = Some(connection.clone());
+                        if let Some(index) = this.open_library(WorkspaceTool::Objects, window, cx) {
+                            this.documents[index].view.update(cx, |view, cx| {
+                                view.describe_context(reference.clone(), cx)
+                            });
+                        }
+                    }
+                }
+                cx.notify();
+            },
+        );
+        let dock = cx.new(crate::dock_view::DockView::new);
+        let dock_events = cx.subscribe_in(
+            &dock,
+            window,
+            |this, _, _: &crate::dock_view::DockClosed, window, cx| {
+                this.focus_active(window, cx);
+                cx.notify();
+            },
+        );
         let mut workspace = Self {
+            dock,
+            _dock_events: dock_events,
+            navigator,
+            _navigator_events: navigator_events,
+            palette: None,
+            _palette_events: None,
+            frecency: Default::default(),
+            health: Default::default(),
+            health_task: None,
+            health_probe: None,
             host,
             pg_tools,
             restore_changes: Default::default(),
@@ -318,6 +420,8 @@ impl Workspace {
             load_error: None,
             message: None,
             dialog: None,
+            managed: None,
+            _managed_events: None,
             focus: cx.focus_handle(),
             previous_focus: None,
             _dialog_events: None,
@@ -330,6 +434,7 @@ impl Workspace {
         // workspace shortcuts before any document editor is available.
         window.focus(&workspace.focus, cx);
         workspace.reload(false, window, cx);
+        workspace.start_health_ticks(window, cx);
         workspace
     }
 
@@ -511,6 +616,8 @@ impl Workspace {
                                 .update(cx, |view, cx| view.invalidate_after_restore(cx));
                         }
                     }
+                    this.navigator
+                        .update(cx, |view, cx| view.mark_stale(Some(connection), cx));
                     this.refresh_comparison_connections(cx);
                     this.changed(cx);
                 }
@@ -630,6 +737,18 @@ impl Workspace {
                     this.changed(cx);
                 }
                 DocumentEvent::Quit => this.close(window, cx),
+                DocumentEvent::Console(entry) => {
+                    let mut entry = entry.clone();
+                    if let Some(name) = entry.connection.as_ref().and_then(|id| {
+                        this.connections
+                            .iter()
+                            .find(|connection| &connection.id == id)
+                            .map(|connection| connection.name.clone())
+                    }) {
+                        entry.message = format!("{name} · {}", entry.message);
+                    }
+                    this.dock.update(cx, |dock, cx| dock.append(entry, cx));
+                }
                 DocumentEvent::PersistApply(request) => {
                     this.persist_apply(&document_id, originating_view.clone(), *request, cx)
                 }
@@ -660,6 +779,8 @@ impl Workspace {
                     metadata.query_changes = document.view.read(cx).query_changes(cx);
                     metadata.schema_changes = document.view.read(cx).schema_changes(cx);
                     metadata.table_ddl = document.view.read(cx).table_ddl(cx);
+                    metadata.schema_alter = document.view.read(cx).schema_alter(cx);
+                    metadata.object_ddl = document.view.read(cx).object_ddl(cx);
                     metadata.admin_control = document.view.read(cx).admin_control(cx);
                     metadata.maintenance = document.view.read(cx).maintenance(cx);
                     metadata
@@ -877,6 +998,8 @@ impl Workspace {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 tool: None,
@@ -931,6 +1054,8 @@ impl Workspace {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 id: id.clone(),
@@ -985,6 +1110,8 @@ impl Workspace {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 id: id.clone(),
@@ -1086,6 +1213,8 @@ impl Workspace {
                 query_changes: None,
                 schema_changes: None,
                 table_ddl: None,
+                schema_alter: None,
+                object_ddl: None,
                 admin_control: None,
                 maintenance: None,
                 tool: None,
@@ -1218,8 +1347,10 @@ impl Workspace {
         }));
     }
     fn drain(&mut self, cx: &mut Context<Self>) -> bool {
+        // The Navigator lane is not a workspace document; it shares this wake.
+        let navigator = self.navigator.update(cx, |view, cx| view.drain_one(cx));
         if self.documents.is_empty() {
-            return false;
+            return navigator;
         }
         let started = Instant::now();
         let mut consumed = 0;
@@ -1240,9 +1371,11 @@ impl Workspace {
                 empty += 1;
             }
         }
-        self.documents
-            .iter()
-            .any(|document| document.view.read(cx).has_pending(cx))
+        navigator
+            || self
+                .documents
+                .iter()
+                .any(|document| document.view.read(cx).has_pending(cx))
     }
 
     fn show_form(
@@ -1295,7 +1428,13 @@ impl Workspace {
     }
 
     fn activate(&mut self, operation: Operation, window: &mut Window, cx: &mut Context<Self>) {
-        if self.closing || self.busy || self.loading || self.dialog.is_some() {
+        if self.closing
+            || self.busy
+            || self.loading
+            || self.dialog.is_some()
+            || self.palette.is_some()
+            || self.managed.is_some()
+        {
             return;
         }
         if self.cleanup_failed && !matches!(operation, Operation::Retry | Operation::Export) {
@@ -1394,6 +1533,11 @@ impl Workspace {
                 self.show_form(form, None, window, cx);
             }
             Operation::Credentials => self.reload(true, window, cx),
+            Operation::Bastions => {
+                let form = cx.new(|cx| Form::bastions(self.host.clone(), window, cx));
+                self.show_form(form, None, window, cx);
+            }
+            Operation::ManagedServers => self.show_managed(window, cx),
             Operation::EditConnection(id) => {
                 self.form_scope = Some(id.clone());
                 if let Some(connection) =
@@ -1522,6 +1666,7 @@ impl Workspace {
                     }));
                 }
             }
+            Operation::Console => self.toggle_console(window, cx),
             Operation::Clear => {
                 if let Some(index) = self.active_index() {
                     self.documents[index]
@@ -1693,9 +1838,50 @@ impl Workspace {
         .detach();
     }
 
+    fn show_managed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view =
+            cx.new(|cx| managed_view::ManagedServersView::new(self.host.clone(), window, cx));
+        self._managed_events = Some(cx.subscribe_in(
+            &view,
+            window,
+            |this, _, event: &managed_view::ManagedEvent, window, cx| {
+                let managed_view::ManagedEvent::Closed { changed, settle } = event;
+                this.managed = None;
+                this._managed_events = None;
+                if let Some(focus) = &this.previous_focus {
+                    window.focus(focus, cx);
+                } else {
+                    this.focus_active(window, cx);
+                }
+                // Stopped or destroyed servers disconnect their documents.
+                match settle.as_slice() {
+                    [] if *changed => this.reload(false, window, cx),
+                    [] => {}
+                    [id] => {
+                        this.form_scope = Some(id.clone());
+                        this.settle_form_change(window, cx);
+                    }
+                    _ => {
+                        this.form_credentials = true;
+                        this.settle_form_change(window, cx);
+                    }
+                }
+                cx.notify();
+            },
+        ));
+        view.update(cx, |view, cx| view.focus(window, cx));
+        self.managed = Some(view);
+        cx.notify();
+    }
+
     fn settle_form_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let scope = self.form_scope.clone();
         let all = self.form_credentials;
+        // An edited endpoint keeps its ID; the retained tree may now describe
+        // a different database.
+        self.navigator.update(cx, |view, cx| {
+            view.mark_stale(if all { None } else { scope.as_deref() }, cx)
+        });
         if !all && scope.is_none() {
             self.reload(false, window, cx);
             return;
@@ -1768,6 +1954,18 @@ impl Workspace {
         }));
     }
 
+    fn toggle_console(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.dialog.is_some() || self.palette.is_some() || self.managed.is_some() {
+            return;
+        }
+        let open = !self.dock.read(cx).is_open();
+        self.dock
+            .update(cx, |dock, cx| dock.set_open(open, window, cx));
+        if !open {
+            self.focus_active(window, cx);
+        }
+        cx.notify();
+    }
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finish_close(false, window, cx);
     }
@@ -1781,6 +1979,8 @@ impl Workspace {
             self.changed(cx);
         }
         self.closing = true;
+        self.navigator
+            .update(cx, |view, cx| view.set_editable(false, cx));
         for document in &self.documents {
             document
                 .view
@@ -1792,6 +1992,25 @@ impl Workspace {
             self.writer.clone()
         };
         let host = self.host.clone();
+        // Fullscreen keeps the previous record. GPUI reports the frame origin
+        // display-locally but sizes new windows by content area.
+        let geometry = match window.window_bounds() {
+            gpui::WindowBounds::Windowed(bounds) => {
+                let content = window.viewport_size();
+                Some(dbunk_lib::backend::WindowGeometry {
+                    x: f32::from(bounds.origin.x),
+                    y: f32::from(bounds.origin.y),
+                    width: f32::from(content.width),
+                    height: f32::from(content.height),
+                    maximized: false,
+                    display: window
+                        .display(cx)
+                        .and_then(|display| display.uuid().ok())
+                        .map(|uuid| uuid.to_string()),
+                })
+            }
+            gpui::WindowBounds::Maximized(_) | gpui::WindowBounds::Fullscreen(_) => None,
+        };
         let task = self.host.runtime.spawn(async move {
             if let Some(writer) = writer {
                 if discard {
@@ -1810,6 +2029,15 @@ impl Workspace {
                         .map_err(|error| (error.to_string(), false))?;
                 }
             }
+            // Advisory and bounded: drafts are flushed first, and a slow or
+            // failed geometry write never blocks the joined shutdown.
+            if let Some(geometry) = geometry {
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(1),
+                    host.backend.set_window_geometry(geometry),
+                )
+                .await;
+            }
             host.shutdown().await.map_err(|error| (error, false))
         });
         self.action_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -1824,6 +2052,8 @@ impl Workspace {
                     };
                     this.message = Some(error);
                     this.cleanup_failed = !resumable;
+                    this.navigator
+                        .update(cx, |view, cx| view.set_editable(resumable, cx));
                     for document in &this.documents {
                         document
                             .view
@@ -1891,6 +2121,16 @@ impl Focusable for Workspace {
 }
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Only a saved, supported PostgreSQL connection can bind the tree.
+        let navigator_connection = self.selected_connection.clone().filter(|id| {
+            self.connections.iter().any(|connection| {
+                &connection.id == id
+                    && connection.postgres.is_some()
+                    && connection.unsupported_reason.is_none()
+            })
+        });
+        self.navigator
+            .update(cx, |view, cx| view.set_connection(navigator_connection, cx));
         let tabs = self
             .documents
             .iter()
@@ -1940,6 +2180,22 @@ impl Render for Workspace {
                         self.selected_connection.as_ref() == Some(&id),
                         cx,
                     ))
+                    .when_some(self.health.label(&connection.id), |row, health| {
+                        row.child(
+                            div()
+                                .id(SharedString::from(format!("health-{}", connection.id)))
+                                .role(Role::Status)
+                                .aria_label(health.clone())
+                                .text_xs()
+                                .px_2()
+                                .text_color(if health.starts_with("Healthy") {
+                                    rgb(0x86efac)
+                                } else {
+                                    rgb(0xfbbf24)
+                                })
+                                .child(health),
+                        )
+                    })
                     .when_some(connection.unsupported_reason.clone(), |row, reason| {
                         row.child(
                             div()
@@ -2048,6 +2304,21 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &MoveTabRight, window, cx| {
                 this.activate(Operation::Move(false), window, cx)
             }))
+            .on_action(
+                cx.listener(|this, _: &OpenAnything, window, cx| this.open_palette(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleConsole, window, cx| this.toggle_console(window, cx)),
+            )
+            .on_action(|_: &MinimizeWindow, window, _| window.minimize_window())
+            .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
+            .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
+            .on_action(cx.listener(|this, _: &FocusNavigator, window, cx| {
+                if this.dialog.is_none() {
+                    this.navigator
+                        .update(cx, |view, cx| view.focus_filter(window, cx));
+                }
+            }))
             .on_action(cx.listener(|this, _: &NewConnection, window, cx| {
                 this.activate(Operation::NewConnection, window, cx)
             }))
@@ -2140,6 +2411,27 @@ impl Render for Workspace {
                     .child(self.button("move-right", "→", Operation::Move(false), false, cx))
                     .child(self.button("close-query", "Close", Operation::Close, false, cx))
                     .child(div().flex_1())
+                    .when(
+                        self.host.backend.native_profile_kind()
+                            == Some(dbunk_lib::backend::NativeProfileKind::GeneralPostgres),
+                        |toolbar| {
+                            toolbar
+                                .child(self.button(
+                                    "bastions",
+                                    "Bastion servers",
+                                    Operation::Bastions,
+                                    false,
+                                    cx,
+                                ))
+                                .child(self.button(
+                                    "managed-servers",
+                                    "Managed servers",
+                                    Operation::ManagedServers,
+                                    false,
+                                    cx,
+                                ))
+                        },
+                    )
                     .child(self.button(
                         "credentials",
                         "Credentials",
@@ -2205,6 +2497,7 @@ impl Render for Workspace {
                                     .min_h_0()
                                     .children(connections),
                             )
+                            .child(self.navigator.clone())
                             .child(self.button(
                                 "density",
                                 match self.density {
@@ -2288,6 +2581,9 @@ impl Render for Workspace {
                         .child(message),
                 )
             })
+            .when(self.dock.read(cx).is_open(), |root| {
+                root.child(self.dock.clone())
+            })
             .child(
                 div()
                     .flex()
@@ -2295,6 +2591,16 @@ impl Render for Workspace {
                     .items_center()
                     .border_t_1()
                     .border_color(rgb(0x333333))
+                    .child(self.button(
+                        "console-badge",
+                        match self.dock.read(cx).unread() {
+                            0 => "Console".to_string(),
+                            unread => format!("Console · {unread} new"),
+                        },
+                        Operation::Console,
+                        self.dock.read(cx).is_open(),
+                        cx,
+                    ))
                     .child(
                         div()
                             .id("workspace-save-status")
@@ -2338,6 +2644,20 @@ impl Render for Workspace {
             )
             .when_some(self.dialog.clone(), |root, dialog| {
                 root.child(div().absolute().inset_0().bg(rgb(0)).child(dialog))
+            })
+            .when_some(self.palette.clone(), |root, palette| {
+                root.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .justify_center()
+                        .pt(px(64.))
+                        .child(palette),
+                )
+            })
+            .when_some(self.managed.clone(), |root, managed| {
+                root.child(div().absolute().inset_0().bg(rgb(0)).child(managed))
             })
     }
 }

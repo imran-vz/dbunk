@@ -765,6 +765,7 @@ async fn native_connection_edit_retires_confirmation_and_refuses_unresolved_clea
         read_only: false,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     };
     let saved = backend
         .save_development_connection(None, form("original"), "synthetic secret".into())

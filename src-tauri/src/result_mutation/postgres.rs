@@ -87,13 +87,24 @@ async fn analyze_once(
     cache: &mut DescriptorCache,
     virtual_keys: &VirtualKeyLookup,
 ) -> Result<AnalysisData, ResultMutationError> {
+    let native_types = NativeTypes::of(source);
     let (projected, statement_relations) = match source {
-        AnalyzeSource::Statement { sql } | AnalyzeSource::NativeStatement { sql } => {
-            let native = matches!(source, AnalyzeSource::NativeStatement { .. });
-            if native {
-                require_qualified_query_targets(sql).map_err(|()| unsupported_statement())?;
-            }
-            let description = describe_statement(client, sql, native).await?;
+        AnalyzeSource::Statement { sql } => {
+            let description = describe_statement(client, sql, None).await?;
+            (description.columns, Some(description.relations))
+        }
+        AnalyzeSource::NativeStatement { sql, context } => {
+            let qualified =
+                query_target_qualification(sql).map_err(|()| unsupported_statement())?;
+            let description = if qualified {
+                describe_statement(client, sql, native_types).await?
+            } else {
+                let path = context
+                    .as_ref()
+                    .and_then(|context| context.search_path.as_deref())
+                    .ok_or_else(session_dependent_target)?;
+                describe_with_search_path(client, sql, native_types, path).await?
+            };
             (description.columns, Some(description.relations))
         }
         AnalyzeSource::Relation { schema, table } => {
@@ -189,10 +200,7 @@ async fn analyze_once(
         };
         // RowDescription flattens domains to their base OID. Check the actual
         // attribute type too, before adopting its cast/guard descriptor.
-        require_native_text_types(
-            matches!(source, AnalyzeSource::NativeStatement { .. }),
-            &[catalog_column.type_oid],
-        )?;
+        require_native_text_types(native_types, &[catalog_column.type_oid])?;
         let mutation_column = descriptor
             .mutation
             .column(&catalog_column.name)
@@ -277,40 +285,165 @@ impl RangeVariable {
     }
 }
 
+/// Native analysis type admission. `None` is the unrestricted Tauri path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeTypes {
+    iso_dates: bool,
+}
+
+impl NativeTypes {
+    fn of(source: &AnalyzeSource) -> Option<Self> {
+        match source {
+            AnalyzeSource::NativeStatement { context, .. } => Some(Self {
+                iso_dates: context.as_ref().is_some_and(|context| context.iso_dates),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Builtin text formats whose captured rendering is exact under any session:
+/// `($n::text)::type = column` reproduces the value on the mutation session.
+const SESSION_INDEPENDENT_TYPES: [u32; 20] = [
+    16,   // bool
+    17,   // bytea
+    18,   // "char"
+    19,   // name
+    20,   // int8
+    21,   // int2
+    23,   // int4
+    25,   // text
+    26,   // oid
+    27,   // tid
+    650,  // cidr
+    774,  // macaddr8
+    829,  // macaddr
+    869,  // inet
+    1042, // bpchar
+    1043, // varchar
+    1560, // bit
+    1562, // varbit
+    1700, // numeric
+    2950, // uuid
+];
+const JSONB: u32 = 3802;
+/// ISO DateStyle output is unambiguous YMD text on input under any DateStyle;
+/// zoned values carry an explicit offset, so TimeZone cannot change them.
+/// interval is excluded: its text depends on IntervalStyle on both sides.
+const ISO_DATE_TYPES: [u32; 5] = [
+    1082, // date
+    1083, // time
+    1114, // timestamp
+    1184, // timestamptz
+    1266, // timetz
+];
+
 /// OIDs, never search-path-sensitive format_type spellings, identify the builtin
-/// text formats that are safe across separate sessions. Floats depend on
-/// extra_float_digits; temporal/money/custom types need execution context.
-fn require_native_text_types(native: bool, type_oids: &[u32]) -> Result<(), ResultMutationError> {
-    use tokio_postgres::types::Type;
-    let safe = [
-        Type::BOOL,
-        Type::BYTEA,
-        Type::INT2,
-        Type::INT4,
-        Type::INT8,
-        Type::TEXT,
-        Type::VARCHAR,
-        Type::BPCHAR,
-        Type::NUMERIC,
-        Type::UUID,
-        Type::TID,
-        Type::OID,
-        Type::JSONB,
-    ];
-    if native
-        && type_oids
-            .iter()
-            .any(|oid| !safe.iter().any(|kind| kind.oid() == *oid))
-    {
+/// text formats that are safe across separate sessions. Floats depend on the
+/// unreported extra_float_digits; money on lc_monetary; intervals on
+/// IntervalStyle; json lacks equality for guards; domains, arrays and custom
+/// types need their own proofs. Dates/times need a proven ISO DateStyle.
+fn require_native_text_types(
+    native: Option<NativeTypes>,
+    type_oids: &[u32],
+) -> Result<(), ResultMutationError> {
+    let Some(native) = native else {
+        return Ok(());
+    };
+    let admitted = |oid: u32| {
+        SESSION_INDEPENDENT_TYPES.contains(&oid)
+            || oid == JSONB
+            || (native.iso_dates && ISO_DATE_TYPES.contains(&oid))
+    };
+    if type_oids.iter().any(|oid| !admitted(*oid)) {
         return Err(not_analyzable(NotAnalyzableReason::SessionDependentTypes));
     }
     Ok(())
 }
 
+/// Resolves an unqualified statement exactly as the execution session did:
+/// same database, the captured search_path set locally in a read-only
+/// transaction, and no uncommitted session state (autocommit only). Name
+/// lookup skips schemas the current role cannot use, and `$user` follows SET
+/// ROLE without a report, so each unqualified name must match exactly one
+/// relation across every schema the path could reach for any role, including
+/// pg_catalog and all role-named schemas when `$user` is present. Committed
+/// temporary relations are refused separately by `possible_temp_shadow`.
+async fn describe_with_search_path(
+    client: &Client,
+    sql: &str,
+    types: Option<NativeTypes>,
+    search_path: &str,
+) -> Result<StatementDescription, ResultMutationError> {
+    let names = unqualified_relation_names(sql).map_err(|()| unsupported_statement())?;
+    let path =
+        super::search_path::split_search_path(search_path).ok_or_else(session_dependent_target)?;
+    client
+        .batch_execute("BEGIN READ ONLY")
+        .await
+        .map_err(database_error)?;
+    let described = async {
+        client
+            .query_one(
+                "SELECT pg_catalog.set_config('search_path', $1, true)",
+                &[&search_path],
+            )
+            .await
+            .map_err(analysis_database_error)?;
+        if !unique_path_resolution(client, &names, &path).await? {
+            return Err(session_dependent_target());
+        }
+        describe_statement(client, sql, types).await
+    }
+    .await;
+    if client.batch_execute("ROLLBACK").await.is_err() {
+        return Err(ResultMutationError::ConnectionLost);
+    }
+    described
+}
+
+async fn unique_path_resolution(
+    client: &Client,
+    names: &[String],
+    path: &super::search_path::SearchPathSchemas,
+) -> Result<bool, ResultMutationError> {
+    let row = client
+        .query_one(
+            r#"
+            SELECT pg_catalog.bool_and(matches.count = 1)
+            FROM unnest($1::text[]) AS names(name)
+            CROSS JOIN LATERAL (
+                SELECT count(*) AS count
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relname = names.name
+                  AND (n.nspname = 'pg_catalog'
+                       OR n.nspname = ANY($2::text[])
+                       OR ($3 AND EXISTS (
+                           SELECT 1 FROM pg_catalog.pg_roles r
+                           WHERE r.rolname = n.nspname)))
+            ) AS matches
+            "#,
+            &[&names, &path.schemas, &path.includes_user],
+        )
+        .await
+        .map_err(analysis_database_error)?;
+    Ok(row.get::<_, Option<bool>>(0).unwrap_or(false))
+}
+
+fn session_dependent_target() -> ResultMutationError {
+    not_analyzable(NotAnalyzableReason::Database {
+        code: None,
+        message: "Unqualified table names need the execution session's reported search_path from an autocommit run, with no role-named schema that could shadow them; schema-qualify each FROM/JOIN table".into(),
+        severity: None,
+        position: None,
+    })
+}
+
 async fn describe_statement(
     client: &Client,
     sql: &str,
-    native: bool,
+    native: Option<NativeTypes>,
 ) -> Result<StatementDescription, ResultMutationError> {
     let statement = match client.prepare(sql).await {
         Ok(statement) => statement,
@@ -440,17 +573,20 @@ async fn resolve_range_variables(
         .collect()
 }
 
-/// Native execution currently carries headings, not origin OIDs. Refuse target
-/// names whose resolution can differ on the separate mutation session. This
-/// shares the analysis parser, including its unsupported-shape refusals.
-pub(crate) fn require_qualified_query_targets(sql: &str) -> Result<(), ()> {
+/// Native execution carries headings, not origin OIDs. Shapes the analysis
+/// parser cannot enumerate completely, and explicitly temporary targets, are
+/// refused. `Ok(false)` means at least one range variable is unqualified, so
+/// its resolution depends on the execution session's search_path.
+pub(crate) fn query_target_qualification(sql: &str) -> Result<bool, ()> {
     let variables = parse_range_variables(sql)?;
     if variables.is_empty() {
         return Err(());
     }
+    let mut qualified = true;
     for variable in variables {
         if variable.parts.len() < 2 {
-            return Err(());
+            qualified = false;
+            continue;
         }
         let schema = &variable.parts[variable.parts.len() - 2];
         let name = if schema.quoted {
@@ -462,7 +598,23 @@ pub(crate) fn require_qualified_query_targets(sql: &str) -> Result<(), ()> {
             return Err(());
         }
     }
-    Ok(())
+    Ok(qualified)
+}
+
+/// Unqualified range-variable relation names, folded as PostgreSQL does.
+fn unqualified_relation_names(sql: &str) -> Result<Vec<String>, ()> {
+    Ok(parse_range_variables(sql)?
+        .into_iter()
+        .filter(|variable| variable.parts.len() == 1)
+        .map(|variable| {
+            let part = &variable.parts[0];
+            if part.quoted {
+                part.value.clone()
+            } else {
+                part.value.to_ascii_lowercase()
+            }
+        })
+        .collect())
 }
 
 fn parse_range_variables(sql: &str) -> Result<Vec<RangeVariable>, ()> {
@@ -1484,12 +1636,26 @@ fn analysis_database_error(error: tokio_postgres::Error) -> ResultMutationError 
 
 #[cfg(test)]
 mod tests {
+    const PLAIN: Option<super::NativeTypes> = Some(super::NativeTypes { iso_dates: false });
+    const ISO: Option<super::NativeTypes> = Some(super::NativeTypes { iso_dates: true });
+
+    fn session_dependent(result: Result<(), super::ResultMutationError>) -> bool {
+        matches!(
+            result,
+            Err(super::ResultMutationError::NotAnalyzable {
+                reason: super::NotAnalyzableReason::SessionDependentTypes
+            })
+        )
+    }
+
     #[test]
     fn native_text_gate_uses_exact_builtin_oids_and_leaves_regular_analysis_unchanged() {
         use tokio_postgres::types::Type;
         for kind in [
             Type::BOOL,
             Type::BYTEA,
+            Type::CHAR,
+            Type::NAME,
             Type::INT2,
             Type::INT4,
             Type::INT8,
@@ -1501,35 +1667,116 @@ mod tests {
             Type::TID,
             Type::OID,
             Type::JSONB,
+            Type::INET,
+            Type::CIDR,
+            Type::MACADDR,
+            Type::MACADDR8,
+            Type::BIT,
+            Type::VARBIT,
         ] {
-            assert!(super::require_native_text_types(true, &[kind.oid()]).is_ok());
+            assert!(
+                super::require_native_text_types(PLAIN, &[kind.oid()]).is_ok(),
+                "{kind}"
+            );
+            assert!(
+                super::require_native_text_types(ISO, &[kind.oid()]).is_ok(),
+                "{kind}"
+            );
         }
         for oid in [
             Type::FLOAT4.oid(),
             Type::FLOAT8.oid(),
-            Type::DATE.oid(),
-            Type::TIMESTAMP.oid(),
-            Type::TIMESTAMPTZ.oid(),
             Type::INTERVAL.oid(),
             Type::MONEY.oid(),
             Type::JSON.oid(),
+            Type::XML.oid(),
             Type::TEXT_ARRAY.oid(),
+            Type::INT4_ARRAY.oid(),
             123456,
         ] {
-            assert!(matches!(
-                super::require_native_text_types(true, &[Type::INT4.oid(), oid]),
-                Err(super::ResultMutationError::NotAnalyzable {
-                    reason: super::NotAnalyzableReason::SessionDependentTypes
-                })
-            ));
-            assert!(super::require_native_text_types(false, &[oid]).is_ok());
+            assert!(session_dependent(super::require_native_text_types(
+                PLAIN,
+                &[Type::INT4.oid(), oid]
+            )));
+            // A proven ISO DateStyle does not admit types it does not render.
+            assert!(session_dependent(super::require_native_text_types(
+                ISO,
+                &[Type::INT4.oid(), oid]
+            )));
+            assert!(super::require_native_text_types(None, &[oid]).is_ok());
         }
         // A domain over INT4 is described as INT4 on the wire. Its actual
         // pg_attribute OID must still fail the native guard-type check.
         let mut domain = catalog_descriptor();
         domain.columns[0].type_oid = 123456;
-        assert!(super::require_native_text_types(true, &[Type::INT4.oid()]).is_ok());
-        assert!(super::require_native_text_types(true, &[domain.columns[0].type_oid]).is_err());
+        assert!(super::require_native_text_types(PLAIN, &[Type::INT4.oid()]).is_ok());
+        assert!(super::require_native_text_types(PLAIN, &[domain.columns[0].type_oid]).is_err());
+    }
+
+    #[test]
+    fn date_and_time_types_need_a_proven_iso_date_style() {
+        use tokio_postgres::types::Type;
+        for kind in [
+            Type::DATE,
+            Type::TIME,
+            Type::TIMETZ,
+            Type::TIMESTAMP,
+            Type::TIMESTAMPTZ,
+        ] {
+            assert!(session_dependent(super::require_native_text_types(
+                PLAIN,
+                &[kind.oid()]
+            )));
+            assert!(super::require_native_text_types(ISO, &[kind.oid()]).is_ok());
+        }
+    }
+
+    #[test]
+    fn native_context_selects_type_admission_only_for_native_statements() {
+        let native = |context| AnalyzeSource::NativeStatement {
+            sql: "SELECT 1".into(),
+            context,
+        };
+        assert_eq!(super::NativeTypes::of(&native(None)), PLAIN);
+        assert_eq!(
+            super::NativeTypes::of(&native(Some(NativeAnalysisContext {
+                search_path: None,
+                iso_dates: true,
+            }))),
+            ISO
+        );
+        assert_eq!(
+            super::NativeTypes::of(&AnalyzeSource::Statement {
+                sql: "SELECT 1".into()
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn unqualified_targets_are_reported_not_refused_and_temp_targets_stay_refused() {
+        assert_eq!(
+            super::query_target_qualification("SELECT * FROM public.rows"),
+            Ok(true)
+        );
+        assert_eq!(
+            super::query_target_qualification("SELECT a.id FROM public.a a JOIN b ON a.id = b.id"),
+            Ok(false)
+        );
+        assert_eq!(
+            super::unqualified_relation_names(
+                "SELECT * FROM public.a JOIN \"Mixed\" m ON true JOIN Lower l ON true"
+            ),
+            Ok(vec!["Mixed".to_owned(), "lower".to_owned()])
+        );
+        for sql in [
+            "SELECT * FROM pg_temp.rows",
+            "SELECT * FROM \"pg_temp_3\".rows",
+            "SELECT 1",
+            "SELECT * FROM (SELECT 1) a",
+        ] {
+            assert_eq!(super::query_target_qualification(sql), Err(()), "{sql}");
+        }
     }
 
     use super::*;

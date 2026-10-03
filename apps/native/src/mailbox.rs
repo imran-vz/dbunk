@@ -430,6 +430,7 @@ mod tests {
             truncation_reasons: Vec::new(),
             error: None,
             refusal: None,
+            context: None,
         };
         for message in [
             event(1, QueryEvent::ExecutionStarted),

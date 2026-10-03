@@ -58,7 +58,7 @@ pub fn validate_connection_tunnel(connection: &StoredConnection) -> Result<(), S
     Ok(())
 }
 
-fn validate_tunnel_config(config: &SshTunnelConfig) -> Result<(), String> {
+pub(crate) fn validate_tunnel_config(config: &SshTunnelConfig) -> Result<(), String> {
     if !config.enabled {
         return Ok(());
     }

@@ -54,13 +54,66 @@ impl Drop for Probe<'_> {
 
 /// `drivers` must be a probe-local child of the backend shutdown owner. A
 /// cancelled waiter may drop this future; the parent still owns every join.
+#[cfg(test)]
 pub(crate) async fn run(
     pg: &crate::PgStoredConnection,
     drivers: &DriverJoins,
     cancellation: watch::Receiver<bool>,
 ) -> Result<NativeDiagnosis, String> {
-    if !pg.ssh_tunnel.is_default() {
-        return Err("Native diagnosis supports direct PostgreSQL connections only".into());
+    run_routed(pg, TunnelStage::Direct, drivers, cancellation).await
+}
+
+/// Outcome of the caller-owned SSH route. The caller keeps the route guard
+/// alive until this runner returns, then drops it to join the forward.
+pub(crate) enum TunnelStage {
+    Direct,
+    Routed {
+        started: Instant,
+        local_endpoint: String,
+    },
+    Failed {
+        started: Instant,
+        message: String,
+    },
+}
+
+/// `pg` is the resolved copy: for a routed connection its endpoint is already
+/// the owned loopback forward.
+pub(crate) async fn run_routed(
+    pg: &crate::PgStoredConnection,
+    tunnel: TunnelStage,
+    drivers: &DriverJoins,
+    cancellation: watch::Receiver<bool>,
+) -> Result<NativeDiagnosis, String> {
+    let mut report = Report::new(DatabaseEngine::PostgreSQL);
+    match tunnel {
+        TunnelStage::Direct => {
+            if pg.ssh_tunnel.enabled {
+                return Err("SSH-routed diagnosis requires an owned tunnel route".into());
+            }
+            report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
+        }
+        TunnelStage::Routed {
+            started,
+            local_endpoint,
+        } => report.pass(
+            DiagnosisStageKind::Tunnel,
+            started,
+            Some(StageDetail::Tunnel { local_endpoint }),
+        ),
+        TunnelStage::Failed { started, message } => {
+            report.fail(
+                DiagnosisStageKind::Tunnel,
+                started,
+                FailureKind::TunnelFailed,
+                message,
+            );
+            let report = NativeDiagnosis::from_legacy(report.finish());
+            report
+                .checked_heap_bytes()
+                .ok_or_else(|| "Diagnosis report exceeds its bounded allowance".to_string())?;
+            return Ok(report);
+        }
     }
     let spec = ResolvedPostgresConnectSpec::from_postgres(pg);
     let duration = spec
@@ -72,8 +125,6 @@ pub(crate) async fn run(
         cancellation,
         drivers,
     };
-    let mut report = Report::new(DatabaseEngine::PostgreSQL);
-    report.skip(DiagnosisStageKind::Tunnel, SkipReason::NoTunnel);
     let result = diagnose(pg, &spec, &mut probe, &mut report).await;
     drivers.abort_all();
     drivers.drain().await;

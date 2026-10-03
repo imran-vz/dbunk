@@ -20,6 +20,7 @@ fn form(name: &str) -> DevelopmentPostgresConnection {
         read_only: false,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 
@@ -277,6 +278,13 @@ async fn connection_workflow_preserves_secrets_metadata_and_atomic_failures() {
         .save_development_connection(None, outside, String::new())
         .await
         .is_err());
+    // Health ticks never dial an unsupported or missing saved connection.
+    for id in [foreign.id.clone(), "missing-connection".into()] {
+        assert!(backend
+            .health_check_development_connection(id)
+            .await
+            .is_err());
+    }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut refused_probe = form("Must not dial");
     refused_probe.port = listener.local_addr().unwrap().port();

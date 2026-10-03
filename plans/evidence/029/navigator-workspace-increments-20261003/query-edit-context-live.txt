@@ -1,0 +1,22 @@
+    Blocking waiting for file lock on build directory
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/dbunk/src-tauri)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `dbunk` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 56.15s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 2 tests
+test postgres::dedicated::live::dedicated_live_reported_parameters_follow_parameter_status_without_queries ... ok
+test result_mutation::live::result_mutation_live_native_search_path_dates_and_unique_resolution ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1237 filtered out; finished in 0.16s
+
+   Doc-tests dbunk_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

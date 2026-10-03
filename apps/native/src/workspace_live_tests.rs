@@ -279,6 +279,7 @@ async fn open_workspace() -> Result<(Profile, Backend, String)> {
                 read_only: false,
                 tls: DevelopmentTlsOptions::default(),
                 driver_options: Default::default(),
+                ssh_tunnel: None,
             },
             "dbunk".into(),
         )
@@ -568,6 +569,141 @@ async fn workspace_mailboxes_share_exact_16_mib_and_release_on_drop() -> Result<
                 drop(second_rx);
                 drop(third_rx);
                 drop(next_rx);
+                Ok(())
+            })
+        },
+    )
+    .await
+}
+
+async fn next_table_message(
+    receiver: &crate::controller::TableReceiver,
+    awake: &async_channel::Receiver<()>,
+) -> Result<crate::controller::TableMessage> {
+    tokio::time::timeout(WAIT, async {
+        loop {
+            if let Some(envelope) = receiver.try_recv() {
+                return envelope.into_message();
+            }
+            let _ = tokio::time::timeout(Duration::from_millis(50), awake.recv()).await;
+        }
+    })
+    .await
+    .context("Navigator lane reply timed out")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires explicitly verified owned stage03 PostgreSQL fixture"]
+async fn navigator_lane_reads_once_releases_and_health_opens_no_session() -> Result<()> {
+    use crate::controller::{TableCommand, TableMessage};
+    run_case(
+        "navigator_lane_reads_once_releases_and_health_opens_no_session",
+        |host, connection| {
+            Box::pin(async move {
+                ensure!(host.connected().is_empty(), "Fresh host reported a session");
+                let health = host
+                    .backend
+                    .health_check_development_connection(connection.to_owned())
+                    .await
+                    .map_err(|error| anyhow!(error))?;
+                ensure!(
+                    matches!(
+                        health,
+                        dbunk_lib::backend::DevelopmentConnectionTest::Reachable { .. }
+                    ),
+                    "Owned fixture health probe was not reachable: {health:?}"
+                );
+                ensure!(host.connected().is_empty(), "Health probe opened a session");
+                let (wake, awake) = async_channel::bounded(1);
+                let (controls, receiver) = host
+                    .open_table_document("navigator:1".into(), connection.to_owned(), wake.clone())
+                    .map_err(|error| anyhow!(error))?;
+                ensure!(host.connected().contains(connection));
+                ensure!(matches!(
+                    next_table_message(&receiver, &awake).await?,
+                    TableMessage::Opened
+                ));
+                controls
+                    .send(TableCommand::Catalog(1))
+                    .map_err(|error| anyhow!(error))?;
+                match next_table_message(&receiver, &awake).await? {
+                    TableMessage::Catalog(1, Ok(catalog)) => ensure!(
+                        catalog.schemas.iter().any(|schema| schema.name == "public"),
+                        "Catalog omitted public"
+                    ),
+                    _ => bail!("Navigator lane did not return its catalog"),
+                }
+                controls.stop();
+                ensure!(matches!(
+                    next_table_message(&receiver, &awake).await?,
+                    TableMessage::Closed(Ok(_))
+                ));
+                tokio::time::timeout(WAIT, async {
+                    while !host.connected().is_empty() {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                })
+                .await
+                .context("Closed Navigator lane still reported its connection")?;
+                // A lane stopped before its read closes without a catalog reply.
+                let (controls, receiver) = host
+                    .open_table_document("navigator:2".into(), connection.to_owned(), wake)
+                    .map_err(|error| anyhow!(error))?;
+                controls.cancel();
+                controls.stop();
+                loop {
+                    match next_table_message(&receiver, &awake).await? {
+                        TableMessage::Opened => {}
+                        TableMessage::Closed(result) => {
+                            result.map_err(|error| anyhow!("{error:?}"))?;
+                            break;
+                        }
+                        _ => bail!("Stopped lane produced a data reply"),
+                    }
+                }
+                Ok(())
+            })
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires explicitly verified owned stage03 PostgreSQL fixture"]
+async fn quit_joins_streaming_query_data_lane_and_catalog_read_together() -> Result<()> {
+    use crate::controller::{TableCommand, TableMessage};
+    run_case(
+        "quit_joins_streaming_query_data_lane_and_catalog_read_together",
+        |host, connection| {
+            Box::pin(async move {
+                let query =
+                    Document::connect(host, connection, uuid::Uuid::new_v4().to_string()).await?;
+                // A long stream that is still producing when quit begins.
+                let _execution =
+                    query.run("SELECT i, repeat('x', 256) FROM generate_series(1, 10000000) i;")?;
+                let (wake, awake) = async_channel::bounded(1);
+                let (table, table_receiver) = host
+                    .open_table_document("quit-table".into(), connection.to_owned(), wake.clone())
+                    .map_err(|error| anyhow!(error))?;
+                ensure!(matches!(
+                    next_table_message(&table_receiver, &awake).await?,
+                    TableMessage::Opened
+                ));
+                let (navigator, navigator_receiver) = host
+                    .open_table_document("navigator:quit".into(), connection.to_owned(), wake)
+                    .map_err(|error| anyhow!(error))?;
+                ensure!(matches!(
+                    next_table_message(&navigator_receiver, &awake).await?,
+                    TableMessage::Opened
+                ));
+                navigator
+                    .send(TableCommand::Catalog(1))
+                    .map_err(|error| anyhow!(error))?;
+                ensure!(host.connected().contains(connection));
+                // Keep the controls alive so quit, not drop, must retire them.
+                let _held = (table, navigator, query.message().await?);
+                // run_case performs one shared-deadline shutdown and then
+                // requires the fixture backend count to return to baseline.
                 Ok(())
             })
         },

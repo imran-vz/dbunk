@@ -34,7 +34,7 @@ async fn multi_origin_unknown_outcome_journal_preserves_source_separate_from_edi
     let encoded = raw(&pool).await;
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&encoded).unwrap()["version"],
-        13
+        15
     );
     assert_eq!(load(&pool).await.unwrap().snapshot, Some(expected));
     assert!(!encoded.contains("analysisId"));
@@ -128,7 +128,7 @@ async fn invalid_versions_provenance_and_extra_intent_are_preserved_without_over
                 value["snapshot"]["documents"][0]["queryChanges"]["draft"]["changes"][0]
                     ["operation"]["futureAuthority"] = true.into()
             }
-            _ => value["version"] = 14.into(),
+            _ => value["version"] = 16.into(),
         }
         let encoded = serde_json::to_string(&value).unwrap();
         seed(&pool, &encoded).await;
@@ -143,7 +143,7 @@ async fn invalid_versions_provenance_and_extra_intent_are_preserved_without_over
 }
 
 #[tokio::test]
-async fn v2_load_does_not_write_and_explicit_save_upgrades_to_v13() {
+async fn v2_load_does_not_write_and_explicit_save_upgrades_to_v15() {
     let pool = pool().await;
     let mut input = snapshot();
     input.documents[0].table = Some(table_state());
@@ -158,7 +158,7 @@ async fn v2_load_does_not_write_and_explicit_save_upgrades_to_v13() {
         .unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&raw(&pool).await).unwrap()["version"],
-        13
+        15
     );
 }
 

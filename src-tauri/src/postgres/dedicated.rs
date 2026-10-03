@@ -21,6 +21,9 @@ use super::options::driver_option_sql;
 use super::tls;
 use crate::TlsFailureKind;
 
+pub(crate) mod reported;
+use reported::ReportedParameters;
+
 #[derive(Debug)]
 pub(crate) struct Notice {
     pub severity: String,
@@ -72,6 +75,8 @@ pub(crate) struct DedicatedConnection {
     pub client: Arc<Client>,
     pub cancel: tokio_postgres::CancelToken,
     pub tls: TlsConfig,
+    /// GUC_REPORT values as last applied by this socket's driver.
+    pub reported: Arc<ReportedParameters>,
     _driver: DriverTask,
 }
 
@@ -219,8 +224,10 @@ impl DedicatedConnection {
             client,
             cancel,
             tls,
+            reported,
             _driver,
         } = self;
+        drop(reported);
         drop(client);
         drop(cancel);
         drop(tls);
@@ -254,6 +261,7 @@ pub(crate) async fn connect_tracked(
         config.hostaddr(addr);
     }
     let client_cert = spec.tls.client_auth_configured();
+    let reported = ReportedParameters::new();
     let (client, driver) = match &tls_config {
         Some(tls_config) => {
             let tls = MakeRustlsConnect::new(rustls::ClientConfig::clone(tls_config));
@@ -262,7 +270,7 @@ pub(crate) async fn connect_tracked(
                 connect.await.map_err(|error| classify(&error, client_cert))
             })
             .await?;
-            let driver = spawn_driver(connection, notices);
+            let driver = spawn_driver(connection, notices, reported.clone());
             (client, driver)
         }
         None => {
@@ -271,7 +279,7 @@ pub(crate) async fn connect_tracked(
                 connect.await.map_err(|error| classify(&error, client_cert))
             })
             .await?;
-            let driver = spawn_driver(connection, notices);
+            let driver = spawn_driver(connection, notices, reported.clone());
             (client, driver)
         }
     };
@@ -290,6 +298,7 @@ pub(crate) async fn connect_tracked(
         client: Arc::new(client),
         cancel,
         tls: tls_config,
+        reported,
         _driver: driver,
     })
 }
@@ -340,13 +349,24 @@ fn classify(error: &tokio_postgres::Error, client_cert_configured: bool) -> Dedi
 fn spawn_driver<S, T>(
     mut connection: tokio_postgres::Connection<S, T>,
     notices: NoticeSink,
+    reported: Arc<ReportedParameters>,
 ) -> tokio::task::JoinHandle<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     T: tokio_postgres::tls::TlsStream + Unpin + Send + 'static,
 {
+    // Startup ParameterStatus values are published before any client request.
+    reported.enter();
+    reported.leave(|name| connection.parameter(name));
     tokio::spawn(async move {
-        while let Some(Ok(message)) = poll_fn(|cx| connection.poll_message(cx)).await {
+        while let Some(Ok(message)) = poll_fn(|cx| {
+            reported.enter();
+            let polled = connection.poll_message(cx);
+            reported.leave(|name| connection.parameter(name));
+            polled
+        })
+        .await
+        {
             if let AsyncMessage::Notice(notice) = message {
                 match &notices {
                     NoticeSink::Ignore => {}
@@ -628,6 +648,41 @@ mod live {
             ),
             "{error:?}"
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires pnpm db:postgres"]
+    async fn dedicated_live_reported_parameters_follow_parameter_status_without_queries() {
+        let connection = connect(
+            &spec(15432, ResolvedTls::prefer("127.0.0.1")),
+            NoticeSink::Ignore,
+        )
+        .await
+        .expect("plaintext fixture");
+        let start = connection.reported.settled().await.expect("settled");
+        assert_eq!(start.value("client_encoding"), Some("UTF8"));
+        assert!(start.value("DateStyle").is_some());
+        // set_config inside a SELECT is reported mid-statement.
+        connection
+            .client
+            .simple_query("SELECT set_config('DateStyle', 'German, DMY', false)")
+            .await
+            .unwrap();
+        let changed = connection.reported.settled().await.expect("settled");
+        assert_ne!(changed.generation, start.generation);
+        assert_eq!(changed.value("DateStyle"), Some("German, DMY"));
+        connection
+            .client
+            .batch_execute("SET search_path TO \"$user\", public")
+            .await
+            .unwrap();
+        let path = connection.reported.settled().await.expect("settled");
+        // Servers that GUC_REPORT search_path report the exact text; older
+        // servers leave it unknown, which keeps unqualified targets refused.
+        assert!(matches!(
+            path.value("search_path"),
+            None | Some("\"$user\", public")
+        ));
     }
 
     #[tokio::test]

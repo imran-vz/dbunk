@@ -94,6 +94,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-native-certs = "0.7"
 rustls-pki-types = "1"
 tempfile = "3"
+# Snapshot and import checksums for copy-based legacy profile migration.
+sha2 = "0.10"
 calamine = "0.26"
 # Existing locked parser dependencies, with the same already-enabled features.
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }

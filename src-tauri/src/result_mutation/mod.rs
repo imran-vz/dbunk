@@ -1,8 +1,9 @@
 pub(crate) mod builder;
 mod native;
 mod postgres;
+mod search_path;
 #[cfg(feature = "isolated-profile")]
-pub(crate) use postgres::require_qualified_query_targets;
+pub(crate) use postgres::query_target_qualification;
 pub(crate) mod protocol;
 pub(crate) mod service;
 
