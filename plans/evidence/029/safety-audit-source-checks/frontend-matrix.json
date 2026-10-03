@@ -1,0 +1,29 @@
+[
+  {
+    "name": "frontend-format",
+    "command": [
+      "pnpm",
+      "format"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "frontend-lint",
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "frontend-typecheck",
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  }
+]

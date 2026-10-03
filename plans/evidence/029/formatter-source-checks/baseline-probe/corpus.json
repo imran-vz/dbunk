@@ -1,0 +1,154 @@
+[
+  {
+    "name": "simple",
+    "sql": "select id,name from public.users where id=$1;"
+  },
+  {
+    "name": "cte",
+    "sql": "with a as (select 1 as n), b as (select n from a) select * from b;"
+  },
+  {
+    "name": "multi",
+    "sql": "select 1; select 2;"
+  },
+  {
+    "name": "line_comment",
+    "sql": "select 1 -- keep ; comment\n + 2;"
+  },
+  {
+    "name": "block_comment",
+    "sql": "select /* first\n  body untouched? */ 1;"
+  },
+  {
+    "name": "nested_comment",
+    "sql": "select /* outer /* nested */ still comment */ 1;"
+  },
+  {
+    "name": "dollar_string",
+    "sql": "select $tag$a  b\nselect x; -- text$tag$ as body;"
+  },
+  {
+    "name": "dollar_anon",
+    "sql": "select $$abc ' ; SELECT  1$$;"
+  },
+  {
+    "name": "do_dollar",
+    "sql": "do $$ begin raise notice 'a  b'; end $$;"
+  },
+  {
+    "name": "e_upper",
+    "sql": "select E'a\\'b  c', E'\\n';"
+  },
+  {
+    "name": "e_lower",
+    "sql": "select e'a\\'b  c', e'\\n';"
+  },
+  {
+    "name": "unicode_string",
+    "sql": "select U&'d\\0061t\\+000061', U&'d!0061t' UESCAPE '!';"
+  },
+  {
+    "name": "unicode_ident",
+    "sql": "select U&\"d\\0061t\" from public.t;"
+  },
+  {
+    "name": "unicode_literal",
+    "sql": "select 'é雪😀é', \"雪 name\" from \"Sch.é\".\"T\";"
+  },
+  {
+    "name": "cast",
+    "sql": "select 1::numeric(10,2), $1::uuid, :value::text;"
+  },
+  {
+    "name": "json_operators",
+    "sql": "select data->'a', data->>'b', data#>>'{a,b}', data ? 'x', data ?| array['x'], data @> '{}'::jsonb from t;"
+  },
+  {
+    "name": "custom_operator",
+    "sql": "select a <@ b, a @@ b, a !~* b, a OPERATOR(public.===) b from t;"
+  },
+  {
+    "name": "named_params",
+    "sql": "select :user_id, @name, $value, $1 from public.t where id=:user_id;"
+  },
+  {
+    "name": "array",
+    "sql": "select ARRAY[1, 2], a[1:2] from public.t;"
+  },
+  {
+    "name": "newline_strings",
+    "sql": "select 'foo'\n'bar';"
+  },
+  {
+    "name": "space_strings",
+    "sql": "select 'foo' 'bar';"
+  },
+  {
+    "name": "comment_strings",
+    "sql": "select 'foo' -- join\n'bar';"
+  },
+  {
+    "name": "quoted_ident",
+    "sql": "select \"MiXeD\", \"a\"\"b\", \"x.y\" from \"S\".\"T\";"
+  },
+  {
+    "name": "identifier_dollar",
+    "sql": "select foo$bar, $1 from public.t;"
+  },
+  {
+    "name": "numeric",
+    "sql": "select 9223372036854775807, 1234567890.12345678901234567890, 1e-10, .5;"
+  },
+  {
+    "name": "bit_hex",
+    "sql": "select B'101010', X'FF', b'01', x'ff';"
+  },
+  {
+    "name": "minus",
+    "sql": "select a-1, a - -1, 1--comment\n+2;"
+  },
+  {
+    "name": "unicode_word",
+    "sql": "select café, 雪 from public.表;"
+  },
+  {
+    "name": "incomplete",
+    "sql": "select 'unterminated"
+  },
+  {
+    "name": "zero_parameter",
+    "sql": "select $0;"
+  },
+  {
+    "name": "adjacent_comments",
+    "sql": "select 'foo' /*comment*/ 'bar';"
+  },
+  {
+    "name": "adjacent_block_newline",
+    "sql": "select 'foo' /*one\ntwo*/ 'bar';"
+  },
+  {
+    "name": "only_operator",
+    "sql": "select a @> b, a <@ b, a ?& b, a ?| b, a # b from t;"
+  },
+  {
+    "name": "identifier_prefixes",
+    "sql": "select n'x', N'x', e'x', E'x';"
+  },
+  {
+    "name": "escaped_string_backslashes",
+    "sql": "select E'\\\\\\'x', E'\\\\\\\\', 'a\\\\b';"
+  },
+  {
+    "name": "named_real",
+    "sql": "select :ID, :id, $1, :name::text;"
+  },
+  {
+    "name": "numeric_underscores",
+    "sql": "select 1_000, 0xFF, 0b101, 1.2e+10;"
+  },
+  {
+    "name": "unicode_space",
+    "sql": "select a b from t;"
+  }
+]

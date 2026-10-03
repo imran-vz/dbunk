@@ -1,0 +1,18 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.72s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 10 tests
+test backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity ... ignored, verified owned stage03 fixture only; creates unique objects with guarded RESTRICT cleanup
+test postgres::native_catalog::table_structure::tests::structure_capability_floor_precedes_version_specific_catalogs ... ok
+test postgres::native_catalog::table_structure::tests::structure_composite_foreign_keys_keep_pair_order_and_validate_local_identity ... ok
+test postgres::native_catalog::table_structure::tests::structure_expression_and_include_positions_are_not_flattened ... ok
+test postgres::native_catalog::table_structure::tests::structure_partition_bound_and_closed_catalog_enums_are_truthful ... ok
+test postgres::native_catalog::table_structure::tests::structure_permission_failure_never_becomes_empty_metadata ... ok
+test postgres::native_catalog::table_structure::tests::structure_predecode_admission_refusal_does_not_consume_budget ... ok
+test postgres::native_catalog::table_structure::tests::structure_preserves_attnum_gaps_primary_key_order_and_empty_text ... ok
+test postgres::native_catalog::table_structure::tests::structure_refuses_spare_capacity_text_and_nested_component_overflow ... ok
+test postgres::native_catalog::table_structure::tests::structure_request_exact_names_and_identity_are_validated ... ok
+
+test result: ok. 9 passed; 0 failed; 1 ignored; 0 measured; 1113 filtered out; finished in 0.05s
+

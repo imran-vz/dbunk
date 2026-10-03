@@ -1,0 +1,8 @@
+{
+  "observed_at": "2026-10-02T22:53:19.950702+00:00",
+  "tool": "cua_repl",
+  "inventory": "Finder and System Settings reported running; no native preflight app running",
+  "probe": "cua.getApp('com.apple.finder')",
+  "result": "Computer Use server error -10005: cgWindowNotFound",
+  "scope": "No native-window acceptance result. This does not establish a systemwide outage or identify a cause."
+}

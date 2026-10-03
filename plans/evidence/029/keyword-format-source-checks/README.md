@@ -1,0 +1,21 @@
+# Native SQL keyword formatting, 2026-10-03
+
+Keyword capitalization is source-implemented through the existing Format SQL command. Focused tests and a pinned Tauri vocabulary comparison pass within the scope below. Required repository/native checks and the separate package pass. Actual-window selection/undo, keyboard/AX and real IME acceptance remain pending; VoiceOver remains deferred, not passed. Plans 027–030 remain IN PROGRESS.
+
+## Behavior
+
+The native formatter now uppercases known PostgreSQL keywords and keyword phrases with the precedence of `sql-formatter` 15.7.4, pinned at Tauri baseline `102568b`. Functions, types, ordinary and qualified identifiers preserve spelling. Comments, strings, quoted identifiers, dollar bodies and parameters remain byte-exact. Comments interrupt keyword phrases, and property access across comments protects names. The scanner also recognizes a qualified `case` after an intervening comment without opening a CASE expression.
+
+The generated vocabulary retains its MIT notice in source and the separate native package resources. This does not complete the full distribution/license review. No runtime dependency was added or upgraded. `generate-vocabulary.cjs` records how the pinned vocabulary was obtained.
+
+This remains a conservative lexer-based formatter, not a PostgreSQL parser or an exact clone of Tauri's layout algorithm. Existing refusal rules and string-continuation preservation remain. Named parameters such as `:select` are deliberately preserved; the baseline formatter rewrites that example as SQL keywords. Native bound-parameter semantics take precedence over reproducing that defect.
+
+## Bounds and verification
+
+Input/output remain capped at 64 KiB, tokens at 4,096 and nesting at 64. At most 8,193 ordered disjoint edits cover one keyword and one gap per token, plus the trailing gap. ASCII case changes cannot increase token length. The 4 MiB shared working reservation still covers simultaneous source, tokens, flags, gap/edit vectors, edit text and materialized output. The editor applies the complete edit set as one undo transaction and refuses busy, unfocused or composing input before any draft change. Source tests cannot establish actual-window editor behavior.
+
+Eleven focused tests pass, including protected spelling, phrase precedence, comment-qualified names, exact named bindings, idempotence, refusal and maximum edit bounds. A separate optimized Rust probe compared output token spelling against the pinned baseline across 1,082 vocabulary/context inputs: 1,079 match; one deliberate named-parameter difference; two incomplete inputs refused by the baseline. Native also refuses the incomplete CASE input, while incomplete BETWEEN remains accepted by its lexer. These are vocabulary probes, not valid-SQL execution evidence. See `baseline-summary.json` and `baseline-comparison.json`; initial raw diagnostics and the first summary remain preserved.
+
+The source manifest covers 439 files, including the new vocabulary, classifier, notice and package resource integration. Required `pnpm format`, `pnpm lint`, `pnpm typecheck`, `just fmt`, `just lint` and serialized `just test` pass. Core tests: 677 passed/71 ignored; Tauri: 694 passed/85 ignored. Native pinned format, debug/release all-target Clippy, fixture-harness Clippy, debug build, debug/release tests and dependency proof pass; each native suite passed 246 tests with 13 ignored. All 36 Python tooling tests pass. The first lint run caught unused destructuring parameters in two evidence scripts; corrected checks pass and the initial log remains. Backend facade/custom-protocol source is unchanged from the frozen comparison increment; its additional suites were not repeated.
+
+The separate package is `/private/tmp/dbunk-native-package-20261003-keywords/dbunk Native Preflight.app`, 129045263 bytes. Executable SHA256: `e796a13a6fc8adb33b554ff1cd0af63b8e7fc591488c8c2554f9a5ae0ce2d697`. All 439 source hashes match after packaging, and the bundled notice resource was checked byte-for-byte. No window launch was attempted for this package after the immediately preceding comparison package failed CUA discovery. That failure is prior blocked evidence, not a formatter-window check. No database, daily-driver, production, commit, push or PR action is part of this increment.

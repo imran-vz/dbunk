@@ -1,0 +1,28 @@
+[
+  {
+    "name": "rust-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.55,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "rust-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 101,
+    "elapsed_seconds": 27.45,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  }
+]

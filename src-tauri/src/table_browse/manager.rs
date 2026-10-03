@@ -2,9 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use futures_util::future::BoxFuture;
 use tokio::sync::{oneshot, Mutex};
 
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
+use crate::postgres::native_tasks::ConnectionTasks;
+
+#[path = "native.rs"]
+mod native;
 
 use super::executor::{
     apply_tab_cancel, close_executor, enqueue_job, spawn_executor, take_queued, Executor,
@@ -17,23 +22,33 @@ use super::{CLOSE_TIMEOUT, IDLE_TIMEOUT, MAX_EXECUTORS, QUEUE_WAIT};
 pub(crate) struct ManagerState {
     pub(crate) executors: HashMap<String, Arc<Executor>>,
     closing: HashSet<String>,
+    native_idle_closing: HashSet<String>,
     opening: HashSet<String>,
     global_closing: bool,
 }
 
 #[derive(Clone)]
 pub(crate) struct TableBrowseManager {
+    native: Option<ConnectionTasks>,
     pub(crate) inner: Arc<Mutex<ManagerState>>,
 }
 
 impl TableBrowseManager {
     pub(crate) fn new() -> Self {
         Self {
+            native: None,
             inner: Arc::new(Mutex::new(ManagerState::default())),
         }
     }
 
     pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
+        self.spawn_monitor(runtime);
+    }
+
+    pub(crate) fn spawn_monitor(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> tokio::task::JoinHandle<()> {
         let manager = self.clone();
         // Spawn on the host's runtime handle: hosts call this from their
         // main thread with no ambient Tokio context, where tokio::spawn
@@ -44,15 +59,25 @@ impl TableBrowseManager {
                 tick.tick().await;
                 manager.close_idle().await;
             }
-        });
+        })
     }
 
+    #[cfg(test)]
     pub(crate) async fn browse(
         &self,
         spec: ResolvedPostgresConnectSpec,
         payload: BrowseTableDataPayload,
     ) -> Result<BrowseTableResult, TableBrowseError> {
-        match self
+        self.start_browse(spec, payload).await?.await
+    }
+
+    pub(crate) async fn start_browse(
+        &self,
+        spec: ResolvedPostgresConnectSpec,
+        payload: BrowseTableDataPayload,
+    ) -> Result<BoxFuture<'static, Result<BrowseTableResult, TableBrowseError>>, TableBrowseError>
+    {
+        let pending = self
             .submit(
                 spec,
                 payload.connection_id.clone(),
@@ -60,19 +85,33 @@ impl TableBrowseManager {
                 payload.request_id,
                 JobKind::Browse(payload),
             )
-            .await?
-        {
-            JobResult::Browse(result) => Ok(*result),
-            JobResult::Count(_) => Err(TableBrowseError::ConnectionLost),
-        }
+            .await?;
+        Ok(Box::pin(async move {
+            match pending.await? {
+                JobResult::Browse(result) => Ok(*result),
+                JobResult::Count(_) => Err(TableBrowseError::ConnectionLost),
+            }
+        }))
     }
 
+    #[cfg(test)]
     pub(crate) async fn count(
         &self,
         spec: ResolvedPostgresConnectSpec,
         payload: CountTableBrowseRowsPayload,
     ) -> Result<BrowseExactCountResult, TableBrowseError> {
-        match self
+        self.start_count(spec, payload).await?.await
+    }
+
+    pub(crate) async fn start_count(
+        &self,
+        spec: ResolvedPostgresConnectSpec,
+        payload: CountTableBrowseRowsPayload,
+    ) -> Result<
+        BoxFuture<'static, Result<BrowseExactCountResult, TableBrowseError>>,
+        TableBrowseError,
+    > {
+        let pending = self
             .submit(
                 spec,
                 payload.connection_id.clone(),
@@ -80,11 +119,13 @@ impl TableBrowseManager {
                 payload.request_id,
                 JobKind::Count(payload),
             )
-            .await?
-        {
-            JobResult::Count(result) => Ok(result),
-            JobResult::Browse(_) => Err(TableBrowseError::ConnectionLost),
-        }
+            .await?;
+        Ok(Box::pin(async move {
+            match pending.await? {
+                JobResult::Count(result) => Ok(result),
+                JobResult::Browse(_) => Err(TableBrowseError::ConnectionLost),
+            }
+        }))
     }
 
     pub(crate) async fn cancel_tab(
@@ -110,6 +151,10 @@ impl TableBrowseManager {
     }
 
     pub(crate) async fn close_tab(&self, connection_id: &str, tab_id: &str) {
+        if self.native.is_some() {
+            self.close_native_tab(connection_id, tab_id).await;
+            return;
+        }
         let _ = self.cancel_tab(connection_id, tab_id).await;
         if let Some(executor) = self
             .inner
@@ -124,6 +169,10 @@ impl TableBrowseManager {
     }
 
     pub(crate) async fn begin_connection_teardown(&self, connection_id: &str) {
+        if self.native.is_some() {
+            self.close_native_connection(connection_id).await;
+            return;
+        }
         let executor = {
             let mut state = self.inner.lock().await;
             state.closing.insert(connection_id.into());
@@ -139,6 +188,10 @@ impl TableBrowseManager {
     }
 
     pub(crate) async fn close_all(&self) {
+        if self.native.is_some() {
+            self.close_native_all().await;
+            return;
+        }
         let executors = {
             let mut state = self.inner.lock().await;
             state
@@ -174,13 +227,13 @@ impl TableBrowseManager {
         tab_id: String,
         request_id: u64,
         kind: JobKind,
-    ) -> Result<JobResult, TableBrowseError> {
+    ) -> Result<BoxFuture<'static, Result<JobResult, TableBrowseError>>, TableBrowseError> {
         let executor = self.executor_for(spec, &connection_id).await?;
         let (tx, mut rx) = oneshot::channel();
         let tab_id_key = tab_id.clone();
         {
             let mut inner = executor.inner.lock().await;
-            if inner.closed {
+            if inner.closed || inner.closing_tabs.contains(&tab_id) {
                 return Err(TableBrowseError::ConnectionClosing);
             }
             let _ = enqueue_job(
@@ -195,25 +248,28 @@ impl TableBrowseManager {
             );
         }
         executor.notify.notify_one();
-        tokio::select! {
-            result = &mut rx => result.unwrap_or(Err(TableBrowseError::ConnectionLost)),
-            _ = tokio::time::sleep(QUEUE_WAIT) => {
-                let timed_out = {
-                    let mut inner = executor.inner.lock().await;
-                    take_queued(&mut inner, &tab_id_key, request_id)
-                };
-                if let Some(job) = timed_out {
-                    let _ = job.reply.send(Err(TableBrowseError::Timeout {
-                        operation: "queueWait".into(),
-                    }));
-                    Err(TableBrowseError::Timeout {
-                        operation: "queueWait".into(),
-                    })
-                } else {
-                    rx.await.unwrap_or(Err(TableBrowseError::ConnectionLost))
+        let deadline = tokio::time::Instant::now() + QUEUE_WAIT;
+        Ok(Box::pin(async move {
+            tokio::select! {
+                result = &mut rx => result.unwrap_or(Err(TableBrowseError::ConnectionLost)),
+                _ = tokio::time::sleep_until(deadline) => {
+                    let timed_out = {
+                        let mut inner = executor.inner.lock().await;
+                        take_queued(&mut inner, &tab_id_key, request_id)
+                    };
+                    if let Some(job) = timed_out {
+                        let _ = job.reply.send(Err(TableBrowseError::Timeout {
+                            operation: "queueWait".into(),
+                        }));
+                        Err(TableBrowseError::Timeout {
+                            operation: "queueWait".into(),
+                        })
+                    } else {
+                        rx.await.unwrap_or(Err(TableBrowseError::ConnectionLost))
+                    }
                 }
             }
-        }
+        }))
     }
 
     async fn executor_for(
@@ -221,6 +277,9 @@ impl TableBrowseManager {
         spec: ResolvedPostgresConnectSpec,
         connection_id: &str,
     ) -> Result<Arc<Executor>, TableBrowseError> {
+        if self.native.is_some() {
+            return self.native_executor_for(spec, connection_id).await;
+        }
         loop {
             let existing = {
                 let mut state = self.inner.lock().await;
@@ -264,6 +323,10 @@ impl TableBrowseManager {
     }
 
     async fn close_idle(&self) {
+        if self.native.is_some() {
+            self.close_native_idle().await;
+            return;
+        }
         let candidates = {
             let state = self.inner.lock().await;
             state

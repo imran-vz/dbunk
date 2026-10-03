@@ -1,0 +1,18 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			31 tab (settable, boolean) Query 1 · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			32 tab (settable, boolean) Value: off, native_parity_20261003.rows · Database may have changed; reconnect and refresh before using retained data
+~			35 tab (settable, boolean) History query · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			36 tab (settable, boolean) Administration · Database may have changed; reconnect and refresh before using retained data, Value: off
+~			37 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			39 tab (settable, boolean) Objects · Database may have changed; reconnect and refresh before using retained data, Value: off
+~			50 button (disabled) Cancel selected copy
+~			52 button Dismiss finished copy
+~				77 text (selected) Secondary Actions: Pick, Completed: Completed { rows: 3 } | native_copy_window_20261003.source → native_copy_window_20261003.slow_destination
+~			76 text Attempt ea91cb1a-3d23-4777-a37b-70af2a0e915a
+Durable recovery: Completed { rows: 3 }
+Source: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.source
+Source endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.slow_destination
+Destination endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination safe mode: Protected; r
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

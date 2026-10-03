@@ -19,6 +19,7 @@ pub type Row = Rc<[Option<String>]>;
 pub struct ResultSet {
     pub index: u32,
     pub columns: Vec<Option<String>>,
+    pub widths: crate::column_widths::ColumnWidths,
     pub rows: Vec<Row>,
     pub row_count: Option<u64>,
     pub partial: bool,
@@ -89,6 +90,12 @@ impl ResultModel {
         }
     }
 
+    /// Clamp subsequent retention to the remaining workspace allowance. This
+    /// never drops rows already retained by this or any other document.
+    pub fn set_byte_limit(&mut self, limit: usize) {
+        self.byte_limit = limit.min(MAX_ENCODED_BYTES);
+    }
+
     pub fn active_set(&self) -> Option<&ResultSet> {
         self.sets.get(self.active)
     }
@@ -114,7 +121,10 @@ impl ResultModel {
                 if self.sets.iter().any(|set| set.index == result_set_index) {
                     return !self.retention_limited;
                 }
-                if self.sets.len() >= MAX_RESULT_SETS || !self.retain(metadata_bytes) {
+                let admitted_bytes = metadata_bytes.saturating_add(
+                    crate::column_widths::ColumnWidths::storage_bytes(columns.len()),
+                );
+                if self.sets.len() >= MAX_RESULT_SETS || !self.retain(admitted_bytes) {
                     self.native_omitted_result_sets += 1;
                     self.native_omitted_metadata = self
                         .native_omitted_metadata
@@ -123,6 +133,7 @@ impl ResultModel {
                 } else {
                     self.sets.push(ResultSet {
                         index: result_set_index,
+                        widths: crate::column_widths::ColumnWidths::new(&columns),
                         columns,
                         ..Default::default()
                     });
@@ -146,6 +157,7 @@ impl ResultModel {
                     }
                     return false;
                 }
+                let mut geometry_changed = false;
                 for row in rows {
                     let bytes = encoded_size(&row);
                     let fits_set = set_index.is_some_and(|index| {
@@ -167,8 +179,13 @@ impl ResultModel {
                     } else if let Some(index) = set_index {
                         self.row_bytes += bytes;
                         self.row_count += 1;
-                        self.sets[index].rows.push(row.into());
+                        let set = &mut self.sets[index];
+                        geometry_changed |= set.widths.sample(&row, set.rows.len());
+                        set.rows.push(row.into());
                     }
+                }
+                if geometry_changed && let Some(index) = set_index {
+                    self.sets[index].widths.rebuild_offsets();
                 }
             }
             QueryEvent::ResultSetCompleted {
@@ -339,7 +356,8 @@ mod tests {
 
     #[test]
     fn budget_accepts_partial_batch_and_keeps_draining_to_one_terminal() {
-        let metadata = encoded_size(&start(0, 1));
+        let metadata =
+            encoded_size(&start(0, 1)) + crate::column_widths::ColumnWidths::storage_bytes(1);
         let row = vec![Some("\\\"雪".to_string())];
         let mut model = ResultModel::with_byte_limit(metadata + encoded_size(&row));
         assert!(model.consume(start(0, 1)));
@@ -359,8 +377,63 @@ mod tests {
     }
 
     #[test]
+    fn column_geometry_is_admitted_before_allocation_and_is_result_local() {
+        let metadata = encoded_size(&start(0, 1));
+        let mut refused = ResultModel::with_byte_limit(metadata);
+        assert!(!refused.consume(start(0, 1)));
+        assert!(refused.sets.is_empty());
+        assert_eq!(refused.native_omitted_result_sets, 1);
+        assert_eq!(refused.native_omitted_metadata, metadata as u64);
+        let mut model = ResultModel::default();
+        model.consume(start(0, 1));
+        model.consume(start(1, 1));
+        model.consume(QueryEvent::RowBatch {
+            result_set_index: 1,
+            rows: vec![vec![Some("x".repeat(100))]],
+        });
+        assert_eq!(model.sets[1].widths.width(0), 400.);
+        assert!(model.sets[0].widths.width(0) < 400.);
+        assert_eq!(model.sets[1].widths.total_width(), 400.);
+        let retained = model.retained_bytes;
+        assert!(model.sets[1].widths.toggle_pin(0));
+        assert_eq!(model.sets[1].widths.pinned_count(), 1);
+        assert_eq!(model.sets[0].widths.pinned_count(), 0);
+        assert_eq!(model.retained_bytes, retained);
+    }
+
+    #[test]
+    fn shared_allowance_preserves_existing_rows_and_stops_new_retention() {
+        let row = vec![Some("one exact row".into())];
+        let metadata =
+            encoded_size(&start(0, 1)) + crate::column_widths::ColumnWidths::storage_bytes(1);
+        let row_bytes = encoded_size(&row);
+        let total = metadata * 2 + row_bytes * 2;
+        let mut first = ResultModel::default();
+        first.set_byte_limit(total);
+        first.consume(start(0, 1));
+        first.consume(QueryEvent::RowBatch {
+            result_set_index: 0,
+            rows: vec![row.clone()],
+        });
+        let mut second = ResultModel::default();
+        second.set_byte_limit(total - first.retained_bytes);
+        second.consume(start(0, 1));
+        assert!(!second.consume(QueryEvent::RowBatch {
+            result_set_index: 0,
+            rows: vec![row.clone(), row]
+        }));
+        assert_eq!(first.sets[0].rows.len(), 1);
+        assert_eq!(second.sets[0].rows.len(), 1);
+        assert!(first.retained_bytes + second.retained_bytes <= total);
+        second.consume(finish("completed"));
+        assert!(second.completion.is_some());
+    }
+
+    #[test]
     fn metadata_and_notices_share_budget_and_refuse_further_rows() {
-        let mut model = ResultModel::with_byte_limit(encoded_size(&start(0, 1)));
+        let mut model = ResultModel::with_byte_limit(
+            encoded_size(&start(0, 1)) + crate::column_widths::ColumnWidths::storage_bytes(1),
+        );
         model.consume(start(0, 1));
         assert!(!model.consume(QueryEvent::Notice {
             severity: "NOTICE".into(),

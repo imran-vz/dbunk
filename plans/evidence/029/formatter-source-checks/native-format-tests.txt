@@ -1,0 +1,13 @@
+
+running 8 tests
+test tests::incomplete_or_ambiguous_input_never_produces_partial_edits ... ok
+test tests::model_working_allowance_covers_all_simultaneous_storage ... ok
+test tests::continuation_gaps_remain_exact_even_across_comments ... ok
+test tests::comments_and_dollar_bodies_are_byte_exact ... ok
+test tests::quoted_prefixes_escapes_and_unicode_are_exact ... ok
+test tests::maximal_operators_identifiers_parameters_and_numbers_do_not_split ... ok
+test tests::useful_clause_layout_preserves_case_and_multiple_statements ... ok
+test tests::input_tokens_depth_and_output_are_bounded_before_growth ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

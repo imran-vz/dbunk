@@ -1,0 +1,19 @@
+[
+  {
+    "path": "/private/tmp/dbunk-native-whole-export-20261003.sql.gz",
+    "bytes": 421,
+    "sha256": "d3487f9d0960db3cd64e05d9f7119b2e49d5f7479775a181dcc48643c04bdf04",
+    "rows": 13,
+    "exact_values": true,
+    "bom": "UTF-16LE",
+    "compression": "gzip"
+  },
+  {
+    "path": "/private/tmp/dbunk-native-whole-export-20261003.xlsx",
+    "bytes": 5798,
+    "sha256": "af9807842afd0f309cb74aff0176d9ec475e0cdf9358127b6917ec31917e1a91",
+    "rows": 13,
+    "exact_values": true,
+    "null_token": "NULL雪"
+  }
+]

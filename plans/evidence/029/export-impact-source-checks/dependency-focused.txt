@@ -1,0 +1,15 @@
+    Blocking waiting for file lock on build directory
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.57s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 6 tests
+test postgres::native_catalog::dependencies::tests::return_rules_normalize_but_custom_rules_and_column_addresses_remain_exact ... ok
+test postgres::native_catalog::dependencies::tests::reference_validation_requires_exact_routine_signature_and_scoped_identity ... ok
+test postgres::native_catalog::dependencies::tests::internal_nodes_are_walked_and_duplicate_paths_keep_reported_status ... ok
+test postgres::native_catalog::dependencies::tests::depth_probe_distinguishes_a_complete_cycle_from_a_longer_chain ... ok
+test postgres::native_catalog::dependencies::tests::address_and_edge_caps_preserve_uncertainty_even_without_visible_rows ... ok
+test postgres::native_catalog::dependencies::tests::output_cap_is_explicit_and_text_or_encoded_overflow_is_an_error ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 872 filtered out; finished in 0.02s
+

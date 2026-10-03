@@ -1,0 +1,46 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit_code": 0,
+    "seconds": 0.82
+  },
+  {
+    "check": "isolated-clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 23.4
+  },
+  {
+    "check": "focused",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "table_ddl::",
+      "--",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "seconds": 42.27
+  }
+]

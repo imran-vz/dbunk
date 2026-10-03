@@ -1,0 +1,2724 @@
+{
+  "cycles" : 20,
+  "pid" : 52423,
+  "samples" : [
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.1556759
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.2610669
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.36904
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.4763789
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.5848629
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.6984072
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.8040481
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960861.9075332
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.012712
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.1218681
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.2290192
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.3408399
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.4455209
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.5520999
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.660574
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.7683539
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.8771319
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960862.9854751
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.093873
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.20259
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.310878
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.4188871
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.5274692
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.635561
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.7438478
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.8517199
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960863.9596429
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.0655088
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.1716518
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.2792459
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.3843999
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.4975929
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.603673
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.7103128
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.819308
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960864.927151
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.0349309
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.1431141
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.252111
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.365314
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.4724059
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.5789161
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.6821899
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.7867951
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.890512
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960865.9975309
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "before",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960866.104207
+    },
+    {
+      "cycle" : 1,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 313935168,
+      "timestamp" : 1790960866.2098
+    },
+    {
+      "cycle" : 1,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 325207360,
+      "timestamp" : 1790960867.3056169
+    },
+    {
+      "cycle" : 1,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 325207360,
+      "timestamp" : 1790960867.4378471
+    },
+    {
+      "cycle" : 2,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 325207360,
+      "timestamp" : 1790960867.4381719
+    },
+    {
+      "cycle" : 2,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960868.503442
+    },
+    {
+      "cycle" : 2,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960868.6355329
+    },
+    {
+      "cycle" : 3,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960868.6358562
+    },
+    {
+      "cycle" : 3,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960869.783783
+    },
+    {
+      "cycle" : 3,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960869.911298
+    },
+    {
+      "cycle" : 4,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960869.9116201
+    },
+    {
+      "cycle" : 4,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960871.0849628
+    },
+    {
+      "cycle" : 4,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960871.211467
+    },
+    {
+      "cycle" : 5,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960871.2118011
+    },
+    {
+      "cycle" : 5,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960872.2954412
+    },
+    {
+      "cycle" : 5,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960872.428479
+    },
+    {
+      "cycle" : 6,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960872.428798
+    },
+    {
+      "cycle" : 6,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960873.5798202
+    },
+    {
+      "cycle" : 6,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960873.7161989
+    },
+    {
+      "cycle" : 7,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960873.7164831
+    },
+    {
+      "cycle" : 7,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 325207360,
+      "timestamp" : 1790960874.797663
+    },
+    {
+      "cycle" : 7,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 325240128,
+      "timestamp" : 1790960874.935885
+    },
+    {
+      "cycle" : 8,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 325240128,
+      "timestamp" : 1790960874.9361792
+    },
+    {
+      "cycle" : 8,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960876.092793
+    },
+    {
+      "cycle" : 8,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960876.2211251
+    },
+    {
+      "cycle" : 9,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 322864448,
+      "timestamp" : 1790960876.221426
+    },
+    {
+      "cycle" : 9,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960877.297137
+    },
+    {
+      "cycle" : 9,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960877.42592
+    },
+    {
+      "cycle" : 10,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960877.426223
+    },
+    {
+      "cycle" : 10,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 319882560,
+      "timestamp" : 1790960878.504389
+    },
+    {
+      "cycle" : 10,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 319882560,
+      "timestamp" : 1790960878.639642
+    },
+    {
+      "cycle" : 11,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 319882560,
+      "timestamp" : 1790960878.6447101
+    },
+    {
+      "cycle" : 11,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960879.7867961
+    },
+    {
+      "cycle" : 11,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960879.916744
+    },
+    {
+      "cycle" : 12,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960879.9171848
+    },
+    {
+      "cycle" : 12,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960881.00313
+    },
+    {
+      "cycle" : 12,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960881.136811
+    },
+    {
+      "cycle" : 13,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960881.137152
+    },
+    {
+      "cycle" : 13,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960882.2061338
+    },
+    {
+      "cycle" : 13,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960882.3373399
+    },
+    {
+      "cycle" : 14,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960882.3376842
+    },
+    {
+      "cycle" : 14,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960883.4845459
+    },
+    {
+      "cycle" : 14,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960883.6167951
+    },
+    {
+      "cycle" : 15,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960883.617126
+    },
+    {
+      "cycle" : 15,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 319882560,
+      "timestamp" : 1790960884.6979918
+    },
+    {
+      "cycle" : 15,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 319882560,
+      "timestamp" : 1790960884.8335381
+    },
+    {
+      "cycle" : 16,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 319882560,
+      "timestamp" : 1790960884.8338799
+    },
+    {
+      "cycle" : 16,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960885.8963871
+    },
+    {
+      "cycle" : 16,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960886.033752
+    },
+    {
+      "cycle" : 17,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317539648,
+      "timestamp" : 1790960886.0341702
+    },
+    {
+      "cycle" : 17,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960887.1860909
+    },
+    {
+      "cycle" : 17,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960887.3119879
+    },
+    {
+      "cycle" : 18,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960887.312325
+    },
+    {
+      "cycle" : 18,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960888.4604979
+    },
+    {
+      "cycle" : 18,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960888.5866299
+    },
+    {
+      "cycle" : 19,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960888.586952
+    },
+    {
+      "cycle" : 19,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960889.7522559
+    },
+    {
+      "cycle" : 19,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960889.876817
+    },
+    {
+      "cycle" : 20,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "opening",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960889.877284
+    },
+    {
+      "cycle" : 20,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "loaded",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.033972
+    },
+    {
+      "cycle" : 20,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "closed",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.1660771
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.166569
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.2692289
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.3761559
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.4824381
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.586164
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.6933389
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.8010759
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960891.9151912
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.0208499
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.1259429
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.2321529
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.3374438
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.442204
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.5493579
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.6556501
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.76246
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.868314
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960892.981045
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.0872149
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.1974649
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.305599
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.4144549
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.5210829
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.6264482
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.733057
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.838814
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960893.9458032
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.0561399
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.1624899
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.2677259
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.375736
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.4890871
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.595825
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.706214
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.812412
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960894.917556
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.025769
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.133173
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.2374182
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.343868
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.4505548
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.55741
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.6631889
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.770045
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.881372
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960895.987226
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.0977421
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.2040939
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.312669
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.415422
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.5195379
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.6304741
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.7391238
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.8477211
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960896.9541709
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.0576801
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.161237
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.2728009
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.3791261
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.4890652
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.5960021
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.6996841
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.8059649
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960897.912308
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.0226331
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.1289279
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.2342892
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.341877
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.44662
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.5544691
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.6645808
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.7707648
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.874202
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960898.9796619
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.083792
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.1910381
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.2998161
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.4043741
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.5090671
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.6160312
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.721065
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.824873
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960899.928926
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960900.0332398
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960900.1392131
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960900.245204
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 317556032,
+      "timestamp" : 1790960900.352258
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960900.458926
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960900.5679312
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960900.675566
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960900.7826591
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960900.8899431
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960900.996197
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.100857
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.2145519
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.3205109
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.4241819
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.529218
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.6345191
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.7413058
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.845751
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960901.9492049
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.056083
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.16238
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.2651792
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.3702512
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.4766531
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.5836229
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.6975589
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.8039441
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960902.9091392
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.0216179
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.129796
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.239249
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.345798
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.4515929
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.557303
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.6643591
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.771492
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.8807468
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960903.9875221
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.0935111
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.2010779
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.3075709
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.4148159
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.521148
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.630959
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.738462
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.845686
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960904.9560161
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.0624571
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.1727281
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.279207
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.383975
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.4922371
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.604804
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.713743
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.8208451
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960905.9250531
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.0291529
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.1339641
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.248019
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.3541451
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.4606071
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.5725009
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.679199
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 312313152,
+      "timestamp" : 1790960906.782608
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960906.887428
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960906.9925599
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.106194
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.2125659
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.318805
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.4259372
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.539814
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.64592
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.7506309
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.8594961
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960907.966274
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.0708308
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.180661
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.287286
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.397331
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.5040622
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.607378
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.7124929
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.817204
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960908.918813
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.0234199
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.127624
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.239095
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.3457608
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.4492888
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.5560999
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.6626182
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.765866
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.8706632
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960909.9803691
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.0872509
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.1921959
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.298027
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.403959
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.5074739
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.6126661
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.7163181
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.820246
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960910.925853
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.039706
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.1461191
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.2560601
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.3623528
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.4691548
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.581444
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.6889501
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.7946901
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960911.902005
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.008239
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.1106381
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.2185431
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.3238931
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.4291902
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.5382371
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.643836
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.751111
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.8644052
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960912.9709001
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.0766339
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.182559
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.2873631
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.398154
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.5044131
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.609746
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.7157679
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.822428
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960913.930903
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.040391
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.1457171
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.251519
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.3576488
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.462894
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.5682411
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.6758809
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.784364
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.8925791
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960914.999584
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.104053
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.2074299
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.3144989
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.4208741
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.52615
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.6349339
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.7477012
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.8541589
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960915.95871
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.06164
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.1715899
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.27721
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.3838501
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.4925041
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.601697
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.7097921
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.8160419
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960916.920836
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.0297661
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.1364222
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.2419028
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.3445501
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.4560242
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.562593
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.66711
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.7721839
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.8793011
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960917.985467
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.093277
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.19911
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.304173
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.4094219
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.517812
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.6254191
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.729439
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.834111
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960918.9423251
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.05127
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.163089
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.2709122
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.3759379
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.482507
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.587332
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.6947799
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.7992349
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960919.903955
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.0093799
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.1159029
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.2215309
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.3295522
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.4346108
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.540987
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.645906
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.7513518
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.8597832
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960920.965704
+    },
+    {
+      "cycle" : 0,
+      "lifetimePeakPhysicalFootprintBytes" : 367772920,
+      "phase" : "after",
+      "physicalFootprintBytes" : 297387328,
+      "timestamp" : 1790960921.072314
+    }
+  ],
+  "sampling" : "100ms while settling plus before open, after completed query and after each close; OS lifetime peak separately includes the whole process lifetime",
+  "workload" : "plan024.fixture_large, 400 rows per cycle; baseline retains fixture_many"
+}

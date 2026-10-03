@@ -1,0 +1,10 @@
+[
+  {
+    "check": "release-clippy",
+    "exit_code": 0
+  },
+  {
+    "check": "release-test",
+    "exit_code": 0
+  }
+]

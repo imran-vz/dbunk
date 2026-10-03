@@ -1,0 +1,6 @@
+{
+  "pid": 16001,
+  "signal": "SIGKILL",
+  "purpose": "owned interrupted-write recovery check",
+  "normal_quit_pass": false
+}

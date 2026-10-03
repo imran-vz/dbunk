@@ -1,0 +1,111 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: redundant closure
+   --> src/sql_completion/context.rs:268:18
+    |
+268 |             .map(|t| ident(t))
+    |                  ^^^^^^^^^^^^ help: replace the closure with the function itself: `ident`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#redundant_closure
+    = note: `-D clippy::redundant-closure` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_closure)]`
+
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> src/sql_completion/provider.rs:129:30
+    |
+129 |                   let confirm: std::sync::Arc<
+    |  ______________________________^
+130 | |                     dyn Send + Sync + Fn(project::CompletionIntent, &mut Window, &mut App) -> bool,
+131 | |                 > = std::sync::Arc::new(move |_, _, _| {
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: this `if` statement can be collapsed
+   --> src/sql_completion/provider.rs:253:21
+    |
+253 | /                     if context.relation_position {
+254 | |                         if let Some(schema) = default {
+255 | |                             add_relations(&mut result, schema, false, &matches);
+256 | |                         }
+257 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+253 ~                     if context.relation_position
+254 ~                         && let Some(schema) = default {
+255 |                             add_relations(&mut result, schema, false, &matches);
+256 ~                         }
+    |
+
+error: this `if` statement can be collapsed
+  --> src/workbench/completion.rs:42:13
+   |
+42 | /             if self.query_changes.controls.is_none() {
+43 | |                 if let Some(handle) = &self.completion {
+44 | |                     if let Some(request) = handle.pending_request() {
+45 | |                         handle.fail(
+...  |
+51 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+42 ~             if self.query_changes.controls.is_none()
+43 ~                 && let Some(handle) = &self.completion {
+44 |                     if let Some(request) = handle.pending_request() {
+...
+49 |                     }
+50 ~                 }
+   |
+
+error: this `if` statement can be collapsed
+  --> src/workbench/completion.rs:43:17
+   |
+43 | /                 if let Some(handle) = &self.completion {
+44 | |                     if let Some(request) = handle.pending_request() {
+45 | |                         handle.fail(
+46 | |                             request.id(),
+...  |
+50 | |                 }
+   | |_________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+43 ~                 if let Some(handle) = &self.completion
+44 ~                     && let Some(request) = handle.pending_request() {
+45 |                         handle.fail(
+...
+48 |                         );
+49 ~                     }
+   |
+
+error: this `if` statement can be collapsed
+  --> src/workbench/query_changes.rs:71:9
+   |
+71 | /         if self.query_changes.ready {
+72 | |             if let Some(controls) = &self.query_changes.controls {
+73 | |                 view.update(cx, |view, cx| view.query_connected(controls.clone(), cx));
+74 | |             }
+75 | |         }
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+help: collapse nested if block
+   |
+71 ~         if self.query_changes.ready
+72 ~             && let Some(controls) = &self.query_changes.controls {
+73 |                 view.update(cx, |view, cx| view.query_connected(controls.clone(), cx));
+74 ~             }
+   |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 6 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 6 previous errors

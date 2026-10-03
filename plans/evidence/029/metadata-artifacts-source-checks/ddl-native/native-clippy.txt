@@ -1,0 +1,47 @@
+   Compiling aws-lc-sys v0.42.0
+   Compiling libz-sys v1.1.29
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling libssh2-sys v0.3.3
+    Checking ssh2 v0.9.6
+   Compiling aws-lc-rs v1.17.1
+   Compiling rustls v0.23.40
+    Checking rustls-webpki v0.103.13
+    Checking tokio-rustls v0.26.4
+    Checking tungstenite v0.28.0
+    Checking rustls-platform-verifier v0.7.0
+    Checking sqlx-core v0.8.6
+    Checking http_client_tls v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking yawc v0.4.2
+    Checking hyper-rustls v0.27.10
+    Checking tokio-postgres-rustls v0.14.0
+    Checking redis v0.27.6
+    Checking async-tungstenite v0.33.0
+    Checking reqwest v0.12.28
+    Checking rpc v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking cloud_api_client v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking language v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking remote v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking sqlx-mysql v0.8.6
+    Checking sqlx-sqlite v0.8.6
+    Checking sqlx-postgres v0.8.6
+    Checking worktree v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking buffer_diff v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking prettier v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking markdown v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking language_detection v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking sqlx v0.8.6
+    Checking multi_buffer v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking client v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking dap v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking edit_prediction_types v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking extension v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking snippet_provider v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking project v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking agent_settings v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking workspace v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking breadcrumbs v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking editor v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 30.59s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

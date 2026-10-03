@@ -1,0 +1,18 @@
+[
+  {
+    "filter": "native_ddl_export",
+    "exit_code": 0
+  },
+  {
+    "filter": "native_schema_map",
+    "exit_code": 0
+  },
+  {
+    "filter": "backend::schema_map::tests",
+    "exit_code": 0
+  },
+  {
+    "filter": "native_catalog::description::tests",
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,33 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 91-135, 139-152, 164-182
+~			37 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: on
+~			46 tab (settable, boolean) native_export_window_20261003.quoted export · Page 1 · 1 rows · 11 ms, Value: off
+~		90 container PostgreSQL administration for 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
++			91 button Connect
++			92 button (disabled) Refresh
++			93 button (disabled) Cancel read
++			94 button (disabled) Copy selected details
++			95 button (disabled) Clear captures
++			96 button Overview statistics
++			97 button Connection settings
++			98 text Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
++			99 text No activity metrics captured
++			100 text No readings collected for this section
++			101 tab group Administration sections
++				102 tab (settable, boolean) Sessions, Value: on
++				103 tab (settable, boolean) Locks, Value: off
++				104 tab (settable, boolean) Pending transactions, Value: off
++				105 tab (settable, boolean) Server facts, Value: off
++				106 tab (settable, boolean) Settings, Value: off
++				107 tab (settable, boolean) Extensions, Value: off
++				108 tab (settable, boolean) Safety overrides, Value: off
++			109 list (settable) 0 captured Sessions; arrows select, Enter inspects
++			110 button (disabled) Review cancel query
++			111 button (disabled) Review terminate session
++			112 button (disabled) Send reviewed signal
++			113 button (disabled) Confirm reviewed signal
++			114 button (disabled) Cancel signal request
++			115 button (disabled) Clear signal recovery
++			116 container Disconnected. Connect, then Refresh to collect readings
+~		77 container (settable) Draft persistence, Value: Saving drafts
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

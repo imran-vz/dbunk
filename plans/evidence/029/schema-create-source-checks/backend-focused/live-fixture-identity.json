@@ -1,0 +1,6 @@
+{
+  "endpoint": "127.0.0.1:15432/dbunk_demo",
+  "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "driver": "local",
+  "baseline_activity": 0
+}

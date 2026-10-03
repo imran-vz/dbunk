@@ -392,3 +392,41 @@ async fn an_inspection_is_consumed_exactly_once() {
     ));
     assert!(m.admission("c").is_ok());
 }
+
+#[cfg(feature = "isolated-profile")]
+#[tokio::test]
+async fn native_terminal_cleanup_keeps_same_connection_and_global_admission() {
+    let owner = crate::postgres::backup::native::Ownership::default();
+    let m = TransferManager::new().with_native_ownership(owner.clone(), Default::default());
+    let mut jobs = Vec::new();
+    for index in 0..MAX_ACTIVE {
+        let id = format!("connection-{index}");
+        let job = launch(
+            &m,
+            &id,
+            |_| async { Err(TransferError::Cancelled) },
+            Box::pin(async {}),
+        );
+        terminal(&m, &job.job_id).await;
+        assert!(matches!(
+            m.admission(&id),
+            Err(TransferError::JobLimitReached)
+        ));
+        jobs.push(job.job_id);
+    }
+    assert!(matches!(
+        m.admission("other"),
+        Err(TransferError::JobLimitReached)
+    ));
+    for id in jobs {
+        let (_, io) = m.observation(&id).unwrap();
+        io.cleanup(tokio::time::Instant::now() + Duration::from_secs(1))
+            .await
+            .unwrap();
+    }
+    assert!(m.admission("connection-0").is_ok());
+    owner
+        .drain_until(tokio::time::Instant::now() + Duration::from_secs(1))
+        .await
+        .unwrap();
+}

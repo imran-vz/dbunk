@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::csv_transfers::live_tests::xlsx::native_xlsx_owned_exact_import_and_private_source_cleanup ... XLSX probe target: owned fixture 2283820d-33ec-4c4c-ae03-7051092bd410, 127.0.0.1:15432/dbunk_demo
+owned XLSX result: exact_numeric_text=true null_empty_literal=true indexed_duplicates=true original_replacement_ignored=true private_artifacts_removed=true committed_rows=2
+owned CSV cleanup: schema=native_xlsx_f368457faad64f6fb03e01191c32df0b schema_oid=16881 table_oid=16883 mode=RESTRICT
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1094 filtered out; finished in 0.89s
+

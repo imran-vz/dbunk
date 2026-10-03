@@ -1,0 +1,34 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 118-136, 138
+~			104 button (disabled) Next page
+~			112 container Schema "native_overview_window_20261003" | database "dbunk_demo" (OID 16384) | 3 rows on this page of 259 captured relations | 2026-10-03T09:13:16.527906+00:00 to 2026-10-03T09:13:16.532216+00:00
+~				116 tab (settable, boolean) Relations (3), Value: on
+~			117 list 3 captured Relations; arrows select, Enter inspects
++				140 text (selected) "native_overview_window_20261003"."v_254" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
++				141 text (selectable) "native_overview_window_20261003"."v_255" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
++				142 text (selectable) "native_overview_window_20261003"."v_256" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
++				143 text entry area (settable) Read-only exact overview statistics, Value: Database: "dbunk_demo"
+Database OID: 16384
+Reader PID: 78796
+Collection started: 2026-10-03T09:13:16.527906+00:00
+Collection ended: 2026-10-03T09:13:16.532216+00:00
+Statistics and physical sizes can change during collection; this is not an atomic server-wide measurement.
+
+Requested scope: Schema "native_overview_window_20261003"
+Schema OID: 19181
+Relation OID: Not scoped to one object
+
+Relation: "native_overview_window_20261003"."v_254"
+Database OID: 16384
+Schema OID: 19181
+Relation OID: 20204
+Kind: View
+Is a partition: false
+Estimated rows: Not applicable
+Physical total size (bytes): Not applicable
+
+Database-wide scope excludes system namespaces and partition children. Explicit schema scope includes that namespace but excludes partition children. Explicit relation scope may inspect a child.
+Rows are planner estimates, not exact counts. Views are Not applicable. Unknown and Restricted never imply zero. Sizes are physical per relation, not recursive partition totals.
+Pages use a fresh read-only capture and stable keyset order; concurrent changes may affect later pages.
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,75 @@
+    Blocking waiting for file lock on build directory
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error: large size difference between variants
+  --> src/backend/csv_transfers/prepare.rs:50:1
+   |
+50 | /  enum Prepared {
+51 | |      Workbook(Arc<CsvWorkbookData>),
+   | |      ------------------------------ the second-largest variant contains at least 8 bytes
+52 | |/     Csv(
+53 | ||         runner::Review,
+54 | ||         CsvConnectionTarget,
+55 | ||         bool,
+56 | ||         Option<CsvWorkbookSource>,
+57 | ||     ),
+   | ||_____- the largest variant contains at least 881 bytes
+58 | |  }
+   | |__^ the entire enum is at least 888 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#large_enum_variant
+   = note: `-D clippy::large-enum-variant` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::large_enum_variant)]`
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+53 ~         Box<runner::Review>,
+54 ~         Box<CsvConnectionTarget>,
+   |
+
+error: this `if` statement can be collapsed
+  --> src/xlsx_native/archive.rs:49:13
+   |
+49 | /             if rolling == 0x504b0506 {
+50 | |                 if end.replace(position - 4).is_some() {
+51 | |                     return Err(XlsxError::AmbiguousZip);
+52 | |                 }
+53 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+   = note: `-D clippy::collapsible-if` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+   |
+49 ~             if rolling == 0x504b0506
+50 ~                 && end.replace(position - 4).is_some() {
+51 |                     return Err(XlsxError::AmbiguousZip);
+52 ~                 }
+   |
+
+error: this `if` can be collapsed into the outer `match`
+   --> src/xlsx_native/cells.rs:132:17
+    |
+132 | /                 if value_text(&path) {
+133 | |                     if let Some(p) = pending.as_mut() {
+134 | |                         xml::append(
+135 | |                             &mut p.value,
+...   |
+139 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_match
+    = note: `-D clippy::collapsible-match` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_match)]`
+help: collapse nested if block
+    |
+131 ~             Event::CData(t)
+132 ~                 if value_text(&path) => {
+133 |                     if let Some(p) = pending.as_mut() {
+...
+138 |                     }
+139 ~                 }
+    |
+
+error: could not compile `dbunk` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (lib test) due to 3 previous errors

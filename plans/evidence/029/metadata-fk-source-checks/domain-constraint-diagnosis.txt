@@ -1,0 +1,2 @@
+17.11|positive_amount_not_null|n|NOT NULL
+17.11|positive_domain|c|CHECK (VALUE > 0::numeric)

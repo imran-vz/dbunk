@@ -51,6 +51,8 @@ semver = "1"
 tree-sitter-sequel = "0.3.11"
 tree-sitter-json = "0.24"
 unicode-segmentation = "1"
+png = { version = "=0.18.0", default-features = false }
+resvg = { version = "=0.46.0", default-features = false, features = ["text"] }
 
 # Zed's root manifest patches these for its own workspace. A Git dependency
 # does not inherit `[patch]`, so the ones its closure needs are repeated here

@@ -1,0 +1,107 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Schema map
+		12 button Save query
+		13 button Rename
+		14 button Pin
+		15 button ←
+		16 button →
+		17 button Close
+		18 button Credentials
+		19 container Connections
+			20 button + Connection
+			21 button Open table
+			22 button −
+			23 button +
+			24 button Auto-fit fixture
+			25 button Edit
+			26 button Duplicate
+			27 button Copy URI
+			28 button ★
+			29 button Delete
+			30 button Comfortable
+		31 tab group
+			32 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			33 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			34 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			35 tab (settable, boolean) History · Open tab to load records, Value: off
+			36 tab (settable, boolean) History query · Disconnected, Value: off
+			37 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			38 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			39 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			40 tab (settable, boolean) Objects · Disconnected, Value: off
+			41 tab (settable, boolean) CSV transfer · Choose the exact target and CSV options, then explicitly inspect and review, Value: off
+			42 tab (settable, boolean) native_seed_window_20261003.destination · Disconnected, Value: off
+			43 tab (settable, boolean) Value: off, Seed table · Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.
+			44 tab (settable, boolean) native_structure_window_20261003.parent · Disconnected, Value: off
+			45 tab (settable, boolean) Value: on, Schema map · Complete bounded map captured. Constraints describe relationships, not measured row counts
+		46 button Connect
+		47 button Disconnect
+		48 button Clear results
+		49 container PostgreSQL schema map for 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+			50 button (disabled) Connect
+			51 button Refresh map
+			52 button (disabled) Cancel read
+			53 button Clear map / reset identity
+			54 button Fit map
+			55 button Zoom in
+			56 button Zoom out
+			57 button Routing: Curve
+			58 button Attributes: All
+			59 button Types: true
+			60 button NULL: false
+			61 button Comments: false
+			62 button (disabled) Save map settings
+			63 button Reset layout
+			64 button Reset scope defaults
+			65 button (disabled) Open selected table
+			66 button (disabled) Copy detail page
+			67 button (disabled) Previous detail page
+			68 button (disabled) Next detail page
+			69 button Save viewport SVG
+			70 button (disabled) Cancel file save
+			71 button Save viewport PNG 2x
+			72 button Relationship glossary
+			73 tab group Map setup scope
+				74 tab (settable, boolean) Database, Value: off
+				75 tab (settable, boolean) Schema, Value: on
+				76 tab (settable, boolean) Table and direct neighbors, Value: off
+			77 text field (settable) Map schema, exact quoted name, Value: native_map_window_20261003
+			78 container Complete bounded map captured. Constraints describe relationships, not measured row counts
+			79 text Captured Schema { name: "native_map_window_20261003", expected_oid: None } · database "dbunk_demo" OID 16384 · 2026-10-03T09:59:46.945603Z · 4 tables / 3 foreign keys
+			80 container Schema map canvas. Drag background to pan; Command-scroll zooms at pointer; drag nodes to save positions. Keyboard arrows pan, plus/minus zoom, F fits. The list below exposes exact tables and relationships.
+			81 list 7 tables and foreign keys. Arrows select; Enter inspects; Open selected table rechecks its OID.
+				82 text (selectable) Table "native_map_window_20261003"."child" · OID 20380 · 0 triggers, Secondary Actions: Pick
+				83 text (selectable) Table "native_map_window_20261003"."links" · OID 20399 · junction · 0 triggers, Secondary Actions: Pick
+				84 text (selectable) Table "native_map_window_20261003"."parent" · OID 20373 · 0 triggers, Secondary Actions: Pick
+				85 text (selectable) Secondary Actions: Pick, Table "native_map_window_20261003_external"."other_parent" · OID 20392 · external target · 0 triggers
+				86 text (selectable) Foreign key OID 20387 · tenant, parent_id → tenant, id, Secondary Actions: Pick
+				87 text (selectable) Foreign key OID 20404 · child_id → id, Secondary Actions: Pick
+				88 text (selectable) Foreign key OID 20409 · other_id → id, Secondary Actions: Pick
+			89 text Selected map detail page 1. 
+			90 text Read-only table graph, including partitioned tables. Inherited foreign-key and trigger copies are omitted. Direct-neighbor scope shows only focal edges. SVG and PNG save the current viewport on white; no row data or DDL is executed.
+		91 container (settable) Draft persistence, Value: Saved
+		92 button Retry
+		93 button Export SQL
+		94 button Discard and quit
+	95 close button
+	96 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	97 minimize button
+	98 text dbunk Native Workspace
+99 menu bar
+	100 dbunk Native Preflight
+	101 Query
+	102 Results
+	103 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

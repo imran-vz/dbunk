@@ -1,0 +1,23 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				61 tab (settable, boolean) Triggers (1), Value: off
+~				62 tab (settable, boolean) Policies (1), Value: on
+~			67 list 1 captured Policies; arrows select, Enter inspects
+~				68 text (selected) "window_policy", Secondary Actions: Pick
+~				85 text entry area (settable) Read-only selected table structure details, Value: Policies · "native_structure_window_20261003"."child"
+Database OID: 16384; relation OID: 17075
+Captured: 2026-10-03 08:39:01.31935+00
+
+Policy: "window_policy"
+OID: 17093
+Permissive: true
+Command: ALL
+Relation row security enabled: true
+Relation row security forced: false
+Roles, in captured order:
+1. "public"
+USING expression (text, 4 UTF-8 bytes):
+true
+WITH CHECK expression (text, 8 UTF-8 bytes):
+(x >= 0)
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

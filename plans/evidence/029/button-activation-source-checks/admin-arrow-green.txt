@@ -1,0 +1,6 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				102 tab (settable, boolean) Sessions, Value: off
+~				103 tab (settable, boolean) Locks, Value: on
+~			109 list (settable) 0 captured Locks; arrows select, Enter inspects
+~		77 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

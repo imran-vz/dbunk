@@ -1,0 +1,2 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+Native packaging failed: Command '['cargo', '+1.98.1', 'build', '--release', '--locked']' died with <Signals.SIGINT: 2>.

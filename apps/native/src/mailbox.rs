@@ -3,11 +3,86 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::results::encoded_size;
-use dbunk_lib::backend::{QueryEventEnvelope, SinkClosed};
+use dbunk_lib::backend::{
+    QueryEventEnvelope, QuerySessionError, QueryTransactionSnapshot, SinkClosed,
+    StatementClassSummary,
+};
 use serde::Serialize;
 
 pub const QUEUE_CAPACITY: usize = 64;
 pub const QUEUE_BYTES: usize = 8 * 1024 * 1024;
+pub const WORKSPACE_QUEUE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Review displays exactly the service-bound value; diagnostics never do.
+#[derive(Serialize)]
+pub struct ReviewParameter {
+    pub name: String,
+    pub value: Option<String>,
+}
+impl std::fmt::Debug for ReviewParameter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ReviewParameter")
+            .field("name", &self.name)
+            .field("value", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Shared encoded-byte admission. Permits own accounting until consumed data
+/// is released, including queued messages dropped during teardown.
+#[derive(Clone)]
+pub struct ByteBudget(Arc<ByteBudgetState>);
+struct ByteBudgetState {
+    used: AtomicUsize,
+    high_water: AtomicUsize,
+    limit: usize,
+}
+pub struct BytePermit {
+    budget: ByteBudget,
+    bytes: usize,
+}
+impl ByteBudget {
+    pub fn new(limit: usize) -> Self {
+        Self(Arc::new(ByteBudgetState {
+            used: AtomicUsize::new(0),
+            high_water: AtomicUsize::new(0),
+            limit,
+        }))
+    }
+    pub fn reserve(&self, bytes: usize) -> Option<BytePermit> {
+        let previous = self
+            .0
+            .used
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(bytes).filter(|next| *next <= self.0.limit)
+            })
+            .ok()?;
+        self.0
+            .high_water
+            .fetch_max(previous + bytes, Ordering::Relaxed);
+        Some(BytePermit {
+            budget: self.clone(),
+            bytes,
+        })
+    }
+    pub fn used(&self) -> usize {
+        self.0.used.load(Ordering::Acquire)
+    }
+    pub fn high_water(&self) -> usize {
+        self.0.high_water.load(Ordering::Relaxed)
+    }
+}
+impl BytePermit {
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+}
+impl Drop for BytePermit {
+    fn drop(&mut self) {
+        self.budget.0.used.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
 
 #[derive(Debug, Serialize)]
 // The fixed 64-slot queue bounds enum storage. Boxing would allocate for each
@@ -16,9 +91,30 @@ pub const QUEUE_BYTES: usize = 8 * 1024 * 1024;
 pub enum Message {
     Event(QueryEventEnvelope),
     Ready,
-    Rejected { execution: String, message: String },
-    Acked { execution: String, sequence: u64 },
-    CancelFailed { execution: String, message: String },
+    HistoryFailed(String),
+    Review {
+        execution: String,
+        sql: String,
+        statements: Vec<StatementClassSummary>,
+        parameters: Option<Vec<ReviewParameter>>,
+        row_limit: Option<i64>,
+    },
+    Transaction {
+        session: String,
+        result: Result<QueryTransactionSnapshot, QuerySessionError>,
+    },
+    Rejected {
+        execution: String,
+        message: String,
+    },
+    Acked {
+        execution: String,
+        sequence: u64,
+    },
+    CancelFailed {
+        execution: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +150,8 @@ struct Shared {
     bytes: AtomicUsize,
     high_water: AtomicUsize,
     budget: usize,
+    workspace_budget: ByteBudget,
+    failure_wake: tokio::sync::Notify,
     failed: Mutex<Option<Failure>>,
     closed: AtomicBool,
 }
@@ -61,6 +159,7 @@ struct Queued {
     message: Option<Message>,
     bytes: usize,
     shared: Arc<Shared>,
+    _workspace_permit: BytePermit,
 }
 impl Drop for Queued {
     fn drop(&mut self) {
@@ -69,12 +168,22 @@ impl Drop for Queued {
 }
 
 pub fn channel(capacity: usize, budget: usize) -> (Sender, Receiver) {
+    channel_with_budget(capacity, budget, ByteBudget::new(budget))
+}
+
+pub fn channel_with_budget(
+    capacity: usize,
+    budget: usize,
+    workspace_budget: ByteBudget,
+) -> (Sender, Receiver) {
     let (data, receive) = async_channel::bounded(capacity);
     let (wake, awakened) = async_channel::bounded(1);
     let shared = Arc::new(Shared {
         bytes: AtomicUsize::new(0),
         high_water: AtomicUsize::new(0),
         budget,
+        workspace_budget,
+        failure_wake: tokio::sync::Notify::new(),
         failed: Mutex::new(None),
         closed: AtomicBool::new(false),
     });
@@ -93,17 +202,25 @@ pub fn channel(capacity: usize, budget: usize) -> (Sender, Receiver) {
 }
 
 impl Sender {
+    pub(crate) fn shares_budget(&self, budget: &ByteBudget) -> bool {
+        Arc::ptr_eq(&self.shared.workspace_budget.0, &budget.0)
+    }
+    pub(crate) fn reserve_history(&self, bytes: usize) -> Option<BytePermit> {
+        self.shared.workspace_budget.reserve(bytes)
+    }
     pub fn send(&self, message: Message) -> Result<(), SinkClosed> {
         let bytes = encoded_size(&message);
         // Linearize admission and first failure across event and command-reply
         // producers. No serialization, await or callback runs under this lock.
         let mut failed = self.shared.failed.lock().unwrap();
         if self.shared.closed.load(Ordering::Acquire) || failed.is_some() {
+            self.shared.failure_wake.notify_one();
             return Err(SinkClosed);
         }
         if bytes > self.shared.budget {
             failed.get_or_insert(Failure::Oversize);
             let _ = self.wake.try_send(());
+            self.shared.failure_wake.notify_one();
             return Err(SinkClosed);
         }
         let used = self
@@ -116,15 +233,24 @@ impl Sender {
         let Ok(used) = used else {
             failed.get_or_insert(Failure::Full);
             let _ = self.wake.try_send(());
+            self.shared.failure_wake.notify_one();
             return Err(SinkClosed);
         };
         self.shared
             .high_water
             .fetch_max(used + bytes, Ordering::Relaxed);
+        let Some(workspace_permit) = self.shared.workspace_budget.reserve(bytes) else {
+            self.shared.bytes.fetch_sub(bytes, Ordering::AcqRel);
+            failed.get_or_insert(Failure::Full);
+            let _ = self.wake.try_send(());
+            self.shared.failure_wake.notify_one();
+            return Err(SinkClosed);
+        };
         let queued = Queued {
             message: Some(message),
             bytes,
             shared: self.shared.clone(),
+            _workspace_permit: workspace_permit,
         };
         #[cfg(feature = "fixture-verification")]
         crate::verification::offered(queued.message.as_ref().unwrap());
@@ -137,6 +263,7 @@ impl Sender {
             #[cfg(feature = "fixture-verification")]
             eprintln!("VERIFY queue-rejected {failed:?}");
             let _ = self.wake.try_send(());
+            self.shared.failure_wake.notify_one();
             return Err(SinkClosed);
         }
         let _ = self.wake.try_send(());
@@ -144,7 +271,17 @@ impl Sender {
     }
     pub fn fail(&self, failure: Failure) {
         self.shared.failed.lock().unwrap().get_or_insert(failure);
+        self.shared.failure_wake.notify_one();
         let _ = self.wake.try_send(());
+    }
+    pub async fn failed(&self) {
+        loop {
+            let changed = self.shared.failure_wake.notified();
+            if self.is_failed() {
+                return;
+            }
+            changed.await;
+        }
     }
     pub fn is_failed(&self) -> bool {
         self.shared.closed.load(Ordering::Acquire) || self.shared.failed.lock().unwrap().is_some()
@@ -171,6 +308,7 @@ impl Drop for Receiver {
     fn drop(&mut self) {
         let mut failed = self.shared.failed.lock().unwrap();
         self.shared.closed.store(true, Ordering::Release);
+        self.shared.failure_wake.notify_one();
         failed.get_or_insert(Failure::Closed);
         self.data.close();
         while self.data.try_recv().is_ok() {}
@@ -210,6 +348,43 @@ mod tests {
             },
         )
     }
+    #[test]
+    fn workspace_budget_spans_mailboxes_and_releases_on_consume_or_drop() {
+        let bytes = encoded_size(&Message::Ready);
+        let budget = ByteBudget::new(2 * bytes);
+        let (a, first) = channel_with_budget(64, QUEUE_BYTES, budget.clone());
+        let (b, second) = channel_with_budget(64, QUEUE_BYTES, budget.clone());
+        let (c, third) = channel_with_budget(64, QUEUE_BYTES, budget.clone());
+        a.send(Message::Ready).unwrap();
+        b.send(Message::Ready).unwrap();
+        assert!(c.send(Message::Ready).is_err());
+        assert_eq!(third.failure(), Some(Failure::Full));
+        assert!(first.failure().is_none());
+        assert!(second.failure().is_none());
+        assert_eq!(budget.used(), 2 * bytes);
+        first.receive().unwrap();
+        assert_eq!(budget.used(), bytes);
+        drop(second);
+        assert_eq!(budget.used(), 0);
+        assert_eq!(budget.high_water(), 2 * bytes);
+        assert_eq!(c.shared.bytes.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn failure_wakes_controller_even_with_no_data_or_heartbeat() {
+        let (sender, receiver) = channel(64, QUEUE_BYTES);
+        let waiting = sender.clone();
+        let waiter = tokio::spawn(async move { waiting.failed().await });
+        sender.fail(Failure::Backend("fixture failure".into()));
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!receiver.pending());
+        drop(receiver);
+        sender.failed().await;
+    }
+
     #[test]
     fn saturation_has_an_independent_failure_and_releases_permits() {
         let (tx, rx) = channel(1, 1024);
@@ -360,6 +535,16 @@ mod tests {
                     message: "\0".repeat(100),
                 },
             ),
+            Message::Review {
+                execution: "execution".into(),
+                sql: "\0".repeat(100),
+                statements: Vec::new(),
+                parameters: Some(vec![ReviewParameter {
+                    name: "bound".into(),
+                    value: Some("\0".repeat(100)),
+                }]),
+                row_limit: Some(100),
+            },
             Message::Rejected {
                 execution: "execution".into(),
                 message: "\0".repeat(100),

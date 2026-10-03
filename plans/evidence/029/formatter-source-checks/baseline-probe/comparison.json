@@ -1,0 +1,268 @@
+[
+  {
+    "name": "simple",
+    "sql": "select id,name from public.users where id=$1;",
+    "js": "SELECT\n  id,\n  name\nFROM\n  public.users\nWHERE\n  id = $1;",
+    "rustExit": 0,
+    "rust": "SELECT\n  id,\n  name\nFROM\n  public.users\nWHERE\n  id = $1;"
+  },
+  {
+    "name": "cte",
+    "sql": "with a as (select 1 as n), b as (select n from a) select * from b;",
+    "js": "WITH\n  a AS (\n    SELECT\n      1 AS n\n  ),\n  b AS (\n    SELECT\n      n\n    FROM\n      a\n  )\nSELECT\n  *\nFROM\n  b;",
+    "rustExit": 0,
+    "rust": "WITH a AS (\n  SELECT\n    1 AS n\n),\nb AS (\n  SELECT\n    n\n  FROM\n    a\n)\nSELECT\n  *\nFROM\n  b;"
+  },
+  {
+    "name": "multi",
+    "sql": "select 1; select 2;",
+    "js": "SELECT\n  1;\n\n\nSELECT\n  2;",
+    "rustExit": 0,
+    "rust": "SELECT\n  1;\n\nSELECT\n  2;"
+  },
+  {
+    "name": "line_comment",
+    "sql": "select 1 -- keep ; comment\n + 2;",
+    "js": "SELECT\n  1 -- keep ; comment\n  + 2;",
+    "rustExit": 0,
+    "rust": "SELECT\n  1 -- keep ; comment\n  + 2;"
+  },
+  {
+    "name": "block_comment",
+    "sql": "select /* first\n  body untouched? */ 1;",
+    "js": "SELECT\n  /* first\n  body untouched? */\n  1;",
+    "rustExit": 0,
+    "rust": "SELECT\n  /* first\n   body untouched? */\n  1;"
+  },
+  {
+    "name": "nested_comment",
+    "sql": "select /* outer /* nested */ still comment */ 1;",
+    "js": "SELECT\n  /* outer /* nested */ still comment */ 1;",
+    "rustExit": 0,
+    "rust": "SELECT\n  /* outer /* nested */\n  still COMMENT * / 1;"
+  },
+  {
+    "name": "dollar_string",
+    "sql": "select $tag$a  b\nselect x; -- text$tag$ as body;",
+    "js": "SELECT\n  $tag$a  b\nselect x; -- text$tag$ AS body;",
+    "rustExit": 0,
+    "rust": "SELECT\n  $tag$a b\nSELECT\n  x;\n\n-- text$tag$ as body;"
+  },
+  {
+    "name": "dollar_anon",
+    "sql": "select $$abc ' ; SELECT  1$$;",
+    "js": "SELECT\n  $$abc ' ; SELECT  1$$;",
+    "rustExit": 0,
+    "rust": "SELECT\n  $$abc ';\n\nSELECT\n  1\n$$\n;"
+  },
+  {
+    "name": "do_dollar",
+    "sql": "do $$ begin raise notice 'a  b'; end $$;",
+    "js": "DO $$ begin raise notice 'a  b'; end $$;",
+    "rustExit": 0,
+    "rust": "DO\n$$\nBEGIN\nraise notice 'a  b';\n\nEND\n$$\n;"
+  },
+  {
+    "name": "e_upper",
+    "sql": "select E'a\\'b  c', E'\\n';",
+    "js": "SELECT\n  E'a\\'b  c',\n  E'\\n';",
+    "rustExit": 0,
+    "rust": "SELECT\n  E'a\\'b  c',\n  E'\\n';"
+  },
+  {
+    "name": "e_lower",
+    "sql": "select e'a\\'b  c', e'\\n';",
+    "js": "SELECT\n  e'a\\'b  c',\n  e'\\n';",
+    "rustExit": 0,
+    "rust": "SELECT\n  e 'a\\'b  c',\n  e '\\n';"
+  },
+  {
+    "name": "unicode_string",
+    "sql": "select U&'d\\0061t\\+000061', U&'d!0061t' UESCAPE '!';",
+    "js": "SELECT\n  U&'d\\0061t\\+000061',\n  U&'d!0061t' UESCAPE '!';",
+    "rustExit": 0,
+    "rust": "SELECT\n  U & 'd\\0061t\\+000061',\n  U & 'd!0061t' UESCAPE '!';"
+  },
+  {
+    "name": "unicode_ident",
+    "sql": "select U&\"d\\0061t\" from public.t;",
+    "js": "SELECT\n  U&\"d\\0061t\"\nFROM\n  public.t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  U & \"d\\0061t\"\nFROM\n  public.t;"
+  },
+  {
+    "name": "unicode_literal",
+    "sql": "select 'é雪😀é', \"雪 name\" from \"Sch.é\".\"T\";",
+    "js": "SELECT\n  'é雪😀é',\n  \"雪 name\"\nFROM\n  \"Sch.é\".\"T\";",
+    "rustExit": 0,
+    "rust": "SELECT\n  'é雪😀é',\n  \"雪 name\"\nFROM\n  \"Sch.é\".\"T\";"
+  },
+  {
+    "name": "cast",
+    "sql": "select 1::numeric(10,2), $1::uuid, :value::text;",
+    "js": "SELECT\n  1::numeric(10, 2),\n  $1::uuid,\n:value::text;",
+    "rustExit": 0,
+    "rust": "SELECT\n  1 :: numeric(10, 2),\n  $1 :: uuid,\n  :value :: text;"
+  },
+  {
+    "name": "json_operators",
+    "sql": "select data->'a', data->>'b', data#>>'{a,b}', data ? 'x', data ?| array['x'], data @> '{}'::jsonb from t;",
+    "js": "SELECT\n  data -> 'a',\n  data ->> 'b',\n  data #>> '{a,b}',\n  data ? 'x',\n  data ?| ARRAY['x'],\n  data @> '{}'::jsonb\nFROM\n  t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  data -> 'a',\n  data ->> 'b',\n  data #>>'{a,b}', data ? 'x', data ?| array['x'], data @> '{}'::jsonb from t;"
+  },
+  {
+    "name": "custom_operator",
+    "sql": "select a <@ b, a @@ b, a !~* b, a OPERATOR(public.===) b from t;",
+    "js": "SELECT\n  a <@ b,\n  a @@ b,\n  a !~* b,\n  a OPERATOR(public.===) b\nFROM\n  t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  a < @ b,\n  a @ @ b,\n  a !~* b,\n  a OPERATOR(public.== =) b\nFROM\n  t;"
+  },
+  {
+    "name": "named_params",
+    "sql": "select :user_id, @name, $value, $1 from public.t where id=:user_id;",
+    "jsError": "Parse error: Unexpected \"$value, $1\" at line 1 column 25.\nSQL dialect used: \"postgresql\".",
+    "rustExit": 0,
+    "rust": "SELECT\n  :user_id,\n  @name,\n  $value,\n  $1\nFROM\n  public.t\nWHERE\n  id = :user_id;"
+  },
+  {
+    "name": "array",
+    "sql": "select ARRAY[1, 2], a[1:2] from public.t;",
+    "js": "SELECT\n  ARRAY[1, 2],\n  a[1:2]\nFROM\n  public.t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  ARRAY [1, 2],\n  a [1:2]\nFROM\n  public.t;"
+  },
+  {
+    "name": "newline_strings",
+    "sql": "select 'foo'\n'bar';",
+    "js": "SELECT\n  'foo' 'bar';",
+    "rustExit": 0,
+    "rust": "SELECT\n  'foo' 'bar';"
+  },
+  {
+    "name": "space_strings",
+    "sql": "select 'foo' 'bar';",
+    "js": "SELECT\n  'foo' 'bar';",
+    "rustExit": 0,
+    "rust": "SELECT\n  'foo' 'bar';"
+  },
+  {
+    "name": "comment_strings",
+    "sql": "select 'foo' -- join\n'bar';",
+    "js": "SELECT\n  'foo' -- join\n  'bar';",
+    "rustExit": 0,
+    "rust": "SELECT\n  'foo' -- join\n  'bar';"
+  },
+  {
+    "name": "quoted_ident",
+    "sql": "select \"MiXeD\", \"a\"\"b\", \"x.y\" from \"S\".\"T\";",
+    "js": "SELECT\n  \"MiXeD\",\n  \"a\"\"b\",\n  \"x.y\"\nFROM\n  \"S\".\"T\";",
+    "rustExit": 0,
+    "rust": "SELECT\n  \"MiXeD\",\n  \"a\"\"b\",\n  \"x.y\"\nFROM\n  \"S\".\"T\";"
+  },
+  {
+    "name": "identifier_dollar",
+    "sql": "select foo$bar, $1 from public.t;",
+    "js": "SELECT\n  foo$bar,\n  $1\nFROM\n  public.t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  foo $bar,\n  $1\nFROM\n  public.t;"
+  },
+  {
+    "name": "numeric",
+    "sql": "select 9223372036854775807, 1234567890.12345678901234567890, 1e-10, .5;",
+    "js": "SELECT\n  9223372036854775807,\n  1234567890.12345678901234567890,\n  1e-10,\n  .5;",
+    "rustExit": 0,
+    "rust": "SELECT\n  9223372036854775807,\n  1234567890.12345678901234567890,\n  1e-10,\n.5;"
+  },
+  {
+    "name": "bit_hex",
+    "sql": "select B'101010', X'FF', b'01', x'ff';",
+    "js": "SELECT\n  B'101010',\n  X'FF',\n  b'01',\n  x'ff';",
+    "rustExit": 0,
+    "rust": "SELECT\n  B '101010',\n  X 'FF',\n  b '01',\n  x 'ff';"
+  },
+  {
+    "name": "minus",
+    "sql": "select a-1, a - -1, 1--comment\n+2;",
+    "js": "SELECT\n  a -1,\n  a - -1,\n  1 --comment\n  + 2;",
+    "rustExit": 0,
+    "rust": "SELECT\n  a -1,\n  a - -1,\n  1 --comment\n  + 2;"
+  },
+  {
+    "name": "unicode_word",
+    "sql": "select café, 雪 from public.表;",
+    "js": "SELECT\n  café,\n  雪\nFROM\n  public.表;",
+    "rustExit": 0,
+    "rust": "SELECT\n  café,\n  雪\nFROM\n  public.表;"
+  },
+  {
+    "name": "incomplete",
+    "sql": "select 'unterminated",
+    "jsError": "Parse error: Unexpected \"'untermina\" at line 1 column 8.\nSQL dialect used: \"postgresql\".",
+    "rustExit": 0,
+    "rust": "SELECT\n  ' unterminated"
+  },
+  {
+    "name": "zero_parameter",
+    "sql": "select $0;",
+    "js": "SELECT\n  $0;",
+    "rustExit": 0,
+    "rust": "SELECT\n  $0;"
+  },
+  {
+    "name": "adjacent_comments",
+    "sql": "select 'foo' /*comment*/ 'bar';",
+    "js": "SELECT\n  'foo' /*comment*/ 'bar';",
+    "rustExit": 0,
+    "rust": "SELECT\n  'foo'\n  /*comment*/\n  'bar';"
+  },
+  {
+    "name": "adjacent_block_newline",
+    "sql": "select 'foo' /*one\ntwo*/ 'bar';",
+    "js": "SELECT\n  'foo'\n  /*one\n  two*/\n  'bar';",
+    "rustExit": 0,
+    "rust": "SELECT\n  'foo'\n  /*one\ntwo*/\n  'bar';"
+  },
+  {
+    "name": "only_operator",
+    "sql": "select a @> b, a <@ b, a ?& b, a ?| b, a # b from t;",
+    "js": "SELECT\n  a @> b,\n  a <@ b,\n  a ?& b,\n  a ?| b,\n  a # b\nFROM\n  t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  a @ > b,\n  a < @ b,\n  a ? & b,\n  a ? | b,\n  a # b from t;"
+  },
+  {
+    "name": "identifier_prefixes",
+    "sql": "select n'x', N'x', e'x', E'x';",
+    "js": "SELECT\n  n 'x',\n  N 'x',\n  e'x',\n  E'x';",
+    "rustExit": 0,
+    "rust": "SELECT\n  n 'x',\n  N'x',\n  e 'x',\n  E'x';"
+  },
+  {
+    "name": "escaped_string_backslashes",
+    "sql": "select E'\\\\\\'x', E'\\\\\\\\', 'a\\\\b';",
+    "js": "SELECT\n  E'\\\\\\'x',\n  E'\\\\\\\\',\n  'a\\\\b';",
+    "rustExit": 0,
+    "rust": "SELECT\n  E'\\\\\\'x',\n  E'\\\\\\\\', ' a \\ \\ b ';"
+  },
+  {
+    "name": "named_real",
+    "sql": "select :ID, :id, $1, :name::text;",
+    "js": "SELECT\n:ID,\n:id,\n  $1,\n:name::text;",
+    "rustExit": 0,
+    "rust": "SELECT\n  :ID,\n  :id,\n  $1,\n  :name :: text;"
+  },
+  {
+    "name": "numeric_underscores",
+    "sql": "select 1_000, 0xFF, 0b101, 1.2e+10;",
+    "js": "SELECT\n  1_000,\n  0xFF,\n  0b101,\n  1.2e+10;",
+    "rustExit": 0,
+    "rust": "SELECT\n  1 _000,\n  0 xFF,\n  0 b101,\n  1.2e+10;"
+  },
+  {
+    "name": "unicode_space",
+    "sql": "select a b from t;",
+    "js": "SELECT\n  a b\nFROM\n  t;",
+    "rustExit": 0,
+    "rust": "SELECT\n  a b\nFROM\n  t;"
+  }
+]

@@ -1,0 +1,85 @@
+[
+  {
+    "name": "rust-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.56,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "rust-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 28.55,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "rust-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 94.61,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "isolated-clippy",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "clippy",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 16.57,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "isolated-test",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile"
+    ],
+    "exit": 101,
+    "elapsed_seconds": 74.69,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "corrected_map_schemas_and_recorded_oids_absent": true,
+  "stage03_backends": 0,
+  "stage04_tls_backends": 0,
+  "tls_runtime_refreshed_with_data_and_fixture_uuid_preserved": true
+}

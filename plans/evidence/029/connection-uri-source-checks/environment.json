@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-10-02T23:56:28.817740+00:00",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "source_count": 349,
+  "scope": "Bounded PostgreSQL URI prefill and secret-free copy, general TLS default alignment, form marked-text keyboard guard; dirty source preserved",
+  "backend_toolchain": "1.97.1",
+  "native_toolchain": "1.98.1"
+}

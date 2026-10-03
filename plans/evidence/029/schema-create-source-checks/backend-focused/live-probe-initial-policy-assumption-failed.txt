@@ -1,0 +1,23 @@
+   Compiling libz-sys v1.1.29
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling libssh2-sys v0.3.1
+   Compiling ssh2 v0.9.5
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.55s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::schema_ddl::live_tests::native_create_schema_receipt_duplicate_atomic_rollback_and_cleanup ... 
+thread 'backend::schema_ddl::live_tests::native_create_schema_receipt_duplicate_atomic_rollback_and_cleanup' (9063581) panicked at src/backend/schema_ddl/live_tests.rs:148:13:
+owned development fixture does not require override
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+fixture=2283820d-33ec-4c4c-ae03-7051092bd410 endpoint=127.0.0.1:15432/dbunk_demo baseline=0 restored=true rollback_schema_absent=true
+FAILED
+
+failures:
+
+failures:
+    backend::schema_ddl::live_tests::native_create_schema_receipt_duplicate_atomic_rollback_and_cleanup
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 945 filtered out; finished in 0.42s
+
+error: test failed, to rerun pass `--lib`

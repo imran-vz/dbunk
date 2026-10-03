@@ -1,0 +1,35 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				68 text (selectable) "child_pkey" · unique, Secondary Actions: Pick
+~				85 text (selected) "expression_include", Secondary Actions: Pick
+~				86 text entry area (settable) Read-only selected table structure details, Value: Indexes · "native_structure_window_20261003"."child"
+Database OID: 16384; relation OID: 17075
+Captured: 2026-10-03 08:39:01.31935+00
+
+Index: "expression_include"
+OID: 17090
+Method: "btree"
+Unique: false
+Primary: false
+Valid: true
+Ready: true
+Owning constraint OID: NULL (absent)
+Ordered index positions:
+
+Position 1: key
+Column attribute number (NULL means expression): NULL (absent)
+Column name: NULL (absent)
+Position definition (text, 11 UTF-8 bytes):
+lower(body)
+
+Position 2: INCLUDE
+Column attribute number (NULL means expression): 2
+Column name (text, 1 UTF-8 bytes):
+x
+Position definition (text, 1 UTF-8 bytes):
+x
+Predicate (text, 18 UTF-8 bytes):
+(body IS NOT NULL)
+Full definition (text, 136 UTF-8 bytes):
+CREATE INDEX expression_include ON native_structure_window_20261003.child USING btree (lower(body)) INCLUDE (x) WHERE (body IS NOT NULL)
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

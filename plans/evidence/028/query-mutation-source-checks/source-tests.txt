@@ -1,0 +1,11 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.44s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 3 tests
+test backend::query_mutation::tests::planner_rewrite_preserves_exact_text_and_parameter_grammar_without_values ... ok
+test backend::query_mutation::tests::forged_derived_fields_and_unknown_fields_are_rejected_on_decode ... ok
+test backend::query_mutation::tests::statement_and_input_limits_refuse_before_source_creation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 886 filtered out; finished in 0.01s
+

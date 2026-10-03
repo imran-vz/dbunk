@@ -1,0 +1,18 @@
+{
+  "manifest": {
+    "fixture": "dbunk-native-stage04-tls",
+    "instance": "15151cfc-5885-4066-831f-2717ed9b4587",
+    "host": "127.0.0.1",
+    "port": 15433,
+    "database": "dbunk_tls_demo",
+    "user": "dbunk"
+  },
+  "phase": "running",
+  "data": "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/data",
+  "pid": 35510,
+  "trusted_ca": "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/ca.pem",
+  "untrusted_ca": "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/untrusted-ca.pem",
+  "client_certificate": "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/client.pem",
+  "client_key": "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/client-key.pem",
+  "global_trust": "unchanged; certificates are fixture files only"
+}

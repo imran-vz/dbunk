@@ -1,0 +1,12 @@
+{
+  "app_exit_code": 0,
+  "app_exit_evidence": "launcher reached baseline check, which follows successful child.wait exit check",
+  "launcher_exit_code": 1,
+  "launcher_error": "PostgreSQL teardown failed: expected 0 backends, found 1",
+  "cause": "external owned lock helper PID50834 still running after app quit",
+  "helper_cleanup": "exact PID/backend_start/query_start/application/query cancellation; helper joined with expected cancellation error",
+  "stage03_final": 0,
+  "tls_final": 0,
+  "schema_absent": true,
+  "app_pid_absent": true
+}

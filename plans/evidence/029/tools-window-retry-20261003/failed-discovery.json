@@ -1,0 +1,9 @@
+{
+  "pid": 38888,
+  "native_ui_error": "cgWindowNotFound",
+  "system_settings_ui_error": "cgWindowNotFound",
+  "termination": "SIGTERM after verified executable/profile command",
+  "backend_final": 0,
+  "normal_quit_pass": false,
+  "settings_changed": false
+}

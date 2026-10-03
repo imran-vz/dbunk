@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "source_files_match": 594,
+  "source_files_changed": [],
+  "output": "/private/tmp/dbunk-native-package-20261003-overview-rows",
+  "launched": false,
+  "executable": "/private/tmp/dbunk-native-package-20261003-overview-rows/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "executable_sha256": "ecebb91db413d6772322c8c3e96832e1909a32a7945be97e80bebf4b026acab3"
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "kind": "dbunk-native-general-verification-owner",
+  "marker": {
+    "version": 1,
+    "kind": "general-postgres",
+    "profile_id": "2b06f664-8524-45e4-b771-f6ac1a3a0e9a",
+    "credential_namespace": "46fcf9b5-21ac-4d59-831a-e1832f6a825d",
+    "path": "/private/tmp/dbunk-native-comparison-20261003-review"
+  },
+  "fixtures": {
+    "version": 1,
+    "fixture": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "database": "dbunk_demo",
+    "user": "dbunk"
+  },
+  "launch_id": "5d3c8211-6f05-48c8-9b68-8f688dfa29d1",
+  "executable_sha256": "45217e43a078bf877810f6e114b92e08a7db108069718cc9a1130b07168706ec"
+}

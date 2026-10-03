@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-03",
+  "probe": "cua.listApps followed by cua.getApp(com.apple.systempreferences)",
+  "result": "System Settings listed running; getApp returned -10005 cgWindowNotFound",
+  "native_app_launched": false,
+  "settings_changed": false,
+  "interpretation": "This native window is not accessible through CUA. No keyboard, AX or IME acceptance is established; system-wide desktop outage is not inferred."
+}

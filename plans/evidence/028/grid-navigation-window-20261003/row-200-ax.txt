@@ -1,0 +1,157 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~		271 table (settable) Query results, Value: col24-200
+~			272 text 250 rows returned · 250 retained · 25 columns
+~			273 button Export selected cells, or all retained rows when no selection
+~			274 cell c9
++			275 cell c10
++			276 cell c11
++			277 cell c12
++			278 cell c13
++			279 cell c14
++			280 cell c15
++			281 cell c16
++			282 cell c17
++			283 cell c18
++			284 cell c19
++			285 cell c20
++			286 cell c21
++			287 cell c22
++			288 cell c23
++			289 cell c24
++			290 row
++				291 cell (settable) col9-193
++				292 cell (settable) col10-193
++				293 cell (settable) col11-193
++				294 cell (settable) col12-193
++				295 cell (settable) col13-193
++				296 cell (settable) col14-193
++				297 cell (settable) col15-193
++				298 cell (settable) col16-193
++				299 cell (settable) col17-193
++				300 cell (settable) col18-193
++				301 cell (settable) col19-193
++				302 cell (settable) col20-193
++				303 cell (settable) col21-193
++				304 cell (settable) col22-193
++				305 cell (settable) col23-193
++				306 cell (settable) col24-193
++			307 row
++				308 cell (settable) col9-194
++				309 cell (settable) col10-194
++				310 cell (settable) col11-194
++				311 cell (settable) col12-194
++				312 cell (settable) col13-194
++				313 cell (settable) col14-194
++				314 cell (settable) col15-194
++				315 cell (settable) col16-194
++				316 cell (settable) col17-194
++				317 cell (settable) col18-194
++				318 cell (settable) col19-194
++				319 cell (settable) col20-194
++				320 cell (settable) col21-194
++				321 cell (settable) col22-194
++				322 cell (settable) col23-194
++				323 cell (settable) col24-194
++			324 row
++				325 cell (settable) col9-195
++				326 cell (settable) col10-195
++				327 cell (settable) col11-195
++				328 cell (settable) col12-195
++				329 cell (settable) col13-195
++				330 cell (settable) col14-195
++				331 cell (settable) col15-195
++				332 cell (settable) col16-195
++				333 cell (settable) col17-195
++				334 cell (settable) col18-195
++				335 cell (settable) col19-195
++				336 cell (settable) col20-195
++				337 cell (settable) col21-195
++				338 cell (settable) col22-195
++				339 cell (settable) col23-195
++				340 cell (settable) col24-195
++			341 row
++				342 cell (settable) col9-196
++				343 cell (settable) col10-196
++				344 cell (settable) col11-196
++				345 cell (settable) col12-196
++				346 cell (settable) col13-196
++				347 cell (settable) col14-196
++				348 cell (settable) col15-196
++				349 cell (settable) col16-196
++				350 cell (settable) col17-196
++				351 cell (settable) col18-196
++				352 cell (settable) col19-196
++				353 cell (settable) col20-196
++				354 cell (settable) col21-196
++				355 cell (settable) col22-196
++				356 cell (settable) col23-196
++				357 cell (settable) col24-196
++			358 row
++				359 cell (settable) col9-197
++				360 cell (settable) col10-197
++				361 cell (settable) col11-197
++				362 cell (settable) col12-197
++				363 cell (settable) col13-197
++				364 cell (settable) col14-197
++				365 cell (settable) col15-197
++				366 cell (settable) col16-197
++				367 cell (settable) col17-197
++				368 cell (settable) col18-197
++				369 cell (settable) col19-197
++				370 cell (settable) col20-197
++				371 cell (settable) col21-197
++				372 cell (settable) col22-197
++				373 cell (settable) col23-197
++				374 cell (settable) col24-197
++			375 row
++				376 cell (settable) col9-198
++				377 cell (settable) col10-198
++				378 cell (settable) col11-198
++				379 cell (settable) col12-198
++				380 cell (settable) col13-198
++				381 cell (settable) col14-198
++				382 cell (settable) col15-198
++				383 cell (settable) col16-198
++				384 cell (settable) col17-198
++				385 cell (settable) col18-198
++				386 cell (settable) col19-198
++				387 cell (settable) col20-198
++				388 cell (settable) col21-198
++				389 cell (settable) col22-198
++				390 cell (settable) col23-198
++				391 cell (settable) col24-198
++			392 row
++				393 cell (settable) col9-199
++				394 cell (settable) col10-199
++				395 cell (settable) col11-199
++				396 cell (settable) col12-199
++				397 cell (settable) col13-199
++				398 cell (settable) col14-199
++				399 cell (settable) col15-199
++				400 cell (settable) col16-199
++				401 cell (settable) col17-199
++				402 cell (settable) col18-199
++				403 cell (settable) col19-199
++				404 cell (settable) col20-199
++				405 cell (settable) col21-199
++				406 cell (settable) col22-199
++				407 cell (settable) col23-199
++				408 cell (settable) col24-199
++			409 row
++				410 cell (settable) col9-200
++				411 cell (settable) col10-200
++				412 cell (settable) col11-200
++				413 cell (settable) col12-200
++				414 cell (settable) col13-200
++				415 cell (settable) col14-200
++				416 cell (settable) col15-200
++				417 cell (settable) col16-200
++				418 cell (settable) col17-200
++				419 cell (settable) col18-200
++				420 cell (settable) col19-200
++				421 cell (settable) col20-200
++				422 cell (settable) col21-200
++				423 cell (settable) col22-200
++				424 cell (settable) col23-200
++				425 cell (settable) col24-200
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

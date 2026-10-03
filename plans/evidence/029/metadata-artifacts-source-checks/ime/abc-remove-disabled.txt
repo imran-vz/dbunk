@@ -1,0 +1,76 @@
+Window: "", App: System Settings.
+0 sheet Secondary Actions: Raise
+	1 split group
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selectable) All Input Sources
+					6 row (selectable)
+					7 row (selected) ABC
+					8 row (selectable) Pinyin – Simplified
+			9 button Add
+			10 button (disabled) Remove
+		11 splitter (disabled, settable, float) 200
+		12 container
+			13 scroll area
+				14 scroll area
+					15 HTML content Description: Keyboard layout preview for ABC input source., URL: file:///System/Library/PrivateFrameworks/IntlPreferences.framework/Resources/KeyboardLayoutDefinition58.html
+						16 text `
+						17 text 1
+						18 text 2
+						19 text 3
+						20 text 4
+						21 text 5
+						22 text 6
+						23 text 7
+						24 text 8
+						25 text 9
+						26 text 0
+						27 text -
+						28 text =
+						29 text q
+						30 text w
+						31 text e
+						32 text r
+						33 text t
+						34 text y
+						35 text u
+						36 text i
+						37 text o
+						38 text p
+						39 text [
+						40 text ]
+						41 text \
+						42 text a
+						43 text s
+						44 text d
+						45 text f
+						46 text g
+						47 text h
+						48 text j
+						49 text k
+						50 text l
+						51 text ;
+						52 text '
+						53 text z
+						54 text x
+						55 text c
+						56 text v
+						57 text b
+						58 text n
+						59 text m
+						60 text ,
+						61 text .
+						62 text /
+			63 button Done
+64 menu bar
+	65 System Settings
+	66 Edit
+	67 View
+	68 Window
+	69 Help
+
+Selected:
+	7 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

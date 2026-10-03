@@ -1,0 +1,47 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 103-135
+~			39 tab (settable, boolean) Objects · Read-only table structure loaded, Value: on
+~		95 container Table structure, read only
+~			96 button Catalog
+~			98 button (disabled) Cancel read
+~			99 button Copy selected details
+~			100 button (disabled) Open related table
+~			101 text "native_structure_window_20261003"."leaf" | Database OID 16384 | Relation OID 17098 | Captured 2026-10-03 08:43:03.211342+00
+~			102 tab group Table structure sections
++				103 tab (settable, boolean) Overview (1), Value: on
++				104 tab (settable, boolean) Columns (1), Value: off
++				105 tab (settable, boolean) Primary key (0), Value: off
++				106 tab (settable, boolean) Foreign keys (0), Value: off
++				107 tab (settable, boolean) Referenced by (0), Value: off
++				108 tab (settable, boolean) Indexes (0), Value: off
++				109 tab (settable, boolean) Constraints (0), Value: off
++				110 tab (settable, boolean) Triggers (0), Value: off
++				111 tab (settable, boolean) Policies (0), Value: off
++				112 tab (settable, boolean) Relation grants (0), Value: off
++				113 tab (settable, boolean) Rules (0), Value: off
++				114 tab (settable, boolean) Parents (1), Value: off
++				115 tab (settable, boolean) Children (0), Value: off
++			116 list 1 captured Overview; arrows select, Enter inspects
++				117 text (selected) "native_structure_window_20261003"."leaf", Secondary Actions: Pick
++			118 container Exact selected structure details, read only
++				119 text entry area (settable) Read-only selected table structure details, Value: Overview · "native_structure_window_20261003"."leaf"
+Database OID: 16384; relation OID: 17098
+Captured: 2026-10-03 08:43:03.211342+00
+
+Kind: Table
+Owner: "dbunk"
+Server version number: 170011
+Row security enabled: false
+Row security forced: false
+Is a partition: true
+Relation comment (text, 37 UTF-8 bytes):
+dbunk owned structure window 20261003
+Partition key: NULL (absent)
+Partition bound (text, 27 UTF-8 bytes):
+FOR VALUES FROM (0) TO (10)
+
+Explicit relation ACL entries from pg_class.relacl only. Excludes column ACLs, inherited role membership, ownership, default privileges and effective authorization. An empty section does not mean no access.
+Definitions are catalog renderings, not a canonical schema dump. Metadata may change after capture.
+
++			120 container Read-only table structure loaded
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

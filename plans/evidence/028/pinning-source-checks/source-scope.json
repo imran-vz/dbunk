@@ -1,0 +1,16 @@
+{
+  "source_files": 467,
+  "changed_from_maintenance_receipts": [
+    "apps/native/src/browse_preferences.rs",
+    "apps/native/src/browse_preferences/pinning_tests.rs",
+    "apps/native/src/column_widths.rs",
+    "apps/native/src/grid.rs",
+    "apps/native/src/grid/frozen.rs",
+    "apps/native/src/grid/render.rs",
+    "apps/native/src/grid_columns.rs",
+    "apps/native/src/grid_columns/pinning_tests.rs",
+    "apps/native/src/main.rs",
+    "apps/native/src/results.rs",
+    "apps/native/src/table_view.rs"
+  ]
+}

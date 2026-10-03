@@ -1,0 +1,18 @@
+[
+  {
+    "key": "Return",
+    "readonly": "on"
+  },
+  {
+    "key": "space",
+    "readonly": "off"
+  },
+  {
+    "key": "Return",
+    "readonly": "on"
+  },
+  {
+    "key": "space",
+    "readonly": "off"
+  }
+]

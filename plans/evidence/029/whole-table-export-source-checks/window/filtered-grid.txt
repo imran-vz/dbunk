@@ -1,0 +1,14 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 150-221
+~			91 tab (settable, boolean) native_export_window_20261003.quoted export · Page 1 · 1 rows · 0 ms, Value: on
++		240 container Table preferences saved
+~		125 text field (settable) Typed filter value, Value: 1
+~		127 button Clear filters
++		241 container id Eq 1
++			242 button Remove filter 1
+~		129 button History 1/1
+~		130 button Apply history
++		243 text 2026-10-03T10:54:12.024264+00:00 · id Eq 1 · 0 sort
+~			137 text 1 rows · 5 columns
+~		239 container Page 1 · 1 rows · 0 ms
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

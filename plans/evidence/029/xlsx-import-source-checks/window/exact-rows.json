@@ -1,0 +1,21 @@
+{
+  "rows": [
+    [
+      "-9223372036854775808",
+      null,
+      "2.0000000000",
+      "owned default",
+      null
+    ],
+    [
+      "9223372036854775807",
+      "雪,\n\"quoted\"",
+      "12345678901234567890.1234567890",
+      "owned default",
+      "11"
+    ]
+  ],
+  "attempt": "f3b923f9-f23a-4b1f-b9a4-7feeef34c2f5",
+  "exact": true,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410"
+}

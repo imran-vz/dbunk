@@ -1,0 +1,19 @@
+[
+  {
+    "query": "IDENTITY",
+    "result": "pass; values not recorded"
+  },
+  {
+    "query": "FACTS",
+    "result": "failure",
+    "error": "ERROR:  unrecognized configuration parameter \"lc_collate\""
+  },
+  {
+    "query": "SETTINGS",
+    "result": "pass; values not recorded"
+  },
+  {
+    "query": "EXTENSIONS",
+    "result": "pass; values not recorded"
+  }
+]

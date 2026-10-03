@@ -1,0 +1,8 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema": "native_copy_window_20261003",
+  "schema_oid": 16842,
+  "removed": true,
+  "guard": "OID, name, owner, comment; RESTRICT; one transaction",
+  "final_clients": 0
+}

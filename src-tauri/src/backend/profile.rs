@@ -141,10 +141,27 @@ pub(super) async fn open(path: &Path) -> Result<(AppState, File), String> {
         {
             return Err("Fixture profile database does not match its ownership marker".into());
         }
-        let state = AppState::new(pool.clone(), paths, CompareManager::new());
+        let state = AppState::with_credentials(
+            paths,
+            CompareManager::new(),
+            credentials::Context::fixture(pool.clone()),
+        );
         let connections = storage::read_connections(&pool).await?;
         if connections.is_empty() && fresh {
-            crate::connections::save(&state, fixture_connection()).await?;
+            // This is immutable seed data in a validated fresh PlainSqlite
+            // profile, before any sessions exist. Keep seed initialization
+            // independent of ordinary-app onboarding/cleanup policy. The
+            // runtime credential context also has no Keychain capability.
+            let connection = fixture_connection();
+            storage::upsert_connection(&pool, &connection).await?;
+            storage::upsert_sqlite_credential(
+                &pool,
+                connection.id(),
+                CredentialStorageMode::PlainSqlite,
+                None,
+                connection.password(),
+            )
+            .await?;
         } else {
             let [StoredConnection::PostgreSQL(connection)] = connections.as_slice() else {
                 return Err("Fixture profile has foreign connection records".into());

@@ -1,0 +1,33 @@
+[
+  {
+    "check": "native-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "cwd": "apps/native",
+    "CARGO_INCREMENTAL": "0",
+    "exit_code": 0
+  },
+  {
+    "check": "native-ddl-tests",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--locked",
+      "ddl_export",
+      "--",
+      "--test-threads=1"
+    ],
+    "cwd": "apps/native",
+    "CARGO_INCREMENTAL": "0",
+    "exit_code": 0
+  }
+]

@@ -24,7 +24,7 @@ pub async fn provision_managed_server(
 ) -> Result<ProvisionManagedServerResult, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    managed::provision(&state.pool, mode, payload).await
+    managed::provision(&state.credentials, &state.pool, mode, payload).await
 }
 
 #[tauri::command]
@@ -41,7 +41,13 @@ pub async fn start_managed_server(
 ) -> Result<(), String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    managed::start(&state.pool, mode, &payload.managed_server_id).await
+    managed::start(
+        &state.credentials,
+        &state.pool,
+        mode,
+        &payload.managed_server_id,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -79,7 +85,13 @@ pub async fn recreate_managed_server(
     let mode = current_credential_mode(state).await?;
     let connection_id = managed_connection_id(state, &payload.managed_server_id).await?;
     fenced_managed(state, connection_id, async {
-        managed::recreate(&state.pool, mode, &payload.managed_server_id).await
+        managed::recreate(
+            &state.credentials,
+            &state.pool,
+            mode,
+            &payload.managed_server_id,
+        )
+        .await
     })
     .await
 }

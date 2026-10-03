@@ -1,0 +1,7 @@
+{
+  "exit_code": 0,
+  "backend_baseline": 0,
+  "backend_final": 0,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "keychain": "Not exercised; unchanged open_fixture uses plain SQLite"
+}

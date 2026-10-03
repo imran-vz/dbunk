@@ -1,0 +1,12 @@
+{
+  "baseline": {
+    "plain": 0,
+    "tls": 0
+  },
+  "final": {
+    "plain": 0,
+    "tls": 0
+  },
+  "profile_retained": "/private/tmp/dbunk-native-diagnosis-20261003-live",
+  "joined_native_shutdown": true
+}

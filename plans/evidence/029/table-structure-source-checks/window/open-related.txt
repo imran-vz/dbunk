@@ -1,0 +1,76 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 46-66, 68-69, 78, 80, 94
+~			39 tab (settable, boolean) Objects · Related table identity checked; opening a fresh table read, Value: off
++			94 tab (settable, boolean) native_structure_window_20261003.parent · Page 1 · 1 rows · 8 ms, Value: on
++		95 button (disabled) Connect
++		96 button Backup
++		97 button Restore
++		98 button Import CSV
++		99 button Export CSV
++		100 button Copy table
++		101 button Seed table
++		102 button Structure
++		103 button Refresh
++		104 button Edit cell
++		105 button Insert row
++		106 button (disabled) Duplicate row
++		107 button (disabled) Bulk edit
++		108 button Delete row
++		109 button (disabled) Follow foreign key
++		110 button Count
++		111 button Sort selected column
++		112 button (disabled) Cancel
++		113 button Narrow column
++		114 button Widen column
++		115 button Auto-fit column
++		116 button Auto-fit visible columns
++		117 button Move column left
++		118 button Move column right
++		119 button Pin / unpin column
++		120 button Hide column
++		121 button Show all columns
++		122 button Reload preferences
++		123 button Typed
++		124 button WHERE
++		125 button Column: a
++		126 button =
++		127 text field (settable) Typed filter value
++		128 button Apply filter
++		129 button (disabled) Clear filters
++		130 button Add sort on column
++		131 button (disabled) History 0/0
++		132 button (disabled) Apply history
++		133 button (disabled) Preset: none
++		134 button (disabled) Apply preset
++		135 text field (settable) Preset name
++		136 button Save preset
++		137 button Inspect query
++		138 table Table rows
++			139 text 1 rows · 2 columns
++			140 button Export selected cells, or all retained rows when no selection
++			141 cell a
++			142 cell b
++			143 row
++				144 cell (settable) 7
++				145 cell (settable) 11
++		146 container Table changes
++			147 container Virtual key
++				148 text Virtual key: unavailable
++				149 button (disabled) Choose virtual key
++				150 button (disabled) Clear virtual key
++				151 button Reload virtual key
++			152 container Result editing unavailable: PostgreSQL could not unambiguously resolve relation range variables
++		153 button First
++		154 button Previous
++		155 button Next
++		156 button Last
++		157 button 10
++		158 button 25
++		159 button 50
++		160 button 100
++		161 button 250
++		162 button 500
++		163 button 1000
++		164 container Page 1 · 1 rows · 8 ms
+~		81 container (settable) Draft persistence, Value: Saving drafts
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

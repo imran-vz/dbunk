@@ -1,0 +1,18 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			81 button (disabled) Next page
+~			95 container Database scope | database "dbunk_demo" (OID 16384) | 10 rows on this page of 266 captured relations | 2026-10-03T09:10:15.834691+00:00 to 2026-10-03T09:10:15.839096+00:00 | Database metrics retained from their earlier, separately shown interval
+~				91 tab (settable, boolean) Relations (10), Value: off
+~				104 text entry area (settable) Read-only exact overview statistics, Value: Database: "dbunk_demo"
+Database OID: 16384
+Reader PID: 76707
+Collection started: 2026-10-03T09:10:10.051706+00:00
+Collection ended: 2026-10-03T09:10:10.057911+00:00
+Statistics and physical sizes can change during collection; this is not an atomic server-wide measurement.
+
+Database size (bytes): 9164467
+Exact returned byte count. Restricted is distinct from zero or Unknown.
+
+Metric capture interval is shown above. Relation page interval (values may have been collected at different times):
+2026-10-03T09:10:15.834691+00:00 to 2026-10-03T09:10:15.839096+00:00
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

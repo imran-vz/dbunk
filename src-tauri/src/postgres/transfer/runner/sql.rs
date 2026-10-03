@@ -15,34 +15,49 @@ pub(super) fn import(review: &Review, mapping: &[(usize, String)]) -> String {
 }
 
 pub(super) fn export(review: &Review) -> String {
+    export_columns(
+        &review.payload.schema,
+        &review.payload.table,
+        &review
+            .relation
+            .columns
+            .iter()
+            .map(|c| c.public.name.as_str())
+            .collect::<Vec<_>>(),
+        &review.payload.options,
+    )
+}
+
+/// Shared bounded PostgreSQL text projection used by native table copy.
+pub(crate) fn export_columns(
+    schema: &str,
+    table: &str,
+    names: &[&str],
+    options: &CsvOptions,
+) -> String {
     const SOURCE_ALIAS: &str = "__dbunk_source";
     const OUTPUT_ALIAS: &str = "__dbunk_output";
-    let columns = review
-        .relation
-        .columns
+    let columns = names
         .iter()
         .map(|column| {
             format!(
                 "{}.{}",
                 crate::quote_double(OUTPUT_ALIAS),
-                crate::quote_double(&column.public.name)
+                crate::quote_double(column)
             )
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let canonical_columns = review
-        .relation
-        .columns
-        .iter()
+    let canonical_columns = names.iter()
         .map(|column| {
             let value = format!(
                 "{}.{}",
                 crate::quote_double(SOURCE_ALIAS),
-                crate::quote_double(&column.public.name)
+                crate::quote_double(column)
             );
             format!(
                 "CASE WHEN {value} IS NOT DISTINCT FROM NULL THEN NULL::text ELSE pg_catalog.format('%s', {value}) END AS {}",
-                crate::quote_double(&column.public.name)
+                crate::quote_double(column)
             )
         })
         .collect::<Vec<_>>()
@@ -50,20 +65,20 @@ pub(super) fn export(review: &Review) -> String {
     let canonical_select = if canonical_columns.is_empty() {
         format!(
             "SELECT FROM {} AS {} OFFSET 0",
-            qualified(review),
+            qualified_names(schema, table),
             crate::quote_double(SOURCE_ALIAS)
         )
     } else {
         format!(
             "SELECT {canonical_columns} FROM {} AS {} OFFSET 0",
-            qualified(review),
+            qualified_names(schema, table),
             crate::quote_double(SOURCE_ALIAS)
         )
     };
     let source = format!(
         "({canonical_select}) AS {} WHERE {}",
         crate::quote_double(OUTPUT_ALIAS),
-        export_size_guard(review, OUTPUT_ALIAS)
+        export_size_guard(names, options, OUTPUT_ALIAS)
     );
     let select = if columns.is_empty() {
         format!("SELECT FROM {source}")
@@ -72,7 +87,7 @@ pub(super) fn export(review: &Review) -> String {
     };
     format!(
         "COPY ({select}) TO STDOUT WITH ({})",
-        csv_options(&review.payload.options, review.payload.options.header)
+        csv_options(options, options.header)
     )
 }
 
@@ -81,19 +96,17 @@ pub(super) fn export(review: &Review) -> String {
 /// barrier preserves streaming while preventing the guard and COPY projection
 /// from separately invoking type output. The row estimate is deliberately
 /// conservative: every non-null byte may need doubling plus surrounding quotes.
-fn export_size_guard(review: &Review, alias: &str) -> String {
-    if review.relation.columns.is_empty() {
+fn export_size_guard(names: &[&str], options: &CsvOptions, alias: &str) -> String {
+    if names.is_empty() {
         return "TRUE".into();
     }
-    let values = review
-        .relation
-        .columns
+    let values = names
         .iter()
         .map(|column| {
             format!(
                 "{}.{}",
                 crate::quote_double(alias),
-                crate::quote_double(&column.public.name)
+                crate::quote_double(column)
             )
         })
         .collect::<Vec<_>>();
@@ -108,7 +121,7 @@ fn export_size_guard(review: &Review, alias: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" AND ");
-    let null_bytes = review.payload.options.null_token.len();
+    let null_bytes = options.null_token.len();
     let row_bytes = values
         .iter()
         .map(|value| {
@@ -159,5 +172,31 @@ pub(super) fn qualified(review: &Review) -> String {
         "{}.{}",
         crate::quote_double(&review.payload.schema),
         crate::quote_double(&review.payload.table)
+    )
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) fn import_columns(
+    schema: &str,
+    table: &str,
+    names: &[&str],
+    options: &CsvOptions,
+) -> String {
+    let columns = names
+        .iter()
+        .map(|n| crate::quote_double(n))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "COPY {} ({columns}) FROM STDIN WITH ({})",
+        qualified_names(schema, table),
+        csv_options(options, false)
+    )
+}
+fn qualified_names(schema: &str, table: &str) -> String {
+    format!(
+        "{}.{}",
+        crate::quote_double(schema),
+        crate::quote_double(table)
     )
 }

@@ -1,0 +1,1 @@
+$ cargo +1.98.1 fmt --manifest-path apps/native/Cargo.toml

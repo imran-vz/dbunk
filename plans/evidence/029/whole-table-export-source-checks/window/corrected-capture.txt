@@ -1,0 +1,6 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			46 tab (settable, boolean) native_export_window_20261003.quoted export · Complete table captured: 13 rows, 5 columns, Value: on
+~			57 button Save captured table
+~			59 button Clear capture
+~			67 container Complete capture: 13 rows, 5 columns. 2026-10-03T11:11:45.445112+00:00 to 2026-10-03T11:11:45.452425+00:00. Includes committed rows visible to this role and row-security policy. Grid filter and column visibility settings and staged edits do not affect this capture.
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

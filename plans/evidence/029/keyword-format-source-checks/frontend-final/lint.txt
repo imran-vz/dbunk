@@ -1,0 +1,6 @@
+Already up to date
+Done in 163ms using pnpm v11.4.0
+$ oxlint .
+plans/evidence/029/keyword-format-source-checks/generate-vocabulary.cjs:28:31: error eslint(no-unused-vars): Parameter '_' is declared but never used. help: Consider removing this parameter.
+plans/evidence/029/keyword-format-source-checks/baseline-probe.cjs:7:107: error eslint(no-unused-vars): Parameter '_' is declared but never used. help: Consider removing this parameter.
+[ELIFECYCLE] Command failed with exit code 1.

@@ -1,0 +1,15 @@
+{
+  "uuid": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "identities_verified": {
+    "schema": "16489",
+    "wrapper": "16558",
+    "server": "16559"
+  },
+  "remaining": {
+    "schema": "0",
+    "wrapper": "0",
+    "server": "0",
+    "multirange": "0"
+  },
+  "activity_after": 0
+}

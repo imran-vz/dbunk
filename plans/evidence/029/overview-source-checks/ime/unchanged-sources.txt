@@ -1,0 +1,96 @@
+The following is a diff from the previous accessibility tree for Window: "Keyboard" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 0-30
++37 standard window Keyboard, ID: Main, Secondary Actions: Raise
++	38 split group Main, SidebarNavigationSplitView
++		39 scroll area Secondary Actions: Scroll Up, Scroll Down
++			40 list Description: Sidebar, ID: com.apple.settings.sidebar.collectionView
++				41 row (selectable)
++				42 row (selectable) Imran M, Apple Account
++				43 row (selectable)
++				44 row (selectable) Wi-Fi
++				45 row (selectable) Bluetooth
++				46 row (selectable) Network
++				47 row (selectable) VPN
++				48 row (selectable) Battery
++				49 row (selectable)
++				50 row (selectable) General
++				51 row (selectable) Accessibility
++				52 row (selectable) Appearance
++				53 row (selectable) Desktop & Dock
++				54 row (selectable) Displays
++				55 row (selectable) Menu Bar
++				56 row (selectable) Siri
++				57 row (selectable) Spotlight
++				58 row (selectable) Wallpaper
++				59 row (selectable)
++				60 row (selectable) Notifications
++				61 row (selectable) Sound
++				62 row (selectable) Focus
++				63 row (selectable) Screen Time
++				64 row (selectable)
++				65 row (selectable) Lock Screen
++				66 row (selectable) Privacy & Security
++				67 row (selectable) Touch ID & Password
++				68 row (selectable) Users & Groups
++				69 row (selectable)
++				70 row (selectable) Game Center
++				71 row (selectable) iCloud
++				72 row (selectable) Internet Accounts
++				73 row (selectable) Wallet & Apple Pay
++				74 row (selectable)
++				75 row (selected) Keyboard
++				76 row (selectable) Trackpad
++				77 row (selectable) Printers & Scanners
++			78 scroll bar (settable, float) 0.9679054054054054
++				79 value indicator (settable, float) 0.9679054054054054
++				80 increment arrow button
++				81 decrement arrow button
++				82 increment page button
++				83 decrement page button
++		84 search text field (settable) Search
++			85 button Search
++		86 splitter (disabled, settable, float) 232
++		87 scroll area Secondary Actions: Scroll Up, Scroll Down
++			88 container
++				89 slider (settable, float) Description: Key repeat rate, Value: 6
++				90 slider (settable, float) Description: Delay until repeat, Value: 4
++			91 container
++				92 switch Adjust keyboard brightness in low light, Value: on
++				93 pop up button Turn keyboard backlight off after inactivity, Value: Never
++				94 pop up button Press 🌐︎ key to, Value: Do Nothing
++				95 switch Value: off, Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.
++				96 button Keyboard Shortcuts…
++			97 heading Text Input
++			98 container
++				99 text Input Sources ABC
++				100 button Edit…
++				101 button Text Replacements…
++			102 heading Dictation
++			103 container
++				104 switch Dictation processes many voice inputs on your Mac. Information will be sent to Apple in some cases., Value: on
++				105 text Languages English (United States)
++				106 button Edit…
++				107 pop up button Microphone source, Value: MacBook Pro Microphone
++				108 text Shortcut
++				109 pop up button Press 🎤︎
++				110 button About Ask Siri, Dictation & Privacy…
++			111 button Set Up Keyboard…
++			112 button Help
++			113 scroll bar (settable, float) 0
++				114 value indicator (settable, float) 0
++				115 increment arrow button
++				116 decrement arrow button
++				117 increment page button
++				118 decrement page button
++	119 toolbar
++		120 container
++			121 button Description: Go Back, ID: chevron.backward
++			122 menu button (disabled) Description: Go Forward, ID: chevron.forward
++	123 close button
++	124 zoom button
++	125 minimize button
++	126 text Keyboard
+Selected:
+	75 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

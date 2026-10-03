@@ -1,0 +1,10 @@
+{
+  "pid": 5152,
+  "exact_executable_profile_hash_checked": true,
+  "signal": "SIGTERM",
+  "process_stopped": true,
+  "backend_before": 0,
+  "backend_final": 0,
+  "normal_quit_pass": false,
+  "profile_retained": true
+}

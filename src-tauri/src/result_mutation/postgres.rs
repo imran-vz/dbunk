@@ -21,10 +21,11 @@ pub(crate) struct MutationConnection {
     pub(crate) inner: DedicatedConnection,
 }
 
-pub(crate) async fn connect(
+pub(crate) async fn connect_tracked(
     spec: &crate::postgres::connect_spec::ResolvedPostgresConnectSpec,
+    tasks: Option<&dedicated::DriverJoins>,
 ) -> Result<MutationConnection, ResultMutationError> {
-    let inner = dedicated::connect(spec, NoticeSink::Ignore)
+    let inner = dedicated::connect_tracked(spec, NoticeSink::Ignore, tasks)
         .await
         .map_err(map_dedicated)?;
     Ok(MutationConnection { inner })
@@ -87,8 +88,12 @@ async fn analyze_once(
     virtual_keys: &VirtualKeyLookup,
 ) -> Result<AnalysisData, ResultMutationError> {
     let (projected, statement_relations) = match source {
-        AnalyzeSource::Statement { sql } => {
-            let description = describe_statement(client, sql).await?;
+        AnalyzeSource::Statement { sql } | AnalyzeSource::NativeStatement { sql } => {
+            let native = matches!(source, AnalyzeSource::NativeStatement { .. });
+            if native {
+                require_qualified_query_targets(sql).map_err(|()| unsupported_statement())?;
+            }
+            let description = describe_statement(client, sql, native).await?;
             (description.columns, Some(description.relations))
         }
         AnalyzeSource::Relation { schema, table } => {
@@ -137,8 +142,10 @@ async fn analyze_once(
         return Err(unsupported_statement());
     }
 
-    if matches!(source, AnalyzeSource::Statement { .. })
-        && possible_temp_shadow(client, descriptors_by_oid.values()).await?
+    if matches!(
+        source,
+        AnalyzeSource::Statement { .. } | AnalyzeSource::NativeStatement { .. }
+    ) && possible_temp_shadow(client, descriptors_by_oid.values()).await?
     {
         return Err(not_analyzable(NotAnalyzableReason::PossibleTempShadowing));
     }
@@ -180,6 +187,12 @@ async fn analyze_once(
         else {
             return Err(undefined_column());
         };
+        // RowDescription flattens domains to their base OID. Check the actual
+        // attribute type too, before adopting its cast/guard descriptor.
+        require_native_text_types(
+            matches!(source, AnalyzeSource::NativeStatement { .. }),
+            &[catalog_column.type_oid],
+        )?;
         let mutation_column = descriptor
             .mutation
             .column(&catalog_column.name)
@@ -264,9 +277,40 @@ impl RangeVariable {
     }
 }
 
+/// OIDs, never search-path-sensitive format_type spellings, identify the builtin
+/// text formats that are safe across separate sessions. Floats depend on
+/// extra_float_digits; temporal/money/custom types need execution context.
+fn require_native_text_types(native: bool, type_oids: &[u32]) -> Result<(), ResultMutationError> {
+    use tokio_postgres::types::Type;
+    let safe = [
+        Type::BOOL,
+        Type::BYTEA,
+        Type::INT2,
+        Type::INT4,
+        Type::INT8,
+        Type::TEXT,
+        Type::VARCHAR,
+        Type::BPCHAR,
+        Type::NUMERIC,
+        Type::UUID,
+        Type::TID,
+        Type::OID,
+        Type::JSONB,
+    ];
+    if native
+        && type_oids
+            .iter()
+            .any(|oid| !safe.iter().any(|kind| kind.oid() == *oid))
+    {
+        return Err(not_analyzable(NotAnalyzableReason::SessionDependentTypes));
+    }
+    Ok(())
+}
+
 async fn describe_statement(
     client: &Client,
     sql: &str,
+    native: bool,
 ) -> Result<StatementDescription, ResultMutationError> {
     let statement = match client.prepare(sql).await {
         Ok(statement) => statement,
@@ -307,6 +351,7 @@ async fn describe_statement(
         .iter()
         .map(|column| column.type_().oid())
         .collect::<Vec<_>>();
+    require_native_text_types(native, &type_oids)?;
     let type_modifiers = statement
         .columns()
         .iter()
@@ -393,6 +438,31 @@ async fn resolve_range_variables(
                 .ok_or_else(unsupported_statement)
         })
         .collect()
+}
+
+/// Native execution currently carries headings, not origin OIDs. Refuse target
+/// names whose resolution can differ on the separate mutation session. This
+/// shares the analysis parser, including its unsupported-shape refusals.
+pub(crate) fn require_qualified_query_targets(sql: &str) -> Result<(), ()> {
+    let variables = parse_range_variables(sql)?;
+    if variables.is_empty() {
+        return Err(());
+    }
+    for variable in variables {
+        if variable.parts.len() < 2 {
+            return Err(());
+        }
+        let schema = &variable.parts[variable.parts.len() - 2];
+        let name = if schema.quoted {
+            schema.value.clone()
+        } else {
+            schema.value.to_ascii_lowercase()
+        };
+        if name == "pg_temp" || name.starts_with("pg_temp_") {
+            return Err(());
+        }
+    }
+    Ok(())
 }
 
 fn parse_range_variables(sql: &str) -> Result<Vec<RangeVariable>, ()> {
@@ -1414,6 +1484,54 @@ fn analysis_database_error(error: tokio_postgres::Error) -> ResultMutationError 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_text_gate_uses_exact_builtin_oids_and_leaves_regular_analysis_unchanged() {
+        use tokio_postgres::types::Type;
+        for kind in [
+            Type::BOOL,
+            Type::BYTEA,
+            Type::INT2,
+            Type::INT4,
+            Type::INT8,
+            Type::TEXT,
+            Type::VARCHAR,
+            Type::BPCHAR,
+            Type::NUMERIC,
+            Type::UUID,
+            Type::TID,
+            Type::OID,
+            Type::JSONB,
+        ] {
+            assert!(super::require_native_text_types(true, &[kind.oid()]).is_ok());
+        }
+        for oid in [
+            Type::FLOAT4.oid(),
+            Type::FLOAT8.oid(),
+            Type::DATE.oid(),
+            Type::TIMESTAMP.oid(),
+            Type::TIMESTAMPTZ.oid(),
+            Type::INTERVAL.oid(),
+            Type::MONEY.oid(),
+            Type::JSON.oid(),
+            Type::TEXT_ARRAY.oid(),
+            123456,
+        ] {
+            assert!(matches!(
+                super::require_native_text_types(true, &[Type::INT4.oid(), oid]),
+                Err(super::ResultMutationError::NotAnalyzable {
+                    reason: super::NotAnalyzableReason::SessionDependentTypes
+                })
+            ));
+            assert!(super::require_native_text_types(false, &[oid]).is_ok());
+        }
+        // A domain over INT4 is described as INT4 on the wire. Its actual
+        // pg_attribute OID must still fail the native guard-type check.
+        let mut domain = catalog_descriptor();
+        domain.columns[0].type_oid = 123456;
+        assert!(super::require_native_text_types(true, &[Type::INT4.oid()]).is_ok());
+        assert!(super::require_native_text_types(true, &[domain.columns[0].type_oid]).is_err());
+    }
+
     use super::*;
 
     fn catalog_descriptor() -> CatalogDescriptor {

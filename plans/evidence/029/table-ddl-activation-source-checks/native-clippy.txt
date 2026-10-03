@@ -1,0 +1,44 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: this `if` statement can be collapsed
+   --> src/table_ddl_view/render.rs:154:9
+    |
+154 | /         if self.editable_recipe() && (!self.remove_comment || self.rename) {
+155 | |             if let Some(value) = &self.value {
+156 | |                 handles.push(value.focus_handle(cx));
+157 | |             }
+158 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+154 ~         if self.editable_recipe() && (!self.remove_comment || self.rename)
+155 ~             && let Some(value) = &self.value {
+156 |                 handles.push(value.focus_handle(cx));
+157 ~             }
+    |
+
+error: this `if` statement can be collapsed
+   --> src/table_ddl_view.rs:284:9
+    |
+284 | /         if self.has_pending() {
+285 | |             if let Some(controls) = &self.controls {
+286 | |                 controls.cancel();
+287 | |             }
+288 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+284 ~         if self.has_pending()
+285 ~             && let Some(controls) = &self.controls {
+286 |                 controls.cancel();
+287 ~             }
+    |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 2 previous errors

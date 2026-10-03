@@ -10,7 +10,7 @@ pub(crate) async fn start_pg_schema_compare(
 ) -> Result<Status, CompareError> {
     state
         .pg_schema_compare
-        .start_native(payload, state.pool.clone())
+        .start_native(payload, state.pool.clone(), state.credentials.clone())
 }
 #[tauri::command]
 pub(crate) async fn list_pg_schema_compares(

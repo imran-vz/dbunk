@@ -1,0 +1,26 @@
+[
+  {
+    "command": [
+      "pnpm",
+      "format"
+    ],
+    "exit": 0,
+    "seconds": 0.82
+  },
+  {
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exit": 0,
+    "seconds": 1.06
+  },
+  {
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
+    "exit": 0,
+    "seconds": 5.59
+  }
+]

@@ -1,0 +1,47 @@
+Diff in /Users/imran/projects/Code/dbunk/apps/native/src/query_result/tests.rs:85:
+ fn source_and_capture_refusal_preserve_other_budget_owners() {
+     let budget = Rc::new(Cell::new(WORKSPACE_BYTES - SOURCE_WORK_BYTES + 1));
+     let before = budget.get();
+[31m-    assert!(ExecutedSource::prepare("SELECT id FROM public.rows", false, "c", "s", "e", budget.clone()).is_err());
+(B[m[32m+    assert!(
+(B[m[32m+        ExecutedSource::prepare(
+(B[m[32m+            "SELECT id FROM public.rows",
+(B[m[32m+            false,
+(B[m[32m+            "c",
+(B[m[32m+            "s",
+(B[m[32m+            "e",
+(B[m[32m+            budget.clone()
+(B[m[32m+        )
+(B[m[32m+        .is_err()
+(B[m[32m+    );
+(B[m     assert_eq!(budget.get(), before);
+     budget.set(0);
+     assert!(
+Diff in /Users/imran/projects/Code/dbunk/apps/native/src/query_result/tests.rs:93:
+             .is_err()
+     );
+     assert_eq!(budget.get(), 0);
+[31m-    let source = ExecutedSource::prepare("SELECT id FROM public.rows", false, "c", "s", "e", budget.clone()).unwrap();
+(B[m[32m+    let source = ExecutedSource::prepare(
+(B[m[32m+        "SELECT id FROM public.rows",
+(B[m[32m+        false,
+(B[m[32m+        "c",
+(B[m[32m+        "s",
+(B[m[32m+        "e",
+(B[m[32m+        budget.clone(),
+(B[m[32m+    )
+(B[m[32m+    .unwrap();
+(B[m     let owned = budget.get();
+     budget.set(WORKSPACE_BYTES);
+     assert!(QueryRows::capture(source.clone(), &completed(), budget.clone()).is_err());
+Diff in /Users/imran/projects/Code/dbunk/apps/native/src/table_changes/source.rs:45:
+                             page.name == column.name && page.cast_type == column.cast_type
+                         })
+             }),
+[31m-            Self::Query { provenance, rows } => rows.as_ref().is_none_or(|rows| { Rc::ptr_eq(provenance, &rows.origin.provenance) && rows.compatible(analysis) }),
+(B[m[32m+            Self::Query { provenance, rows } => rows.as_ref().is_none_or(|rows| {
+(B[m[32m+                Rc::ptr_eq(provenance, &rows.origin.provenance) && rows.compatible(analysis)
+(B[m[32m+            }),
+(B[m         }
+     }
+ }

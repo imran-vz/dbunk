@@ -1,0 +1,10 @@
+{
+  "changed_paths": [
+    "apps/native/src/pg_tool_view/render.rs",
+    "src-tauri/src/postgres/dedicated.rs",
+    "src-tauri/src/postgres/transfer/files.rs",
+    "src-tauri/src/postgres/transfer/manager.rs"
+  ],
+  "reason": "Default Tauri Clippy found unused declarations after native adapter extraction. Restrict test/native-only helpers to their actual feature scope and remove an unused test wrapper. Correct the backup/restore footer to describe mutation refusal until joined cleanup. Runtime CSV semantics unchanged; owned CSV probe is not repeated.",
+  "prior_native_matrix": "native-final passed230tests/13ignored on the formatting-only revision; subsequent native-verified matrix covers this final correction."
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "check": "rust-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "rust-test",
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-clippy",
+    "exit_code": 101
+  }
+]

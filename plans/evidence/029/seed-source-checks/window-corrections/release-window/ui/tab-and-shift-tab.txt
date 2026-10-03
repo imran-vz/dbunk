@@ -1,0 +1,4 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				91 text field (settable) Constant value, Value: release interrupted seed
+~				92 text field (settable) NULL percentage (0–100, blank for default), Value: 0
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

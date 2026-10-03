@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "2e98fb3d-38ff-4df8-981c-3755e9c6fb4c",
+  "configurations": [
+    {
+      "id": "dba6f82c-fc14-4ce1-a93f-df91fa621593",
+      "target": {
+        "connection_id": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+        "schema": "native_export_window_20261003",
+        "table": "quoted export"
+      },
+      "options": {
+        "format": "sql",
+        "encoding": "utf16Le",
+        "compression": "gzip",
+        "null_token": "NULL雪"
+      },
+      "created_at": "2026-10-03T10:55:56.563685+00:00"
+    }
+  ]
+}

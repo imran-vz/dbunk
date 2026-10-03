@@ -1,0 +1,7 @@
+{
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "endpoint": "127.0.0.1:15432/dbunk_demo",
+  "app_connections_before": 0,
+  "native_apps": 0,
+  "scope": "unique seed_ schema named by probe before setup; captured ownership and RESTRICT cleanup"
+}

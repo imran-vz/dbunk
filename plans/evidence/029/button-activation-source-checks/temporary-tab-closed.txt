@@ -1,0 +1,39 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 46, 91-168
+~			45 tab (settable, boolean) Schema map · Disconnected. Connect, then Refresh to read the map, Value: on
+~		90 container PostgreSQL schema map for 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
++			91 button Connect
++			92 button (disabled) Refresh map
++			93 button (disabled) Cancel read
++			94 button Clear map / reset identity
++			95 button (disabled) Fit map
++			96 button (disabled) Zoom in
++			97 button (disabled) Zoom out
++			98 button (disabled) Routing: Curve
++			99 button (disabled) Attributes: All
++			100 button (disabled) Types: true
++			101 button (disabled) NULL: false
++			102 button (disabled) Comments: false
++			103 button (disabled) Save map settings
++			104 button (disabled) Reset layout
++			105 button (disabled) Reset scope defaults
++			106 button (disabled) Open selected table
++			107 button (disabled) Copy detail page
++			108 button (disabled) Previous detail page
++			109 button (disabled) Next detail page
++			110 button (disabled) Save viewport SVG
++			111 button (disabled) Cancel file save
++			112 button (disabled) Save viewport PNG 2x
++			113 button Relationship glossary
++			114 tab group Map setup scope
++				115 tab (settable, boolean) Database, Value: on
++				116 tab (settable, boolean) Schema, Value: off
++				117 tab (settable, boolean) Table and direct neighbors, Value: off
++			118 container Disconnected. Connect, then Refresh to read the map
++			119 text No captured map
++			120 container Schema map canvas. Drag background to pan; Command-scroll zooms at pointer; drag nodes to save positions. Keyboard arrows pan; Shift+Arrow moves the selected table 10 world units and saves; plus/minus zoom, F fits. The list below exposes exact tables and relationships.
++			121 list 0 tables and foreign keys. Arrows select; Shift+Arrow moves a selected table 10 world units and saves; Enter inspects; Open selected table rechecks its OID.
++			122 text Selected map detail page 1. 
++			123 text Read-only table graph, including partitioned tables. Inherited foreign-key and trigger copies are omitted. Direct-neighbor scope shows only focal edges. SVG and PNG save the current viewport on white; no row data or DDL is executed.
+~		77 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,9 @@
+{
+  "initial": "source-sha256.json",
+  "final": "source-sha256-final.json",
+  "changed_paths": [
+    "src-tauri/src/backend/development/workspace_query_tests.rs"
+  ],
+  "reason": "Two existing tests expected format 4; production format 5 is intentional. Corrected expectations and test name only. Earlier failed log remains preserved.",
+  "production_source_changed": false
+}

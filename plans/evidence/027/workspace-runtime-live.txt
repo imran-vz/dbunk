@@ -1,0 +1,48 @@
+Command: DBUNK_NATIVE_FIXTURE_VERIFIED=1 cargo +1.98.1 test --locked workspace_live_tests -- --ignored --test-threads=1 --nocapture
+Directory: apps/native
+Scope: actual stage04 Host WorkspaceRuntime, no GPUI window. Each ignored case reexecutes the test binary with a new private stage04 profile, verified fixture manifest and plain-SQLite saved fixture connection. Synthetic mailbox pressure is identified separately in the test source.
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.13s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/dbunk_native-772a36ec0cbab884)
+
+running 3 tests
+test live_tests::workspace_live_tests::workspace_admission_reconnect_stale_events_and_global_shutdown ... Native queue released: high_water_bytes=541 remaining_bytes=0
+Native workspace queue: high_water_bytes=804 remaining_bytes=0
+Native queue released: high_water_bytes=0 remaining_bytes=0
+Native queue released: high_water_bytes=640 remaining_bytes=0
+Native queue released: high_water_bytes=348 remaining_bytes=0
+Native queue released: high_water_bytes=541 remaining_bytes=0
+Native queue released: high_water_bytes=348 remaining_bytes=0
+
+running 1 test
+test live_tests::workspace_live_tests::workspace_admission_reconnect_stale_events_and_global_shutdown ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.41s
+
+ok
+test live_tests::workspace_live_tests::workspace_mailboxes_share_exact_16_mib_and_release_on_drop ... Native queue released: high_water_bytes=8388608 remaining_bytes=0
+Native queue released: high_water_bytes=8388608 remaining_bytes=0
+Native queue released: high_water_bytes=7 remaining_bytes=0
+Native queue released: high_water_bytes=8388608 remaining_bytes=0
+Native workspace queue: high_water_bytes=16777216 remaining_bytes=0
+
+running 1 test
+test live_tests::workspace_live_tests::workspace_mailboxes_share_exact_16_mib_and_release_on_drop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.69s
+
+ok
+test live_tests::workspace_live_tests::workspace_streams_cancel_and_close_independently_with_terminal_ack ... Native queue released: high_water_bytes=53920 remaining_bytes=0
+Native queue released: high_water_bytes=53920 remaining_bytes=0
+Native workspace queue: high_water_bytes=54364 remaining_bytes=0
+
+running 1 test
+test live_tests::workspace_live_tests::workspace_streams_cancel_and_close_independently_with_terminal_ack ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.83s
+
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 1.94s

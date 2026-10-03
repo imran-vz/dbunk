@@ -1,0 +1,49 @@
+{
+  "identity": {
+    "version": 1,
+    "pid": 16001,
+    "executable": "/private/tmp/dbunk-native-package-20261003-seed-keyboard/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+    "executable_sha256": "e0f2f6f8e99eb8a20c8ae0f60a1721e60ba0bffa9cd94ed693178ac2c351ad56",
+    "profile": "/private/tmp/dbunk-native-auto-fit-20261003-review",
+    "profile_mode": "stage04-fixture",
+    "general_profile_owner": null,
+    "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-04ctsmlw",
+    "tls_fixture_instance": "15151cfc-5885-4066-831f-2717ed9b4587",
+    "bundle": "/private/tmp/dbunk-native-package-20261003-seed-keyboard/dbunk Native Preflight.app"
+  },
+  "attempt": {
+    "attemptId": "d6c1558a-8e1e-41d8-882d-a7417027addb",
+    "description": {
+      "endpoint": {
+        "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+        "schema": "native_seed_window_20261003",
+        "table": "destination"
+      },
+      "connection": {
+        "connectionName": "Auto-fit fixture",
+        "host": "127.0.0.1",
+        "port": 15432,
+        "database": "dbunk_demo",
+        "user": "dbunk",
+        "environment": "Development",
+        "safeMode": "Protected",
+        "readOnly": false
+      },
+      "databaseOid": 16384,
+      "relationOid": 16937,
+      "rowCount": 1,
+      "seedUsed": 42,
+      "clockEpochSeconds": 1791015152,
+      "recipeSha256": "61606e55293cd10d30d76bfa391191b783e39ccc8be8dfda1797097f3530abb3",
+      "recipeSummary": "note: constant \"release interrupted seed\" (24 UTF-8 bytes); NULL rate Some(0.0)\n",
+      "recipeSummaryTruncated": false,
+      "insertedColumns": 3,
+      "defaultedColumns": 2
+    },
+    "state": "applying"
+  },
+  "postgres_pid": 16929,
+  "observed_saved_applying": true,
+  "observed_sleeping_insert": true
+}

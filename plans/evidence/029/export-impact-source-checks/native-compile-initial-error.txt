@@ -1,0 +1,55 @@
+   Compiling aws-lc-sys v0.42.0
+   Compiling libz-sys v1.1.29
+   Compiling libssh2-sys v0.3.3
+   Compiling ssh2 v0.9.6
+   Compiling aws-lc-rs v1.17.1
+   Compiling rustls v0.23.40
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling tungstenite v0.28.0
+   Compiling rustls-platform-verifier v0.7.0
+   Compiling sqlx-core v0.8.6
+   Compiling http_client_tls v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling yawc v0.4.2
+   Compiling hyper-rustls v0.27.10
+   Compiling redis v0.27.6
+   Compiling tokio-postgres-rustls v0.14.0
+   Compiling async-tungstenite v0.33.0
+   Compiling reqwest v0.12.28
+   Compiling rpc v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling cloud_api_client v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling sqlx-sqlite v0.8.6
+   Compiling sqlx-postgres v0.8.6
+   Compiling sqlx-mysql v0.8.6
+   Compiling language v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling remote v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling sqlx v0.8.6
+   Compiling worktree v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling buffer_diff v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling markdown v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling prettier v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling language_detection v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling multi_buffer v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling client v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling dap v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling edit_prediction_types v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling extension v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling snippet_provider v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling project v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling agent_settings v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling workspace v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling breadcrumbs v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling editor v0.1.0 (https://github.com/zed-industries/zed?rev=506beb34de3f433707b7ebe8d8ad2d80f856af6c#506beb34)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0502]: cannot borrow `*cx` as mutable because it is also borrowed as immutable
+   --> src/export_view.rs:313:76
+    |
+311 |             .read(cx)
+    |                   -- immutable borrow occurs here
+312 |             .selections
+313 |             .newest::<MultiBufferOffset>(&editor.read(cx).display_snapshot(cx));
+    |              ------ immutable borrow later used by call                    ^^ mutable borrow occurs here
+
+For more information about this error, try `rustc --explain E0502`.
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

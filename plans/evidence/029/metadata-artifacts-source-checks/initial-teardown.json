@@ -1,0 +1,6 @@
+{
+  "initial_ddl_schema_and_recorded_oids_absent": true,
+  "initial_failed_map_schemas_absent": true,
+  "stage03_backends": 0,
+  "stage04_tls_backends": 0
+}

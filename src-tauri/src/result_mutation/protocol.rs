@@ -8,14 +8,23 @@ use crate::postgres::sql_class::StatementClassSummary;
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum AnalyzeSource {
-    Statement { sql: String },
-    Relation { schema: String, table: String },
+pub enum AnalyzeSource {
+    Statement {
+        sql: String,
+    },
+    /// Native retained text currently has no execution rendering-context proof.
+    NativeStatement {
+        sql: String,
+    },
+    Relation {
+        schema: String,
+        table: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AnalyzeResultSetPayload {
+pub struct AnalyzeResultSetPayload {
     pub connection_id: String,
     pub tab_id: String,
     pub request_id: u64,
@@ -30,7 +39,7 @@ pub(crate) struct AnalyzeResultSetPayload {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum ColumnOrigin {
+pub enum ColumnOrigin {
     Table {
         schema: String,
         table: String,
@@ -42,7 +51,7 @@ pub(crate) enum ColumnOrigin {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", tag = "kind")]
-pub(crate) enum ColumnWritability {
+pub enum ColumnWritability {
     Writable,
     Generated,
     IdentityAlways,
@@ -51,7 +60,7 @@ pub(crate) enum ColumnWritability {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AnalyzedColumn {
+pub struct AnalyzedColumn {
     pub name: String,
     pub origin: ColumnOrigin,
     pub cast_type: String,
@@ -61,7 +70,7 @@ pub(crate) struct AnalyzedColumn {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum MutationIdentityKind {
+pub enum MutationIdentityKind {
     PrimaryKey,
     UniqueIndex,
     VirtualKey,
@@ -81,14 +90,14 @@ impl MutationIdentityKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MutationIdentity {
+pub struct MutationIdentity {
     pub kind: MutationIdentityKind,
     pub columns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum CapabilityReason {
+pub enum CapabilityReason {
     NotAnalyzable,
     NoIdentity,
     IdentityNotProjected,
@@ -100,7 +109,7 @@ pub(crate) enum CapabilityReason {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CapabilityVerdict {
+pub struct CapabilityVerdict {
     pub allowed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<CapabilityReason>,
@@ -108,7 +117,7 @@ pub(crate) struct CapabilityVerdict {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AnalyzedTable {
+pub struct AnalyzedTable {
     pub schema: String,
     pub table: String,
     pub identity: MutationIdentity,
@@ -125,11 +134,12 @@ pub(crate) struct AnalyzedTable {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum NotAnalyzableReason {
+pub enum NotAnalyzableReason {
     MultiStatement,
     NoProjectedColumns,
     NoTableOrigins,
     PossibleTempShadowing,
+    SessionDependentTypes,
     Database {
         code: Option<String>,
         message: String,
@@ -144,14 +154,14 @@ pub(crate) enum NotAnalyzableReason {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum AnalysisStatement {
+pub enum AnalysisStatement {
     Analyzed,
     NotAnalyzable { reason: NotAnalyzableReason },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AnalyzeResultSetResult {
+pub struct AnalyzeResultSetResult {
     pub request_id: u64,
     pub analysis_id: u64,
     pub columns: Vec<AnalyzedColumn>,
@@ -161,14 +171,14 @@ pub(crate) struct AnalyzeResultSetResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MutationTable {
+pub struct MutationTable {
     pub schema: String,
     pub table: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MutationValue {
+pub struct MutationValue {
     pub column: String,
     pub value: Option<String>,
 }
@@ -179,7 +189,7 @@ pub(crate) struct MutationValue {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum MutationOp {
+pub enum MutationOp {
     Update {
         table: MutationTable,
         identity: Vec<MutationValue>,
@@ -199,13 +209,13 @@ pub(crate) enum MutationOp {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MutationPlan {
+pub struct MutationPlan {
     pub operations: Vec<MutationOp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PreviewResultMutationsPayload {
+pub struct PreviewResultMutationsPayload {
     pub connection_id: String,
     pub tab_id: String,
     pub analysis_id: u64,
@@ -214,7 +224,7 @@ pub(crate) struct PreviewResultMutationsPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ApplyResultMutationsPayload {
+pub struct ApplyResultMutationsPayload {
     pub connection_id: String,
     pub tab_id: String,
     pub request_id: u64,
@@ -226,20 +236,20 @@ pub(crate) struct ApplyResultMutationsPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CancelResultMutationPayload {
+pub struct CancelResultMutationPayload {
     pub connection_id: String,
     pub tab_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CloseResultMutationPayload {
+pub struct CloseResultMutationPayload {
     pub connection_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LoadVirtualKeyPayload {
+pub struct LoadVirtualKeyPayload {
     pub connection_id: String,
     pub schema: String,
     pub table: String,
@@ -247,7 +257,7 @@ pub(crate) struct LoadVirtualKeyPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SaveVirtualKeyPayload {
+pub struct SaveVirtualKeyPayload {
     pub connection_id: String,
     pub schema: String,
     pub table: String,
@@ -256,7 +266,7 @@ pub(crate) struct SaveVirtualKeyPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ClearVirtualKeyPayload {
+pub struct ClearVirtualKeyPayload {
     pub connection_id: String,
     pub schema: String,
     pub table: String,
@@ -264,7 +274,7 @@ pub(crate) struct ClearVirtualKeyPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct VirtualKey {
+pub struct VirtualKey {
     pub version: u32,
     pub columns: Vec<String>,
 }
@@ -275,13 +285,13 @@ pub(crate) struct VirtualKey {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum DmlParam {
+pub enum DmlParam {
     Text { value: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PreviewStatement {
+pub struct PreviewStatement {
     pub op_index: usize,
     pub sql: String,
     pub params: Vec<DmlParam>,
@@ -289,33 +299,33 @@ pub(crate) struct PreviewStatement {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PreviewResult {
+pub struct PreviewResult {
     pub statements: Vec<PreviewStatement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AppliedOperation {
+pub struct AppliedOperation {
     pub op_index: usize,
     pub rows_affected: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ApplyResult {
+pub struct ApplyResult {
     pub operations: Vec<AppliedOperation>,
     pub runtime_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CancelResultMutationResult {
+pub struct CancelResultMutationResult {
     pub cancel_requested: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum InvalidPlanReason {
+pub enum InvalidPlanReason {
     EmptySet,
     EmptyIdentity,
     NullKeyedIdentity,
@@ -336,7 +346,7 @@ pub(crate) enum InvalidPlanReason {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum ResultMutationError {
+pub enum ResultMutationError {
     UnsupportedEngine,
     NotAnalyzable {
         reason: NotAnalyzableReason,
@@ -632,6 +642,10 @@ mod tests {
                 "noProjectedColumns",
             ),
             (NotAnalyzableReason::NoTableOrigins, "noTableOrigins"),
+            (
+                NotAnalyzableReason::SessionDependentTypes,
+                "sessionDependentTypes",
+            ),
             (
                 NotAnalyzableReason::PossibleTempShadowing,
                 "possibleTempShadowing",

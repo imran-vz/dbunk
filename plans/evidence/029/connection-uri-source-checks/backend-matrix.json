@@ -1,0 +1,46 @@
+[
+  {
+    "name": "rust-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "rust-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "rust-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native-backend",
+    "command": [
+      "just",
+      "check-native-backend"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "custom-protocol",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--features",
+      "tauri/custom-protocol"
+    ],
+    "exit": 0
+  }
+]

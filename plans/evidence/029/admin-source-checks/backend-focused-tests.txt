@@ -1,0 +1,14 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.10s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 6 tests
+test postgres::native_catalog::admin::tests::blockers_preserve_zero_prepared_transaction_and_refuse_invalid_clipping ... ok
+test postgres::native_catalog::admin::tests::query_clipping_preserves_unicode_and_distinguishes_missing_text ... ok
+test postgres::native_catalog::admin::tests::metrics_preserve_null_zero_restricted_and_unavailable ... ok
+test postgres::native_catalog::admin::tests::escaped_bytes_are_charged_before_retaining_a_row ... ok
+test postgres::native_catalog::admin::tests::combined_sections_refuse_byte_overflow_without_a_successful_partial_snapshot ... ok
+test postgres::native_catalog::admin::tests::each_section_discloses_only_observed_overflow ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 894 filtered out; finished in 0.01s
+

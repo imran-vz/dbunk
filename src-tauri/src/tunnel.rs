@@ -159,17 +159,27 @@ impl Drop for EphemeralRoute {
 }
 
 pub async fn resolve_connection(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     route_key: &str,
     connection: &StoredConnection,
 ) -> Result<StoredConnection, String> {
-    resolve_connection_checked(pool, mode, route_key, connection, Arc::new(|| Ok(()))).await
+    resolve_connection_checked(
+        context,
+        pool,
+        mode,
+        route_key,
+        connection,
+        Arc::new(|| Ok(())),
+    )
+    .await
 }
 
 /// The caller retains this future until it stops. The check prevents a cancelled
 /// setup from starting another SSH hop or publishing a newly resolved route.
 pub(crate) async fn resolve_connection_checked(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     route_key: &str,
@@ -183,7 +193,7 @@ pub(crate) async fn resolve_connection_checked(
     if !config.enabled {
         return Ok(connection.clone());
     }
-    let endpoint = ensure_forward(pool, mode, route_key, connection, check).await?;
+    let endpoint = ensure_forward(context, pool, mode, route_key, connection, check).await?;
     rewrite_connection_endpoint(connection, &endpoint)
 }
 
@@ -234,12 +244,13 @@ pub fn drop_bastion(bastion_id: &str) {
 }
 
 pub async fn test_bastion(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     bastion_id: &str,
 ) -> Result<TestBastionResult, String> {
     let started = Instant::now();
-    let bastion = load_bastion(pool, mode, bastion_id).await?;
+    let bastion = load_bastion(context, pool, mode, bastion_id).await?;
     let route = SshRoute::from_config(&crate::SshTunnelConfig {
         enabled: true,
         bastion_server_id: Some(bastion_id.to_string()),
@@ -266,6 +277,7 @@ pub async fn test_bastion(
 }
 
 async fn ensure_forward(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     route_key: &str,
@@ -302,7 +314,7 @@ async fn ensure_forward(
         port: local_addr.port(),
     };
     let stop = Arc::new(AtomicBool::new(false));
-    let session = ensure_session(pool, mode, &route, check.clone()).await?;
+    let session = ensure_session(context, pool, mode, &route, check.clone()).await?;
     check()?;
     let worker = spawn_forward_accept_loop(
         listener,
@@ -370,6 +382,7 @@ fn lookup_forward(route_key: &str) -> Option<LocalEndpoint> {
 }
 
 async fn ensure_session(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     route: &SshRoute,
@@ -389,8 +402,13 @@ async fn ensure_session(
 
     let mut bastions = Vec::with_capacity(route.bastion_ids.len());
     for bastion_id in &route.bastion_ids {
-        bastions
-            .push(await_setup_checked(load_bastion(pool, mode, bastion_id), check.as_ref()).await?);
+        bastions.push(
+            await_setup_checked(
+                load_bastion(context, pool, mode, bastion_id),
+                check.as_ref(),
+            )
+            .await?,
+        );
     }
     check()?;
     let worker_check = check.clone();
@@ -496,6 +514,7 @@ fn publish_session(
 }
 
 async fn load_bastion(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     bastion_id: &str,
@@ -503,10 +522,11 @@ async fn load_bastion(
     let server = storage::bastions::read_bastion_server_by_id(pool, bastion_id)
         .await?
         .ok_or_else(|| format!("Bastion Server '{bastion_id}' not found"))?;
-    let password = credentials::read_bastion_secret(pool, mode, bastion_id, "password").await?;
+    let password = credentials::read_bastion_secret(context, mode, bastion_id, "password").await?;
     let private_key_content =
-        credentials::read_bastion_secret(pool, mode, bastion_id, "privateKeyContent").await?;
-    let passphrase = credentials::read_bastion_secret(pool, mode, bastion_id, "passphrase").await?;
+        credentials::read_bastion_secret(context, mode, bastion_id, "privateKeyContent").await?;
+    let passphrase =
+        credentials::read_bastion_secret(context, mode, bastion_id, "passphrase").await?;
     Ok(ResolvedBastion {
         server,
         password,
@@ -663,7 +683,9 @@ mod tests {
         let route = ssh_route("cancelled-pool-wait");
         let cancelled = Arc::new(AtomicBool::new(false));
         let check_cancelled = cancelled.clone();
+        let context = credentials::Context::fixture(pool.clone());
         let setup = ensure_session(
+            &context,
             &pool,
             CredentialStorageMode::PlainSqlite,
             &route,
@@ -695,7 +717,9 @@ mod tests {
         let (pool, _held) = exhausted_pool().await;
         let route = ssh_route("expired-pool-wait");
         let deadline = Instant::now() + Duration::from_millis(100);
+        let context = credentials::Context::fixture(pool.clone());
         let setup = ensure_session(
+            &context,
             &pool,
             CredentialStorageMode::PlainSqlite,
             &route,

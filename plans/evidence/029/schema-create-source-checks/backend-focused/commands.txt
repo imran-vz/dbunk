@@ -1,0 +1,30 @@
+Working directory: /Users/imran/projects/Code/dbunk
+cargo +1.97.1 test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile schema_ddl -- --test-threads=1
+  initial: 8 passed, 1 failed (expired deadline allowed immediately-ready SQL before timer wake).
+  after explicit deadline precheck: 9 passed, 0 failed. backend-tests-after-deadline.txt
+cargo +1.97.1 test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::data_documents -- --test-threads=1
+  4 passed, 0 failed. document-fence-tests.txt
+cargo +1.97.1 clippy --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+  Passed. backend-clippy.txt
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check
+  Passed. backend-format.txt
+No live PostgreSQL, fixture endpoint, native UI, Keychain or production access.
+Service tests created disposable temporary SQLite fixture profiles only; policy refusal prevents socket startup.
+
+Owned live probe authorized target: 127.0.0.1:15432/dbunk_demo, UUID2283820d-33ec-4c4c-ae03-7051092bd410.
+DBUNK_NATIVE_FIXTURE_VERIFIED=1 cargo +1.97.1 test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::schema_ddl::live_tests::native_create_schema_receipt_duplicate_atomic_rollback_and_cleanup -- --ignored --exact --nocapture --test-threads=1
+  Initial failed assumption: fixture policy required confirmation; no schema write occurred. Initial failure log retained.
+  After verifying and consuming exact confirmation token: 1 passed, 0 failed. live-probe.txt
+  Created unique schema OID16632; identity-checked RESTRICT cleanup; main/rollback schemas absent, activity0 baseline restored. live-cleanup.json
+cargo +1.97.1 clippy --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+  Final added live test compile/lint: backend-clippy-after-live.txt
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check
+  Passed. backend-format-after-live.txt
+
+Audit-enhanced final live run (same exact owned fixture guard and test command):
+  1 passed; confirmed successful apply audit exactly1 class-only ddl record; duplicate knownNotApplied adds0.
+  live-probe-after-audit-check.txt and live-cleanup-after-audit-check.json.
+  Unique created schema OID16634 removed after exact identity checks; both names absent and activitybaseline0 restored.
+  Prior successful run preserved separately in live-probe-before-audit-check.txt/live-cleanup-before-audit-check.json (OID16632).
+Final isolated all-target Clippy and fmt --check passed:
+  backend-clippy-after-audit-live.txt, backend-format-after-audit-live.txt.

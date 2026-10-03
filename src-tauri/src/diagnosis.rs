@@ -10,6 +10,9 @@
 //! PostgreSQL only gets the full ladder. Other engines get the tunnel
 //! stage and one `database` stage wrapping today's ping.
 
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native;
+
 use std::borrow::Cow;
 use std::io;
 use std::net::SocketAddr;
@@ -310,6 +313,7 @@ fn elapsed_ms(started: Instant) -> u64 {
 /// Run the ladder. The outer `Err` is reserved for credential-store and
 /// tunnel-validation failures; every probe failure lands in the report.
 pub(crate) async fn run(
+    context: &crate::credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     connection: &StoredConnection,
@@ -320,7 +324,7 @@ pub(crate) async fn run(
     let tunnel_enabled = connection.ssh_tunnel().is_some_and(|config| config.enabled);
     let resolved: Cow<'_, StoredConnection> = if tunnel_enabled {
         let started = Instant::now();
-        match tunnel::resolve_connection(pool, mode, route.key(), connection).await {
+        match tunnel::resolve_connection(context, pool, mode, route.key(), connection).await {
             Ok(resolved) => {
                 let local_endpoint = format!("{}:{}", resolved.host(), resolved.port());
                 report.pass(

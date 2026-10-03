@@ -1,0 +1,13 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.48s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 5 tests
+test backend::native_profile::tests::fixture_profile_cannot_be_reopened_or_switched_to_general ... ok
+test backend::native_profile::tests::general_namespace_is_lazy_strict_and_independent ... ok
+test backend::native_profile::tests::loaded_invalid_options_refuse_before_hydration_and_preserve_metadata ... ok
+test backend::native_profile::tests::mismatched_markers_and_databases_are_preserved_without_credentials ... ok
+test backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 910 filtered out; finished in 0.32s
+

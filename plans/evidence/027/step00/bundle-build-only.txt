@@ -1,0 +1,5 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.47s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+PASS: one GPUI revision 506beb34de3f433707b7ebe8d8ad2d80f856af6c; no Tauri/Wry/Tao/WebKit packages
+Built /Users/imran/projects/Code/dbunk/tools/native/.state/step00-ci-bundle/dbunk Native Preflight.app (113550924 bytes)

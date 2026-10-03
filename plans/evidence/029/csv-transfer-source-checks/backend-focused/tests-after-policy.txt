@@ -1,0 +1,22 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+   --> src/backend/csv_transfers/registry.rs:580:49
+    |
+580 |         Ok(CsvTransferSubmission::Accepted(self.get(id)?))
+    |                                                 ^^^ -- argument #1 of type `&transfer::manager::TransferManager` is missing
+    |
+note: method defined here
+   --> src/backend/csv_transfers/registry.rs:593:12
+    |
+593 |     pub fn get(
+    |            ^^^
+594 |         &self,
+595 |         manager: &TransferManager,
+    |         -------------------------
+help: provide the argument
+    |
+580 |         Ok(CsvTransferSubmission::Accepted(self.get(/* &transfer::manager::TransferManager */, id)?))
+    |                                                     ++++++++++++++++++++++++++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `dbunk` (lib test) due to 1 previous error

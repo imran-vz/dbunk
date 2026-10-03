@@ -1,0 +1,6 @@
+{
+  "source_files": 440,
+  "changed_from_auto_fit": [
+    "apps/native/src/query_library_view.rs"
+  ]
+}

@@ -1,0 +1,21 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::server_details::live_tests::native_server_details_owned_read_cancel_retire_and_cleanup ... 
+thread 'backend::server_details::live_tests::native_server_details_owned_read_cancel_retire_and_cleanup' (9011128) panicked at src/backend/server_details/live_tests.rs:46:63:
+called `Result::unwrap()` on an `Err` value: Catalog(Database)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    backend::server_details::live_tests::native_server_details_owned_read_cancel_retire_and_cleanup
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.21s
+
+error: test failed, to rerun pass `--lib`

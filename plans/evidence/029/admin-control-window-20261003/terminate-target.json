@@ -1,0 +1,11 @@
+{
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "application_name": "native_admin_window_terminate_4b7190e2",
+  "pid": 14796,
+  "backend_start": "2026-10-03T04:12:03.235636Z",
+  "query_start": "2026-10-03T04:12:03.239274Z",
+  "cancelled_confirmation_attempt": "64bd308f-a9aa-4158-9816-3789dd633dc5",
+  "confirmed_attempt": "fd42a07f-bff2-4fb5-aea7-61d246eae0d0",
+  "ui_outcome": "SignalSent",
+  "target_remaining": 0
+}

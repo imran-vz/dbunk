@@ -1,0 +1,10 @@
+{
+  "pid": 8714,
+  "executable": "/private/tmp/dbunk-native-plan027-preflight-20261002/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "bundle": "/private/tmp/dbunk-native-plan027-preflight-20261002/dbunk Native Preflight.app",
+  "bundle_id": "codes.imran.dbunk.native.stage04.preflight",
+  "profile_id": "63ec082d-99e7-4107-8ed5-ebfadaa249eb",
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-bundle-cwd-82wcr_mf",
+  "profile": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-stage03-hs5p_ra8"
+}

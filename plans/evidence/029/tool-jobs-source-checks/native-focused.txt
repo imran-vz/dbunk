@@ -1,0 +1,23 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.76s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 12 tests
+test controller::workspace_runtime::tests::pg_tool_delivery_refusal_precedes_attempt_registration ... ok
+test controller::workspace_runtime::tests::pg_tool_observer_shutdown_fences_unconsumed_queue_and_keeps_single_owner ... ok
+test pg_tool_jobs::tests::capture_refuses_duplicate_ids_and_unbounded_capacity_before_admission ... ok
+test pg_tool_jobs::tests::full_capture_revision_survives_release_and_reports_safe_diagnostics ... ok
+test pg_tool_jobs::tests::refused_path_preserves_previous_selection_and_tokens_are_setup_local ... ok
+test pg_tool_jobs::tests::release_fence_rejects_old_lists_even_after_new_requests_are_issued ... ok
+test pg_tool_jobs::tests::restore_revision_acknowledges_only_applied_plans_and_handles_expired_records ... ok
+test pg_tool_jobs::tests::retained_identity_and_terminal_cleanup_are_independent_of_row_positions ... ok
+test pg_tool_jobs::tests::setup_captures_exact_scope_and_fences_picker_and_review_changes ... ok
+test pg_tool_jobs::tests::shared_capture_replacement_charges_both_and_refusal_retains_original ... ok
+test pg_tool_view::choices::tests::baseline_choices_keep_exact_schema_and_only_ordinary_partitioned_tables ... ok
+test pg_tool_view::choices::tests::choices_preserve_truncation_exact_names_and_old_capture_on_admission_failure ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 220 filtered out; finished in 0.05s
+

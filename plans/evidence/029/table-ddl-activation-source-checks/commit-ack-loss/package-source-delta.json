@@ -1,0 +1,13 @@
+{
+  "scope": "Only cfg(test) probe and transport changed after the frozen production package. No package rebuild claimed.",
+  "changed": {
+    "src-tauri/src/backend/table_ddl/live_tests.rs": {
+      "package_source": "97214997eee7eddd1766e5cd528e16ccb7ed7f9c48414090016c81a05cf19bd7",
+      "current_source": "d83e0467d3c80f3a1bd6cc071b0f255a04ca8b539692a41812a147894203b112"
+    },
+    "src-tauri/src/postgres/native_table_ddl/test_transport.rs": {
+      "package_source": "0c178727fe252206539e67e8fe0e326b58d29cec3d089eafa969a053c41a29ac",
+      "current_source": "2aeae9d736d0349846c951feefc2a91ebadc4cdb31ceaa2e5fc85fe50005cdbe"
+    }
+  }
+}

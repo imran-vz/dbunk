@@ -1,0 +1,19 @@
+[
+  {
+    "name": "native-format",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--check"
+    ],
+    "exit": 1,
+    "elapsed_seconds": 0.47,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  }
+]

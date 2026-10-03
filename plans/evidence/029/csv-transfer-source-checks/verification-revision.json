@@ -1,0 +1,7 @@
+{
+  "changed_paths": [
+    "apps/native/src/workbench.rs"
+  ],
+  "reason": "Native format check required one existing string conversion to fit on one line; formatting only. Initial manifest and failed format log preserved.",
+  "backend_source_unchanged": true
+}

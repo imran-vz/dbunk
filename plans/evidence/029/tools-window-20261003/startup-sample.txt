@@ -1,0 +1,80 @@
+Analysis of sampling dbunk-native (pid 37381) every 1 millisecond
+Process:         dbunk-native [37381]
+Path:            /private/tmp/*/dbunk Native Preflight.app/Contents/MacOS/dbunk-native
+Load Address:    0x100f94000
+Identifier:      codes.imran.dbunk.native.stage04.preflight
+Version:         0.0.0 (27)
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [37369]
+Target Type:     live task
+
+Date/Time:       2026-10-03 01:46:13.843 +0530
+Launch Time:     2026-10-03 01:45:42.243 +0530
+OS Version:      macOS 27.0.1 (26A434)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         66.4M
+Physical footprint (peak):  186.7M
+Idle exit:                  untracked
+----
+
+Call graph:
+    839 Thread_8389556   DispatchQueue_1: com.apple.main-thread  (serial)
+    + 839 start  (in dyld) + 6688  [0x18cc0be80]
+    +   839 main  (in dbunk-native) + 52  [0x101857928]
+    +     839 _RNvNtCs82bWklYMk3w_3std2rt19lang_start_internal  (in dbunk-native) + 952  [0x103ae2a94]  rt.rs:171
+    +       839 _RNCINvNtCs82bWklYMk3w_3std2rt10lang_startNtNtB6_7process8ExitCodeE0CspXAE5MLbk_12dbunk_native  (in dbunk-native) + 16  [0x10163a428]  rt.rs:206
+    +         839 _RINvNtNtCs82bWklYMk3w_3std3sys9backtrace28___rust_begin_short_backtraceFENtNtB6_7process8ExitCodeB19_ECspXAE5MLbk_12dbunk_native  (in dbunk-native) + 12  [0x101581ad4]  backtrace.rs:166
+    +           839 _RNvCspXAE5MLbk_12dbunk_native4main  (in dbunk-native) + 1500  [0x10177b2ac]  main.rs:302
+    +             839 _RINvMs2_NtCsbLhpfwEX7Or_4gpui3appNtB6_11Application3runNCNvCspXAE5MLbk_12dbunk_native3runs2_0EBV_  (in dbunk-native) + 200  [0x1014c0e30]  app.rs:243
+    +               839 _RNvXs_NtCs8WG2Ooe2fj5_10gpui_macos8platformNtB4_11MacPlatformNtNtCsbLhpfwEX7Or_4gpui8platform8Platform3run  (in dbunk-native) + 648  [0x1022ab3b4]  platform.rs:549
+    +                 839 -[NSApplication run]  (in AppKit) + 396  [0x19164b90c]
+    +                   839 -[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]  (in AppKit) + 292  [0x191ed026c]
+    +                     839 -[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]  (in AppKit) + 780  [0x191ed0748]
+    +                       839 _DPSNextEvent  (in AppKit) + 580  [0x1916584fc]
+    +                         839 _DPSBlockUntilNextEventMatchingListInMode  (in AppKit) + 292  [0x19199b29c]
+    +                           839 _BlockUntilNextEventMatchingListInMode  (in HIToolbox) + 48  [0x19a65a380]
+    +                             839 ReceiveNextEventCommon  (in HIToolbox) + 492  [0x19a4d791c]
+    +                               839 RunCurrentEventLoopInMode  (in HIToolbox) + 320  [0x19a4d4590]
+    +                                 839 _CFRunLoopRunSpecificWithOptions  (in CoreFoundation) + 536  [0x18d17b82c]
+    +                                   838 __CFRunLoopRun  (in CoreFoundation) + 1172  [0x18d0a1334]
+    +                                   ! 838 __CFRunLoopServiceMachPort  (in CoreFoundation) + 160  [0x18d0a2aec]
+    +                                   !   838 mach_msg  (in libsystem_kernel.dylib) + 24  [0x18cf9cfac]
+    +                                   !     838 mach_msg_overwrite  (in libsystem_kernel.dylib) + 480  [0x18cfa5a28]
+    +                                   !       838 mach_msg2_internal  (in libsystem_kernel.dylib) + 76  [0x18cfaf8e0]
+    +                                   !         838 mach_msg2_trap  (in libsystem_kernel.dylib) + 8  [0x18cf9cc20]
+    +                                   1 __CFRunLoopRun  (in CoreFoundation) + 1980  [0x18d0a165c]
+    +                                     1 __CFRUNLOOP_IS_SERVICING_THE_MAIN_DISPATCH_QUEUE__  (in CoreFoundation) + 16  [0x18d0df9cc]
+    +                                       1 _dispatch_main_queue_callback_4CF  (in libdispatch.dylib) + 44  [0x18ce2fa4c]
+    +                                         1 _dispatch_main_queue_drain  (in libdispatch.dylib) + 176  [0x18ce2fb0c]
+    +                                           1 _dispatch_main_queue_drain.cold.6  (in libdispatch.dylib) + 832  [0x18ce58998]
+    +                                             1 _dispatch_client_callout  (in libdispatch.dylib) + 16  [0x18ce3a5a0]
+    +                                               1 _dispatch_call_block_and_release  (in libdispatch.dylib) + 32  [0x18ce20a34]
+    +                                                 1 ____CFRunLoopSetOptionsReason_block_invoke_5.134  (in CoreFoundation) + 52  [0x18d20f978]
+    +                                                   1 ____CFRunLoopSetOptionsReason_block_invoke_3.125  (in CoreFoundation) + 420  [0x18d20f75c]
+    +                                                     1 rbs_acquire_appnap_assertion  (in RunningBoardServices) + 1380  [0x1958115bc]
+    +                                                       1 -[RBSAssertion acquireWithError:]  (in RunningBoardServices) + 168  [0x1957da7e8]
+    +                                                         1 -[RBSConnection acquireAssertion:error:]  (in RunningBoardServices) + 268  [0x1957dab3c]
+    +                                                           1 -[RBSXPCMessage invokeOnConnection:withReturnClass:error:]  (in RunningBoardServices) + 32  [0x1957d7260]
+    +                                                             1 -[RBSXPCMessage invokeOnConnection:withReturnCollectionClass:entryClass:error:]  (in RunningBoardServices) + 144  [0x1957d730c]
+    +                                                               1 -[RBSXPCMessage sendToConnection:error:]  (in RunningBoardServices) + 344  [0x1957d75a8]
+    +                                                                 1 xpc_connection_send_message_with_reply_sync  (in libxpc.dylib) + 328  [0x18ccaa588]
+    +                                                                   1 dispatch_mach_send_with_result_and_wait_for_reply  (in libdispatch.dylib) + 60  [0x18ce3c0f4]
+    +                                                                     1 _dispatch_mach_send_and_wait_for_reply  (in libdispatch.dylib) + 548  [0x18ce3bd54]
+    +                                                                       1 mach_msg  (in libsystem_kernel.dylib) + 24  [0x18cf9cfac]
+    +                                                                         1 mach_msg_overwrite  (in libsystem_kernel.dylib) + 480  [0x18cfa5a28]
+    +                                                                           1 mach_msg2_internal  (in libsystem_kernel.dylib) + 76  [0x18cfaf8e0]
+    +                                                                             1 mach_msg2_trap  (in libsystem_kernel.dylib) + 8  [0x18cf9cc20]
+    839 Thread_8389648: tokio-rt-worker
+    + 839 thread_start  (in libsystem_pthread.dylib) + 8  [0x18cfdccec]
+    +   839 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x18cfe1d00]
+    +     839 _RNvNvMs0_NtNtNtCs82bWklYMk3w_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dbunk-native) + 384  [0x103aeb570]
+    +       839 _RNSNvYNCINvNtNtCs82bWklYMk3w_3std6thread9lifecycle15spawn_uncheckedNCNvMs4_NtNtNtCskHEuNbN8Kbp_5tokio7runtime8blocking4poolNtB1b_7Spawner12spawn_thread0uEs_0INtNtNtCs8Mbv00yxnRz_4core3ops8function6FnOnceuE9call_once6vtableB1h_  (in dbunk-native) + 72  [0x103c46e54]  function.rs:250
+    +         839 _RINvNtNtCs82bWklYMk3w_3std3sys9backtrace28___rust_begin_short_backtraceNCNvMs4_NtNtNtCskHEuNbN8Kbp_5tokio7runtime8blocking4poolNtB1f_7Spawner12spawn_thread0uEB1l_  (in dbunk-native) + 496  [0x103c43be8]  backtrace.rs:166
+    +           839 _RINvNtNtNtCskHEuNbN8Kbp_5tokio7runtime4task3raw4pollINtNtNtB6_8blocking4task12BlockingTaskNCNvMNtNtNtB6_9scheduler12multi_thread6workerNtB1v_6Launch6launch0ENtNtBT_8schedule16BlockingScheduleEB8_  (in dbunk-native) + 212  [0x103c44ec8]  raw.rs:337
+    +             839 _RNvNtNtNtNtCskHEuNbN8Kbp_5tokio7runtime9scheduler12multi_thread6worker3run  (in dbunk-native) + 4184  [0x103c57eec]  worker.rs:529
+    +               839 _RNvMs_NtNtNtNtCskHEuNbN8Kbp_5tokio7runtime9scheduler12multi_thread6workerNtB4_7Context13park_internal  (in dbunk-native) + 500  [0x103c53014]  worker.rs:865
+    +                 839 _pthread_cond_wait  (in libsystem_pthread.dylib) + 980  [0x18cfe21d0]
+    +                   839 __psynch_cvwait  (in libsystem_kernel.dylib) + 8  [0x18cfa050c]

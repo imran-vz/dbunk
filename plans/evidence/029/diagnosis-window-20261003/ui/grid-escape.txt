@@ -1,0 +1,4 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			56 text 250 rows returned · 250 retained · 3 columns · Copy refused: Select cells to copy
+~		106 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

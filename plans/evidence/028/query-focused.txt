@@ -1,0 +1,13 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.32s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 5 tests
+test backend::query_control_tests::absent_and_closed_sessions_refuse_new_control_operations_without_connecting ... ok
+test backend::query_control_tests::native_query_confirmation_binds_request_backend_window_and_session_instance ... ignored, owned stage03 PostgreSQL fixture; no simultaneous window acceptance
+test backend::query_control_tests::native_query_confirmation_rechecks_read_only_and_validates_before_confirmation ... ignored, owned stage03 PostgreSQL fixture; no simultaneous window acceptance
+test backend::query_control_tests::native_transactions_are_independent_and_failed_commit_requires_rollback ... ignored, owned stage03 PostgreSQL fixture; no simultaneous window acceptance
+test backend::query_control_tests::parameter_description_preserves_lexical_boundaries_and_first_use_order ... ok
+
+test result: ok. 2 passed; 0 failed; 3 ignored; 0 measured; 791 filtered out; finished in 0.03s
+

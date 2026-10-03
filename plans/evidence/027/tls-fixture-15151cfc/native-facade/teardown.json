@@ -1,0 +1,12 @@
+{
+  "baseline": {
+    "plain": 0,
+    "tls": 0
+  },
+  "final": {
+    "plain": 0,
+    "tls": 0
+  },
+  "profile_retained": "/private/tmp/dbunk-stage04-native-tls-15151cfc",
+  "joined_native_shutdown": true
+}

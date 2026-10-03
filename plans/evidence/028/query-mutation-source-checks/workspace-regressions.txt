@@ -1,0 +1,40 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::development::workspace::tests::v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_cas ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::development::workspace::tests::sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v3 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::development::workspace::tests::corrupt_and_future_records_are_preserved_until_explicit_reset ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::development::workspace::tests::malformed_or_future_table_intent_remains_exportable_without_automatic_overwrite ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::development::workspace::tests::aggregate_budget_refuses_oversized_staged_values_without_losing_saved_drafts ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 888 filtered out; finished in 0.02s
+

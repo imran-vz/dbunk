@@ -1,0 +1,12 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.43s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::table_seed::live_tests::native_seed_owned_transaction_recipe_and_composite_fk ... SEED_CREATE_INTENT {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","marker":"dbunk native seed owned e8613abe-609f-4997-949b-0e625a535e40","schema":"seed_8d48f55e3da84f79839305631daf5c8b"}
+SEED_OWNED {"schema":16902,"tables":[{"name":"late_failure","oid":16924},{"name":"parent","oid":16903},{"name":"payload","oid":16909},{"name":"unsupported","oid":16921}]}
+SEED_CLEANUP {"absent":true,"joined":true,"schema":"seed_8d48f55e3da84f79839305631daf5c8b"}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1112 filtered out; finished in 1.02s
+

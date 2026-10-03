@@ -1,0 +1,8 @@
+[
+  "apps/native/src/main.rs",
+  "apps/native/src/table_seed_store.rs",
+  "apps/native/src/table_seed_view/actions.rs",
+  "apps/native/src/table_seed_view/keyboard.rs",
+  "apps/native/src/table_seed_view/render.rs",
+  "apps/native/src/table_seed_view.rs"
+]

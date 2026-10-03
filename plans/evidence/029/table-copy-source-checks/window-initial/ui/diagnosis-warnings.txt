@@ -1,0 +1,125 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Save query
+		12 button Rename
+		13 button Pin
+		14 button ←
+		15 button →
+		16 button Close
+		17 button Credentials
+		18 container Connections
+			19 button + Connection
+			20 button Open table
+			21 button −
+			22 button +
+			23 button Auto-fit fixture
+			24 button Edit
+			25 button Duplicate
+			26 button Copy URI
+			27 button ★
+			28 button Delete
+			29 button Comfortable
+		30 tab group
+			31 tab (settable, boolean) Query 1 · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			32 tab (settable, boolean) Value: off, native_parity_20261003.rows · Database may have changed; reconnect and refresh before using retained data
+			33 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			34 tab (settable, boolean) History · Open tab to load records, Value: off
+			35 tab (settable, boolean) History query · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			36 tab (settable, boolean) Administration · Database may have changed; reconnect and refresh before using retained data, Value: off
+			37 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			38 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			39 tab (settable, boolean) Objects · Select a connection, Value: on
+		40 button Connect
+		41 button Disconnect
+		42 button Clear results
+		43 container PostgreSQL objects
+			44 button Connect
+			45 button (disabled) Refresh
+			46 button (disabled) Cancel
+			47 button (disabled) Search
+			48 button (disabled) Open
+			49 button (disabled) Copy identity
+			50 button Clear
+			51 button (disabled) Describe
+			52 button (disabled) Drop impact
+			53 button Create schema
+			54 button Maintenance
+			55 text field (settable) Search object names, schemas or signatures
+			56 text Select a connection
+			57 list (settable) 0 matching objects; arrows select, Enter opens
+			58 text
+		59 container (settable) Draft persistence, Value: Saved
+		60 button Retry
+		61 button Export SQL
+		62 button Discard and quit
+		63 dialog PostgreSQL connection
+			64 text field (settable) Name, Value: Auto-fit fixture
+			65 text field (settable) Host, Value: 127.0.0.1
+			66 text field (settable) Port, Value: 15432
+			67 text field (settable) Database, Value: dbunk_demo
+			68 text field (settable) User, Value: dbunk
+			69 secure text field (settable) Database password
+			70 text field (settable) Folder
+			71 text field (settable) Color
+			72 text field (settable) Root certificate
+			73 text field (settable) Client certificate
+			74 text field (settable) Client key
+			75 text field (settable) TLS server name
+			76 text field (settable) Statement timeout (ms)
+			77 text field (settable) Idle transaction timeout (ms)
+			78 text field (settable) Connect timeout (ms)
+			79 text field (settable) Keepalive (seconds)
+			80 text field (settable) Search path (comma separated)
+			81 text field (settable) Default role
+			82 radio button (selectable, settable, boolean) Development
+			83 radio button (selectable, settable, boolean) Test
+			84 radio button (selectable, settable, boolean) Staging
+			85 radio button (selectable, settable, boolean) Production
+			86 radio button (selectable, settable, boolean) Inherit
+			87 radio button (selectable, settable, boolean) Disabled
+			88 radio button (selectable, settable, boolean) Protected
+			89 radio button (selectable, settable, boolean) Strict
+			90 checkbox (settable, boolean) Read-only: off, Value: off
+			91 checkbox (settable, boolean) Favorite: no, Value: off
+			92 radio button (selectable, settable, boolean) Disable TLS
+			93 radio button (selectable, settable, boolean) Prefer TLS
+			94 radio button (selectable, settable, boolean) Require TLS
+			95 radio button (selectable, settable, boolean) Verify CA
+			96 radio button (selectable, settable, boolean) Verify full
+			97 button Choose root certificate
+			98 button Choose client certificate
+			99 button Choose client key
+			100 container Connected in 5 ms
+			101 list Connection diagnosis
+				102 container (selectable) Tunnel: Skipped: direct connection
+				103 container (selectable) DNS: Passed (0 ms) 127.0.0.1
+				104 container (selectable) TCP: Passed (0 ms)
+				105 container (selectable) TLS: Skipped: TLS disabled
+				106 container (selectable) Authentication: Passed (4 ms)
+				107 container (selectable) Database: Passed (0 ms) PostgreSQL 17.11
+				108 container (selectable) Warning: connection is not encrypted.
+				109 container (selectable) This staged probe does not use SCRAM channel binding; a server requiring it can reject this probe even when the regular query driver connects.
+			110 button Save
+			111 button Test connection
+			112 button Cancel
+	113 close button
+	114 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	115 minimize button
+	116 text dbunk Native Workspace
+117 menu bar
+	118 dbunk Native Preflight
+	119 Query
+	120 Results
+	121 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

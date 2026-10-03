@@ -28,7 +28,7 @@ pub(crate) async fn save(
     let connection_id = connection.id().to_string();
     let save_result = socket_lifecycle::with_connection_fence(state, &connection_id, async {
         storage::upsert_connection(&state.pool, &connection).await?;
-        crate::credentials::upsert(&state.pool, mode, &connection).await?;
+        crate::credentials::upsert(&state.credentials, mode, &connection).await?;
         socket_lifecycle::invalidate_connection_caches(&connection_id, Some(engine)).await;
         Ok::<_, String>(())
     })
@@ -46,7 +46,9 @@ pub(crate) async fn delete(
         if !storage::delete_connection(&state.pool, connection_id).await? {
             return Err(format!("Connection '{connection_id}' not found"));
         }
-        if let Err(error) = crate::credentials::delete(&state.pool, mode, connection_id).await {
+        if let Err(error) =
+            crate::credentials::delete(&state.credentials, mode, connection_id).await
+        {
             log::warn!("Failed to delete credential for {}: {error}", connection_id);
         }
         socket_lifecycle::invalidate_connection_caches(connection_id, None).await;
@@ -100,7 +102,7 @@ pub(crate) async fn duplicate(
     // read failures degrade to an empty map per its documented
     // failure policy, so a locked keychain duplicates the record
     // without a credential rather than failing.
-    crate::credentials::hydrate(&state.pool, mode, &mut source).await?;
+    crate::credentials::hydrate(&state.credentials, mode, &mut source).await?;
     let secret = (!source.password().is_empty()).then(|| source.password().to_string());
 
     let existing_names: Vec<String> = all
@@ -116,7 +118,7 @@ pub(crate) async fn duplicate(
     storage::upsert_connection(&state.pool, &copy).await?;
     if let Some(secret) = secret {
         copy.set_password(secret);
-        if let Err(error) = crate::credentials::upsert(&state.pool, mode, &copy).await {
+        if let Err(error) = crate::credentials::upsert(&state.credentials, mode, &copy).await {
             // Roll back the row so we never keep a copy that silently
             // lost its credential.
             let _ = storage::delete_connection(&state.pool, &new_id).await;
@@ -173,7 +175,8 @@ pub(crate) async fn connect(
 ) -> Result<ConnectResult, String> {
     let mode = current_credential_mode(state).await?;
     with_active_connection(state, connection_id, |connection| async move {
-        managed::ensure_running_for_connection(&state.pool, mode, &connection).await?;
+        managed::ensure_running_for_connection(&state.credentials, &state.pool, mode, &connection)
+            .await?;
         dispatch::ping_connection(&connection).await
     })
     .await
@@ -271,9 +274,10 @@ mod tests {
         assert!(copy.password().is_empty());
 
         // The credential backend carries it, keyed to the new id.
-        let secrets = crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
-            .await
-            .expect("read credentials");
+        let secrets =
+            crate::credentials::read_all(&state.credentials, CredentialStorageMode::PlainSqlite)
+                .await
+                .expect("read credentials");
         assert_eq!(secrets.get(copy.id()).map(String::as_str), Some("s3cret"));
         assert_eq!(secrets.get("source").map(String::as_str), Some("s3cret"));
     }
@@ -315,7 +319,7 @@ mod tests {
     async fn duplicate_copies_credential_in_encrypted_mode() {
         let (_directory, state) = crate::test_app_state().await;
         crate::credentials::configure(
-            &state.pool,
+            &state.credentials,
             CredentialStorageMode::EncryptedSqlite,
             Some("test passphrase"),
         )
@@ -330,10 +334,12 @@ mod tests {
             .iter()
             .find(|connection| connection.name() == "Primary copy")
             .expect("copy present");
-        let secrets =
-            crate::credentials::read_all(&state.pool, CredentialStorageMode::EncryptedSqlite)
-                .await
-                .expect("read credentials");
+        let secrets = crate::credentials::read_all(
+            &state.credentials,
+            CredentialStorageMode::EncryptedSqlite,
+        )
+        .await
+        .expect("read credentials");
         assert_eq!(secrets.get(copy.id()).map(String::as_str), Some("s3cret"));
     }
 
@@ -342,7 +348,7 @@ mod tests {
     async fn locked_encrypted_store_blocks_pg_duplicate_but_not_sqlite() {
         let (_directory, state) = crate::test_app_state().await;
         crate::credentials::configure(
-            &state.pool,
+            &state.credentials,
             CredentialStorageMode::EncryptedSqlite,
             Some("test passphrase"),
         )
@@ -354,7 +360,7 @@ mod tests {
         save(&state, sqlite_connection("lite-src", "Local file"))
             .await
             .expect("save sqlite source");
-        crate::credentials::lock_for_tests();
+        crate::credentials::lock_for_tests(&state.credentials);
 
         // A network-backed source fails up front — before any row is
         // written — because its credential cannot be read.
@@ -404,9 +410,10 @@ mod tests {
 
         // The credential is untouched — this path must be safe for a
         // one-click toggle with no password in frontend memory.
-        let secrets = crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
-            .await
-            .expect("read credentials");
+        let secrets =
+            crate::credentials::read_all(&state.credentials, CredentialStorageMode::PlainSqlite)
+                .await
+                .expect("read credentials");
         assert_eq!(secrets.get("source").map(String::as_str), Some("s3cret"));
 
         let missing = update_organization(

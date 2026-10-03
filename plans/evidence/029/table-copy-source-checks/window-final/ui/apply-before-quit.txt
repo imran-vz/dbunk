@@ -1,0 +1,15 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 96-99
+~			77 button (disabled) Review selected copy
+~			78 button (disabled) Apply reviewed copy
++			95 text Copy admitted. Check the attempt for its transaction outcome and cleanup status.
+~				94 text (selected) Running: Pending | native_copy_window_20261003.source → native_copy_window_20261003.slow_destination, Secondary Actions: Pick
+~			93 text Attempt 467e3795-c0f3-4580-acfb-34689c115a13
+Durable recovery: Applying
+Source: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.source
+Source endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.slow_destination
+Destination endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination safe mode: Protected; read-only: fal
+~		59 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

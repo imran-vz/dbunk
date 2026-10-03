@@ -1,0 +1,18 @@
+[
+  {
+    "check": "native-fmt",
+    "exit_code": 0
+  },
+  {
+    "check": "native-clippy",
+    "exit_code": 0
+  },
+  {
+    "check": "native-fixture-clippy",
+    "exit_code": 0
+  },
+  {
+    "check": "native-test",
+    "exit_code": 101
+  }
+]

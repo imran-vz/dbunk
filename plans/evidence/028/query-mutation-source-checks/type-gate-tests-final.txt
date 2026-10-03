@@ -1,0 +1,9 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.12s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test result_mutation::postgres::tests::native_text_gate_uses_exact_builtin_oids_and_leaves_regular_analysis_unchanged ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 892 filtered out; finished in 0.00s
+

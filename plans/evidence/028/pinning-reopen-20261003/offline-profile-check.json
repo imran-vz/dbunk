@@ -1,0 +1,19 @@
+{
+  "profile_id": "c16f87dc-e21a-4ea2-b2ed-a0fdc9aa8a42",
+  "workspace_version": 9,
+  "documents": 8,
+  "workspace_bytes": 2198,
+  "hidden_columns": [
+    "id"
+  ],
+  "column_order": [
+    "value",
+    "id",
+    "amount"
+  ],
+  "column_widths": {
+    "value": 193.0,
+    "amount": 179.0
+  },
+  "pinned_columns": []
+}

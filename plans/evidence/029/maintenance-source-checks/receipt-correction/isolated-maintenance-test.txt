@@ -1,0 +1,31 @@
+Command: ['cargo', '+1.97.1', 'test', '--manifest-path', 'src-tauri/Cargo.toml', '--no-default-features', '--features', 'isolated-profile', 'maintenance']
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.81s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 22 tests
+test backend::development::workspace::maintenance_tests::maintenance_receipts_require_exact_target_action_sql_and_deadlines ... ok
+test backend::development::workspace::maintenance_tests::maintenance_recovery_preserves_exact_identity_and_partial_outcomes_without_replay ... ok
+test backend::maintenance::live_tests::native_maintenance_owned_actions_identity_cancellation_audit_and_cleanup ... ignored, exact owned stage03 fixture UUID, DBUNK_NATIVE_FIXTURE_VERIFIED=1 and exclusive serial fixture writer
+test backend::maintenance::tests::changed_statement_timeout_refuses_before_confirmation_admission_and_credentials ... ok
+test backend::maintenance::tests::dropped_waiter_keeps_connection_write_slot_until_driver_cleanup_joins ... ok
+test backend::maintenance::tests::foreign_and_retired_documents_refuse_consumed_reviews_without_execution ... ok
+test backend::maintenance::tests::only_known_completed_required_overrides_are_audited ... ok
+test backend::maintenance::tests::readonly_always_refuses_while_protected_maintenance_needs_no_confirmation ... ok
+test backend::maintenance::tests::review_is_exact_quoted_bounded_and_classifies_partitioned_maintenance ... ok
+test backend::maintenance::tests::strict_confirmation_preserves_authority_and_rechecks_policy_before_execution ... ok
+test backend::maintenance::tests::worst_escaped_receipt_and_review_fit_native_reservations ... ok
+test postgres::dedicated::ownership_tests::maintenance_notices_bound_utf8_before_cloning_and_count_overflow ... ok
+test postgres::native_maintenance::tests::both_refresh_modes_use_transaction_without_invalid_lock_table_on_matview ... ok
+test postgres::native_maintenance::tests::cancellation_after_preflight_or_last_statement_wins_atomic_effect_fence ... ok
+test postgres::native_maintenance::tests::cancellation_during_transaction_rolls_back_and_joins_cleanup_without_commit ... ok
+test postgres::native_maintenance::tests::cancelled_or_expired_before_dispatch_never_sends_maintenance ... ok
+test postgres::native_maintenance::tests::errors_distinguish_transaction_rollback_partial_effects_and_unknown_commit ... ok
+test postgres::native_maintenance::tests::known_commit_or_standalone_success_wins_retirement_and_is_sent_only_once ... ok
+test postgres::native_maintenance::tests::lost_standalone_reply_is_unknown_and_partitioned_reindex_never_begins_transaction ... ok
+test postgres::native_maintenance::tests::revalidation_after_relation_lock_refuses_replacement ... ok
+test postgres::native_maintenance::tests::stale_target_never_executes_the_utility ... ok
+test postgres::native_maintenance::tests::unsettled_standalone_cancellation_is_unknown_and_cleanup_is_joined ... ok
+
+test result: ok. 21 passed; 0 failed; 1 ignored; 0 measured; 1021 filtered out; finished in 1.12s
+

@@ -1,0 +1,15 @@
+{
+  "cases": 1082,
+  "matching": 1079,
+  "mismatches": [
+    {
+      "sql": "select :select,$1;",
+      "baseline": "SELECT\n:\nSELECT\n,\n  $1;",
+      "native": "SELECT\n  :select,\n  $1;",
+      "sameTokens": false
+    }
+  ],
+  "baselineRefused": 2,
+  "nativeRefused": 0,
+  "comparisonErrors": 0
+}

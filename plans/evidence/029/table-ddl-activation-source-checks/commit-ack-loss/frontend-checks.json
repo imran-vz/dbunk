@@ -1,0 +1,39 @@
+[
+  {
+    "check": "format",
+    "command": [
+      "pnpm",
+      "format"
+    ],
+    "exit_code": 0,
+    "seconds": 0.89
+  },
+  {
+    "check": "lint",
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exit_code": 0,
+    "seconds": 1.08
+  },
+  {
+    "check": "typecheck",
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
+    "exit_code": 0,
+    "seconds": 5.37
+  },
+  {
+    "check": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.04
+  }
+]

@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 6 tests
+test result_mutation::protocol::tests::not_analyzable_reason_shapes_are_typed ... ok
+test result_mutation::protocol::tests::every_error_variant_has_the_stable_wire_shape ... ok
+test result_mutation::protocol::tests::preview_apply_cancel_and_virtual_key_results_are_camel_case ... ok
+test result_mutation::protocol::tests::analysis_result_covers_all_tagged_shapes ... ok
+test result_mutation::protocol::tests::command_payloads_are_camel_case_and_tagged ... ok
+test result_mutation::protocol::tests::payload_round_trip_rejects_untagged_operations ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 887 filtered out; finished in 0.00s
+

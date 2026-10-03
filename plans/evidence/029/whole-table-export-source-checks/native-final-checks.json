@@ -1,0 +1,95 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 1.59
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 42.49
+  },
+  {
+    "check": "fixture-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--features",
+      "fixture-verification",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 7.15
+  },
+  {
+    "check": "test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 43.2
+  },
+  {
+    "check": "build",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "build",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 12.84
+  },
+  {
+    "check": "release-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--release",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 20.39
+  },
+  {
+    "check": "release-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--release",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 118.96
+  }
+]

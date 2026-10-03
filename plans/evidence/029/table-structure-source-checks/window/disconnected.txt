@@ -1,0 +1,7 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			39 tab (settable, boolean) Objects · Disconnected; retained catalog may be stale, Value: on
+~			97 button (disabled) Refresh
+~			100 button (disabled) Open related table
++			122 container Retained capture may be stale. Refresh before navigation.
+~			120 container Disconnected; retained catalog may be stale
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,49 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.89s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 41 tests
+test backend::development::workspace::copy_state::tests::copy_description_escape_expansion_stays_bounded_and_workspace_limit_is_independent ... ok
+test backend::development::workspace::copy_state::tests::copy_rejects_duplicate_attempts_invalid_states_and_unbounded_capacities ... ok
+test backend::development::workspace::copy_state::tests::copy_unknown_future_and_pre10_fields_preserve_original_storage ... ok
+test backend::development::workspace::copy_state::tests::global_copy_journal_survives_no_tabs_and_restores_applying_as_unknown_without_writing ... ok
+test backend::development::workspace::maintenance_tests::maintenance_receipts_require_exact_target_action_sql_and_deadlines ... ok
+test backend::development::workspace::maintenance_tests::maintenance_recovery_preserves_exact_identity_and_partial_outcomes_without_replay ... ok
+test backend::development::workspace::query_tests::invalid_versions_provenance_and_extra_intent_are_preserved_without_overwrite ... ok
+test backend::development::workspace::query_tests::multi_origin_unknown_outcome_journal_preserves_source_separate_from_editor ... ok
+test backend::development::workspace::query_tests::query_journal_excludes_table_tools_and_obeys_smaller_workspace_budget ... ok
+test backend::development::workspace::query_tests::query_nullable_virtual_identity_refused_without_changing_table_contract ... ok
+test backend::development::workspace::query_tests::query_operations_require_updates_with_original_identity_and_exact_guards ... ok
+test backend::development::workspace::query_tests::v2_load_does_not_write_and_explicit_save_upgrades_to_v12 ... ok
+test backend::development::workspace::query_tests::virtual_key_requires_full_original_row_and_limits_cover_escape_expansion ... ok
+test backend::development::workspace::seed_state::tests::exact_seed_recovery_preserves_storage_but_never_replays_applying ... ok
+test backend::development::workspace::seed_state::tests::journal_bounds_include_diagnostics_duplicates_and_truthful_committed_rows ... ok
+test backend::development::workspace::seed_state::tests::old_versions_and_unknown_fields_cannot_silently_discard_seed_intent ... ok
+test backend::development::workspace::tests::admin_receipt_matching_requires_every_observed_identity_component ... ok
+test backend::development::workspace::tests::admin_recovery_roundtrips_unknown_identity_and_preserves_invalid_records ... ok
+test backend::development::workspace::tests::aggregate_budget_refuses_oversized_staged_values_without_losing_saved_drafts ... ok
+test backend::development::workspace::tests::backup_restore_tab_persists_only_identity_and_refuses_old_or_extended_records ... ok
+test backend::development::workspace::tests::comparison_tabs_persist_only_identity_and_binding ... ok
+test backend::development::workspace::tests::concurrent_saves_commit_once_and_survive_disk_reopen ... ok
+test backend::development::workspace::tests::corrupt_and_future_records_are_preserved_until_explicit_reset ... ok
+test backend::development::workspace::tests::csv_transfer_tab_refuses_persisted_source_samples_or_execution ... ok
+test backend::development::workspace::tests::document_identity_and_admission_limits_reject_invalid_snapshots ... ok
+test backend::development::workspace::tests::encoded_budget_accepts_exact_limit_and_rejects_one_more_byte ... ok
+test backend::development::workspace::tests::exact_drafts_order_binding_and_geometry_round_trip_without_connections ... ok
+test backend::development::workspace::tests::malformed_or_future_table_intent_remains_exportable_without_automatic_overwrite ... ok
+test backend::development::workspace::tests::old_future_and_corrupt_schema_journals_preserve_their_original_bytes ... ok
+test backend::development::workspace::tests::older_writers_and_pre_reset_writers_cannot_overwrite_newer_commits ... ok
+test backend::development::workspace::tests::oversized_unicode_and_json_expansion_preserve_last_committed_draft ... ok
+test backend::development::workspace::tests::schema_journal_round_trips_exact_attempt_comment_and_unknown_state_without_replay_fields ... ok
+test backend::development::workspace::tests::schema_map_tab_round_trips_only_identity_and_old_workspaces_remain_read_only ... ok
+test backend::development::workspace::tests::schema_recovery_keeps_the_existing_aggregate_byte_and_document_budgets ... ok
+test backend::development::workspace::tests::schema_recovery_requires_an_objects_connection_and_rejects_mixed_document_intent ... ok
+test backend::development::workspace::tests::selection_and_geometry_are_clamped_without_changing_sql ... ok
+test backend::development::workspace::tests::sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v12 ... ok
+test backend::development::workspace::tests::sqlite_failure_does_not_advance_revision_and_retry_succeeds ... ok
+test backend::development::workspace::tests::stage03_facade_cannot_read_write_export_or_reset_native_workspace ... ok
+test backend::development::workspace::tests::tool_documents_round_trip_and_reject_mixed_document_intent ... ok
+test backend::development::workspace::tests::v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_cas ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 1117 filtered out; finished in 0.24s
+

@@ -1,0 +1,11 @@
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.17s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 1 test
+test controller::query_library_runtime::tests::exit_wake_observes_closed_replies_even_while_another_sender_survives ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 219 filtered out; finished in 0.00s
+

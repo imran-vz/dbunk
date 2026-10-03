@@ -1,0 +1,42 @@
+[
+  {
+    "check": "required-format",
+    "exit_code": 0
+  },
+  {
+    "check": "required-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "required-typecheck",
+    "exit_code": 0
+  },
+  {
+    "check": "required-rust-format",
+    "exit_code": 0
+  },
+  {
+    "check": "required-rust-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "required-rust-test",
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-test",
+    "exit_code": 0
+  },
+  {
+    "check": "facade-test",
+    "exit_code": 0
+  },
+  {
+    "check": "tauri-package",
+    "exit_code": 0
+  }
+]

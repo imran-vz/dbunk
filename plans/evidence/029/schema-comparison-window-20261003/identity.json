@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pid": 83616,
+  "executable": "/private/tmp/dbunk-native-package-20261003-comparison/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "executable_sha256": "45217e43a078bf877810f6e114b92e08a7db108069718cc9a1130b07168706ec",
+  "profile": "/private/tmp/dbunk-native-comparison-20261003-review",
+  "profile_mode": "create-general-profile",
+  "general_profile_owner": "/Users/imran/projects/Code/dbunk/plans/evidence/029/schema-comparison-window-20261003/general-profile-owner.json",
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-mibdqgwf",
+  "tls_fixture_instance": null,
+  "bundle": "/private/tmp/dbunk-native-package-20261003-comparison/dbunk Native Preflight.app"
+}

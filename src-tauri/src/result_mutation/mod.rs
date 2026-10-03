@@ -1,6 +1,10 @@
 pub(crate) mod builder;
+mod native;
 mod postgres;
+#[cfg(feature = "isolated-profile")]
+pub(crate) use postgres::require_qualified_query_targets;
 pub(crate) mod protocol;
+pub(crate) mod service;
 
 #[cfg(test)]
 mod live;
@@ -14,6 +18,7 @@ use futures_util::future::BoxFuture;
 use tokio::sync::{oneshot, Mutex, Notify};
 
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
+use crate::postgres::native_tasks::{ConnectionTasks, TabWork, TaskGroup};
 
 use builder::build_mutation_plan;
 use postgres::{DescriptorCache, MutationConnection};
@@ -53,6 +58,7 @@ fn apply_write_intent(plan: &MutationPlan) -> crate::safety::policy::WriteIntent
 struct ManagerState {
     executors: HashMap<String, Arc<Executor>>,
     closing: HashSet<String>,
+    native_idle_closing: HashSet<String>,
     lingering_closes: HashSet<String>,
     connection_end_requested: HashSet<String>,
     global_closing: bool,
@@ -62,6 +68,7 @@ struct ManagerState {
 
 #[derive(Clone)]
 pub(crate) struct ResultMutationManager {
+    native: Option<ConnectionTasks>,
     inner: Arc<Mutex<ManagerState>>,
     changed: Arc<Notify>,
 }
@@ -96,12 +103,20 @@ impl std::ops::Deref for ApplyOutcome {
 impl ResultMutationManager {
     pub(crate) fn new() -> Self {
         Self {
+            native: None,
             inner: Arc::new(Mutex::new(ManagerState::default())),
             changed: Arc::new(Notify::new()),
         }
     }
 
     pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
+        self.spawn_monitor(runtime);
+    }
+
+    pub(crate) fn spawn_monitor(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> tokio::task::JoinHandle<()> {
         let manager = self.clone();
         // Spawn on the host's runtime handle: hosts call this from their
         // main thread with no ambient Tokio context, where tokio::spawn
@@ -112,29 +127,42 @@ impl ResultMutationManager {
                 tick.tick().await;
                 manager.close_idle().await;
             }
-        });
+        })
     }
 
+    #[cfg(test)]
     pub(crate) async fn analyze(
         &self,
         spec: ResolvedPostgresConnectSpec,
         payload: AnalyzeResultSetPayload,
         virtual_keys: VirtualKeyLookup,
     ) -> Result<AnalyzeResultSetResult, ResultMutationError> {
+        self.start_analyze(spec, payload, virtual_keys).await?.await
+    }
+
+    pub(crate) async fn start_analyze(
+        &self,
+        spec: ResolvedPostgresConnectSpec,
+        payload: AnalyzeResultSetPayload,
+        virtual_keys: VirtualKeyLookup,
+    ) -> Result<
+        BoxFuture<'static, Result<AnalyzeResultSetResult, ResultMutationError>>,
+        ResultMutationError,
+    > {
         let executor = self.executor_for(spec, &payload.connection_id).await?;
         let tab_id = payload.tab_id.clone();
         let request_id = payload.request_id;
         let (reply, mut result) = oneshot::channel();
-        let cancel = {
+        let (cancel, completion) = {
             let mut state = executor.state.lock().await;
-            if state.closed {
+            if state.closed || state.closing_tabs.contains(&payload.tab_id) {
                 return Err(ResultMutationError::ConnectionClosing);
             }
             if payload.refresh_structure {
                 invalidate_structure_state(&mut state);
             }
             let generation = state.structure_generation;
-            enqueue_analysis(
+            let cancel = enqueue_analysis(
                 &mut state,
                 AnalysisJob {
                     tab_id: tab_id.clone(),
@@ -145,23 +173,40 @@ impl ResultMutationManager {
                     virtual_keys,
                     reply,
                 },
-            )
+            );
+            let completion = executor
+                .native
+                .as_ref()
+                .map(|group| group.begin_tab(&tab_id));
+            (cancel, completion)
         };
-        perform_cancel(&executor, cancel).await;
-        executor.notify.notify_one();
-        tokio::select! {
-            response = &mut result => response.unwrap_or(Err(ResultMutationError::ConnectionLost)),
-            _ = tokio::time::sleep(QUEUE_WAIT) => {
-                let timed_out = take_queued(&mut *executor.state.lock().await, &tab_id, request_id);
-                if let Some(job) = timed_out {
-                    let error = ResultMutationError::Timeout { operation: "queueWait".into() };
-                    let _ = job.reply.send(Err(error.clone()));
-                    Err(error)
-                } else {
-                    result.await.unwrap_or(Err(ResultMutationError::ConnectionLost))
+        if let Some(group) = &executor.native {
+            let executor = executor.clone();
+            group.cleanup(async move {
+                let _completion = completion;
+                perform_cancel(&executor, cancel).await;
+                executor.notify.notify_one();
+            });
+        } else {
+            perform_cancel(&executor, cancel).await;
+            executor.notify.notify_one();
+        }
+        let deadline = tokio::time::Instant::now() + QUEUE_WAIT;
+        Ok(Box::pin(async move {
+            tokio::select! {
+                response = &mut result => response.unwrap_or(Err(ResultMutationError::ConnectionLost)),
+                _ = tokio::time::sleep_until(deadline) => {
+                    let timed_out = take_queued(&mut *executor.state.lock().await, &tab_id, request_id);
+                    if let Some(job) = timed_out {
+                        let error = ResultMutationError::Timeout { operation: "queueWait".into() };
+                        let _ = job.reply.send(Err(error.clone()));
+                        Err(error)
+                    } else {
+                        result.await.unwrap_or(Err(ResultMutationError::ConnectionLost))
+                    }
                 }
             }
-        }
+        }))
     }
 
     pub(crate) async fn preview(
@@ -174,7 +219,7 @@ impl ResultMutationManager {
             .ok_or(ResultMutationError::AnalysisExpired)?;
         let descriptors = {
             let mut state = executor.state.lock().await;
-            if state.closed {
+            if state.closed || state.closing_tabs.contains(&payload.tab_id) {
                 return Err(ResultMutationError::ConnectionClosing);
             }
             state.last_used = Instant::now();
@@ -194,11 +239,21 @@ impl ResultMutationManager {
         })
     }
 
+    #[cfg(test)]
     pub(crate) async fn apply(
         &self,
         spec: ResolvedPostgresConnectSpec,
         payload: ApplyResultMutationsPayload,
     ) -> Result<ApplyOutcome, ResultMutationError> {
+        self.start_apply(spec, payload).await?.await
+    }
+
+    pub(crate) async fn start_apply(
+        &self,
+        spec: ResolvedPostgresConnectSpec,
+        payload: ApplyResultMutationsPayload,
+    ) -> Result<BoxFuture<'static, Result<ApplyOutcome, ResultMutationError>>, ResultMutationError>
+    {
         let intent = apply_write_intent(&payload.plan);
         let authorization = crate::safety::policy::assert_permitted(
             &spec.safety_policy,
@@ -220,26 +275,39 @@ impl ResultMutationManager {
             .existing_executor(&payload.connection_id)
             .await
             .ok_or(ResultMutationError::AnalysisExpired)?;
-        {
+        let completion = {
             let mut state = executor.state.lock().await;
+            if state.closing_tabs.contains(&payload.tab_id) {
+                return Err(ResultMutationError::ConnectionClosing);
+            }
             begin_apply(&mut state, &payload)?;
-        }
+            executor
+                .native
+                .as_ref()
+                .map(|group| group.begin_tab(&payload.tab_id))
+        };
         let (reply, result) = oneshot::channel();
         let (caller_dropped, dropped) = oneshot::channel();
         let task_executor = executor.clone();
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
+            let _completion = completion;
             run_owned_apply(task_executor, payload, dropped, reply).await;
         });
+        if let Some(group) = &executor.native {
+            group.track(task);
+        }
         let mut guard = ApplyCallerGuard::new(caller_dropped);
-        let result = result
-            .await
-            .unwrap_or(Err(ResultMutationError::ConnectionLost));
-        guard.complete();
-        result.map(|result| ApplyOutcome {
-            result,
-            intent,
-            authorization,
-        })
+        Ok(Box::pin(async move {
+            let result = result
+                .await
+                .unwrap_or(Err(ResultMutationError::ConnectionLost));
+            guard.complete();
+            result.map(|result| ApplyOutcome {
+                result,
+                intent,
+                authorization,
+            })
+        }))
     }
 
     pub(crate) async fn cancel_tab(
@@ -252,10 +320,34 @@ impl ResultMutationManager {
                 cancel_requested: false,
             };
         };
-        let (cancel_requested, cancel) =
-            cancel_tab_state(&mut *executor.state.lock().await, tab_id);
-        perform_cancel(&executor, cancel).await;
-        executor.notify.notify_waiters();
+        let (cancel_requested, cancel, completion) = {
+            let mut state = executor.state.lock().await;
+            if executor.native.is_some() && state.closed {
+                return CancelResultMutationResult {
+                    cancel_requested: false,
+                };
+            }
+            let (requested, cancel) = cancel_tab_state(&mut state, tab_id);
+            let completion = executor
+                .native
+                .as_ref()
+                .map(|group| group.begin_tab(tab_id));
+            (requested, cancel, completion)
+        };
+        if let Some(group) = &executor.native {
+            let task_executor = executor.clone();
+            let (done, finished) = oneshot::channel();
+            group.cleanup(async move {
+                let _completion = completion;
+                perform_cancel(&task_executor, cancel).await;
+                task_executor.notify.notify_one();
+                let _ = done.send(());
+            });
+            let _ = finished.await;
+        } else {
+            perform_cancel(&executor, cancel).await;
+            executor.notify.notify_waiters();
+        }
         CancelResultMutationResult { cancel_requested }
     }
 
@@ -278,6 +370,10 @@ impl ResultMutationManager {
     }
 
     pub(crate) async fn begin_connection_teardown(&self, connection_id: &str) {
+        if self.native.is_some() {
+            self.close_native_connection(connection_id).await;
+            return;
+        }
         self.begin_connection_teardown_with_timeout(connection_id, CLOSE_TIMEOUT)
             .await;
     }
@@ -338,6 +434,10 @@ impl ResultMutationManager {
     }
 
     pub(crate) async fn close_all(&self) {
+        if self.native.is_some() {
+            self.close_native_all().await;
+            return;
+        }
         let (executors, track_global) = {
             let mut state = self.inner.lock().await;
             let executors = state
@@ -424,7 +524,11 @@ impl ResultMutationManager {
             return Ok(executor);
         }
         check_admission(&state)?;
-        let executor = new_executor(spec);
+        let group = self
+            .native
+            .as_ref()
+            .and_then(|native| native.register(connection_id));
+        let executor = new_executor_tracked(spec, group);
         state
             .executors
             .insert(connection_id.into(), executor.clone());
@@ -438,6 +542,10 @@ impl ResultMutationManager {
     }
 
     async fn close_idle(&self) {
+        if self.native.is_some() {
+            self.close_native_idle().await;
+            return;
+        }
         let candidates = self
             .inner
             .lock()
@@ -473,6 +581,7 @@ impl ResultMutationManager {
 }
 
 struct Executor {
+    native: Option<TaskGroup>,
     spec: ResolvedPostgresConnectSpec,
     state: Mutex<ExecutorState>,
     notify: Notify,
@@ -481,6 +590,7 @@ struct Executor {
 }
 
 struct ExecutorState {
+    closing_tabs: HashSet<String>,
     connection: Option<Arc<MutationConnection>>,
     descriptors: DescriptorCache,
     snapshots: SnapshotCache,
@@ -595,10 +705,20 @@ impl SnapshotCache {
     }
 }
 
+#[cfg(test)]
 fn new_executor(spec: ResolvedPostgresConnectSpec) -> Arc<Executor> {
+    new_executor_tracked(spec, None)
+}
+
+fn new_executor_tracked(
+    spec: ResolvedPostgresConnectSpec,
+    native: Option<TaskGroup>,
+) -> Arc<Executor> {
     Arc::new(Executor {
+        native,
         spec,
         state: Mutex::new(ExecutorState {
+            closing_tabs: HashSet::new(),
             connection: None,
             descriptors: HashMap::new(),
             snapshots: SnapshotCache::new(ANALYSIS_CACHE_CAPACITY),
@@ -618,7 +738,10 @@ fn new_executor(spec: ResolvedPostgresConnectSpec) -> Arc<Executor> {
 fn start_executor_worker(executor: &Arc<Executor>) {
     executor.worker_running.store(true, Ordering::Release);
     let worker = executor.clone();
-    tokio::spawn(async move { run_analysis_worker(worker).await });
+    let task = tokio::spawn(async move { run_analysis_worker(worker).await });
+    if let Some(group) = &executor.native {
+        group.track(task);
+    }
 }
 
 #[cfg(test)]
@@ -719,8 +842,9 @@ async fn run_analysis_worker(executor: Arc<Executor>) {
     loop {
         let notified = executor.notify.notified();
         tokio::pin!(notified);
+        notified.as_mut().enable();
         match next_analysis(&executor).await {
-            Some(job) => execute_analysis(&executor, job).await,
+            Some((job, _completion)) => execute_analysis(&executor, job).await,
             None => {
                 if executor.state.lock().await.closed {
                     break;
@@ -733,7 +857,7 @@ async fn run_analysis_worker(executor: Arc<Executor>) {
     executor.notify.notify_waiters();
 }
 
-async fn next_analysis(executor: &Executor) -> Option<AnalysisJob> {
+async fn next_analysis(executor: &Executor) -> Option<(AnalysisJob, Option<TabWork>)> {
     let mut state = executor.state.lock().await;
     if state.closed || state.active.is_some() || state.cancel_pending.is_some() {
         return None;
@@ -766,6 +890,13 @@ async fn next_analysis(executor: &Executor) -> Option<AnalysisJob> {
         ));
         state.last_used = Instant::now();
     }
+    let job = job.map(|job| {
+        let completion = executor
+            .native
+            .as_ref()
+            .map(|group| group.begin_tab(&job.tab_id));
+        (job, completion)
+    });
     drop(state);
     for job in expired {
         let _ = job.reply.send(Err(ResultMutationError::Timeout {
@@ -991,7 +1122,13 @@ async fn ensure_connection(
             return Ok(connection);
         }
     }
-    let connection = Arc::new(postgres::connect(&executor.spec).await?);
+    let connection = Arc::new(
+        postgres::connect_tracked(
+            &executor.spec,
+            executor.native.as_ref().map(|group| group.drivers()),
+        )
+        .await?,
+    );
     let mut state = executor.state.lock().await;
     if state.closed {
         return Err(ResultMutationError::ConnectionClosing);
@@ -1102,6 +1239,7 @@ async fn finish_executor_close(executor: &Executor, preparation: ClosePreparatio
         loop {
             let notified = executor.notify.notified();
             tokio::pin!(notified);
+            notified.as_mut().enable();
             if executor.state.lock().await.active.is_none() {
                 break;
             }
@@ -1215,6 +1353,7 @@ mod tests {
 
     fn state() -> ExecutorState {
         ExecutorState {
+            closing_tabs: HashSet::new(),
             connection: None,
             descriptors: HashMap::new(),
             snapshots: SnapshotCache::new(ANALYSIS_CACHE_CAPACITY),
@@ -1492,6 +1631,7 @@ mod tests {
             notify: Notify::new(),
             worker_running: AtomicBool::new(false),
             teardown_requested: AtomicBool::new(true),
+            native: None,
         };
 
         assert_eq!(

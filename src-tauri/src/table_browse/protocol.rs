@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ComparisonOperator {
+pub enum ComparisonOperator {
     Eq,
     Neq,
     Lt,
@@ -13,7 +13,7 @@ pub(crate) enum ComparisonOperator {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum TextMatchOperator {
+pub enum TextMatchOperator {
     Contains,
     NotContains,
     StartsWith,
@@ -26,7 +26,7 @@ pub(crate) enum TextMatchOperator {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum BrowseFilter {
+pub enum BrowseFilter {
     Comparison {
         column: String,
         operator: ComparisonOperator,
@@ -54,14 +54,14 @@ pub(crate) enum BrowseFilter {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowseSortDirection {
+pub enum BrowseSortDirection {
     Asc,
     Desc,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowseNulls {
+pub enum BrowseNulls {
     Default,
     First,
     Last,
@@ -69,7 +69,7 @@ pub(crate) enum BrowseNulls {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseSortKey {
+pub struct BrowseSortKey {
     pub column: String,
     pub direction: BrowseSortDirection,
     pub nulls: BrowseNulls,
@@ -77,7 +77,7 @@ pub(crate) struct BrowseSortKey {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseCursor {
+pub struct BrowseCursor {
     pub values: Vec<String>,
 }
 
@@ -87,21 +87,21 @@ pub(crate) struct BrowseCursor {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum BrowsePageRequest {
+pub enum BrowsePageRequest {
     Offset { page: u32 },
     Keyset { cursor: Option<BrowseCursor> },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowseCountPolicy {
+pub enum BrowseCountPolicy {
     None,
     Estimated,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseTableDataPayload {
+pub struct BrowseTableDataPayload {
     pub connection_id: String,
     pub tab_id: String,
     pub request_id: u64,
@@ -120,7 +120,7 @@ pub(crate) struct BrowseTableDataPayload {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CountTableBrowseRowsPayload {
+pub struct CountTableBrowseRowsPayload {
     pub connection_id: String,
     pub tab_id: String,
     pub request_id: u64,
@@ -132,14 +132,14 @@ pub(crate) struct CountTableBrowseRowsPayload {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TableBrowseTabPayload {
+pub struct TableBrowseTabPayload {
     pub connection_id: String,
     pub tab_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LoadTableGridPrefsPayload {
+pub struct LoadTableGridPrefsPayload {
     pub connection_id: String,
     pub schema: String,
     pub table: String,
@@ -147,7 +147,7 @@ pub(crate) struct LoadTableGridPrefsPayload {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SaveTableGridPrefsPayload {
+pub struct SaveTableGridPrefsPayload {
     pub connection_id: String,
     pub schema: String,
     pub table: String,
@@ -156,7 +156,7 @@ pub(crate) struct SaveTableGridPrefsPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
-pub(crate) struct TableGridPrefs(pub serde_json::Value);
+pub struct TableGridPrefs(pub serde_json::Value);
 
 pub(crate) const TABLE_GRID_PREFS_HISTORY_CAP: usize = 20;
 
@@ -182,7 +182,7 @@ pub(crate) fn validate_table_grid_prefs(prefs: TableGridPrefs) -> Result<TableGr
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowseIdentityKind {
+pub enum BrowseIdentityKind {
     PrimaryKey,
     UniqueIndex,
     Virtual,
@@ -191,7 +191,7 @@ pub(crate) enum BrowseIdentityKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseIdentity {
+pub struct BrowseIdentity {
     pub kind: BrowseIdentityKind,
     pub columns: Vec<String>,
 }
@@ -204,7 +204,7 @@ impl BrowseIdentity {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseColumn {
+pub struct BrowseColumn {
     pub name: String,
     pub cast_type: String,
     pub nullable: bool,
@@ -212,14 +212,14 @@ pub(crate) struct BrowseColumn {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowsePageMode {
+pub enum BrowsePageMode {
     Offset,
     Keyset,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowsePageInfo {
+pub struct BrowsePageInfo {
     pub mode: BrowsePageMode,
     pub page: Option<u32>,
     pub has_more: bool,
@@ -228,7 +228,7 @@ pub(crate) struct BrowsePageInfo {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum BrowseCountKind {
+pub enum BrowseCountKind {
     Exact,
     Estimated,
     Unknown,
@@ -236,7 +236,7 @@ pub(crate) enum BrowseCountKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseCount {
+pub struct BrowseCount {
     pub kind: BrowseCountKind,
     pub value: Option<u64>,
 }
@@ -247,21 +247,21 @@ pub(crate) struct BrowseCount {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum InspectionParam {
+pub enum InspectionParam {
     Text { value: String },
     TextArray { values: Vec<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseInspection {
+pub struct BrowseInspection {
     pub sql: String,
     pub params: Vec<InspectionParam>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseTableResult {
+pub struct BrowseTableResult {
     pub request_id: u64,
     pub columns: Vec<BrowseColumn>,
     pub rows: Vec<Vec<Option<String>>>,
@@ -277,7 +277,7 @@ pub(crate) struct BrowseTableResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BrowseExactCountResult {
+pub struct BrowseExactCountResult {
     pub kind: BrowseCountKind,
     pub value: u64,
     pub request_id: u64,
@@ -285,7 +285,7 @@ pub(crate) struct BrowseExactCountResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CancelTableBrowseResult {
+pub struct CancelTableBrowseResult {
     pub cancel_requested: bool,
 }
 
@@ -295,7 +295,7 @@ pub(crate) struct CancelTableBrowseResult {
     rename_all_fields = "camelCase",
     tag = "kind"
 )]
-pub(crate) enum TableBrowseError {
+pub enum TableBrowseError {
     UnsupportedEngine,
     UnknownColumn {
         column: String,

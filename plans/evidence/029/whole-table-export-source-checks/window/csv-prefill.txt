@@ -1,0 +1,41 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 50-63
+~			41 tab (settable, boolean) CSV transfer · Whole-table CSV export configured; inspect and review before starting, Value: on
+~			46 tab (settable, boolean) native_export_window_20261003.quoted export · Capturing complete table; grid state is not used, Value: off
++		77 checkbox (settable, boolean) Import CSV, Value: off
++		78 checkbox (settable, boolean) Import XLSX, Value: off
++		79 checkbox (settable, boolean) Export CSV, Value: on
++		80 text Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
++		81 text field (settable) CSV schema, Value: native_export_window_20261003
++		82 text field (settable) CSV table, Value: quoted export
++		83 text field (settable) CSV delimiter (one byte), Value: ,
++		84 text field (settable) CSV quote (one byte), Value: "
++		85 text field (settable) CSV escape (one byte), Value: "
++		86 text field (settable) CSV NULL token (64 characters), Value: NULL雪
++		87 checkbox (settable, boolean) Header row, Value: on
++		88 checkbox (settable, boolean) Comma delimiter, Value: on
++		89 checkbox (settable, boolean) Semicolon delimiter, Value: off
++		90 checkbox (settable, boolean) Tab delimiter, Value: off
++		91 checkbox (settable, boolean) Pipe delimiter, Value: off
++		92 button Load choices
++		93 checkbox (disabled, settable, boolean) Schema choices, Value: on
++		94 checkbox (disabled, settable, boolean) Table choices, Value: off
++		95 button (disabled) Use selected choice
++		96 button (disabled) Cancel choice read
++		97 text Selected file: No file selected
++		98 button Choose CSV file
++		99 button Inspect target and source
++		100 button (disabled) Load prepared inspection
++		101 button (disabled) Release inspection
++		102 button Clear setup
++		103 button (disabled) Review exact transfer
++		104 button (disabled) Start reviewed transfer
++		105 button (disabled) Confirm exact import
++		106 text Whole-table CSV export configured; inspect and review before starting
++		107 button Refresh observations
++		108 button (disabled) Review awaiting confirmation
++		109 button (disabled) Cancel selected transfer
++		110 button (disabled) Dismiss finished transfer
++		111 list CSV transfers in this session
+~		64 container (settable) Draft persistence, Value: Saving drafts
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

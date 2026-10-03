@@ -1,0 +1,29 @@
+[
+  {
+    "check": "backend-fmt-corrected",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "fmt"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "map-live-corrected",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "backend::schema_map::live_tests",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0
+  }
+]

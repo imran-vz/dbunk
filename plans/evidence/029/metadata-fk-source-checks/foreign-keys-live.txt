@@ -1,0 +1,9 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.18s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 1 test
+test backend::objects::foreign_key_live_tests::native_foreign_keys_ordered_composite_navigation_and_cleanup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 862 filtered out; finished in 0.37s
+

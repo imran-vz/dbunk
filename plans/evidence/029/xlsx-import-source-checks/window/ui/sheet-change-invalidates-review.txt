@@ -1,0 +1,6 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 173-177
+~			180 text (selected) 1: Exact values · Visible, Secondary Actions: Pick
+~			181 text (selectable) 2: Other values · Hidden, Secondary Actions: Pick
+~		156 button (disabled) Start reviewed transfer
+The focused UI element is 92 standard window dbunk Native Workspace, Secondary Actions: Raise

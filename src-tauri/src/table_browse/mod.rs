@@ -4,7 +4,8 @@ pub(crate) mod interrupt;
 mod manager;
 pub(crate) mod postgres;
 pub(crate) mod protocol;
-mod service;
+mod runner;
+pub(crate) mod service;
 
 #[cfg(test)]
 mod live;

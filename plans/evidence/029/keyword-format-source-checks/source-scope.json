@@ -1,0 +1,15 @@
+{
+  "source_files": 439,
+  "added": [
+    "apps/native/THIRD-PARTY-NOTICES.txt",
+    "apps/native/src/sql_format/keyword_vocabulary.rs",
+    "apps/native/src/sql_format/keywords.rs",
+    "tools/native/package.py"
+  ],
+  "changed_from_comparison": [
+    "apps/native/src/sql_format.rs",
+    "apps/native/src/sql_format/scanner.rs",
+    "apps/native/src/sql_format/tests.rs",
+    "apps/native/src/workbench/formatting.rs"
+  ]
+}

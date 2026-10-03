@@ -1,0 +1,22 @@
+Working directory: /Users/imran/projects/Code/dbunk
+Toolchain: Rust 1.97.1, locked existing dependencies, isolated-profile
+
+cargo +1.97.1 test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::pg_tools -- --test-threads=1
+  tests-cleanup-final.txt: 19 passed, 1 ignored real-tool probe, 0 failed
+cargo +1.97.1 test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile failed_copy_unlink_keeps_exact_partial_owner -- --test-threads=1
+  failed-copy-owner.txt: 1 passed
+cargo +1.97.1 clippy --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+  clippy-after-cleanup.txt: passed
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check
+  fmt-final.txt: passed
+
+Earlier focused real-child-join model:
+  native-reap-test.txt: 1 passed, deterministic injected future only
+
+No live fixture, external PostgreSQL client, UI or OS Keychain execution by this agent.
+The ignored live test is compiled only:
+backend::pg_tools::live_tests::native_plain_custom_backup_restore_owned_table_and_joined_cleanup
+
+Failed compile attempts are preserved as check-initial.txt, tests-initial.txt,
+clippy-initial.txt, and tests-explicit-cleanup-compile-initial.txt.
+Broad required backend/frontend/native matrices are parent-owned after handoff.

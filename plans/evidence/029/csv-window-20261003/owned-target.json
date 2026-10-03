@@ -1,0 +1,8 @@
+{
+  "schema": "16873",
+  "table": "16874",
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "name": "native_csv_window_20261003",
+  "comment": "dbunk owned CSV window 20261003",
+  "output": "/private/tmp/dbunk-native-csv-window-20261003-files"
+}

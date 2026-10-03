@@ -1,0 +1,65 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 58 tests
+test postgres::schema_compare::budget::tests::allocation_and_serializer_admission_are_atomic_and_release_on_drop ... ok
+test postgres::schema_compare::budget::tests::nested_result_scope_preserves_the_combined_cap_and_rolls_back_global ... ok
+test postgres::schema_compare::budget::tests::one_result_shares_its_cap_across_components_and_failure_rolls_back ... ok
+test postgres::schema_compare::budget::tests::simultaneous_serializers_have_two_winners_without_a_queue ... ok
+test postgres::schema_compare::budget::tests::two_jobs_two_results_and_two_serializers_fit_the_global_ceiling_with_a_known_margin ... ok
+test postgres::schema_compare::capture::tests::cancellation_and_deadline_wrap_pending_work ... ok
+test postgres::schema_compare::capture::tests::endpoints_are_bounded_and_must_share_a_resolved_connection ... ok
+test postgres::schema_compare::capture::tests::native_capture ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::capture::tests::native_capture_normalizes_identifier_quoting ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::capture::tests::retained_capture_refuses_endpoint_and_child_limits_and_releases_budget ... ok
+test postgres::schema_compare::diff::tests::absence_rename_and_excluded_counterparts_are_directional ... ok
+test postgres::schema_compare::diff::tests::cancelled_expired_and_over_budget_builds_release_every_partial_allocation ... ok
+test postgres::schema_compare::diff::tests::changes_incomparability_and_ordered_facts_coexist_without_rewriting_literals ... ok
+test postgres::schema_compare::diff::tests::closed_field_checklist_compares_every_supported_path_in_both_directions ... ok
+test postgres::schema_compare::diff::tests::counterpart_exclusions_retain_the_reason_for_each_requested_side ... ok
+test postgres::schema_compare::diff::tests::different_minor_versions_and_unshared_transactions_cannot_claim_expression_equality ... ok
+test postgres::schema_compare::diff::tests::empty_supported_scope_and_excluded_only_schemas_have_distinct_outcomes ... ok
+test postgres::schema_compare::diff::tests::excluded_relation_eligibility_survives_capture_consumption_and_binds_side ... ok
+test postgres::schema_compare::diff::tests::field_merge_checks_cancellation_between_units ... ok
+test postgres::schema_compare::diff::tests::result_pages_and_chunks_bound_payloads_and_validate_identity_ttl_and_side ... ok
+test postgres::schema_compare::diff::tests::stable_names_paths_and_value_ids_ignore_catalog_order_and_local_oids ... ok
+test postgres::schema_compare::expression::tests::accepts_scalar_projection_without_rewriting_literals ... ok
+test postgres::schema_compare::expression::tests::bounds_work_and_rejects_non_scalar_types ... ok
+test postgres::schema_compare::expression::tests::excludes_hidden_dependencies_and_unproven_syntax ... ok
+test postgres::schema_compare::manager::tests::admission_reserves_both_endpoints_and_reconciles_without_running_twice ... ok
+test postgres::schema_compare::manager::tests::cancellation_wins_against_success_and_holds_capacity_until_real_join ... ok
+test postgres::schema_compare::manager::tests::deadline_includes_resolution_and_grace_expiry_does_not_release_a_running_worker ... ok
+test postgres::schema_compare::manager::tests::document_transport_registry_is_bounded_and_reclaims_destroyed_windows ... ok
+test postgres::schema_compare::manager::tests::either_endpoint_and_global_fences_wait_before_resource_invalidation ... ok
+test postgres::schema_compare::manager::tests::expired_start_ids_cannot_recreate_evicted_jobs_and_request_history_is_bounded ... ok
+test postgres::schema_compare::manager::tests::fence_ledger_is_bounded_and_overflow_fails_closed_globally ... ok
+test postgres::schema_compare::manager::tests::maximum_control_ledger_fits_reserved_headroom ... ok
+test postgres::schema_compare::manager::tests::native_manager_capture_pages_and_connection_edit_invalidation ... ignored, run infrastructure/test-db/schema-compare/native.py; owned disposable fixture only
+test postgres::schema_compare::manager::tests::pages_bind_endpoints_and_keep_two_leases_until_the_receiving_transport_acknowledges ... ok
+test postgres::schema_compare::manager::tests::reconnect_through_the_disconnect_command_cancels_a_late_worker_and_admits_a_fresh_job ... ok
+test postgres::schema_compare::manager::tests::reload_reclaims_abandoned_replies_and_rejects_late_document_work ... ok
+test postgres::schema_compare::manager::tests::start_monitor_is_callable_outside_a_tokio_runtime ... ok
+test postgres::schema_compare::manager::tests::terminal_retention_release_and_ttl_never_turn_missing_results_into_empty ... ok
+test postgres::schema_compare::manager::tests::worker_panic_is_failed_and_releases_only_after_join ... ok
+test postgres::schema_compare::normalize::tests::excluded_counterparts_never_become_directional_absence ... ok
+test postgres::schema_compare::normalize::tests::field_order_is_deterministic_and_changed_does_not_hide_incomparability ... ok
+test postgres::schema_compare::normalize::tests::fk_delete_subsets_and_constraint_owned_index_state_survive_matching ... ok
+test postgres::schema_compare::normalize::tests::inventory_and_table_caps_are_distinct ... ok
+test postgres::schema_compare::normalize::tests::maps_only_structured_selected_schema_references ... ok
+test postgres::schema_compare::normalize::tests::mixed_index_keys_compare_by_ordinal_with_explicit_optional_facts ... ok
+test postgres::schema_compare::pages::tests::field_pages_accept_value_references_bound_to_their_named_sides ... ok
+test postgres::schema_compare::pages::tests::field_pages_reject_value_references_bound_to_the_wrong_side ... ok
+test postgres::schema_compare::pages::tests::incomparable_summary_flattens_its_required_observed_sides ... ok
+test postgres::schema_compare::pages::tests::pages_at_most_one_hundred_summaries_and_rejects_invalid_offsets ... ok
+test postgres::schema_compare::protocol::tests::status_serialization_binds_terminal_payloads_to_their_phase ... ok
+test postgres::schema_compare::values::tests::child_fact_slots_are_bounded_independently_for_each_endpoint ... ok
+test postgres::schema_compare::values::tests::encoded_pages_require_valid_response_ids_and_handoff_uses_the_bound_id ... ok
+test postgres::schema_compare::values::tests::endpoint_and_combined_result_bytes_reject_before_retention ... ok
+test postgres::schema_compare::values::tests::handoff_retains_both_serializer_reservations_until_matching_ack ... ok
+test postgres::schema_compare::values::tests::maximum_control_text_uses_four_independent_bounded_chunks ... ok
+test postgres::schema_compare::values::tests::serialized_json_limit_is_checked_before_buffer_growth ... ok
+test postgres::schema_compare::values::tests::tauri_json_callback_duplication_fits_the_reserved_scratch ... ok
+test postgres::schema_compare::values::tests::utf8_offsets_result_identity_and_expiry_are_checked ... ok
+
+test result: ok. 55 passed; 0 failed; 3 ignored; 0 measured; 945 filtered out; finished in 0.65s
+

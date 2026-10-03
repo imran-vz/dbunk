@@ -1,0 +1,23 @@
+{
+  "files": 435,
+  "new_paths": [
+    "apps/native/src/schema_compare_model.rs",
+    "apps/native/src/schema_compare_model/presentation.rs",
+    "apps/native/src/schema_compare_model/reader.rs",
+    "apps/native/src/schema_compare_model/tests.rs",
+    "apps/native/src/schema_compare_reader.rs",
+    "apps/native/src/schema_compare_runtime.rs",
+    "apps/native/src/schema_compare_runtime/tests.rs",
+    "apps/native/src/schema_compare_store.rs",
+    "apps/native/src/schema_compare_view.rs",
+    "apps/native/src/schema_compare_view/render.rs",
+    "src-tauri/src/backend/schema_comparisons.rs",
+    "src-tauri/src/backend/schema_comparisons/bounds.rs",
+    "src-tauri/src/backend/schema_comparisons/live_tests.rs",
+    "src-tauri/src/backend/schema_comparisons/readers.rs",
+    "src-tauri/src/backend/schema_comparisons/tests.rs",
+    "src-tauri/src/backend/schema_comparisons/types.rs"
+  ],
+  "removed_paths": [],
+  "scope": "Previous CSV scope plus current native/backend/PostgreSQL Rust graph"
+}

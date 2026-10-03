@@ -1,0 +1,45 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: this looks like an `else if` but the `else` is missing
+   --> src/csv_transfer_view/render.rs:484:119
+    |
+484 | ...   .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if this.scroll_key(event,window,cx){return;}if !this.list.is_fo...
+    |                                                                                                                 ^
+    |
+    = note: to remove this lint, add the missing `else` or add a new line before the second `if`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#possible_missing_else
+    = note: `-D clippy::possible-missing-else` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::possible_missing_else)]`
+
+error: field `0` is never read
+  --> src/csv_transfer_runtime.rs:88:27
+   |
+88 |     InspectionObservation(CsvInspectionObservation),
+   |     --------------------- ^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `-D dead-code` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+88 -     InspectionObservation(CsvInspectionObservation),
+88 +     InspectionObservation(()),
+   |
+
+error: field `0` is never read
+  --> src/csv_transfer_runtime.rs:94:17
+   |
+94 |     Observation(CsvTransferObservation),
+   |     ----------- ^^^^^^^^^^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+94 -     Observation(CsvTransferObservation),
+94 +     Observation(()),
+   |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 3 previous errors

@@ -1,0 +1,41 @@
+[
+  {
+    "name": "rust-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.63,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "rust-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 1.02,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "rust-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 81.06,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  }
+]

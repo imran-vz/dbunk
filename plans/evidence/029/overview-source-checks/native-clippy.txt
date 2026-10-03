@@ -1,0 +1,58 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0308]: mismatched types
+   --> src/admin_view.rs:651:9
+    |
+637 |       fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    |                                                                            ---------------- expected a single type implementing `IntoElement` because of return type
+...
+642 |               return div().size_full().child(view.clone());
+    |                      ------------------------------------- return type resolved to be `gpui::Div`
+...
+651 | /         div()
+652 | |             .id("administration-tool")
+653 | |             .role(Role::Group)
+654 | |             .aria_label(format!("PostgreSQL administration for {connection}"))
+...   |
+915 | |                     .child(self.status.clone()),
+916 | |             )
+    | |_____________^ expected `Div`, found `Stateful<Div>`
+    |
+    = note: expected struct `gpui::Div`
+               found struct `gpui::Stateful<gpui::Div>`
+
+error: unused variable: `cx`
+  --> src/admin_view/overview.rs:78:64
+   |
+78 |     fn load_overview(&mut self, request: RelationStatsRequest, cx: &mut Context<Self>) {
+   |                                                                ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+   |
+   = note: `-D unused-variables` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_variables)]`
+
+error[E0004]: non-exhaustive patterns: `controller::table_runtime::TableMessage::Overview(_, _)` not covered
+    --> src/table_view.rs:878:15
+     |
+ 878 |         match message.into_message() {
+     |               ^^^^^^^^^^^^^^^^^^^^^^ pattern `controller::table_runtime::TableMessage::Overview(_, _)` not covered
+     |
+note: `controller::table_runtime::TableMessage` defined here
+    --> src/table_runtime.rs:105:10
+     |
+ 105 | pub enum TableMessage {
+     |          ^^^^^^^^^^^^
+...
+ 120 |     Overview(
+     |     -------- not covered
+     = note: the matched value is of type `controller::table_runtime::TableMessage`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+     |
+1105 ~             },
+1106 +             controller::table_runtime::TableMessage::Overview(_, _) => todo!()
+     |
+
+Some errors have detailed explanations: E0004, E0308.
+For more information about an error, try `rustc --explain E0004`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 3 previous errors

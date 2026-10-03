@@ -1,0 +1,19 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.21s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-c27680dced51cdee)
+
+running 8 tests
+test table_structure_model::tests::acl_scope_rules_constraints_and_partition_context_remain_explicit ... ok
+test table_structure_model::tests::actual_capacity_detail_overlap_and_atomic_refusal_are_charged_and_released ... ok
+test table_structure_model::tests::index_expression_include_trigger_inheritance_and_rls_have_separate_fields ... ok
+test table_structure_model::tests::malformed_or_oversized_capacity_never_changes_admission ... ok
+test table_structure_model::tests::primary_and_foreign_key_order_and_navigation_are_not_name_sorted ... ok
+test table_structure_model::tests::section_order_exact_unicode_numeric_text_and_null_empty_are_distinct ... ok
+test table_structure_view::tests::list_navigation_is_bounded_and_never_creates_an_empty_selection ... ok
+test table_structure_view::tests::long_runtime_status_is_bounded_without_splitting_utf8 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 313 filtered out; finished in 0.00s
+

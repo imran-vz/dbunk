@@ -1,0 +1,26 @@
+[
+  {
+    "depth": 16,
+    "inputBytes": 104,
+    "outputBytes": 714,
+    "elapsedSeconds": 0.002468709019012749
+  },
+  {
+    "depth": 64,
+    "inputBytes": 200,
+    "outputBytes": 8778,
+    "elapsedSeconds": 0.002668084023753181
+  },
+  {
+    "depth": 128,
+    "inputBytes": 328,
+    "outputBytes": 33866,
+    "elapsedSeconds": 0.0035639579873532057
+  },
+  {
+    "depth": 256,
+    "inputBytes": 584,
+    "outputBytes": 133194,
+    "elapsedSeconds": 0.0060935840010643005
+  }
+]

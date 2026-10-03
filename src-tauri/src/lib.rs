@@ -26,11 +26,13 @@ mod host;
 mod keychain;
 mod managed;
 mod postgres;
+mod query_library;
 mod query_session;
 mod redis;
 mod result_mutation;
 mod safety;
 mod seed;
+mod settings;
 mod socket_lifecycle;
 mod storage;
 mod table_browse;
@@ -39,6 +41,8 @@ mod tauri_host;
 mod tunnel;
 mod types;
 mod xlsx;
+#[cfg(feature = "isolated-profile")]
+mod xlsx_native;
 
 #[cfg(all(test, feature = "tauri-host"))]
 #[path = "commands/pg_backup/lifecycle_tests.rs"]

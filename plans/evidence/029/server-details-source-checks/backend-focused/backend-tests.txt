@@ -1,0 +1,15 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.36s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 7 tests
+test postgres::native_catalog::server_details::reader::tests::permission_is_the_only_sql_error_recovered_as_a_section_state ... ok
+test postgres::native_catalog::server_details::tests::borrowed_admission_accounts_escaping_and_full_backing_before_copy ... ok
+test postgres::native_catalog::server_details::tests::debug_redacts_every_nested_setting_and_connection_value ... ok
+test postgres::native_catalog::server_details::tests::loaded_empty_restricted_unavailable_and_partial_are_not_interchangeable ... ok
+test postgres::native_catalog::server_details::tests::null_empty_omitted_and_malformed_wire_cells_remain_distinct ... ok
+test postgres::native_catalog::server_details::tests::reader_limits_and_override_flags_do_not_masquerade_as_operator_changes ... ok
+test postgres::native_catalog::server_details::tests::validator_checks_retained_capacity_identities_duplicate_keys_and_cell_states ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 923 filtered out; finished in 0.04s
+

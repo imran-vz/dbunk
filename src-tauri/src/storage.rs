@@ -483,12 +483,24 @@ fn isolated_config_dir(requested: Option<std::ffi::OsString>) -> Result<Option<P
 }
 
 pub async fn open_pool(paths: &Paths) -> Result<SqlitePool, String> {
+    open_pool_with_sync(paths, SqliteSynchronous::Normal).await
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) async fn open_native_profile_pool(paths: &Paths) -> Result<SqlitePool, String> {
+    open_pool_with_sync(paths, SqliteSynchronous::Full).await
+}
+
+async fn open_pool_with_sync(
+    paths: &Paths,
+    synchronous: SqliteSynchronous,
+) -> Result<SqlitePool, String> {
     paths.ensure_dir()?;
     let options = SqliteConnectOptions::new()
         .filename(paths.db_file())
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)
+        .synchronous(synchronous)
         .foreign_keys(true);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -799,6 +811,13 @@ fn row_to_ssh_tunnel(
 /// unread per variant); we match on the `engine` column to
 /// pick which variant to build. ADR-0010 covers the design.
 fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, String> {
+    row_to_connection_with_logging(row, true)
+}
+
+fn row_to_connection_with_logging(
+    row: sqlx::sqlite::SqliteRow,
+    log_malformed: bool,
+) -> Result<StoredConnection, String> {
     let engine = DatabaseEngine::from_str(row.get::<String, _>("engine").as_str())?;
     let id: String = row.get("id");
     let name: String = row.get("name");
@@ -826,7 +845,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
         match serde_json::from_str::<crate::types::PgDriverOptions>(&raw) {
             Ok(value) => Some(value),
             Err(error) => {
-                log::warn!("ignoring malformed driver_options for connection {id}: {error}");
+                if log_malformed {
+                    log::warn!("ignoring malformed driver_options for connection {id}: {error}");
+                }
                 None
             }
         }
@@ -839,7 +860,9 @@ fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, S
         match serde_json::from_str::<crate::types::PgTlsOptions>(&raw) {
             Ok(value) => Some(value),
             Err(error) => {
-                log::warn!("ignoring malformed tls_options for connection {id}: {error}");
+                if log_malformed {
+                    log::warn!("ignoring malformed tls_options for connection {id}: {error}");
+                }
                 None
             }
         }
@@ -948,6 +971,84 @@ pub async fn read_connections(pool: &SqlitePool) -> Result<Vec<StoredConnection>
     rows.into_iter().map(row_to_connection).collect()
 }
 
+/// Native metadata marks unknown or malformed option blobs unsupported instead
+/// of allowing the legacy decoder's fallback defaults to authorize a rewrite.
+#[cfg(feature = "isolated-profile")]
+pub(crate) async fn read_native_connections(
+    pool: &SqlitePool,
+) -> Result<Vec<(StoredConnection, bool)>, String> {
+    let query =
+        format!("SELECT {CONNECTION_COLUMNS} FROM connections ORDER BY name COLLATE NOCASE ASC");
+    let rows = sqlx::query(&query)
+        .fetch_all(pool)
+        .await
+        .map_err(|_| "Connection metadata could not be loaded".to_string())?;
+    rows.into_iter()
+        .map(|row| {
+            let valid = native_options_supported(&row);
+            row_to_connection_with_logging(row, false)
+                .map(|connection| (connection, valid))
+                .map_err(|_| "Connection metadata is unreadable; profile preserved".to_string())
+        })
+        .collect()
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) async fn read_native_connection_by_id(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<Option<(StoredConnection, bool)>, String> {
+    let query = format!("SELECT {CONNECTION_COLUMNS} FROM connections WHERE id = ?");
+    let row = sqlx::query(&query)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| "Connection metadata could not be loaded".to_string())?;
+    row.map(|row| {
+        let valid = native_options_supported(&row);
+        row_to_connection_with_logging(row, false)
+            .map(|connection| (connection, valid))
+            .map_err(|_| "Connection metadata is unreadable; profile preserved".to_string())
+    })
+    .transpose()
+}
+
+#[cfg(feature = "isolated-profile")]
+fn native_options_supported(row: &sqlx::sqlite::SqliteRow) -> bool {
+    fn valid<T: serde::de::DeserializeOwned>(raw: Option<String>, keys: &[&str]) -> bool {
+        let Some(raw) = raw else {
+            return true;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            return false;
+        };
+        value
+            .as_object()
+            .is_some_and(|object| object.keys().all(|key| keys.contains(&key.as_str())))
+            && serde_json::from_value::<T>(value).is_ok()
+    }
+    valid::<crate::PgTlsOptions>(
+        row.get("tls_options"),
+        &[
+            "mode",
+            "rootCertPath",
+            "clientCertPath",
+            "clientKeyPath",
+            "serverName",
+        ],
+    ) && valid::<crate::PgDriverOptions>(
+        row.get("driver_options"),
+        &[
+            "statementTimeoutMs",
+            "idleInTransactionTimeoutMs",
+            "connectTimeoutMs",
+            "keepaliveSeconds",
+            "defaultSearchPath",
+            "defaultRole",
+        ],
+    )
+}
+
 /// Fetch a single connection by ID. Returns `None` when the ID doesn't
 /// exist — callers map that to a user-facing "Connection not found" error.
 /// This avoids reading and deserialising every stored connection when
@@ -968,6 +1069,14 @@ pub async fn read_connection_by_id(
 
 pub async fn upsert_connection(
     pool: &SqlitePool,
+    connection: &StoredConnection,
+) -> Result<(), String> {
+    upsert_connection_with(pool, connection).await
+}
+
+/// Share the exact legacy row encoding with native atomic credential writes.
+pub(crate) async fn upsert_connection_with<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Sqlite>,
     connection: &StoredConnection,
 ) -> Result<(), String> {
     // Per-variant binding: each variant supplies values for the columns
@@ -1129,7 +1238,7 @@ pub async fn upsert_connection(
     .bind(ssh_tunnel_keepalive_want_reply)
     .bind(ssh_tunnel_jump_chain)
     .bind(ssh_tunnel_proxy_command)
-    .execute(pool)
+    .execute(executor)
     .await
     .map_err(|error| error.to_string())?;
     Ok(())
@@ -1580,6 +1689,7 @@ pub async fn read_sqlite_credentials(
         .collect())
 }
 
+#[cfg(feature = "isolated-profile")]
 pub async fn upsert_sqlite_credential(
     pool: &SqlitePool,
     credential_id: &str,

@@ -1,212 +1,119 @@
-use std::sync::Arc;
-use std::time::Instant;
+//! Host-neutral Table Browse operations. Connection resolution, engine checks
+//! and activity updates stay here; hosts do not call the manager directly.
 
-use super::builder::{build_browse_query, BuiltBrowseQuery, RelationDescriptor};
-use super::protocol::*;
-use super::{builder, postgres};
+use crate::app::{find_connection, touch_connection_activity};
+use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
+use crate::table_browse::protocol::*;
+use crate::{AppState, DatabaseEngine};
+use futures_util::future::BoxFuture;
 
-pub(crate) async fn run_kind(
-    executor: &super::executor::Executor,
-    job: &super::executor::Job,
-) -> Result<super::executor::JobResult, TableBrowseError> {
-    match &job.kind {
-        super::executor::JobKind::Browse(payload) => run_browse(executor, payload)
-            .await
-            .map(|result| super::executor::JobResult::Browse(Box::new(result))),
-        super::executor::JobKind::Count(payload) => run_count(executor, payload)
-            .await
-            .map(super::executor::JobResult::Count),
-    }
+pub(crate) async fn browse(
+    state: &AppState,
+    payload: BrowseTableDataPayload,
+) -> Result<BrowseTableResult, TableBrowseError> {
+    start_browse(state, payload).await?.await
 }
 
-async fn ensure_connection(executor: &super::executor::Executor) -> Result<(), TableBrowseError> {
-    {
-        let mut inner = executor.inner.lock().await;
-        if let Some(connection) = inner.connection.as_ref() {
-            if !connection.inner.is_closed() {
-                return Ok(());
-            }
-        }
-        inner.connection = None;
-    }
-    let connection = postgres::connect(&executor.spec).await?;
-    let mut inner = executor.inner.lock().await;
-    if inner.closed {
-        return Err(TableBrowseError::ConnectionClosing);
-    }
-    inner.connection = Some(connection);
+/// Admit before returning the result wait, allowing native startup admission to
+/// be released while database work remains independently cancelable.
+pub(crate) async fn start_browse(
+    state: &AppState,
+    payload: BrowseTableDataPayload,
+) -> Result<BoxFuture<'_, Result<BrowseTableResult, TableBrowseError>>, TableBrowseError> {
+    let spec = postgres_spec(state, &payload.connection_id).await?;
+    let connection_id = payload.connection_id.clone();
+    let pending = state.table_browse.start_browse(spec, payload).await?;
+    Ok(Box::pin(async move {
+        let result = pending.await?;
+        touch_connection_activity(state, &connection_id).await;
+        Ok(result)
+    }))
+}
+
+pub(crate) async fn cancel(
+    state: &AppState,
+    payload: TableBrowseTabPayload,
+) -> Result<CancelTableBrowseResult, TableBrowseError> {
+    Ok(state
+        .table_browse
+        .cancel_tab(&payload.connection_id, &payload.tab_id)
+        .await)
+}
+
+pub(crate) async fn count(
+    state: &AppState,
+    payload: CountTableBrowseRowsPayload,
+) -> Result<BrowseExactCountResult, TableBrowseError> {
+    start_count(state, payload).await?.await
+}
+
+pub(crate) async fn start_count(
+    state: &AppState,
+    payload: CountTableBrowseRowsPayload,
+) -> Result<BoxFuture<'_, Result<BrowseExactCountResult, TableBrowseError>>, TableBrowseError> {
+    let spec = postgres_spec(state, &payload.connection_id).await?;
+    let connection_id = payload.connection_id.clone();
+    let pending = state.table_browse.start_count(spec, payload).await?;
+    Ok(Box::pin(async move {
+        let result = pending.await?;
+        touch_connection_activity(state, &connection_id).await;
+        Ok(result)
+    }))
+}
+
+pub(crate) async fn close_tab(
+    state: &AppState,
+    payload: TableBrowseTabPayload,
+) -> Result<(), TableBrowseError> {
+    state
+        .table_browse
+        .close_tab(&payload.connection_id, &payload.tab_id)
+        .await;
     Ok(())
 }
 
-async fn browse_client(
-    executor: &super::executor::Executor,
-) -> Result<Arc<tokio_postgres::Client>, TableBrowseError> {
-    executor
-        .inner
-        .lock()
+pub(crate) async fn load_grid_prefs(
+    state: &AppState,
+    payload: LoadTableGridPrefsPayload,
+) -> Result<Option<TableGridPrefs>, String> {
+    crate::storage::read_table_grid_prefs(
+        &state.pool,
+        &payload.connection_id,
+        &payload.schema,
+        &payload.table,
+    )
+    .await
+}
+
+pub(crate) async fn save_grid_prefs(
+    state: &AppState,
+    payload: SaveTableGridPrefsPayload,
+) -> Result<(), String> {
+    let prefs = validate_table_grid_prefs(payload.prefs)?;
+    crate::storage::upsert_table_grid_prefs(
+        &state.pool,
+        &payload.connection_id,
+        &payload.schema,
+        &payload.table,
+        &prefs,
+    )
+    .await
+}
+
+async fn postgres_spec(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<ResolvedPostgresConnectSpec, TableBrowseError> {
+    let connection = find_connection(state, connection_id)
         .await
-        .connection
-        .as_ref()
-        .map(|connection| connection.inner.client.clone())
-        .ok_or(TableBrowseError::ConnectionLost)
-}
-
-async fn descriptor(
-    executor: &super::executor::Executor,
-    schema: &str,
-    table: &str,
-    refresh: bool,
-) -> Result<RelationDescriptor, TableBrowseError> {
-    ensure_connection(executor).await?;
-    if !refresh {
-        if let Some(cached) = executor
-            .inner
-            .lock()
-            .await
-            .cache
-            .get(&(schema.to_string(), table.to_string()))
-            .cloned()
-        {
-            return Ok(cached);
-        }
+        .map_err(|_| TableBrowseError::ConnectionLost)?;
+    if connection.engine() != DatabaseEngine::PostgreSQL {
+        return Err(TableBrowseError::UnsupportedEngine);
     }
-    let client = browse_client(executor).await?;
-    let descriptor = postgres::load_descriptor(client.as_ref(), schema, table).await?;
-    executor
-        .inner
-        .lock()
-        .await
-        .cache
-        .insert((schema.into(), table.into()), descriptor.clone());
-    Ok(descriptor)
+    ResolvedPostgresConnectSpec::from_connection(&connection)
+        .map_err(|_| TableBrowseError::UnsupportedEngine)
 }
 
-async fn invalidate_descriptor(executor: &super::executor::Executor, schema: &str, table: &str) {
-    executor
-        .inner
-        .lock()
-        .await
-        .cache
-        .remove(&(schema.to_string(), table.to_string()));
-}
-
-async fn run_browse(
-    executor: &super::executor::Executor,
-    payload: &BrowseTableDataPayload,
-) -> Result<BrowseTableResult, TableBrowseError> {
-    let started = Instant::now();
-    let mut retried = false;
-    loop {
-        let descriptor = descriptor(
-            executor,
-            &payload.schema,
-            &payload.table,
-            payload.refresh_structure || retried,
-        )
-        .await?;
-        let built = build_browse_query(&descriptor, payload)?;
-        let client = browse_client(executor).await?;
-        let executed = match postgres::execute_browse(client.as_ref(), &built).await {
-            Ok(executed) => Ok(executed),
-            Err(error) if postgres::is_undefined_object(&error) && !retried => Err(error),
-            Err(error) => return Err(error),
-        };
-        match executed {
-            Ok(executed) => {
-                let count = browse_count(executor, payload, &built).await?;
-                let next_cursor = next_cursor(&built, &executed.row_identity, executed.has_more);
-                let inspection = built.inspection();
-                return Ok(BrowseTableResult {
-                    request_id: payload.request_id,
-                    columns: built.visible_columns,
-                    rows: executed.rows,
-                    identity: built.identity,
-                    row_identity: executed.row_identity,
-                    page_info: BrowsePageInfo {
-                        mode: built.page_mode,
-                        page: built.page,
-                        has_more: executed.has_more,
-                        next_cursor,
-                    },
-                    count,
-                    inspection,
-                    omitted_rows: executed.omitted_rows,
-                    truncated_cells: executed.truncated_cells,
-                    runtime_ms: started.elapsed().as_millis() as u64,
-                });
-            }
-            Err(_) => {
-                invalidate_descriptor(executor, &payload.schema, &payload.table).await;
-                retried = true;
-            }
-        }
-    }
-}
-
-async fn browse_count(
-    executor: &super::executor::Executor,
-    payload: &BrowseTableDataPayload,
-    built: &BuiltBrowseQuery,
-) -> Result<BrowseCount, TableBrowseError> {
-    match payload.count_policy {
-        BrowseCountPolicy::None => Ok(BrowseCount {
-            kind: BrowseCountKind::Unknown,
-            value: None,
-        }),
-        BrowseCountPolicy::Estimated if built.where_sql.is_empty() => {
-            let client = browse_client(executor).await?;
-            postgres::estimated_unfiltered_count(client.as_ref(), &payload.schema, &payload.table)
-                .await
-        }
-        BrowseCountPolicy::Estimated => {
-            let client = browse_client(executor).await?;
-            postgres::estimated_filtered_count(
-                client.as_ref(),
-                &built.explain_sql(),
-                &built.where_params,
-            )
-            .await
-        }
-    }
-}
-
-async fn run_count(
-    executor: &super::executor::Executor,
-    payload: &CountTableBrowseRowsPayload,
-) -> Result<BrowseExactCountResult, TableBrowseError> {
-    let mut retried = false;
-    loop {
-        let descriptor = descriptor(executor, &payload.schema, &payload.table, retried).await?;
-        let (sql, params) = builder::build_count_query(&descriptor, &payload.filters)?;
-        let client = browse_client(executor).await?;
-        match postgres::execute_count(client.as_ref(), &sql, &params).await {
-            Ok(value) => {
-                return Ok(BrowseExactCountResult {
-                    kind: BrowseCountKind::Exact,
-                    value,
-                    request_id: payload.request_id,
-                });
-            }
-            Err(error) if postgres::is_undefined_object(&error) && !retried => {
-                invalidate_descriptor(executor, &payload.schema, &payload.table).await;
-                retried = true;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-}
-
-fn next_cursor(
-    built: &BuiltBrowseQuery,
-    row_identity: &Option<Vec<Vec<String>>>,
-    has_more: bool,
-) -> Option<BrowseCursor> {
-    if built.page_mode != BrowsePageMode::Keyset || !has_more {
-        return None;
-    }
-    row_identity
-        .as_ref()
-        .and_then(|rows| rows.last())
-        .cloned()
-        .map(|values| BrowseCursor { values })
-}
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;

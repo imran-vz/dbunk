@@ -1,0 +1,6 @@
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+TLS target: dbunk-native-stage04-tls 127.0.0.1:15433/dbunk_tls_demo instance=15151cfc-5885-4066-831f-2717ed9b4587
+Persistent isolated stage04 profile: /private/tmp/dbunk-native-auto-fit-20261003-review
+Executable: /private/tmp/dbunk-native-package-20261003-metadata-artifacts/dbunk Native Preflight.app/Contents/MacOS/dbunk-native; evidence: /Users/imran/projects/Code/dbunk/plans/evidence/029/metadata-artifacts-source-checks/window/launch
+Native workspace PID: 83856
+Workspace quit; drafts and profile retained at /private/tmp/dbunk-native-auto-fit-20261003-review

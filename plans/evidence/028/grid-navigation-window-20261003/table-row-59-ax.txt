@@ -1,0 +1,49 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~		188 table (settable) Table rows, Value: 5.9000000000000000
+~			189 text 60 rows · 2 columns · Copied 1 selected rows
+~			190 button Export selected cells, or all retained rows when no selection
+~			191 cell value
++			192 cell amount
++			193 row
++				194 cell (settable) row 46
++				195 cell (settable) 4.6000000000000000
++			196 row
++				197 cell (settable) row 47
++				198 cell (settable) 4.7000000000000000
++			199 row
++				200 cell (settable) row 48
++				201 cell (settable) 4.8000000000000000
++			202 row
++				203 cell (settable) row 49
++				204 cell (settable) 4.9000000000000000
++			205 row
++				206 cell (settable) row 50
++				207 cell (settable) 5.0000000000000000
++			208 row
++				209 cell (settable) row 51
++				210 cell (settable) 5.1000000000000000
++			211 row
++				212 cell (settable) row 52
++				213 cell (settable) 5.2000000000000000
++			214 row
++				215 cell (settable) row 53
++				216 cell (settable) 5.3000000000000000
++			217 row
++				218 cell (settable) row 54
++				219 cell (settable) 5.4000000000000000
++			220 row
++				221 cell (settable) row 55
++				222 cell (settable) 5.5000000000000000
++			223 row
++				224 cell (settable) row 56
++				225 cell (settable) 5.6000000000000000
++			226 row
++				227 cell (settable) row 57
++				228 cell (settable) 5.7000000000000000
++			229 row
++				230 cell (settable) review recovery
++				231 cell (settable) 5.8000000000000000
++			232 row
++				233 cell (settable) 你好
++				234 cell (settable) 5.9000000000000000
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

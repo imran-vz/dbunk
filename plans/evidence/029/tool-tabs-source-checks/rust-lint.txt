@@ -1,0 +1,8 @@
+cargo clippy --manifest-path src-tauri/Cargo.toml --no-default-features --all-targets -- -D warnings
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.85s
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    Checking dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.61s

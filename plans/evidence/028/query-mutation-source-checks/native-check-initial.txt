@@ -1,0 +1,47 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0277]: `dbunk_lib::backend::WorkspaceMutationDraft` doesn't implement `std::fmt::Debug`
+   --> src/data_model_tests.rs:926:5
+    |
+926 |     assert_eq!(restored.snapshot(), saved.draft);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `std::fmt::Debug` is not implemented for `dbunk_lib::backend::WorkspaceMutationDraft`
+
+error[E0063]: missing field `query_changes` in initializer of `WorkspaceDocument`
+   --> src/persistence.rs:454:30
+    |
+454 |         draft.documents.push(WorkspaceDocument {
+    |                              ^^^^^^^^^^^^^^^^^ missing `query_changes`
+
+error[E0063]: missing field `query_changes` in initializer of `WorkspaceDocument`
+   --> src/persistence.rs:490:29
+    |
+490 |             documents: vec![WorkspaceDocument {
+    |                             ^^^^^^^^^^^^^^^^^ missing `query_changes`
+
+error[E0063]: missing field `query_changes` in initializer of `WorkspaceDocument`
+   --> src/workspace.rs:523:13
+    |
+523 |             WorkspaceDocument {
+    |             ^^^^^^^^^^^^^^^^^ missing `query_changes`
+
+error[E0063]: missing field `query_changes` in initializer of `WorkspaceDocument`
+   --> src/workspace.rs:563:13
+    |
+563 |             WorkspaceDocument {
+    |             ^^^^^^^^^^^^^^^^^ missing `query_changes`
+
+error[E0063]: missing field `query_changes` in initializer of `WorkspaceDocument`
+   --> src/workspace.rs:605:13
+    |
+605 |             WorkspaceDocument {
+    |             ^^^^^^^^^^^^^^^^^ missing `query_changes`
+
+error[E0063]: missing field `query_changes` in initializer of `WorkspaceDocument`
+   --> src/workspace.rs:701:13
+    |
+701 |             WorkspaceDocument {
+    |             ^^^^^^^^^^^^^^^^^ missing `query_changes`
+
+Some errors have detailed explanations: E0063, E0277.
+For more information about an error, try `rustc --explain E0063`.
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 8 previous errors

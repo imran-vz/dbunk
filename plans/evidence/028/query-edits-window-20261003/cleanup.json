@@ -1,0 +1,10 @@
+{
+  "owned_pid": 54914,
+  "signal": "SIGTERM",
+  "launcher_exit": 1,
+  "child_exit": -15,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "backend_final": 0,
+  "normal_quit_passed": false,
+  "profile_exists_after_attempt": true
+}

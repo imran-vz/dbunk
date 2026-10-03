@@ -1,0 +1,14 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.39s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 6 tests
+test postgres::native_catalog::completion::tests::kinds_cover_relations_and_refuse_sequence_index_and_composite_type ... ok
+test postgres::native_catalog::completion::tests::names_are_exact_and_bounded_in_utf8_bytes ... ok
+test postgres::native_catalog::completion::tests::dropped_attribute_gaps_and_exact_type_and_pk_metadata_are_preserved ... ok
+test postgres::native_catalog::completion::tests::type_and_encoded_escape_expansion_refuse_before_retention ... ok
+test postgres::native_catalog::completion::tests::exactly_column_limit_succeeds_and_extra_row_refuses_whole_result ... ok
+test postgres::native_catalog::completion::tests::aggregate_byte_limit_is_independent_of_column_count ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 901 filtered out; finished in 0.04s
+

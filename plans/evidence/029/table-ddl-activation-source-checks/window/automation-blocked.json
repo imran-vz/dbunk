@@ -1,0 +1,7 @@
+{
+  "pid": 84851,
+  "shutdown": "SIGTERM after repeated CUA native pipe startup failure; not normal-quit acceptance",
+  "stage03_backends": 0,
+  "stage04_backends": 0,
+  "ui_actions_completed": 0
+}

@@ -1,0 +1,161 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: on
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · Disconnected, Value: off
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 button Connect
+		42 button Backup
+		43 button Restore
+		44 button Import CSV
+		45 button Export CSV
+		46 button (disabled) Refresh
+		47 button (disabled) Edit cell
+		48 button (disabled) Insert row
+		49 button (disabled) Duplicate row
+		50 button (disabled) Bulk edit
+		51 button (disabled) Delete row
+		52 button (disabled) Follow foreign key
+		53 button (disabled) Count
+		54 button (disabled) Sort selected column
+		55 button (disabled) Cancel
+		56 button (disabled) Narrow column
+		57 button (disabled) Widen column
+		58 button (disabled) Auto-fit column
+		59 button (disabled) Auto-fit visible columns
+		60 button (disabled) Move column left
+		61 button (disabled) Move column right
+		62 button (disabled) Pin / unpin column
+		63 button (disabled) Hide column
+		64 button (disabled) Show all columns
+		65 button (disabled) Reload preferences
+		66 button (disabled) Typed
+		67 button (disabled) WHERE
+		68 button (disabled) Column: none
+		69 button (disabled) =
+		70 text field (settable) Typed filter value
+		71 button (disabled) Apply filter
+		72 button (disabled) Clear filters
+		73 button (disabled) Add sort on column
+		74 button (disabled) History 0/0
+		75 button (disabled) Apply history
+		76 button (disabled) Preset: none
+		77 button (disabled) Apply preset
+		78 text field (settable) Preset name
+		79 button (disabled) Save preset
+		80 button (disabled) Inspect query
+		81 table Table rows
+			82 text No results
+			83 button Export selected cells, or all retained rows when no selection
+		84 container Table changes
+		85 button (disabled) First
+		86 button (disabled) Previous
+		87 button (disabled) Next
+		88 button (disabled) Last
+		89 button (disabled) 10
+		90 button (disabled) 25
+		91 button (disabled) 50
+		92 button (disabled) 100
+		93 button (disabled) 250
+		94 button (disabled) 500
+		95 button (disabled) 1000
+		96 container Disconnected
+		97 container (settable) Draft persistence, Value: Saved
+		98 button Retry
+		99 button Export SQL
+		100 button Discard and quit
+		101 dialog PostgreSQL connection
+			102 text field (settable) Name, Value: Auto-fit fixture
+			103 text field (settable) Host, Value: 127.0.0.1
+			104 text field (settable) Port, Value: 15432
+			105 text field (settable) Database, Value: dbunk_demo
+			106 text field (settable) User, Value: dbunk
+			107 secure text field (settable) Database password
+			108 text field (settable) Folder
+			109 text field (settable) Color
+			110 text field (settable) Root certificate
+			111 text field (settable) Client certificate
+			112 text field (settable) Client key
+			113 text field (settable) TLS server name
+			114 text field (settable) Statement timeout (ms)
+			115 text field (settable) Idle transaction timeout (ms)
+			116 text field (settable) Connect timeout (ms)
+			117 text field (settable) Keepalive (seconds)
+			118 text field (settable) Search path (comma separated)
+			119 text field (settable) Default role
+			120 radio button (selectable, settable, boolean) Development
+			121 radio button (selectable, settable, boolean) Test
+			122 radio button (selectable, settable, boolean) Staging
+			123 radio button (selectable, settable, boolean) Production
+			124 radio button (selectable, settable, boolean) Inherit
+			125 radio button (selectable, settable, boolean) Disabled
+			126 radio button (selectable, settable, boolean) Protected
+			127 radio button (selectable, settable, boolean) Strict
+			128 checkbox (settable, boolean) Read-only: off, Value: off
+			129 checkbox (settable, boolean) Favorite: no, Value: off
+			130 radio button (selectable, settable, boolean) Disable TLS
+			131 radio button (selectable, settable, boolean) Prefer TLS
+			132 radio button (selectable, settable, boolean) Require TLS
+			133 radio button (selectable, settable, boolean) Verify CA
+			134 radio button (selectable, settable, boolean) Verify full
+			135 button Choose root certificate
+			136 button Choose client certificate
+			137 button Choose client key
+			138 container Connected in 5 ms
+			139 list Connection diagnosis
+				140 container (selectable) Tunnel: Skipped: direct connection
+				141 container (selectable) DNS: Passed (0 ms) 127.0.0.1
+				142 container (selectable) TCP: Passed (0 ms)
+				143 container (selectable) TLS: Skipped: TLS disabled
+				144 container (selectable) Authentication: Passed (3 ms)
+				145 container (selectable) Database: Passed (1 ms) PostgreSQL 17.11
+			146 button Save
+			147 button Test connection
+			148 button Cancel
+	149 close button
+	150 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	151 minimize button
+	152 text dbunk Native Workspace
+153 menu bar
+	154 dbunk Native Preflight
+	155 Query
+	156 Results
+	157 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

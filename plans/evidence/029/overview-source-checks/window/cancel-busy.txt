@@ -1,0 +1,7 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			36 tab (settable, boolean) Administration · Collecting overview statistics; previous capture may be stale, Value: on
+~			103 button (disabled) Refresh scope
+~			105 button Cancel read
++			144 container Retained capture may be stale. Refresh preserves its identity. To inspect a replacement, return to Administration and Clear captures.
+~			139 container Collecting overview statistics; previous capture may be stale
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

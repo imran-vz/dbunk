@@ -1,0 +1,43 @@
+{
+  "repository_required_checks": "passed",
+  "repository_test_counts": {
+    "core": {
+      "passed": 677,
+      "ignored": 71
+    },
+    "tauri": {
+      "passed": 694,
+      "ignored": 85
+    }
+  },
+  "isolated_backend": {
+    "passed": 840,
+    "ignored": 82,
+    "doctests_passed": 2
+  },
+  "tauri_facade": {
+    "passed": 96,
+    "ignored": 11
+  },
+  "native_debug": {
+    "passed": 187,
+    "ignored": 13
+  },
+  "native_release": {
+    "passed": 187,
+    "ignored": 13
+  },
+  "native_graph_uri_corpus": {
+    "passed": 6,
+    "ignored": 0,
+    "proof": "native-graph-uri-proof.json"
+  },
+  "native_cargo_dependency_test_attempt": "refused by Cargo; replaced by exact-native-artifact rustc corpus, no repository source change",
+  "custom_protocol": "passed",
+  "native_clippy_debug_release_and_harness": "passed",
+  "package": "passed; dependency proof passed",
+  "actual_window": "pending; not attempted for this source",
+  "voiceover": "deferred, not passed",
+  "matched_source_hashes": 349,
+  "executable_sha256": "1c4a0e6f6fc7ee88843e858ed075e8cc39b603f5b7ecf300b554521c05347789"
+}

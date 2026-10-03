@@ -1,0 +1,1 @@
+Package build exited 0. Post-build proof collection failed because the script searched filenames containing package instead of using tools/native/package.py MARKER. No source changed or rebuild required. Corrected collection uses package.MARKER.

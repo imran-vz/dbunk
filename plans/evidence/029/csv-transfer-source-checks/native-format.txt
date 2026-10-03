@@ -1,0 +1,10 @@
+Diff in /Users/imran/projects/Code/dbunk/apps/native/src/workbench.rs:944:
+         self.disconnect_query_changes(cx);
+         self.invalidate_review(cx);
+         self.query_changes.unavailable = Some(
+[31m-            "Database may have changed; run SQL explicitly to obtain a fresh editing source"
+(B[m[31m-                .into(),
+(B[m[32m+            "Database may have changed; run SQL explicitly to obtain a fresh editing source".into(),
+(B[m         );
+         self.status =
+             "Database may have changed; retained results may be stale. SQL session preserved"

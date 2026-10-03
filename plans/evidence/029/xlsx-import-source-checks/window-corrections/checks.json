@@ -1,0 +1,14 @@
+[
+  {
+    "check": "native-clippy",
+    "exit_code": 0
+  },
+  {
+    "check": "native-test",
+    "exit_code": 0
+  },
+  {
+    "check": "package",
+    "exit_code": 0
+  }
+]

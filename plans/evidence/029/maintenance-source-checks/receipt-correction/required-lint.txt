@@ -1,0 +1,4 @@
+Command: ['pnpm', 'lint']
+Already up to date
+Done in 149ms using pnpm v11.4.0
+$ oxlint .

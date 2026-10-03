@@ -1,0 +1,24 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.58s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity ... STRUCTURE_CREATE_INTENT {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","marker":"dbunk native structure owned a8ceff57-37f5-40a7-a23f-859985eeb940","schema":"structure_b1d34714297841c990ab8c1bc5224f77"}
+STRUCTURE_OWNED {"schema":16992,"tables":[{"name":"child","oid":16999},{"name":"inherited","oid":17025},{"name":"leaf","oid":17022},{"name":"parent","oid":16993},{"name":"partitioned","oid":17019}],"function":17015}
+
+thread 'backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity' (10589021) panicked at src/backend/table_structure/live_tests.rs:161:9:
+assertion `left == right` failed
+  left: None
+ right: Some("")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+STRUCTURE_CLEANUP {"absent":true,"joined":true,"schema":"structure_b1d34714297841c990ab8c1bc5224f77"}
+FAILED
+
+failures:
+
+failures:
+    backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1122 filtered out; finished in 0.54s
+
+error: test failed, to rerun pass `--lib`

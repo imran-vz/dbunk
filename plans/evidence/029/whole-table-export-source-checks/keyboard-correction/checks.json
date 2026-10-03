@@ -1,0 +1,106 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.81
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 6.82
+  },
+  {
+    "check": "fixture-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--features",
+      "fixture-verification",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 5.86
+  },
+  {
+    "check": "test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 19.98
+  },
+  {
+    "check": "build",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "build",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 13.23
+  },
+  {
+    "check": "release-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--release",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 6.61
+  },
+  {
+    "check": "package",
+    "command": [
+      "python3",
+      "tools/native/package.py",
+      "--out",
+      "/private/tmp/dbunk-native-package-20261003-export-keyboard"
+    ],
+    "exit_code": 0,
+    "seconds": 195.84
+  },
+  {
+    "check": "release-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--release",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 106.87
+  }
+]

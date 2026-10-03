@@ -1,0 +1,12 @@
+{
+  "pid": 19468,
+  "native_bundle_path": "cgWindowNotFound",
+  "native_bundle_id": "cgWindowNotFound",
+  "system_settings": "cgWindowNotFound",
+  "finder_desktop_ax_and_screenshot": "available",
+  "system_wide_outage_not_established": true,
+  "termination": "SIGTERM after exact executable/profile verification",
+  "normal_quit_pass": false,
+  "settings_changed": false,
+  "backend_final": 0
+}

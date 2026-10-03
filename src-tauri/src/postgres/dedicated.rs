@@ -29,6 +29,15 @@ pub(crate) struct Notice {
 
 pub(crate) enum NoticeSink {
     Ignore,
+    /// Byte- and count-bounded maintenance diagnostics. Truncate borrowed wire
+    /// text before cloning; failed queue admission allocates no owned strings.
+    #[cfg(feature = "isolated-profile")]
+    Capped {
+        tx: mpsc::Sender<Notice>,
+        dropped: Arc<AtomicU32>,
+        message_bytes: usize,
+        severity_bytes: usize,
+    },
     Bounded {
         tx: mpsc::Sender<Notice>,
         dropped: Arc<AtomicU32>,
@@ -77,6 +86,7 @@ struct TrackedDriver {
 struct DriverJoinState {
     aborted: bool,
     drivers: Vec<TrackedDriver>,
+    parent: Option<DriverJoins>,
 }
 
 /// A bounded operation can retain joins even when a connect future is dropped
@@ -85,6 +95,16 @@ struct DriverJoinState {
 pub(crate) struct DriverJoins(Arc<std::sync::Mutex<DriverJoinState>>);
 
 impl DriverJoins {
+    /// A local cleanup barrier whose drivers also remain owned by the host.
+    /// Cancelling the local operation cannot remove the host's join handles.
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn child(&self) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(DriverJoinState {
+            parent: Some(self.clone()),
+            ..Default::default()
+        })))
+    }
+
     /// Aborts every tracked driver. The abort is latched so a driver registered
     /// concurrently after cleanup starts cannot escape the owning job's fence.
     pub(crate) fn abort_all(&self) {
@@ -117,7 +137,7 @@ impl DriverJoins {
                 .lock()
                 .unwrap()
                 .drivers
-                .retain(|driver| !driver.abort.is_finished());
+                .retain(|driver| driver.join.peek().is_none());
         }
     }
 
@@ -136,7 +156,14 @@ impl DriverJoins {
         if state.aborted {
             abort.abort();
         }
-        state.drivers.retain(|driver| !driver.abort.is_finished());
+        if let Some(parent) = &state.parent {
+            parent.track(abort.clone(), join.clone());
+        }
+        // A finished Tokio task still has an unobserved JoinHandle. Poll the
+        // shared join before pruning it; is_finished alone is not a join.
+        state
+            .drivers
+            .retain(|driver| driver.join.clone().now_or_never().is_none());
         state.drivers.push(TrackedDriver { abort, join });
     }
 }
@@ -201,6 +228,7 @@ impl DedicatedConnection {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn connect(
     spec: &ResolvedPostgresConnectSpec,
     notices: NoticeSink,
@@ -322,6 +350,22 @@ where
             if let AsyncMessage::Notice(notice) = message {
                 match &notices {
                     NoticeSink::Ignore => {}
+                    #[cfg(feature = "isolated-profile")]
+                    NoticeSink::Capped {
+                        tx,
+                        dropped,
+                        message_bytes,
+                        severity_bytes,
+                    } => {
+                        capped_notice(
+                            tx,
+                            dropped,
+                            notice.severity(),
+                            notice.message(),
+                            *severity_bytes,
+                            *message_bytes,
+                        );
+                    }
                     NoticeSink::Bounded { tx, dropped } => {
                         if tx
                             .try_send(Notice {
@@ -337,6 +381,44 @@ where
             }
         }
     })
+}
+
+#[cfg(feature = "isolated-profile")]
+fn capped_notice(
+    tx: &mpsc::Sender<Notice>,
+    dropped: &AtomicU32,
+    severity: &str,
+    message: &str,
+    severity_bytes: usize,
+    message_bytes: usize,
+) {
+    fn prefix(value: &str, cap: usize) -> &str {
+        let mut end = value.len().min(cap);
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        &value[..end]
+    }
+    let permit = match tx.try_reserve() {
+        Ok(permit) => permit,
+        Err(_) => {
+            let _ = dropped.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                Some(n.saturating_add(1))
+            });
+            return;
+        }
+    };
+    let short_severity = prefix(severity, severity_bytes);
+    let short_message = prefix(message, message_bytes);
+    if short_severity.len() != severity.len() || short_message.len() != message.len() {
+        let _ = dropped.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+            Some(n.saturating_add(1))
+        });
+    }
+    permit.send(Notice {
+        severity: short_severity.into(),
+        message: short_message.into(),
+    });
 }
 
 async fn with_deadline<T>(
@@ -589,6 +671,62 @@ mod live {
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
+
+    #[cfg(feature = "isolated-profile")]
+    #[tokio::test]
+    async fn maintenance_notices_bound_utf8_before_cloning_and_count_overflow() {
+        let (tx, mut rx) = mpsc::channel(1);
+        let dropped = AtomicU32::new(0);
+        capped_notice(&tx, &dropped, "WARNING", "字字字", 4, 7);
+        capped_notice(&tx, &dropped, "WARNING", "extra", 4, 7);
+        let notice = rx.recv().await.unwrap();
+        assert_eq!(notice.severity, "WARN");
+        assert_eq!(notice.message, "字字");
+        assert_eq!(dropped.load(Ordering::Relaxed), 2);
+        dropped.store(u32::MAX, Ordering::Relaxed);
+        drop(rx);
+        capped_notice(&tx, &dropped, "WARNING", "extra", 4, 7);
+        assert_eq!(dropped.load(Ordering::Relaxed), u32::MAX);
+    }
+
+    async fn finished_but_unobserved(tracked: &DriverJoins) -> Arc<std::sync::atomic::AtomicBool> {
+        let observed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = tokio::spawn(async {});
+        let abort = task.abort_handle();
+        while !abort.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        let signal = observed.clone();
+        let join = async move {
+            task.await.unwrap();
+            signal.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        .boxed()
+        .shared();
+        tracked.track(abort, join);
+        observed
+    }
+
+    #[tokio::test]
+    async fn pruning_and_concurrent_registration_observe_every_join() {
+        let tracked = DriverJoins::default();
+        let observed = finished_but_unobserved(&tracked).await;
+        tracked.track_task(tokio::spawn(async {}));
+        assert!(observed.load(std::sync::atomic::Ordering::SeqCst));
+        tracked.drain().await;
+
+        let (release, pending) = tokio::sync::oneshot::channel();
+        tracked.track_task(tokio::spawn(async {
+            pending.await.unwrap();
+        }));
+        let mut drain = Box::pin(tracked.drain());
+        assert!(futures_util::poll!(&mut drain).is_pending());
+        let late = finished_but_unobserved(&tracked).await;
+        release.send(()).unwrap();
+        drain.await;
+        assert!(late.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(tracked.0.lock().unwrap().drivers.is_empty());
+    }
 
     fn pending_driver(
         tracked: &DriverJoins,

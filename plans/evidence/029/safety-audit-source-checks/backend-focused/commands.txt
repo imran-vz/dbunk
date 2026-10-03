@@ -1,0 +1,5 @@
+# Local temporary SQLite profiles only. No PostgreSQL, fixture, OS Keychain or production profile access.
+cargo +1.97.1 test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile safety_audit -- --test-threads=1
+# First attempt used current-thread test runtime and refused before profile opening; preserved in tests-initial-runtime-config.txt. Final run uses required multi_thread annotations.
+cargo +1.97.1 clippy --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml --check

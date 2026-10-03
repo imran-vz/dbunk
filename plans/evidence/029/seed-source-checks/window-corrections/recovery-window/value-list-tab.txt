@@ -1,0 +1,102 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Save query
+		12 button Rename
+		13 button Pin
+		14 button ←
+		15 button →
+		16 button Close
+		17 button Credentials
+		18 container Connections
+			19 button + Connection
+			20 button Open table
+			21 button −
+			22 button +
+			23 button Auto-fit fixture
+			24 button Edit
+			25 button Duplicate
+			26 button Copy URI
+			27 button ★
+			28 button Delete
+			29 button Comfortable
+		30 tab group
+			31 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			32 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			33 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			34 tab (settable, boolean) History · Open tab to load records, Value: off
+			35 tab (settable, boolean) History query · Disconnected, Value: off
+			36 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			37 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			38 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			39 tab (settable, boolean) Objects · Disconnected, Value: off
+			40 tab (settable, boolean) CSV transfer · Choose the exact target and CSV options, then explicitly inspect and review, Value: off
+			41 tab (settable, boolean) native_seed_window_20261003.destination · Disconnected, Value: off
+			42 tab (settable, boolean) Value: on, Seed table · Column edits are local until Prepare edited recipe. Save a changed column before selecting another.
+		43 button Connect
+		44 button Disconnect
+		45 button Clear results
+		46 container PostgreSQL table seed
+			47 container Seed setup, exact review and receipt; Page Up and Page Down scroll, Home and End from this group reach either end
+				48 button Destination: Auto-fit fixture
+				49 button (disabled) Load columns with Auto recipe
+				50 button (disabled) Edit selected recipe
+				51 button Prepare edited recipe
+				52 button Refresh seed jobs
+				53 button Review selected seed
+				54 button (disabled) Apply reviewed seed
+				55 button Cancel selected seed
+				56 button (disabled) Reconcile uncertain seed
+				57 button (disabled) Dismiss finished seed
+				58 text Column edits are local until Prepare edited recipe. Save a changed column before selecting another.
+				59 text Generate rows on the backend in one destination transaction. DEFAULT leaves database defaults authoritative. Exact review freezes the seed and clock. Cancellation after COMMIT cannot undo rows. Jobs and uncertain intent survive tab closure.
+				60 text field (settable) Destination schema, Value: native_seed_window_20261003
+				61 text field (settable) Destination table, Value: destination
+				62 text field (settable) Rows (1–1000000), Value: 1
+				63 text field (settable) Optional unsigned seed, Value: 42
+				64 list Seed attempts and durable recovery records
+					65 text (selectable) Recovered Completed { rows: 3 } | native_seed_window_20261003.destination, Secondary Actions: Pick
+					66 text (selectable) Recovered Reconciled | native_seed_window_20261003.destination, Secondary Actions: Pick
+					67 text (selected) ReadyReview: NotStarted | native_seed_window_20261003.destination, Secondary Actions: Pick
+				68 text Editable recipe: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e / native_seed_window_20261003.destination · 5 columns
+				69 list Editable seed columns
+					70 text (selectable) id: Auto, Secondary Actions: Pick
+					71 text (selectable) category: Auto, Secondary Actions: Pick
+					72 text (selected) note: Auto, Secondary Actions: Pick
+					73 text (selectable) score: Auto, Secondary Actions: Pick
+					74 text (selectable) note_length: Auto, Secondary Actions: Pick
+				75 text note (text) · nullable: true · default: false · generated: false · identity: false · unsaved changes
+				76 button Source: Value list
+				77 button Save selected column
+				78 text field (settable) Comma-separated values, Value: release recovered seed,another value
+				79 text field (settable) NULL percentage (0–100, blank for default), Value: 0
+				80 text Attempt 4ce59039-04fc-42c3-9dbe-94b4f89d53b7
+Observed phase: ReadyReview
+Transaction outcome: NotStarted
+Cleanup: Complete
+Rows generated: 0 / 1
+Destination: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e / native_seed_window_20261003.destination
+		81 container (settable) Draft persistence, Value: Saved
+		82 button Retry
+		83 button Export SQL
+		84 button Discard and quit
+	85 close button
+	86 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	87 minimize button
+	88 text dbunk Native Workspace
+89 menu bar
+	90 dbunk Native Preflight
+	91 Query
+	92 Results
+	93 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

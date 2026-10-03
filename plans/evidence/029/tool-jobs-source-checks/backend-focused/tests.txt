@@ -1,0 +1,15 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.81s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 7 tests
+test backend::pg_tools::tests::cancelled_review_releases_source_and_foreign_or_stale_review_never_dispatches ... ok
+test backend::pg_tools::tests::intent_bounds_and_source_snapshot_reject_symlinks_and_keep_selected_bytes ... ok
+test backend::pg_tools::tests::lifecycle_fence_cancels_ready_review_and_admission_is_bounded ... ok
+test backend::pg_tools::tests::pending_attempt_survives_lost_reply_and_restore_uses_immutable_snapshot ... ok
+test backend::pg_tools::tests::restore_failure_after_dispatch_is_unknown_and_invalidates_once_without_audit ... ok
+test backend::pg_tools::tests::running_restore_cancellation_remains_owned_until_success_reconciliation ... ok
+test backend::pg_tools::tests::unjoined_cleanup_is_reported_at_absolute_deadline_without_aborting_owner ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 952 filtered out; finished in 0.23s
+

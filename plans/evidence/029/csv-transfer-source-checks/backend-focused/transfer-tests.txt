@@ -1,0 +1,43 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 36 tests
+test postgres::transfer::csv_tests::accepts_1600_columns_and_rejects_a_1601st ... ok
+test postgres::transfer::csv_tests::defaults_and_camel_case_options_are_stable ... ok
+test postgres::transfer::csv_tests::encoder_chunks_large_escaped_values_and_round_trips_them ... ok
+test postgres::transfer::csv_tests::enforces_field_limit_before_growing_the_field ... ok
+test postgres::transfer::csv_tests::enforces_record_limit_before_accepting_another_byte ... ok
+test postgres::transfer::csv_tests::handles_a_bom_incrementally_and_rejects_invalid_utf8 ... ok
+test postgres::transfer::csv_tests::header_rows_are_returned_for_the_caller_to_handle ... ok
+test postgres::transfer::csv_tests::invalid_options_return_structural_errors_without_values ... ok
+test postgres::transfer::csv_tests::parses_a_distinct_escape_character ... ok
+test postgres::transfer::csv_tests::parses_one_byte_at_a_time_with_quoted_newlines_and_crlf ... ok
+test postgres::transfer::csv_tests::preserves_null_markers_and_empty_strings_through_encoding ... ok
+test postgres::transfer::csv_tests::rejects_malformed_quotes_and_line_endings_at_the_exact_record ... ok
+test postgres::transfer::csv_tests::reports_preview_pending_state_without_finishing_a_partial_record ... ok
+test postgres::transfer::manager::tests::an_inspection_is_consumed_exactly_once ... ok
+test postgres::transfer::manager::tests::cancellation_cannot_commit_or_run_success_effects ... ok
+test postgres::transfer::manager::tests::fences_invalidate_reviews_and_resolutions_with_nested_scopes ... ok
+test postgres::transfer::manager::tests::finalization_wins_and_completion_effects_precede_terminal ... ok
+test postgres::transfer::manager::tests::global_fence_stops_all_workers_before_returning ... ok
+test postgres::transfer::manager::tests::native_terminal_cleanup_keeps_same_connection_and_global_admission ... ok
+test postgres::transfer::manager::tests::pending_work_counts_towards_capacity_and_same_connection_limit ... ok
+test postgres::transfer::manager::tests::reviews_have_a_cap_ttl_and_explicit_release ... ok
+test postgres::transfer::manager::tests::teardown_timeout_joins_aborted_worker_before_returning ... ok
+test postgres::transfer::manager::tests::terminal_retention_never_evicts_active_jobs ... ok
+test postgres::transfer::manager::tests::unknown_commit_never_runs_success_audit ... ok
+test postgres::transfer::manager::tests::watchdog_joins_before_releasing_capacity ... ok
+test postgres::transfer::manager::tests::worker_panic_after_commit_claim_is_unknown ... ok
+test postgres::transfer::native::tests::publication_is_known_success_and_failed_private_cleanup_retains_owner ... ok
+test postgres::transfer::runner::tests::export_sql_guards_fields_and_records_before_copy_projection ... ok
+test postgres::transfer::runner::tests::import_sql_quotes_identifiers_and_uses_only_validated_options ... ok
+test postgres::transfer::runner::tests::inspection_bounds_retained_header_labels ... ok
+test postgres::transfer::runner::tests::inspection_refuses_a_first_record_that_exceeds_the_inspection_budget ... ok
+test postgres::transfer::runner::tests::inspection_reports_actual_width_error_after_retained_sample_is_full ... ok
+test postgres::transfer::runner::tests::mapping_allows_source_reuse_but_rejects_duplicate_and_unsupported_targets ... ok
+test postgres::transfer::runner::tests::partial_publication_never_replaces_a_destination ... ok
+test postgres::transfer::runner::tests::source_fingerprint_changes_after_an_in_place_write ... ok
+test postgres::transfer::runner::tests::source_symlinks_are_refused ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 951 filtered out; finished in 0.28s
+

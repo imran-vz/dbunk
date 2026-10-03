@@ -1,0 +1,15 @@
+{
+  "frozen_at_utc": "2026-10-03T02:19:52.759073+00:00",
+  "backend_rust": "1.97.1",
+  "native_rust": "1.98.1",
+  "matrix_environment": {
+    "CARGO_INCREMENTAL": "0",
+    "RUST_TEST_THREADS": "1"
+  },
+  "live_environment": {
+    "DBUNK_NATIVE_FIXTURE_VERIFIED": "1",
+    "RUST_TEST_THREADS": "1"
+  },
+  "base_commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "tauri_baseline": "102568b"
+}

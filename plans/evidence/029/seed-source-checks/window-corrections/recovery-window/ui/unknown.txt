@@ -1,0 +1,13 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				56 button Reconcile uncertain seed
+~					66 text (selected) Recovered Unknown | native_seed_window_20261003.destination, Secondary Actions: Pick
++				80 text Attempt d6c1558a-8e1e-41d8-882d-a7417027addb
+Durable recovery: Unknown
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_seed_window_20261003.destination
+Endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Safe mode: Protected; read-only: false
+Observed database OID: 16384; relation OID: 16937
+Rows: 1; exact seed: 42; frozen clock (Unix seconds): 1791015152
+Columns: 3 inserted; 2 defaulted
+Recipe identity: 61606e55293cd10d30d76bfa391191b783e39ccc8be8dfda
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

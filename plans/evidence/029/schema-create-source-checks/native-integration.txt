@@ -1,0 +1,27 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: unused import: `MAX_SCHEMA_PREVIEW_BYTES`
+  --> src/schema_view.rs:10:49
+   |
+10 |     CreateSchemaReview, CreateSchemaSubmission, MAX_SCHEMA_PREVIEW_BYTES,
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error[E0599]: no method named `aria_checked` found for struct `gpui::Stateful<E>` in the current scope
+  --> src/schema_view/render.rs:39:24
+   |
+39 |                 button.aria_checked(self.include_comment)
+   |                        ^^^^^^^^^^^^
+   |
+help: there is a method `aria_selected` with a similar name
+   |
+39 -                 button.aria_checked(self.include_comment)
+39 +                 button.aria_selected(self.include_comment)
+   |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 2 previous errors

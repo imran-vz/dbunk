@@ -1,0 +1,9 @@
+{
+  "pid": 68741,
+  "signal": "SIGTERM",
+  "identity_checked": true,
+  "process_stopped": true,
+  "normal_quit_pass": false,
+  "fixture_backend_count": 0,
+  "profile_exists": true
+}

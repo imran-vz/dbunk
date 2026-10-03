@@ -17,18 +17,50 @@ struct ResolvedEndpoint {
 pub(super) async fn run(
     ctx: JobContext,
     pool: sqlx::SqlitePool,
+    credentials: Arc<credentials::Context>,
 ) -> Result<diff::Comparison, CompareError> {
-    let source = resolve(&ctx, &pool, &ctx.request.source.connection_id, Side::Source).await?;
+    let source = resolve(
+        &ctx,
+        &credentials,
+        &pool,
+        &ctx.request.source.connection_id,
+        Side::Source,
+    )
+    .await?;
     let same = ctx.request.source.connection_id == ctx.request.target.connection_id;
     let target = if same {
         None
     } else {
-        Some(resolve(&ctx, &pool, &ctx.request.target.connection_id, Side::Target).await?)
+        Some(
+            resolve(
+                &ctx,
+                &credentials,
+                &pool,
+                &ctx.request.target.connection_id,
+                Side::Target,
+            )
+            .await?,
+        )
     };
+    run_resolved(
+        ctx,
+        &source.spec,
+        target.as_ref().map(|target| &target.spec),
+        pool,
+    )
+    .await
+}
+
+pub(crate) async fn run_resolved(
+    ctx: JobContext,
+    source: &ResolvedPostgresConnectSpec,
+    target: Option<&ResolvedPostgresConnectSpec>,
+    pool: sqlx::SqlitePool,
+) -> Result<diff::Comparison, CompareError> {
     let (source, target) = if let Some(target) = target {
         ctx.progress(StatusState::ReadingSource, 0, 0);
         let mut source = capture_resolved(
-            &source.spec,
+            source,
             &[(Side::Source, &ctx.request.source)],
             &ctx.control,
             &ctx.budget,
@@ -37,7 +69,7 @@ pub(super) async fn run(
         let source = source.pop().ok_or(CompareError::Unavailable)?;
         ctx.progress(StatusState::ReadingTarget, source.inventory.len() as u32, 0);
         let mut target = capture_resolved(
-            &target.spec,
+            target,
             &[(Side::Target, &ctx.request.target)],
             &ctx.control,
             &ctx.budget,
@@ -47,7 +79,7 @@ pub(super) async fn run(
     } else {
         ctx.progress(StatusState::ReadingBoth, 0, 0);
         let mut endpoints = capture_resolved(
-            &source.spec,
+            source,
             &[
                 (Side::Source, &ctx.request.source),
                 (Side::Target, &ctx.request.target),
@@ -88,6 +120,7 @@ pub(super) async fn run(
 
 async fn resolve(
     ctx: &JobContext,
+    credentials: &credentials::Context,
     pool: &sqlx::SqlitePool,
     id: &str,
     side: Side,
@@ -108,7 +141,7 @@ async fn resolve(
         .map_err(|_| CompareError::Unavailable)?
         .ok_or(CompareError::Unavailable)?;
     ctx.control
-        .wait(credentials::hydrate(pool, mode, &mut connection))
+        .wait(credentials::hydrate(credentials, mode, &mut connection))
         .await?
         .map_err(|_| CompareError::Unavailable)?;
     let StoredConnection::PostgreSQL(postgres) = &mut connection else {
@@ -123,6 +156,7 @@ async fn resolve(
     // joined. Cancellation is checked between hops and before cache publication.
     let route = tunnel::EphemeralRoute::new("schema-compare");
     let resolved = tunnel::resolve_connection_checked(
+        credentials,
         pool,
         mode,
         route.key(),

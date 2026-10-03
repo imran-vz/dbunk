@@ -1,0 +1,55 @@
+{
+  "scope": "owned libpq transport; native facade/window acceptance is separate",
+  "fixture": {
+    "fixture": "dbunk-native-stage04-tls",
+    "instance": "15151cfc-5885-4066-831f-2717ed9b4587",
+    "host": "127.0.0.1",
+    "port": 15433,
+    "database": "dbunk_tls_demo",
+    "user": "dbunk"
+  },
+  "cases": [
+    {
+      "case": "trusted-verify-full",
+      "passed": true,
+      "connected": true,
+      "error": null
+    },
+    {
+      "case": "untrusted-ca-rejected",
+      "passed": true,
+      "connected": false,
+      "error": "psql: error: connection to server at \"127.0.0.1\", port 15433 failed: SSL error: certificate verify failed"
+    },
+    {
+      "case": "hostname-mismatch-rejected",
+      "passed": true,
+      "connected": false,
+      "error": "psql: error: connection to server at \"127.0.0.1\", port 15433 failed: server certificate for \"localhost\" (and 1 other name) does not match host name \"wrong.dbunk.invalid\""
+    },
+    {
+      "case": "verify-ca-ignores-hostname",
+      "passed": true,
+      "connected": true,
+      "error": null
+    },
+    {
+      "case": "require-encrypts",
+      "passed": true,
+      "connected": true,
+      "error": null
+    },
+    {
+      "case": "trusted-client-certificate",
+      "passed": true,
+      "connected": true,
+      "error": null
+    },
+    {
+      "case": "plaintext-rejected",
+      "passed": true,
+      "connected": false,
+      "error": "psql: error: connection to server at \"127.0.0.1\", port 15433 failed: FATAL:  pg_hba.conf rejects connection for host \"127.0.0.1\", user \"dbunk\", database \"dbunk_tls_demo\", no encryption"
+    }
+  ]
+}

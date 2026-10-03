@@ -27,10 +27,20 @@ const FALLBACK_DIRS: &[&str] = &[
     "/Applications/Postgres.app/Contents/Versions/latest/bin",
 ];
 
-struct ProgressTask(tokio::task::JoinHandle<()>);
+struct ProgressTask {
+    task: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(feature = "isolated-profile")]
+    cancellation: Option<super::native::source::Cancellation>,
+}
 impl Drop for ProgressTask {
     fn drop(&mut self) {
-        self.0.abort();
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+        #[cfg(feature = "isolated-profile")]
+        if let Some(cancellation) = &self.cancellation {
+            cancellation.cancel();
+        }
     }
 }
 
@@ -156,6 +166,11 @@ pub(crate) enum Ready {
         destination: PathBuf,
     },
     Restore,
+    #[cfg(feature = "isolated-profile")]
+    NativeBackup {
+        archive: Arc<super::native::archive::Archive>,
+        destination: PathBuf,
+    },
     #[cfg(test)]
     PublicationTest {
         started: tokio::sync::oneshot::Sender<()>,
@@ -185,6 +200,11 @@ impl Ready {
                 })?;
             }
             Self::Restore => {}
+            #[cfg(feature = "isolated-profile")]
+            Self::NativeBackup {
+                archive,
+                destination,
+            } => archive.publish(destination)?,
             #[cfg(test)]
             Self::PublicationTest { started, finish } => {
                 let _ = started.send(());
@@ -258,6 +278,8 @@ pub(crate) async fn run(
             .map_err(|_| PgToolJobError::invalid("job", "File worker stopped"))?
             .map_err(|e| PgToolJobError::io("createPartial", &e))?;
             let partial = Arc::new(partial);
+            #[cfg(feature = "isolated-profile")]
+            let native_archive = context.retain_native_archive(partial.clone());
             let (mut command, material) = connection_command(pg, &binary)?;
             command.args(backup_args(payload, partial.path()));
             process(
@@ -283,6 +305,14 @@ pub(crate) async fn run(
                 .await
                 .map_err(|e| PgToolJobError::io("syncPartial", &e))?;
             context.progress(Some(size), None, None);
+            #[cfg(feature = "isolated-profile")]
+            if let Some(archive) = native_archive {
+                drop(partial);
+                return Ok(Ready::NativeBackup {
+                    archive,
+                    destination: request.path().into(),
+                });
+            }
             Ready::Backup {
                 partial,
                 destination: request.path().into(),
@@ -715,8 +745,101 @@ fn diagnostic(tail: &[u8]) -> String {
     }
 }
 
+struct Auxiliary<T> {
+    future: std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, ()>> + Send>>,
+    abort: Option<tokio::task::AbortHandle>,
+}
+impl<T> std::future::Future for Auxiliary<T> {
+    type Output = Result<T, ()>;
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        self.future.as_mut().poll(cx)
+    }
+}
+impl<T> Auxiliary<T> {
+    fn abort(&self) {
+        if let Some(abort) = &self.abort {
+            abort.abort();
+        }
+    }
+}
+fn auxiliary<T: Send + 'static>(
+    context: &JobContext,
+    work: impl std::future::Future<Output = T> + Send + 'static,
+) -> Auxiliary<T> {
+    #[cfg(feature = "isolated-profile")]
+    if let Some(owner) = context.native_owner() {
+        let receive = owner.spawn(work);
+        return Auxiliary {
+            future: Box::pin(async move { receive?.await.map_err(|_| ()) }),
+            abort: None,
+        };
+    }
+    #[cfg(not(feature = "isolated-profile"))]
+    let _ = context;
+    let task = tokio::spawn(work);
+    let abort = Some(task.abort_handle());
+    Auxiliary {
+        future: Box::pin(async move { task.await.map_err(|_| ()) }),
+        abort,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn process(
+    command: Command,
+    tool: &str,
+    context: &JobContext,
+    partial: Option<Arc<tempfile::NamedTempFile>>,
+    material: Option<tls::LibpqTlsMaterial>,
+    deadline: Option<Duration>,
+    capture_stdout: bool,
+    irreversible_success: bool,
+    stdin_source: Option<PathBuf>,
+) -> Result<Vec<u8>, PgToolJobError> {
+    #[cfg(feature = "isolated-profile")]
+    if let Some(owner) = context.native_owner() {
+        let context = context.clone();
+        let tool = tool.to_string();
+        return owner
+            .spawn(async move {
+                process_inner(
+                    command,
+                    &tool,
+                    &context,
+                    partial,
+                    material,
+                    deadline,
+                    capture_stdout,
+                    irreversible_success,
+                    stdin_source,
+                )
+                .await
+            })
+            .map_err(|_| PgToolJobError::JobLimitReached)?
+            .await
+            .map_err(|_| {
+                PgToolJobError::io("supervisor", &std::io::Error::other("supervisor stopped"))
+            })?;
+    }
+    process_inner(
+        command,
+        tool,
+        context,
+        partial,
+        material,
+        deadline,
+        capture_stdout,
+        irreversible_success,
+        stdin_source,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn process_inner(
     mut command: Command,
     tool: &str,
     context: &JobContext,
@@ -744,17 +867,21 @@ pub(super) async fn process(
     let mut child = command
         .spawn()
         .map_err(|_| PgToolJobError::ToolUnavailable { tool: tool.into() })?;
-    let stderr = tokio::spawn(drain_tail(
-        child.stderr.take().expect("piped stderr"),
-        STDERR_LIMIT,
-    ));
+    #[cfg(feature = "isolated-profile")]
+    if irreversible_success {
+        context.mark_restore_dispatch();
+    }
+    let stderr = auxiliary(
+        context,
+        drain_tail(child.stderr.take().expect("piped stderr"), STDERR_LIMIT),
+    );
     let stdout = child
         .stdout
         .take()
-        .map(|pipe| tokio::spawn(drain_tail(pipe, 1024)));
+        .map(|pipe| auxiliary(context, drain_tail(pipe, 1024)));
     let mut stdin = stdin_source.map(|path| {
         let pipe = child.stdin.take().expect("piped stdin");
-        tokio::spawn(stream_plain_restore(path, pipe))
+        auxiliary(context, stream_plain_restore(path, pipe))
     });
     let mut held_stdin = None;
     // Filesystem metadata can stall independently of the child. Keep it out of
@@ -762,15 +889,46 @@ pub(super) async fn process(
     let progress = partial.as_ref().map(|file| {
         let path = file.path().to_owned();
         let context = context.clone();
-        ProgressTask(tokio::spawn(async move {
-            let mut tick = tokio::time::interval(Duration::from_millis(200));
-            loop {
-                tick.tick().await;
-                if let Ok(meta) = tokio::fs::metadata(&path).await {
-                    context.progress(Some(meta.len()), None, None);
+        #[cfg(feature = "isolated-profile")]
+        if let Some(owner) = context.native_owner() {
+            let cancellation = super::native::source::Cancellation::default();
+            let stop = cancellation.clone();
+            let filesystem = owner.clone();
+            let _ = owner.spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_millis(200));
+                while !stop.cancelled() {
+                    tick.tick().await;
+                    if stop.cancelled() {
+                        break;
+                    }
+                    let path = path.clone();
+                    let Ok(receive) = filesystem.spawn_blocking(move || std::fs::metadata(path))
+                    else {
+                        break;
+                    };
+                    if let Ok(Ok(Ok(meta))) = receive.await {
+                        context.progress(Some(meta.len()), None, None);
+                    }
                 }
-            }
-        }))
+            });
+            return ProgressTask {
+                task: None,
+                cancellation: Some(cancellation),
+            };
+        }
+        ProgressTask {
+            task: Some(tokio::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_millis(200));
+                loop {
+                    tick.tick().await;
+                    if let Ok(meta) = tokio::fs::metadata(&path).await {
+                        context.progress(Some(meta.len()), None, None);
+                    }
+                }
+            })),
+            #[cfg(feature = "isolated-profile")]
+            cancellation: None,
+        }
     });
     let timeout = async {
         match deadline {
@@ -916,6 +1074,16 @@ where
     F: std::future::Future<Output = T> + Send + 'static,
 {
     let mut finished = context.spawn_reaper(work);
+    #[cfg(feature = "isolated-profile")]
+    if context.native_owner().is_some() {
+        // Native cancellation stays pending until the actual child is reaped.
+        // The host's absolute deadline reports cleanup failure without freezing
+        // a cancellation outcome that could hide a later observed commit.
+        return match finished.await {
+            Ok(Ok(result)) => Ok(result),
+            _ => Err(()),
+        };
+    }
     match tokio::time::timeout(deadline, &mut finished).await {
         Ok(Ok(Ok(output))) => Ok(output),
         Ok(Ok(Err(_))) | Ok(Err(_)) | Err(_) => Err(()),

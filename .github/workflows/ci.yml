@@ -36,6 +36,9 @@ jobs:
   rust:
     name: Rust (fmt + clippy + test)
     runs-on: [self-hosted, Linux, ARM64, homeserver, docker, orbstack]
+    # Credential tests still share the legacy AES key/password cache (Plan 027).
+    env:
+      RUST_TEST_THREADS: "1"
     defaults:
       run:
         working-directory: src-tauri
@@ -73,6 +76,8 @@ jobs:
   native:
     name: Native macOS (pinned GPUI checks)
     runs-on: macos-15
+    env:
+      RUST_TEST_THREADS: "1"
     defaults:
       run:
         working-directory: apps/native
@@ -97,4 +102,5 @@ jobs:
       - run: cargo test --manifest-path ../../src-tauri/Cargo.toml --features isolated-profile backend::
       - run: python3 ../../tools/native/dependencies.py
       - run: python3 -m unittest discover -s ../../tools/native -p 'test_*.py'
+      - run: python3 ../../tools/native/package.py --out ../../tools/native/.state/ci-bundle
       # Interactive AX, VoiceOver and PostgreSQL E2E remain explicit fixture gates.

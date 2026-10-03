@@ -1,0 +1,6 @@
+python3 tools/native/workspace_probe.py '/private/tmp/dbunk-native-workspace-services-20261002'
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Persistent probe profile: /private/tmp/dbunk-native-workspace-services-20261002
+PASS: two saved connections, explicit probes, query sessions and durable drafts and joined backend shutdown
+PASS: encrypted profile unlock and exact disconnected draft restoration and joined backend shutdown
+PASS: PostgreSQL activity 0 -> 0; profile retained

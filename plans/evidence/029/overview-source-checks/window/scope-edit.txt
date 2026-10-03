@@ -1,0 +1,5 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			104 button (disabled) Next page
+~			110 text field (settable) Exact schema name, Value: native_overview_window_20261003x
++			140 container Controls differ from the captured scope. Refresh to inspect this scope; Next is disabled.
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

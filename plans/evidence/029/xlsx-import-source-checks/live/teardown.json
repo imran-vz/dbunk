@@ -1,0 +1,7 @@
+{
+  "exit_code": 0,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "baseline": 0,
+  "final": 0,
+  "cleanup": "probe captured OIDs/owner/comment and used RESTRICT; see probe.txt"
+}

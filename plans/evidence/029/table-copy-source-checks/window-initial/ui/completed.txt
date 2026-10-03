@@ -1,0 +1,84 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Save query
+		12 button Rename
+		13 button Pin
+		14 button ←
+		15 button →
+		16 button Close
+		17 button Credentials
+		18 container Connections
+			19 button + Connection
+			20 button Open table
+			21 button −
+			22 button +
+			23 button Auto-fit fixture
+			24 button Edit
+			25 button Duplicate
+			26 button Copy URI
+			27 button ★
+			28 button Delete
+			29 button Comfortable
+		30 tab group
+			31 tab (settable, boolean) Query 1 · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			32 tab (settable, boolean) Value: off, native_parity_20261003.rows · Database may have changed; reconnect and refresh before using retained data
+			33 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			34 tab (settable, boolean) History · Open tab to load records, Value: off
+			35 tab (settable, boolean) History query · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			36 tab (settable, boolean) Administration · Database may have changed; reconnect and refresh before using retained data, Value: off
+			37 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			38 tab (settable, boolean) Value: on, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+		39 button Connect
+		40 button Disconnect
+		41 button Clear results
+		42 container PostgreSQL table copy
+			43 button Source: Auto-fit fixture
+			44 button Destination: Auto-fit fixture
+			45 button Prepare table copy
+			46 button Refresh copy jobs
+			47 button (disabled) Review selected copy
+			48 button (disabled) Apply reviewed copy
+			49 button (disabled) Cancel selected copy
+			50 button (disabled) Reconcile unknown outcome
+			51 button Dismiss finished copy
+			52 text Prepare reads both tables; destination rows change only after exact review and saved admission.
+			53 text Append matching columns in one destination transaction. No table creation or replacement. Identity values are copied; destination defaults and generated expressions remain authoritative. Cancellation after COMMIT cannot undo copied rows. Jobs survive tab closure.
+			54 text Copy admitted; awaiting transaction outcome
+			55 text field (settable) Source schema, Value: native_copy_window_20261003
+			56 text field (settable) Source table, Value: source
+			57 text field (settable) Destination schema, Value: native_copy_window_20261003
+			58 text field (settable) Destination table, Value: destination
+			59 list Table copy attempts and durable recovery records
+				60 text (selected) Secondary Actions: Pick, Completed: Completed { rows: 3 } | native_copy_window_20261003.source → native_copy_window_20261003.destination
+			61 text Attempt 02def5e8-7c66-4aa6-894c-cd5bb510d98c
+Durable recovery: Completed { rows: 3 }
+Source: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.source
+Source endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.destination
+Destination endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination safe mode: Protected; read-o
+		62 container (settable) Draft persistence, Value: Saved
+		63 button Retry
+		64 button Export SQL
+		65 button Discard and quit
+	66 close button
+	67 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	68 minimize button
+	69 text dbunk Native Workspace
+70 menu bar
+	71 dbunk Native Preflight
+	72 Query
+	73 Results
+	74 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

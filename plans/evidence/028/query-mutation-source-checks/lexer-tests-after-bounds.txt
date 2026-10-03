@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 5 tests
+test postgres::sql_lex::tests::plain_string_backslash_is_rejected_when_the_boundary_moves ... ok
+test postgres::sql_lex::tests::bounded_lexer_matches_shared_tokens_and_refuses_at_exact_cap ... ok
+test postgres::sql_lex::tests::plain_string_backslash_is_accepted_when_both_semantics_agree ... ok
+test postgres::sql_lex::tests::brackets_and_dollar_identifiers_are_lexed_structurally ... ok
+test postgres::sql_lex::tests::spans_cover_each_token_and_skip_comments_and_whitespace ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 886 filtered out; finished in 0.00s
+

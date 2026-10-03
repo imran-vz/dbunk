@@ -1,0 +1,17 @@
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 33.55s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::pg_tools::live_tests::native_plain_custom_backup_restore_owned_table_and_joined_cleanup ... owned backup complete: format=Plain bytes=1874
+owned backup complete: format=Custom bytes=2313
+owned tool table removed: schema=native_tools_2992919491894779a988d40147d4c38a oid=16637 mode=RESTRICT
+owned restore complete: format=Plain rows=2 exact_bigint_numeric_text=true audit_count=1
+owned tool table removed: schema=native_tools_2992919491894779a988d40147d4c38a oid=16645 mode=RESTRICT
+owned restore complete: format=Custom rows=2 exact_bigint_numeric_text=true audit_count=2
+owned tool table removed: schema=native_tools_2992919491894779a988d40147d4c38a oid=16652 mode=RESTRICT
+owned tool schema removed: name=native_tools_2992919491894779a988d40147d4c38a oid=16636 mode=RESTRICT
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 973 filtered out; finished in 2.47s
+

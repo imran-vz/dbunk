@@ -1,0 +1,19 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "activity": 0,
+  "checks": [
+    {
+      "schema": "overview_47d6eb35479b45249c3045215b6771c9",
+      "schema_oid": 17119,
+      "remaining_schemas": 0,
+      "remaining_view_oids": 0
+    },
+    {
+      "schema": "overview_f043c941a62c48bbb97a40d04f7750b1",
+      "schema_oid": 18150,
+      "remaining_schemas": 0,
+      "remaining_view_oids": 0
+    }
+  ],
+  "method": "independent post-test ownership-checked read-only catalog check"
+}

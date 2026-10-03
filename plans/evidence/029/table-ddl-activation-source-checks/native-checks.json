@@ -1,0 +1,94 @@
+[
+  {
+    "check": "native-fmt",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.78
+  },
+  {
+    "check": "native-clippy-final",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 5.44
+  },
+  {
+    "check": "native-fixture-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--features",
+      "fixture-verification",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 5.43
+  },
+  {
+    "check": "native-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 37.69
+  },
+  {
+    "check": "native-build",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "build",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 12.21
+  },
+  {
+    "check": "native-release-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--release",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 19.72
+  },
+  {
+    "check": "package",
+    "command": [
+      "python3",
+      "tools/native/package.py",
+      "--out",
+      "/private/tmp/dbunk-native-package-20261003-table-ddl"
+    ],
+    "exit_code": 1,
+    "seconds": 57.64
+  }
+]

@@ -256,6 +256,7 @@ fn connection_string(server: &ManagedServer, password: &str) -> String {
 }
 
 async fn clean_up_failed_provision(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     server: &ManagedServer,
@@ -266,7 +267,7 @@ async fn clean_up_failed_provision(
     // restoring a pre-provision snapshot: a snapshot rewrite would
     // erase any credential another caller saved while Docker was
     // provisioning.
-    if let Err(error) = credentials::delete(pool, mode, connection_id).await {
+    if let Err(error) = credentials::delete(context, mode, connection_id).await {
         errors.push(format!("credential rollback failed: {error}"));
     }
     if let Err(error) = storage::delete_connection(pool, connection_id).await {
@@ -292,6 +293,7 @@ async fn clean_up_failed_provision(
 }
 
 pub async fn provision(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     payload: ProvisionManagedServerPayload,
@@ -394,11 +396,12 @@ pub async fn provision(
         storage::managed::upsert_managed_server(pool, &server).await?;
         let connection = build_connection(&server, &connection_id, &password)?;
         storage::upsert_connection(pool, &connection).await?;
-        credentials::upsert(pool, mode, &connection).await
+        credentials::upsert(context, mode, &connection).await
     }
     .await;
     if let Err(error) = persist_result {
-        let cleanup_errors = clean_up_failed_provision(pool, mode, &server, &connection_id).await;
+        let cleanup_errors =
+            clean_up_failed_provision(context, pool, mode, &server, &connection_id).await;
         if cleanup_errors.is_empty() {
             return Err(format!(
                 "failed to save the managed server; provisioning was rolled back: {error}"
@@ -447,6 +450,7 @@ async fn require_server(pool: &SqlitePool, id: &str) -> Result<ManagedServer, St
 }
 
 async fn start_and_wait(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     server: &ManagedServer,
@@ -458,7 +462,7 @@ async fn start_and_wait(
     let mut connection = storage::read_connection_by_id(pool, connection_id)
         .await?
         .ok_or_else(|| "the linked connection was deleted".to_string())?;
-    credentials::hydrate(pool, mode, &mut connection).await?;
+    credentials::hydrate(context, mode, &mut connection).await?;
     docker::start_container(&server.container_name).await?;
     wait_until_ready(
         server.engine,
@@ -470,9 +474,14 @@ async fn start_and_wait(
     .await
 }
 
-pub async fn start(pool: &SqlitePool, mode: CredentialStorageMode, id: &str) -> Result<(), String> {
+pub async fn start(
+    context: &credentials::Context,
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    id: &str,
+) -> Result<(), String> {
     let server = require_server(pool, id).await?;
-    start_and_wait(pool, mode, &server).await
+    start_and_wait(context, pool, mode, &server).await
 }
 
 pub async fn stop(pool: &SqlitePool, id: &str) -> Result<(), String> {
@@ -505,6 +514,7 @@ pub async fn destroy(pool: &SqlitePool, id: &str) -> Result<(), String> {
 /// hold the original users, so the env values only matter on a fresh
 /// volume and reusing them keeps the run idempotent.
 pub async fn recreate(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     id: &str,
@@ -526,7 +536,7 @@ pub async fn recreate(
             "the linked connection was deleted; destroy this record and provision a new server"
                 .to_string()
         })?;
-    credentials::hydrate(pool, mode, &mut connection).await?;
+    credentials::hydrate(context, mode, &mut connection).await?;
     let password = connection.password().to_string();
 
     let spec = engine_spec(server.engine)?;
@@ -559,6 +569,7 @@ pub async fn recreate(
 /// a cold boot from an already-running server. Missing containers remain
 /// an explicit Orphaned error; connect intent never recreates resources.
 pub async fn ensure_running_for_connection(
+    context: &credentials::Context,
     pool: &SqlitePool,
     mode: CredentialStorageMode,
     connection: &StoredConnection,
@@ -571,7 +582,7 @@ pub async fn ensure_running_for_connection(
     match docker::container_state(&server.container_name).await {
         Some(state) if state == "running" => Ok(false),
         Some(_) => {
-            start_and_wait(pool, mode, &server).await?;
+            start_and_wait(context, pool, mode, &server).await?;
             Ok(true)
         }
         None => Err(format!(
@@ -597,9 +608,11 @@ mod live_tests {
         let pool = open_pool(&Paths::from_dir(dir.path().to_path_buf()))
             .await
             .expect("open_pool");
+        let context = credentials::Context::fixture(pool.clone());
         let mode = CredentialStorageMode::PlainSqlite;
 
         let result = provision(
+            &context,
             &pool,
             mode,
             ProvisionManagedServerPayload {
@@ -624,7 +637,7 @@ mod live_tests {
             .await
             .expect("read connection")
             .expect("connection exists");
-        credentials::hydrate(&pool, mode, &mut connection)
+        credentials::hydrate(&context, mode, &mut connection)
             .await
             .expect("hydrate");
         assert!(!connection.password().is_empty());
@@ -647,7 +660,9 @@ mod live_tests {
             "stopped"
         );
 
-        start(&pool, mode, &server_id).await.expect("start");
+        start(&context, &pool, mode, &server_id)
+            .await
+            .expect("start");
         assert_eq!(
             status_of(list(&pool).await.expect("list")).status,
             "running"
@@ -661,7 +676,9 @@ mod live_tests {
         assert_eq!(orphaned.status, "orphaned");
         assert!(orphaned.volume_exists);
 
-        recreate(&pool, mode, &server_id).await.expect("recreate");
+        recreate(&context, &pool, mode, &server_id)
+            .await
+            .expect("recreate");
         assert_eq!(
             status_of(list(&pool).await.expect("list")).status,
             "running"

@@ -1,0 +1,23 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `dbunk` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.52s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 10 tests
+test backend::table_ddl::live_tests::native_table_ddl_live_exact_changes_races_and_joined_cleanup ... ignored, owned stage03 table DDL and deterministic schema ABA races; serial explicit opt-in
+test backend::table_ddl::tests::bounds_refuse_oversized_backings_and_preserve_serialized_readonly_description ... ok
+test backend::table_ddl::tests::dropped_submission_waiter_keeps_write_permit_until_driver_join ... ok
+test backend::table_ddl::tests::exact_preview_quotes_and_preserves_null_comment_and_column_identity ... ok
+test backend::table_ddl::tests::four_fixed_forms_match_legacy_renderer_and_accept_quoted_whitespace ... ok
+test backend::table_ddl::tests::strict_confirmation_stale_timeout_policy_and_generation_refuse_before_credentials ... ok
+test postgres::native_table_ddl::tests::cancellation_before_commit_rolls_back_and_known_commit_wins_retirement ... ok
+test postgres::native_table_ddl::tests::empty_comment_postcondition_is_server_removal_without_rewriting_intent ... ok
+test postgres::native_table_ddl::tests::lost_rollback_and_commit_replies_are_unknown ... ok
+test postgres::native_table_ddl::tests::wrong_lock_refuses_dispatch_and_namespace_aba_rolls_back_after_statement ... ok
+
+test result: ok. 9 passed; 0 failed; 1 ignored; 0 measured; 1174 filtered out; finished in 0.06s
+

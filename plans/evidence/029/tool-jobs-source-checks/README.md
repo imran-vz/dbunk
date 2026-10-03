@@ -1,0 +1,35 @@
+# Native PostgreSQL backup/restore, 2026-10-03
+
+Source implemented in the approved Tool tabs and table-context entry points. Required repository checks, native debug/release checks and an owned real-client probe pass. The isolated package builds and its 400 final source hashes match. Actual-window acceptance remains pending after CUA discovery failed. This does not close Plans 027–030 or establish full PostgreSQL parity.
+
+## Behavior and ownership
+
+The profile-owned facade registers each stable attempt synchronously before preparation. Restore preparation validates a regular source and copies it to a private immutable snapshot used for inspection and execution. Review binds the backend owner, connection generation, exact intent and stored policy. Starting and confirming are explicit; lost confirmation can be reacquired by explicit review without dispatch. Preparation, subprocesses, pipes, reapers, publication and snapshot cleanup retain joined ownership under shared shutdown deadlines. Unknown writes are never automatically retried.
+
+Plain/custom backup and restore include database/schema/table backup scope, native path selection, bounded catalog choices, exact target/policy review, structured redacted diagnostics, observed phases and cancellation. Catalog choices are explicitly loaded, bounded and virtualized; typing opens no sockets. Setup fields refuse or preserve real marked text rather than silently rewriting it. The app-owned observer survives closing setup tabs. Paths, samples, tokens and session jobs are transient; workspace format 5 persists only the Backup/Restore tab identity/binding and preserves supported older versions.
+
+A published backup remains known successful if removing its private temporary name fails. Failed cleanup retains its owner/admission; cleanup never targets the published destination. Snapshot unlink errors are explicit. Shared TLS-helper temporary CA/home removal retains its preexisting best-effort Drop behavior, so no broader claim about typed unlink failures is made.
+
+Restore dispatch retires old data/mutation handles and blocks new data handles until cleanup settles. Successful and unknown outcomes advance a lifetime revision that survives job-history expiry/release. The native workspace invalidates affected metadata/mutation sources while retaining drafts, SQL sessions and manual transactions. Missing revision history invalidates all relevant sources conservatively. No SQL is automatically rerun.
+
+There are four active jobs, one per connection, and at most 32 retained terminal jobs for one hour. Bounded observations and opaque reviews are checked for heap capacity. The native command lane reserves delivery allowance before dispatch and holds one outstanding reply. Setup/capture/editor/catalog allowances participate in the shared 128 MiB retained and 16 MiB delivery payload budgets; these are not process RSS claims.
+
+## Verification
+
+Focused source checks cover registered blocked preparation and shutdown, source replacement while copying, explicit confirmation recovery, cancellation around publication, late known success, unknown restore outcomes, audit counts, data-source retirement and retained ownership after failed snapshot/archive cleanup. Independent source review led to fixes for finalization cancellation, a closed-watch busy loop, stale observation errors, polling-click feedback and an IME menu bypass. Catalog choices and schema-change table reset were also completed. Native focused checks: 12 passed. Backend focused facade checks: 19 passed; additional copy-owner and reaper checks are retained in backend-focused.
+
+The frozen matrix passes `pnpm format`, `pnpm lint`, `pnpm typecheck`, `just fmt`, `just lint` and serialized `just test` (core 677 passed/71 ignored, Tauri 694 passed/85 ignored). Native debug/release all-target Clippy, fixture-harness Clippy, format, debug build and both test suites pass: 219 passed/13 ignored each. Dependency proof and Tauri custom-protocol build pass. Python tooling is unchanged; prior tooling tests were not repeated.
+
+The first isolated suite exposed two stale test expectations for workspace format 4. Production format 5 was intentional; only those backend test expectations/name changed. Initial 400-file source-sha256.json and failed logs remain immutable. source-sha256-final.json and verification-revision.json identify that test-only correction. Corrected isolated Clippy/tests pass: 889 passed/85 ignored plus 2 doctests. The Tauri facade compilation then exhausted disk space. Only the inactive generated backend incremental cache was removed; the exact interrupted facade command was retried and passed 132 tests/14 ignored. See corrective-results.json. No ignored test is counted as passed.
+
+The explicitly invoked real-client probe passes against owned stage03 `127.0.0.1:15432/dbunk_demo`, UUID `2283820d-33ec-4c4c-ae03-7051092bd410`, using local libpq 18.6 clients. Unique schema `native_tools_2992919491894779a988d40147d4c38a` held only the probe's commented payload table. Plain (1,874 bytes) and custom (2,313 bytes) backups restored two rows with exact bigint, numeric, Unicode/quotes/backslashes/newlines and NULL values. Replacing the selected source pathname after snapshot preparation did not change restored contents. Each confirmed success recorded exactly one audit event and advanced the restore revision. Backend shutdown joined before identity/OID/owner/comment-guarded RESTRICT cleanup. The schema was absent afterward and the zero activity baseline was restored. The probe does not establish TLS-client, failure-matrix or actual-window acceptance.
+
+Keyboard/AX and real IME acceptance remain required for new controls. VoiceOver is deferred, not passed. Frozen older profiles/packages remain preserved. No production, daily-driver cutover, commit, push or PR is involved.
+
+## Package and window attempt
+
+Package: `/private/tmp/dbunk-native-package-20261003-pg-tools/dbunk Native Preflight.app`.
+Executable SHA256: `09a826eb862584584352203ebfce52883241d61cecc3edfce42c0735ccc8084b`.
+Bundle size: 125,884,892 bytes. package-identity.json and post-package-source-proof.json bind the release package to all 400 final source hashes.
+
+The owned launcher created `/private/tmp/dbunk-native-pg-tools-20261003-review` and launched PID 86764 outside the repository. CUA discovery by exact package path and observed bundle ID both returned `cgWindowNotFound`; inventory reported the app running. No UI interaction followed, and no source diagnosis is inferred. Exact executable hash/process/profile/manifest checks preceded SIGTERM cleanup. The initial cleanup guard expected the wrong flag and refused before any signal; the corrected guard matched the launch command. Process termination and zero fixture activity are verified, but this is not a normal-quit pass. See [window evidence](../tool-jobs-window-20261003/failed-discovery.json) and forced-cleanup.json. Keyboard/AX and real IME remain pending for these controls; VoiceOver remains deferred.

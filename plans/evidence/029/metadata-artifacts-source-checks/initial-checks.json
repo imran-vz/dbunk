@@ -1,0 +1,28 @@
+[
+  {
+    "check": "backend-fmt",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "fmt"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "backend-clippy",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "clippy",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0
+  }
+]

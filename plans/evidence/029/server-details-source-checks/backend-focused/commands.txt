@@ -1,0 +1,6 @@
+Owner /root/export_models. Pure source tests; no live fixture/profile/credentials/UI access.
+Working directory /Users/imran/projects/Code/dbunk
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile postgres::native_catalog::server_details -- --test-threads=1
+cargo +1.97.1 clippy --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check
+Ignored owned probe written/compiled but NOT run: backend::server_details::live_tests::native_server_details_owned_read_cancel_retire_and_cleanup

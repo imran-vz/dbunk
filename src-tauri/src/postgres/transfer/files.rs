@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use once_cell::sync::Lazy;
 use tokio::sync::Semaphore;
 
+use super::native::IoContext;
 use super::protocol::TransferError;
 
 pub(super) const SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -64,10 +65,17 @@ impl SourceFile {
 
 /// Opens a source without following an already-present symlink and verifies
 /// that the opened handle still describes the entry that was inspected.
+#[cfg(test)]
 pub(super) async fn open_source(path: &Path) -> Result<SourceFile, TransferError> {
+    open_source_in(path, IoContext::default()).await
+}
+pub(super) async fn open_source_in(
+    path: &Path,
+    io: IoContext,
+) -> Result<SourceFile, TransferError> {
     validate_absolute(path, "sourcePath")?;
     let path = path.to_owned();
-    let (file, opened) = file_work(move || {
+    let (file, opened) = file_work(&io, move || {
         let before = std::fs::symlink_metadata(&path)
             .map_err(|error| TransferError::io("sourceMetadata", &error))?;
         validate_source_metadata(&before)?;
@@ -87,7 +95,7 @@ pub(super) async fn open_source(path: &Path) -> Result<SourceFile, TransferError
     })
     .await?;
     Ok(SourceFile {
-        file: BoundedFile::new(file),
+        file: BoundedFile::new(file, io),
         fingerprint: opened,
     })
 }
@@ -133,9 +141,12 @@ fn configure_source_open(options: &mut std::fs::OpenOptions) {
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn configure_source_open(_options: &mut std::fs::OpenOptions) {}
 
-pub(super) async fn path_fingerprint(path: &Path) -> Result<FileFingerprint, TransferError> {
+pub(super) async fn path_fingerprint_in(
+    path: &Path,
+    io: &IoContext,
+) -> Result<FileFingerprint, TransferError> {
     let path = path.to_owned();
-    file_work(move || {
+    file_work(io, move || {
         let metadata = std::fs::symlink_metadata(path)
             .map_err(|error| TransferError::io("sourceMetadata", &error))?;
         validate_source_metadata(&metadata)?;
@@ -153,12 +164,21 @@ pub(super) fn file_name(path: &Path) -> Result<String, TransferError> {
 
 pub(super) struct PartialFile {
     destination: PathBuf,
-    temporary: tempfile::NamedTempFile,
+    temporary: Arc<tempfile::NamedTempFile>,
+    io: IoContext,
     writer: Option<BoundedFile>,
 }
 
 impl PartialFile {
+    #[cfg(test)]
     pub(super) async fn create(destination: PathBuf, job_id: &str) -> Result<Self, TransferError> {
+        Self::create_in(destination, job_id, IoContext::default()).await
+    }
+    pub(super) async fn create_in(
+        destination: PathBuf,
+        job_id: &str,
+        io: IoContext,
+    ) -> Result<Self, TransferError> {
         validate_absolute(&destination, "destinationPath")?;
         let parent = destination
             .parent()
@@ -176,7 +196,8 @@ impl PartialFile {
             .collect::<String>();
         let prefix = format!(".{name}.dbunk-partial-{job_id}-");
         let destination_check = destination.clone();
-        let (temporary, writer) = file_work(move || {
+        let creation_owner = io.clone();
+        let (temporary, writer) = file_work(&io, move || {
             let parent_metadata = std::fs::symlink_metadata(&parent)
                 .map_err(|error| TransferError::io("destinationParent", &error))?;
             if !parent_metadata.is_dir() {
@@ -196,6 +217,10 @@ impl PartialFile {
                 .prefix(&prefix)
                 .tempfile_in(parent)
                 .map_err(|error| TransferError::io("createPartial", &error))?;
+            let temporary = Arc::new(temporary);
+            // Register inside the owned worker before reopening or delivering
+            // its result; cancellation cannot lose the private-name owner.
+            creation_owner.retain_partial(temporary.clone());
             let writer = temporary
                 .reopen()
                 .map_err(|error| TransferError::io("openPartial", &error))?;
@@ -205,7 +230,8 @@ impl PartialFile {
         Ok(Self {
             destination,
             temporary,
-            writer: Some(BoundedFile::new(writer)),
+            writer: Some(BoundedFile::new(writer, io.clone())),
+            io,
         })
     }
 
@@ -232,8 +258,13 @@ impl PartialFile {
     /// worker through completion after the job has claimed finalization.
     pub(super) async fn publish(self) -> Result<(), TransferError> {
         debug_assert!(self.writer.is_none());
-        file_work(move || {
-            self.temporary
+        if self.io.tracked() {
+            drop(self.temporary);
+            return self.io.publish_partial(self.destination).await;
+        }
+        file_work(&self.io, move || {
+            Arc::try_unwrap(self.temporary)
+                .map_err(|_| file_worker_error("publish"))?
                 .persist_noclobber(self.destination)
                 .map_err(|error| {
                     if error.error.kind() == std::io::ErrorKind::AlreadyExists {
@@ -249,16 +280,16 @@ impl PartialFile {
 }
 
 #[derive(Clone)]
-struct BoundedFile(Arc<Mutex<std::fs::File>>);
+struct BoundedFile(Arc<Mutex<std::fs::File>>, IoContext);
 
 impl BoundedFile {
-    fn new(file: std::fs::File) -> Self {
-        Self(Arc::new(Mutex::new(file)))
+    fn new(file: std::fs::File, io: IoContext) -> Self {
+        Self(Arc::new(Mutex::new(file)), io)
     }
 
     async fn read(&self, limit: usize, operation: &'static str) -> Result<Vec<u8>, TransferError> {
         let file = self.0.clone();
-        file_work(move || {
+        file_work(&self.1, move || {
             let mut bytes = vec![0; limit];
             let read = file
                 .lock()
@@ -277,7 +308,7 @@ impl BoundedFile {
         operation: &'static str,
     ) -> Result<(), TransferError> {
         let file = self.0.clone();
-        file_work(move || {
+        file_work(&self.1, move || {
             file.lock()
                 .map_err(|_| file_worker_error(operation))?
                 .write_all(&bytes)
@@ -288,7 +319,7 @@ impl BoundedFile {
 
     async fn sync_all(&self, operation: &'static str) -> Result<(), TransferError> {
         let file = self.0.clone();
-        file_work(move || {
+        file_work(&self.1, move || {
             file.lock()
                 .map_err(|_| file_worker_error(operation))?
                 .sync_all()
@@ -299,7 +330,7 @@ impl BoundedFile {
 
     async fn metadata(&self, operation: &'static str) -> Result<FileFingerprint, TransferError> {
         let file = self.0.clone();
-        file_work(move || {
+        file_work(&self.1, move || {
             let metadata = file
                 .lock()
                 .map_err(|_| file_worker_error(operation))?
@@ -316,6 +347,7 @@ impl BoundedFile {
 /// actually returns. Cancellation can free its transfer job, but repeated work
 /// cannot create an unbounded queue of abandoned filesystem threads.
 async fn file_work<T: Send + 'static>(
+    io: &IoContext,
     work: impl FnOnce() -> Result<T, TransferError> + Send + 'static,
 ) -> Result<T, TransferError> {
     let permit = FILE_WORKER_PERMITS
@@ -323,12 +355,11 @@ async fn file_work<T: Send + 'static>(
         .acquire_owned()
         .await
         .map_err(|_| file_worker_error("fileWorker"))?;
-    tokio::task::spawn_blocking(move || {
+    io.file_work(move || {
         let _permit = permit;
         work()
     })
     .await
-    .map_err(|_| file_worker_error("fileWorker"))?
 }
 
 fn file_worker_error(operation: &str) -> TransferError {

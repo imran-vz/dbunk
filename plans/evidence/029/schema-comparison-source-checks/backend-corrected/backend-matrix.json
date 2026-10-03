@@ -1,0 +1,85 @@
+[
+  {
+    "name": "isolated-clippy",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "clippy",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 15.29,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "isolated-test",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 65.93,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "tauri-facade-test",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--features",
+      "isolated-profile",
+      "backend::"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 50.13,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "custom-protocol",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "build",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--features",
+      "tauri/custom-protocol"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 19.9,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  }
+]

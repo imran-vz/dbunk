@@ -1,0 +1,16 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				142 button (disabled) Apply maintenance
+~				145 button (disabled) Clear recovery
+~				148 container Command completed. Review warnings for skipped work; this does not measure maintenance performed.
+~				149 container (settable) Observed target, SQL, deadlines and recovery, Value: Attempt: d5b4badf-1f5a-43cc-8351-b98486762509
+Action: Analyze
+Database: "dbunk_demo" (OID 16384)
+Schema: "native_parity_20261003" (OID 16466)
+Relation: "rows" (OID 16467, Table)
+SQL: ANALYZE "native_parity_20261003"."rows"
+Effects: potentially partial after dispatch
+Operation deadline: 300000 ms
+Statement timeout: inherited/server default
+
+The observed object identity is rechecked before execution. PostgreSQL maintenance SQL resolves names again; concurrent schema or object changes can still retarget it. Th
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

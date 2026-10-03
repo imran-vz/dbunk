@@ -1,0 +1,71 @@
+{
+  "profile_id": "c16f87dc-e21a-4ea2-b2ed-a0fdc9aa8a42",
+  "workspace_version": 11,
+  "documents": [
+    {
+      "id": "ac9cb75a-e1bc-4d59-9024-576bf6338359",
+      "tool": null,
+      "title": null
+    },
+    {
+      "id": "ca49b926-0cbd-4de3-9a10-7e981c894333",
+      "tool": null,
+      "title": null
+    },
+    {
+      "id": "1b012429-6f61-4ce6-9f44-34176b7c69c7",
+      "tool": "savedQueries",
+      "title": null
+    },
+    {
+      "id": "afe040fe-462b-4cc3-a0f4-8567c5795da4",
+      "tool": "history",
+      "title": null
+    },
+    {
+      "id": "2cceb3ee-8ede-49c5-a06c-737ef4e5b0cf",
+      "tool": null,
+      "title": null
+    },
+    {
+      "id": "4b1f3a2a-e102-4e0c-9f3a-6fc5e3a33a23",
+      "tool": "administration",
+      "title": null
+    },
+    {
+      "id": "684130cd-0a8e-45e9-92e2-2cc9a0ebbb99",
+      "tool": null,
+      "title": null
+    },
+    {
+      "id": "c4cc107a-dfa8-4ba8-9515-e90406d85a04",
+      "tool": "tableCopy",
+      "title": null
+    },
+    {
+      "id": "630bd1fc-09eb-414b-bb3f-555ced1d0549",
+      "tool": "objects",
+      "title": null
+    },
+    {
+      "id": "bcc6b482-6843-4c4e-9e73-6f68bd4a1ec5",
+      "tool": "csvTransfer",
+      "title": null
+    },
+    {
+      "id": "d33bd037-4370-4fdc-b391-f470d399743f",
+      "tool": null,
+      "title": null
+    },
+    {
+      "id": "fda04d51-cf8a-450a-afe2-3c712af3b568",
+      "tool": "tableSeed",
+      "title": null
+    },
+    {
+      "id": "edc67ed9-b018-4c03-8cea-e001eb26485f",
+      "tool": null,
+      "title": null
+    }
+  ]
+}

@@ -14,10 +14,18 @@ pub(crate) struct BrowseConnection {
     pub inner: DedicatedConnection,
 }
 
+#[cfg(test)]
 pub(crate) async fn connect(
     spec: &ResolvedPostgresConnectSpec,
 ) -> Result<BrowseConnection, TableBrowseError> {
-    let inner = dedicated::connect(spec, NoticeSink::Ignore)
+    connect_tracked(spec, None).await
+}
+
+pub(crate) async fn connect_tracked(
+    spec: &ResolvedPostgresConnectSpec,
+    tasks: Option<&dedicated::DriverJoins>,
+) -> Result<BrowseConnection, TableBrowseError> {
+    let inner = dedicated::connect_tracked(spec, NoticeSink::Ignore, tasks)
         .await
         .map_err(map_dedicated)?;
     inner

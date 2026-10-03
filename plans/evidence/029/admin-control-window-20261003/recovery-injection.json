@@ -1,0 +1,12 @@
+{
+  "kind": "explicit offline recovery fault injection; no signal dispatched",
+  "profile_id": "c16f87dc-e21a-4ea2-b2ed-a0fdc9aa8a42",
+  "document_id": "4b1f3a2a-e102-4e0c-9f3a-6fc5e3a33a23",
+  "attempt_id": "18d8d2f1-13c5-4b08-bbc4-3056328ade8d",
+  "field": "adminControl.applyState",
+  "before": "staged",
+  "after": "outcomeUnknown",
+  "before_workspace_sha256": "a6d9384f5272398474ca7aecde3b7163e6e7d77a73ac921b94d451ba88bfcae2",
+  "after_workspace_sha256": "6fa30affd0ae0fd934837e7a3f4645e2a4a8911f456905e29379d269213d97c3",
+  "all_other_decoded_fields_unchanged": true
+}

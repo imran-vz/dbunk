@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "pid": 51503,
+  "executable": "/Users/imran/projects/Code/dbunk/apps/native/target/release/dbunk-native",
+  "executable_sha256": "ca19f89e1ac37109194b91d504156d674e58e7426feecfd887918dbf3a4c42cb",
+  "profile": "/private/tmp/dbunk-stage04-performance-20261002a",
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-s4v1uge1",
+  "tls_fixture_instance": null,
+  "bundle": null
+}

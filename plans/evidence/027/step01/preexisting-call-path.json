@@ -1,0 +1,18 @@
+{
+  "src-tauri/src/backend/profile.rs": {
+    "step00_sha256": "607f01c5ecc150921d5d1bde817f5efc91da915895bf4084cf34df1c3ac5f2fb",
+    "committed_sha256": "607f01c5ecc150921d5d1bde817f5efc91da915895bf4084cf34df1c3ac5f2fb"
+  },
+  "src-tauri/src/connections.rs": {
+    "step00_sha256": "2494ea8eb93df247361d15d661063e11d36cea0985b2093bf8ac018974cd31b0",
+    "committed_sha256": "2494ea8eb93df247361d15d661063e11d36cea0985b2093bf8ac018974cd31b0"
+  },
+  "src-tauri/src/credentials.rs": {
+    "step00_sha256": "015ab4441fbfcea815b7e5fcedf7013e03e2e50b9e3a9e8a505c5f6b001c3774",
+    "committed_sha256": "015ab4441fbfcea815b7e5fcedf7013e03e2e50b9e3a9e8a505c5f6b001c3774"
+  },
+  "src-tauri/src/keychain.rs": {
+    "step00_sha256": "f804bdc4b433b9be159da2ef563c7aea7ae68e889f715fd21851d8f2364b798d",
+    "committed_sha256": "f804bdc4b433b9be159da2ef563c7aea7ae68e889f715fd21851d8f2364b798d"
+  }
+}

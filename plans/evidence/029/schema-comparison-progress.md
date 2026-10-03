@@ -1,0 +1,3 @@
+# Native schema comparison progress, 2026-10-03
+
+Read-only PostgreSQL 16 comparison source is integrated with the approved Tool tabs. See [source, ownership and verification scope](./schema-comparison-source-checks/README.md). Focused checks and the guarded real PG16 probe pass. Required and pinned checks pass, including 243 native tests/13 ignored in both debug and release; the separate package matches 435 source hashes. CUA could not locate its window, so native-window acceptance remains pending. Cached schema suggestions and the comparison presentation/copy/keyboard refinements are now source-implemented; their final pinned native checks pass. Plans 027–030 remain IN PROGRESS; VoiceOver is deferred and no full parity claim is made.

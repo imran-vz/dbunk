@@ -1,0 +1,14 @@
+{
+  "fixture": {
+    "project": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "driver": "local",
+    "executable": "/Users/imran/projects/Code/dbunk/tools/native/.state/runtime/installed/bin/postgres",
+    "pid": 3519
+  },
+  "baseline": 0,
+  "executable": "/Users/imran/projects/Code/dbunk/src-tauri/target/debug/examples/native_table_copy_probe",
+  "sha256": "6741540f421950a0935875d534ef73f35454afef035ccd8ba48545b06210cf8a",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "scope": "owned backend facade; no native-window claim"
+}

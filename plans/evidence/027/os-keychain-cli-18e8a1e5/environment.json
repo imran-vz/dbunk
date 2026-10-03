@@ -1,0 +1,52 @@
+{
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "macos": "27.0.1",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "tracked_diff_sha256": "a7f4b969d018a648eaf8e86740627c78ad01f75e2503a47dc8498e589c8d6935",
+  "build_variant": "debug, --no-default-features --features isolated-profile --example native_keychain_probe",
+  "executable_sha256": "fbc4a1a3077c9741b920fc71524988695e83122bdac316f486f116a58f33b2b2",
+  "source_sha256": {
+    "src-tauri/examples/native_keychain_probe.rs": "3e36cf62bbbdfa7edd02b91884dda84f672696535f9d166fe974f88f1625a916",
+    "src-tauri/Cargo.toml": "e993f49b006eed8dd8e7b13e33c869535fae0b74808e9fad6766a422631d3660",
+    "tools/native/profile.py": "24088c0df9bcb084226b3b7bed025e83df03e13101724bfdeaa08113aad07d2b",
+    "src-tauri/src/credentials.rs": "e54e9c305b715a36824f00efad8e27172710ac073313b2e33c2da360b304cb55",
+    "src-tauri/src/keychain.rs": "7fa6bd9e3472c3ee191fbf2afa656517ae1f8adb92652b0724037a9aef08d788",
+    "src-tauri/src/settings.rs": "ba4adab304f886f181133b7c84025414803545e63526dd7327ec4b030793cffb",
+    "src-tauri/src/storage.rs": "2a9dcbea0274899ee4b3fcd497aa5c63a9d3208e85dbd98ebbd4685e51ed0763",
+    "src-tauri/src/credentials/context_tests.rs": "e0697f6b6dd5a8a190e4ecfb20809590f8b07912ca702520eb9c4d4debdf5632",
+    "src-tauri/src/credentials/native.rs": "8f9b85bf2d48f88261d04a4a1eac8354bf4eef659fba1d1a5e6f75ce02991ede",
+    "src-tauri/src/credentials/native_connections.rs": "a73473e509f3c6f687a81513ddbeb533dd4b70fb0855826dda3efe27d06beee5",
+    "src-tauri/src/credentials/sqlite.rs": "2c004a8e385baf6994aae0ea65188373b3e20080e11cbe6777de4944fbcb5735",
+    "src-tauri/src/backend/development/admission_tests.rs": "445c6976f7828839c3996cabc1e2ad215f71c4816c50a38ee2223a7171962e40",
+    "src-tauri/src/backend/development/connection_tests.rs": "17afbbbb9db495648a3268a26e830afb21979437acf876605ed5ddfb63c121c7",
+    "src-tauri/src/backend/development/connections.rs": "44e91e997bb107df890d2e669a1e018a682ffcaea102f642b7edef9c98ab2818",
+    "src-tauri/src/backend/development/files.rs": "ebe185ba3051926a4f4fea5e7c2578bb89aa1c4b0a17e85c00ea992b98754572",
+    "src-tauri/src/backend/development/settings.rs": "a3d1a1df2788469532966dd770fedc30eb0c241540fed7aba4aec2c32bb9084e",
+    "src-tauri/src/backend/development/tests.rs": "b57f2f8fff6c64185d9b3366e9cba74e4393bb188ce00238fb1cb37ced35d27f",
+    "src-tauri/src/backend/development/workspace.rs": "3df4f2efe5d4894b9ab0c5c97c8881512dfd74df2782a42599468b40d9b7400d",
+    "src-tauri/src/backend/development/workspace_tests.rs": "f368e65e0bc0b9e815142a9b86faa98928e2d862cd32f89f08d410acd5341298",
+    "src-tauri/src/backend.rs": "7cdd88ff5f50b6027a8bfd2208e337318be5bc43ab4cfe3667342beb86866383",
+    "src-tauri/src/backend/development.rs": "c8f943672a7bd81bc483b56036ef3740b2e4ffc68c916ccc61179764a1ee9491",
+    "src-tauri/src/backend/profile.rs": "6f7a9cb341d2dbec763672d5652c5454e0ba7ce780ae59325a66af878d91373c",
+    "src-tauri/src/app.rs": "4e93e0cfd1549880d8f5ff63b76d1026120eff62270ad8e77f366c25686a14d0",
+    "src-tauri/src/socket_lifecycle.rs": "186ec0590548a0bea946a0c4fbc6e1cbe314a0782564683e1cfd0c750c5234c0"
+  },
+  "commands": [
+    "python3 tools/native/profile.py keychain-prepare /private/tmp/dbunk-stage04-keychain-402e3774-fa8b-4a88-a696-683a4a0ad935",
+    "python3 tools/native/profile.py keychain-seed /private/tmp/dbunk-stage04-keychain-402e3774-fa8b-4a88-a696-683a4a0ad935",
+    "python3 tools/native/profile.py keychain-reopen /private/tmp/dbunk-stage04-keychain-402e3774-fa8b-4a88-a696-683a4a0ad935"
+  ],
+  "profile": "/private/tmp/dbunk-stage04-keychain-402e3774-fa8b-4a88-a696-683a4a0ad935",
+  "profile_id": "18e8a1e5-818f-4068-9dfd-55953bdd9bb4",
+  "credential_namespace": "1cf0911c-aaf7-4311-85e1-02ba7e0f3555",
+  "secret_values": "omitted; random test secrets generated only in probe memory",
+  "keychain_cleanup": "primary and rollback entry absent after confirmed reset; verified through real OS reads",
+  "profile_cleanup": "profile retained with draft+metadata and NeedsOnboarding; no saved passwords remain",
+  "scope": "real OS Keychain, CLI facade, separate seed/reopen processes; no GPUI/bundle/VoiceOver claim",
+  "phase_completed_utc": {
+    "seed": "2026-10-02T16:21:09.331076+00:00",
+    "reopen": "2026-10-02T16:21:18.493976+00:00"
+  }
+}

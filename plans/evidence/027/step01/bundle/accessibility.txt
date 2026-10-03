@@ -1,0 +1,29 @@
+PASS: requested application registers with Cocoa
+PASS: packaged AX identity codes.imran.dbunk.native.stage04.preflight at /private/tmp/dbunk-native-plan027-repaired-20261002/dbunk Native Preflight.app
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: cold native startup reaches Ready with Run enabled without wake input
+PASS: identity-checked cold startup exposes readable SQL and a ready session without editing or focus input
+PASS: requested application registers with Cocoa
+PASS: packaged AX identity codes.imran.dbunk.native.stage04.preflight at /private/tmp/dbunk-native-plan027-repaired-20261002/dbunk Native Preflight.app
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window admits execution
+PASS: window-step SQL reaches editor
+PASS: new view completes fresh query and terminal ACK
+PASS: only fresh result is exposed
+PASS: native window step recovery
+PASS: requested application registers with Cocoa
+PASS: packaged AX identity codes.imran.dbunk.native.stage04.preflight at /private/tmp/dbunk-native-plan027-repaired-20261002/dbunk Native Preflight.app
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: window shutdown terminates validated process
+Shutdown milliseconds: 174.129834
+PASS: native window step quit

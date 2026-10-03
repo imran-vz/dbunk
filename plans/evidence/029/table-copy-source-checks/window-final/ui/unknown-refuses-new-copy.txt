@@ -1,0 +1,7 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
++			77 text Reconcile the previous uncertain copy on this destination before preparing another
+~			55 text field (settable) Source schema, Value: native_copy_window_20261003
+~			56 text field (settable) Source table, Value: source
+~			57 text field (settable) Destination schema, Value: native_copy_window_20261003
+~			58 text field (settable) Destination table, Value: slow_destination
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

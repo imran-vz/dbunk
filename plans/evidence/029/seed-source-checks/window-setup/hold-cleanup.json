@@ -1,0 +1,7 @@
+{
+  "function_oid": 16951,
+  "trigger_oid": 16952,
+  "absent": true,
+  "restrict": true,
+  "activity_before": 0
+}

@@ -10,19 +10,19 @@
 </head>
 <body><main>
 <header>
-<p class="meta">dbunk / implementation task · Draft · 02 Oct 2026 · baseline 102568b + reviewed working tree</p>
-<h1>Build the first working<br>GPUI PostgreSQL client</h1>
+<p class="meta">dbunk / completed stage 03 scope · 02 Oct 2026 · Plan 026 at 3f987c9</p>
+<h1>First GPUI PostgreSQL<br>query workflow: complete</h1>
 <p class="lead">Launch a native window, connect to a disposable PostgreSQL database, run real SQL, inspect results and errors, and stop a running query.</p>
-<p>Target: an internal macOS Apple Silicon development version. The native spike currently uses synthetic rows; this task connects its useful parts to the tested backend.</p>
+<p>Plan 026 delivered the internal macOS Apple Silicon query app against an owned PostgreSQL fixture. It runs real SQL and passes the recorded stream, cancellation, reconnect and cleanup checks. <strong>This is not PostgreSQL feature parity.</strong> Imran confirmed the broader target on 02 Oct 2026; see the <a href="mocks/native-postgres-parity/index.html">current parity scope and design review</a>.</p>
 <div class="path" aria-label="End-to-end flow"><div><b>01 / Connect</b>Isolated fixture profile</div><div><b>02 / Execute</b>Existing Query Session service</div><div><b>03 / Inspect</b>Real results and errors</div><div><b>04 / Stop</b>Cancellation and cleanup</div></div>
 </header>
 <section>
 <h2>Editor accessibility gate</h2>
 <p class="gate">The SQL editor now has an application-owned accessibility adapter using the pinned GPUI APIs. It exposes text, primary selection, focus and shaped highlight geometry without a fork. Geometry, scrolling, resize and keyboard focus through editor/results/cell-editor pass the external macOS checks. Imran confirmed VoiceOver validation complete on 02 Oct 2026. <strong>Stage 01 gate closed: PASS / continue.</strong> See the <a href="evidence/024/stage01-gate.md">review and costed remaining work</a>. No accessibility exception is used.</p>
-<p>For any new layout or controls, first publish distinct static mocks and wait for the selected direction, as required by AGENTS.md. The task draft itself does not authorize implementation or cutover.</p>
+<p>For any new layout or controls, first publish distinct static mocks and wait for the selected direction, as required by AGENTS.md. Plan 026 implementation is complete. Workspace shell A is already selected for Plan 027; later table-review designs await selection. No daily-driver cutover is authorized.</p>
 </section>
 <section>
-<h2>Implementation</h2>
+<h2>Completed implementation scope</h2>
 <article class="step"><div class="num">1</div><div><h3>Expose the smallest safe backend API</h3><p>Build on Plan 025. Export a narrow host-facing surface for startup, connections, Query Session operations, event types and shutdown. Keep storage pools, drivers and manager internals private. Connection hydration, safety enforcement and auditing must remain inside the services.</p><p>A native crate can depend on the existing backend with <code>default-features = false</code>. Completing every service extraction or moving everything into <code>crates/dbunk-core</code> is not a prerequisite for this slice.</p></div></article>
 <article class="step"><div class="num">2</div><div><h3>Create the native host and connect it to PostgreSQL</h3><p>Add a separately runnable native application using the spike’s pinned GPUI/Zed dependencies. Own a multi-thread Tokio runtime, start the core monitors, register the window/session owner, and open a fixture connection through the connection service.</p><p>Provide a reproducible setup command for an isolated profile with plain SQLite fixture credentials. Use the disposable PostgreSQL service on <code>127.0.0.1:15432</code>. Never fall back to the daily-driver profile or keychain.</p></div></article>
 <article class="step"><div class="num">3</div><div><h3>Replace synthetic batches with the real event stream</h3><p>Bridge the core’s typed events into GPUI using a bounded queue. For this first version, preserve the existing sequence, ACK and credit protocol. Acknowledge after consuming the event into the bounded result model. Keep database work off the UI thread.</p><p>Fence updates by owner, session, generation and execution. Queue saturation or delivery failure must fail explicitly and release the session, with no silent drops or unlimited buffering. Closing the window must cancel work and await backend cleanup.</p></div></article>
@@ -45,6 +45,6 @@
 <p>Connection-management UI, saved workspaces, schema browsing, table mutations, schema maps, backup/restore, transfers, schema comparison, Redis and other engines, full feature parity, signed installers and daily-driver cutover.</p>
 <p>This task delivers one working native query workflow. A daily-driver replacement still requires the remaining migration stages.</p>
 </section>
-<footer>Sources: <a href="024-gpui-baseline-and-spike.md">Plan 024</a> · <a href="025-shared-core-query-session-extraction.md">Plan 025</a> · <a href="gpui-migration.html#sequence">Migration sequence</a> · <a href="../docs/adr/0032-host-neutral-backend-seam.md">ADR-0032</a>. Stage 01 is closed; this implementation task remains a draft, not authorization for a new host or cutover.</footer>
+<footer>Sources: <a href="024-gpui-baseline-and-spike.md">Plan 024</a> · <a href="025-shared-core-query-session-extraction.md">Plan 025</a> · <a href="gpui-migration.html#sequence">Migration sequence</a> · <a href="../docs/adr/0032-host-neutral-backend-seam.md">ADR-0032</a>. Stage 01 is closed. Plan 026 is DONE at 3f987c9. <a href="027-native-workspace-shell.md">Plan 027</a> is in progress; <a href="028-native-postgres-data-workflow.md">Plan 028</a> covers the next data-workflow milestone. Full PostgreSQL parity remains pending.</footer>
 </main></body>
 </html>

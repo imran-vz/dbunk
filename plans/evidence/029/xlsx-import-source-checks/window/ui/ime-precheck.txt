@@ -1,0 +1,63 @@
+Window: "Keyboard", App: System Settings.
+0 standard window Keyboard, ID: Main, Secondary Actions: Raise
+	1 split group Main, SidebarNavigationSplitView
+		2 container
+			3 scroll area
+				4 list Description: Sidebar, ID: com.apple.settings.applicationSearch.collectionView
+					5 row (selectable)
+					6 row (selectable) Night, Accessibility
+					7 row (selectable) Night Shift options, Displays
+					8 row (selectable) Illuminate keyboard, Keyboard
+					9 row (selectable) Game Center, Game Center
+		10 search text field (settable) Value: ni, Placeholder: Search
+			11 button Search
+			12 button cancel
+		13 splitter (disabled, settable, float) 232
+		14 scroll area Secondary Actions: Scroll Up, Scroll Down
+			15 container
+				16 slider (settable, float) Description: Key repeat rate, Value: 6
+				17 slider (settable, float) Description: Delay until repeat, Value: 4
+			18 container
+				19 switch Adjust keyboard brightness in low light, Value: on
+				20 pop up button Turn keyboard backlight off after inactivity, Value: Never
+				21 pop up button Press 🌐︎ key to, Value: Do Nothing
+				22 switch Value: off, Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.
+				23 button Keyboard Shortcuts…
+			24 heading Text Input
+			25 container
+				26 text Input Sources ABC and Pinyin – Simplified
+				27 button Edit…
+				28 button Text Replacements…
+			29 heading Dictation
+			30 container
+				31 switch Value: on, Support for processing Chinese (Mandarin) on your Mac will download later when an Internet connection is available.
+				32 text Languages Chinese (Mandarin - China mainland) and English (United States)
+				33 button Edit…
+				34 pop up button Microphone source, Value: MacBook Pro Microphone
+				35 text Shortcut
+				36 pop up button Press 🎤︎
+				37 button About Ask Siri, Dictation & Privacy…
+			38 button Set Up Keyboard…
+			39 button Help
+			40 scroll bar (settable, float) 0
+				41 value indicator (settable, float) 0
+				42 increment arrow button
+				43 decrement arrow button
+				44 increment page button
+				45 decrement page button
+	46 toolbar
+		47 container
+			48 button Description: Go Back, ID: chevron.backward
+			49 menu button (disabled) Description: Go Forward, ID: chevron.forward
+	50 close button
+	51 zoom button
+	52 minimize button
+	53 text Keyboard
+54 menu bar
+	55 System Settings
+	56 Edit
+	57 View
+	58 Window
+	59 Help
+
+The focused UI element is 10 search text field (settable) Value: ni, Placeholder: Search

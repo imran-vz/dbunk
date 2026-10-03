@@ -1,0 +1,19 @@
+
+running 2 tests
+test backend::ddl_export::live_tests::native_ddl_export_referenced_unique_index_and_mixed_relations ... verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+DDL_EXPORT_SETUP {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","schema":"native_ddl_72d8e099ea784436b569ef1ccf265e2d"}
+DDL_EXPORT_OBJECTS {"relations":[{"kind":"r","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"parent \"雪","oid":20223,"owner":"dbunk"},{"kind":"i","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"owned_pk","oid":20226,"owner":"dbunk"},{"kind":"i","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"owned_uq","oid":20228,"owner":"dbunk"},{"kind":"i","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"referenced \"unique","oid":20230,"owner":"dbunk"},{"kind":"r","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"child.dot","oid":20231,"owner":"dbunk"},{"kind":"p","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"partition root","oid":20239,"owner":"dbunk"},{"kind":"r","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"partition.0","oid":20242,"owner":"dbunk"},{"kind":"v","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"view \"雪","oid":20245,"owner":"dbunk"},{"kind":"v","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":" ","oid":20249,"owner":"dbunk"},{"kind":"m","marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"materialized \"雪","oid":20253,"owner":"dbunk"}],"schema":{"marker":"dbunk owned DDL export 72d8e099ea784436b569ef1ccf265e2d","name":"native_ddl_72d8e099ea784436b569ef1ccf265e2d","oid":20222,"owner":"dbunk"}}
+verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+DDL_EXPORT_CLEANUP {"activity":0,"backend_joined":true,"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","schema":"native_ddl_72d8e099ea784436b569ef1ccf265e2d","schema_absent":true}
+ok
+test backend::ddl_export::live_tests::native_ddl_export_scopes_identity_and_joined_cleanup ... verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+DDL_EXPORT_READ_ONLY_CLEANUP fixture=2283820d-33ec-4c4c-ae03-7051092bd410 activity=0 no_fixture_objects_created
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1149 filtered out; finished in 1.03s
+

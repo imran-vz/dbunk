@@ -1,0 +1,26 @@
+{
+  "files": 419,
+  "new_paths": [
+    "apps/native/src/csv_transfer_model.rs",
+    "apps/native/src/csv_transfer_model/mapping.rs",
+    "apps/native/src/csv_transfer_model/observations.rs",
+    "apps/native/src/csv_transfer_model/tests.rs",
+    "apps/native/src/csv_transfer_runtime.rs",
+    "apps/native/src/csv_transfer_store.rs",
+    "apps/native/src/csv_transfer_view.rs",
+    "apps/native/src/csv_transfer_view/choices.rs",
+    "apps/native/src/csv_transfer_view/render.rs",
+    "src-tauri/src/backend/csv_transfers.rs",
+    "src-tauri/src/backend/csv_transfers/live_tests.rs",
+    "src-tauri/src/backend/csv_transfers/prepare.rs",
+    "src-tauri/src/backend/csv_transfers/registry.rs",
+    "src-tauri/src/backend/csv_transfers/retirement.rs",
+    "src-tauri/src/backend/csv_transfers/tests.rs",
+    "src-tauri/src/backend/csv_transfers/types.rs",
+    "src-tauri/src/backend/csv_transfers/types_bounds.rs",
+    "src-tauri/src/backend/pg_tools/connection_settled_tests.rs",
+    "src-tauri/src/postgres/transfer/native.rs"
+  ],
+  "removed_paths": [],
+  "scope": "Previous frozen tool-jobs scope plus all native, backend and PostgreSQL Rust files and CSV command/socket lifecycle adapters"
+}

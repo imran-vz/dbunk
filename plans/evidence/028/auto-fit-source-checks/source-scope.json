@@ -1,0 +1,16 @@
+{
+  "source_files": 440,
+  "added": [
+    "apps/native/src/column_widths.rs"
+  ],
+  "changed_from_keyword_format": [
+    "apps/native/src/browse_preferences.rs",
+    "apps/native/src/data_model/browse.rs",
+    "apps/native/src/data_model_tests.rs",
+    "apps/native/src/grid.rs",
+    "apps/native/src/grid_columns.rs",
+    "apps/native/src/main.rs",
+    "apps/native/src/results.rs",
+    "apps/native/src/table_view.rs"
+  ]
+}

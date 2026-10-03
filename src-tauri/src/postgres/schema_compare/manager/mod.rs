@@ -1,7 +1,7 @@
 //! Two admitted comparisons, including resolution, with one reservation per
 //! endpoint. Only the supervisor publishes terminal state, after worker joins.
 mod reads;
-mod runner;
+pub(crate) mod runner;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -69,6 +69,11 @@ struct State {
 pub(crate) struct CompareManager {
     inner: Arc<Mutex<State>>,
     budget: Budget,
+    #[cfg(feature = "isolated-profile")]
+    native: Option<(
+        crate::postgres::backup::native::Ownership,
+        crate::postgres::dedicated::DriverJoins,
+    )>,
 }
 
 #[derive(Clone)]
@@ -80,6 +85,27 @@ pub(crate) struct JobContext {
     pub(crate) budget: Budget,
 }
 impl JobContext {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn check_current(&self) -> Result<(), CompareError> {
+        self.control.check()?;
+        let state = self.manager.inner.lock().unwrap();
+        let entry = state
+            .jobs
+            .iter()
+            .find(|entry| entry.status.job_id == self.identity.job_id)
+            .ok_or(CompareError::Unavailable)?;
+        if entry.invalidated
+            || entry.generations
+                != [
+                    state.global.generation,
+                    generation(&state, &self.request.source.connection_id),
+                    generation(&state, &self.request.target.connection_id),
+                ]
+        {
+            return Err(CompareError::Cancelled);
+        }
+        Ok(())
+    }
     pub(crate) fn progress(&self, phase: StatusState, source: u32, target: u32) {
         let mut s = self.manager.inner.lock().unwrap();
         if let Some(e) = s
@@ -97,6 +123,20 @@ impl JobContext {
 }
 
 impl CompareManager {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn with_native_ownership(
+        mut self,
+        owner: crate::postgres::backup::native::Ownership,
+        drivers: crate::postgres::dedicated::DriverJoins,
+    ) -> Self {
+        self.native = Some((owner, drivers));
+        self
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn reader_reservation(&self) -> Result<super::budget::Reservation, CompareError> {
+        self.budget.scratch(4096)
+    }
+
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -105,8 +145,9 @@ impl CompareManager {
         &self,
         request: StartRequest,
         pool: sqlx::SqlitePool,
+        credentials: Arc<crate::credentials::Context>,
     ) -> Result<Status, CompareError> {
-        self.start(request, move |ctx| runner::run(ctx, pool))
+        self.start(request, move |ctx| runner::run(ctx, pool, credentials))
     }
 
     pub(crate) fn start<F, Fut>(
@@ -188,6 +229,13 @@ impl CompareManager {
             target_objects: 0,
             state: StatusState::Resolving,
         };
+        let control = CaptureControl::new(deadline, rx.clone());
+        #[cfg(feature = "isolated-profile")]
+        let control = if let Some((_, drivers)) = &self.native {
+            control.with_drivers(drivers.child())
+        } else {
+            control
+        };
         let ctx = JobContext {
             manager: self.clone(),
             identity: ResultIdentity {
@@ -195,7 +243,7 @@ impl CompareManager {
                 result_id: uuid::Uuid::new_v4().to_string(),
             },
             request: request.clone(),
-            control: CaptureControl::new(deadline, rx.clone()),
+            control,
             budget: self.budget.result_scope(),
         };
         // Reserve setup/credential/transport scratch through all joins, including
@@ -224,7 +272,7 @@ impl CompareManager {
         // A running blocking worker cannot be forcibly stopped by Tokio; its join
         // continues to own admission even after the cleanup grace expires.
         let mut worker = tokio::task::spawn_blocking(move || runtime.block_on(run(ctx)));
-        tokio::spawn(async move {
+        let supervisor = async move {
             let mut rx = rx;
             let interrupted = tokio::select! {
                 biased;
@@ -251,7 +299,19 @@ impl CompareManager {
             drop(scratch);
             owner.finish(&job_id, Err(interrupted.unwrap()));
             done.send_replace(true);
-        });
+        };
+        #[cfg(feature = "isolated-profile")]
+        if let Some((owner, _)) = &self.native {
+            // This owner is dedicated to the manager's two admitted supervisors;
+            // its 128-task ceiling cannot be reached by page readers or drivers.
+            owner
+                .spawn(supervisor)
+                .expect("comparison owner has at most two supervisors");
+        } else {
+            tokio::spawn(supervisor);
+        }
+        #[cfg(not(feature = "isolated-profile"))]
+        tokio::spawn(supervisor);
         Ok(status)
     }
 
@@ -405,6 +465,12 @@ impl CompareManager {
         s.global.closing = s.global.closing.saturating_sub(1);
     }
     pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
+        drop(self.spawn_monitor(runtime));
+    }
+    pub(crate) fn spawn_monitor(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> tokio::task::JoinHandle<()> {
         let weak = Arc::downgrade(&self.inner);
         // Host setup calls this on the main thread without an ambient Tokio
         // context, so the monitor must use the host's runtime handle.
@@ -415,7 +481,7 @@ impl CompareManager {
                 let Some(inner) = weak.upgrade() else { break };
                 prune(&mut inner.lock().unwrap(), Instant::now());
             }
-        });
+        })
     }
 }
 fn compact_request(request: &mut StartRequest) {

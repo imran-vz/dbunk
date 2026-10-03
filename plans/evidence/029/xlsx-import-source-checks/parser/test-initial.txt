@@ -1,0 +1,38 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0597]: `e` does not live long enough
+   --> src/xlsx_native/cells.rs:39:28
+    |
+ 28 |     let mut path: Vec<&[u8]> = Vec::new();
+    |         -------- lifetime `'1` appears in the type of `path`
+...
+ 38 |             Event::Start(e) | Event::Empty(e) => {
+    |                          - binding `e` declared here
+ 39 |                 let name = e.local_name().into_inner();
+    |                            ^ borrowed value does not live long enough
+...
+101 |                 path.push(name);
+    |                 --------------- argument requires that `e` is borrowed for `'1`
+...
+105 |             }
+    |             - `e` dropped here while still borrowed
+
+error[E0597]: `e` does not live long enough
+  --> src/xlsx_native/strings.rs:18:28
+   |
+ 7 |     let mut path: Vec<&[u8]> = Vec::new();
+   |         -------- lifetime `'1` appears in the type of `path`
+...
+13 |             Event::Start(e) | Event::Empty(e) => {
+   |                          - binding `e` declared here
+...
+18 |                 let name = e.local_name().into_inner();
+   |                            ^ borrowed value does not live long enough
+...
+31 |                 path.push(name);
+   |                 --------------- argument requires that `e` is borrowed for `'1`
+...
+35 |             }
+   |             - `e` dropped here while still borrowed
+
+For more information about this error, try `rustc --explain E0597`.
+error: could not compile `dbunk` (lib test) due to 2 previous errors

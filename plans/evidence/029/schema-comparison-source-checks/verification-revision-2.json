@@ -1,0 +1,22 @@
+{
+  "changed_files": [
+    "apps/native/src/catalog_view.rs",
+    "apps/native/src/document_view.rs",
+    "apps/native/src/main.rs",
+    "apps/native/src/schema_compare_model.rs",
+    "apps/native/src/schema_compare_model/presentation.rs",
+    "apps/native/src/schema_compare_model/reader.rs",
+    "apps/native/src/schema_compare_model/tests.rs",
+    "apps/native/src/schema_compare_reader.rs",
+    "apps/native/src/schema_compare_runtime.rs",
+    "apps/native/src/schema_compare_store.rs",
+    "apps/native/src/schema_compare_view.rs",
+    "apps/native/src/schema_compare_view/render.rs",
+    "apps/native/src/workspace.rs",
+    "src-tauri/src/backend/development/workspace_query_tests.rs",
+    "src-tauri/src/backend/development/workspace_tests.rs"
+  ],
+  "scope": "Native comparison presentation/copy/cache/keyboard refinements; version7 test corrections only on backend. Backend corrected matrix covers these test changes; production facade/live source unchanged.",
+  "new_manifest": "source-sha256-refined.json",
+  "cached_schema_accounting": "Borrowed preflight1MiB/512names perconnection; temporary shared1MiB lease; unstable sort without scratch; model retains actual capacities; disconnect revokes cache authority until fresh captured catalog."
+}

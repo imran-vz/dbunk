@@ -1,0 +1,10 @@
+{
+  "changed": [
+    "apps/native/src/document_view.rs",
+    "apps/native/src/table_copy_view.rs",
+    "apps/native/src/table_copy_view/tests.rs",
+    "apps/native/src/workspace.rs",
+    "src-tauri/examples/native_table_copy_probe.rs"
+  ],
+  "scope": "borrowed connection choices admitted before clone; probe profile canonicalized; test-only escape ceiling corrected separately"
+}

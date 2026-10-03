@@ -1,0 +1,22 @@
+{
+  "inputs": {
+    "source": {
+      "version": "17.11",
+      "url": "https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2",
+      "sha256": "dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979"
+    },
+    "openssl_prefix": "/opt/homebrew/Cellar/openssl@3/3.6.4",
+    "openssl_sha256": {
+      "/opt/homebrew/Cellar/openssl@3/3.6.4/bin/openssl": "67a83dd6d6d747d50c5d296dffb23e32bae9a2c588c93ae2d77e4c607b455c72",
+      "/opt/homebrew/Cellar/openssl@3/3.6.4/lib/libssl.3.dylib": "c6ee373222087cf31bc2f3817537d268b3c23e56b7fadd44bbf5c2317caed349",
+      "/opt/homebrew/Cellar/openssl@3/3.6.4/lib/libcrypto.3.dylib": "bae675614cd791d37ec35416ea9f87edcc85407d020810504cf458119b63522c",
+      "/opt/homebrew/Cellar/openssl@3/3.6.4/include/openssl/ssl.h": "29f1ff501f1ac10dc23b750dc1c64634acd267e430c12ccc6bd78c1d05c2f58f"
+    }
+  },
+  "executables_sha256": {
+    "postgres": "860316dbaf1b249d6ee141d1b0a1bd15ed0cdcfb1c2476266d57301ce9ff47fb",
+    "initdb": "8d452dc0ee2635e176f9579c15b2998aa49a41883c8ca1724546d3f3934cc126",
+    "psql": "da213ce6926fc912212857302efbb4e66e09c3d2d46ae0cad1182a1081f4ec2b",
+    "pg_ctl": "2d9ce9f8fa5229a639f60762c787c5016754836fb5ac0236dbf245709e857e2b"
+  }
+}

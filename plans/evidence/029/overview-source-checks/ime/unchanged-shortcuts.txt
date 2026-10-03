@@ -1,0 +1,43 @@
+Window: "", App: System Settings.
+0 sheet Secondary Actions: Raise
+	1 split group
+		2 scroll area
+			3 list Sidebar
+				4 row (selectable) Dock shortcuts
+				5 row (selectable) Display shortcuts
+				6 row (selectable) Mission Control shortcuts
+				7 row (selectable) Window management shortcuts
+				8 row (selectable) Keyboard shortcuts
+				9 row (selected) Input Sources shortcuts
+				10 row (selectable) Screenshots shortcuts
+				11 row (selectable) Presenter Overlay
+				12 row (selectable) Services shortcuts
+				13 row (selectable) Spotlight shortcuts
+				14 row (selectable) Accessibility shortcuts
+				15 row (selectable) Application shortcuts
+				16 row (selectable) Function Keys
+				17 row (selectable) Modifier Keys
+		18 splitter (disabled, settable, float) 200
+		19 container
+			20 scroll area
+				21 container
+					22 text To change a shortcut, double click the key combination, and then type the new keys.
+					23 scroll area
+						24 list
+							25 row (selectable) Description: ⁦⌃Space⁩, Value: Select the previous input source
+								26 checkbox 1
+							27 row (selected) Description: ⁦⌃⌥Space⁩, Value: Select next source in Input menu
+								28 checkbox 1
+			29 button Restore Defaults
+			30 button Done
+31 menu bar
+	32 System Settings
+	33 Edit
+	34 View
+	35 Window
+	36 Help
+
+Selected:
+	27 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

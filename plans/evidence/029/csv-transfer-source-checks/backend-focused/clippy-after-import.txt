@@ -1,0 +1,74 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error: manual implementation of `.is_multiple_of()`
+   --> src/backend/csv_transfers/types_bounds.rs:171:16
+    |
+171 |             || self.execution_reserved_bytes % MAX_CSV_EXECUTION_BYTES != 0
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `!self.execution_reserved_bytes.is_multiple_of(MAX_CSV_EXECUTION_BYTES)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+    = note: `-D clippy::manual-is-multiple-of` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_is_multiple_of)]`
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/postgres/transfer/files.rs:153:15
+    |
+153 |     file_work(&io, move || {
+    |               ^^^ help: change this to: `io`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+    = note: `-D clippy::needless-borrow` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_borrow)]`
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/postgres/transfer/runner.rs:216:39
+    |
+216 |     validate_run_request(&connection, &review, &request)?;
+    |                                       ^^^^^^^ help: change this to: `review`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/postgres/transfer/runner.rs:227:76
+    |
+227 |         RunRequest::Import { mapping } => run_import(&context, &dedicated, &review, &mapping).await,
+    |                                                                            ^^^^^^^ help: change this to: `review`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/postgres/transfer/runner.rs:232:17
+    |
+232 |                 &review,
+    |                 ^^^^^^^ help: change this to: `review`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+
+error: could not compile `dbunk` (lib) due to 5 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: unneeded `return` statement
+   --> src/backend/csv_transfers/prepare.rs:427:21
+    |
+427 | /                     return match injected {
+428 | |                         Some(run) => run(context, hydrated, core, request).await,
+429 | |                         None => Err(legacy::TransferError::invalid(
+430 | |                             "test",
+431 | |                             "No injected CSV runner",
+432 | |                         )),
+433 | |                     };
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_return
+    = note: `-D clippy::needless-return` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_return)]`
+help: remove `return`
+    |
+427 ~                     match injected {
+428 +                         Some(run) => run(context, hydrated, core, request).await,
+429 +                         None => Err(legacy::TransferError::invalid(
+430 +                             "test",
+431 +                             "No injected CSV runner",
+432 +                         )),
+433 ~                     }
+    |
+
+error: could not compile `dbunk` (lib test) due to 6 previous errors

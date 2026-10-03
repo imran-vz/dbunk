@@ -1,0 +1,28 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.77s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 20 tests
+test backend::admin::control_live_tests::native_admin_control_owned_identity_policy_signals_audit_and_joined_cleanup ... ignored, exact owned stage03 UUID; explicit DBUNK_NATIVE_FIXTURE_VERIFIED=1; serial exclusive fixture use
+test backend::admin::control_tests::capture_mints_exact_targets_refuses_missing_identity_and_bounds_retention ... ok
+test backend::admin::control_tests::confirmation_preserves_exact_attempt_and_rechecks_current_readonly_policy ... ok
+test backend::admin::control_tests::dropped_waiter_keeps_control_slot_and_document_owned_through_cleanup ... ok
+test backend::admin::control_tests::foreign_document_and_retired_confirmation_never_reach_execution ... ok
+test backend::admin::control_tests::lock_control_requires_the_same_observed_holder_not_a_blocker_pid ... ok
+test backend::admin::control_tests::only_known_sent_required_overrides_are_audited_once ... ok
+test backend::admin::control_tests::readonly_cancel_is_allowed_during_schema_write_without_confirmation_or_audit ... ok
+test backend::admin::live_tests::native_admin_snapshot_owned_read_cancel_retire_and_cleanup ... ignored, verified owned stage03 fixture only; run serially
+test postgres::native_admin_control::tests::cancellation_and_retirement_before_dispatch_never_signal ... ok
+test postgres::native_admin_control::tests::exact_server_results_and_transport_loss_keep_distinct_outcomes ... ok
+test postgres::native_admin_control::tests::late_cancel_settles_the_same_future_and_preserves_success ... ok
+test postgres::native_admin_control::tests::receipt_waits_for_joined_cleanup_even_after_acknowledgement ... ok
+test postgres::native_admin_control::tests::unresolved_postdispatch_cancel_is_unknown_and_never_retried ... ok
+test postgres::native_catalog::admin::tests::blockers_preserve_zero_prepared_transaction_and_refuse_invalid_clipping ... ok
+test postgres::native_catalog::admin::tests::combined_sections_refuse_byte_overflow_without_a_successful_partial_snapshot ... ok
+test postgres::native_catalog::admin::tests::each_section_discloses_only_observed_overflow ... ok
+test postgres::native_catalog::admin::tests::escaped_bytes_are_charged_before_retaining_a_row ... ok
+test postgres::native_catalog::admin::tests::metrics_preserve_null_zero_restricted_and_unavailable ... ok
+test postgres::native_catalog::admin::tests::query_clipping_preserves_unicode_and_distinguishes_missing_text ... ok
+
+test result: ok. 18 passed; 0 failed; 2 ignored; 0 measured; 999 filtered out; finished in 0.15s
+

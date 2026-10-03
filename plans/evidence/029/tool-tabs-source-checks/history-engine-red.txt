@@ -1,0 +1,22 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.43s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 1 test
+test backend::query_library::tests::editor_save_preserves_current_organization_and_creation_atomically ... FAILED
+
+failures:
+
+---- backend::query_library::tests::editor_save_preserves_current_organization_and_creation_atomically stdout ----
+
+thread 'backend::query_library::tests::editor_save_preserves_current_organization_and_creation_atomically' (8347756) panicked at src/backend/query_library_tests.rs:372:48:
+called `Result::unwrap()` on an `Err` value: InvalidInput("Unknown database engine")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    backend::query_library::tests::editor_save_preserves_current_organization_and_creation_atomically
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 821 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `--lib`

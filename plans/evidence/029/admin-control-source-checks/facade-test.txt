@@ -1,0 +1,223 @@
+Command: ['cargo', '+1.97.1', 'test', '--manifest-path', 'src-tauri/Cargo.toml', '--features', 'isolated-profile', 'backend::']
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+warning: unused import: `native::IoContext`
+ --> src/backend/csv_transfers/prepare.rs:4:26
+  |
+4 |     postgres::transfer::{native::IoContext, protocol as legacy, runner},
+  |                          ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tokio::sync::watch`
+  --> src/backend/csv_transfers/prepare.rs:12:5
+   |
+12 | use tokio::sync::watch;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `*`
+ --> src/backend/safety_audit/storage.rs:3:23
+  |
+3 | use super::{types::*, *};
+  |                       ^
+
+warning: `dbunk` (lib) generated 3 warnings (run `cargo fix --lib -p dbunk` to apply 3 suggestions)
+warning: `dbunk` (lib test) generated 3 warnings (3 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.76s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-42c065a696a3202f)
+
+running 186 tests
+test backend::admin::control_live_tests::native_admin_control_owned_identity_policy_signals_audit_and_joined_cleanup ... ignored, exact owned stage03 UUID; explicit DBUNK_NATIVE_FIXTURE_VERIFIED=1; serial exclusive fixture use
+test backend::admin::control_tests::capture_mints_exact_targets_refuses_missing_identity_and_bounds_retention ... ok
+test backend::admin::control_tests::confirmation_preserves_exact_attempt_and_rechecks_current_readonly_policy ... ok
+test backend::admin::control_tests::dropped_waiter_keeps_control_slot_and_document_owned_through_cleanup ... ok
+test backend::admin::control_tests::foreign_document_and_retired_confirmation_never_reach_execution ... ok
+test backend::admin::control_tests::lock_control_requires_the_same_observed_holder_not_a_blocker_pid ... ok
+test backend::admin::control_tests::only_known_sent_required_overrides_are_audited_once ... ok
+test backend::admin::control_tests::readonly_cancel_is_allowed_during_schema_write_without_confirmation_or_audit ... ok
+test backend::admin::live_tests::native_admin_snapshot_owned_read_cancel_retire_and_cleanup ... ignored, verified owned stage03 fixture only; run serially
+test backend::completion::live_tests::native_completion_columns_exact_relation_cancel_retire_and_cleanup ... ignored, verified owned stage03 fixture only; run serially
+test backend::connection_uri::tests::ambiguous_or_unsupported_uri_shapes_refuse_without_endpoint_normalization ... ok
+test backend::connection_uri::tests::baseline_postgres_defaults_password_and_component_encoding ... ok
+test backend::connection_uri::tests::export_round_trips_exact_identifiers_hosts_and_raw_dot_database_names ... ok
+test backend::connection_uri::tests::only_exact_sslmode_applies_and_ignored_keys_are_ordered_and_unique ... ok
+test backend::connection_uri::tests::parser_and_export_bounds_refuse_atomically_at_byte_limits ... ok
+test backend::connection_uri::tests::secrets_never_enter_export_omission_flags_debug_or_errors ... ok
+test backend::csv_transfers::live_tests::native_csv_owned_import_export_rollback_and_joined_cleanup ... ignored, owned stage03 only; DBUNK_NATIVE_FIXTURE_VERIFIED=1; serial explicit opt-in
+test backend::csv_transfers::tests::cancellation_between_registration_and_worker_admission_finishes_without_orphan ... ok
+test backend::csv_transfers::tests::cancelled_blocking_inspection_retains_admission_until_real_worker_join ... ok
+test backend::csv_transfers::tests::committed_and_unknown_imports_invalidate_once_and_only_known_success_audits ... ok
+test backend::csv_transfers::tests::consuming_lock_refuses_replaced_same_id_inspection_without_consuming_new_review ... ok
+test backend::csv_transfers::tests::dispatch_lock_refuses_old_confirmation_after_same_attempt_id_replacement ... ok
+test backend::csv_transfers::tests::eight_ready_inspections_are_separate_from_active_admission_and_expire_on_observation ... ok
+test backend::csv_transfers::tests::exact_confirmation_reacquisition_and_consumed_inspection_release_do_not_replay ... ok
+test backend::csv_transfers::tests::execution_workspace_refuses_before_dispatch_and_does_not_audit ... ok
+test backend::csv_transfers::tests::import_retires_old_data_and_refuses_new_data_and_restore_until_cleanup ... ok
+test backend::csv_transfers::tests::inspection_preserves_bounded_parser_diagnostics_without_sample_content ... ok
+test backend::csv_transfers::tests::native_connection_edit_retires_confirmation_and_refuses_unresolved_cleanup ... ok
+test backend::csv_transfers::tests::options_and_identity_refuse_before_unbounded_clone_and_keep_exact_dialect ... ok
+test backend::csv_transfers::tests::retirement_cancels_confirmation_and_blocks_synchronous_registration_through_mutation ... ok
+test backend::csv_transfers::tests::retirement_deadline_refuses_mutation_and_preserves_registered_worker ... ok
+test backend::csv_transfers::tests::shutdown_deadline_retains_registered_runner_and_execution_workspace_until_actual_join ... ok
+test backend::data::live_tests::native_data_browse_review_policy_conflict_and_document_lifecycle ... ignored, verified owned stage03 fixture only; run serially without window acceptance
+test backend::data::preferences::tests::native_preference_reads_refuse_large_future_and_corrupt_records_without_rewriting ... ok
+test backend::data::tests::rejected_close_admission_does_not_strand_a_retired_document ... ok
+test backend::data::tests::saturated_data_waiters_leave_control_admission_and_remain_owned_after_drop ... ok
+test backend::data::tests::windows_have_private_manager_tabs_and_retired_handles_cannot_access_preferences ... ok
+test backend::data_documents::tests::abandoned_close_waiter_keeps_admission_reserved_until_joined ... ok
+test backend::data_documents::tests::close_waits_for_owned_work_and_never_revives_a_retired_handle ... ok
+test backend::data_documents::tests::control_slot_is_independent_bounded_and_retained_until_owner_drop ... ok
+test backend::data_documents::tests::retirement_and_commit_admission_share_a_single_fence ... ok
+test backend::data_documents::tests::schema_write_admission_is_connection_scoped_bounded_and_released ... ok
+test backend::development::admission_tests::public_open_waits_before_metadata_lookup_and_delete_cannot_cross_startup ... ok
+test backend::development::admission_tests::shutdown_rejects_queued_native_work_after_gate_is_released ... ok
+test backend::development::admission_tests::startup_snapshot_settles_before_queued_connection_mutations ... ok
+test backend::development::connection_tests::connection_workflow_preserves_secrets_metadata_and_atomic_failures ... ok
+test backend::development::connection_tests::probe_disconnect_and_post_connect_failure_join_owned_sockets ... ok
+test backend::development::connections::bounds_tests::general_authority_accepts_only_bounded_direct_postgres_metadata ... ok
+test backend::development::connections::bounds_tests::probe_cleanup_expires_at_original_deadline_and_joins_hung_driver ... ok
+test backend::development::connections::bounds_tests::tls_limits_match_saved_and_loaded_metadata_without_file_access ... ok
+test backend::development::tests::corrupt_settings_and_denied_keychain_never_look_empty ... ok
+test backend::development::tests::fixture_admission_rejects_endpoint_transport_and_engine_substitution ... ok
+test backend::development::tests::foreign_paths_markers_databases_and_fixture_changes_are_preserved ... ok
+test backend::development::tests::scoped_namespace_is_lazy_and_cannot_fall_back_to_production ... ok
+test backend::development::tests::session_admission_rejects_foreign_endpoint_before_credentials_or_network ... ok
+test backend::development::tests::sqlite_lifecycle_reopen_and_reset_never_construct_keychain_entries ... ok
+test backend::development::tests::tls_fixture_opt_in_pins_endpoint_without_bypassing_certificate_validation ... ok
+test backend::development::workspace::query_tests::invalid_versions_provenance_and_extra_intent_are_preserved_without_overwrite ... ok
+test backend::development::workspace::query_tests::multi_origin_unknown_outcome_journal_preserves_source_separate_from_editor ... ok
+test backend::development::workspace::query_tests::query_journal_excludes_table_tools_and_obeys_smaller_workspace_budget ... ok
+test backend::development::workspace::query_tests::query_nullable_virtual_identity_refused_without_changing_table_contract ... ok
+test backend::development::workspace::query_tests::query_operations_require_updates_with_original_identity_and_exact_guards ... ok
+test backend::development::workspace::query_tests::v2_load_does_not_write_and_explicit_save_upgrades_to_v8 ... ok
+test backend::development::workspace::query_tests::virtual_key_requires_full_original_row_and_limits_cover_escape_expansion ... ok
+test backend::development::workspace::tests::admin_receipt_matching_requires_every_observed_identity_component ... ok
+test backend::development::workspace::tests::admin_recovery_roundtrips_unknown_identity_and_preserves_invalid_records ... ok
+test backend::development::workspace::tests::aggregate_budget_refuses_oversized_staged_values_without_losing_saved_drafts ... ok
+test backend::development::workspace::tests::backup_restore_tab_persists_only_identity_and_refuses_old_or_extended_records ... ok
+test backend::development::workspace::tests::comparison_tabs_persist_only_identity_and_binding ... ok
+test backend::development::workspace::tests::concurrent_saves_commit_once_and_survive_disk_reopen ... ok
+test backend::development::workspace::tests::corrupt_and_future_records_are_preserved_until_explicit_reset ... ok
+test backend::development::workspace::tests::csv_transfer_tab_refuses_persisted_source_samples_or_execution ... ok
+test backend::development::workspace::tests::document_identity_and_admission_limits_reject_invalid_snapshots ... ok
+test backend::development::workspace::tests::encoded_budget_accepts_exact_limit_and_rejects_one_more_byte ... ok
+test backend::development::workspace::tests::exact_drafts_order_binding_and_geometry_round_trip_without_connections ... ok
+test backend::development::workspace::tests::malformed_or_future_table_intent_remains_exportable_without_automatic_overwrite ... ok
+test backend::development::workspace::tests::old_future_and_corrupt_schema_journals_preserve_their_original_bytes ... ok
+test backend::development::workspace::tests::older_writers_and_pre_reset_writers_cannot_overwrite_newer_commits ... ok
+test backend::development::workspace::tests::oversized_unicode_and_json_expansion_preserve_last_committed_draft ... ok
+test backend::development::workspace::tests::schema_journal_round_trips_exact_attempt_comment_and_unknown_state_without_replay_fields ... ok
+test backend::development::workspace::tests::schema_recovery_keeps_the_existing_aggregate_byte_and_document_budgets ... ok
+test backend::development::workspace::tests::schema_recovery_requires_an_objects_connection_and_rejects_mixed_document_intent ... ok
+test backend::development::workspace::tests::selection_and_geometry_are_clamped_without_changing_sql ... ok
+test backend::development::workspace::tests::sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v8 ... ok
+test backend::development::workspace::tests::sqlite_failure_does_not_advance_revision_and_retry_succeeds ... ok
+test backend::development::workspace::tests::stage03_facade_cannot_read_write_export_or_reset_native_workspace ... ok
+test backend::development::workspace::tests::tool_documents_round_trip_and_reject_mixed_document_intent ... ok
+test backend::development::workspace::tests::v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_cas ... ok
+test backend::explain::tests::absent_timing_and_parallel_children_do_not_invent_negative_durations ... ok
+test backend::explain::tests::baseline_nested_timing_estimates_and_insights_use_preorder_identity ... ok
+test backend::explain::tests::malformed_truncated_and_over_budget_plans_are_explicit_refusals ... ok
+test backend::explain::tests::present_malformed_metrics_are_not_presented_as_unknown ... ok
+test backend::native_profile::tests::fixture_profile_cannot_be_reopened_or_switched_to_general ... ok
+test backend::native_profile::tests::general_namespace_is_lazy_strict_and_independent ... ok
+test backend::native_profile::tests::loaded_invalid_options_refuse_before_hydration_and_preserve_metadata ... ok
+test backend::native_profile::tests::maximum_name_duplicates_remain_supported_and_preserve_original_secret ... ok
+test backend::native_profile::tests::mismatched_markers_and_databases_are_preserved_without_credentials ... ok
+test backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer ... ok
+test backend::objects::dependency_live_tests::native_drop_impact_exact_dependencies_limits_and_cleanup ... ignored, verified owned stage03 fixture plus root-created native_impact_20261003 corpus only; run serially
+test backend::objects::foreign_key_live_tests::native_foreign_keys_ordered_composite_navigation_and_cleanup ... ignored, verified owned stage03 metadata corpus only; run serially
+test backend::objects::live_tests::native_catalog_owned_read_cancel_reopen_and_shutdown ... ignored, verified owned stage03 fixture only; run serially without window acceptance
+test backend::objects::live_tests::native_descriptions_exact_identity_values_and_document_lifecycle ... ignored, verified owned stage03 fixture plus root-created native_objects_20261003 schema only; run serially
+test backend::objects::remaining_live_tests::remaining_descriptions_exact_metadata_and_owned_cleanup ... ignored, verified owned stage03 fixture plus root-created native_metadata_20261003 corpus only; run serially
+test backend::objects::tests::cancelled_or_abandoned_waiter_keeps_document_until_driver_join ... ok
+test backend::objects::tests::connection_retirement_cancels_reads_and_waits_before_replacement ... ok
+test backend::objects::tests::description_refuses_malformed_or_stale_identity_before_socket_startup ... ok
+test backend::objects::tests::explicit_cancel_does_not_poison_next_read_on_same_document ... ok
+test backend::objects::tests::foreign_and_unowned_endpoints_refuse_before_catalog_connect ... ok
+test backend::objects::tests::shutdown_signals_reads_and_joins_abandoned_work ... ok
+test backend::pg_tools::live_tests::native_plain_custom_backup_restore_owned_table_and_joined_cleanup ... ignored, owned stage03 only; requires DBUNK_NATIVE_FIXTURE_VERIFIED=1 and patched libpq PATH; serial explicit opt-in
+test backend::pg_tools::registry::connection_settled_tests::preparation_registered_after_settled_check_cannot_cross_generation_fence ... ok
+test backend::pg_tools::registry::connection_settled_tests::preparing_and_confirmation_refuse_edits_until_cancelled_and_joined ... ok
+test backend::pg_tools::registry::connection_settled_tests::running_and_published_backup_with_failed_cleanup_refuse_connection_mutation ... ok
+test backend::pg_tools::tests::backend_shutdown_reports_unjoined_registered_job_and_keeps_its_owner ... ok
+test backend::pg_tools::tests::backup_partial_unlink_failure_keeps_cleanup_fence_and_publication_transfers_ownership ... ok
+test backend::pg_tools::tests::backup_publication_preserves_existing_destination_and_never_audits ... ok
+test backend::pg_tools::tests::cancel_during_finalizing_obeys_the_actual_publication_claim ... ok
+test backend::pg_tools::tests::cancellation_interrupts_preparation_waiting_for_lifecycle_gate ... ok
+test backend::pg_tools::tests::cancelled_review_releases_source_and_foreign_or_stale_review_never_dispatches ... ok
+test backend::pg_tools::tests::consumed_preparation_watch_does_not_turn_into_a_ready_poll_loop ... ok
+test backend::pg_tools::tests::failed_snapshot_unlink_retains_admission_and_refuses_successful_drain ... ok
+test backend::pg_tools::tests::intent_bounds_and_source_snapshot_reject_symlinks_and_keep_selected_bytes ... ok
+test backend::pg_tools::tests::lifecycle_fence_cancels_ready_review_and_admission_is_bounded ... ok
+test backend::pg_tools::tests::lost_confirmation_can_be_explicitly_reacquired_but_cancelled_tokens_refuse ... ok
+test backend::pg_tools::tests::pending_attempt_survives_lost_reply_and_restore_uses_immutable_snapshot ... ok
+test backend::pg_tools::tests::published_backup_stays_succeeded_when_private_cleanup_fails ... ok
+test backend::pg_tools::tests::restore_failure_after_dispatch_is_unknown_and_invalidates_once_without_audit ... ok
+test backend::pg_tools::tests::restore_fences_existing_and_new_data_documents_until_cleanup ... ok
+test backend::pg_tools::tests::running_restore_cancellation_remains_owned_until_success_reconciliation ... ok
+test backend::pg_tools::tests::source_replacement_during_copy_and_changed_length_are_refused ... ok
+test backend::pg_tools::tests::unjoined_cleanup_is_reported_at_absolute_deadline_without_aborting_owner ... ok
+test backend::pg_tools::tests::unsupported_connection_and_read_only_policy_refuse_before_source_work ... ok
+test backend::query_control_tests::absent_and_closed_sessions_refuse_new_control_operations_without_connecting ... ok
+test backend::query_control_tests::native_query_confirmation_binds_request_backend_window_and_session_instance ... ignored, owned stage03 PostgreSQL fixture; no simultaneous window acceptance
+test backend::query_control_tests::native_query_confirmation_rechecks_read_only_and_validates_before_confirmation ... ignored, owned stage03 PostgreSQL fixture; no simultaneous window acceptance
+test backend::query_control_tests::native_transactions_are_independent_and_failed_commit_requires_rollback ... ignored, owned stage03 PostgreSQL fixture; no simultaneous window acceptance
+test backend::query_control_tests::parameter_description_preserves_lexical_boundaries_and_first_use_order ... ok
+test backend::query_library::tests::control_admission_and_shutdown_fence_library_mutations ... ok
+test backend::query_library::tests::editor_save_preserves_current_organization_and_creation_atomically ... ok
+test backend::query_library::tests::escaped_continuation_is_included_in_the_complete_page_budget ... ok
+test backend::query_library::tests::history_filters_unicode_tied_cursors_and_deletes_remain_profile_local ... ok
+test backend::query_library::tests::history_retention_is_atomic_and_payload_or_legacy_row_limits_fail_explicitly ... ok
+test backend::query_library::tests::saved_paging_preserves_exact_work_and_failed_write_does_not_replace_it ... ok
+test backend::query_library::tests::scan_budget_and_encoded_byte_budget_keep_continuations_truthful ... ok
+test backend::query_mutation::tests::dense_sql_is_refused_before_planner_and_rewrites_stay_within_token_cap ... ok
+test backend::query_mutation::tests::forged_derived_fields_and_unknown_fields_are_rejected_on_decode ... ok
+test backend::query_mutation::tests::planner_rewrite_preserves_exact_text_and_parameter_grammar_without_values ... ok
+test backend::query_mutation::tests::separate_session_targets_require_all_qualified_non_temp_range_variables ... ok
+test backend::query_mutation::tests::statement_and_input_limits_refuse_before_source_creation ... ok
+test backend::result_files::tests::cancel_and_publication_admission_have_one_winner ... ok
+test backend::result_files::tests::gzip_preserves_encoded_bytes_and_partial_disclosure ... ok
+test backend::result_files::tests::late_collision_cancel_and_io_failure_remove_private_partial_without_touching_destination ... ok
+test backend::result_files::tests::output_limit_refuses_growth_and_out_of_bounds_seeks ... ok
+test backend::result_files::tests::publication_is_private_no_clobber_and_cleans_temp_on_failure ... ok
+test backend::result_files::tests::xlsx_exact_strings_projection_null_tokens_and_no_formulas ... ok
+test backend::result_files::tests::xlsx_limits_include_headers_and_repeated_null_expansion ... ok
+test backend::result_files::tests::xlsx_refuses_projection_width_cell_and_library_unicode_hazard_before_workbook ... ok
+test backend::safety_audit::tests::continuation_is_exact_stable_and_profile_bound ... ok
+test backend::safety_audit::tests::encoded_byte_limit_continues_without_skipping_a_row ... ok
+test backend::safety_audit::tests::global_retention_can_end_a_continuation_with_an_empty_page ... ok
+test backend::safety_audit::tests::persisted_corruption_is_refused_without_leaking_its_values ... ok
+test backend::safety_audit::tests::public_capture_validation_accounts_for_capacities_order_and_redacts ... ok
+test backend::schema_comparisons::live_tests::native_pg16_facade_pages_utf8_identity_invalidation_and_joined_cleanup ... ignored, owned PG16 loopback15434 fixture only; explicit UUID/environment guard; serial opt-in
+test backend::schema_comparisons::tests::both_profile_authorities_precede_capture_and_unrelated_data_retirement_preserves_history ... ok
+test backend::schema_comparisons::tests::connection_mutation_fence_does_not_pass_unjoined_native_comparison_worker ... ok
+test backend::schema_comparisons::tests::public_page_bounds_reject_wrong_identity_lengths_and_unearned_continuations ... ok
+test backend::schema_comparisons::tests::reader_close_waits_for_queued_reply_and_reused_tab_never_accepts_old_generation ... ok
+test backend::schema_comparisons::tests::released_result_cannot_free_queued_response_slots_or_revalidate_its_old_reader ... ok
+test backend::schema_comparisons::tests::shutdown_reports_unjoined_worker_and_holds_admission_until_real_completion ... ok
+test backend::schema_comparisons::tests::typed_pages_and_utf8_chunks_preserve_server_continuations_and_serializer_ownership ... ok
+test backend::schema_ddl::live_tests::native_create_schema_receipt_duplicate_atomic_rollback_and_cleanup ... ignored, writes only UUID-owned empty schemas on exact verified stage03 fixture; serial opt-in
+test backend::schema_ddl::tests::abandoned_waiter_retains_write_guard_until_owned_cleanup_finishes ... ok
+test backend::schema_ddl::tests::attempt_identity_requires_canonical_v4_and_receipt_preserves_exact_intent ... ok
+test backend::schema_ddl::tests::intent_is_bounded_exact_validated_on_restore_and_redacted ... ok
+test backend::schema_ddl::tests::preview_quotes_exact_names_comments_and_admits_bounded_expansion ... ok
+test backend::schema_ddl::tests::pure_review_policy_confirmation_and_current_readonly_refusal_need_no_socket ... ok
+test backend::selection::tests::respects_postgres_quoting_comments_and_utf8 ... ok
+test backend::selection::tests::selection_and_script_preserve_original_text ... ok
+test backend::selection::tests::source_ranges_distinguish_duplicate_statements ... ok
+test backend::server_details::live_tests::native_server_details_owned_read_cancel_retire_and_cleanup ... ignored, verified owned stage03 fixture only; run serially
+test backend::tests::closing_during_stalled_connect_aborts_and_joins_the_owned_socket ... ok
+test backend::tests::existing_non_plain_credential_mode_is_never_hydrated ... ok
+test backend::tests::fixture_startup_never_opens_a_keychain_entry ... ok
+test backend::tests::isolated_profile_rejects_foreign_files_and_remembers_layout ... ok
+test backend::tests::profile_symlinks_are_rejected_before_database_access ... ok
+test backend::tests::shutdown_joins_admitted_work_even_when_the_caller_is_cancelled ... ok
+
+test result: ok. 169 passed; 0 failed; 17 ignored; 0 measured; 866 filtered out; finished in 9.66s
+
+     Running unittests src/main.rs (src-tauri/target/debug/deps/dbunk-ac3a08ea897a49c1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

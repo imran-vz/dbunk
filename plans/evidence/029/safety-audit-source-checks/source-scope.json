@@ -1,0 +1,13 @@
+{
+  "files": 381,
+  "new_paths": [
+    "apps/native/src/admin_view/audit.rs",
+    "apps/native/src/safety_audit_model.rs",
+    "apps/native/src/safety_audit_model/tests.rs",
+    "src-tauri/src/backend/safety_audit.rs",
+    "src-tauri/src/backend/safety_audit/storage.rs",
+    "src-tauri/src/backend/safety_audit/tests.rs",
+    "src-tauri/src/backend/safety_audit/types.rs"
+  ],
+  "scope": "Previous schema freeze plus all native, backend and PostgreSQL Rust sources"
+}

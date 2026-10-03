@@ -1,0 +1,106 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.82
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 5.95
+  },
+  {
+    "check": "fixture-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--features",
+      "fixture-verification",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 5.87
+  },
+  {
+    "check": "test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 16.16
+  },
+  {
+    "check": "build",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "build",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 13.24
+  },
+  {
+    "check": "release-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--release",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 6.1
+  },
+  {
+    "check": "package",
+    "command": [
+      "python3",
+      "tools/native/package.py",
+      "--out",
+      "/private/tmp/dbunk-native-package-20261003-export-correction"
+    ],
+    "exit_code": 0,
+    "seconds": 189.45
+  },
+  {
+    "check": "release-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--release",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 112.75
+  }
+]

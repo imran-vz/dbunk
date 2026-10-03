@@ -1,0 +1,7 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "relation_oid": 16859,
+  "table": "native_copy_window_20261003.slow_destination",
+  "rows_before_explicit_reconciliation": 0,
+  "backend_clients": 0
+}

@@ -1,0 +1,114 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Save query
+		12 button Rename
+		13 button Pin
+		14 button ←
+		15 button →
+		16 button Close
+		17 button Credentials
+		18 container Connections
+			19 button + Connection
+			20 button Open table
+			21 button −
+			22 button +
+			23 button Auto-fit fixture
+			24 button Edit
+			25 button Duplicate
+			26 button Copy URI
+			27 button ★
+			28 button Delete
+			29 button Comfortable
+		30 tab group
+			31 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			32 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			33 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			34 tab (settable, boolean) History · Open tab to load records, Value: off
+			35 tab (settable, boolean) History query · Disconnected, Value: off
+			36 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			37 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			38 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			39 tab (settable, boolean) Objects · Disconnected, Value: off
+			40 tab (settable, boolean) CSV transfer · Inspection requested. Load it when Ready, then review explicitly, Value: on
+		41 button Connect
+		42 button Disconnect
+		43 button Clear results
+		44 checkbox (settable, boolean) Import CSV, Value: off
+		45 checkbox (settable, boolean) Import XLSX, Value: off
+		46 checkbox (settable, boolean) Export CSV, Value: on
+		47 text Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+		48 text field (settable) CSV schema, Value: native_parity_20261003
+		49 text field (settable) CSV table, Value: rows
+		50 text field (settable) CSV delimiter (one byte), Value: ,
+		51 text field (settable) CSV quote (one byte), Value: "
+		52 text field (settable) CSV escape (one byte), Value: "
+		53 text field (settable) CSV NULL token (64 characters), Value: NULL
+		54 checkbox (settable, boolean) Header row, Value: on
+		55 checkbox (settable, boolean) Comma delimiter, Value: on
+		56 checkbox (settable, boolean) Semicolon delimiter, Value: off
+		57 checkbox (settable, boolean) Tab delimiter, Value: off
+		58 checkbox (settable, boolean) Pipe delimiter, Value: off
+		59 button Load choices
+		60 checkbox (disabled, settable, boolean) Schema choices, Value: on
+		61 checkbox (disabled, settable, boolean) Table choices, Value: off
+		62 button (disabled) Use selected choice
+		63 button (disabled) Cancel choice read
+		64 text Selected file: keyboard-receipt-export.csv
+		65 button Choose CSV file
+		66 button Inspect target and source
+		67 button (disabled) Load prepared inspection
+		68 button Release inspection
+		69 button Clear setup
+		70 text Inspection admission/observation pending or unavailable. Missing is not proof of refusal.
+		71 button (disabled) Review exact transfer
+		72 button (disabled) Start reviewed transfer
+		73 button (disabled) Confirm exact import
+		74 text Inspection requested. Load it when Ready, then review explicitly
+		75 button Refresh observations
+		76 button (disabled) Review awaiting confirmation
+		77 button (disabled) Cancel selected transfer
+		78 button Dismiss finished transfer
+		79 list CSV transfers in this session
+			80 text (selected) keyboard-receipt-export.csv · Export CSV · Completed, Secondary Actions: Pick
+		81 text Export CSV · keyboard-receipt-export.csv
+Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+Target: native_parity_20261003.rows
+Attempt: f308985c-20d2-4b4f-be6d-6961ee7dea68
+State: Completed
+Started: 2026-10-03T07:34:17.071797+00:00
+Finished: 2026-10-03T07:34:17.084879+00:00
+Source size: Unavailable
+Bytes processed: 1805
+Rows processed: Unavailable
+Rows committed: Unavailable
+Commit or publication succeeded
+Cleanup complete
+
+
+
+Export covers the whole committed relation, including partitions. It excludes grid 
+		82 container (settable) Draft persistence, Value: Saved
+		83 button Retry
+		84 button Export SQL
+		85 button Discard and quit
+	86 close button
+	87 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	88 minimize button
+	89 text dbunk Native Workspace
+90 menu bar
+	91 dbunk Native Preflight
+	92 Query
+	93 Results
+	94 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

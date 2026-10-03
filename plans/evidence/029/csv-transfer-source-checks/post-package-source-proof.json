@@ -1,0 +1,8 @@
+{
+  "manifest": "source-sha256-final-tests.json",
+  "source_files": 419,
+  "changed_paths": [],
+  "package": "/private/tmp/dbunk-native-package-20261003-csv/dbunk Native Preflight.app",
+  "executable_sha256": "6743917f18e4c9580b5a183b8f2198f3da05963acf613cd3754c4fd27bf104b9",
+  "note": "Final correction changed only two test assertions; packaged production sources are identical to the verified native matrix."
+}

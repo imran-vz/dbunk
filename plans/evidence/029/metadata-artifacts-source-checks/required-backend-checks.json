@@ -1,0 +1,60 @@
+[
+  {
+    "check": "just-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "just-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "just-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-clippy",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "clippy",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-tests",
+    "command": [
+      "cargo",
+      "+1.97.1",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--locked",
+      "--no-default-features",
+      "--features",
+      "isolated-profile"
+    ],
+    "exit_code": 0
+  }
+]

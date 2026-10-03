@@ -256,13 +256,18 @@ pub struct EncodedPage {
     response_id: Box<str>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "isolated-profile"))]
 impl EncodedPage {
     pub fn as_str(&self) -> &str {
         &self.json
     }
+    #[cfg(test)]
     pub fn bytes(&self) -> usize {
         self.json.len()
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.json.capacity() + self.response_id.len()
     }
 }
 

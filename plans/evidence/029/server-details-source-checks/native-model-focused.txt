@@ -1,0 +1,21 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.63s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 7 tests
+test server_details_model::search::tests::unicode_lowercase_and_overlapping_prefixes_match_without_field_copies ... ok
+test server_details_model::tests::filtered_empty_keeps_partial_scope_and_stable_selected_identity ... ok
+test server_details_model::tests::invalid_search_preserves_last_applied_filter_and_budget ... ok
+test server_details_model::tests::malformed_identity_and_excess_capacity_refuse_before_admission ... ok
+test server_details_model::tests::non_default_source_excludes_reader_overrides_and_values_are_never_searched ... ok
+test server_details_model::tests::null_omitted_restricted_and_unavailable_are_not_empty_success ... ok
+test server_details_model::tests::replacement_admission_keeps_old_capture_and_releases_each_lease ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 202 filtered out; finished in 0.01s
+

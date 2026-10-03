@@ -1,0 +1,79 @@
+{
+  "schema_oid": 17068,
+  "relations": [
+    {
+      "oid": 17069,
+      "name": "parent",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure window 20261003"
+    },
+    {
+      "oid": 17072,
+      "name": "parent_pkey",
+      "kind": "i",
+      "owner": "dbunk",
+      "comment": null
+    },
+    {
+      "oid": 17074,
+      "name": "child_id_seq",
+      "kind": "S",
+      "owner": "dbunk",
+      "comment": null
+    },
+    {
+      "oid": 17075,
+      "name": "child",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure window 20261003"
+    },
+    {
+      "oid": 17083,
+      "name": "child_pkey",
+      "kind": "i",
+      "owner": "dbunk",
+      "comment": null
+    },
+    {
+      "oid": 17090,
+      "name": "expression_include",
+      "kind": "i",
+      "owner": "dbunk",
+      "comment": null
+    },
+    {
+      "oid": 17095,
+      "name": "partitioned",
+      "kind": "p",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure window 20261003"
+    },
+    {
+      "oid": 17098,
+      "name": "leaf",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure window 20261003"
+    },
+    {
+      "oid": 17101,
+      "name": "inherited",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure window 20261003"
+    }
+  ],
+  "functions": [
+    {
+      "oid": 17091,
+      "name": "touch",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure window 20261003"
+    }
+  ],
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema": "native_structure_window_20261003",
+  "marker": "dbunk owned structure window 20261003"
+}

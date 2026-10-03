@@ -1941,8 +1941,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
     cleanup_schema(&admin, &schema).await;
 }
 
-// Applies through the mutation command core, which is not extracted yet.
-#[cfg(feature = "tauri-host")]
+// Applies through the same host-neutral service used by the Tauri adapter.
 #[tokio::test]
 #[serial_test::serial]
 #[ignore = "requires pnpm db:postgres"]
@@ -1971,7 +1970,7 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
     });
     crate::connections::save(&state, strict_connection.clone())
         .await
-        .expect("save strict connection through command core");
+        .expect("save strict connection through service");
     let default_spec = ResolvedPostgresConnectSpec::from_connection(&strict_connection)
         .expect("strict Postgres spec");
     let admin = session_postgres::connect(&default_spec)
@@ -2013,8 +2012,7 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
         confirmed,
     };
     assert!(matches!(
-        crate::commands::result_mutation::apply_result_mutations_inner(&state, payload(false))
-            .await,
+        super::service::apply(&state, payload(false)).await,
         Err(ResultMutationError::PolicyNeedsConfirmation { .. })
     ));
     let refused_row: String = admin
@@ -2035,10 +2033,9 @@ async fn safety_live_apply_strict_confirmation_and_audit() {
         .last_activity_at()
         .is_none());
 
-    let applied =
-        crate::commands::result_mutation::apply_result_mutations_inner(&state, payload(true))
-            .await
-            .expect("confirmed apply");
+    let applied = super::service::apply(&state, payload(true))
+        .await
+        .expect("confirmed apply");
     assert_eq!(applied.operations[0].rows_affected, 1);
     let stored: String = admin
         .client

@@ -1,0 +1,84 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Schema map
+		12 button Save query
+		13 button Rename
+		14 button Pin
+		15 button ←
+		16 button →
+		17 button Close
+		18 button Credentials
+		19 container Connections
+			20 button + Connection
+			21 button Open table
+			22 button −
+			23 button +
+			24 button Auto-fit fixture
+			25 button Edit
+			26 button Duplicate
+			27 button Copy URI
+			28 button ★
+			29 button Delete
+			30 button Comfortable
+		31 tab group
+			32 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			33 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			34 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			35 tab (settable, boolean) History · Open tab to load records, Value: off
+			36 tab (settable, boolean) History query · Disconnected, Value: off
+			37 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			38 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			39 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			40 tab (settable, boolean) Objects · Disconnected, Value: off
+			41 tab (settable, boolean) CSV transfer · Choose the exact target and CSV options, then explicitly inspect and review, Value: off
+			42 tab (settable, boolean) native_seed_window_20261003.destination · Disconnected, Value: off
+			43 tab (settable, boolean) Value: off, Seed table · Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.
+			44 tab (settable, boolean) native_structure_window_20261003.parent · Disconnected, Value: off
+			45 tab (settable, boolean) Schema map · Disconnected. Connect, then Refresh to read the map, Value: off
+			46 tab (settable, boolean) native_export_window_20261003.quoted export · Disconnected, Value: on
+		47 button Connect
+		48 button Disconnect
+		49 button Clear results
+		50 container Export whole committed table
+			51 button Table
+			52 button Connect
+			53 button Format: SQL INSERT
+			54 button Encoding: Utf16Le
+			55 button Compression: Gzip
+			56 button (disabled) Capture whole table
+			57 button (disabled) Save captured table
+			58 button (disabled) Cancel
+			59 button (disabled) Clear capture
+			60 button Load configurations
+			61 button Save configuration
+			62 button Load latest configuration
+			63 text Whole table: "native_export_window_20261003"."quoted export"
+			64 text field (settable) Whole-table export NULL token, Value: NULL雪
+			65 text Whole committed table only, including partition rows. No grid filters, projections or staged edits. CSV streams through its own review; other formats refuse oversized captures or output instead of truncating.
+			66 text SQL, JSON and text values preserve captured server text. Dates and other output depend on the reader session. XLSX uses text cells; empty text appears blank. Existing files are never replaced.
+			67 container Latest configuration loaded. Capture whole table or open CSV export explicitly; a new file picker is always required.
+		68 container (settable) Draft persistence, Value: Saved
+		69 button Retry
+		70 button Export SQL
+		71 button Discard and quit
+	72 close button
+	73 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	74 minimize button
+	75 text dbunk Native Workspace
+76 menu bar
+	77 dbunk Native Preflight
+	78 Query
+	79 Results
+	80 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,20 @@
+{
+  "backend": {
+    "packages": 292,
+    "added_packages": [],
+    "removed_packages": [],
+    "feature_changes": [],
+    "changed_dependency_nodes": [
+      "path+file:///Users/imran/projects/Code/dbunk/src-tauri#dbunk@0.1.0-alpha.1"
+    ]
+  },
+  "native": {
+    "packages": 1144,
+    "added_packages": [],
+    "removed_packages": [],
+    "feature_changes": [],
+    "changed_dependency_nodes": [
+      "path+file:///Users/imran/projects/Code/dbunk/src-tauri#dbunk@0.1.0-alpha.1"
+    ]
+  }
+}

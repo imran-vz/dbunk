@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 7 tests
+test persistence::tests::apply_barrier_reports_storage_refusal_and_lost_writer ... ok
+test persistence::tests::apply_barrier_waits_for_its_exact_commit_and_refuses_superseded_ack ... ok
+test persistence::tests::export_keeps_exact_sql_and_preserves_existing_files ... ok
+test persistence::tests::export_snapshot_refuses_before_copy_and_releases_only_its_own_allowance ... ok
+test persistence::tests::mixed_export_preserves_table_intent_and_oversize_sql_without_overwriting ... ok
+test persistence::tests::schema_only_recovery_exports_exact_intent_and_refuses_lossy_sql ... ok
+test persistence::tests::writer_coalesces_flushes_recovers_and_refuses_stale_overwrite ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.27s
+

@@ -1,0 +1,10 @@
+{
+  "package_sha256": "09a826eb862584584352203ebfce52883241d61cecc3edfce42c0735ccc8084b",
+  "path_error": "Computer Use server error -10005: cgWindowNotFound",
+  "inventory_running": true,
+  "bundle_id_error": "Computer Use server error -10005: cgWindowNotFound",
+  "interaction_performed": false,
+  "keyboard_ax_pass": false,
+  "ime_pass": false,
+  "voiceover": "deferred, not passed"
+}

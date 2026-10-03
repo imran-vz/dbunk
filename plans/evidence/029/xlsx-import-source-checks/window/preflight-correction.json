@@ -1,0 +1,7 @@
+{
+  "attempt": "standalone profile.py check without --tls",
+  "result": "refused: Development profile fixture identity changed",
+  "reason": "existing owned profile includes both stage03 and stage04 TLS manifests; incomplete caller manifest refused",
+  "correction": "use workspace_launch.py --tls with both ownership checks",
+  "app_launched": false
+}

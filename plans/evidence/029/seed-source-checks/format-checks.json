@@ -1,0 +1,18 @@
+[
+  {
+    "check": "rust-format-final",
+    "exit_code": 0
+  },
+  {
+    "check": "native-format-final",
+    "exit_code": 0
+  },
+  {
+    "check": "format-final",
+    "exit_code": 0
+  },
+  {
+    "check": "diff-check",
+    "exit_code": 0
+  }
+]

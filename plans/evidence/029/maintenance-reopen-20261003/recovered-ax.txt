@@ -1,0 +1,98 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · Disconnected, Value: on
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 container PostgreSQL objects
+			42 button Connect
+			43 button (disabled) Refresh
+			44 button (disabled) Cancel
+			45 button (disabled) Search
+			46 button (disabled) Open
+			47 button (disabled) Copy identity
+			48 button Clear
+			49 button (disabled) Describe
+			50 button (disabled) Drop impact
+			51 button Create schema
+			52 button Maintenance
+			53 text field (settable) Search object names, schemas or signatures
+			54 text Disconnected
+			55 list (settable) 0 matching objects; arrows select, Enter opens
+			56 text
+			57 container PostgreSQL maintenance review
+				58 button (disabled) Review VACUUM
+				59 button (disabled) Review ANALYZE
+				60 button (disabled) Review REINDEX TABLE
+				61 button (disabled) Review REFRESH
+				62 button (disabled) Review REFRESH CONCURRENTLY
+				63 button (disabled) Apply maintenance
+				64 button (disabled) Confirm maintenance
+				65 button (disabled) Cancel request
+				66 button Clear recovery
+				67 button Copy review
+				68 button Back to objects
+				69 container Choose an action to observe the target and review SQL. Recovered records cannot be applied.
+				70 container (settable) Observed target, SQL, deadlines and recovery, Value: Attempt: 4164d6f5-cf63-42f5-b628-0e8c1135b816
+Action: Analyze
+Database: "dbunk_demo" (OID 16384)
+Schema: "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee" (OID 16784)
+Relation: "rows" (OID 16785, Table)
+State: Staged
+SQL: ANALYZE "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."rows"
+Effects: potentially partial after dispatch
+Operation deadline: 300000 ms
+Statement timeout: inherited/server default
+
+The observed object identity is rechecked before execution. PostgreSQL maintenance SQL resolves 
+		71 container (settable) Draft persistence, Value: Saved
+		72 button Retry
+		73 button Export SQL
+		74 button Discard and quit
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+	78 text dbunk Native Workspace
+79 menu bar
+	80 dbunk Native Preflight
+	81 Query
+	82 Results
+	83 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,161 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Page 1 · 60 rows · 9 ms, Value: on
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · Disconnected, Value: off
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 button (disabled) Connect
+		42 button Backup
+		43 button Restore
+		44 button Import CSV
+		45 button Export CSV
+		46 button Refresh
+		47 button Edit cell
+		48 button Insert row
+		49 button Duplicate row
+		50 button Bulk edit
+		51 button Delete row
+		52 button Follow foreign key
+		53 button Count
+		54 button Sort selected column
+		55 button (disabled) Cancel
+		56 button Narrow column
+		57 button Widen column
+		58 button Auto-fit column
+		59 button Auto-fit visible columns
+		60 button Move column left
+		61 button Move column right
+		62 button Pin / unpin column
+		63 button Hide column
+		64 button Show all columns
+		65 button Reload preferences
+		66 container Table preferences saved
+		67 button Typed
+		68 button WHERE
+		69 button Column: id
+		70 button =
+		71 text field (settable) Typed filter value
+		72 button Apply filter
+		73 button (disabled) Clear filters
+		74 button Add sort on column
+		75 button History 1/2
+		76 button Apply history
+		77 button Preset: row59
+		78 button Apply preset
+		79 text field (settable) Preset name
+		80 button Save preset
+		81 button Inspect query
+		82 text 2026-10-03T03:49:37.513864+00:00 ·  · 0 sort
+		83 table (settable) Table rows, Value: 0.10000000000000000000
+			84 text 60 rows · 2 columns · 1 pinned · Copied 1 selected rows
+			85 button Export selected cells, or all retained rows when no selection
+			86 cell amount
+			87 cell value
+			88 row
+				89 cell (settable) 0.10000000000000000000
+				90 cell (settable) row 1
+			91 row
+				92 cell (settable) 0.20000000000000000000
+				93 cell (settable) row 2
+			94 row
+				95 cell (settable) 0.30000000000000000000
+				96 cell (settable) row 3
+			97 row
+				98 cell (settable) 0.40000000000000000000
+				99 cell (settable) row 4
+			100 row
+				101 cell (settable) 0.50000000000000000000
+				102 cell (settable) row 5
+			103 row
+				104 cell (settable) 0.60000000000000000000
+				105 cell (settable) row 6
+			106 row
+				107 cell (settable) 0.70000000000000000000
+				108 cell (settable) row 7
+			109 row
+				110 cell (settable) 0.80000000000000000000
+				111 cell (settable) row 8
+			112 row
+				113 cell (settable) 0.90000000000000000000
+				114 cell (settable) row 9
+			115 row
+				116 cell (settable) 1.00000000000000000000
+				117 cell (settable) row 10
+			118 row
+				119 cell (settable) 1.1000000000000000
+				120 cell (settable) row 11
+			121 row
+				122 cell (settable) 1.2000000000000000
+				123 cell (settable) row 12
+			124 row
+				125 cell (settable) 1.3000000000000000
+				126 cell (settable) row 13
+		127 container Table changes
+			128 container Virtual key
+				129 text Virtual key: none
+				130 button Choose virtual key
+				131 button (disabled) Clear virtual key
+				132 button Reload virtual key
+		133 button First
+		134 button Previous
+		135 button Next
+		136 button Last
+		137 button 10
+		138 button 25
+		139 button 50
+		140 button 100
+		141 button 250
+		142 button 500
+		143 button 1000
+		144 container Page 1 · 60 rows · 9 ms
+		145 container (settable) Draft persistence, Value: Saved
+		146 button Retry
+		147 button Export SQL
+		148 button Discard and quit
+	149 close button
+	150 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	151 minimize button
+	152 text dbunk Native Workspace
+153 menu bar
+	154 dbunk Native Preflight
+	155 Query
+	156 Results
+	157 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

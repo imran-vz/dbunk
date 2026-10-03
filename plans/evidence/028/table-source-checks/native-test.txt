@@ -1,0 +1,99 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.90s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/dbunk_native-772a36ec0cbab884)
+
+running 88 tests
+test controller::query_controls::tests::unavailable_or_unknown_state_never_enables_destructive_transaction_controls ... ok
+test accessible_editor::tests::rejects_unknown_nodes_and_out_of_range_positions ... ok
+test controller::table_runtime::tests::only_explicit_global_stop_accepts_backend_closing_handoff ... ok
+test accessible_editor::tests::long_combining_clusters_preserve_every_byte ... ok
+test accessible_editor::tests::unicode_positions_round_trip_at_every_selectable_boundary ... ok
+test accessible_editor::tests::display_splits_preserve_unicode_offsets_and_ignore_interior_grapheme_breaks ... ok
+test controller::tests::disconnected_controls_still_coalesce_layout_preference ... ok
+test controller::workspace_runtime::tests::cancellation_review_discard_and_transaction_lane_bypass_saturated_run_queue ... ok
+test controller::table_runtime::tests::mutation_delivery_preserves_unknown_outcomes_and_releases_shared_budget ... ok
+test controller::table_runtime::tests::cancel_after_dequeue_before_first_poll_never_dispatches_the_command ... ok
+test controller::table_runtime::tests::shared_budget_is_held_by_envelope_and_released_by_consume_or_drop ... ok
+test controller::tests::actual_cleanup_error_is_not_swallowed_by_shutdown ... ok
+test controller::workspace_runtime::tests::execution_admission_is_shared_and_stale_terminal_cannot_release_another_run ... ok
+test controller::table_runtime::tests::dropped_ui_and_close_waiter_cannot_lose_an_opened_document ... ok
+test controller::table_runtime::tests::cancel_and_stop_bypass_a_full_command_queue ... ok
+test controller::table_runtime::tests::queued_mutation_cancellation_preserves_family_and_request_identity ... ok
+test data_model::tests::apply_failure_preserves_draft_attribution_and_success_only_removes_reviewed_changes ... ok
+test data_model::tests::header_sort_cycle_keeps_order_for_appended_keys_and_resets_paging ... ok
+test data_model::tests::keyed_updates_keep_first_null_original_and_reverting_removes_only_that_cell ... ok
+test data_model::tests::paging_keeps_server_cursor_and_uses_offset_for_backward_and_direct_navigation ... ok
+test data_model::tests::query_changes_fence_page_and_count_replies_without_relabelling_old_rows ... ok
+test data_model::tests::ambiguous_virtual_keys_and_reused_ctids_do_not_merge_distinct_captured_rows ... ok
+test data_model::tests::selection_and_removal_preserve_applying_and_uncertain_changes ... ok
+test controller::tests::failed_reconnect_cleanup_never_becomes_success_after_abort_join ... ok
+test controller::tests::cancelled_waiter_leaves_termination_join_owned_by_host ... ok
+test data_model::tests::shared_page_and_cached_account_survive_refused_replacements_and_clear_together ... ok
+test data_model::tests::selection_changes_require_new_review_even_when_the_plan_returns_to_its_prior_values ... ok
+test data_model::tests::changed_catalog_or_malformed_saved_guards_preserve_draft_and_refuse_recovery ... ok
+test diagnostics::tests::end_of_input_is_an_empty_range_at_the_executed_end ... ok
+test live_tests::native_background_beyond_lease_and_refocus_stay_usable ... ignored, requires verified owned fixture; exercises background beyond the real 120-second lease
+test live_tests::native_foreground_heartbeats_do_not_prevent_ack_timeout ... ignored, requires verified owned fixture; exercises the real 120-second ACK lease
+test data_model::tests::restored_inflight_apply_is_explicitly_uncertain_and_cannot_be_retried_by_reanalysis ... ok
+test live_tests::native_full_queue_retires_and_explicit_reconnect_restores_queries ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test diagnostics::tests::invalid_missing_and_stale_positions_do_not_mark_sql ... ok
+test live_tests::native_idle_and_active_owned_socket_loss_require_reconnect ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_retention_refusal_drains_terminal_ack_and_preserves_session ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_select_error_and_terminal_ack_allow_next_run ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_shutdown_during_sleep_joins_and_is_idempotent ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::native_shutdown_with_streaming_credit_held_joins ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test data_model::tests::durable_table_restore_keeps_intent_without_pages_and_requires_new_analysis_review ... ok
+test live_tests::native_stop_with_four_batches_of_held_credit_resumes_and_finishes ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::workspace_live_tests::workspace_admission_reconnect_stale_events_and_global_shutdown ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::workspace_live_tests::workspace_mailboxes_share_exact_16_mib_and_release_on_drop ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test live_tests::workspace_live_tests::workspace_streams_cancel_and_close_independently_with_terminal_ack ... ignored, requires explicitly verified owned stage03 PostgreSQL fixture
+test data_model::tests::virtual_and_ctid_changes_guard_full_projected_row_and_generated_columns_refuse ... ok
+test mailbox::tests::byte_budget_applies_even_before_count_capacity ... ok
+test data_model::tests::disconnected_and_restored_drafts_allow_selection_and_removal_without_granting_analysis ... ok
+test mailbox::tests::first_failure_is_sticky_and_fences_other_producers ... ok
+test mailbox::tests::failure_wakes_controller_even_with_no_data_or_heartbeat ... ok
+test mailbox::tests::escaped_notice_and_command_errors_use_encoded_byte_budget ... ok
+test mailbox::tests::full_queue_reports_initial_row_and_terminal_failures_out_of_band ... ok
+test mailbox::tests::oversize_and_closed_consumer_fail_without_retry ... ok
+test mailbox::tests::retired_consumer_releases_bytes_and_cannot_affect_a_new_mailbox ... ok
+test mailbox::tests::saturation_has_an_independent_failure_and_releases_permits ... ok
+test mailbox::tests::workspace_budget_spans_mailboxes_and_releases_on_consume_or_drop ... ok
+test mailbox::tests::slow_consumer_preserves_order_and_coalesces_wakes_with_bounded_bytes ... ok
+test diagnostics::tests::maps_selected_duplicate_without_searching ... ok
+test diagnostics::tests::recovery_fallback_keeps_combining_sequence_intact ... ok
+test diagnostics::tests::unicode_prefix_and_later_script_statement_use_character_positions ... ok
+test results::tests::an_unretained_column_set_never_leaves_unrenderable_rows ... ok
+test results::tests::metadata_and_notices_share_budget_and_refuse_further_rows ... ok
+test results::tests::budget_accepts_partial_batch_and_keeps_draining_to_one_terminal ... ok
+test results::tests::preserves_null_empty_numeric_and_unicode_across_result_sets ... ok
+test results::tests::display_prefix_is_utf8_safe_but_exact_value_remains_available ... ok
+test results::tests::shared_allowance_preserves_existing_rows_and_stops_new_retention ... ok
+test results::tests::terminal_preserves_error_position_and_omission_details ... ok
+test stream::tests::document_identity_is_checked_before_advancing_sequence ... ok
+test stream::tests::gap_and_retirement_are_sticky ... ok
+test stream::tests::stale_sessions_generations_and_executions_cannot_change_current_results ... ok
+test table_changes::apply_flow::tests::cancelled_save_cannot_release_a_late_or_duplicate_write ... ok
+test table_changes::apply_flow::tests::confirmation_has_a_new_durable_fence_and_is_cancellable ... ok
+test table_changes::tests::inserted_values_preserve_text_null_and_omission_without_numeric_rounding ... ok
+test results::tests::row_count_limit_refuses_retention_but_records_server_completion ... ok
+test workbench::query_parameters::tests::limits_reject_invalid_input_without_clamping_or_treating_it_as_unlimited ... ok
+test table_changes::tests::review_and_analysis_share_result_allowance_without_evicting_existing_data ... ok
+test workbench::query_parameters::tests::scanner_output_is_bounded_before_creating_native_editors ... ok
+test workbench::binding_review_tests::review_preserves_disabled_empty_null_text_and_bound_limit ... ok
+test persistence::tests::export_keeps_exact_sql_and_preserves_existing_files ... ok
+test workbench::query_parameters::tests::values_are_bounded_by_utf8_bytes_and_null_is_not_empty_text ... ok
+test controller::table_runtime::tests::local_close_timeout_preserves_owned_open_for_retry ... ok
+test persistence::tests::apply_barrier_reports_storage_refusal_and_lost_writer ... ok
+test persistence::tests::apply_barrier_waits_for_its_exact_commit_and_refuses_superseded_ack ... ok
+test controller::workspace_runtime::tests::closing_one_pending_document_preserves_other_documents ... ok
+test persistence::tests::writer_coalesces_flushes_recovers_and_refuses_stale_overwrite ... ok
+test data_model::tests::budgets_and_malformed_apply_success_never_shed_unresolved_changes ... ok
+test persistence::tests::mixed_export_preserves_table_intent_and_oversize_sql_without_overwriting ... ok
+test controller::table_runtime::tests::oversized_delivery_and_terminal_outcome_remain_visible_without_queue_space ... ok
+test data_model::tests::foreign_tickets_bad_shapes_and_over_budget_queries_cannot_replace_good_state ... ok
+
+test result: ok. 76 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 0.47s
+

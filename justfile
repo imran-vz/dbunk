@@ -67,9 +67,38 @@ dev-native:
 test-native-e2e:
     python3 tools/native/launch.py --verify
 
+# Separate unsigned development bundle; output must be a new directory.
+package-native out:
+    python3 tools/native/package.py --out {{quote(out)}}
+
+# Foreground AX probe, with the owned fixture and a fresh isolated profile.
+test-native-bundle out:
+    python3 tools/native/package.py --out {{quote(out)}} --verify
+
 # Serial foreground probes; each output directory must be new.
 test-native-window-races out:
     python3 tools/native/verify_window.py races --out {{quote(out)}}
 
 measure-native out:
     python3 tools/native/verify_window.py performance --out {{quote(out)}}
+
+# Persistent stage04 profiles; the helper verifies the owned fixture first.
+native-profile-create path:
+    python3 tools/native/profile.py create {{quote(path)}}
+
+native-profile-check path:
+    python3 tools/native/profile.py check {{quote(path)}}
+
+# Headless public-facade acceptance, two processes and an owned Postgres fixture.
+test-native-workspace path:
+    python3 tools/native/workspace_probe.py {{quote(path)}}
+
+# Persistent native workspace window; restores drafts without reconnecting.
+dev-native-workspace path:
+    python3 tools/native/workspace_launch.py {{quote(path)}}
+
+native-tls-fixture-up:
+    python3 tools/native/tls_fixture.py up
+
+native-tls-fixture-down:
+    python3 tools/native/tls_fixture.py down

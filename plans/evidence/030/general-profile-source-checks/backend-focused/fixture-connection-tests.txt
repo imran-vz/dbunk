@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 2 tests
+test backend::development::connection_tests::connection_workflow_preserves_secrets_metadata_and_atomic_failures ... ok
+test backend::development::connection_tests::probe_disconnect_and_post_connect_failure_join_owned_sockets ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 913 filtered out; finished in 0.44s
+

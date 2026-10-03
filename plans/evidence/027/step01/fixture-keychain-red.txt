@@ -1,0 +1,34 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.82s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 1 test
+test backend::tests::fixture_startup_never_opens_a_keychain_entry ... 
+thread 'backend::tests::fixture_startup_never_opens_a_keychain_entry' (6524921) panicked at src/backend.rs:343:13:
+
+running 1 test
+test backend::tests::fixture_startup_never_opens_a_keychain_entry ... FAILED
+
+failures:
+
+failures:
+    backend::tests::fixture_startup_never_opens_a_keychain_entry
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 721 filtered out; finished in 0.03s
+
+
+thread 'backend::tests::fixture_startup_never_opens_a_keychain_entry' (6524925) panicked at src/backend.rs:369:9:
+Fixture startup reached Keychain identities: [("dbunk", "connection-credentials")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    backend::tests::fixture_startup_never_opens_a_keychain_entry
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 721 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--lib`

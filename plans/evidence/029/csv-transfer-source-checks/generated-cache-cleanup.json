@@ -1,0 +1,9 @@
+{
+  "removed_generated_caches": [
+    "/Users/imran/projects/Code/dbunk/src-tauri/target/debug/incremental",
+    "/Users/imran/projects/Code/dbunk/apps/native/target/debug/incremental"
+  ],
+  "compiler_processes": [],
+  "preserved": "source, profiles, packages and immutable evidence",
+  "subsequent_matrix_incremental": "disabled"
+}

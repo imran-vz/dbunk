@@ -1,0 +1,9 @@
+{
+  "schema_absent": true,
+  "recorded_relation_oids_absent": 260,
+  "stage03_backends": 0,
+  "stage04_tls_backends": 0,
+  "workspace_documents_unchanged": 13,
+  "normal_quit_exit": 0,
+  "package_sha256": "a234ec665b1b5a3ed6735b1ff98e16dbc16f5a06cb08e03f1636ac0af06af750"
+}

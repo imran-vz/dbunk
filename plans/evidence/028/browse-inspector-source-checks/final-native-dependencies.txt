@@ -1,0 +1,2 @@
+$ python3 tools/native/dependencies.py
+PASS: one GPUI revision 506beb34de3f433707b7ebe8d8ad2d80f856af6c; no Tauri/Wry/Tao/WebKit packages

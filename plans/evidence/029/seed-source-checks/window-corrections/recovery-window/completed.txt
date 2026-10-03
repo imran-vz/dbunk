@@ -1,0 +1,106 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Save query
+		12 button Rename
+		13 button Pin
+		14 button ←
+		15 button →
+		16 button Close
+		17 button Credentials
+		18 container Connections
+			19 button + Connection
+			20 button Open table
+			21 button −
+			22 button +
+			23 button Auto-fit fixture
+			24 button Edit
+			25 button Duplicate
+			26 button Copy URI
+			27 button ★
+			28 button Delete
+			29 button Comfortable
+		30 tab group
+			31 tab (settable, boolean) Query 1 · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			32 tab (settable, boolean) Value: off, native_parity_20261003.rows · Database may have changed; reconnect and refresh before using retained data
+			33 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			34 tab (settable, boolean) History · Open tab to load records, Value: off
+			35 tab (settable, boolean) History query · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			36 tab (settable, boolean) Administration · Database may have changed; reconnect and refresh before using retained data, Value: off
+			37 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+			38 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			39 tab (settable, boolean) Objects · Database may have changed; reconnect and refresh before using retained data, Value: off
+			40 tab (settable, boolean) CSV transfer · Database changed; inspect again. Setup text and accepted transfers remain, Value: off
+			41 tab (settable, boolean) Value: off, native_seed_window_20261003.destination · Database may have changed; reconnect and refresh before using retained data
+			42 tab (settable, boolean) Seed table · Seed apply requested. Check the attempt's transaction outcome and cleanup status., Value: on
+		43 button Connect
+		44 button Disconnect
+		45 button Clear results
+		46 container PostgreSQL table seed
+			47 container Seed setup, exact review and receipt; Page Up and Page Down scroll, Home and End from this group reach either end
+				48 button Destination: Auto-fit fixture
+				49 button Load columns with Auto recipe
+				50 button (disabled) Edit selected recipe
+				51 button Prepare edited recipe
+				52 button Refresh seed jobs
+				53 button (disabled) Review selected seed
+				54 button (disabled) Apply reviewed seed
+				55 button (disabled) Cancel selected seed
+				56 button (disabled) Reconcile uncertain seed
+				57 button Dismiss finished seed
+				58 text Seed apply requested. Check the attempt's transaction outcome and cleanup status.
+				59 text Generate rows on the backend in one destination transaction. DEFAULT leaves database defaults authoritative. Exact review freezes the seed and clock. Cancellation after COMMIT cannot undo rows. Jobs and uncertain intent survive tab closure.
+				60 text Seed admitted. Check the attempt for its transaction outcome and cleanup status.
+				61 text field (settable) Destination schema, Value: native_seed_window_20261003
+				62 text field (settable) Destination table, Value: destination
+				63 text field (settable) Rows (1–1000000), Value: 1
+				64 text field (settable) Optional unsigned seed, Value: 42
+				65 list Seed attempts and durable recovery records
+					66 text (selectable) Recovered Completed { rows: 3 } | native_seed_window_20261003.destination, Secondary Actions: Pick
+					67 text (selectable) Recovered Reconciled | native_seed_window_20261003.destination, Secondary Actions: Pick
+					68 text (selected) Completed: Completed { rows: 1 } | native_seed_window_20261003.destination, Secondary Actions: Pick
+				69 text Editable recipe: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e / native_seed_window_20261003.destination · 5 columns
+				70 list Editable seed columns
+					71 text (selectable) id: Auto, Secondary Actions: Pick
+					72 text (selectable) category: Auto, Secondary Actions: Pick
+					73 text (selected) note: Value list · 0% NULL, Secondary Actions: Pick
+					74 text (selectable) score: Auto, Secondary Actions: Pick
+					75 text (selectable) note_length: Auto, Secondary Actions: Pick
+				76 text note (text) · nullable: true · default: false · generated: false · identity: false
+				77 button Source: Value list
+				78 button Save selected column
+				79 text field (settable) Comma-separated values, Value: release recovered seed,another value
+				80 text field (settable) NULL percentage (0–100, blank for default), Value: 0
+				81 text Attempt 0192ecf6-eb34-4307-aaec-c1f22afc2655
+Durable recovery: Completed { rows: 1 }
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_seed_window_20261003.destination
+Endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Safe mode: Protected; read-only: false
+Observed database OID: 16384; relation OID: 16937
+Rows: 1; exact seed: 42; frozen clock (Unix seconds): 1791015443
+Columns: 3 inserted; 2 defaulted
+Recipe identity: cb2e26a05f44b68acdd031e6429c778340
+		82 container (settable) Draft persistence, Value: Saved
+		83 button Retry
+		84 button Export SQL
+		85 button Discard and quit
+	86 close button
+	87 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	88 minimize button
+	89 text dbunk Native Workspace
+90 menu bar
+	91 dbunk Native Preflight
+	92 Query
+	93 Results
+	94 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

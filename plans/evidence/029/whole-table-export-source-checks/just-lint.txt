@@ -1,0 +1,39 @@
+cargo clippy --manifest-path src-tauri/Cargo.toml --no-default-features --all-targets -- -D warnings
+   Compiling libz-sys v1.1.29
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling libssh2-sys v0.3.1
+    Checking ssh2 v0.9.5
+error[E0433]: cannot find `backend` in `crate`
+  --> src/postgres/native_table_ddl.rs:12:12
+   |
+12 | use crate::backend::table_ddl::{
+   |            ^^^^^^^ could not find `backend` in the crate root
+   |
+note: found an item that was configured out
+  --> src/lib.rs:16:9
+   |
+15 | #[cfg(feature = "isolated-profile")]
+   |       ---------------------------- the item is gated behind the `isolated-profile` feature
+16 | pub mod backend;
+   |         ^^^^^^^
+
+error[E0432]: unresolved import `crate::postgres::native_catalog`
+  --> src/postgres/native_table_ddl/catalog.rs:2:22
+   |
+ 2 | use crate::postgres::native_catalog::{self, CatalogError};
+   |                      ^^^^^^^^^^^^^^ could not find `native_catalog` in `postgres`
+   |
+note: found an item that was configured out
+  --> src/postgres/mod.rs:25:16
+   |
+24 | #[cfg(feature = "isolated-profile")]
+   |       ---------------------------- the item is gated behind the `isolated-profile` feature
+25 | pub(crate) mod native_catalog;
+   |                ^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `dbunk` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (lib test) due to 2 previous errors
+error: Recipe `lint-core` failed on line 12 with exit code 101

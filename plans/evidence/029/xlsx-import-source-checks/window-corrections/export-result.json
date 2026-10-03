@@ -1,0 +1,13 @@
+{
+  "file": "/private/tmp/dbunk-native-xlsx-window-20261003-files/keyboard-receipt-export.csv",
+  "bytes": 1805,
+  "sha256": "639ae962f7a58c3a036e6d56b08bdf81da51a4d95ad8675777d3eb31f8a22f23",
+  "header": [
+    "id",
+    "value",
+    "amount"
+  ],
+  "data_rows": 60,
+  "owned_source_rows_after": 60,
+  "attempt": "f308985c-20d2-4b4f-be6d-6961ee7dea68"
+}

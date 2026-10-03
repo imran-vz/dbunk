@@ -21,6 +21,26 @@ name = "dbunk"
 path = "src/main.rs"
 required-features = ["tauri-host"]
 
+[[example]]
+name = "native_table_copy_probe"
+required-features = ["isolated-profile"]
+
+[[example]]
+name = "native_profile"
+required-features = ["isolated-profile"]
+
+[[example]]
+name = "native_workspace_probe"
+required-features = ["isolated-profile"]
+
+[[example]]
+name = "native_keychain_probe"
+required-features = ["isolated-profile"]
+
+[[example]]
+name = "native_tls_probe"
+required-features = ["isolated-profile"]
+
 [features]
 default = ["tauri-host"]
 # The Tauri desktop host: command adapters, plugins and the entry point.
@@ -75,7 +95,11 @@ rustls-native-certs = "0.7"
 rustls-pki-types = "1"
 tempfile = "3"
 calamine = "0.26"
+# Existing locked parser dependencies, with the same already-enabled features.
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+quick-xml = { version = "=0.31.0", default-features = false, features = ["encoding"] }
 rust_xlsxwriter = "0.84"
+flate2 = "1.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3.2", optional = true }

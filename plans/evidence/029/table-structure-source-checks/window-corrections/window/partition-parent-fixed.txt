@@ -1,0 +1,18 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 101
+~			82 button Open related table
+~				85 tab (settable, boolean) Overview (1), Value: off
+~				96 tab (settable, boolean) Parents (1), Value: on
+~			98 list 1 captured Parents; arrows select, Enter inspects
+~				99 text (selected) "native_structure_catalog_20261003"."parent" · partition, Secondary Actions: Pick
++				103 text entry area (settable) Read-only selected table structure details, Value: Parents · "native_structure_catalog_20261003"."leaf"
+Database OID: 16384; relation OID: 17116
+Captured: 2026-10-03 08:50:37.799283+00
+
+Relation: "native_structure_catalog_20261003"."parent"
+OID: 17113
+Inheritance sequence: 1
+Is a partition: false
+Partition bound: NULL (absent)
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

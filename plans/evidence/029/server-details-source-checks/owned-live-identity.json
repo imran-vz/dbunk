@@ -1,0 +1,24 @@
+{
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "endpoint": "127.0.0.1:15432/dbunk_demo",
+  "profile": "test-owned temporary stage03 marked directory; removed by tempfile scope",
+  "baseline": 0,
+  "final": 0,
+  "exit": 101,
+  "command": [
+    "cargo",
+    "test",
+    "--manifest-path",
+    "src-tauri/Cargo.toml",
+    "--no-default-features",
+    "--features",
+    "isolated-profile",
+    "backend::server_details::live_tests::native_server_details_owned_read_cancel_retire_and_cleanup",
+    "--",
+    "--exact",
+    "--ignored",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "scope": "read-only server facts/settings/extensions, reader timeout flags, idle cancellation reuse, retired owner refusal and joined cleanup; no persistent server setting change"
+}

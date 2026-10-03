@@ -1,0 +1,10 @@
+{
+  "changed_from_initial_frozen_package": [
+    "apps/native/src/csv_transfer_store.rs",
+    "apps/native/src/csv_transfer_view/render.rs",
+    "apps/native/src/csv_transfer_view/workbook.rs"
+  ],
+  "original_manifest_preserved": true,
+  "backend_unchanged": true,
+  "seed_modules_not_declared": true
+}

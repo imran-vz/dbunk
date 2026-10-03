@@ -1,0 +1,23 @@
+{
+  "schema_oid": 17112,
+  "schema": "native_structure_catalog_20261003",
+  "owner": "dbunk",
+  "marker": "dbunk owned structure catalog recheck 20261003",
+  "relations": [
+    {
+      "oid": 17113,
+      "name": "parent",
+      "kind": "p",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure catalog recheck 20261003"
+    },
+    {
+      "oid": 17116,
+      "name": "leaf",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned structure catalog recheck 20261003"
+    }
+  ],
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410"
+}

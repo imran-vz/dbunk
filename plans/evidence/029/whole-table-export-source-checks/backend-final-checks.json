@@ -1,0 +1,85 @@
+[
+  {
+    "name": "just-fmt-final",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit": 0,
+    "seconds": 0.84
+  },
+  {
+    "name": "just-lint-final",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 0,
+    "seconds": 34.55
+  },
+  {
+    "name": "just-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit": 0,
+    "seconds": 124.43
+  },
+  {
+    "name": "isolated-tests",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "isolated-profile"
+    ],
+    "exit": 0,
+    "seconds": 97.47
+  },
+  {
+    "name": "host-isolated-tests",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--features",
+      "isolated-profile",
+      "backend::"
+    ],
+    "exit": 0,
+    "seconds": 96.28
+  },
+  {
+    "name": "tauri-build",
+    "command": [
+      "cargo",
+      "build",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--features",
+      "tauri/custom-protocol"
+    ],
+    "exit": 0,
+    "seconds": 37.11
+  },
+  {
+    "name": "python-tests",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tools/native",
+      "-p",
+      "test_*.py"
+    ],
+    "exit": 0,
+    "seconds": 0.16
+  }
+]

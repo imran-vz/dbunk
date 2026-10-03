@@ -1,0 +1,9 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			36 tab (settable, boolean) Value: on, Administration · Overview read refused: Overview target identity changed; refresh the target explicitly; previous capture retained
++			163 container Retained capture may be stale. Refresh preserves its identity. To inspect a replacement, return to Administration and Clear captures.
+~			139 container Overview read refused: Overview target identity changed; refresh the target explicitly; previous capture retained
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise
+
+Repeated refresh:
+There has been no change in the accessibility tree for Window: "dbunk Native Workspace".
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

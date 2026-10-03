@@ -1,0 +1,24 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.52s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 13 tests
+test sql_completion::context::tests::opaque_regions_and_statement_boundary ... ok
+test sql_completion::context::tests::quoted_schema_and_whole_identifier ... ok
+test sql_completion::tests::column_capacity_and_order_are_bounded_before_retention ... ok
+test sql_completion::context::tests::predicate_identity_case_and_suffix ... ok
+test sql_completion::tests::editor_move_allows_cache_but_prevents_menu_refresh ... ok
+test sql_completion::tests::composing_suppresses_new_reads_and_refresh_without_cancelling_owner ... ok
+test sql_completion::provider::tests::disconnected_only_keywords_no_metadata_request ... ok
+test sql_completion::tests::stale_reply_never_settles_new_binding ... ok
+test sql_completion::context::tests::doubled_quote_boundary_preserves_identifier_and_following_comment ... ok
+test sql_completion::tests::request_coalescing_exact_columns_and_explicit_retry ... ok
+test sql_completion::tests::refusal_preserves_last_good_capture_and_budget ... ok
+test sql_completion::provider::tests::menu_cap_and_exact_insert_are_independent_from_display ... ok
+test sql_completion::provider::tests::general_context_keeps_keywords_before_a_large_catalog ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 176 filtered out; finished in 0.00s
+

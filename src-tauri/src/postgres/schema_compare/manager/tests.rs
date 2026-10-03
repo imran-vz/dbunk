@@ -695,7 +695,7 @@ async fn native_manager_capture_pages_and_connection_edit_invalidation() {
     payload.target.schema = "manager_target".into();
     let status = state
         .pg_schema_compare
-        .start_native(payload, state.pool.clone())
+        .start_native(payload, state.pool.clone(), state.credentials.clone())
         .unwrap();
     let status = finished(&state.pg_schema_compare, &status.job_id).await;
     assert_eq!(status.source_objects, 1);

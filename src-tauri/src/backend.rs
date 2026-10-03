@@ -1,4 +1,4 @@
-//! Fixture-only native host boundary. Services own credentials, policy and auditing.
+//! Explicit-profile native host boundary. Services own credentials, policy and auditing.
 //!
 //! Raw application state and storage remain inaccessible to downstream hosts:
 //! ```compile_fail
@@ -8,8 +8,41 @@
 //! use dbunk_lib::postgres::connect_spec::ResolvedPostgresConnectSpec;
 //! ```
 
+pub mod admin;
+pub mod completion;
+pub mod connection_diagnosis;
+pub mod connection_uri;
+pub mod csv_transfers;
+pub mod data;
+mod data_documents;
+pub mod ddl_export;
+mod development;
+pub mod explain;
+pub mod export_configurations;
+pub mod maintenance;
+mod native_profile;
+pub mod objects;
+pub mod overview;
+pub mod pg_tools;
 mod profile;
+mod query_confirmation;
+#[cfg(test)]
+mod query_control_tests;
+pub mod query_library;
+pub mod query_mutation;
+pub mod result_files;
+pub mod safety_audit;
+pub mod schema_comparisons;
+pub mod schema_ddl;
+pub mod schema_map;
 mod selection;
+pub mod server_details;
+pub mod table_copy;
+pub mod table_ddl;
+pub mod table_export;
+pub mod table_seed;
+pub mod table_structure;
+mod transactions;
 
 use std::future::Future;
 use std::path::Path;
@@ -27,7 +60,26 @@ pub use crate::postgres::sql_class::{StatementClassKind, StatementClassSummary};
 pub use crate::postgres::sql_params::{ParameterRejectionReason, ParameterValue};
 pub use crate::query_session::protocol::*;
 pub use crate::types::TlsFailureKind;
+pub use development::{
+    DevelopmentConnection, DevelopmentConnectionFailure, DevelopmentConnectionOrganization,
+    DevelopmentConnectionTest, DevelopmentCredentialState, DevelopmentDriverOptions,
+    DevelopmentEnvironment, DevelopmentFixtures, DevelopmentPostgresConnection,
+    DevelopmentSafeMode, DevelopmentSettings, DevelopmentStorageMode, DevelopmentTlsMode,
+    DevelopmentTlsOptions, WorkspaceAdminAction, WorkspaceAdminControl, WorkspaceApplyState,
+    WorkspaceDensity, WorkspaceDocument, WorkspaceError, WorkspaceLoad, WorkspaceMaintenance,
+    WorkspaceMaintenanceAction, WorkspaceMaintenanceKind, WorkspaceMaintenanceState,
+    WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision, WorkspaceSchemaChanges,
+    WorkspaceSelection, WorkspaceSnapshot, WorkspaceStagedChange, WorkspaceTableCopy,
+    WorkspaceTableCopyState, WorkspaceTableDdl, WorkspaceTableSeed, WorkspaceTableSeedState,
+    WorkspaceTableState, WorkspaceTool, NATIVE_WORKSPACE_MAX_BYTES, NATIVE_WORKSPACE_MAX_DOCUMENTS,
+    WORKSPACE_COPY_MAX_JOBS, WORKSPACE_MUTATION_MAX_BYTES, WORKSPACE_MUTATION_MAX_CHANGES,
+    WORKSPACE_SEED_MAX_JOBS, WORKSPACE_TABLE_DDL_MAX_BYTES,
+};
+pub use native_profile::NativeProfileKind;
+pub use query_confirmation::{QueryConfirmation, QuerySubmission};
+pub use query_mutation::{QueryMutationSource, QueryMutationSourceError};
 pub use selection::{select_sql, select_sql_range, SelectionError};
+pub use transactions::TransactionControl;
 
 /// Geometry preference only; changes never replace an editor or session.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -52,15 +104,24 @@ pub struct FixtureSummary {
 struct Inner {
     state: Arc<AppState>,
     tasks: DriverJoins,
+    tool_jobs: pg_tools::Registry,
+    csv_transfers: csv_transfers::Registry,
+    table_copy: table_copy::Registry,
+    table_seed: table_seed::Registry,
+    schema_comparisons: schema_comparisons::Registry,
     closing: AtomicBool,
     submission: std::sync::Mutex<()>,
     admission: Arc<Semaphore>,
-    monitor: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    data_admission: Arc<Semaphore>,
+    documents: data_documents::Documents,
+    monitors: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     shutdown: Mutex<Option<Result<(), String>>>,
     _profile_lock: std::fs::File,
+    development: Option<Arc<development::Authority>>,
+    development_gate: Arc<Mutex<()>>,
 }
 
-/// An opaque, cloneable service handle for the disposable native fixture.
+/// An opaque, cloneable service handle for an explicitly validated native profile.
 /// Futures must run on the host's multi-thread Tokio runtime.
 #[derive(Clone)]
 pub struct Backend(Arc<Inner>);
@@ -74,22 +135,61 @@ impl Backend {
         {
             return Err("Native backend requires a multi-thread Tokio runtime".into());
         }
-        let (mut state, profile_lock) = profile::open(path).await?;
+        let (state, profile_lock) = profile::open(path).await?;
+        Ok(Self::from_state(state, profile_lock, None))
+    }
+
+    fn from_state(
+        mut state: AppState,
+        profile_lock: std::fs::File,
+        development: Option<Arc<development::Authority>>,
+    ) -> Self {
         let tasks = DriverJoins::default();
+        let tool_jobs = pg_tools::Registry::default();
+        let csv_transfers = csv_transfers::Registry::default();
+        let table_copy = table_copy::Registry::default();
+        let table_seed = table_seed::Registry::default();
+        let schema_comparisons = schema_comparisons::Registry::default();
+        state.pg_schema_compare = state
+            .pg_schema_compare
+            .with_native_ownership(schema_comparisons.owner.clone(), tasks.clone());
+        state.pg_transfers = state
+            .pg_transfers
+            .with_native_ownership(csv_transfers.owner.clone(), tasks.clone());
+        state.pg_tool_jobs = state
+            .pg_tool_jobs
+            .with_native_ownership(tool_jobs.ownership());
         state.query_sessions = state.query_sessions.with_native_tasks(tasks.clone());
-        let monitor = state
-            .query_sessions
-            .spawn_monitor(&tokio::runtime::Handle::current());
-        Ok(Self(Arc::new(Inner {
+        state.table_browse = state.table_browse.with_native_tasks(tasks.clone());
+        state.result_mutations = state.result_mutations.with_native_tasks(tasks.clone());
+        let runtime = tokio::runtime::Handle::current();
+        let monitors = vec![
+            state.query_sessions.spawn_monitor(&runtime),
+            state.table_browse.spawn_monitor(&runtime),
+            state.result_mutations.spawn_monitor(&runtime),
+            state.pg_tool_jobs.spawn_monitor(&runtime),
+            state.pg_transfers.spawn_monitor(&runtime),
+            state.pg_schema_compare.spawn_monitor(&runtime),
+        ];
+        Self(Arc::new(Inner {
             state: Arc::new(state),
             tasks,
+            tool_jobs,
+            csv_transfers,
+            table_copy,
+            table_seed,
+            schema_comparisons,
             closing: AtomicBool::new(false),
             submission: std::sync::Mutex::new(()),
             admission: Arc::new(Semaphore::new(16)),
-            monitor: Mutex::new(Some(monitor)),
+            data_admission: Arc::new(Semaphore::new(8)),
+            documents: Default::default(),
+            monitors: Mutex::new(monitors),
             shutdown: Mutex::new(None),
             _profile_lock: profile_lock,
-        })))
+            development,
+            development_gate: Arc::new(Mutex::new(())),
+        }))
     }
 
     pub fn fixture(&self) -> FixtureSummary {
@@ -104,6 +204,22 @@ impl Backend {
         F: FnOnce(Arc<AppState>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, QuerySessionError>> + Send + 'static,
     {
+        self.call_with_admission(self.0.admission.clone(), operation)
+            .await
+    }
+
+    // Long data requests have a separate bounded budget. They cannot consume
+    // the slots used by ACK, cancellation, lifecycle and persistence calls.
+    async fn call_with_admission<T, F, Fut>(
+        &self,
+        admission: Arc<Semaphore>,
+        operation: F,
+    ) -> Result<T, QuerySessionError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<AppState>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, QuerySessionError>> + Send + 'static,
+    {
         let receive = {
             // Synchronize registration with shutdown's admission fence. Merely
             // checking an atomic flag before spawn leaves a late-worker race.
@@ -111,10 +227,7 @@ impl Backend {
             if self.0.closing.load(Ordering::SeqCst) {
                 return Err(QuerySessionError::ConnectionClosing);
             }
-            let permit = self
-                .0
-                .admission
-                .clone()
+            let permit = admission
                 .try_acquire_owned()
                 .map_err(|_| QuerySessionError::ConnectionClosing)?;
             let state = self.0.state.clone();
@@ -143,18 +256,48 @@ impl Backend {
         .await
     }
 
+    /// Native lifecycle operations and session startup share admission. Hold
+    /// through hydration and socket startup so a credential/connection change
+    /// cannot be overtaken by an earlier open. Existing Tauri fences are kept
+    /// at the service boundary; native callers cannot overlap those fences.
+    async fn development_call<T, F, Fut>(&self, operation: F) -> Result<T, QuerySessionError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<AppState>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, QuerySessionError>> + Send + 'static,
+    {
+        let inner = self.0.clone();
+        self.call(move |state| async move {
+            let _admission = inner.development_gate.lock().await;
+            if inner.closing.load(Ordering::SeqCst) {
+                return Err(QuerySessionError::ConnectionClosing);
+            }
+            operation(state).await
+        })
+        .await
+    }
+
     pub async fn open(
         &self,
         window: &str,
         payload: OpenSessionPayload,
         sink: Arc<dyn EventSink<QueryEventEnvelope>>,
     ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-        if payload.connection_id != profile::CONNECTION_ID {
+        if self.0.development.is_none() && payload.connection_id != profile::CONNECTION_ID {
             return Err(QuerySessionError::ConnectionLost);
         }
         let window = window.to_owned();
-        self.call(move |state| async move { service::open(&state, &window, payload, sink).await })
-            .await
+        let development = self.0.development.clone();
+        let inner = self.0.clone();
+        self.call(move |state| async move {
+            let _admission = inner.development_gate.lock().await;
+            if inner.closing.load(Ordering::SeqCst) {
+                return Err(QuerySessionError::ConnectionClosing);
+            }
+            admit_connection(&state, development.as_deref(), &payload.connection_id).await?;
+            service::open(&state, &window, payload, sink).await
+        })
+        .await
     }
 
     pub async fn execute(
@@ -215,6 +358,27 @@ impl Backend {
         .await
     }
 
+    /// Waits for admitted native startup before closing only this document's
+    /// session. A cancelled open caller cannot leave a later socket behind.
+    pub async fn close_native_session(
+        &self,
+        window: &str,
+        session_id: &str,
+    ) -> Result<(), QuerySessionError> {
+        if self.0.development.is_none() {
+            return Err(QuerySessionError::ConnectionLost);
+        }
+        let window = window.to_owned();
+        let session_id = session_id.to_owned();
+        self.development_call(move |state| async move {
+            state
+                .query_sessions
+                .close_native(&session_id, &window)
+                .await
+        })
+        .await
+    }
+
     /// Observes the owned socket's known closure; this is not a network probe.
     pub async fn session_alive(
         &self,
@@ -229,21 +393,22 @@ impl Backend {
         .await
     }
 
-    /// Fence the owner before closing sessions; pending opens then fail their
-    /// second admission check. The caller must stop issuing old-owner commands.
+    /// Retire a query owner after admitted startup, then join its sessions.
+    /// Unrelated browse/mutation actors do not belong to this query barrier.
+    /// The caller must stop issuing old-owner commands.
     pub async fn retire_window(&self, window: &str) -> Result<(), QuerySessionError> {
         let window = window.to_owned();
-        self.call(move |state| async move {
-            state.query_sessions.retire_window(&window).await;
-            Ok(())
-        })
-        .await?;
-        tokio::time::timeout(Duration::from_secs(3), self.0.tasks.drain())
-            .await
-            .map_err(|_| QuerySessionError::Timeout {
-                operation: "nativeRetire".into(),
-            })?;
-        Ok(())
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            self.development_call(move |state| async move {
+                state.query_sessions.retire_window(&window).await;
+                Ok(())
+            }),
+        )
+        .await
+        .map_err(|_| QuerySessionError::Timeout {
+            operation: "nativeRetire".into(),
+        })?
     }
 
     pub async fn layout(&self) -> Result<Layout, String> {
@@ -289,24 +454,49 @@ impl Backend {
             let _submission = self.0.submission.lock().unwrap();
             self.0.closing.store(true, Ordering::SeqCst);
             self.0.admission.close();
+            self.0.data_admission.close();
+            self.0.documents.retire_matching(None);
+            self.0.tool_jobs.close(&self.0.state.pg_tool_jobs);
+            self.0.csv_transfers.close(&self.0.state.pg_transfers);
+            self.0.table_copy.close();
+            self.0.table_seed.close();
+            self.0.schema_comparisons.close();
         }
         let mut shutdown = self.0.shutdown.lock().await;
         if let Some(result) = &*shutdown {
             return result.clone();
         }
-        if let Some(monitor) = self.0.monitor.lock().await.take() {
+        let monitors = std::mem::take(&mut *self.0.monitors.lock().await);
+        for monitor in &monitors {
             monitor.abort();
+        }
+        for monitor in monitors {
             let _ = monitor.await;
         }
         let graceful = async {
-            self.0.state.query_sessions.begin_global_teardown().await;
+            tokio::join!(
+                self.0.state.query_sessions.begin_global_teardown(),
+                self.0.state.table_browse.begin_global_teardown(),
+                self.0.state.result_mutations.begin_global_teardown(),
+                self.0.state.pg_tool_jobs.begin_global_teardown(),
+                self.0.state.pg_transfers.begin_global_teardown(),
+                self.0.state.pg_schema_compare.begin_global_teardown(),
+            );
             self.0.tasks.drain().await;
+            let _ = self.0.tool_jobs.drain_until(graceful_deadline).await;
+            let _ = self.0.csv_transfers.drain_until(graceful_deadline).await;
+            let _ = self.0.table_copy.drain_until(graceful_deadline).await;
+            let _ = self.0.table_seed.drain_until(graceful_deadline).await;
+            let _ = self
+                .0
+                .schema_comparisons
+                .drain_until(graceful_deadline)
+                .await;
             self.0
                 .state
                 .query_sessions
                 .clear_native_reservations()
                 .await;
-            self.0.state.pool.close().await;
         };
         let forced = tokio::time::timeout_at(graceful_deadline, graceful)
             .await
@@ -314,21 +504,138 @@ impl Backend {
         let result = if forced {
             self.0.tasks.abort_all();
             tokio::time::timeout_at(final_deadline, async {
+                tokio::join!(
+                    self.0.state.table_browse.force_native_teardown(None),
+                    self.0.state.result_mutations.force_native_teardown(None),
+                );
                 self.0.tasks.drain().await;
                 self.0.state.query_sessions.clear_native_reservations().await;
-                self.0.state.pool.close().await;
+
             }).await.map_err(|_| "Native cleanup could not join all owned tasks and close storage within five seconds".to_string())
         } else {
             Ok(())
+        };
+        let owners = async {
+            self.0.tool_jobs.drain_until(final_deadline).await?;
+            self.0.csv_transfers.drain_until(final_deadline).await?;
+            self.0.table_copy.drain_until(final_deadline).await?;
+            self.0.table_seed.drain_until(final_deadline).await?;
+            self.0.schema_comparisons.drain_until(final_deadline).await
+        };
+        let result = match owners.await {
+            Ok(()) => {
+                match tokio::time::timeout_at(final_deadline, self.0.state.pool.close()).await {
+                    Ok(()) => result,
+                    Err(_) => {
+                        Err("Native storage close exceeded the shared shutdown deadline".into())
+                    }
+                }
+            }
+            Err(error) => Err(error),
         };
         *shutdown = Some(result.clone());
         result
     }
 }
 
+/// Call while native startup admission is held, before any secret hydration.
+/// Recheck can replace an observer socket, so it uses the same boundary as open.
+async fn admit_connection(
+    state: &AppState,
+    development: Option<&development::Authority>,
+    connection_id: &str,
+) -> Result<(), QuerySessionError> {
+    let Some(development) = development else {
+        return if connection_id == profile::CONNECTION_ID {
+            Ok(())
+        } else {
+            Err(QuerySessionError::ConnectionLost)
+        };
+    };
+    let (connection, options_supported) =
+        crate::storage::read_native_connection_by_id(&state.pool, connection_id)
+            .await
+            .map_err(|_| QuerySessionError::ConnectionLost)?
+            .ok_or(QuerySessionError::ConnectionLost)?;
+    if !options_supported || !development.permits(&connection) {
+        return Err(QuerySessionError::ConnectionLost);
+    }
+    if crate::credentials::native_recovery_required(&state.credentials)
+        .await
+        .map_err(|_| QuerySessionError::ConnectionLost)?
+    {
+        return Err(QuerySessionError::ConnectionLost);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A separate process keeps keyring's process-global builder isolated from
+    /// unrelated credential tests. This builder never reaches the OS keychain.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn fixture_startup_never_opens_a_keychain_entry() {
+        const CHILD: &str = "DBUNK_FIXTURE_KEYCHAIN_GUARD_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "backend::tests::fixture_startup_never_opens_a_keychain_entry",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        #[derive(Debug)]
+        struct RecordingBuilder(Arc<std::sync::Mutex<Vec<(String, String)>>>);
+        impl keyring::credential::CredentialBuilderApi for RecordingBuilder {
+            fn build(
+                &self,
+                target: Option<&str>,
+                service: &str,
+                account: &str,
+            ) -> keyring::Result<Box<keyring::credential::Credential>> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((service.into(), account.into()));
+                keyring::mock::default_credential_builder().build(target, service, account)
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn persistence(&self) -> keyring::credential::CredentialPersistence {
+                keyring::credential::CredentialPersistence::EntryOnly
+            }
+        }
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        keyring::set_default_credential_builder(Box::new(RecordingBuilder(calls.clone())));
+        let directory = profile::directory();
+        let path = directory.path().canonicalize().unwrap();
+        for _ in 0..2 {
+            let backend = Backend::open_fixture(&path).await.unwrap();
+            let connection = crate::app::find_connection(&backend.0.state, &backend.fixture().id)
+                .await
+                .unwrap();
+            assert_eq!(connection.password(), "dbunk");
+            backend.shutdown().await.unwrap();
+        }
+        let calls = calls.lock().unwrap();
+        assert!(
+            calls.is_empty(),
+            "Fixture startup reached Keychain identities: {calls:?}"
+        );
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn isolated_profile_rejects_foreign_files_and_remembers_layout() {

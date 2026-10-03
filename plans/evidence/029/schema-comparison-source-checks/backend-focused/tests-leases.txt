@@ -1,0 +1,15 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.87s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 7 tests
+test backend::schema_comparisons::tests::both_profile_authorities_precede_capture_and_unrelated_data_retirement_preserves_history ... ok
+test backend::schema_comparisons::tests::connection_mutation_fence_does_not_pass_unjoined_native_comparison_worker ... ok
+test backend::schema_comparisons::tests::public_page_bounds_reject_wrong_identity_lengths_and_unearned_continuations ... ok
+test backend::schema_comparisons::tests::reader_close_waits_for_queued_reply_and_reused_tab_never_accepts_old_generation ... ok
+test backend::schema_comparisons::tests::released_result_cannot_free_queued_response_slots_or_revalidate_its_old_reader ... ok
+test backend::schema_comparisons::tests::shutdown_reports_unjoined_worker_and_holds_admission_until_real_completion ... ok
+test backend::schema_comparisons::tests::typed_pages_and_utf8_chunks_preserve_server_continuations_and_serializer_ownership ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 996 filtered out; finished in 0.24s
+

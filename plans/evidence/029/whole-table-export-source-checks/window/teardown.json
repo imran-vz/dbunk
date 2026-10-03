@@ -1,0 +1,12 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema_oid": 20509,
+  "table_oid": 20510,
+  "remaining_schema_count": 0,
+  "drops": "exact name/OID/owner/comment guards; RESTRICT",
+  "stage03_backends": 0,
+  "stage04_backends": 0,
+  "app_pid": 58733,
+  "launcher_exit": 0,
+  "executable_sha256": "a796671c5096fd7f8a19f64a0278cbc43751ad68e543a7ec2b7e31bd6731ebed"
+}

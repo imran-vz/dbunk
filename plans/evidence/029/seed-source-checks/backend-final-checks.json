@@ -1,0 +1,18 @@
+[
+  {
+    "check": "isolated-clippy-final",
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-test",
+    "exit_code": 0
+  },
+  {
+    "check": "facade-test",
+    "exit_code": 0
+  },
+  {
+    "check": "custom-protocol",
+    "exit_code": 0
+  }
+]

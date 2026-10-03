@@ -1,0 +1,190 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · Disconnected, Value: off
+			38 tab (settable, boolean) Query 2 · Completed · 22 ms, Value: on
+		39 button Connect
+		40 button Disconnect
+		41 button Clear results
+		42 radio button (selectable, settable, boolean) Stacked
+		43 radio button (selectable, settable, boolean) Side by side
+		44 radio button (selectable, settable, boolean) Results first
+		45 button (disabled) Edit selected cell
+		46 button Run
+		47 button Run script
+		48 button (disabled) Stop
+		49 button Bindings
+		50 button Explain draft
+		51 button Analyze draft
+		52 text entry area (settable) SQL editor, Value: 1001	2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:1	1	3:3:3:3:3:3:3:3:3:3:3:3:3:3:3:3:3:3:3:3:1	4:4:4:4:4:4:4:4:4:4:4:4:4:4:4:4:4:4:4:4:1	5:5:5:5:5:5:5:5:5:5:5:5:5:5:5:5:5:5:5:5:1	6:6:6:6:6:6:6:6:6:6:6:6:6:6:6:6:6:6:6:6:1	7:7:7:7:7:7:7:7:7:7:7:7:7:7:7:7:7:7:7:7:1	8:8:8:8:8:8:8:8:8:8:8:8:8:8:8:8:8:8:8:8:1	9:9:9:9:9:9:9:9:9:9:9:9:9:9:9:9:9:9:9:9:1	10:10:10:10:10:10:10:10:10:10:10:10:10:10:10:10:10:10:10:10:1	11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:11:1	12:12:12:12:12:12:12:12:12:12:12:12:12:12:12:12:12:12:12:12:1	13:13:13:13:13:13:13:13:13:13:13:13:13:13:13:13:13:13:13:13:1	14:14:14:14:14:14:14:14:14:14:14:14:14:14:14:14:14:14:14:14:1	15:15:15:15:15:15:15:15:15:15:15:15:15:15:15:15:15:15:15:15:1	16:16:16:16:16:16:16:16:16:16:16:16:16:16:16:16:16:16:16:16:1	17:17:17:17:17:17:17:17:17:17:17:17:17:17:17:17:17:17:17:17:1	18:18:18:18:18:18:18:18:18:18:18:18:18:18:18:18:18:18:18:18:1	19:19:19:19:19:19:19:19:19:19:19:19:19:19:19:19:19:19:19:19:1	20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:1	21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:1	22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:1	23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:1	24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:1
+		53 tab (settable, boolean) Result 1 · 250 rows, Value: on
+		54 toggle button (settable, boolean) Notices 0, Value: off
+		55 table (settable) Query results, Value: 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:250
+			56 text 250 rows returned · 250 retained · 25 columns · 2 pinned · Copied 1 selected rows
+			57 button Export selected cells, or all retained rows when no selection
+			58 cell x
+			59 cell c2
+			60 cell c20
+			61 cell c21
+			62 cell c22
+			63 cell c23
+			64 cell c24
+			65 row
+				66 cell (settable) 1001
+				67 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:1
+				68 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:1
+				69 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:1
+				70 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:1
+				71 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:1
+				72 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:1
+			73 row
+				74 cell (settable) 1002
+				75 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2
+				76 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:2
+				77 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:2
+				78 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:2
+				79 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:2
+				80 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:2
+			81 row
+				82 cell (settable) 1003
+				83 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:3
+				84 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:3
+				85 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:3
+				86 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:3
+				87 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:3
+				88 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:3
+			89 row
+				90 cell (settable) 1004
+				91 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:4
+				92 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:4
+				93 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:4
+				94 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:4
+				95 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:4
+				96 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:4
+			97 row
+				98 cell (settable) 1005
+				99 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:5
+				100 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:5
+				101 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:5
+				102 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:5
+				103 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:5
+				104 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:5
+			105 row
+				106 cell (settable) 1006
+				107 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:6
+				108 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:6
+				109 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:6
+				110 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:6
+				111 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:6
+				112 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:6
+			113 row
+				114 cell (settable) 1007
+				115 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:7
+				116 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:7
+				117 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:7
+				118 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:7
+				119 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:7
+				120 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:7
+			121 row
+				122 cell (settable) 1008
+				123 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:8
+				124 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:8
+				125 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:8
+				126 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:8
+				127 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:8
+				128 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:8
+			129 row
+				130 cell (settable) 1009
+				131 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:9
+				132 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:9
+				133 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:9
+				134 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:9
+				135 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:9
+				136 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:9
+			137 row
+				138 cell (settable) 1010
+				139 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:10
+				140 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:10
+				141 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:10
+				142 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:10
+				143 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:10
+				144 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:10
+			145 row
+				146 cell (settable) 1011
+				147 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:11
+				148 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:11
+				149 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:11
+				150 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:11
+				151 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:11
+				152 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:11
+			153 row
+				154 cell (settable) 1012
+				155 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:12
+				156 cell (settable) 20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:20:12
+				157 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:12
+				158 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:12
+				159 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:12
+				160 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:12
+		161 container Transaction controls
+			162 container (settable) Transaction state, Value: Autocommit · idle
+			163 radio button (selectable, settable, boolean) Autocommit
+			164 radio button (selectable, settable, boolean) Manual
+			165 radio button (selectable, settable, boolean) Read committed
+			166 radio button (selectable, settable, boolean) Repeatable read
+			167 radio button (selectable, settable, boolean) Serializable
+			168 button (disabled) Commit
+			169 button (disabled) Rollback
+			170 button Recheck
+		171 container Result editing unavailable: Result editing requires a supported SELECT with every FROM/JOIN table fully schema-qualified outside temporary schemas; execution and analysis use separate session contexts
+		172 container SQL completion ready; invoke in the editor
+		173 container (settable) Query status, Value: Completed · 22 ms
+		174 container (settable) Draft persistence, Value: Saving drafts
+		175 button Retry
+		176 button Export SQL
+		177 button Discard and quit
+	178 close button
+	179 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	180 minimize button
+	181 text dbunk Native Workspace
+182 menu bar
+	183 dbunk Native Preflight
+	184 Query
+	185 Results
+	186 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

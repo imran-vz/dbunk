@@ -1,0 +1,12 @@
+{
+  "observed_at": "2026-10-02T23:01:02.742218+00:00",
+  "pid": 68741,
+  "profile": "/private/tmp/dbunk-native-admin-20261003-review",
+  "executable_sha256": "e8d77d51e7c0910c3f65eb148349c702e10e59b6e63f43f087e879fd3420d57d",
+  "inventory": "CUA reported isolated bundle running",
+  "path_lookup": "-10005 cgWindowNotFound",
+  "bundle_id_lookup": "-10005 cgWindowNotFound",
+  "feature_acceptance": "not performed",
+  "keyboard_AX_IME": "pending",
+  "voiceover": "deferred; not passed"
+}

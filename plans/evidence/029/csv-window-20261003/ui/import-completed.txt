@@ -1,0 +1,41 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 165
+~			108 tab (settable, boolean) Query 1 · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			109 tab (settable, boolean) Value: off, native_parity_20261003.rows · Database may have changed; reconnect and refresh before using retained data
+~			112 tab (settable, boolean) History query · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			113 tab (settable, boolean) Administration · Database may have changed; reconnect and refresh before using retained data, Value: off
+~			114 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			116 tab (settable, boolean) Objects · Database may have changed; reconnect and refresh before using retained data, Value: off
+~			117 tab (settable, boolean) CSV transfer · Database changed; inspect again. Setup text and accepted transfers remain, Value: on
+~		121 checkbox (settable, boolean) Import CSV, Value: on
+~		122 checkbox (settable, boolean) Export CSV, Value: off
+~		130 checkbox (settable, boolean) Header row, Value: on
+~		131 checkbox (settable, boolean) Comma delimiter, Value: on
+~		132 checkbox (settable, boolean) Semicolon delimiter, Value: off
+~		133 checkbox (settable, boolean) Tab delimiter, Value: off
+~		134 checkbox (settable, boolean) Pipe delimiter, Value: off
+~		135 button Load choices
+~		141 button Choose CSV file
+~		142 button Inspect target and source
+~		144 button (disabled) Release inspection
+~		149 text Database changed; inspect again. Setup text and accepted transfers remain
+~		152 button (disabled) Cancel selected transfer
+~		153 button Dismiss finished transfer
+~			166 text (selected) export.csv · Import CSV · Completed, Secondary Actions: Pick
+~		156 text Import CSV · export.csv
+Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+Target: native_csv_window_20261003.destination
+Attempt: 8798bc8b-913d-4705-84ab-4c245d603d96
+State: Completed
+Started: 2026-10-03T06:53:37.250163+00:00
+Finished: 2026-10-03T06:53:37.260676+00:00
+Source size: 1805
+Bytes processed: 1805
+Rows processed: 60
+Rows committed: 60
+Commit or publication succeeded
+Cleanup complete
+
+
+Import appends in one transaction. Cancellation cannot undo committed rows or sequence/external trigger effects.
+The focused UI element is 77 standard window dbunk Native Workspace, Secondary Actions: Raise

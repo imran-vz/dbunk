@@ -1,0 +1,17 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
++		173 button (disabled) Skip source column
++		174 button (disabled) Previous target column
++		175 button (disabled) Next target column
++		176 list CSV source to target column mapping
++			177 text (selectable) 1: id → id (bigint), Secondary Actions: Pick
++			178 text (selectable) 2: value → value (text), Secondary Actions: Pick
++			179 text (selectable) 3: amount → amount (numeric(40,10)), Secondary Actions: Pick
++		180 list CSV preview cells by record and source index
++			181 text (selectable) Record 1, column 1: 9223372036854775807, Secondary Actions: Pick
++			182 text (selectable) Secondary Actions: Pick, Record 1, column 2: 雪,
+"quoted"
++			183 text (selectable) Record 1, column 3: 12345678901234567890.1234567890, Secondary Actions: Pick
++			184 text (selectable) Record 2, column 1: -9223372036854775808, Secondary Actions: Pick
++			185 text (selectable) Record 2, column 2: NULL, Secondary Actions: Pick
+~		155 button Review exact transfer
+The focused UI element is 92 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,34 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 86-107
+~		81 container Saved connection settings
+~			82 button Administration
+~			83 button Edit connection
+~			84 container Saved metadata only. Passwords are excluded; TLS files are not read. Defaults are not current session settings.
+~			85 list Saved connection fields; Up and Down select
++				86 text (selected) Connection ID, Secondary Actions: Pick
++				87 text (selectable) Name, Secondary Actions: Pick
++				88 text (selectable) Engine, Secondary Actions: Pick
++				89 text (selectable) Folder, Secondary Actions: Pick
++				90 text (selectable) Favorite, Secondary Actions: Pick
++				91 text (selectable) Color, Secondary Actions: Pick
++				92 text (selectable) Host, Secondary Actions: Pick
++				93 text (selectable) Port, Secondary Actions: Pick
++				94 text (selectable) Database, Secondary Actions: Pick
++				95 text (selectable) User, Secondary Actions: Pick
++				96 text (selectable) Environment, Secondary Actions: Pick
++				97 text (selectable) Configured safe mode, Secondary Actions: Pick
++				98 text (selectable) Read only, Secondary Actions: Pick
++				99 text (selectable) TLS mode, Secondary Actions: Pick
++				100 text (selectable) TLS server name, Secondary Actions: Pick
++				101 text (selectable) Root certificate path, Secondary Actions: Pick
++				102 text (selectable) Client certificate path, Secondary Actions: Pick
++				103 text (selectable) Client key path, Secondary Actions: Pick
++				104 text (selectable) Statement timeout (ms), Secondary Actions: Pick
++				105 text (selectable) Idle transaction timeout (ms), Secondary Actions: Pick
++				106 text (selectable) Connect timeout (ms), Secondary Actions: Pick
++				107 text (selectable) Keepalive (seconds), Secondary Actions: Pick
++				108 text (selectable) Default role, Secondary Actions: Pick
++				109 text (selectable) Default search path, Secondary Actions: Pick
++			110 text entry area (settable) Exact saved connection setting, read only, Value: Connection ID
+18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,9 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0616]: field `session_key` of struct `credentials::Context` is private
+  --> src/backend/development/probe_credentials_tests.rs:63:10
+   |
+63 |         .session_key
+   |          ^^^^^^^^^^^ private field
+
+For more information about this error, try `rustc --explain E0616`.
+error: could not compile `dbunk` (lib test) due to 1 previous error

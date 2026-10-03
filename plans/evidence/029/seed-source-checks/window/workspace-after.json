@@ -1,0 +1,433 @@
+{
+  "original_documents_unchanged": 10,
+  "workspace": {
+    "version": 11,
+    "snapshot": {
+      "documents": [
+        {
+          "id": "ac9cb75a-e1bc-4d59-9024-576bf6338359",
+          "name": "Query 1",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "SELECT\n  1 AS id,\n  'a longer retained value' AS label,\n  E'first line\\nsecond line' AS multiline,\n  '\u4f60\u597d' AS unicode;  ",
+          "pinned": false,
+          "selection": {
+            "anchor": 123,
+            "head": 123
+          }
+        },
+        {
+          "id": "ca49b926-0cbd-4de3-9a10-7e981c894333",
+          "name": "native_parity_20261003.rows",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "table": {
+            "schema": "native_parity_20261003",
+            "table": "rows",
+            "filters": [],
+            "sort": [],
+            "pageSize": 100,
+            "draft": null
+          }
+        },
+        {
+          "id": "1b012429-6f61-4ce6-9f44-34176b7c69c7",
+          "name": "Saved queries",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "savedQueries"
+        },
+        {
+          "id": "afe040fe-462b-4cc3-a0f4-8567c5795da4",
+          "name": "History",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "history"
+        },
+        {
+          "id": "2cceb3ee-8ede-49c5-a06c-737ef4e5b0cf",
+          "name": "History query",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "SELECT\n  1 AS id,\n  'a longer retained value' AS label,\n  E'first line\\nsecond line' AS multiline,\n  '\u4f60\u597d' AS unicode",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "savedQueryId": "069cea60-577d-4a8f-bf21-6b390e37db11"
+        },
+        {
+          "id": "4b1f3a2a-e102-4e0c-9f3a-6fc5e3a33a23",
+          "name": "Administration",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "administration"
+        },
+        {
+          "id": "684130cd-0a8e-45e9-92e2-2cc9a0ebbb99",
+          "name": "EXPLAIN",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "EXPLAIN (FORMAT JSON) SELECT id, value FROM native_parity_20261003.rows ORDER BY id LIMIT 3;",
+          "pinned": false,
+          "selection": {
+            "anchor": 92,
+            "head": 92
+          }
+        },
+        {
+          "id": "c4cc107a-dfa8-4ba8-9515-e90406d85a04",
+          "name": "Table copy",
+          "connectionId": null,
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "tableCopy"
+        },
+        {
+          "id": "630bd1fc-09eb-414b-bb3f-555ced1d0549",
+          "name": "Objects",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "objects"
+        },
+        {
+          "id": "bcc6b482-6843-4c4e-9e73-6f68bd4a1ec5",
+          "name": "CSV transfer",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "csvTransfer"
+        },
+        {
+          "id": "d33bd037-4370-4fdc-b391-f470d399743f",
+          "name": "native_seed_window_20261003.destination",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "table": {
+            "schema": "native_seed_window_20261003",
+            "table": "destination",
+            "filters": [],
+            "sort": [],
+            "pageSize": 100,
+            "draft": null
+          }
+        },
+        {
+          "id": "fda04d51-cf8a-450a-afe2-3c712af3b568",
+          "name": "Seed table",
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "sql": "",
+          "pinned": false,
+          "selection": {
+            "anchor": 0,
+            "head": 0
+          },
+          "tool": "tableSeed"
+        }
+      ],
+      "copyJobs": [
+        {
+          "attemptId": "02def5e8-7c66-4aa6-894c-cd5bb510d98c",
+          "description": {
+            "intent": {
+              "source": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "source"
+              },
+              "destination": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "destination"
+              }
+            },
+            "sourceConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "destinationConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "sourceRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16843,
+              "kind": "r"
+            },
+            "destinationRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16850,
+              "kind": "r"
+            },
+            "mappingSha256": "ad9195131f340aabb3dbe7e049bc997e086a68690cdd809c7209cdf2f59c78b0",
+            "copiedColumns": 3,
+            "defaultedColumns": 1,
+            "generatedColumns": 1,
+            "identityColumns": 0
+          },
+          "state": {
+            "completed": {
+              "rows": 3
+            }
+          }
+        },
+        {
+          "attemptId": "aa3d33b3-a837-4668-8af9-12dafdf8cd3d",
+          "description": {
+            "intent": {
+              "source": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "source"
+              },
+              "destination": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "slow_destination"
+              }
+            },
+            "sourceConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "destinationConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "sourceRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16843,
+              "kind": "r"
+            },
+            "destinationRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16859,
+              "kind": "r"
+            },
+            "mappingSha256": "662be04e07af322af699bb4e5c28b48e2e2d995b18b98217356a7a3a78bda674",
+            "copiedColumns": 3,
+            "defaultedColumns": 0,
+            "generatedColumns": 0,
+            "identityColumns": 0
+          },
+          "state": {
+            "completed": {
+              "rows": 3
+            }
+          }
+        },
+        {
+          "attemptId": "467e3795-c0f3-4580-acfb-34689c115a13",
+          "description": {
+            "intent": {
+              "source": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "source"
+              },
+              "destination": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "slow_destination"
+              }
+            },
+            "sourceConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "destinationConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "sourceRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16843,
+              "kind": "r"
+            },
+            "destinationRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16859,
+              "kind": "r"
+            },
+            "mappingSha256": "662be04e07af322af699bb4e5c28b48e2e2d995b18b98217356a7a3a78bda674",
+            "copiedColumns": 3,
+            "defaultedColumns": 0,
+            "generatedColumns": 0,
+            "identityColumns": 0
+          },
+          "state": "reconciled"
+        },
+        {
+          "attemptId": "ea91cb1a-3d23-4777-a37b-70af2a0e915a",
+          "description": {
+            "intent": {
+              "source": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "source"
+              },
+              "destination": {
+                "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+                "schema": "native_copy_window_20261003",
+                "table": "slow_destination"
+              }
+            },
+            "sourceConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "destinationConnection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "sourceRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16843,
+              "kind": "r"
+            },
+            "destinationRelation": {
+              "databaseOid": 16384,
+              "relationOid": 16859,
+              "kind": "r"
+            },
+            "mappingSha256": "662be04e07af322af699bb4e5c28b48e2e2d995b18b98217356a7a3a78bda674",
+            "copiedColumns": 3,
+            "defaultedColumns": 0,
+            "generatedColumns": 0,
+            "identityColumns": 0
+          },
+          "state": {
+            "completed": {
+              "rows": 3
+            }
+          }
+        }
+      ],
+      "seedJobs": [
+        {
+          "attemptId": "9c49b8e7-aa2d-475b-aed7-5c32df30619a",
+          "description": {
+            "endpoint": {
+              "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+              "schema": "native_seed_window_20261003",
+              "table": "destination"
+            },
+            "connection": {
+              "connectionName": "Auto-fit fixture",
+              "host": "127.0.0.1",
+              "port": 15432,
+              "database": "dbunk_demo",
+              "user": "dbunk",
+              "environment": "Development",
+              "safeMode": "Protected",
+              "readOnly": false
+            },
+            "databaseOid": 16384,
+            "relationOid": 16937,
+            "rowCount": 3,
+            "seedUsed": 18446744073709551615,
+            "clockEpochSeconds": 1791014587,
+            "recipeSha256": "092af1231100cb3b0e31318be979b59b7a6fe5750c60a4e3a01b13e787973ac0",
+            "recipeSummary": "note: constant \"seed window exact \u96ea\" (21 UTF-8 bytes); NULL rate Some(0.0)\nscore: DEFAULT; NULL rate None\n",
+            "recipeSummaryTruncated": false,
+            "insertedColumns": 2,
+            "defaultedColumns": 3
+          },
+          "state": {
+            "completed": {
+              "rows": 3
+            }
+          }
+        }
+      ],
+      "activeDocumentId": "fda04d51-cf8a-450a-afe2-3c712af3b568",
+      "layout": "stacked",
+      "density": "comfortable",
+      "navigatorWidth": 240.0
+    }
+  }
+}

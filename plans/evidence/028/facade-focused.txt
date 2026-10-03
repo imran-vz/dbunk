@@ -1,0 +1,13 @@
+    Blocking waiting for file lock on build directory
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 46.11s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 4 tests
+test backend::data::tests::saturated_data_waiters_leave_control_admission_and_remain_owned_after_drop ... ok
+test backend::data::tests::windows_have_private_manager_tabs_and_retired_handles_cannot_access_preferences ... ok
+test backend::data_documents::tests::abandoned_close_waiter_keeps_admission_reserved_until_joined ... ok
+test backend::data_documents::tests::close_waits_for_owned_work_and_never_revives_a_retired_handle ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 792 filtered out; finished in 0.12s
+

@@ -1,0 +1,17 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.03s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 6 tests
+test grid_columns::tests::preferences_preserve_unrelated_fields_and_reconcile_schema_changes ... ok
+test persistence::tests::schema_only_recovery_exports_exact_intent_and_refuses_lossy_sql ... ok
+test schema_changes::tests::a_late_receipt_cannot_clear_another_attempt_connection_or_intent ... ok
+test schema_changes::tests::restored_unknown_refuses_new_attempt_until_explicit_reconciliation ... ok
+test schema_view::tests::schema_review_reservation_cannot_evict_retained_captures_and_releases_on_drop ... ok
+test sql_completion::context::tests::quoted_schema_and_whole_identifier ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 207 filtered out; finished in 0.02s
+

@@ -1,0 +1,9 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.44s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 1 test
+test backend::query_library::tests::editor_save_preserves_current_organization_and_creation_atomically ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 821 filtered out; finished in 0.04s
+

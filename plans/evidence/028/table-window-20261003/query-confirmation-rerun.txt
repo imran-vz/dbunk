@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 1 test
+test backend::query_control_tests::native_query_confirmation_binds_request_backend_window_and_session_instance ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 819 filtered out; finished in 0.47s
+

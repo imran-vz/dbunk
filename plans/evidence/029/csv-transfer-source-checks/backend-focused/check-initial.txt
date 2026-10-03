@@ -1,0 +1,56 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0365]: `Registry` is private, and cannot be re-exported
+ --> src/backend/csv_transfers.rs:8:16
+  |
+8 | pub(super) use registry::Registry;
+  |                ^^^^^^^^^^^^^^^^^^ re-export of private `Registry`
+  |
+  = note: consider declaring type or module `Registry` with `pub`
+
+error[E0603]: struct import `Registry` is private
+  --> src/backend.rs:92:35
+   |
+92 |     csv_transfers: csv_transfers::Registry,
+   |                                   ^^^^^^^^ private struct import
+   |
+note: the struct import `Registry` is defined here...
+  --> src/backend/csv_transfers.rs:8:16
+   |
+ 8 | pub(super) use registry::Registry;
+   |                ^^^^^^^^^^^^^^^^^^
+note: ...and refers to the struct `Registry` which is defined here
+  --> src/backend/csv_transfers/registry.rs:72:1
+   |
+72 | pub(super) struct Registry {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: import `Registry` directly
+   |
+92 -     csv_transfers: csv_transfers::Registry,
+92 +     csv_transfers: registry::Registry,
+   |
+
+error[E0603]: struct import `Registry` is private
+   --> src/backend.rs:130:44
+    |
+130 |         let csv_transfers = csv_transfers::Registry::default();
+    |                                            ^^^^^^^^ private struct import
+    |
+note: the struct import `Registry` is defined here...
+   --> src/backend/csv_transfers.rs:8:16
+    |
+  8 | pub(super) use registry::Registry;
+    |                ^^^^^^^^^^^^^^^^^^
+note: ...and refers to the struct `Registry` which is defined here
+   --> src/backend/csv_transfers/registry.rs:72:1
+    |
+ 72 | pub(super) struct Registry {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: import `Registry` directly
+    |
+130 -         let csv_transfers = csv_transfers::Registry::default();
+130 +         let csv_transfers = registry::Registry();
+    |
+
+Some errors have detailed explanations: E0365, E0603.
+For more information about an error, try `rustc --explain E0365`.
+error: could not compile `dbunk` (lib) due to 3 previous errors

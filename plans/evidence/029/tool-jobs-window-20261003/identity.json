@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pid": 86764,
+  "executable": "/private/tmp/dbunk-native-package-20261003-pg-tools/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "executable_sha256": "09a826eb862584584352203ebfce52883241d61cecc3edfce42c0735ccc8084b",
+  "profile": "/private/tmp/dbunk-native-pg-tools-20261003-review",
+  "profile_mode": "stage04-fixture",
+  "general_profile_owner": null,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-pj2xz6ld",
+  "tls_fixture_instance": null,
+  "bundle": "/private/tmp/dbunk-native-package-20261003-pg-tools/dbunk Native Preflight.app"
+}

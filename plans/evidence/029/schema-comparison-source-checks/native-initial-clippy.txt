@@ -1,0 +1,45 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: large size difference between variants
+  --> src/schema_compare_runtime.rs:35:1
+   |
+35 | / pub enum CompareReply {
+36 | |     List(SchemaComparisonList),
+37 | |     Started(Status),
+   | |     --------------- the second-largest variant contains at least 184 bytes
+38 | |     Cancelled,
+39 | |     Released,
+40 | |     Page(SchemaComparisonResponse),
+   | |     ------------------------------ the largest variant contains at least 696 bytes
+41 | | }
+   | |_^ the entire enum is at least 696 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#large_enum_variant
+   = note: `-D clippy::large-enum-variant` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::large_enum_variant)]`
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+40 -     Page(SchemaComparisonResponse),
+40 +     Page(Box<SchemaComparisonResponse>),
+   |
+
+error: this `if` statement can be collapsed
+   --> src/schema_compare_runtime.rs:189:13
+    |
+189 | /             if held.as_ref().is_some_and(|reader| reader.request() != &dispatch.request) {
+190 | |                 if let Some(reader) = held.take() { backend.close_schema_comparison_reader(&reader).await?; }
+191 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+189 ~             if held.as_ref().is_some_and(|reader| reader.request() != &dispatch.request)
+190 ~                 && let Some(reader) = held.take() { backend.close_schema_comparison_reader(&reader).await?; }
+    |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 2 previous errors

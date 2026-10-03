@@ -1,0 +1,39 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0277]: `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId` doesn't implement `std::fmt::Display`
+  --> src/table_ddl_view/render.rs:28:21
+   |
+27 |                     "Attempt: {}\nRecovery: {:?}\nDatabase OID: {}\nSchema: {:?} (OID {})\nTable: {:?} (OID {})",
+   |                               -- required by this formatting parameter
+28 |                     j.attempt_id,
+   |                     ^^^^^^^^^^^^ `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId` cannot be formatted with the default formatter
+   |
+   = help: the trait `std::fmt::Display` is not implemented for `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId`
+   = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+
+error[E0277]: `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId` doesn't implement `std::fmt::Display`
+   --> src/table_ddl_view/replies.rs:135:41
+    |
+134 | ...                   "Applied transactional table change. Attempt {}. {:?}",
+    |                                                                    -- required by this formatting parameter
+135 | ...                   receipt.attempt_id, receipt.outcome
+    |                       ^^^^^^^^^^^^^^^^^^ `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId` cannot be formatted with the default formatter
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId`
+    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+
+error[E0277]: `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId` doesn't implement `std::fmt::Display`
+   --> src/table_ddl_view/replies.rs:147:41
+    |
+146 | ...                   "Attempt {}: {:?}",
+    |                                -- required by this formatting parameter
+147 | ...                   receipt.attempt_id, receipt.outcome
+    |                       ^^^^^^^^^^^^^^^^^^ `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId` cannot be formatted with the default formatter
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `dbunk_lib::backend::schema_ddl::CreateSchemaAttemptId`
+    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 3 previous errors

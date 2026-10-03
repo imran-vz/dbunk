@@ -1,0 +1,235 @@
+PASS: requested application registers with Cocoa
+PASS: validated application exposes its window
+PASS: SQL editor is exposed
+PASS: SQL text is readable
+PASS: editor owns accessibility focus
+PASS: caret is exposed
+PASS: keyboard edits publish exact Unicode text
+PASS: text edits notify assistive clients
+PASS: caret uses UTF-16 offsets at trailing newline
+PASS: character count, caret line and line reading
+PASS: AX selection reaches editor at 9:2
+PASS: selected Unicode text is exact
+PASS: typing replaces the real AX-selected range
+PASS: undo restores accessible text
+PASS: AX selection reaches editor at 0:0
+PASS: keyboard caret movement updates AX
+PASS: selection changes notify assistive clients
+PASS: keyboard selection updates AX
+PASS: AX selection reaches editor at 2:0
+PASS: backward keyboard selection updates AX
+PASS: selection direction survives publication
+PASS: AX selection reaches editor at 11:0
+PASS: character boundaries match Zed movement
+PASS: AX selection reaches editor at 11:2
+PASS: combining sequence stays intact
+PASS: text geometry at 0:1
+PASS: text geometry at 1:1
+PASS: text geometry at 9:2
+PASS: text geometry at 11:2
+PASS: text geometry at 16:1
+PASS: text geometry at 0:17
+PASS: text geometry at 26:0
+PASS: shaped Unicode, multiline and trailing-caret geometry
+PASS: AX selection reaches editor at 0:0
+PASS: Tab keeps editor focus and indents SQL
+PASS: Shift-Tab keeps editor focus and outdents SQL
+PASS: AX selection reaches editor at 1:1
+PASS: F6 moves editor focus to results
+PASS: Shift-F6 restores editor focus and selection
+PASS: Tab from results returns to editor
+PASS: Shift-Tab from results returns to editor
+PASS: F8 reaches the first enabled query control
+PASS: toolbar Escape restores results focus
+PASS: typing after pane navigation reaches the preserved SQL selection
+PASS: pane navigation leaves SQL undo intact
+PASS: AX selection reaches editor at 0:26
+PASS: empty editor retains readable value and caret
+PASS: text geometry at 0:0
+PASS: undo from empty restores text runs
+PASS: long geometry fixture is loaded
+PASS: AX selection reaches editor at 1079:0
+PASS: text geometry at 1079:1
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 0:1
+PASS: AX selection reaches editor at 1079:0
+PASS: text geometry at 1079:1
+PASS: geometry follows vertical autoscroll
+PASS: wrap fixture is loaded
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 0:1
+PASS: text geometry at 142:1
+PASS: text geometry at 143:1
+PASS: AX selection reaches editor at 143:1
+PASS: soft-wrap geometry and selection
+PASS: resizing recalculates soft-wrap highlight geometry
+PASS: restoring window size restores wrap geometry
+PASS: AX selection reaches editor at 0:0
+PASS: text geometry at 352:1
+PASS: AX selection reaches editor at 352:0
+PASS: text geometry at 352:1
+PASS: geometry follows horizontal autoscroll
+PASS: geometry checks restore Unicode fixture
+PASS: editor accessibility round trip
+PASS: fixture session is ready for execution
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: real fixture query completes
+PASS: query result inspection owns focus
+PASS: column 1 exposes exact retained text
+PASS: column 1 copies exact retained text
+PASS: column 2 exposes exact retained text
+PASS: column 2 copies exact retained text
+PASS: column 3 exposes exact retained text
+PASS: column 3 copies exact retained text
+PASS: column 4 exposes exact retained text
+PASS: column 4 copies exact retained text
+PASS: column 5 exposes exact retained text
+PASS: column 5 copies exact retained text
+PASS: column 6 exposes exact retained text
+PASS: column 6 copies exact retained text
+PASS: F6 returns from exact results to SQL
+PASS: F6 restores visible results and retained selected cell
+PASS: F8 route 1 focuses Run control
+PASS: F8 route 2 focuses Run control
+PASS: Tab reaches Side by side layout radio
+PASS: Tab reaches Results first layout radio
+PASS: repeated toolbar route and Escape restore retained grid focus
+PASS: Notices control owns focus before activation
+PASS: Notices 0 becomes enabled
+PASS: Notices replaces the visible results region
+PASS: F6 leaves Notices for visible results and retained selected cell
+PASS: F6 after Notices returns to SQL
+PASS: AX selection reaches editor at 7:1
+PASS: Side by side becomes enabled
+PASS: completed query: Side by side reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Results first becomes enabled
+PASS: completed query: Results first reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Stacked becomes enabled
+PASS: completed query: Stacked reflows editor bounds
+PASS: text geometry at 7:1
+PASS: SQL input reaches real editor
+PASS: AX selection reaches editor at 0:0
+PASS: caret execution is admitted after terminal ACK
+PASS: Cmd-Enter executes the caret statement
+PASS: AX selection reaches editor at 11:10
+PASS: selected execution is admitted after terminal ACK
+PASS: Cmd-Enter executes selected SQL
+PASS: script execution is admitted after terminal ACK
+PASS: Cmd-Shift-Enter executes both statements despite a selection
+PASS: Result 2 · 1 rows becomes enabled
+PASS: script second result contains 42
+PASS: Result 1 · 1 rows becomes enabled
+PASS: script first result contains 41
+PASS: SQL input reaches real editor
+PASS: AX selection reaches editor at 30:36
+PASS: selected failing query is admitted after terminal ACK
+PASS: SQL failure exposes its full message and PostgreSQL code
+PASS: failed query terminal ACK makes Run available
+PASS: F8 from a failed query reaches Run
+PASS: Return to SQL becomes enabled
+PASS: Return to SQL restores editor focus
+PASS: AX selection reaches editor at 46:0
+PASS: text geometry at 44:21
+PASS: identical SQL error can be rerun after terminal ACK
+PASS: fast identical failure has a new announcement identity
+PASS: new execution clears the previous failure before its delayed statement completes
+PASS: repeated SQL error remains explicitly accessible
+PASS: delayed script starts before editing its source
+PASS: SQL input reaches real editor
+PASS: editing SQL removes the stale diagnostic location while retaining execution details
+PASS: Run script becomes enabled
+PASS: session remains usable after SQL error
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: zero-row SELECT preserves column metadata
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: command-only result completes with zero rows and no invented cells
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: transaction warning arrives through the server notice channel
+PASS: Notices 1 becomes enabled
+PASS: server warning is exposed in the Notices pane
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: protected policy refuses DO without a confirmation override
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: oversized cell completes with its exact core truncation reason
+PASS: SQL input reaches real editor
+PASS: AX selection reaches editor at 7:20
+PASS: Run script becomes enabled
+PASS: native query exposes its own backend identity
+PASS: backend identity result owns keyboard focus
+PASS: query backend PID is available as exact cell text
+PASS: query backend_start is available as exact cell text
+PASS: SQL focus returns before fixture-only fault injection
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: connection-loss scenario retains an explicit prior query failure
+PASS: AX selection reaches editor at 7:20
+PASS: owned fixture fault helper completes
+Terminated owned fixture query backend PID=72900 instance=2283820d-33ec-4c4c-ae03-7051092bd410
+PASS: externally terminated owned query socket becomes disconnected
+PASS: disconnected F8 route focuses Reconnect and remembers SQL focus
+PASS: Reconnect owns focus before activation
+PASS: Reconnect becomes enabled
+PASS: explicit reconnect reaches Ready without rerunning retained SQL
+PASS: reconnect restores SQL focus before its control disappears
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: fresh session executes after explicit reconnect
+PASS: SQL input reaches real editor
+PASS: AX selection reaches editor at 7:1
+PASS: Run script becomes enabled
+PASS: real row stream exposes its first cell while running
+PASS: streaming result inspection owns focus
+PASS: streaming inspection selects the first retained cell
+PASS: Side by side becomes enabled
+PASS: streaming rows: Side by side reflows editor bounds
+PASS: text geometry at 7:1
+PASS: streaming rows: Side by side retains the selected result cell
+PASS: Results first becomes enabled
+PASS: streaming rows: Results first reflows editor bounds
+PASS: text geometry at 7:1
+PASS: streaming rows: Results first retains the selected result cell
+PASS: Stacked becomes enabled
+PASS: streaming rows: Stacked reflows editor bounds
+PASS: text geometry at 7:1
+PASS: streaming rows: Stacked retains the selected result cell
+PASS: streaming query completes after layout switching
+PASS: streaming layout checks restore SQL focus
+PASS: SQL input reaches real editor
+PASS: AX selection reaches editor at 7:1
+PASS: Run script becomes enabled
+PASS: long query starts
+PASS: Side by side becomes enabled
+PASS: running query: Side by side reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Results first becomes enabled
+PASS: running query: Results first reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Stacked becomes enabled
+PASS: running query: Stacked reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Stop is available while the query runs
+PASS: Side by side becomes enabled
+PASS: cancellation: Side by side reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Results first becomes enabled
+PASS: cancellation: Results first reflows editor bounds
+PASS: text geometry at 7:1
+PASS: Stacked becomes enabled
+PASS: cancellation: Stacked reflows editor bounds
+PASS: text geometry at 7:1
+PASS: cancellation settles
+PASS: cancelled execution completes terminal ACK before close scenario
+PASS: SQL input reaches real editor
+PASS: Run script becomes enabled
+PASS: close scenario has an active query
+PASS: validated native application terminates after window closure
+Native AXClose-to-termination: 61.187 ms
+PASS: real native fixture query/error/cancel/layout/close workflow

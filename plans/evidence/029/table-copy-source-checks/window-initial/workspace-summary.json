@@ -1,0 +1,67 @@
+{
+  "documents": [
+    {
+      "name": "Query 1",
+      "tool": null,
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "native_parity_20261003.rows",
+      "tool": null,
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "Saved queries",
+      "tool": "savedQueries",
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "History",
+      "tool": "history",
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "History query",
+      "tool": null,
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "Administration",
+      "tool": "administration",
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "EXPLAIN",
+      "tool": null,
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    },
+    {
+      "name": "Table copy",
+      "tool": "tableCopy",
+      "connectionId": null
+    },
+    {
+      "name": "Objects",
+      "tool": "objects",
+      "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e"
+    }
+  ],
+  "copies": [
+    {
+      "attemptId": "02def5e8-7c66-4aa6-894c-cd5bb510d98c",
+      "state": {
+        "completed": {
+          "rows": 3
+        }
+      }
+    },
+    {
+      "attemptId": "aa3d33b3-a837-4668-8af9-12dafdf8cd3d",
+      "state": {
+        "completed": {
+          "rows": 3
+        }
+      }
+    }
+  ]
+}

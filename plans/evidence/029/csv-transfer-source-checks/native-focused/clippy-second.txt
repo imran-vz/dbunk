@@ -1,0 +1,78 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: method `count` is never used
+  --> src/csv_transfer_model/mapping.rs:40:12
+   |
+11 | impl Mapping {
+   | ------------ method in this implementation
+...
+40 |     pub fn count(&self) -> usize {
+   |            ^^^^^
+   |
+   = note: `-D dead-code` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: method `id` is never used
+  --> src/csv_transfer_store.rs:24:12
+   |
+17 | impl InspectionOwner {
+   | -------------------- method in this implementation
+...
+24 |     pub fn id(&self) -> uuid::Uuid {
+   |            ^^
+
+error: methods `cancel_inspection` and `release_inspection` are never used
+   --> src/csv_transfer_store.rs:451:12
+    |
+ 72 | impl CsvStore {
+    | ------------- methods in this implementation
+...
+451 |     pub fn cancel_inspection(&mut self, id: CsvInspectionId, cx: &mut Context<Self>) {
+    |            ^^^^^^^^^^^^^^^^^
+...
+454 |     pub fn release_inspection(&mut self, id: CsvInspectionId, cx: &mut Context<Self>) {
+    |            ^^^^^^^^^^^^^^^^^^
+
+error: called `filter(..).next_back()` on an `DoubleEndedIterator`
+  --> src/csv_transfer_model/mapping.rs:75:13
+   |
+75 | /             choices
+76 | |                 .filter(|index| old.is_none_or(|old| *index < old))
+77 | |                 .next_back()
+   | |____________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#filter_next
+   = note: `-D clippy::filter-next` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::filter_next)]`
+help: use `.rfind(..)` instead
+   |
+75 -             choices
+76 -                 .filter(|index| old.is_none_or(|old| *index < old))
+77 -                 .next_back()
+75 +             choices.rfind(|index| old.is_none_or(|old| *index < old))
+   |
+
+error: this `if` statement can be collapsed
+  --> src/csv_transfer_store.rs:94:21
+   |
+94 | /                     if poll || changed {
+95 | |                         if !this.cleanup_abandoned(cx) {
+96 | |                             this.refresh(cx);
+97 | |                         }
+98 | |                     }
+   | |_____________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+   = note: `-D clippy::collapsible-if` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+   |
+94 ~                     if (poll || changed) {
+95 ~                         && !this.cleanup_abandoned(cx) {
+96 |                             this.refresh(cx);
+97 ~                         }
+   |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 5 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 5 previous errors

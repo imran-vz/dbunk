@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 7 tests
+test backend::development::workspace::query_tests::query_nullable_virtual_identity_refused_without_changing_table_contract ... ok
+test backend::development::workspace::query_tests::query_operations_require_updates_with_original_identity_and_exact_guards ... ok
+test backend::development::workspace::query_tests::multi_origin_unknown_outcome_journal_preserves_source_separate_from_editor ... ok
+test backend::development::workspace::query_tests::v2_load_does_not_write_and_explicit_save_upgrades_to_v3 ... ok
+test backend::development::workspace::query_tests::invalid_versions_provenance_and_extra_intent_are_preserved_without_overwrite ... ok
+test backend::development::workspace::query_tests::query_journal_excludes_table_tools_and_obeys_smaller_workspace_budget ... ok
+test backend::development::workspace::query_tests::virtual_key_requires_full_original_row_and_limits_cover_escape_expansion ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 885 filtered out; finished in 0.03s
+

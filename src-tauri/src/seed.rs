@@ -606,6 +606,13 @@ pub(crate) struct PlanDraft {
     pub needed_maxes: Vec<String>,
 }
 
+#[cfg(feature = "isolated-profile")]
+impl PlanDraft {
+    pub(crate) fn columns(&self) -> &[ColumnPlan] {
+        &self.columns
+    }
+}
+
 /// Decide every column's value source from the table's structure plus
 /// the Seed Spec. Pure: no database access, no clock.
 pub(crate) fn analyze_plan(

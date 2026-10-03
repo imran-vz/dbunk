@@ -1,0 +1,14 @@
+{
+  "bundle": "/private/tmp/dbunk-native-package-20261003-query-edits/dbunk Native Preflight.app",
+  "pid": 54914,
+  "profile": "/private/tmp/dbunk-native-query-edits-20261003-review",
+  "observations": [
+    "CUA path lookup returned -10005 cgWindowNotFound",
+    "CUA app inventory lists verified bundle identifier running",
+    "CUA bundle-ID lookup returned -10005 cgWindowNotFound"
+  ],
+  "cleanup": "SIGTERM sent only after matching exact executable/profile arguments and SHA256",
+  "normal_quit_passed": false,
+  "keyboard_ax_ime_passed": false,
+  "voiceover": "deferred; not run"
+}

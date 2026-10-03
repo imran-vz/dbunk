@@ -1,0 +1,27 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0624]: method `render_header` is private
+   --> src/grid.rs:953:49
+    |
+953 |         let header = (columns > 0).then(|| self.render_header(cx));
+    |                                                 ^^^^^^^^^^^^^ private method
+    |
+   ::: src/grid/render.rs:39:5
+    |
+ 39 |     fn render_header(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+    |     ----------------------------------------------------------------------- private method defined here
+
+error[E0624]: method `render_rows` is private
+    --> src/grid.rs:1058:73
+     |
+1058 |                     cx.processor(|this, rows: Range<usize>, _, cx| this.render_rows(rows, cx)),
+     |                                                                         ^^^^^^^^^^^ private method
+     |
+    ::: src/grid/render.rs:130:5
+     |
+ 130 |     fn render_rows(&self, rows: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement + use<>> {
+     |     ---------------------------------------------------------------------------------------------- private method defined here
+
+For more information about this error, try `rustc --explain E0624`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 2 previous errors

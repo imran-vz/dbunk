@@ -1,0 +1,17 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.09s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 9 tests
+test xlsx_native::tests::zip_admission_rejects_ambiguous_zip64_encryption_and_oversized_metadata ... ok
+test xlsx_native::tests::null_token_and_sheet_identity_are_validated_before_output ... ok
+test xlsx_native::tests::empty_sheet_is_not_a_synthetic_data_row ... ok
+test xlsx_native::tests::cancellation_and_output_failure_never_return_a_summary ... ok
+test xlsx_native::tests::exact_numeric_cache_boolean_date_and_unicode ... ok
+test xlsx_native::tests::baseline_headers_duplicate_names_and_null_are_indexed_exactly ... ok
+test xlsx_native::tests::sparse_extent_matches_used_range_without_dense_allocation ... ok
+test xlsx_native::tests::malformed_values_and_formula_caches_refuse ... ok
+test xlsx_native::tests::xml_structure_entities_encoding_and_raw_field_limits ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1075 filtered out; finished in 0.02s
+
