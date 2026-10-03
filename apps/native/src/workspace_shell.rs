@@ -107,9 +107,8 @@ pub(super) fn groups<'a>(
             }
         } else {
             let endpoint = connection
-                .postgres
-                .as_ref()
-                .map(|pg| format!("{} {}", pg.host, pg.database))
+                .endpoint()
+                .map(|endpoint| endpoint.label())
                 .unwrap_or_default();
             let haystack = format!(
                 "{} {} {} {}",
@@ -412,9 +411,8 @@ impl Workspace {
                     .is_some_and(|label| !label.starts_with("Healthy"));
                 let (badge, badge_color) = style::engine_badge(&connection.engine);
                 let database = connection
-                    .postgres
-                    .as_ref()
-                    .map(|pg| pg.database.clone())
+                    .endpoint()
+                    .map(|endpoint| endpoint.database)
                     .unwrap_or_default();
                 let mut row = self
                     .shell_button(
@@ -736,9 +734,8 @@ impl Workspace {
         let summary = connection
             .map(|c| {
                 let database = c
-                    .postgres
-                    .as_ref()
-                    .map(|pg| format!(" · {}", pg.database))
+                    .endpoint()
+                    .map(|endpoint| format!(" · {}", endpoint.database))
                     .unwrap_or_default();
                 format!("{}{database} · {}", c.name, c.engine)
             })
@@ -1173,6 +1170,7 @@ mod tests {
             },
             unsupported_reason: None,
             postgres: None,
+            settings: None,
             environment,
         }
     }

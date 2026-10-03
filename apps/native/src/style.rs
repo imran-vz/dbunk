@@ -15,6 +15,12 @@ pub const ICON: f32 = 11.;
 pub const SIDEBAR: f32 = 248.;
 /// Space the macOS traffic lights occupy at the left of the first row.
 pub const TRAFFIC_LIGHTS: f32 = 78.;
+/// Document toolbar row, footer status line and tool button heights.
+pub const TOOLBAR: f32 = 28.;
+pub const FOOTER: f32 = 24.;
+pub const TOOL: f32 = 20.;
+/// Data font: the editor's buffer font, so grid cells and SQL line up.
+pub const MONO: &str = ".ZedMono";
 
 pub fn bg() -> Rgba {
     rgb(0x0c0d0f)
@@ -51,6 +57,24 @@ pub fn ok() -> Rgba {
 }
 pub fn warn() -> Rgba {
     rgb(0xd29922)
+}
+pub fn bad() -> Rgba {
+    rgb(0xf85149)
+}
+/// Keyboard focus ring and the selected-cell outline.
+pub fn accent() -> Rgba {
+    rgb(0x6aa6ff)
+}
+/// Row hover in data grids, between `bg` and `panel`.
+pub fn row_hover() -> Rgba {
+    rgb(0x14171b)
+}
+/// Data colours: numbers and booleans in grids.
+pub fn number() -> Rgba {
+    rgb(0x79c0ff)
+}
+pub fn boolean() -> Rgba {
+    rgb(0xd2a8ff)
 }
 
 /// Environment signal colour. `None` (no connection) is neutral.

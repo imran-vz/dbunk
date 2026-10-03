@@ -5,7 +5,7 @@ use dbunk_lib::backend::{Backend, ParameterValue};
 use editor::{Editor, EditorEvent};
 use gpui::{
     Context, Entity, FocusHandle, Focusable, KeyDownEvent, Role, SharedString, Subscription,
-    Window, accesskit::Action, div, prelude::*, px, rgb,
+    Window, accesskit::Action, div, prelude::*, px,
 };
 
 pub enum ParametersEvent {
@@ -183,34 +183,30 @@ impl QueryParameters {
         let weak = cx.weak_entity();
         let enabled = self.editable || matches!(action, ActionKind::Close);
         let toggle = !matches!(action, ActionKind::Close);
-        div()
-            .id(SharedString::from(label.clone()))
-            .role(if toggle { Role::CheckBox } else { Role::Button })
-            .aria_label(label.clone())
-            .when(toggle, |element| element.aria_toggled(selected.into()))
-            .track_focus(&focus)
-            .tab_stop(enabled)
-            .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.border_color(rgb(0xa9d8c5)))
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
-            .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
-            .on_a11y_action(Action::Click, move |_, _, cx| {
-                let _ = weak.update(cx, |this, cx| this.activate(action, cx));
-            })
-            .child(label)
+        crate::ui::pressed(
+            crate::ui::tool_button(
+                SharedString::from(label.clone()),
+                label,
+                (!toggle).then_some("icons/close.svg"),
+                enabled,
+                false,
+            ),
+            toggle && selected,
+        )
+        .role(if toggle { Role::CheckBox } else { Role::Button })
+        .when(toggle, |element| element.aria_toggled(selected.into()))
+        .track_focus(&focus)
+        .tab_stop(enabled)
+        .tab_index(0)
+        .a11y_synthetic_children(move |builder| {
+            if !enabled {
+                builder.parent_node().set_disabled();
+            }
+        })
+        .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
+        .on_a11y_action(Action::Click, move |_, _, cx| {
+            let _ = weak.update(cx, |this, cx| this.activate(action, cx));
+        })
     }
 
     fn key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -293,15 +289,17 @@ impl Render for QueryParameters {
             .max_h(px(200.))
             .overflow_y_scroll()
             .border_b_1()
-            .border_color(crate::style::line())
-            .p_2()
-            .gap_2()
+            .border_color(crate::style::line_soft())
+            .bg(crate::style::panel())
+            .px_2()
+            .py_1()
+            .gap_1()
             .text_sm()
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(px(4.))
                     .flex_wrap()
                     .child(self.button(
                         "Named parameters".into(),
@@ -310,15 +308,14 @@ impl Render for QueryParameters {
                         self.enabled,
                         cx,
                     ))
-                    .child("Row limit")
+                    .child(crate::ui::separator())
+                    .child(div().text_color(crate::style::dim()).child("Row limit"))
                     .child(
-                        div()
+                        crate::ui::field()
                             .w(px(120.))
-                            .h(px(28.))
-                            .border_1()
-                            .border_color(crate::style::line())
                             .child(self.accessible_limit.clone()),
                     )
+                    .child(crate::ui::grow())
                     .child(self.button(
                         "Close bindings".into(),
                         ActionKind::Close,
@@ -327,25 +324,29 @@ impl Render for QueryParameters {
                         cx,
                     )),
             )
-            .child(if self.enabled {
+            .child(div().text_color(crate::style::faint()).child(if self.enabled {
                 "Text bindings. Run discovers :names in the selected SQL. Values are not saved."
             } else {
                 "Named parameters off. Blank row limit keeps the normal result cap."
-            })
+            }))
             .when(self.enabled, |element| {
                 element.children(self.fields.iter().enumerate().map(|(index, field)| {
                     div()
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(format!(":{}", field.name))
                         .child(
                             div()
+                                .min_w(px(80.))
+                                .font_family(crate::style::MONO)
+                                .text_color(crate::style::dim())
+                                .child(format!(":{}", field.name)),
+                        )
+                        .child(
+                            crate::ui::field()
                                 .flex_1()
                                 .min_w_0()
-                                .h(px(28.))
-                                .border_1()
-                                .border_color(crate::style::line())
+                                .font_family(crate::style::MONO)
                                 .child(field.accessible.clone()),
                         )
                         .child(self.button(

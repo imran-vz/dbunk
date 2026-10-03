@@ -15,6 +15,8 @@ use std::{collections::HashMap, sync::Arc};
 
 mod bastions;
 mod diagnosis;
+mod engine;
+mod engine_view;
 mod tunnel;
 mod uri;
 
@@ -49,6 +51,8 @@ enum FormAction {
     Bastion(bastions::Action),
     Tunnel,
     TunnelVia(usize),
+    Engine(engine::Engine),
+    EngineToggle(engine::Toggle),
 }
 enum Kind {
     Credentials(DevelopmentSettings),
@@ -84,6 +88,8 @@ pub struct Form {
     task: Option<Task<()>>,
     diagnosis: Option<diagnosis::State>,
     tunnel: Option<tunnel::State>,
+    engine: engine::Engine,
+    toggles: engine::Toggles,
 }
 impl EventEmitter<FormEvent> for Form {}
 impl Form {
@@ -106,6 +112,8 @@ impl Form {
             task: None,
             diagnosis: None,
             tunnel: None,
+            engine: engine::Engine::Postgres,
+            toggles: engine::Toggles::default(),
         }
     }
     fn field(
@@ -175,6 +183,11 @@ impl Form {
             .as_ref()
             .and_then(|connection| connection.postgres.clone())
             .unwrap_or_else(|| connection_defaults(host.backend.native_profile_kind()));
+        // Plan 031: non-PostgreSQL records edit through their own field set.
+        let settings = connection
+            .as_ref()
+            .and_then(|connection| connection.settings.clone())
+            .filter(|settings| engine::Engine::of(settings) != engine::Engine::Postgres);
         let mut form = Self::base(
             host,
             Kind::Connection {
@@ -184,20 +197,36 @@ impl Form {
         );
         form.diagnosis = Some(diagnosis::State::new(retained));
         if form.host.backend.native_profile_kind() == Some(NativeProfileKind::GeneralPostgres) {
-            form.tunnel = Some(tunnel::State::new(data.ssh_tunnel.clone()));
+            form.tunnel = Some(tunnel::State::new(match &settings {
+                Some(settings) => engine::stored_tunnel(settings),
+                None => data.ssh_tunnel.clone(),
+            }));
         }
         form.environment = data.environment;
         form.safe = data.safe_mode;
         form.tls = data.tls.mode;
         form.read_only = data.read_only;
+        let mut engine_values = Vec::new();
+        if let Some(settings) = &settings {
+            let policy = engine::Policy::of(settings);
+            form.engine = engine::Engine::of(settings);
+            form.toggles = engine::Toggles::from_settings(settings);
+            form.environment = policy.environment;
+            form.safe = policy.safe_mode;
+            form.read_only = policy.read_only;
+            engine_values = engine::initial_values(settings);
+        }
         form.favorite = connection
             .as_ref()
             .is_some_and(|connection| connection.organization.is_favorite);
         for (key, label, value) in [
             ("name", "Name", data.name),
+            ("path", "Database file", String::new()),
             ("host", "Host", data.host),
             ("port", "Port", data.port.to_string()),
+            ("db-number", "Database number", "0".into()),
             ("database", "Database", data.database),
+            ("url-path", "URL path", String::new()),
             ("user", "User", data.user),
             ("password", "Database password", String::new()),
             (
@@ -278,6 +307,10 @@ impl Form {
                 data.driver_options.default_role.unwrap_or_default(),
             ),
         ] {
+            let value = engine_values
+                .iter()
+                .find(|(engine_key, _)| *engine_key == key)
+                .map_or(value, |(_, engine_value)| engine_value.clone());
             form.field(key, label, value, key == "password", window, cx);
         }
         if let Some(initial) = form
@@ -409,9 +442,53 @@ impl Form {
             ssh_tunnel: self.tunnel_input(cx)?,
         })
     }
+    /// The selected engine's record; PostgreSQL keeps its dedicated input.
+    fn engine_input(&self, cx: &App) -> Result<DevelopmentEngineConnection, String> {
+        if self.engine == engine::Engine::Postgres {
+            return self
+                .connection_input(cx)
+                .map(DevelopmentEngineConnection::PostgreSQL);
+        }
+        let ssh_tunnel = if self.engine.tunnels() {
+            self.tunnel_input(cx)?
+        } else {
+            None
+        };
+        engine::input(
+            self.engine,
+            |key| self.value(key, cx),
+            engine::Policy {
+                environment: self.environment,
+                safe_mode: self.safe,
+                read_only: self.read_only,
+            },
+            self.toggles,
+            ssh_tunnel,
+        )
+    }
+    /// Only a new connection in a general profile may change engine.
+    fn engine_selectable(&self) -> bool {
+        matches!(self.kind, Kind::Connection { id: None })
+            && self.host.backend.native_profile_kind() == Some(NativeProfileKind::GeneralPostgres)
+    }
+    fn select_engine(&mut self, to: engine::Engine, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.engine_selectable() || to == self.engine {
+            return;
+        }
+        let changes = engine::switch_defaults(self.engine, to, |key| self.value(key, cx));
+        for (key, value) in changes {
+            if let Some(field) = self.fields.iter().find(|field| field.key == key) {
+                field
+                    .editor
+                    .update(cx, |editor, cx| editor.set_text(value, window, cx));
+            }
+        }
+        self.engine = to;
+    }
     fn field_visible(&self, key: &str) -> bool {
         match &self.kind {
             Kind::Bastions(state) => bastions::field_visible(state.auth(), key),
+            Kind::Connection { .. } if !self.engine.shows(key) => false,
             _ if key.starts_with("tunnel-") => {
                 self.tunnel.as_ref().is_some_and(|tunnel| tunnel.enabled)
             }
@@ -501,6 +578,16 @@ impl Form {
                 cx.notify();
                 return;
             }
+            FormAction::Engine(value) => {
+                self.select_engine(value, window, cx);
+                cx.notify();
+                return;
+            }
+            FormAction::EngineToggle(toggle) => {
+                self.toggles.flip(toggle);
+                cx.notify();
+                return;
+            }
             FormAction::TunnelVia(index) => {
                 if let Some(tunnel) = self.tunnel.as_mut()
                     && let Some((id, _)) = tunnel.choices.get(index)
@@ -571,7 +658,7 @@ impl Form {
         let mode = self.mode;
         let job: FormJob = match &self.kind {
             Kind::Connection { id } => {
-                let form = match self.connection_input(cx) {
+                let form = match self.engine_input(cx) {
                     Ok(form) => form,
                     Err(error) => {
                         self.message = Some(error);
@@ -588,12 +675,7 @@ impl Form {
                 };
                 Box::pin(async move {
                     match backend
-                        .save_development_connection_with_organization(
-                            id,
-                            form,
-                            password,
-                            organization,
-                        )
+                        .save_development_engine_connection(id, form, password, organization)
                         .await
                     {
                         Ok(connection) => {
@@ -693,6 +775,8 @@ impl Form {
             FormAction::Cancel => "Cancel".to_owned(),
             FormAction::Tunnel => "SSH tunnel".to_owned(),
             FormAction::TunnelVia(index) => format!("tunnel-via-{index}"),
+            FormAction::Engine(engine) => format!("engine-{}", engine.label()),
+            FormAction::EngineToggle(toggle) => format!("engine-toggle-{toggle:?}"),
             FormAction::Bastion(bastions::Action::ClearPassphrase) => "Clear passphrase".to_owned(),
             FormAction::Bastion(bastions::Action::Row(op, index)) => {
                 format!("bastion-{op:?}-{index}")
@@ -719,6 +803,7 @@ impl Form {
                 | FormAction::Safe(_)
                 | FormAction::Tls(_)
                 | FormAction::TunnelVia(_)
+                | FormAction::Engine(_)
                 | FormAction::Bastion(bastions::Action::Auth(_))
         );
         let toggle = matches!(
@@ -726,6 +811,7 @@ impl Form {
             FormAction::ReadOnly
                 | FormAction::Favorite
                 | FormAction::Tunnel
+                | FormAction::EngineToggle(_)
                 | FormAction::Bastion(bastions::Action::ClearPassphrase)
         );
         let weak = cx.weak_entity();
@@ -815,23 +901,43 @@ fn number(value: Option<u32>) -> String {
 impl Render for Form {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.visible_controls.clear();
-        let title = match self.kind {
-            Kind::Credentials(_) => "Credential storage",
-            Kind::Connection { .. } => "PostgreSQL connection",
-            Kind::Rename => "Rename query",
-            Kind::OpenTable => "Open table",
-            Kind::Delete(_) => "Delete connection",
-            Kind::Discard => "Unsaved drafts",
-            Kind::ResetWorkspace => "Reset saved drafts",
-            Kind::Bastions(_) => "Bastion servers",
+        let title: SharedString = match self.kind {
+            Kind::Credentials(_) => "Credential storage".into(),
+            Kind::Connection { .. } => format!("{} connection", self.engine.label()).into(),
+            Kind::Rename => "Rename query".into(),
+            Kind::OpenTable => "Open table".into(),
+            Kind::Delete(_) => "Delete connection".into(),
+            Kind::Discard => "Unsaved drafts".into(),
+            Kind::ResetWorkspace => "Reset saved drafts".into(),
+            Kind::Bastions(_) => "Bastion servers".into(),
         };
         let mut content = div().flex().flex_col().gap_2();
         if matches!(self.kind, Kind::Connection { .. }) {
+            if self.engine_selectable() {
+                let mut picker = div()
+                    .id("engine-picker")
+                    .role(Role::RadioGroup)
+                    .aria_label("Engine")
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child("Engine");
+                for value in engine::Engine::ALL {
+                    picker = picker.child(self.button(
+                        value.label(),
+                        FormAction::Engine(value),
+                        self.engine == value,
+                        cx,
+                    ));
+                }
+                content = content.child(picker);
+            }
+            let engine = self.engine;
             let mut fields = div().flex().flex_wrap().gap_x_4().gap_y_2();
             for field in self
                 .fields
                 .iter()
-                .filter(|field| !field.key.starts_with("tunnel-"))
+                .filter(|field| !field.key.starts_with("tunnel-") && engine.shows(field.key))
             {
                 fields = fields.child(
                     div()
@@ -850,9 +956,10 @@ impl Render for Form {
                         ),
                 );
             }
-            content = content
-                .child(fields)
-                .child(div().child("Blank password keeps the saved password."));
+            content = content.child(fields);
+            if engine.shows("password") {
+                content = content.child(div().child("Blank password keeps the saved password."));
+            }
             let mut policy = div().flex().flex_wrap().gap_2().child("Environment");
             for (label, value) in [
                 ("Development", DevelopmentEnvironment::Development),
@@ -904,42 +1011,54 @@ impl Render for Form {
                     cx,
                 ));
             content = content.child(policy);
-            let mut tls = div().flex().flex_wrap().gap_2().child("TLS");
-            for (label, value) in [
-                ("Disable TLS", DevelopmentTlsMode::Disable),
-                ("Prefer TLS", DevelopmentTlsMode::Prefer),
-                ("Require TLS", DevelopmentTlsMode::Require),
-                ("Verify CA", DevelopmentTlsMode::VerifyCa),
-                ("Verify full", DevelopmentTlsMode::VerifyFull),
-            ] {
-                tls = tls.child(self.button(label, FormAction::Tls(value), self.tls == value, cx));
-            }
-            if let Some(section) = self.tunnel_view(cx) {
+            if let Some(section) = self.engine_view(cx) {
                 content = content.child(section);
             }
-            content = content.child(tls).child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(self.button(
-                        "Choose root certificate",
-                        FormAction::Pick("root-cert"),
-                        false,
+            if engine.tunnels()
+                && let Some(section) = self.tunnel_view(cx)
+            {
+                content = content.child(section);
+            }
+            if engine == engine::Engine::Postgres {
+                let mut tls = div().flex().flex_wrap().gap_2().child("TLS");
+                for (label, value) in [
+                    ("Disable TLS", DevelopmentTlsMode::Disable),
+                    ("Prefer TLS", DevelopmentTlsMode::Prefer),
+                    ("Require TLS", DevelopmentTlsMode::Require),
+                    ("Verify CA", DevelopmentTlsMode::VerifyCa),
+                    ("Verify full", DevelopmentTlsMode::VerifyFull),
+                ] {
+                    tls = tls.child(self.button(
+                        label,
+                        FormAction::Tls(value),
+                        self.tls == value,
                         cx,
-                    ))
-                    .child(self.button(
-                        "Choose client certificate",
-                        FormAction::Pick("client-cert"),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "Choose client key",
-                        FormAction::Pick("client-key"),
-                        false,
-                        cx,
-                    )),
-            );
+                    ));
+                }
+                content = content.child(tls).child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(self.button(
+                            "Choose root certificate",
+                            FormAction::Pick("root-cert"),
+                            false,
+                            cx,
+                        ))
+                        .child(self.button(
+                            "Choose client certificate",
+                            FormAction::Pick("client-cert"),
+                            false,
+                            cx,
+                        ))
+                        .child(self.button(
+                            "Choose client key",
+                            FormAction::Pick("client-key"),
+                            false,
+                            cx,
+                        )),
+                );
+            }
         } else if matches!(self.kind, Kind::Bastions(_)) {
             content = content.child(self.bastion_view(cx));
         } else if let Kind::Credentials(settings) = &self.kind {
@@ -1048,7 +1167,9 @@ impl Render for Form {
         if let Some((label, action)) = action {
             buttons = buttons.child(self.button(label, action, false, cx));
         }
-        if matches!(self.kind, Kind::Connection { id: None }) {
+        if matches!(self.kind, Kind::Connection { id: None })
+            && self.engine == engine::Engine::Postgres
+        {
             buttons = buttons.child(self.button(
                 "Import URI from clipboard",
                 FormAction::ImportUri,
@@ -1079,7 +1200,7 @@ impl Render for Form {
         div()
             .id("native-form")
             .role(Role::Dialog)
-            .aria_label(title)
+            .aria_label(title.clone())
             .bg(crate::style::bg())
             .text_color(crate::style::text())
             .text_sm()

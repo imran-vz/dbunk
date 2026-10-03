@@ -17,7 +17,7 @@ fn form() -> DevelopmentPostgresConnection {
 }
 
 #[test]
-fn general_authority_accepts_only_bounded_direct_postgres_metadata() {
+fn general_authority_accepts_only_bounded_direct_metadata() {
     let authority = Authority {
         capability: EndpointCapability::GeneralPostgres,
         profile_id: uuid::Uuid::new_v4().to_string(),
@@ -60,8 +60,9 @@ fn general_authority_accepts_only_bounded_direct_postgres_metadata() {
     }
     let mut json = serde_json::to_value(StoredConnection::PostgreSQL(pg)).unwrap();
     json["engine"] = "MySQL".into();
+    // Plan 031: general profiles admit every engine within field limits.
     let foreign: StoredConnection = serde_json::from_value(json).unwrap();
-    assert!(!authority.permits(&foreign));
+    assert!(authority.permits(&foreign));
 }
 
 #[test]

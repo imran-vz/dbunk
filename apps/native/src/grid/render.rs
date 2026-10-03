@@ -1,15 +1,79 @@
 //! Both row and header strips use the same source/display geometry. Frozen and
 //! scrolling viewports are clipped independently, including oversized pin sets.
+//! A row-number gutter stays fixed at the left of both strips.
 use super::*;
+use crate::style;
+
+/// Presentation class of one cell; never affects copy, AX or edit values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CellKind {
+    Null,
+    Number,
+    Boolean,
+    Text,
+}
+
+/// Declared column types decide when known (table pages). Query results carry
+/// no types, so only plain decimal literals are shown as numbers.
+pub(super) fn cell_kind(value: Option<&str>, cast_type: Option<&str>) -> CellKind {
+    let Some(value) = value else {
+        return CellKind::Null;
+    };
+    match cast_type {
+        Some(cast_type) => {
+            let base = cast_type
+                .split('(')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            match base.as_str() {
+                "smallint" | "integer" | "bigint" | "int" | "int2" | "int4" | "int8"
+                | "numeric" | "decimal" | "real" | "double precision" | "float4" | "float8"
+                | "oid" => CellKind::Number,
+                "boolean" | "bool" => CellKind::Boolean,
+                _ => CellKind::Text,
+            }
+        }
+        None if looks_numeric(value) => CellKind::Number,
+        None => CellKind::Text,
+    }
+}
+
+fn looks_numeric(text: &str) -> bool {
+    if text.is_empty() || text.len() > 40 {
+        return false;
+    }
+    let unsigned = text.strip_prefix('-').unwrap_or(text);
+    let (whole, fraction) = match unsigned.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (unsigned, None),
+    };
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    // "007" and zip-code-like text stay text.
+    digits(whole) && (whole == "0" || !whole.starts_with('0')) && fraction.is_none_or(digits)
+}
+
+/// Fits the largest 1-based row number in the 11 px monospace font.
+pub(super) fn gutter_width(rows: usize) -> f32 {
+    let digits = rows.max(1).ilog10() as f32 + 1.;
+    (digits.max(2.) * 7. + 16.).round()
+}
 
 impl ResultGrid {
+    fn cast_type(&self, source: usize) -> Option<&str> {
+        self.table
+            .as_ref()?
+            .columns
+            .get(source)
+            .map(|column| column.cast_type.as_str())
+    }
     fn header_cell(&self, column: usize, cx: &Context<Self>) -> gpui::AnyElement {
-        let label: SharedString = crate::column_widths::heading(
-            self.column_name(column),
-            self.source_column(column).unwrap_or(column),
-        )
-        .into_owned()
-        .into();
+        let source = self.source_column(column).unwrap_or(column);
+        let label: SharedString = crate::column_widths::heading(self.column_name(column), source)
+            .into_owned()
+            .into();
+        let cast_type = self.cast_type(source).map(str::to_owned);
         div()
             .id(("header", column))
             .role(Role::ColumnHeader)
@@ -19,20 +83,48 @@ impl ResultGrid {
             .w(self.column_width(column))
             .h_full()
             .px_2()
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .overflow_hidden()
+            .whitespace_nowrap()
             .border_r_1()
-            .border_color(crate::style::line())
-            .truncate()
-            .child(label.clone())
-            .when(self.sortable, |header| {
-                header.cursor_pointer().on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |_, event: &MouseDownEvent, _, cx| {
-                        cx.emit(GridEvent::Sort {
-                            column: label.to_string(),
-                            append: event.modifiers.shift,
-                        });
-                    }),
+            .border_color(style::line_soft())
+            .text_color(style::dim())
+            .font_weight(gpui::FontWeight::MEDIUM)
+            .child(
+                div()
+                    .flex_shrink(1.)
+                    .min_w_0()
+                    .truncate()
+                    .child(label.clone()),
+            )
+            .when_some(cast_type, |header, cast_type| {
+                header.child(
+                    div()
+                        .flex_shrink(1.)
+                        .min_w_0()
+                        .truncate()
+                        .font_family(style::MONO)
+                        .font_weight(gpui::FontWeight::NORMAL)
+                        .text_size(px(style::FONT_SMALL))
+                        .text_color(style::faint())
+                        .child(cast_type),
                 )
+            })
+            .when(self.sortable, |header| {
+                header
+                    .cursor_pointer()
+                    .hover(|s| s.bg(style::hover()).text_color(style::text()))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |_, event: &MouseDownEvent, _, cx| {
+                            cx.emit(GridEvent::Sort {
+                                column: label.to_string(),
+                                append: event.modifiers.shift,
+                            });
+                        }),
+                    )
             })
             .into_any_element()
     }
@@ -40,23 +132,42 @@ impl ResultGrid {
         let panes = self.panes();
         let pinned = self.pinned_columns();
         let scrolling = self.scrolling_columns();
+        let gutter = self.gutter();
         div()
             .h(ROW_HEIGHT)
             .w_full()
             .relative()
             .flex_shrink_0()
             .overflow_hidden()
+            .bg(style::panel())
             .border_b_1()
-            .border_color(crate::style::line())
+            .border_color(style::line())
             .child(
                 div()
                     .absolute()
                     .left_0()
                     .top_0()
                     .h_full()
+                    .w(px(gutter))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .border_r_1()
+                    .border_color(style::line_soft())
+                    .font_family(style::MONO)
+                    .text_color(style::faint())
+                    .child("#"),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(gutter))
+                    .top_0()
+                    .h_full()
                     .w(px(panes.pinned_viewport))
                     .overflow_hidden()
-                    .bg(crate::style::bg())
+                    .bg(style::panel())
                     .on_scroll_wheel(cx.listener(Self::scroll_pinned))
                     .child(
                         div()
@@ -71,12 +182,15 @@ impl ResultGrid {
             .child(
                 div()
                     .absolute()
-                    .left(px(panes.pinned_viewport))
+                    .left(px(gutter + panes.pinned_viewport))
                     .top_0()
                     .h_full()
                     .w(px(panes.scrolling_viewport))
                     .overflow_hidden()
-                    .bg(crate::style::bg())
+                    .bg(style::panel())
+                    .when(panes.pinned_viewport > 0., |pane| {
+                        pane.border_l_1().border_color(style::line())
+                    })
                     .child(
                         div()
                             .flex()
@@ -101,6 +215,7 @@ impl ResultGrid {
         let selected = selection
             .as_ref()
             .is_some_and(|(rows, columns)| rows.contains(&row) && columns.contains(&column));
+        let kind = cell_kind(cells[source].as_deref(), self.cast_type(source));
         div()
             .id(("cell", row * self.column_count().max(1) + column))
             .role(Role::Cell)
@@ -113,11 +228,32 @@ impl ResultGrid {
             .w(self.column_width(column))
             .h_full()
             .px_2()
+            .flex()
+            .items_center()
+            .overflow_hidden()
+            .whitespace_nowrap()
             .border_r_1()
-            .border_color(crate::style::hover())
-            .truncate()
-            .when(selected, |cell| cell.bg(gpui::rgb(0x203247)))
-            .child(display_text(&cells[source]))
+            .border_color(style::line_soft())
+            .when(kind == CellKind::Number, |cell| {
+                cell.justify_end().text_color(style::number())
+            })
+            .when(kind == CellKind::Boolean, |cell| {
+                cell.text_color(style::boolean())
+            })
+            .when(kind == CellKind::Null, |cell| {
+                cell.italic().text_color(style::faint())
+            })
+            .when(selected, |cell| {
+                cell.bg(style::select())
+                    .border_1()
+                    .border_color(style::accent())
+            })
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(display_text(&cells[source])),
+            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -137,6 +273,7 @@ impl ResultGrid {
         let scrolling = self.scrolling_columns();
         let selection = self.selection();
         let scroll = self.scroll_left();
+        let gutter = self.gutter();
         rows.filter_map(|row| {
             let cells = self.row(row)?;
             Some(
@@ -144,20 +281,40 @@ impl ResultGrid {
                     .id(("row", row))
                     .role(Role::Row)
                     .aria_row_index(row + 1)
+                    .group("grid-row")
+                    .font_family(style::MONO)
                     .relative()
                     .h(ROW_HEIGHT)
-                    .w(px(panes.content_width))
+                    .w(px(gutter + panes.content_width))
                     .border_b_1()
-                    .border_color(crate::style::hover())
+                    .border_color(style::line_soft())
                     .child(
                         div()
                             .absolute()
                             .left(scroll)
                             .top_0()
                             .h_full()
+                            .w(px(gutter))
+                            .px_2()
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .bg(style::panel())
+                            .border_r_1()
+                            .border_color(style::line_soft())
+                            .text_color(style::faint())
+                            .child((row + 1).to_string()),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(scroll + px(gutter))
+                            .top_0()
+                            .h_full()
                             .w(px(panes.pinned_viewport))
                             .overflow_hidden()
-                            .bg(crate::style::bg())
+                            .bg(style::bg())
+                            .group_hover("grid-row", |s| s.bg(style::row_hover()))
                             .on_scroll_wheel(cx.listener(Self::scroll_pinned))
                             .child(
                                 div()
@@ -174,12 +331,16 @@ impl ResultGrid {
                     .child(
                         div()
                             .absolute()
-                            .left(scroll + px(panes.pinned_viewport))
+                            .left(scroll + px(gutter + panes.pinned_viewport))
                             .top_0()
                             .h_full()
                             .w(px(panes.scrolling_viewport))
                             .overflow_hidden()
-                            .bg(crate::style::bg())
+                            .bg(style::bg())
+                            .group_hover("grid-row", |s| s.bg(style::row_hover()))
+                            .when(panes.pinned_viewport > 0., |pane| {
+                                pane.border_l_1().border_color(style::line())
+                            })
                             .child(
                                 div()
                                     .flex()
@@ -197,5 +358,42 @@ impl ResultGrid {
             )
         })
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn declared_types_win_and_untyped_results_only_promote_plain_decimals() {
+        assert_eq!(cell_kind(None, Some("text")), CellKind::Null);
+        assert_eq!(
+            cell_kind(Some("12.50"), Some("numeric(12,2)")),
+            CellKind::Number
+        );
+        assert_eq!(
+            cell_kind(Some("1"), Some("double precision")),
+            CellKind::Number
+        );
+        assert_eq!(cell_kind(Some("t"), Some("boolean")), CellKind::Boolean);
+        // A numeric-looking value in a text or array column stays text.
+        assert_eq!(cell_kind(Some("42"), Some("text")), CellKind::Text);
+        assert_eq!(cell_kind(Some("{1,2}"), Some("integer[]")), CellKind::Text);
+        for number in ["0", "-7", "1042", "3.25", "0.5"] {
+            assert_eq!(cell_kind(Some(number), None), CellKind::Number, "{number}");
+        }
+        for text in ["", "007", "1.", ".5", "1e3", "12a", "NULL", "-", "1.2.3"] {
+            assert_eq!(cell_kind(Some(text), None), CellKind::Text, "{text}");
+        }
+        // The literal text "NULL" is not a database NULL.
+        assert_eq!(cell_kind(Some("NULL"), Some("text")), CellKind::Text);
+    }
+
+    #[test]
+    fn gutter_grows_with_the_largest_row_number() {
+        assert_eq!(gutter_width(0), gutter_width(99));
+        assert!(gutter_width(1_000) > gutter_width(999));
+        assert!(gutter_width(10_000_000) > gutter_width(1_000));
     }
 }

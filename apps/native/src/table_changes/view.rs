@@ -30,47 +30,52 @@ impl TableChanges {
         if enabled {
             self.visible_buttons.push(focus.clone());
         }
-        div()
-            .id(key)
-            .role(if checked.is_some() {
-                Role::CheckBox
+        let primary = matches!(
+            action,
+            Action::Review | Action::Apply | Action::Confirm | Action::Stage
+        );
+        let icon = match action {
+            Action::Include(_, next) => Some(if next {
+                "icons/circle.svg"
             } else {
-                Role::Button
-            })
-            .aria_label(label.clone())
-            .track_focus(&focus)
-            .tab_index(0)
-            .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-                if let Some(checked) = checked {
-                    builder
-                        .parent_node()
-                        .set_toggled(gpui::accesskit::Toggled::from(checked));
-                }
-            })
-            .on_click(cx.listener(move |this, _, window, cx| {
-                if enabled {
-                    this.activate(action, window, cx);
-                }
-            }))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                if enabled {
-                    let _ = weak.update(cx, |this, cx| this.activate(action, window, cx));
-                }
-            })
-            .child(label)
-            .into_any_element()
+                "icons/check.svg"
+            }),
+            Action::Remove(_) => Some("icons/close.svg"),
+            _ => None,
+        };
+        crate::ui::pressed(
+            crate::ui::tool_button(key, label, icon, enabled, primary),
+            checked.unwrap_or(false),
+        )
+        .role(if checked.is_some() {
+            Role::CheckBox
+        } else {
+            Role::Button
+        })
+        .track_focus(&focus)
+        .tab_index(0)
+        .tab_stop(enabled)
+        .a11y_synthetic_children(move |builder| {
+            if !enabled {
+                builder.parent_node().set_disabled();
+            }
+            if let Some(checked) = checked {
+                builder
+                    .parent_node()
+                    .set_toggled(gpui::accesskit::Toggled::from(checked));
+            }
+        })
+        .on_click(cx.listener(move |this, _, window, cx| {
+            if enabled {
+                this.activate(action, window, cx);
+            }
+        }))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            if enabled {
+                let _ = weak.update(cx, |this, cx| this.activate(action, window, cx));
+            }
+        })
+        .into_any_element()
     }
     pub fn focus_handles(&self, cx: &App) -> Vec<FocusHandle> {
         self.edit_handles(cx, false)
@@ -124,6 +129,11 @@ impl Render for TableChanges {
             }))
             .flex()
             .flex_col()
+            .flex_shrink_0()
+            .gap(px(2.))
+            .py_1()
+            .text_sm()
+            .bg(crate::style::panel())
             .border_t_1()
             .border_color(crate::style::line());
         if pending {
@@ -135,7 +145,7 @@ impl Render for TableChanges {
             ));
         }
         if self.is_query() {
-            content = content.child(div().px_2().text_sm().child(
+            content = content.child(div().px_2().text_color(crate::style::dim()).child(
                 "Result edits commit separately from the SQL transaction. Apply never reruns the query."
             ));
         }
@@ -153,12 +163,14 @@ impl Render for TableChanges {
                 .aria_label("Virtual key")
                 .flex()
                 .flex_col()
+                .gap(px(2.))
                 .px_2()
                 .child(
                     div()
                         .id("virtual-key-current")
                         .role(Role::Label)
                         .aria_label(summary.clone())
+                        .text_color(crate::style::dim())
                         .child(summary),
                 );
             if self.key.editing {
@@ -179,6 +191,7 @@ impl Render for TableChanges {
                 let choices = div()
                     .flex()
                     .flex_wrap()
+                    .gap(px(4.))
                     .child(self.button(
                         &format!("Key column: {}", selected.as_deref().unwrap_or("none")),
                         Action::KeyColumn,
@@ -209,6 +222,7 @@ impl Render for TableChanges {
                     div()
                         .flex()
                         .flex_wrap()
+                        .gap(px(4.))
                         .child(self.button(
                             "Save virtual key",
                             Action::KeySave,
@@ -229,6 +243,7 @@ impl Render for TableChanges {
                     div()
                         .flex()
                         .flex_wrap()
+                        .gap(px(4.))
                         .child(self.button(
                             "Choose virtual key",
                             Action::KeyEdit,
@@ -286,20 +301,31 @@ impl Render for TableChanges {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .p_2()
+                        .px_2()
+                        .py_1()
                         .child(
-                            edit.column
-                                .clone()
-                                .unwrap_or_else(|| "Insert JSON object".into()),
+                            div()
+                                .font_family(crate::style::MONO)
+                                .text_color(crate::style::dim())
+                                .child(
+                                    edit.column
+                                        .clone()
+                                        .unwrap_or_else(|| "Insert JSON object".into()),
+                                ),
                         )
                         .child(
                             div()
                                 .h(px(if edit.kind.is_some() || edit.row.is_none() {
                                     120.
                                 } else {
-                                    28.
+                                    24.
                                 }))
                                 .flex_1()
+                                .px_1()
+                                .rounded(px(4.))
+                                .border_1()
+                                .border_color(crate::style::line())
+                                .bg(crate::style::bg())
                                 .child(edit.accessible.clone()),
                         ),
                 );
@@ -308,6 +334,9 @@ impl Render for TableChanges {
             let cell = self.edit.as_ref().unwrap().row.is_some();
             let mut buttons = div()
                 .flex()
+                .flex_wrap()
+                .gap(px(4.))
+                .px_2()
                 .child(self.button("Stage change", Action::Stage, !pending, cx))
                 .child(self.button("Cancel edit", Action::CancelEdit, !pending, cx));
             if matches!(
@@ -421,14 +450,23 @@ impl Render for TableChanges {
                     div()
                         .flex()
                         .items_center()
+                        .gap(px(4.))
                         .px_2()
+                        .h(px(crate::style::ROW + 2.))
                         .child(self.button(
                             &format!("Include change {}", index + 1),
                             Action::Include(id, !included),
                             selectable,
                             cx,
                         ))
-                        .child(div().flex_1().child(text))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(crate::style::MONO)
+                                .child(text),
+                        )
                         .child(self.button(
                             &format!("Remove change {}", index + 1),
                             Action::Remove(id),
@@ -447,6 +485,8 @@ impl Render for TableChanges {
             let mut buttons = div()
                 .flex()
                 .flex_wrap()
+                .gap(px(4.))
+                .px_2()
                 .child(self.button("Review changes", Action::Review, !pending && !unknown, cx))
                 .child(self.button(
                     "Discard changes",
@@ -512,7 +552,9 @@ impl Render for TableChanges {
                                     .id(("review-statement", index))
                                     .role(Role::Label)
                                     .aria_label(text.clone())
-                                    .p_2()
+                                    .px_2()
+                                    .py_1()
+                                    .font_family(crate::style::MONO)
                                     .child(text)
                             },
                         )),
@@ -543,6 +585,7 @@ impl Render for TableChanges {
                         .set_live(gpui::accesskit::Live::Polite)
                 })
                 .px_2()
+                .text_color(crate::style::dim())
                 .child(self.message.clone()),
         )
     }

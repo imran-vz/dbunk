@@ -89,6 +89,7 @@ mod table_seed_view;
 mod table_structure_model;
 mod table_structure_view;
 mod table_view;
+mod ui;
 mod value_inspector;
 #[cfg(feature = "fixture-verification")]
 mod verification;

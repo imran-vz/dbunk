@@ -52,6 +52,10 @@ impl State {
     pub(super) fn running(&self) -> bool {
         self.control.is_some()
     }
+    /// Current form revision; input edits advance it.
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
+    }
     fn admit(&mut self) -> Result<(), &'static str> {
         self.report = None;
         self.lease = None;
@@ -111,6 +115,10 @@ impl Form {
         let Kind::Connection { id } = &self.kind else {
             return;
         };
+        if self.engine != super::engine::Engine::Postgres {
+            self.test_engine_connection(cx);
+            return;
+        }
         let id = id.clone();
         let form = match self.connection_input(cx) {
             Ok(form) => form,

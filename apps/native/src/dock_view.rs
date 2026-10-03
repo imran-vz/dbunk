@@ -4,7 +4,7 @@
 use crate::console_model::{Console, Entry, Severity};
 use gpui::{
     Context, EventEmitter, FocusHandle, Focusable, Role, SharedString, UniformListScrollHandle,
-    Window, div, prelude::*, px, rgb, uniform_list,
+    Window, div, prelude::*, px, uniform_list,
 };
 
 pub struct DockClosed;
@@ -129,26 +129,13 @@ impl Render for DockView {
                     _ => false,
                 };
                 let weak = cx.entity().downgrade();
-                div()
-                    .id(("dock-action", index))
-                    .role(Role::Button)
-                    .aria_label(*label)
+                crate::ui::segment(("dock-action", index), *label, selected, true)
                     .when(
                         matches!(action, Action::Filter(_) | Action::Follow),
                         |button| button.aria_selected(selected),
                     )
                     .track_focus(&self.buttons[index])
                     .tab_index(0)
-                    .px_2()
-                    .text_xs()
-                    .border_b_1()
-                    .border_color(if selected {
-                        crate::style::text()
-                    } else {
-                        crate::style::line()
-                    })
-                    .focus(|style| style.bg(crate::style::hover()))
-                    .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
                     .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
                         weak.update(cx, |this, cx| this.activate(action, cx)).ok();
@@ -165,11 +152,27 @@ impl Render for DockView {
             .flex_col()
             .border_t_1()
             .border_color(crate::style::line())
+            .bg(crate::style::bg())
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(div().px_2().text_sm().child("Console"))
+                crate::ui::segmented()
+                    .bg(crate::style::panel())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .px_1()
+                            .text_color(crate::style::text())
+                            .child(
+                                gpui::svg()
+                                    .path("icons/terminal.svg")
+                                    .size(px(crate::style::ICON))
+                                    .text_color(crate::style::dim()),
+                            )
+                            .child("Console")
+                            .child(crate::ui::badge(count.to_string())),
+                    )
+                    .child(crate::ui::separator())
                     .children(buttons),
             )
             .child(
@@ -193,15 +196,18 @@ impl Render for DockView {
                                             .id(("console-row", index))
                                             .role(Role::ListItem)
                                             .aria_label(label)
-                                            .h(px(20.))
+                                            .h(px(crate::style::ROW))
                                             .px_2()
-                                            .text_xs()
+                                            .flex()
+                                            .items_center()
+                                            .font_family(crate::style::MONO)
+                                            .text_size(px(crate::style::FONT_SMALL))
                                             .overflow_hidden()
                                             .whitespace_nowrap()
                                             .text_color(match severity {
                                                 Severity::Info => crate::style::dim(),
                                                 Severity::Warning => crate::style::warn(),
-                                                Severity::Error => rgb(0xf87171),
+                                                Severity::Error => crate::style::bad(),
                                             })
                                             .child(text)
                                     })

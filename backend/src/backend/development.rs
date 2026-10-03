@@ -12,9 +12,11 @@ mod probe_credentials_tests;
 mod settings;
 mod workspace;
 pub use connections::{
-    DevelopmentConnection, DevelopmentConnectionFailure, DevelopmentConnectionOrganization,
-    DevelopmentConnectionTest, DevelopmentDriverOptions, DevelopmentEnvironment,
-    DevelopmentPostgresConnection, DevelopmentSafeMode, DevelopmentSshTunnel, DevelopmentTlsMode,
+    DevelopmentClickHouseConnection, DevelopmentConnection, DevelopmentConnectionFailure,
+    DevelopmentConnectionOrganization, DevelopmentConnectionTest, DevelopmentDriverOptions,
+    DevelopmentEndpoint, DevelopmentEngineConnection, DevelopmentEnvironment,
+    DevelopmentMySqlConnection, DevelopmentPostgresConnection, DevelopmentRedisConnection,
+    DevelopmentSafeMode, DevelopmentSqliteConnection, DevelopmentSshTunnel, DevelopmentTlsMode,
     DevelopmentTlsOptions,
 };
 pub use settings::{DevelopmentCredentialState, DevelopmentSettings, DevelopmentStorageMode};
@@ -157,6 +159,8 @@ struct Marker {
 
 pub(super) enum EndpointCapability {
     OwnedFixtures(Box<DevelopmentFixtures>),
+    /// General profiles (marker kind `general-postgres`, kept for on-disk
+    /// compatibility) admit every engine within supported field limits.
     GeneralPostgres,
 }
 

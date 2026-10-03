@@ -9,7 +9,7 @@ use std::{cell::Cell, rc::Rc};
 
 const VALUE_BYTES: usize = 1024 * 1024;
 const WORKSPACE_BYTES: usize = 128 * 1024 * 1024;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
     Text,
     Json,
@@ -27,6 +27,8 @@ pub struct Inspection {
     column: String,
     value: Option<String>,
     derived: Option<String>,
+    /// The view `derived` holds; presentation only.
+    view: View,
     disclosure: String,
     budget: Rc<Cell<usize>>,
     bytes: usize,
@@ -54,6 +56,7 @@ impl Inspection {
             column,
             value: value.clone(),
             derived: None,
+            view: View::Text,
             disclosure: if partial {
                 "Retained value only; source is partial".into()
             } else {
@@ -62,6 +65,9 @@ impl Inspection {
             budget,
             bytes,
         })
+    }
+    fn view(&self) -> View {
+        self.view
     }
     fn display(&self) -> &str {
         match (&self.value, &self.derived) {
@@ -100,6 +106,7 @@ impl Inspection {
         self.budget.set(remaining + bytes);
         self.bytes = bytes;
         self.derived = derived;
+        self.view = view;
         Ok(status)
     }
 }
@@ -162,10 +169,18 @@ impl ValueInspector {
     ) -> impl IntoElement {
         let enabled = !matches!(action, Action::Copy) || self.data.value.is_some();
         let weak = cx.weak_entity();
-        div()
-            .id(("inspect-action", index))
-            .role(Role::Button)
-            .aria_label(label)
+        let selected = matches!(action, Action::View(view) if self.data.view() == view);
+        let icon = match action {
+            Action::Copy => Some("icons/copy.svg"),
+            Action::Close => Some("icons/close.svg"),
+            _ => None,
+        };
+        let button = if matches!(action, Action::View(_)) {
+            crate::ui::segment(("inspect-action", index), label, selected, enabled)
+        } else {
+            crate::ui::tool_button(("inspect-action", index), label, icon, enabled, false)
+        };
+        button
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
@@ -174,10 +189,6 @@ impl ValueInspector {
                     builder.parent_node().set_disabled();
                 }
             })
-            .px_2()
-            .py_1()
-            .focus(|style| style.bg(crate::style::hover()))
-            .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
                 if enabled {
                     this.activate(action, cx);
@@ -240,14 +251,21 @@ impl Render for ValueInspector {
             .border_color(crate::style::line())
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_sm()
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(self.data.column.clone())
+                crate::ui::segmented()
+                    .child(
+                        div()
+                            .px_1()
+                            .font_family(crate::style::MONO)
+                            .text_color(crate::style::text())
+                            .child(self.data.column.clone()),
+                    )
+                    .child(crate::ui::separator())
                     .child(self.button(0, "Text", Action::View(View::Text), cx))
                     .child(self.button(1, "JSON", Action::View(View::Json), cx))
                     .child(self.button(2, "Hex", Action::View(View::Hex), cx))
+                    .child(crate::ui::grow())
                     .child(self.button(3, "Copy value", Action::Copy, cx))
                     .child(self.button(4, "Close inspector", Action::Close, cx)),
             )
@@ -259,15 +277,22 @@ impl Render for ValueInspector {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .p_2()
+                    .px_2()
+                    .py_1()
+                    .font_family(crate::style::MONO)
+                    .when(self.data.value.is_none(), |value| {
+                        value.italic().text_color(crate::style::faint())
+                    })
                     .child(self.data.display().to_owned()),
             )
             .child(
-                div()
-                    .id("inspection-status")
-                    .role(Role::Label)
-                    .aria_label(self.status.clone())
-                    .child(self.status.clone()),
+                crate::ui::status_line().child(
+                    div()
+                        .id("inspection-status")
+                        .role(Role::Label)
+                        .aria_label(self.status.clone())
+                        .child(self.status.clone()),
+                ),
             )
     }
 }

@@ -237,6 +237,10 @@ impl TableChanges {
             .or_else(|| self.draft.as_ref().map(MutationDraft::snapshot))
             .filter(|draft| !draft.changes.is_empty())
     }
+    /// Staged operations, for the table footer.
+    pub fn staged_len(&self) -> usize {
+        self.draft.as_ref().map_or(0, MutationDraft::len)
+    }
     pub fn navigation_blocked(&self) -> bool {
         self.pending() || self.edit.is_some() || self.key.editing
     }

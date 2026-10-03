@@ -183,7 +183,7 @@ impl Backend {
                     return Err(CompareError::Unavailable);
                 }
                 for endpoint in [&request.source, &request.target] {
-                    super::super::admit_connection(
+                    super::super::admit_postgres_connection(
                         &state,
                         inner.development.as_deref(),
                         &endpoint.connection_id,

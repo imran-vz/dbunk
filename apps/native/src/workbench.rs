@@ -17,7 +17,7 @@ use editor::{Editor, EditorEvent};
 use gpui::accesskit::{Action, Live};
 use gpui::{
     Context, Entity, FocusHandle, Focusable, KeyDownEvent, Role, SharedString, Subscription, Task,
-    Window, actions, div, prelude::*, px, rgb,
+    Window, actions, div, prelude::*, px,
 };
 use language::Buffer;
 use multi_buffer::MultiBufferOffset;
@@ -1737,10 +1737,40 @@ impl Workbench {
             Control::Result(_) => Role::Tab,
             _ => Role::Button,
         };
-        div()
-            .id(SharedString::from(format!("{control:?}")))
+        let icon = match control {
+            Control::Run => Some("icons/play_filled.svg"),
+            Control::Script => Some("icons/play_outlined.svg"),
+            Control::Stop => Some("icons/stop.svg"),
+            Control::Explain(_) => Some("icons/list_tree.svg"),
+            Control::Reconnect => Some("icons/rotate_cw.svg"),
+            _ => None,
+        };
+        let shortcut = match control {
+            Control::Run => Some(("⌘↵", "Command+Enter")),
+            Control::Script => Some(("⇧⌘↵", "Shift+Command+Enter")),
+            Control::Stop => Some(("⌘.", "Command+Period")),
+            _ => None,
+        };
+        let id = SharedString::from(format!("{control:?}"));
+        let button = if matches!(
+            control,
+            Control::Result(_) | Control::Notices | Control::Plan
+        ) {
+            crate::ui::segment(id, label, selected, enabled)
+        } else {
+            crate::ui::pressed(
+                crate::ui::tool_button(
+                    id,
+                    label,
+                    icon,
+                    enabled,
+                    matches!(control, Control::Run | Control::ConfirmQuery),
+                ),
+                selected,
+            )
+        };
+        button
             .role(role)
-            .aria_label(label.clone())
             .when(
                 matches!(
                     control,
@@ -1755,25 +1785,15 @@ impl Workbench {
             .when(matches!(control, Control::Result(_)), |button| {
                 button.aria_selected(selected)
             })
+            .when_some(shortcut, |button, (keys, spoken)| {
+                button
+                    .aria_keyshortcuts(spoken)
+                    .child(crate::ui::shortcut(keys))
+            })
             .key_context("NativeToolbar")
             .track_focus(&focus)
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(if selected {
-                crate::style::text()
-            } else {
-                crate::style::line()
-            })
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .text_sm()
-            .focus(|style| style.border_color(rgb(0xa9d8c5)))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -1790,7 +1810,6 @@ impl Workbench {
                     this.activate(control, window, cx);
                 }
             }))
-            .child(label)
     }
 }
 impl Render for Workbench {
@@ -1848,17 +1867,14 @@ impl Render for Workbench {
             .flex()
             .flex_col()
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .h(px(28.))
-                    .flex_shrink_0()
-                    .px_2()
-                    .child(if self.document.is_some() {
-                        "SQL"
-                    } else {
-                        "Query 1"
-                    })
+                crate::ui::segmented()
+                    .child(div().px(px(2.)).text_color(crate::style::faint()).child(
+                        if self.document.is_some() {
+                            "SQL"
+                        } else {
+                            "Query 1"
+                        },
+                    ))
                     .when(self.layout == Layout::ResultsFirst, |pane| {
                         pane.child(self.button(
                             if self.expanded {
@@ -1951,11 +1967,17 @@ impl Render for Workbench {
                         .flex_shrink_0()
                         .max_h(px(180.))
                         .overflow_y_scroll()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .gap_1()
                         .border_l_2()
                         .border_b_1()
-                        .border_color(rgb(0xf87171))
-                        .p_2()
-                        .child(div().text_color(rgb(0xf87171)).child(
+                        .border_color(crate::style::bad())
+                        .px_2()
+                        .py_1()
+                        .text_sm()
+                        .child(div().text_color(crate::style::bad()).child(
                             failure.code.as_ref().map_or("Query failed".into(), |code| {
                                 format!("Query failed · {code}")
                             }),
@@ -1973,7 +1995,8 @@ impl Render for Workbench {
                                     .id("query-failure-location")
                                     .role(Role::Label)
                                     .aria_label(location.clone())
-                                    .text_sm()
+                                    .font_family(crate::style::MONO)
+                                    .text_color(crate::style::dim())
                                     .child(location),
                             )
                         })
@@ -1988,13 +2011,10 @@ impl Render for Workbench {
                 )
             })
             .child(
-                div()
+                crate::ui::segmented()
                     .id("result-tabs")
                     .overflow_x_scroll()
-                    .flex()
-                    .gap_2()
-                    .p_1()
-                    .flex_shrink_0()
+                    .flex_nowrap()
                     .children(tabs)
                     .when(self.plan.is_some(), |pane| {
                         pane.child(self.button(
@@ -2026,7 +2046,10 @@ impl Render for Workbench {
                     .when(self.show_plan, |pane| pane.children(self.plan.clone()))
                     .when(self.show_notices, |pane| {
                         pane.overflow_y_scroll()
-                            .p_2()
+                            .px_2()
+                            .py_1()
+                            .text_sm()
+                            .font_family(crate::style::MONO)
                             .role(Role::Group)
                             .aria_label("Query notices")
                             .children(notices.into_iter().enumerate().map(|(index, notice)| {
@@ -2048,7 +2071,10 @@ impl Render for Workbench {
                         .overflow_y_scroll()
                         .text_sm()
                         .px_2()
-                        .text_color(rgb(0xefd592))
+                        .py_1()
+                        .border_t_1()
+                        .border_color(crate::style::line_soft())
+                        .text_color(crate::style::warn())
                         .children(diagnostics.into_iter().enumerate().map(|(index, message)| {
                             div()
                                 .id(("query-diagnostic", index))
@@ -2127,55 +2153,17 @@ impl Render for Workbench {
                 element
             })
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_2()
-                    .p_2()
-                    .flex_shrink_0()
-                    .border_b_1()
-                    .border_color(crate::style::line())
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(180.))
-                            .text_sm()
-                            .child(if self.document.is_some() { "PostgreSQL" } else { "dbunk_demo · 127.0.0.1:15432" }),
-                    )
-                    .child("Layout")
-                    .child(self.button(
-                        "Stacked",
-                        Control::Layout(Layout::Stacked),
-                        4,
-                        !self.closing,
-                        self.layout == Layout::Stacked,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "Side by side",
-                        Control::Layout(Layout::SideBySide),
-                        5,
-                        !self.closing,
-                        self.layout == Layout::SideBySide,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "Results first",
-                        Control::Layout(Layout::ResultsFirst),
-                        6,
-                        !self.closing,
-                        self.layout == Layout::ResultsFirst,
-                        cx,
-                    ))
-                    .child(self.button("Edit selected cell", Control::EditCell, 24, self.can_edit_query_cell(cx), false, cx))
+                crate::ui::toolbar()
                     .child(self.button("Run", Control::Run, 0, can_run, false, cx))
                     .child(self.button("Run script", Control::Script, 1, can_run, false, cx))
                     .child(self.button("Stop", Control::Stop, 2, can_stop, false, cx))
                     .when(self.document.is_some(), |toolbar| toolbar
-                        .child(self.button("Bindings", Control::Bindings, 20, !self.closing, self.show_parameters, cx))
+                        .child(crate::ui::separator())
                         .child(self.button("Explain draft", Control::Explain(false), 21, !self.closing, false, cx))
-                        .child(self.button("Analyze draft", Control::Explain(true), 22, !self.closing, false, cx)))
+                        .child(self.button("Analyze draft", Control::Explain(true), 22, !self.closing, false, cx))
+                        .child(self.button("Bindings", Control::Bindings, 20, !self.closing, self.show_parameters, cx)))
+                    .child(crate::ui::separator())
+                    .child(self.button("Edit selected cell", Control::EditCell, 24, self.can_edit_query_cell(cx), false, cx))
                     .when(!self.connected, |toolbar| {
                         toolbar.child(self.button(
                             if self.document.is_some() { "Connect" } else { "Reconnect" },
@@ -2185,29 +2173,68 @@ impl Render for Workbench {
                             false,
                             cx,
                         ))
-                    }),
-            )
-            .child(
-                div().text_sm().px_2().py_1().flex_shrink_0()
-                    .child("F8: controls · Tab: next control · Enter: activate · Escape: return · F6: SQL / results")
+                    })
+                    .child(crate::ui::grow())
+                    .child(
+                        div()
+                            .id("layout-choices")
+                            .role(Role::RadioGroup)
+                            .aria_label("Layout")
+                            .flex()
+                            .items_center()
+                            .gap(px(2.))
+                            .child(self.button(
+                                "Stacked",
+                                Control::Layout(Layout::Stacked),
+                                4,
+                                !self.closing,
+                                self.layout == Layout::Stacked,
+                                cx,
+                            ))
+                            .child(self.button(
+                                "Side by side",
+                                Control::Layout(Layout::SideBySide),
+                                5,
+                                !self.closing,
+                                self.layout == Layout::SideBySide,
+                                cx,
+                            ))
+                            .child(self.button(
+                                "Results first",
+                                Control::Layout(Layout::ResultsFirst),
+                                6,
+                                !self.closing,
+                                self.layout == Layout::ResultsFirst,
+                                cx,
+                            )),
+                    )
+                    .child(crate::ui::separator())
+                    .child(crate::ui::crumbs(
+                        "",
+                        if self.document.is_some() { "PostgreSQL" } else { "dbunk_demo · 127.0.0.1:15432" },
+                    )),
             )
             .when(self.document.is_some() && self.show_parameters, |pane| pane.child(self.parameters.clone()))
             .when_some(self.review.as_ref(), |pane, review| {
                 let reviewed_sql = review.sql.clone();
                 pane.child(
                     div().id("query-confirmation").role(Role::Group).aria_label("Safe Mode query review")
-                        .flex().flex_col().flex_shrink_0().p_2().gap_2().border_b_1().border_color(crate::style::line())
+                        .flex().flex_col().flex_shrink_0().px_2().py_1().gap_1().text_sm()
+                        .bg(crate::style::panel()).border_b_1().border_l_2().border_color(crate::style::warn())
                         .child(div().id("query-confirmation-announcement").role(Role::Alert)
                             .aria_label("Safe Mode requires confirmation. Review the exact SQL, then confirm or cancel. Query has not run.")
+                            .flex().items_center().gap(px(6.)).text_color(crate::style::warn())
+                            .child(gpui::svg().path("icons/warning.svg").size(px(crate::style::ICON)).flex_none().text_color(crate::style::warn()))
                             .child("Safe Mode requires confirmation"))
-                        .child(review.classification.clone())
+                        .child(div().text_color(crate::style::dim()).child(review.classification.clone()))
                         .child(div().id("query-review-bindings").role(Role::Document).aria_label("Bound parameters and row limit")
                             .a11y_synthetic_children({ let value = review.bindings.clone(); move |builder| { builder.parent_node().set_value(value.clone()); } })
-                            .max_h(px(120.)).overflow_y_scroll().text_sm().child(review.bindings.clone()))
+                            .max_h(px(120.)).overflow_y_scroll().font_family(crate::style::MONO).text_color(crate::style::dim()).child(review.bindings.clone()))
                         .child(div().id("query-review-sql").role(Role::Document).aria_label("SQL requiring confirmation")
                             .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(reviewed_sql.clone()); })
-                            .max_h(px(160.)).overflow_y_scroll().text_sm().child(review.sql.clone()))
-                        .child(div().flex().gap_2()
+                            .max_h(px(160.)).overflow_y_scroll().p_1().rounded(px(4.)).bg(crate::style::bg())
+                            .border_1().border_color(crate::style::line_soft()).font_family(crate::style::MONO).child(review.sql.clone()))
+                        .child(div().flex().gap(px(4.))
                             .child(self.button("Cancel review", Control::CancelReview, 18, !self.closing, false, cx))
                             .child(self.button("Confirm and run", Control::ConfirmQuery, 19, !self.closing, false, cx)))
                 )
@@ -2235,40 +2262,45 @@ impl Render for Workbench {
             .when(self.document.is_some(), |pane| {
                 let transaction_label = self.transaction_label();
                 pane.child(div().id("transaction-controls").role(Role::Group).aria_label("Transaction controls")
-                    .flex().flex_col().flex_shrink_0().border_t_1().border_color(crate::style::line()).p_2().gap_2()
-                    .child(div().id("transaction-state").role(Role::Status).aria_label("Transaction state")
-                        .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(transaction_label.clone()); })
-                        .text_sm().child(self.transaction_label()))
-                    .child(div().flex().flex_wrap().gap_2().children(Self::transaction_controls().into_iter().map(|(label, control, index)| {
-                        let selected = self.transaction.as_ref().is_some_and(|snapshot| match control {
-                            TransactionControl::Mode(mode) => snapshot.mode == mode,
-                            TransactionControl::Isolation(isolation) => snapshot.manual_isolation == isolation,
-                            _ => false,
-                        });
-                        self.button(label, Control::Transaction(control), index, self.can_control_transaction(control), selected, cx)
-                    })))
+                    .flex().flex_col().flex_shrink_0().border_t_1().border_color(crate::style::line_soft())
+                    .child(crate::ui::toolbar().border_b_0()
+                        .child(div().id("transaction-state").role(Role::Status).aria_label("Transaction state")
+                            .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(transaction_label.clone()); })
+                            .pr_1().text_color(crate::style::text()).child(self.transaction_label()))
+                        .children(Self::transaction_controls().into_iter().flat_map(|(label, control, index)| {
+                            let selected = self.transaction.as_ref().is_some_and(|snapshot| match control {
+                                TransactionControl::Mode(mode) => snapshot.mode == mode,
+                                TransactionControl::Isolation(isolation) => snapshot.manual_isolation == isolation,
+                                _ => false,
+                            });
+                            let separator = matches!(index, 10 | 12 | 15).then(|| crate::ui::separator().into_any_element());
+                            separator.into_iter().chain([self.button(label, Control::Transaction(control), index, self.can_control_transaction(control), selected, cx).into_any_element()])
+                        })))
                     .when_some(self.transaction_error.as_ref(), |footer, message| {
-                        footer.child(div().id("transaction-error").role(Role::Alert).aria_label(message.clone()).text_sm().child(message.clone()))
+                        footer.child(div().id("transaction-error").role(Role::Alert).aria_label(message.clone()).px_2().pb_1().text_sm().text_color(crate::style::bad()).child(message.clone()))
                     }))
             })
-            .when_some(self.query_changes.unavailable.clone(), |content, reason| content.child(div().id("query-editing-unavailable").role(Role::Status).aria_label(reason.clone()).px_2().text_sm().child(reason)))
-            .when_some(self.completion.as_ref().map(|completion| completion.status()), |content, status| content.child(div().id("sql-completion-status").role(Role::Status).aria_label(status.clone()).px_2().text_sm().child(status)))
+            .when_some(self.query_changes.unavailable.clone(), |content, reason| content.child(div().id("query-editing-unavailable").role(Role::Status).aria_label(reason.clone()).px_2().py_1().text_sm().text_color(crate::style::dim()).border_t_1().border_color(crate::style::line_soft()).child(reason)))
+            .when_some(self.completion.as_ref().map(|completion| completion.status()), |content, status| content.child(div().id("sql-completion-status").role(Role::Status).aria_label(status.clone()).px_2().py_1().text_sm().text_color(crate::style::dim()).border_t_1().border_color(crate::style::line_soft()).child(status)))
             .when_some(self.query_changes.view.clone(), |content, changes| content.child(div().id("query-change-scroll").max_h(px(260.)).overflow_y_scroll().child(changes)))
             .child(
-                div()
-                    .id("query-status")
-                    .role(Role::Status)
-                    .aria_label("Query status")
-                    .a11y_synthetic_children(move |builder| {
-                        builder.parent_node().set_value(status.clone())
-                    })
-                    .px_2()
-                    .py_1()
-                    .border_t_1()
-                    .border_color(crate::style::line())
-                    .flex_shrink_0()
-                    .text_sm()
-                    .child(self.status.clone()),
+                crate::ui::status_line()
+                    .child(
+                        div()
+                            .id("query-status")
+                            .role(Role::Status)
+                            .aria_label("Query status")
+                            .a11y_synthetic_children(move |builder| {
+                                builder.parent_node().set_value(status.clone())
+                            })
+                            .min_w_0()
+                            .text_color(crate::style::dim())
+                            .child(self.status.clone()),
+                    )
+                    .child(crate::ui::grow())
+                    .child(
+                        "F8 controls · Tab next · Enter activate · Esc return · F6 SQL / results",
+                    ),
             )
     }
 }

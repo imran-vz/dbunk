@@ -21,6 +21,7 @@ fn record(id: &str) -> DevelopmentConnection {
             ssh_tunnel: None,
         }),
         environment: Default::default(),
+        settings: None,
     }
 }
 #[test]
@@ -30,6 +31,29 @@ fn identity_and_supported_dispatch_are_exact() {
     assert!(editable_connection(&records, "gone").is_none());
     records[1].postgres = None;
     assert!(editable_connection(&records, "two").is_none());
+    // Plan 031: a supported non-PostgreSQL record edits through its settings.
+    records[1].engine = "SQLite".into();
+    records[1].settings = Some(DevelopmentEngineConnection::SQLite(
+        DevelopmentSqliteConnection {
+            name: "file".into(),
+            path: "/data/app.db".into(),
+            environment: Default::default(),
+            safe_mode: Default::default(),
+            read_only: false,
+        },
+    ));
+    assert_eq!(editable_connection(&records, "two").unwrap().id, "two");
+    let capture = Capture::new(&records[1], "two", Rc::default()).unwrap();
+    assert!(capture.editable());
+    assert!(
+        (0..capture.count())
+            .any(|i| capture.details(i).as_deref() == Some("Database\n/data/app.db"))
+    );
+    records[1].engine = "Redis".into();
+    assert!(
+        editable_connection(&records, "two").is_none(),
+        "engine mismatch"
+    );
     assert!(Capture::new(&records[0], "two", Rc::default()).is_err());
 }
 #[test]

@@ -363,39 +363,36 @@ impl BrowseControls {
             self.tab_order.push(focus.clone());
         }
         let weak = cx.weak_entity();
-        div()
-            .id(id)
-            .role(Role::Button)
-            .aria_label(label.clone())
-            .track_focus(&focus)
-            .tab_index(0)
-            .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .child(label)
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
-            .on_click(cx.listener(move |this, _, window, cx| {
-                if enabled {
-                    this.action(action, window, cx);
-                }
-            }))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                if enabled {
-                    weak.update(cx, |this, cx| this.action(action, window, cx))
-                        .ok();
-                }
-            })
-            .into_any_element()
+        let icon = match action {
+            Action::Apply => Some("icons/filter.svg"),
+            Action::AddSort => Some("icons/arrow_down.svg"),
+            Action::Remove(_) | Action::RemoveSort(_) => Some("icons/close.svg"),
+            _ => None,
+        };
+        let selected = match action {
+            Action::Mode(mode) => self.state.filter_mode == mode,
+            Action::Inspect => self.inspect,
+            _ => false,
+        };
+        crate::ui::pressed(
+            crate::ui::tool_button(id, label, icon, enabled, false),
+            selected,
+        )
+        .track_focus(&focus)
+        .tab_index(0)
+        .tab_stop(enabled)
+        .on_click(cx.listener(move |this, _, window, cx| {
+            if enabled {
+                this.action(action, window, cx);
+            }
+        }))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            if enabled {
+                weak.update(cx, |this, cx| this.action(action, window, cx))
+                    .ok();
+            }
+        })
+        .into_any_element()
     }
 }
 impl Render for BrowseControls {
@@ -406,10 +403,13 @@ impl Render for BrowseControls {
                 .update(cx, |editor, cx| editor.set_text(raw, window, cx));
         }
         self.tab_order.clear();
-        let mut controls = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
+        let mut controls = crate::ui::toolbar()
+            .child(
+                div()
+                    .pr_1()
+                    .text_color(crate::style::faint())
+                    .child("Filter"),
+            )
             .child(self.button(
                 "browse-typed",
                 "Typed",
@@ -427,9 +427,10 @@ impl Render for BrowseControls {
         if self.state.filter_mode == FilterMode::Raw {
             self.tab_order.push(self.raw.editor.focus_handle(cx));
             controls = controls.child(
-                div()
+                crate::ui::field()
                     .min_w(px(250.))
                     .flex_1()
+                    .font_family(crate::style::MONO)
                     .child(self.raw.accessible.clone()),
             );
         } else {
@@ -456,7 +457,11 @@ impl Render for BrowseControls {
                 ));
             if self.operator < 11 {
                 self.tab_order.push(self.value.editor.focus_handle(cx));
-                controls = controls.child(div().w(px(220.)).child(self.value.accessible.clone()));
+                controls = controls.child(
+                    crate::ui::field()
+                        .w(px(220.))
+                        .child(self.value.accessible.clone()),
+                );
             }
         }
         controls = controls
@@ -479,12 +484,15 @@ impl Render for BrowseControls {
             .max_h(px(110.))
             .overflow_y_scroll()
             .flex()
-            .flex_col();
+            .flex_col()
+            .px_2()
+            .font_family(crate::style::MONO);
         for (index, filter) in self.state.typed_filters.clone().iter().enumerate() {
             active = active.child(
                 div()
                     .flex()
                     .items_center()
+                    .gap(px(4.))
                     .id(("active-filter", index))
                     .role(Role::Group)
                     .aria_label(filter_summary(filter))
@@ -503,6 +511,7 @@ impl Render for BrowseControls {
                 div()
                     .flex()
                     .items_center()
+                    .gap(px(4.))
                     .id(("active-sort", index))
                     .role(Role::Group)
                     .aria_label(format!("Sort {}: {}", index + 1, sort.column))
@@ -530,10 +539,8 @@ impl Render for BrowseControls {
                     )),
             );
         }
-        let mut history = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
+        let mut history = crate::ui::toolbar()
+            .border_b_0()
             .child(self.button(
                 "browse-add-sort",
                 "Add sort on column",
@@ -585,7 +592,11 @@ impl Render for BrowseControls {
             ));
         self.tab_order.push(self.name.editor.focus_handle(cx));
         history = history
-            .child(div().w(px(140.)).child(self.name.accessible.clone()))
+            .child(
+                crate::ui::field()
+                    .w(px(140.))
+                    .child(self.name.accessible.clone()),
+            )
             .child(self.button(
                 "browse-save-preset",
                 "Save preset",
@@ -620,7 +631,7 @@ impl Render for BrowseControls {
                 entry.sort.len()
             )
         });
-        let mut inspection = div().flex().flex_col();
+        let mut inspection = div().flex().flex_col().px_2();
         if self.inspect
             && let Some(page) = self.page.clone()
         {
@@ -632,6 +643,7 @@ impl Render for BrowseControls {
                     .child(
                         div()
                             .flex()
+                            .gap(px(4.))
                             .child(self.button(
                                 "browse-copy-sql",
                                 "Copy SQL",
@@ -658,6 +670,8 @@ impl Render for BrowseControls {
                             ))
                             .max_h(px(140.))
                             .overflow_y_scroll()
+                            .font_family(crate::style::MONO)
+                            .text_color(crate::style::dim())
                             .child(format!(
                                 "{}\n{}",
                                 page.inspection.sql,
@@ -692,9 +706,10 @@ impl Render for BrowseControls {
             }))
             .flex()
             .flex_col()
+            .flex_shrink_0()
             .text_sm()
             .border_b_1()
-            .border_color(crate::style::line())
+            .border_color(crate::style::line_soft())
             .child(controls)
             .child(active)
             .child(history)
@@ -704,6 +719,8 @@ impl Render for BrowseControls {
                     .role(Role::Label)
                     .aria_label(text.clone())
                     .px_2()
+                    .font_family(crate::style::MONO)
+                    .text_color(crate::style::faint())
                     .child(text)
             }))
             .children(self.message.clone().map(|text| {
@@ -711,6 +728,8 @@ impl Render for BrowseControls {
                     .id("browse-control-message")
                     .role(Role::Status)
                     .aria_label(text.clone())
+                    .px_2()
+                    .text_color(crate::style::dim())
                     .child(text)
             }))
             .child(inspection)

@@ -79,7 +79,7 @@ impl Backend {
                     for endpoint in [&context.request.source, &context.request.target] {
                         context
                             .control
-                            .wait(super::admit_connection(
+                            .wait(super::admit_postgres_connection(
                                 &inner.state,
                                 inner.development.as_deref(),
                                 &endpoint.connection_id,
