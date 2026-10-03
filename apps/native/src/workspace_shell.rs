@@ -2,6 +2,7 @@
 //! connection search and list, object tree), tab bar, production strip,
 //! collapsible status bar and the environment frame + tint.
 use super::*;
+use crate::document_view::ConnectionPhase;
 use crate::style;
 use dbunk_lib::backend::DevelopmentEnvironment;
 use editor::Editor;
@@ -148,6 +149,39 @@ pub(super) fn groups<'a>(
     groups
 }
 
+/// One connection's state from its documents' query sessions and the host's
+/// open sessions (`live`). An attempt in flight wins; then any open session;
+/// then the first failure, which stays until a retry or a disconnect.
+pub(super) fn connection_phase(
+    live: bool,
+    documents: impl IntoIterator<Item = ConnectionPhase>,
+) -> ConnectionPhase {
+    let mut failed = None;
+    let mut connected = live;
+    for phase in documents {
+        match phase {
+            ConnectionPhase::Connecting => return ConnectionPhase::Connecting,
+            ConnectionPhase::Connected => connected = true,
+            ConnectionPhase::Failed(error) => {
+                failed.get_or_insert(error);
+            }
+            ConnectionPhase::Idle => {}
+        }
+    }
+    if connected {
+        ConnectionPhase::Connected
+    } else if let Some(error) = failed {
+        ConnectionPhase::Failed(error)
+    } else {
+        ConnectionPhase::Idle
+    }
+}
+
+/// Whether the native host can open a session for this connection.
+fn connectable(connection: &DevelopmentConnection) -> bool {
+    connection.postgres.is_some() && connection.unsupported_reason.is_none()
+}
+
 fn icon(path: &'static str, color: gpui::Rgba) -> impl IntoElement {
     svg()
         .path(path)
@@ -227,6 +261,37 @@ impl Workspace {
             .px_0()
             .justify_center()
             .child(icon(path, style::dim()))
+    }
+    /// A button inside a connection row; it must not also select the row.
+    fn row_button(
+        &self,
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        path: &'static str,
+        color: gpui::Rgba,
+        operation: Operation,
+        cx: &Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        self.shell_button(id, label, operation, cx)
+            .on_click(|_, _, cx| cx.stop_propagation())
+            .size(px(16.))
+            .px_0()
+            .justify_center()
+            .child(icon(path, color))
+    }
+    fn phase_of(
+        &self,
+        id: &str,
+        connected: &std::collections::BTreeSet<String>,
+        cx: &gpui::App,
+    ) -> ConnectionPhase {
+        connection_phase(
+            connected.contains(id),
+            self.documents
+                .iter()
+                .filter(|document| document.metadata.connection_id.as_deref() == Some(id))
+                .map(|document| document.view.read(cx).connection_phase(cx)),
+        )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
         let id = self
@@ -404,7 +469,7 @@ impl Workspace {
             for connection in items {
                 let id = connection.id.clone();
                 let selected = self.selected_connection.as_ref() == Some(&id);
-                let live = connected.contains(&id);
+                let phase = self.phase_of(&id, &connected, cx);
                 let health = self.health.label(&id);
                 let unhealthy = health
                     .as_ref()
@@ -421,7 +486,13 @@ impl Workspace {
                             "{}, {}, {}{}{}",
                             connection.name,
                             connection.engine,
-                            if live { "connected" } else { "not connected" },
+                            match &phase {
+                                ConnectionPhase::Idle => "not connected".to_owned(),
+                                ConnectionPhase::Connecting => "connecting".to_owned(),
+                                ConnectionPhase::Connected => "connected".to_owned(),
+                                ConnectionPhase::Failed(error) =>
+                                    format!("connection failed: {error}"),
+                            },
                             health.map(|label| format!(", {label}")).unwrap_or_default(),
                             connection
                                 .unsupported_reason
@@ -472,33 +543,66 @@ impl Workspace {
                     .child(
                         div()
                             .text_size(px(style::FONT_SMALL))
-                            .text_color(style::faint())
-                            .child(database),
+                            .text_color(match phase {
+                                ConnectionPhase::Failed(_) => style::bad(),
+                                ConnectionPhase::Connecting => style::accent(),
+                                _ => style::faint(),
+                            })
+                            .child(match phase {
+                                ConnectionPhase::Connecting => "connecting…".into(),
+                                ConnectionPhase::Failed(_) => "failed".into(),
+                                _ => database,
+                            }),
                     );
-                row = row.child(if live {
-                    div().size(px(6.)).rounded_full().bg(if unhealthy {
+                let dot = div().size(px(6.)).rounded_full();
+                row = row.child(match phase {
+                    ConnectionPhase::Connected => dot.bg(if unhealthy {
                         style::warn()
                     } else {
                         style::ok()
-                    })
-                } else {
-                    div()
-                        .size(px(6.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(style::faint())
+                    }),
+                    ConnectionPhase::Connecting => dot.border_1().border_color(style::accent()),
+                    ConnectionPhase::Failed(_) => dot.bg(style::bad()),
+                    ConnectionPhase::Idle => dot.border_1().border_color(style::faint()),
                 });
-                if selected {
-                    row = row.child(
-                        self.icon_button(
-                            SharedString::from(format!("connection-menu-{id}")),
-                            format!("Actions for {}", connection.name),
-                            "icons/ellipsis.svg",
-                            Operation::ShellMenu(ShellMenu::Connection(id.clone())),
+                if connectable(connection) && (selected || phase != ConnectionPhase::Idle) {
+                    row = row.child(match phase {
+                        ConnectionPhase::Connected | ConnectionPhase::Connecting => self
+                            .row_button(
+                                SharedString::from(format!("connection-toggle-{id}")),
+                                format!("Disconnect {}", connection.name),
+                                "icons/power.svg",
+                                style::ok(),
+                                Operation::DisconnectConnection(id.clone()),
+                                cx,
+                            ),
+                        ConnectionPhase::Failed(_) => self.row_button(
+                            SharedString::from(format!("connection-toggle-{id}")),
+                            format!("Retry connecting {}", connection.name),
+                            "icons/rotate_cw.svg",
+                            style::bad(),
+                            Operation::SelectConnection(id.clone()),
                             cx,
-                        )
-                        .size(px(16.)),
-                    );
+                        ),
+                        ConnectionPhase::Idle => self.row_button(
+                            SharedString::from(format!("connection-toggle-{id}")),
+                            format!("Connect {}", connection.name),
+                            "icons/power.svg",
+                            style::dim(),
+                            Operation::SelectConnection(id.clone()),
+                            cx,
+                        ),
+                    });
+                }
+                if selected {
+                    row = row.child(self.row_button(
+                        SharedString::from(format!("connection-menu-{id}")),
+                        format!("Actions for {}", connection.name),
+                        "icons/ellipsis.svg",
+                        style::dim(),
+                        Operation::ShellMenu(ShellMenu::Connection(id.clone())),
+                        cx,
+                    ));
                 }
                 rows.push(row.into_any_element());
             }
@@ -725,7 +829,7 @@ impl Workspace {
                 .into_any_element();
         }
         let connection = self.current_connection();
-        let live = connection.is_some_and(|c| self.host.connected().contains(&c.id));
+        let phase = connection.map(|c| self.phase_of(&c.id, &self.host.connected(), cx));
         let save = match &self.save_status {
             SaveStatus::Pending => "Saving".to_string(),
             SaveStatus::Saved => "Saved".to_string(),
@@ -744,14 +848,25 @@ impl Workspace {
             .and_then(|c| self.shell.last_latency.get(&c.id))
             .map(|ms| format!("last query {ms} ms"))
             .unwrap_or_else(|| "last query —".into());
-        let state = if connection.is_none() {
-            ""
-        } else if live {
-            "Connected"
-        } else {
-            "Disconnected"
+        let state = match (&phase, connection) {
+            (None, _) => "",
+            (Some(ConnectionPhase::Connecting), _) => "Connecting",
+            (Some(ConnectionPhase::Connected), _) => "Connected",
+            (Some(ConnectionPhase::Failed(_)), _) => "Connection failed",
+            (Some(ConnectionPhase::Idle), Some(c)) if !connectable(c) => "Sessions unavailable",
+            (Some(ConnectionPhase::Idle), _) => "Disconnected",
         };
-        let announcement = format!("{state} {summary}, {latency}, {save}");
+        let failure = match &phase {
+            Some(ConnectionPhase::Failed(error)) => Some(error.clone()),
+            _ => None,
+        };
+        let announcement = format!(
+            "{state}{} {summary}, {latency}, {save}",
+            failure
+                .as_ref()
+                .map(|error| format!(": {error}"))
+                .unwrap_or_default()
+        );
         div()
             .id("status-bar")
             .role(Role::Status)
@@ -779,21 +894,34 @@ impl Workspace {
                         .child(style::env_label(c.environment).to_uppercase()),
                 )
             })
-            .when(connection.is_some(), |bar| {
-                bar.child(if live {
-                    div().size(px(6.)).rounded_full().bg(style::ok())
-                } else {
-                    div()
-                        .size(px(6.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(style::faint())
+            .when_some(phase.clone(), |bar, phase| {
+                let dot = div().size(px(6.)).rounded_full();
+                bar.child(match phase {
+                    ConnectionPhase::Connected => dot.bg(style::ok()),
+                    ConnectionPhase::Connecting => dot.border_1().border_color(style::accent()),
+                    ConnectionPhase::Failed(_) => dot.bg(style::bad()),
+                    ConnectionPhase::Idle => dot.border_1().border_color(style::faint()),
                 })
-                .child(state)
+                .child(
+                    div()
+                        .when(failure.is_some(), |s| s.text_color(style::bad()))
+                        .child(state),
+                )
             })
             .child(summary)
             .child(latency)
-            .child(div().flex_1())
+            .child(match failure {
+                Some(error) => div()
+                    .id("connection-failure")
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_color(style::bad())
+                    .child(error)
+                    .into_any_element(),
+                None => div().flex_1().into_any_element(),
+            })
             .child(
                 self.shell_button("console-badge", "Toggle console", Operation::Console, cx)
                     .h(px(18.))
@@ -1197,5 +1325,22 @@ mod tests {
         let search = groups(&all, Some("Billing"), None, "EVENTS");
         assert_eq!(search[0].0, "Analytics · Dev");
         assert!(groups(&all, Some("Billing"), None, "nothing").is_empty());
+    }
+
+    #[test]
+    fn connection_phase_prefers_attempts_then_sessions_then_failures() {
+        use ConnectionPhase::*;
+        let failed = || Failed("password authentication failed".into());
+        assert_eq!(connection_phase(false, []), Idle);
+        assert_eq!(connection_phase(false, [Idle, failed()]), failed());
+        // A retry in flight replaces the failure on the row.
+        assert_eq!(connection_phase(true, [failed(), Connecting]), Connecting);
+        // A table-lane session counts even when a query document failed.
+        assert_eq!(connection_phase(true, [failed()]), Connected);
+        assert_eq!(connection_phase(false, [Connected, failed()]), Connected);
+        assert_eq!(
+            connection_phase(false, [Failed("first".into()), Failed("second".into())]),
+            Failed("first".into())
+        );
     }
 }

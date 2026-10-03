@@ -13,7 +13,7 @@ mod shell;
 
 use crate::{
     controller::Host,
-    document_view::{DocumentEvent, DocumentResources, DocumentView},
+    document_view::{ConnectionPhase, DocumentEvent, DocumentResources, DocumentView},
     forms::{Form, FormEvent},
     persistence::{DraftWriter, SaveStatus},
 };
@@ -93,7 +93,9 @@ enum Operation {
     Credentials,
     Bastions,
     SelectDocument(String),
+    /// Select a saved connection and make sure it has a session.
     SelectConnection(String),
+    DisconnectConnection(String),
     EditConnection(String),
     DeleteConnection(String),
     DuplicateConnection(String),
@@ -1547,12 +1549,14 @@ impl Workspace {
                 {
                     self.documents[index].metadata.connection_id = Some(id.clone());
                     self.documents[index].view.update(cx, |view, cx| {
-                        view.bind_connection(id, cx);
+                        view.bind_connection(id.clone(), cx);
                         view.set_connection_metadata(&self.connections, cx);
                     });
                     self.changed(cx);
                 }
+                self.connect_selection(id, window, cx);
             }
+            Operation::DisconnectConnection(id) => self.disconnect_connection(id, window, cx),
             Operation::Rename => {
                 if let Some(index) = self.active_index() {
                     let document = &self.documents[index].metadata;
@@ -1768,6 +1772,101 @@ impl Workspace {
             }
         }
         cx.notify();
+    }
+
+    /// Connects the document that represents `id`: the active document when
+    /// it is bound there, else the first bound document, else a new query.
+    /// Never restarts a session that is already open or opening.
+    fn connect_selection(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.connections.iter().any(|connection| {
+            connection.id == id
+                && connection.postgres.is_some()
+                && connection.unsupported_reason.is_none()
+        }) {
+            return;
+        }
+        let bound = |document: &Document| document.metadata.connection_id.as_deref() == Some(&id);
+        let index = match self
+            .active_index()
+            .filter(|&index| bound(&self.documents[index]))
+            .or_else(|| self.documents.iter().position(&bound))
+        {
+            Some(index) => index,
+            None => {
+                self.new_document(window, cx);
+                match self
+                    .active_index()
+                    .filter(|&index| bound(&self.documents[index]))
+                {
+                    Some(index) => index,
+                    None => return,
+                }
+            }
+        };
+        if self.active_index() != Some(index) {
+            self.remember_focus(window, cx);
+            self.active = Some(self.documents[index].metadata.id.clone());
+            self.changed(cx);
+            self.focus_active(window, cx);
+        }
+        let view = self.documents[index].view.clone();
+        let idle = {
+            let view = view.read(cx);
+            // Table-lane documents ignore a connect while their lane is open.
+            !view.is_query()
+                || matches!(
+                    view.connection_phase(cx),
+                    ConnectionPhase::Idle | ConnectionPhase::Failed(_)
+                )
+        };
+        if idle {
+            view.update(cx, |view, cx| view.begin_connect(cx));
+        }
+    }
+
+    /// Closes every session on `id`, refusing while a bound document holds
+    /// changes that a disconnect would discard.
+    fn disconnect_connection(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let bound: Vec<Entity<DocumentView>> = self
+            .documents
+            .iter()
+            .filter(|document| document.metadata.connection_id.as_deref() == Some(&id))
+            .map(|document| document.view.clone())
+            .collect();
+        if bound
+            .iter()
+            .any(|view| view.read(cx).has_recoverable_changes(cx))
+        {
+            self.message = Some("Resolve pending changes before disconnecting".into());
+            return;
+        }
+        self.busy = true;
+        for view in &bound {
+            view.update(cx, |view, cx| view.set_editable(false, cx));
+        }
+        let host = self.host.clone();
+        let target = id.clone();
+        let task = self
+            .host
+            .runtime
+            .spawn(async move { host.disconnect_connection_documents(&target).await });
+        self.action_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            this.update(cx, |this, cx| {
+                this.busy = false;
+                for view in &bound {
+                    view.update(cx, |view, cx| {
+                        view.set_editable(true, cx);
+                        view.mark_disconnected(cx);
+                    });
+                }
+                if !matches!(result, Ok(Ok(()))) {
+                    this.message = Some("Disconnect cleanup failed".into());
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     fn connection_change(

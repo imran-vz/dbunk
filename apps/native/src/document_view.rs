@@ -87,6 +87,14 @@ pub struct DocumentResources {
     pub copies: Entity<crate::table_copy_store::CopyStore>,
     pub seeds: Entity<crate::table_seed_store::SeedStore>,
 }
+/// A document's own session state, as shown on its connection's sidebar row.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConnectionPhase {
+    Idle,
+    Connecting,
+    Connected,
+    Failed(String),
+}
 pub struct DocumentView {
     content: Content,
     _events: Option<Subscription>,
@@ -486,6 +494,17 @@ impl DocumentView {
             | Content::CsvTransfer(_) => None,
             Content::Table(view) => Some(view.read(cx).snapshot(cx)),
         }
+    }
+    /// Only query sessions report a phase; table-lane documents surface
+    /// their state in the document and through the host's connected set.
+    pub fn connection_phase(&self, cx: &App) -> ConnectionPhase {
+        match &self.content {
+            Content::Query(view) => view.read(cx).connection_phase(),
+            _ => ConnectionPhase::Idle,
+        }
+    }
+    pub fn is_query(&self) -> bool {
+        matches!(self.content, Content::Query(_))
     }
     pub fn document_status<'a>(&'a self, cx: &'a App) -> &'a str {
         match &self.content {

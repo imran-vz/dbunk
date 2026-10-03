@@ -14,7 +14,7 @@ What already works:
 
 | Area | Status | Where |
 |---|---|---|
-| Sidebar: connections + schemas + tables/views tree | ✅ | `src/components/sidebar.tsx` |
+| Sidebar: connections + schemas + tables/views tree | ✅ | `apps/native/src/workspace_shell.rs` (connections; selecting connects), `apps/native/src/navigator_view.rs` (object tree) |
 | Workspace overview (stats, recent queries, favorite tables, health banner) | ✅ | `src/components/workspace-overview/*` |
 | Query editor + results grid | ✅ | `src/components/query-editor*`, `query-editor/*` |
 | Table editor (browse rows, inline cell commit, insert/delete, pending mutations) | ✅ | `src/components/table-editor*`, `src-tauri/src/postgres.rs` |
