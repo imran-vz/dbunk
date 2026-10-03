@@ -42,10 +42,20 @@ use crate::results::encoded_size;
 
 #[path = "table_runtime_ddl.rs"]
 mod table_ddl;
+use dbunk_lib::backend::schema_alter::{
+    SchemaAlterConfirmation, SchemaAlterError, SchemaAlterIntent, SchemaAlterRequest,
+    SchemaAlterReview, SchemaAlterTarget,
+};
 use dbunk_lib::backend::table_ddl::{
     TableDdlConfirmation, TableDdlError, TableDdlIntent, TableDdlRequest, TableDdlReview,
     TableDdlSubmission, TableDdlTarget,
 };
+#[path = "table_runtime_object_ddl.rs"]
+mod object_ddl;
+use dbunk_lib::backend::object_ddl::{
+    ObjectDdlConfirmation, ObjectDdlError, ObjectDdlRequest, ObjectDdlReview, ObjectDdlTarget,
+};
+pub use table_ddl::{DdlApplied, DdlObserved, DdlReviewed};
 
 const DOCUMENT_LIMIT: usize = 16;
 const RESULT_CAPACITY: usize = 4;
@@ -84,12 +94,21 @@ pub enum TableCommand {
     TableDdlReview(u64, Box<TableDdlTarget>, TableDdlIntent),
     TableDdlApply(u64, Box<TableDdlReview>),
     TableDdlConfirm(u64, Box<TableDdlConfirmation>),
+    SchemaAlterObserve(u64, SchemaAlterRequest),
+    SchemaAlterReview(u64, Box<SchemaAlterTarget>, SchemaAlterIntent),
+    SchemaAlterApply(u64, Box<SchemaAlterReview>),
+    SchemaAlterConfirm(u64, Box<SchemaAlterConfirmation>),
+    ObjectDdlObserve(u64, ObjectDdlRequest),
+    ObjectDdlReview(u64, Box<ObjectDdlTarget>),
+    ObjectDdlApply(u64, Box<ObjectDdlReview>),
+    ObjectDdlConfirm(u64, Box<ObjectDdlConfirmation>),
     MaintenanceReview(
         u64,
         dbunk_lib::backend::objects::PgObjectRef,
         MaintenanceIntent,
     ),
     MaintenanceApply(u64, MaintenanceReview),
+    Sequence(u64, crate::sequence_runtime::SequenceRequest),
     MaintenanceConfirm(u64, MaintenanceConfirmation),
     AdminApply(u64, AdminControlReview),
     AdminConfirm(u64, AdminControlConfirmation),
@@ -132,9 +151,10 @@ pub enum TableCommand {
 }
 #[allow(clippy::large_enum_variant)]
 pub enum TableMessage {
-    TableDdlObserved(u64, Result<Box<TableDdlTarget>, Arc<TableDdlError>>),
-    TableDdlReviewed(u64, Result<Box<TableDdlReview>, Arc<TableDdlError>>),
-    TableDdlApplied(u64, Result<Box<TableDdlSubmission>, Arc<TableDdlError>>),
+    /// Table, existing-schema and typed object DDL share this Objects-owned lane.
+    TableDdlObserved(u64, DdlObserved),
+    TableDdlReviewed(u64, DdlReviewed),
+    TableDdlApplied(u64, DdlApplied),
     WholeTableExport(
         u64,
         DataResult<dbunk_lib::backend::table_export::TableExportCapture>,
@@ -154,6 +174,7 @@ pub enum TableMessage {
     ),
     MaintenanceReviewed(u64, Result<MaintenanceReview, Arc<MaintenanceError>>),
     MaintenanceApplied(u64, Result<MaintenanceSubmission, Arc<MaintenanceError>>),
+    Sequence(u64, crate::sequence_runtime::SequenceReply),
     AdminApplied(u64, Result<AdminControlSubmission, Arc<AdminControlError>>),
     SchemaReviewed(u64, Result<CreateSchemaReview, Arc<CreateSchemaError>>),
     SchemaApplied(u64, Result<CreateSchemaSubmission, Arc<CreateSchemaError>>),
@@ -400,9 +421,15 @@ fn table_error_bytes(error: &TableError) -> usize {
 }
 fn message_bytes(message: &TableMessage) -> usize {
     let payload = match message {
+        TableMessage::TableDdlObserved(_, DdlObserved::Object(_))
+        | TableMessage::TableDdlReviewed(_, DdlReviewed::Object(_))
+        | TableMessage::TableDdlApplied(_, DdlApplied::Object(_)) => {
+            object_ddl::message_bytes(message)
+        }
         TableMessage::TableDdlObserved(..)
         | TableMessage::TableDdlReviewed(..)
         | TableMessage::TableDdlApplied(..) => table_ddl::message_bytes(message),
+        TableMessage::Sequence(..) => crate::sequence_runtime::message_bytes(message),
         TableMessage::MaintenanceReviewed(_, Ok(value)) => value.retained_bytes(),
         TableMessage::MaintenanceApplied(
             _,
@@ -634,6 +661,15 @@ impl TableRuntime {
         );
         Ok((controls, receiver))
     }
+    /// Connections with a live or still-closing data worker. Successfully
+    /// joined workers stay registered until the next open prunes them.
+    pub fn visit_connections(&self, visit: &mut dyn FnMut(&str)) {
+        for record in self.registry.lock().unwrap().documents.values() {
+            if !matches!(record.worker.join.clone().now_or_never(), Some(Ok(_))) {
+                visit(&record.connection);
+            }
+        }
+    }
     pub async fn close(&self, tab: &str) -> TableCloseResult {
         let worker = {
             let records = self.registry.lock().unwrap();
@@ -829,8 +865,22 @@ impl TableBackend for Backend {
                 command @ (TableCommand::TableDdlObserve(..)
                 | TableCommand::TableDdlReview(..)
                 | TableCommand::TableDdlApply(..)
-                | TableCommand::TableDdlConfirm(..)) => {
+                | TableCommand::TableDdlConfirm(..)
+                | TableCommand::SchemaAlterObserve(..)
+                | TableCommand::SchemaAlterReview(..)
+                | TableCommand::SchemaAlterApply(..)
+                | TableCommand::SchemaAlterConfirm(..)) => {
                     table_ddl::request(self, document, command).await
+                }
+                TableCommand::Sequence(id, request) => TableMessage::Sequence(
+                    id,
+                    crate::sequence_runtime::request(self, document, request).await,
+                ),
+                command @ (TableCommand::ObjectDdlObserve(..)
+                | TableCommand::ObjectDdlReview(..)
+                | TableCommand::ObjectDdlApply(..)
+                | TableCommand::ObjectDdlConfirm(..)) => {
+                    object_ddl::request(self, document, command).await
                 }
                 TableCommand::AdminApply(id, review) => TableMessage::AdminApplied(
                     id,
@@ -1196,6 +1246,14 @@ async fn run_request<B: TableBackend>(
             | TableCommand::TableDdlReview(..)
             | TableCommand::TableDdlApply(..)
             | TableCommand::TableDdlConfirm(..)
+            | TableCommand::SchemaAlterObserve(..)
+            | TableCommand::SchemaAlterReview(..)
+            | TableCommand::SchemaAlterApply(..)
+            | TableCommand::SchemaAlterConfirm(..)
+            | TableCommand::ObjectDdlObserve(..)
+            | TableCommand::ObjectDdlReview(..)
+            | TableCommand::ObjectDdlApply(..)
+            | TableCommand::ObjectDdlConfirm(..)
     ) && (delivery.data.is_closed() || delivery.data.is_full())
     {
         delivery
@@ -1207,12 +1265,23 @@ async fn run_request<B: TableBackend>(
         TableCommand::TableDdlObserve(..)
         | TableCommand::TableDdlReview(..)
         | TableCommand::TableDdlApply(..)
-        | TableCommand::TableDdlConfirm(..) => Some(table_ddl::RESPONSE_BYTES),
+        | TableCommand::TableDdlConfirm(..)
+        | TableCommand::SchemaAlterObserve(..)
+        | TableCommand::SchemaAlterReview(..)
+        | TableCommand::SchemaAlterApply(..)
+        | TableCommand::SchemaAlterConfirm(..) => Some(table_ddl::RESPONSE_BYTES),
+        TableCommand::ObjectDdlObserve(..)
+        | TableCommand::ObjectDdlReview(..)
+        | TableCommand::ObjectDdlApply(..)
+        | TableCommand::ObjectDdlConfirm(..) => Some(object_ddl::RESPONSE_BYTES),
         TableCommand::AdminApply(..) | TableCommand::AdminConfirm(..) => Some(16 * 1024),
         // Both the 32 KiB confirmation token and 16 KiB receipt fit, including
         // envelope overhead. Reserve before dispatch, never after side effects.
         TableCommand::MaintenanceApply(..) | TableCommand::MaintenanceConfirm(..) => {
             Some(64 * 1024)
+        }
+        TableCommand::Sequence(_, request) if request.writes() => {
+            Some(crate::sequence_runtime::RESPONSE_BYTES)
         }
         _ => None,
     };
@@ -1287,14 +1356,51 @@ fn cancelled(command: TableCommand) -> TableMessage {
     match command {
         // This mapping is used only before the backend future is polled. Once
         // dispatched, preserve its typed receipt or an unknown transport outcome.
-        TableCommand::TableDdlObserve(id, ..) => {
-            TableMessage::TableDdlObserved(id, Err(Arc::new(TableDdlError::Unavailable)))
-        }
-        TableCommand::TableDdlReview(id, ..) => {
-            TableMessage::TableDdlReviewed(id, Err(Arc::new(TableDdlError::Unavailable)))
-        }
+        TableCommand::TableDdlObserve(id, ..) => TableMessage::TableDdlObserved(
+            id,
+            DdlObserved::Table(Err(Arc::new(TableDdlError::Unavailable))),
+        ),
+        TableCommand::TableDdlReview(id, ..) => TableMessage::TableDdlReviewed(
+            id,
+            DdlReviewed::Table(Err(Arc::new(TableDdlError::Unavailable))),
+        ),
         TableCommand::TableDdlApply(id, ..) | TableCommand::TableDdlConfirm(id, ..) => {
-            TableMessage::TableDdlApplied(id, Err(Arc::new(TableDdlError::Unavailable)))
+            TableMessage::TableDdlApplied(
+                id,
+                DdlApplied::Table(Err(Arc::new(TableDdlError::Unavailable))),
+            )
+        }
+        // A consumed single-use schema token that never reached the backend
+        // reports a pre-dispatch refusal, never an unknown outcome.
+        TableCommand::SchemaAlterObserve(id, ..) => TableMessage::TableDdlObserved(
+            id,
+            DdlObserved::Schema(Err(Arc::new(SchemaAlterError::Unavailable))),
+        ),
+        TableCommand::SchemaAlterReview(id, ..) => TableMessage::TableDdlReviewed(
+            id,
+            DdlReviewed::Schema(Err(Arc::new(SchemaAlterError::Unavailable))),
+        ),
+        TableCommand::SchemaAlterApply(id, ..) | TableCommand::SchemaAlterConfirm(id, ..) => {
+            TableMessage::TableDdlApplied(
+                id,
+                DdlApplied::Schema(Err(Arc::new(SchemaAlterError::Unavailable))),
+            )
+        }
+        // A consumed single-use object token that never reached the backend
+        // reports a pre-dispatch refusal, never an unknown outcome.
+        TableCommand::ObjectDdlObserve(id, ..) => TableMessage::TableDdlObserved(
+            id,
+            DdlObserved::Object(Err(Arc::new(ObjectDdlError::Unavailable))),
+        ),
+        TableCommand::ObjectDdlReview(id, ..) => TableMessage::TableDdlReviewed(
+            id,
+            DdlReviewed::Object(Err(Arc::new(ObjectDdlError::Unavailable))),
+        ),
+        TableCommand::ObjectDdlApply(id, ..) | TableCommand::ObjectDdlConfirm(id, ..) => {
+            TableMessage::TableDdlApplied(
+                id,
+                DdlApplied::Object(Err(Arc::new(ObjectDdlError::Unavailable))),
+            )
         }
         TableCommand::AdminApply(id, _) | TableCommand::AdminConfirm(id, _) => {
             TableMessage::AdminApplied(id, Err(Arc::new(AdminControlError::Cancelled)))
@@ -1419,6 +1525,7 @@ fn cancelled(command: TableCommand) -> TableMessage {
                 ResultMutationError::Cancelled,
             ))),
         ),
+        TableCommand::Sequence(id, request) => TableMessage::Sequence(id, request.cancelled()),
         TableCommand::MaintenanceReview(id, _, _) => {
             TableMessage::MaintenanceReviewed(id, Err(Arc::new(MaintenanceError::Unavailable)))
         }

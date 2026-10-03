@@ -53,8 +53,8 @@ pub async fn read_bastion_server_by_id(
     row.map(row_to_bastion).transpose()
 }
 
-pub async fn upsert_bastion_server(
-    pool: &SqlitePool,
+pub async fn upsert_bastion_server<'e>(
+    pool: impl SqliteExecutor<'e>,
     bastion: &BastionServer,
 ) -> Result<(), String> {
     sqlx::query(
@@ -89,7 +89,10 @@ pub async fn upsert_bastion_server(
     Ok(())
 }
 
-pub async fn delete_bastion_server(pool: &SqlitePool, bastion_id: &str) -> Result<bool, String> {
+pub async fn delete_bastion_server<'e>(
+    pool: impl SqliteExecutor<'e>,
+    bastion_id: &str,
+) -> Result<bool, String> {
     let result = sqlx::query("DELETE FROM bastion_servers WHERE id = ?")
         .bind(bastion_id)
         .execute(pool)
@@ -142,6 +145,31 @@ pub async fn connection_ids_referencing_bastion(
     }
     ids.sort();
     Ok(ids)
+}
+
+#[cfg(feature = "isolated-profile")]
+/// Compare-and-set for an explicitly reviewed fingerprint. Returns false when
+/// the trusted key changed since the user reviewed it, so a stale review can
+/// never replace a newer decision.
+pub async fn replace_bastion_host_key_fingerprint<'e>(
+    executor: impl SqliteExecutor<'e>,
+    bastion_id: &str,
+    expected: Option<&str>,
+    fingerprint: Option<&str>,
+) -> Result<bool, String> {
+    let result = sqlx::query(
+        "UPDATE bastion_servers
+         SET host_key_fingerprint = ?, updated_at = ?
+         WHERE id = ? AND host_key_fingerprint IS ?",
+    )
+    .bind(fingerprint)
+    .bind(now())
+    .bind(bastion_id)
+    .bind(expected)
+    .execute(executor)
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn update_bastion_host_key_fingerprint<'e>(

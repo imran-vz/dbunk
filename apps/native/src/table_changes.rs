@@ -41,6 +41,7 @@ enum Action {
     BulkColumn,
     Null,
     FormatValue,
+    CopyLiteral,
     RawValue,
     CancelEdit,
     Discard,
@@ -533,7 +534,13 @@ impl TableChanges {
             return;
         };
         let target = if self.is_query() {
-            crate::query_result::editable_target(self.analysis.as_ref().unwrap(), values, column)
+            crate::query_result::editable_target(
+                self.analysis.as_ref().unwrap(),
+                values,
+                column,
+                self.query_provenance()
+                    .is_some_and(|provenance| provenance.utf8()),
+            )
         } else {
             self.page
                 .as_ref()
@@ -1174,10 +1181,13 @@ impl TableChanges {
                             return;
                         }
                         let compatible = self.source.compatible(self.page.as_deref(), &analysis);
+                        let utf8 = self
+                            .query_provenance()
+                            .is_some_and(|provenance| provenance.utf8());
                         if self.is_query()
                             && self.draft.as_ref().is_some_and(|draft| {
                                 draft.changes().any(|(_, _, operation)| {
-                                    !crate::query_result::guards_supported(operation)
+                                    !crate::query_result::guards_supported(operation, utf8)
                                 })
                             })
                         {
@@ -1397,6 +1407,18 @@ impl TableChanges {
             Action::Stage if !self.pending() => self.stage(window, cx),
             Action::BulkColumn if !self.pending() => self.cycle_bulk_column(window, cx),
             Action::FormatValue if !self.pending() => self.format_value(window, cx),
+            Action::CopyLiteral => {
+                // Baseline "Copy EWKT": a quoted literal of the trimmed text.
+                // Copying never stages, edits or executes anything.
+                if let Some(edit) = &self.edit {
+                    let text = edit.editor.read(cx).text(cx);
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
+                        "'{}'",
+                        text.trim().replace('\'', "''")
+                    )));
+                    self.message = "Copied geometry as a SQL literal".into();
+                }
+            }
             Action::RawValue if !self.pending() => self.toggle_raw(window, cx),
             Action::Null => {
                 if let Some(edit) = &mut self.edit {

@@ -31,11 +31,12 @@ impl CatalogView {
     }
     pub(super) fn sync_table_ddl(&mut self, cx: &mut Context<Self>) {
         if let Some(view) = &self.table_ddl {
+            let idle = self.others_idle(super::object_ddl::Lane::TableDdl);
             view.update(cx, |view, cx| {
                 view.set_runtime(
                     self.controls.clone(),
-                    self.ready && !self.busy && !self.schema_busy && !self.maintenance_busy,
-                    self.editable && !self.busy && !self.schema_busy && !self.maintenance_busy,
+                    self.ready && idle,
+                    self.editable && idle,
                     cx,
                 )
             });
@@ -47,12 +48,7 @@ impl CatalogView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy
-            || self.schema_busy
-            || self.maintenance_busy
-            || self.has_schema_changes(cx)
-            || self.has_maintenance_changes(cx)
-        {
+        if self.busy || self.blocked_by_other_lane(super::object_ddl::Lane::TableDdl, cx) {
             self.status =
                 "Finish or reconcile the current Objects operation before a table change".into();
             return;
@@ -114,12 +110,7 @@ impl CatalogView {
             self.table_ddl = Some(view);
             self.table_ddl_recovery = None;
         }
-        self.show_table_ddl = true;
-        self.show_structure = false;
-        self.show_schema = false;
-        self.show_maintenance = false;
-        self.show_details = false;
-        self.ddl_export.show = false;
+        self.show_lane(super::object_ddl::Lane::TableDdl);
         self.sync_table_ddl(cx);
         window.focus(&self.table_ddl.as_ref().unwrap().focus_handle(cx), cx);
         cx.notify();

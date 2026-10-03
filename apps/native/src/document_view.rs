@@ -54,6 +54,7 @@ pub enum DocumentEvent {
     Quit,
     PersistApply(u64),
     OpenLibraryQuery(OpenQuery),
+    Console(crate::console_model::Entry),
     EditConnection(String),
     OpenTable {
         connection: String,
@@ -206,6 +207,14 @@ impl DocumentView {
                 }
                 AdminEvent::Changed => cx.emit(DocumentEvent::DraftChanged),
                 AdminEvent::PersistApply(id) => cx.emit(DocumentEvent::PersistApply(*id)),
+                AdminEvent::OpenQuery(query) => {
+                    cx.emit(DocumentEvent::OpenLibraryQuery(OpenQuery {
+                        sql: query.sql.clone(),
+                        name: query.name.clone(),
+                        connection: query.connection.clone(),
+                        saved_id: query.saved_id.clone(),
+                    }))
+                }
             });
             (Content::Admin(view), Some(events), status)
         } else if document.tool == Some(dbunk_lib::backend::WorkspaceTool::Objects) {
@@ -394,7 +403,9 @@ impl DocumentView {
                 .read(cx)
                 .schema_bytes(cx)
                 .saturating_add(view.read(cx).maintenance_bytes(cx))
-                .saturating_add(view.read(cx).table_ddl_bytes(cx)),
+                .saturating_add(view.read(cx).table_ddl_bytes(cx))
+                .saturating_add(view.read(cx).schema_alter_bytes(cx))
+                .saturating_add(view.read(cx).object_ddl_bytes(cx)),
             Content::Admin(view) => view.read(cx).control_bytes(),
             Content::SchemaMap(_) => 0,
             Content::Library(_)
@@ -423,6 +434,18 @@ impl DocumentView {
             _ => None,
         }
     }
+    pub fn schema_alter(&self, cx: &App) -> Option<dbunk_lib::backend::WorkspaceSchemaAlter> {
+        match &self.content {
+            Content::Catalog(view) => view.read(cx).schema_alter_snapshot(cx),
+            _ => None,
+        }
+    }
+    pub fn object_ddl(&self, cx: &App) -> Option<dbunk_lib::backend::WorkspaceObjectDdl> {
+        match &self.content {
+            Content::Catalog(view) => view.read(cx).object_ddl_snapshot(cx),
+            _ => None,
+        }
+    }
     pub fn maintenance(&self, cx: &App) -> Option<dbunk_lib::backend::WorkspaceMaintenance> {
         match &self.content {
             Content::Catalog(view) => view.read(cx).maintenance_snapshot(cx),
@@ -442,6 +465,8 @@ impl DocumentView {
                 view.read(cx).has_schema_changes(cx)
                     || view.read(cx).has_maintenance_changes(cx)
                     || view.read(cx).has_table_ddl_changes(cx)
+                    || view.read(cx).has_schema_alter_changes(cx)
+                    || view.read(cx).has_object_ddl_changes(cx)
             }
             Content::Admin(view) => view.read(cx).has_control_recovery(),
             _ => false,
@@ -734,6 +759,11 @@ impl DocumentView {
             Err(error) => view.update(cx, |view, cx| view.reject_connections(error, cx)),
         }
     }
+    pub fn set_connection_health(&mut self, health: Option<String>, cx: &mut Context<Self>) {
+        if let Content::Admin(view) = &self.content {
+            view.update(cx, |view, cx| view.set_health(health, cx));
+        }
+    }
     pub fn set_connection_metadata(
         &mut self,
         connections: &[dbunk_lib::backend::DevelopmentConnection],
@@ -774,6 +804,15 @@ impl DocumentView {
     pub fn structure_context(&mut self, schema: String, table: String, cx: &mut Context<Self>) {
         if let Content::Catalog(view) = &self.content {
             view.update(cx, |view, cx| view.structure_context(schema, table, cx));
+        }
+    }
+    pub fn describe_context(
+        &mut self,
+        reference: dbunk_lib::backend::objects::PgObjectRef,
+        cx: &mut Context<Self>,
+    ) {
+        if let Content::Catalog(view) = &self.content {
+            view.update(cx, |view, cx| view.describe_context(reference, cx));
         }
     }
     pub fn seed_context(&mut self, schema: String, table: String, cx: &mut Context<Self>) {
@@ -840,6 +879,7 @@ fn relay(event: &WorkbenchEvent, cx: &mut Context<DocumentView>) {
         WorkbenchEvent::DraftChanged => DocumentEvent::DraftChanged,
         WorkbenchEvent::LayoutChanged(layout) => DocumentEvent::LayoutChanged(*layout),
         WorkbenchEvent::Quit => DocumentEvent::Quit,
+        WorkbenchEvent::Console(entry) => DocumentEvent::Console(entry.clone()),
     });
 }
 impl Render for DocumentView {

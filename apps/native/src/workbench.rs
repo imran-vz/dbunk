@@ -41,6 +41,9 @@ actions!(
         InsertRecentRows,
         RefreshCompletionMetadata,
         FormatSql,
+        FindInSql,
+        FindNext,
+        FindPrevious,
         StopQuery,
         Reconnect,
         SwitchPane,
@@ -111,6 +114,7 @@ pub enum WorkbenchEvent {
     LayoutChanged(Layout),
     Quit,
     OpenQuery(crate::query_library_view::OpenQuery),
+    Console(crate::console_model::Entry),
 }
 impl gpui::EventEmitter<WorkbenchEvent> for Workbench {}
 
@@ -137,6 +141,8 @@ pub struct Workbench {
     buffer: Entity<Buffer>,
     failure: Option<QueryFailure>,
     accessible: Entity<AccessibleEditor>,
+    find: Option<Entity<crate::sql_find::FindView>>,
+    _find_events: Option<gpui::Subscription>,
     grid: Entity<ResultGrid>,
     plan: Option<Entity<crate::explain_view::ExplainView>>,
     show_plan: bool,
@@ -256,6 +262,8 @@ impl Workbench {
             buffer,
             failure: None,
             accessible,
+            find: None,
+            _find_events: None,
             grid,
             plan: None,
             show_plan: false,
@@ -649,6 +657,54 @@ impl Workbench {
             controls.stop();
         }
     }
+    fn console(
+        &mut self,
+        severity: crate::console_model::Severity,
+        source: crate::console_model::Source,
+        message: String,
+        detail: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.emit(WorkbenchEvent::Console(crate::console_model::Entry {
+            severity,
+            source,
+            message,
+            detail,
+            connection: self
+                .document
+                .as_ref()
+                .and_then(|document| document.connection_id.clone()),
+        }));
+    }
+    fn open_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = match &self.find {
+            Some(view) => view.clone(),
+            None => {
+                let view =
+                    cx.new(|cx| crate::sql_find::FindView::new(self.editor.clone(), window, cx));
+                self._find_events = Some(cx.subscribe_in(
+                    &view,
+                    window,
+                    |this, _, _: &crate::sql_find::FindEvent, window, cx| {
+                        this.find = None;
+                        this._find_events = None;
+                        window.focus(&this.editor.focus_handle(cx), cx);
+                        cx.notify();
+                    },
+                ));
+                self.find = Some(view.clone());
+                view
+            }
+        };
+        view.update(cx, |view, cx| view.focus(window, cx));
+        cx.notify();
+    }
+    fn find_again(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        match self.find.clone() {
+            Some(view) => view.update(cx, |view, cx| view.find(forward, false, window, cx)),
+            None => self.open_find(window, cx),
+        }
+    }
     fn consume(&mut self, message: Message, cx: &mut Context<Self>) {
         match message {
             Message::HistoryFailed(error) => {
@@ -661,6 +717,13 @@ impl Workbench {
                 }
                 self.connecting = false;
                 self.status = "Ready".into();
+                self.console(
+                    crate::console_model::Severity::Info,
+                    crate::console_model::Source::Connection,
+                    "Query session connected".into(),
+                    None,
+                    cx,
+                );
                 self.connect_query_changes(cx);
             }
             Message::Review {
@@ -798,12 +861,35 @@ impl Workbench {
                         self.transaction = Some(transaction.clone());
                     }
                     QueryEvent::SessionLost { reason } => {
+                        self.console(
+                            crate::console_model::Severity::Warning,
+                            crate::console_model::Source::Connection,
+                            "Query session lost".into(),
+                            Some(reason.clone()),
+                            cx,
+                        );
                         self.disconnected(reason.clone(), cx);
                         return;
                     }
                     QueryEvent::SessionClosed => {
+                        self.console(
+                            crate::console_model::Severity::Info,
+                            crate::console_model::Source::Connection,
+                            "Query session closed".into(),
+                            None,
+                            cx,
+                        );
                         self.disconnected("Connection closed".into(), cx);
                         return;
+                    }
+                    QueryEvent::Notice { severity, message } => {
+                        self.console(
+                            crate::console_model::Severity::for_notice(severity),
+                            crate::console_model::Source::Notice,
+                            format!("{severity}: {message}"),
+                            None,
+                            cx,
+                        );
                     }
                     QueryEvent::ExecutionCompleted { transaction, .. } => {
                         self.transaction = Some(transaction.clone());
@@ -818,6 +904,10 @@ impl Workbench {
                     _ => {}
                 }
                 let completed = matches!(&envelope.event, QueryEvent::ExecutionCompleted { .. });
+                let execution_context = match &envelope.event {
+                    QueryEvent::ExecutionCompleted { context, .. } => context.clone(),
+                    _ => None,
+                };
                 let allowance = self.retained_budget.as_ref().map(|budget| {
                     (128 * 1024 * 1024usize)
                         .saturating_sub(budget.get())
@@ -837,6 +927,8 @@ impl Workbench {
                     });
                     if completion.status != TerminalStatus::Completed || !exact_source {
                         self.query_changes.source = None;
+                    } else if let Some(source) = &self.query_changes.source {
+                        source.complete(execution_context);
                     }
                     let elapsed = self
                         .execution
@@ -848,6 +940,54 @@ impl Workbench {
                         TerminalStatus::Failed => "Failed",
                     };
                     self.status = format!("{label} · {elapsed} ms");
+                    // Cross-tab query log: one event per terminal run.
+                    let retained: usize = self
+                        .grid
+                        .read(cx)
+                        .model()
+                        .sets
+                        .iter()
+                        .map(|set| set.rows.len())
+                        .sum();
+                    let sql = self
+                        .execution
+                        .as_ref()
+                        .and_then(|execution| execution.source.as_ref())
+                        .map(|source| {
+                            source
+                                .sql()
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .chars()
+                                .take(300)
+                                .collect::<String>()
+                        })
+                        .unwrap_or_default();
+                    let (severity, message) = match completion.status {
+                        TerminalStatus::Failed => (
+                            crate::console_model::Severity::Error,
+                            "Query failed".to_string(),
+                        ),
+                        _ => (
+                            crate::console_model::Severity::Info,
+                            format!(
+                                "Query {} · {retained} rows retained · {elapsed} ms",
+                                label.to_lowercase()
+                            ),
+                        ),
+                    };
+                    let detail = match &completion.error {
+                        Some(error) => format!("{sql}\n{}", error.message),
+                        None => sql,
+                    };
+                    self.console(
+                        severity,
+                        crate::console_model::Source::Query,
+                        message,
+                        Some(detail),
+                        cx,
+                    );
                     if let Some(source) = self
                         .execution
                         .as_ref()
@@ -1721,6 +1861,7 @@ impl Render for Workbench {
                         ))
                     }),
             )
+            .when_some(self.find.clone(), |editor, find| editor.child(find))
             .child(div().flex_1().min_h_0().child(self.accessible.clone()));
         let result_count = self.grid.read(cx).model().sets.len();
         self.result_focus
@@ -1937,6 +2078,9 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &InsertRecentRows, window, cx| this.insert_snippet(sql::Snippet::RecentRows, window, cx)))
             .on_action(cx.listener(|this, _: &RefreshCompletionMetadata, window, cx| this.refresh_completion(window, cx)))
             .on_action(cx.listener(|this, _: &FormatSql, window, cx| this.format_sql(window, cx)))
+            .on_action(cx.listener(|this, _: &FindInSql, window, cx| this.open_find(window, cx)))
+            .on_action(cx.listener(|this, _: &FindNext, window, cx| this.find_again(true, window, cx)))
+            .on_action(cx.listener(|this, _: &FindPrevious, window, cx| this.find_again(false, window, cx)))
             .on_action(cx.listener(|this, _: &StopQuery, _, cx| this.stop(cx)))
             .on_action(cx.listener(Self::reconnect))
             .on_action(cx.listener(Self::switch_pane))

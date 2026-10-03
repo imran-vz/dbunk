@@ -323,6 +323,7 @@ mod tests {
             truncation_reasons: vec!["cellBytes".into()],
             error: None,
             refusal: None,
+            context: None,
         }
     }
 

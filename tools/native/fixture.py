@@ -173,7 +173,9 @@ def terminate_query(pid, backend_start, instance):
     # expression. Normalize only after requiring this narrow, quote-free form.
     if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?[+-][0-9]{2}(?::[0-9]{2})?", backend_start):
         raise RuntimeError("A PostgreSQL backend_start timestamp with offset is required")
-    timestamp = datetime.fromisoformat(backend_start)
+    # Python < 3.11 rejects PostgreSQL's hour-only offset; "+00" == "+00:00".
+    normalized = backend_start + ":00" if re.search(r"[+-][0-9]{2}$", backend_start) else backend_start
+    timestamp = datetime.fromisoformat(normalized)
     if timestamp.tzinfo is None:
         raise RuntimeError("Backend identity timestamp requires a timezone")
     instance = str(uuid.UUID(instance))

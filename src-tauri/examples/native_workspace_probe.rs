@@ -85,6 +85,7 @@ async fn create(backend: &Backend) -> Result<(), String> {
         read_only: false,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     };
     let first = backend
         .save_development_connection(None, form, "dbunk".into())
@@ -127,6 +128,8 @@ async fn create(backend: &Backend) -> Result<(), String> {
             query_changes: None,
             schema_changes: None,
             table_ddl: None,
+            schema_alter: None,
+            object_ddl: None,
             admin_control: None,
             maintenance: None,
             tool: None,

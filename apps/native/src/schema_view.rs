@@ -13,6 +13,7 @@ use dbunk_lib::backend::{WorkspaceApplyState, WorkspaceSchemaChanges};
 use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, prelude::*};
 use std::{cell::Cell, rc::Rc};
 mod actions;
+pub mod alter;
 mod render;
 use crate::bounded_field::Field;
 

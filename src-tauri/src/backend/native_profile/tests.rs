@@ -89,6 +89,7 @@ fn form(port: u16) -> DevelopmentPostgresConnection {
         read_only: true,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 
@@ -161,6 +162,8 @@ async fn save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer
             query_changes: None,
             schema_changes: None,
             table_ddl: None,
+            schema_alter: None,
+            object_ddl: None,
             admin_control: None,
             maintenance: None,
             tool: None,

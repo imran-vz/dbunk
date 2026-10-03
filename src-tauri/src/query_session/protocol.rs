@@ -266,11 +266,52 @@ pub enum QueryEvent {
         truncation_reasons: Vec<String>,
         error: Option<QueryDatabaseError>,
         refusal: Option<String>,
+        /// Present only for a completed execution whose server-reported
+        /// rendering parameters were unchanged from submission to completion.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context: Option<Box<QueryExecutionContext>>,
     },
     SessionLost {
         reason: String,
     },
     SessionClosed,
+}
+
+/// Server-reported session parameters that rendered a completed execution's
+/// text. Values are copied from ParameterStatus messages, never queried on the
+/// user's session; an absent value is unknown, not a default.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryExecutionContext {
+    pub client_encoding: Option<String>,
+    pub date_style: Option<String>,
+    pub interval_style: Option<String>,
+    pub search_path: Option<String>,
+    /// The statement ran in its own autocommit wrapper, so no uncommitted
+    /// session DDL (for example a temporary table) could have been visible.
+    pub autocommit: bool,
+}
+
+// The Tauri webview build only serializes the context; native hosts read it.
+#[cfg_attr(not(feature = "isolated-profile"), allow(dead_code))]
+impl QueryExecutionContext {
+    /// Every captured cell crossed the wire as UTF-8. Server encoding is
+    /// irrelevant: UTF8 or SQL_ASCII servers return exactly the bytes sent back.
+    pub fn utf8(&self) -> bool {
+        self.client_encoding.as_deref() == Some("UTF8")
+    }
+    /// DateStyle output ISO renders dates and timestamps as unambiguous ISO
+    /// 8601 text, with an explicit offset for zoned values.
+    pub fn iso_dates(&self) -> bool {
+        self.date_style
+            .as_deref()
+            .is_some_and(|style| style == "ISO" || style.starts_with("ISO,"))
+    }
+    /// The search_path that resolved unqualified names, only when the server
+    /// reported it and no uncommitted session catalog state could apply.
+    pub fn name_resolution_path(&self) -> Option<&str> {
+        self.search_path.as_deref().filter(|_| self.autocommit)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -421,10 +462,32 @@ mod tests {
             truncation_reasons: Vec::new(),
             error: None,
             refusal: Some("parametersReturnRows".into()),
+            context: None,
         })
         .unwrap();
         assert_eq!(terminal["refusal"], "parametersReturnRows");
         assert_eq!(terminal["error"], serde_json::Value::Null);
+        // Existing consumers see no new key unless a context was proven.
+        assert!(terminal.get("context").is_none());
+        let completed = serde_json::to_value(QueryEvent::ExecutionCompleted {
+            status: "completed".into(),
+            transaction: QueryTransactionSnapshot::default(),
+            omitted_rows: 0,
+            omitted_result_sets: 0,
+            omitted_notices: 0,
+            omitted_metadata_bytes: 0,
+            truncation_reasons: Vec::new(),
+            error: None,
+            refusal: None,
+            context: Some(Box::new(QueryExecutionContext {
+                client_encoding: Some("UTF8".into()),
+                autocommit: true,
+                ..QueryExecutionContext::default()
+            })),
+        })
+        .unwrap();
+        assert_eq!(completed["context"]["clientEncoding"], "UTF8");
+        assert_eq!(completed["context"]["autocommit"], true);
     }
     #[test]
     fn nullable_column_names_keep_positions() {

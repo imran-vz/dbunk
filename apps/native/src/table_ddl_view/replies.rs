@@ -3,7 +3,7 @@ impl TableDdlView {
     pub fn receive(&mut self, message: TableMessage, cx: &mut Context<Self>) {
         let mut invalidate = false;
         match message {
-            TableMessage::TableDdlObserved(id, result)
+            TableMessage::TableDdlObserved(id, DdlObserved::Table(result))
                 if self
                     .pending
                     .as_ref()
@@ -59,7 +59,7 @@ impl TableDdlView {
                     };
                 }
             }
-            TableMessage::TableDdlReviewed(id, result)
+            TableMessage::TableDdlReviewed(id, DdlReviewed::Table(result))
                 if self
                     .pending
                     .as_ref()
@@ -100,7 +100,7 @@ impl TableDdlView {
                     }
                 }
             }
-            TableMessage::TableDdlApplied(id, result)
+            TableMessage::TableDdlApplied(id, DdlApplied::Table(result))
                 if self
                     .flow
                     .as_ref()

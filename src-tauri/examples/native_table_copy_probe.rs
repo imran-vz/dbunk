@@ -398,6 +398,7 @@ async fn run() -> Result<(), String> {
                     read_only: false,
                     tls: Default::default(),
                     driver_options: Default::default(),
+                    ssh_tunnel: None,
                 },
                 "dbunk".into(),
             )

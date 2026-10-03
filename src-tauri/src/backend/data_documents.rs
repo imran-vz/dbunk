@@ -98,6 +98,7 @@ impl Documents {
         write.active = Some(ActiveWrite {
             id,
             phase: WritePhase::Preparing,
+            interrupted: false,
         });
         Ok(WritePermit {
             lease: document.0.clone(),
@@ -127,6 +128,7 @@ impl Documents {
         state.control = Some(ActiveWrite {
             id,
             phase: WritePhase::Preparing,
+            interrupted: false,
         });
         Ok(ControlPermit {
             lease: document.0.clone(),
@@ -215,6 +217,7 @@ impl Lease {
             if active.phase == WritePhase::Preparing {
                 active.phase = WritePhase::Interrupted;
             }
+            active.interrupted = true;
         }
         if let Some(active) = &mut write.control {
             if active.phase == WritePhase::Preparing {
@@ -248,6 +251,9 @@ struct WriteState {
 struct ActiveWrite {
     id: Uuid,
     phase: WritePhase,
+    /// Any cancel/retire since admission. Only grouped DDL consults it, to
+    /// refuse returning to Preparing after an already admitted COMMIT.
+    interrupted: bool,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WritePhase {
@@ -359,6 +365,24 @@ impl WritePermit {
         match state.active.as_mut() {
             Some(active) if active.id == self.id && active.phase == WritePhase::Preparing => {
                 active.phase = WritePhase::CommitAdmitted;
+                true
+            }
+            _ => false,
+        }
+    }
+    /// Grouped DDL: after one admitted group settles, return to Preparing for
+    /// the next group only when no cancel/retire arrived since admission. The
+    /// same lease lock orders this against cancellation, so a cancel during an
+    /// earlier COMMIT can never be lost by a later group's dispatch.
+    pub(crate) fn readmit(&self) -> bool {
+        let mut state = self.lease.write.lock().unwrap();
+        match state.active.as_mut() {
+            Some(active)
+                if active.id == self.id
+                    && active.phase == WritePhase::CommitAdmitted
+                    && !active.interrupted =>
+            {
+                active.phase = WritePhase::Preparing;
                 true
             }
             _ => false,

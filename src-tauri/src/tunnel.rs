@@ -42,8 +42,28 @@ mod session;
 use endpoint::{remote_endpoint, rewrite_connection_endpoint};
 use forwarding::spawn_forward_accept_loop;
 pub use route::validate_connection_tunnel;
+#[cfg(feature = "isolated-profile")]
+pub(crate) use route::validate_tunnel_config;
 use route::{SshRoute, SshSessionKey};
 use session::{connect_route_session, ResolvedBastion, RouteSession};
+#[cfg(feature = "isolated-profile")]
+pub(crate) use session::{HOST_KEY_CHANGED, HOST_KEY_UNTRUSTED};
+
+#[cfg(feature = "isolated-profile")]
+/// Host-key refusals are reported separately from transport failures so a
+/// native caller can direct the user to review or reset trust.
+pub(crate) fn is_host_key_error(message: &str) -> bool {
+    message.starts_with(HOST_KEY_CHANGED) || message.starts_with(HOST_KEY_UNTRUSTED)
+}
+
+#[cfg(feature = "isolated-profile")]
+/// Observation from an explicit native bastion Test. Nothing is persisted.
+pub(crate) struct BastionProbe {
+    pub(crate) trusted: Option<String>,
+    pub(crate) observed: String,
+    pub(crate) authentication: Option<Result<(), String>>,
+    pub(crate) latency_ms: u64,
+}
 
 struct ForwardState {
     publication_id: uuid::Uuid,
@@ -532,7 +552,56 @@ async fn load_bastion(
         password,
         private_key_content,
         passphrase,
+        require_trusted_host_key: context.requires_trusted_host_keys(),
     })
+}
+
+#[cfg(feature = "isolated-profile")]
+/// Handshake with one bastion directly, compare its key with the trusted key
+/// and authenticate only on a match. The blocking worker is awaited, so the
+/// SSH socket is closed before this returns.
+pub(crate) async fn probe_bastion(
+    context: &credentials::Context,
+    pool: &SqlitePool,
+    mode: CredentialStorageMode,
+    bastion_id: &str,
+) -> Result<BastionProbe, String> {
+    let started = Instant::now();
+    let bastion = load_bastion(context, pool, mode, bastion_id).await?;
+    let trusted = bastion.server.host_key_fingerprint.clone();
+    let probe = tokio::task::spawn_blocking(move || session::probe_bastion(&bastion))
+        .await
+        .map_err(|error| error.to_string())??;
+    Ok(BastionProbe {
+        trusted,
+        observed: probe.observed,
+        authentication: probe.authentication,
+        latency_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+    })
+}
+
+#[cfg(feature = "isolated-profile")]
+/// Process teardown: stop every published forward and idle SSH session and
+/// join their workers. In-flight setups release their own leases.
+pub(crate) async fn drop_all_async() {
+    if let Err(error) = tokio::task::spawn_blocking(drop_all).await {
+        log::warn!("SSH tunnel teardown worker failed: {error}");
+    }
+}
+
+#[cfg(feature = "isolated-profile")]
+fn drop_all() {
+    let (forwards, sessions) = {
+        let mut runtime = RUNTIME.lock().expect("ssh tunnel runtime poisoned");
+        let forwards = runtime
+            .forwards
+            .drain()
+            .map(|(_, forward)| forward)
+            .collect::<Vec<_>>();
+        let sessions = take_unused_sessions_locked(&mut runtime);
+        (forwards, sessions)
+    };
+    shutdown_resources(forwards, sessions);
 }
 
 fn take_unused_sessions_locked(runtime: &mut Runtime) -> Vec<CachedSession> {

@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Connection, SqliteConnection};
 use std::{path::Path, path::PathBuf, sync::Arc};
 
-const MARKER: &str = ".dbunk-native-profile";
-const IDENTITY_KEY: &str = "native.profile.identity.v1";
+pub(super) const MARKER: &str = ".dbunk-native-profile";
+pub(super) const IDENTITY_KEY: &str = "native.profile.identity.v1";
 const MAX_MARKER_BYTES: usize = 8192;
 
 /// Validated workspace authority. Stage03's immutable single-fixture host has
@@ -57,6 +57,28 @@ impl Marker {
         }
         Ok(encoded)
     }
+}
+
+/// A fresh general-profile identity whose marker names `path`. The legacy
+/// importer writes it into private staging before publishing at `path`.
+pub(super) fn new_identity(path: &Path) -> Result<(String, String), String> {
+    let marker = Marker {
+        version: 1,
+        kind: MarkerKind::GeneralPostgres,
+        profile_id: uuid::Uuid::new_v4().to_string(),
+        credential_namespace: uuid::Uuid::new_v4().to_string(),
+        path: path.to_owned(),
+    };
+    Ok((marker.encoded()?, marker.profile_id))
+}
+
+/// Reads and validates the marker stored in `directory` for a profile whose
+/// final location is `path`. Returns the canonical encoding and profile ID.
+pub(super) fn read_identity(directory: &Path, path: &Path) -> Result<(String, String), String> {
+    let marker: Marker = serde_json::from_slice(&files::read_marker(directory, MARKER)?)
+        .map_err(|_| "Invalid native profile marker")?;
+    marker.validate(path)?;
+    Ok((marker.encoded()?, marker.profile_id))
 }
 
 impl Backend {

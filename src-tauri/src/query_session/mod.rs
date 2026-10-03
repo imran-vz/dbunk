@@ -1125,6 +1125,10 @@ async fn run_execution(
         }
         _ => postgres::TransactionEntry::Inside,
     };
+    let autocommit = entry == postgres::TransactionEntry::Autocommit;
+    // Every earlier response has been received, so this includes all
+    // ParameterStatus values reported before the statement is sent.
+    let reported_before = session.connection.reported.settled().await;
     let mut events = postgres::execute_plan_tracked(
         session.connection.client.clone(),
         session.connection.notices.clone(),
@@ -1224,6 +1228,15 @@ async fn run_execution(
     // Sampled as soon as the outcome is known: a Stop that arrives during the
     // observer probe below did not cause this outcome.
     let cancel_requested = session.credit.lock().await.cancel_requested;
+    let context = if matches!(outcome, postgres::Outcome::Completed) {
+        execution_context(
+            reported_before.as_ref(),
+            session.connection.reported.settled().await.as_ref(),
+            autocommit,
+        )
+    } else {
+        None
+    };
     let (status, error, refusal) = match outcome {
         postgres::Outcome::Abandoned => {
             manager.remove_and_close(&session.id, false).await;
@@ -1281,12 +1294,86 @@ async fn run_execution(
             truncation_reasons: reasons,
             error: display_error,
             refusal: refusal.map(Into::into),
+            context,
         },
     )
     .await
     .is_err()
     {
         manager.remove_and_close(&session.id, false).await;
+    }
+}
+
+/// A context is reported only when the same reported values applied before
+/// submission and after the terminal response: any ParameterStatus in between
+/// (for example `SELECT set_config(...)`) withdraws it.
+fn execution_context(
+    before: Option<&crate::postgres::dedicated::reported::ReportedSnapshot>,
+    after: Option<&crate::postgres::dedicated::reported::ReportedSnapshot>,
+    autocommit: bool,
+) -> Option<Box<QueryExecutionContext>> {
+    let (before, after) = (before?, after?);
+    if before != after {
+        return None;
+    }
+    let value = |name: &str| after.value(name).map(str::to_owned);
+    Some(Box::new(QueryExecutionContext {
+        client_encoding: value("client_encoding"),
+        date_style: value("DateStyle"),
+        interval_style: value("IntervalStyle"),
+        search_path: value("search_path"),
+        autocommit,
+    }))
+}
+
+#[cfg(test)]
+mod execution_context_tests {
+    use super::execution_context;
+    use crate::postgres::dedicated::reported::ReportedSnapshot;
+
+    fn snapshot(generation: u64, encoding: &str, path: Option<&str>) -> ReportedSnapshot {
+        ReportedSnapshot {
+            generation,
+            values: [
+                Some(encoding.into()),
+                Some("ISO, MDY".into()),
+                Some("postgres".into()),
+                path.map(str::to_owned),
+            ],
+        }
+    }
+
+    #[test]
+    fn stable_reported_values_become_the_execution_context() {
+        let before = snapshot(3, "UTF8", Some("\"$user\", public"));
+        let context = execution_context(Some(&before), Some(&before.clone()), true).unwrap();
+        assert!(context.utf8());
+        assert!(context.iso_dates());
+        assert_eq!(context.name_resolution_path(), Some("\"$user\", public"));
+        let manual = execution_context(Some(&before), Some(&before), false).unwrap();
+        assert_eq!(manual.name_resolution_path(), None);
+        let unreported = snapshot(3, "UTF8", None);
+        assert_eq!(
+            execution_context(Some(&unreported), Some(&unreported), true)
+                .unwrap()
+                .name_resolution_path(),
+            None
+        );
+    }
+
+    #[test]
+    fn any_report_during_the_execution_or_an_unsettled_driver_withdraws_it() {
+        let before = snapshot(3, "UTF8", Some("public"));
+        // set_config inside the statement reports a change, even one that is
+        // later reverted to the same value (the generation still moves).
+        for after in [
+            snapshot(4, "LATIN1", Some("public")),
+            snapshot(5, "UTF8", Some("public")),
+        ] {
+            assert!(execution_context(Some(&before), Some(&after), true).is_none());
+        }
+        assert!(execution_context(None, Some(&before), true).is_none());
+        assert!(execution_context(Some(&before), None, true).is_none());
     }
 }
 

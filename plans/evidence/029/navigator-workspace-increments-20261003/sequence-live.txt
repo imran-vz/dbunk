@@ -1,0 +1,29 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/dbunk/src-tauri)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `dbunk` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 47.08s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::sequences::live_tests::native_sequence_inspect_writes_policy_stale_identity_and_cleanup ... fixture=81868ce8-ab69-4c18-9521-b204506b3d30 endpoint=127.0.0.1:15432/dbunk_demo schema=native_seq_4d51ab21609245e3936e0b363490b206"字 helper_client=native_seq_probe_4d51ab21609245e3936e0b363490b206
+created owned schema oid=16443
+inspect ord value=10,f unchanged; identity owned_by=Some("\"native_seq_4d51ab21609245e3936e0b363490b206\"\"字\".\"ident\"\"字\".id")
+out-of-range Set/Restart refused before review; value unchanged
+protected advance returned 10 then 15; helper sees 15,t
+confirmed setval(100,true)=100,t; setval(50,false)=50,f; next nextval returned 50
+confirmed RESTART WITH 500 -> 500,f; RESTART -> 10,f
+identity sequence advance returned 100; restart 200 used by next insert
+stale drop/recreate refused advance+restart old_oid=16445 new_oid=16455 new value 1,f untouched
+stale definition (increment changed) refused; value 10,f untouched
+strict advance confirmed and returned 10
+read-only stored policy refused advance/set/restart; value 10,t untouched
+audited confirmed completions=6 (set_sequence=2, restart_sequence=3, advance_sequence=1)
+owned schema cleanup schema=native_seq_4d51ab21609245e3936e0b363490b206"字 oid=16443 verified_objects=4 mode=RESTRICT
+joined cleanup activity baseline=0 final=0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1203 filtered out; finished in 17.48s
+

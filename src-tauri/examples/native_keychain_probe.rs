@@ -156,6 +156,7 @@ fn form() -> DevelopmentPostgresConnection {
         read_only: true,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 
@@ -211,6 +212,8 @@ async fn seed(backend: &Backend, service: &str, primary: &str, backup: &str) -> 
                     query_changes: None,
                     schema_changes: None,
                     table_ddl: None,
+                    schema_alter: None,
+                    object_ddl: None,
                     admin_control: None,
                     maintenance: None,
                     tool: None,

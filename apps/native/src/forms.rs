@@ -13,7 +13,9 @@ use gpui::{
 };
 use std::{collections::HashMap, sync::Arc};
 
+mod bastions;
 mod diagnosis;
+mod tunnel;
 mod uri;
 
 type FormJob =
@@ -44,6 +46,9 @@ enum FormAction {
     ReadOnly,
     Favorite,
     Pick(&'static str),
+    Bastion(bastions::Action),
+    Tunnel,
+    TunnelVia(usize),
 }
 enum Kind {
     Credentials(DevelopmentSettings),
@@ -53,6 +58,7 @@ enum Kind {
     Delete(String),
     Discard,
     ResetWorkspace,
+    Bastions(Box<bastions::State>),
 }
 struct Field {
     key: &'static str,
@@ -77,6 +83,7 @@ pub struct Form {
     message: Option<String>,
     task: Option<Task<()>>,
     diagnosis: Option<diagnosis::State>,
+    tunnel: Option<tunnel::State>,
 }
 impl EventEmitter<FormEvent> for Form {}
 impl Form {
@@ -98,6 +105,7 @@ impl Form {
             message: None,
             task: None,
             diagnosis: None,
+            tunnel: None,
         }
     }
     fn field(
@@ -175,6 +183,9 @@ impl Form {
             cx,
         );
         form.diagnosis = Some(diagnosis::State::new(retained));
+        if form.host.backend.native_profile_kind() == Some(NativeProfileKind::GeneralPostgres) {
+            form.tunnel = Some(tunnel::State::new(data.ssh_tunnel.clone()));
+        }
         form.environment = data.environment;
         form.safe = data.safe_mode;
         form.tls = data.tls.mode;
@@ -260,6 +271,16 @@ impl Form {
             ),
         ] {
             form.field(key, label, value, key == "password", window, cx);
+        }
+        if let Some(initial) = form
+            .tunnel
+            .as_ref()
+            .map(|tunnel| tunnel::FIELDS.map(|(key, label)| (key, label, tunnel.initial(key))))
+        {
+            for (key, label, value) in initial {
+                form.field(key, label, value, false, window, cx);
+            }
+            form.load_tunnel_choices(window, cx);
         }
         form.focus(window, cx);
         form
@@ -377,7 +398,17 @@ impl Form {
                 }),
                 default_role: optional("role"),
             },
+            ssh_tunnel: self.tunnel_input(cx)?,
         })
+    }
+    fn field_visible(&self, key: &str) -> bool {
+        match &self.kind {
+            Kind::Bastions(state) => bastions::field_visible(state.auth(), key),
+            _ if key.starts_with("tunnel-") => {
+                self.tunnel.as_ref().is_some_and(|tunnel| tunnel.enabled)
+            }
+            _ => true,
+        }
     }
     fn activate(&mut self, action: FormAction, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy {
@@ -393,6 +424,19 @@ impl Form {
         }
         if matches!(action, FormAction::Test) {
             self.test_connection(cx);
+            return;
+        }
+        if let Kind::Bastions(state) = &self.kind {
+            match action {
+                FormAction::Bastion(action) => self.activate_bastion(action, window, cx),
+                FormAction::Submit if state.editing() => self.save_bastion(window, cx),
+                FormAction::Cancel => cx.emit(if self.bastions_changed() {
+                    FormEvent::Saved
+                } else {
+                    FormEvent::Cancelled
+                }),
+                _ => {}
+            }
             return;
         }
         if let Some(state) = &mut self.diagnosis {
@@ -439,6 +483,22 @@ impl Form {
             }
             FormAction::Favorite => {
                 self.favorite = !self.favorite;
+                cx.notify();
+                return;
+            }
+            FormAction::Tunnel => {
+                if let Some(tunnel) = self.tunnel.as_mut() {
+                    tunnel.enabled = !tunnel.enabled;
+                }
+                cx.notify();
+                return;
+            }
+            FormAction::TunnelVia(index) => {
+                if let Some(tunnel) = self.tunnel.as_mut()
+                    && let Some((id, _)) = tunnel.choices.get(index)
+                {
+                    tunnel.bastion = Some(id.clone());
+                }
                 cx.notify();
                 return;
             }
@@ -621,6 +681,14 @@ impl Form {
         let key = match action {
             FormAction::ReadOnly => "Read-only".to_owned(),
             FormAction::Favorite => "Favorite".to_owned(),
+            FormAction::Cancel => "Cancel".to_owned(),
+            FormAction::Tunnel => "SSH tunnel".to_owned(),
+            FormAction::TunnelVia(index) => format!("tunnel-via-{index}"),
+            FormAction::Bastion(bastions::Action::ClearPassphrase) => "Clear passphrase".to_owned(),
+            FormAction::Bastion(bastions::Action::Row(op, index)) => {
+                format!("bastion-{op:?}-{index}")
+            }
+            FormAction::Bastion(action) => format!("bastion-{action:?}"),
             _ => label.to_string(),
         };
         let focus = self
@@ -641,8 +709,16 @@ impl Form {
                 | FormAction::Environment(_)
                 | FormAction::Safe(_)
                 | FormAction::Tls(_)
+                | FormAction::TunnelVia(_)
+                | FormAction::Bastion(bastions::Action::Auth(_))
         );
-        let toggle = matches!(action, FormAction::ReadOnly | FormAction::Favorite);
+        let toggle = matches!(
+            action,
+            FormAction::ReadOnly
+                | FormAction::Favorite
+                | FormAction::Tunnel
+                | FormAction::Bastion(bastions::Action::ClearPassphrase)
+        );
         let weak = cx.weak_entity();
         div()
             .id(SharedString::from(key))
@@ -705,6 +781,7 @@ impl Form {
             let handles: Vec<_> = self
                 .fields
                 .iter()
+                .filter(|field| self.field_visible(field.key))
                 .map(|field| field.editor.focus_handle(cx))
                 .chain(self.visible_controls.iter().cloned())
                 .collect();
@@ -737,11 +814,16 @@ impl Render for Form {
             Kind::Delete(_) => "Delete connection",
             Kind::Discard => "Unsaved drafts",
             Kind::ResetWorkspace => "Reset saved drafts",
+            Kind::Bastions(_) => "Bastion servers",
         };
         let mut content = div().flex().flex_col().gap_2();
         if matches!(self.kind, Kind::Connection { .. }) {
             let mut fields = div().flex().flex_wrap().gap_x_4().gap_y_2();
-            for field in &self.fields {
+            for field in self
+                .fields
+                .iter()
+                .filter(|field| !field.key.starts_with("tunnel-"))
+            {
                 fields = fields.child(
                     div()
                         .w(px(430.))
@@ -823,6 +905,9 @@ impl Render for Form {
             ] {
                 tls = tls.child(self.button(label, FormAction::Tls(value), self.tls == value, cx));
             }
+            if let Some(section) = self.tunnel_view(cx) {
+                content = content.child(section);
+            }
             content = content.child(tls).child(
                 div()
                     .flex()
@@ -846,6 +931,8 @@ impl Render for Form {
                         cx,
                     )),
             );
+        } else if matches!(self.kind, Kind::Bastions(_)) {
+            content = content.child(self.bastion_view(cx));
         } else if let Kind::Credentials(settings) = &self.kind {
             let state = settings.state;
             if state == DevelopmentCredentialState::NeedsRecovery {
@@ -945,8 +1032,10 @@ impl Render for Form {
             {
                 Some(("Unlock", FormAction::Submit))
             }
+            Kind::Bastions(state) if !state.editing() => None,
             _ => Some(("Save", FormAction::Submit)),
         };
+        let bastion_editing = matches!(&self.kind, Kind::Bastions(state) if state.editing());
         if let Some((label, action)) = action {
             buttons = buttons.child(self.button(label, action, false, cx));
         }
@@ -961,7 +1050,20 @@ impl Render for Form {
         if matches!(self.kind, Kind::Connection { .. }) {
             buttons = buttons.child(self.button("Test connection", FormAction::Test, false, cx));
         }
-        buttons = buttons.child(self.button("Cancel", FormAction::Cancel, false, cx));
+        if bastion_editing {
+            buttons = buttons.child(self.button(
+                "Back to Bastion Servers",
+                FormAction::Bastion(bastions::Action::Back),
+                false,
+                cx,
+            ));
+        }
+        let cancel = if matches!(self.kind, Kind::Bastions(_)) {
+            "Close"
+        } else {
+            "Cancel"
+        };
+        buttons = buttons.child(self.button(cancel, FormAction::Cancel, false, cx));
         if self.busy {
             buttons = buttons.child("Working…");
         }
@@ -1004,6 +1106,7 @@ fn connection_defaults(kind: Option<NativeProfileKind>) -> DevelopmentPostgresCo
             ..Default::default()
         },
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 

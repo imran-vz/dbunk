@@ -3,13 +3,16 @@
 use crate::{
     accessible_editor::AccessibleEditor,
     bounded_field::Field,
-    overview_model::{Capture, Scope, Section},
+    overview_model::{
+        Capture, Scope, Section,
+        recent::{RECENT_LIMIT, Recent},
+    },
 };
 use dbunk_lib::backend::overview::{OverviewSnapshot, RelationStatsRequest};
 use editor::Editor;
 use gpui::{
-    Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Subscription,
-    UniformListScrollHandle, Window, div, prelude::*, px, rgb, uniform_list,
+    Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, ScrollHandle,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, rgb, uniform_list,
 };
 use std::{cell::Cell, rc::Rc};
 mod actions;
@@ -23,6 +26,12 @@ pub enum OverviewEvent {
     Refresh(RelationStatsRequest),
     Next(RelationStatsRequest),
     Cancel,
+    RefreshRecent,
+    /// Exact recorded SQL; the parent opens it as an unexecuted draft.
+    OpenRecent {
+        sql: String,
+        connection: String,
+    },
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Action {
@@ -31,15 +40,18 @@ enum Action {
     Refresh,
     Next,
     Cancel,
+    RefreshRecent,
     Scope(usize),
     Section(usize),
+    OpenRecent(u64, usize),
 }
-const ACTIONS: [(Action, &str); 5] = [
+const ACTIONS: [(Action, &str); 6] = [
     (Action::Back, "Administration"),
     (Action::Connect, "Connect"),
     (Action::Refresh, "Refresh scope"),
     (Action::Next, "Next page"),
     (Action::Cancel, "Cancel read"),
+    (Action::RefreshRecent, "Refresh recent queries"),
 ];
 const FIELD_BYTES: usize = 2 * 1024 * 1024;
 struct FieldLease(Rc<Cell<usize>>);
@@ -68,6 +80,11 @@ pub struct OverviewRuntime<'a> {
     pub editable: bool,
     pub capture_current: bool,
     pub status: &'a str,
+    /// Bound connection identity and this document's reader state.
+    pub header: &'a str,
+    pub connection: Option<&'a str>,
+    pub recent_enabled: bool,
+    pub recent_loading: bool,
 }
 pub struct OverviewView {
     budget: Rc<Cell<usize>>,
@@ -93,6 +110,14 @@ pub struct OverviewView {
     capture_current: bool,
     status: String,
     message: Option<String>,
+    header: String,
+    connection: Option<String>,
+    recent: Option<Recent>,
+    recent_focus: usize,
+    recent_rows: Vec<FocusHandle>,
+    recent_scroll: ScrollHandle,
+    recent_enabled: bool,
+    recent_loading: bool,
 }
 impl EventEmitter<OverviewEvent> for OverviewView {}
 impl OverviewView {
@@ -121,6 +146,14 @@ impl OverviewView {
             capture_current: false,
             status: String::new(),
             message: None,
+            header: String::new(),
+            connection: None,
+            recent: None,
+            recent_focus: 0,
+            recent_rows: (0..RECENT_LIMIT).map(|_| cx.focus_handle()).collect(),
+            recent_scroll: ScrollHandle::new(),
+            recent_enabled: false,
+            recent_loading: false,
         };
         view.ensure_fields(window, cx);
         view
@@ -145,6 +178,10 @@ impl OverviewView {
             editable,
             capture_current,
             status,
+            header,
+            connection,
+            recent_enabled,
+            recent_loading,
         } = runtime;
         let status = bounded_status(status);
         if (
@@ -153,11 +190,35 @@ impl OverviewView {
             self.can_cancel,
             self.editable,
             self.capture_current,
-        ) == (ready, busy, can_cancel, editable, capture_current)
-            && self.status == status
+            self.recent_enabled,
+            self.recent_loading,
+        ) == (
+            ready,
+            busy,
+            can_cancel,
+            editable,
+            capture_current,
+            recent_enabled,
+            recent_loading,
+        ) && self.status == status
+            && self.header == header
+            && self.connection.as_deref() == connection
         {
             return;
         }
+        // A list for another connection is never shown or opened.
+        if self
+            .recent
+            .as_ref()
+            .is_some_and(|recent| Some(recent.connection.as_str()) != connection)
+        {
+            self.recent = None;
+            self.recent_focus = 0;
+        }
+        self.header = bounded_status(header);
+        self.connection = connection.map(str::to_owned);
+        self.recent_enabled = recent_enabled;
+        self.recent_loading = recent_loading;
         self.ready = ready;
         self.busy = busy;
         self.can_cancel = can_cancel;
@@ -208,6 +269,22 @@ impl OverviewView {
         }
         cx.notify();
         Ok(())
+    }
+    /// Parent admits only the current generation for the bound connection.
+    /// Replacing the list drops the previous allowance.
+    pub fn receive_recent(&mut self, recent: Recent, cx: &mut Context<Self>) {
+        if self.connection.as_deref() != Some(recent.connection.as_str()) {
+            return;
+        }
+        self.recent_focus = 0;
+        self.recent = Some(recent);
+        self.recent_scroll.scroll_to_item(0);
+        cx.notify();
+    }
+    fn recent_count(&self) -> usize {
+        self.recent
+            .as_ref()
+            .map_or(0, |recent| recent.entries.len().min(self.recent_rows.len()))
     }
     fn ensure_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.fields.is_empty() {

@@ -60,6 +60,7 @@ fn form(name: &str) -> DevelopmentPostgresConnection {
         read_only: false,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 

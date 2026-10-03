@@ -14,20 +14,24 @@ mod workspace;
 pub use connections::{
     DevelopmentConnection, DevelopmentConnectionFailure, DevelopmentConnectionOrganization,
     DevelopmentConnectionTest, DevelopmentDriverOptions, DevelopmentEnvironment,
-    DevelopmentPostgresConnection, DevelopmentSafeMode, DevelopmentTlsMode, DevelopmentTlsOptions,
+    DevelopmentPostgresConnection, DevelopmentSafeMode, DevelopmentSshTunnel, DevelopmentTlsMode,
+    DevelopmentTlsOptions,
 };
 pub use settings::{DevelopmentCredentialState, DevelopmentSettings, DevelopmentStorageMode};
+pub(super) use workspace::encode_record as encode_workspace_record;
 pub use workspace::{
     WorkspaceAdminAction, WorkspaceAdminControl, WorkspaceApplyState, WorkspaceDensity,
     WorkspaceDocument, WorkspaceError, WorkspaceLoad, WorkspaceMaintenance,
     WorkspaceMaintenanceAction, WorkspaceMaintenanceKind, WorkspaceMaintenanceState,
-    WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision, WorkspaceSchemaChanges,
-    WorkspaceSelection, WorkspaceSnapshot, WorkspaceStagedChange, WorkspaceTableCopy,
-    WorkspaceTableCopyState, WorkspaceTableDdl, WorkspaceTableSeed, WorkspaceTableSeedState,
-    WorkspaceTableState, WorkspaceTool, NATIVE_WORKSPACE_MAX_BYTES, NATIVE_WORKSPACE_MAX_DOCUMENTS,
-    WORKSPACE_COPY_MAX_JOBS, WORKSPACE_MUTATION_MAX_BYTES, WORKSPACE_MUTATION_MAX_CHANGES,
-    WORKSPACE_SEED_MAX_JOBS, WORKSPACE_TABLE_DDL_MAX_BYTES,
+    WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision, WorkspaceSchemaAlter,
+    WorkspaceSchemaChanges, WorkspaceSelection, WorkspaceSnapshot, WorkspaceStagedChange,
+    WorkspaceTableCopy, WorkspaceTableCopyState, WorkspaceTableDdl, WorkspaceTableSeed,
+    WorkspaceTableSeedState, WorkspaceTableState, WorkspaceTool, NATIVE_WORKSPACE_MAX_BYTES,
+    NATIVE_WORKSPACE_MAX_DOCUMENTS, WORKSPACE_COPY_MAX_JOBS, WORKSPACE_MUTATION_MAX_BYTES,
+    WORKSPACE_MUTATION_MAX_CHANGES, WORKSPACE_SCHEMA_ALTER_MAX_BYTES, WORKSPACE_SEED_MAX_JOBS,
+    WORKSPACE_TABLE_DDL_MAX_BYTES,
 };
+pub use workspace::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
 #[cfg(test)]
 mod tests;
 

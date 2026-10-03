@@ -14,13 +14,20 @@ impl CatalogView {
             expected: None,
         };
         if self.ready {
-            if self.busy || self.schema_busy || self.maintenance_busy || self.table_ddl_busy {
+            if self.busy
+                || self.schema_busy
+                || self.maintenance_busy
+                || self.table_ddl_busy
+                || self.object_ddl_busy
+            {
                 self.status =
                     "Finish the current Objects operation, then open Structure again".into();
             } else {
                 self.request_structure(request);
             }
         } else if self.editable {
+            // The latest pending request wins; never run both after connect.
+            self.describe_after_connect = None;
             self.structure_after_connect = Some(request);
             if self.controls.is_none() {
                 self.begin_connect(cx);
@@ -58,6 +65,7 @@ impl CatalogView {
             || self.schema_busy
             || self.maintenance_busy
             || self.table_ddl_busy
+            || self.object_ddl_busy
         {
             return;
         }

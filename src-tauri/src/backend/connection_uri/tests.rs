@@ -16,6 +16,7 @@ fn input() -> DevelopmentPostgresConnection {
             ..Default::default()
         },
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 

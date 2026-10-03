@@ -12,6 +12,7 @@ fn form() -> DevelopmentPostgresConnection {
         read_only: true,
         tls: Default::default(),
         driver_options: Default::default(),
+        ssh_tunnel: None,
     }
 }
 

@@ -1,13 +1,27 @@
 //! Launch modes never infer endpoint authority from a directory's contents.
 //! General profile creation and opening are separate explicit operations.
-use dbunk_lib::backend::{Backend, DevelopmentFixtures};
+use dbunk_lib::backend::{
+    Backend, DevelopmentFixtures, import_legacy_profile, snapshot_legacy_profile,
+};
 use std::{ffi::OsString, io::Read, path::PathBuf};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Launch {
     Fixture(PathBuf),
-    FixtureWorkspace { profile: PathBuf, manifest: PathBuf },
-    Native { profile: PathBuf, create: bool },
+    FixtureWorkspace {
+        profile: PathBuf,
+        manifest: PathBuf,
+    },
+    Native {
+        profile: PathBuf,
+        create: bool,
+    },
+    /// Offline copy-based import. Never opens a profile, window or endpoint.
+    ImportLegacy {
+        source: PathBuf,
+        snapshot: PathBuf,
+        destination: PathBuf,
+    },
 }
 
 impl Launch {
@@ -17,7 +31,7 @@ impl Launch {
     ) -> anyhow::Result<Self> {
         let mut args = args.into_iter();
         let mode = args.next().ok_or_else(|| anyhow::anyhow!(
-            "Usage: dbunk-native --profile PATH | --workspace-profile PATH --fixture-manifest FILE | --create-native-profile PATH | --native-profile PATH"
+            "Usage: dbunk-native --profile PATH | --workspace-profile PATH --fixture-manifest FILE | --create-native-profile PATH | --native-profile PATH | --import-legacy-profile DB --snapshot DIR --into PATH"
         ))?;
         let profile = PathBuf::from(
             args.next()
@@ -52,6 +66,30 @@ impl Launch {
                 profile,
                 create: mode == "--create-native-profile",
             }
+        } else if mode == "--import-legacy-profile" {
+            anyhow::ensure!(
+                !fixture_verification_requested,
+                "Fixture verification cannot run with a legacy import"
+            );
+            let mut path = |flag: &str| -> anyhow::Result<PathBuf> {
+                anyhow::ensure!(
+                    args.next().as_deref() == Some(std::ffi::OsStr::new(flag)),
+                    "Legacy import requires --snapshot DIR --into PATH"
+                );
+                let path = PathBuf::from(
+                    args.next()
+                        .ok_or_else(|| anyhow::anyhow!("Missing {flag} path"))?,
+                );
+                anyhow::ensure!(path.is_absolute(), "{flag} path must be absolute");
+                Ok(path)
+            };
+            let snapshot = path("--snapshot")?;
+            let destination = path("--into")?;
+            Self::ImportLegacy {
+                source: profile,
+                snapshot,
+                destination,
+            }
         } else {
             anyhow::bail!("Unknown native launch mode");
         };
@@ -62,6 +100,15 @@ impl Launch {
         Ok(launch)
     }
 
+    pub fn profile(&self) -> &std::path::Path {
+        match self {
+            Self::Fixture(profile)
+            | Self::FixtureWorkspace { profile, .. }
+            | Self::Native { profile, .. } => profile,
+            // The import's log is keyed by the profile it creates.
+            Self::ImportLegacy { destination, .. } => destination,
+        }
+    }
     pub fn workspace(&self) -> bool {
         !matches!(self, Self::Fixture(_))
     }
@@ -93,8 +140,38 @@ impl Launch {
                 profile,
                 create: false,
             } => Backend::open_native_profile(profile).await,
+            Self::ImportLegacy { .. } => Err("A legacy import does not open a profile".into()),
         };
         result.map_err(anyhow::Error::msg)
+    }
+
+    /// Captures a verified snapshot (or reuses one to resume an interrupted
+    /// import), then imports it. Returns the redacted manifests as JSON.
+    pub async fn import_legacy(&self) -> anyhow::Result<Option<String>> {
+        let Self::ImportLegacy {
+            source,
+            snapshot,
+            destination,
+        } = self
+        else {
+            return Ok(None);
+        };
+        let captured = if snapshot.exists() {
+            None
+        } else {
+            Some(
+                snapshot_legacy_profile(source, snapshot)
+                    .await
+                    .map_err(anyhow::Error::msg)?,
+            )
+        };
+        let imported = import_legacy_profile(snapshot, destination)
+            .await
+            .map_err(anyhow::Error::msg)?;
+        Ok(Some(serde_json::to_string_pretty(&serde_json::json!({
+            "snapshot": captured,
+            "import": imported,
+        }))?))
     }
 }
 
@@ -148,6 +225,58 @@ mod tests {
                 .unwrap()
                 .workspace()
         );
+    }
+
+    #[test]
+    fn legacy_import_is_an_explicit_offline_mode() {
+        let args = [
+            "--import-legacy-profile",
+            "/owned/legacy/dbunk.sqlite",
+            "--snapshot",
+            "/owned/snapshot",
+            "--into",
+            "/owned/native",
+        ];
+        let launch = parse(&args, false).unwrap();
+        assert_eq!(
+            launch,
+            Launch::ImportLegacy {
+                source: "/owned/legacy/dbunk.sqlite".into(),
+                snapshot: "/owned/snapshot".into(),
+                destination: "/owned/native".into(),
+            }
+        );
+        assert!(parse(&args, true).is_err());
+        for args in [
+            vec!["--import-legacy-profile", "/owned/legacy/dbunk.sqlite"],
+            vec![
+                "--import-legacy-profile",
+                "/owned/legacy/dbunk.sqlite",
+                "--into",
+                "/owned/native",
+                "--snapshot",
+                "/owned/snapshot",
+            ],
+            vec![
+                "--import-legacy-profile",
+                "/owned/legacy/dbunk.sqlite",
+                "--snapshot",
+                "relative",
+                "--into",
+                "/owned/native",
+            ],
+            vec![
+                "--import-legacy-profile",
+                "/owned/legacy/dbunk.sqlite",
+                "--snapshot",
+                "/owned/snapshot",
+                "--into",
+                "/owned/native",
+                "--native-profile",
+            ],
+        ] {
+            assert!(parse(&args, false).is_err(), "accepted {args:?}");
+        }
     }
 
     #[test]

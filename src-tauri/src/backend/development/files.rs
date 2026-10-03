@@ -124,10 +124,20 @@ pub(in crate::backend) fn validate_files(path: &Path, marker_name: &str) -> Resu
     validate_directory(path)?;
     for entry in std::fs::read_dir(path).map_err(|_| "Development profile is unavailable")? {
         let entry = entry.map_err(|_| "Development profile is unavailable")?;
-        if !entry
-            .file_type()
-            .map_err(|_| "Development profile file is unavailable")?
-            .is_file()
+        // SQLite may remove its transient WAL/SHM files between listing and
+        // opening; only those names may vanish without refusing the profile.
+        let transient = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| matches!(name, "dbunk.sqlite-wal" | "dbunk.sqlite-shm"));
+        let vanished =
+            |error: &std::io::Error| transient && error.kind() == std::io::ErrorKind::NotFound;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) if vanished(&error) => continue,
+            Err(_) => return Err("Development profile file is unavailable".into()),
+        };
+        if !file_type.is_file()
             || !entry.file_name().to_str().is_some_and(|name| {
                 [
                     marker_name,
@@ -142,10 +152,11 @@ pub(in crate::backend) fn validate_files(path: &Path, marker_name: &str) -> Resu
         {
             return Err("Development profile contains a foreign file or symlink".into());
         }
-        let file = options()
-            .read(true)
-            .open(entry.path())
-            .map_err(|_| "Development profile file is unavailable")?;
+        let file = match options().read(true).open(entry.path()) {
+            Ok(file) => file,
+            Err(error) if vanished(&error) => continue,
+            Err(_) => return Err("Development profile file is unavailable".into()),
+        };
         validate_file(&file)?;
     }
     lock(path)

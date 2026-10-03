@@ -28,11 +28,17 @@ pub(crate) mod native_ddl_export;
 #[cfg(feature = "isolated-profile")]
 pub(crate) mod native_maintenance;
 #[cfg(feature = "isolated-profile")]
+pub(crate) mod native_object_ddl;
+#[cfg(feature = "isolated-profile")]
 pub(crate) mod native_overview;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_schema_alter;
 #[cfg(feature = "isolated-profile")]
 pub(crate) mod native_schema_ddl;
 #[cfg(feature = "isolated-profile")]
 pub(crate) mod native_schema_map;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_sequences;
 #[cfg(feature = "isolated-profile")]
 pub(crate) mod native_table_copy;
 #[cfg(feature = "isolated-profile")]

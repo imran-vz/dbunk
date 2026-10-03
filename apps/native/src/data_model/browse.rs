@@ -300,6 +300,54 @@ impl TableDocument {
             },
         ))
     }
+    /// A bounded related-row read on this tab's superseding sequence. It never
+    /// replaces the retained page, its query, or an outstanding page/count reply.
+    pub fn related(
+        &mut self,
+        schema: &str,
+        table: &str,
+        filters: Vec<BrowseFilter>,
+        page_size: u32,
+    ) -> Result<(RequestTicket, BrowseTableDataPayload), ModelError> {
+        if self.pending.is_some() {
+            return Err(ModelError::Unavailable);
+        }
+        if [schema, table]
+            .iter()
+            .any(|s| s.is_empty() || s.len() > 256 || s.contains('\0'))
+            || filters.is_empty()
+            || !(1..=1000).contains(&page_size)
+        {
+            return Err(ModelError::InvalidInput);
+        }
+        if filters.len() > 256 || crate::results::encoded_size(&filters) > QUERY_BYTES {
+            return Err(ModelError::Budget);
+        }
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or(ModelError::Unavailable)?;
+        let ticket = RequestTicket {
+            owner: self.owner,
+            sequence: self.sequence,
+        };
+        Ok((
+            ticket,
+            BrowseTableDataPayload {
+                connection_id: self.connection.clone(),
+                tab_id: self.tab.clone(),
+                request_id: ticket.sequence,
+                schema: schema.into(),
+                table: table.into(),
+                filters,
+                sort: Vec::new(),
+                page_request: BrowsePageRequest::Keyset { cursor: None },
+                page_size,
+                count_policy: BrowseCountPolicy::None,
+                refresh_structure: false,
+            },
+        ))
+    }
     /// Browse/count share the service's superseding request sequence.
     pub fn count(&mut self) -> Result<(RequestTicket, CountTableBrowseRowsPayload), ModelError> {
         let ticket = self.ticket(None)?;

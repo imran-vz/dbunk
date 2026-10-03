@@ -2,7 +2,7 @@
 use crate::{
     apply_flow::ApplyFlow,
     bounded_field::{Changed, Field},
-    controller::{TableCommand, TableControls, TableMessage},
+    controller::{DdlApplied, DdlObserved, DdlReviewed, TableCommand, TableControls, TableMessage},
     table_ddl_model::{self as model, Lease, Recovery, Selection, Settlement, TOKEN_BYTES},
 };
 use dbunk_lib::backend::{WorkspaceTableDdl, table_ddl::*};

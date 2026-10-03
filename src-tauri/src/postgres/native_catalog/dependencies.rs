@@ -25,20 +25,7 @@ pub(crate) async fn read(
         move |client, timeout| {
             Box::pin(async move {
                 begin_snapshot(client, timeout).await?;
-                let root = resolve(client, &reference).await?;
-                let mut walk = Walk::new(root);
-                for depth in 1..=MAX_DEPTH {
-                    let (edges, limited) = candidates(client, &walk.frontier).await?;
-                    walk.advance(edges, depth, limited);
-                    if walk.frontier.is_empty() {
-                        break;
-                    }
-                }
-                if !walk.frontier.is_empty() {
-                    let (edges, limited) = candidates(client, &walk.frontier).await?;
-                    walk.probe(&edges, limited);
-                }
-                let impact = identify(client, &walk).await?;
+                let impact = impact_in_snapshot(client, &reference).await?;
                 client
                     .batch_execute("COMMIT")
                     .await
@@ -48,6 +35,28 @@ pub(crate) async fn read(
         },
     )
     .await
+}
+
+/// The bounded walk inside a caller-owned snapshot. Object-DDL observation
+/// reuses it so the impact describes exactly the identity captured with it.
+pub(crate) async fn impact_in_snapshot(
+    client: &Client,
+    reference: &PgObjectRef,
+) -> Result<PgDropImpact, CatalogError> {
+    let root = resolve(client, reference).await?;
+    let mut walk = Walk::new(root);
+    for depth in 1..=MAX_DEPTH {
+        let (edges, limited) = candidates(client, &walk.frontier).await?;
+        walk.advance(edges, depth, limited);
+        if walk.frontier.is_empty() {
+            break;
+        }
+    }
+    if !walk.frontier.is_empty() {
+        let (edges, limited) = candidates(client, &walk.frontier).await?;
+        walk.probe(&edges, limited);
+    }
+    identify(client, &walk).await
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -136,9 +145,10 @@ impl Walk {
     }
 }
 
-async fn resolve(client: &Client, reference: &PgObjectRef) -> Result<Address, CatalogError> {
+/// The `$1` kind label understood by [`RESOLVE`].
+pub(crate) fn resolve_kind(kind: PgObjectKind) -> &'static str {
     use PgObjectKind::*;
-    let kind = match reference.kind {
+    match kind {
         Schema => "schema",
         Table => "table",
         View => "view",
@@ -151,7 +161,11 @@ async fn resolve(client: &Client, reference: &PgObjectRef) -> Result<Address, Ca
         Type => "type",
         Domain => "domain",
         Extension => "extension",
-    };
+    }
+}
+
+async fn resolve(client: &Client, reference: &PgObjectRef) -> Result<Address, CatalogError> {
+    let kind = resolve_kind(reference.kind);
     let rows = client
         .query(
             RESOLVE,
@@ -317,7 +331,7 @@ impl Impact {
 
 // All identity components are bound values. Exact kind and routine signature
 // prevent a recreated or overloaded object from silently replacing the target.
-const RESOLVE: &str = r#"
+pub(crate) const RESOLVE: &str = r#"
 SELECT class_id, object_id FROM (
  SELECT 'pg_namespace'::regclass::oid::bigint AS class_id, n.oid::bigint AS object_id
  FROM pg_namespace n WHERE $1='schema' AND n.nspname=$3

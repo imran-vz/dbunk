@@ -19,7 +19,9 @@ mod table_runtime;
 use table_runtime::TableRuntime;
 #[path = "diagnosis_runtime.rs"]
 mod diagnosis_runtime;
-pub use table_runtime::{TableCommand, TableControls, TableMessage, TableReceiver};
+pub use table_runtime::{
+    DdlApplied, DdlObserved, DdlReviewed, TableCommand, TableControls, TableMessage, TableReceiver,
+};
 #[path = "query_controls.rs"]
 mod query_controls;
 use query_controls::QueryControls;
@@ -369,6 +371,21 @@ impl Host {
             .as_ref()
             .ok_or("A workspace host is required")?
             .open(WINDOW.into(), id, connection, wake)
+    }
+
+    /// Saved connections the user explicitly connected in some document.
+    pub fn connected(&self) -> std::collections::BTreeSet<String> {
+        let mut connected = std::collections::BTreeSet::new();
+        let mut visit = |id: &str| {
+            connected.insert(id.to_owned());
+        };
+        if let Some(workspace) = &self.workspace {
+            workspace.visit_connections(&mut visit);
+        }
+        if let Some(tables) = &self.tables {
+            tables.visit_connections(&mut visit);
+        }
+        connected
     }
 
     pub async fn close_document(&self, tab: &str) -> WorkerResult {

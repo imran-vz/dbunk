@@ -101,6 +101,12 @@ impl Context {
         &self.pool
     }
 
+    /// Native profiles require an explicitly reviewed SSH host key before any
+    /// route authenticates; legacy Tauri keeps trust-on-first-use.
+    pub(crate) fn requires_trusted_host_keys(&self) -> bool {
+        self.lifecycle == LifecyclePolicy::Native
+    }
+
     pub(crate) fn legacy(pool: SqlitePool) -> Arc<Self> {
         Self::new(pool, keychain::legacy(), LifecyclePolicy::Legacy)
     }
@@ -681,7 +687,7 @@ pub async fn change_mode(
 // Private helpers
 // ---------------------------------------------------------------------------
 
-async fn read_all_cached(
+pub(crate) async fn read_all_cached(
     context: &Context,
     mode: CredentialStorageMode,
 ) -> Result<HashMap<String, String>, String> {

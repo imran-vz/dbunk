@@ -17,6 +17,12 @@ impl Settings {
     }
 }
 impl AdminView {
+    pub fn set_health(&mut self, health: Option<String>, cx: &mut Context<Self>) {
+        if self.health != health {
+            self.health = health;
+            cx.notify();
+        }
+    }
     pub fn set_connection_metadata(
         &mut self,
         records: &[DevelopmentConnection],
@@ -24,6 +30,19 @@ impl AdminView {
     ) {
         let id = self.connection.as_deref();
         let record = id.and_then(|id| records.iter().find(|record| record.id == id));
+        self.identity = record.map(|record| {
+            use crate::overview_model::recent::single_line;
+            let database = record
+                .postgres
+                .as_ref()
+                .map_or("unknown database", |postgres| postgres.database.as_str());
+            format!(
+                "{} · {} · {}",
+                single_line(&record.name, 128),
+                single_line(&record.engine, 32),
+                single_line(database, 128)
+            )
+        });
         self.connection_settings
             .view
             .update(cx, |view, cx| view.receive(record, id, cx));

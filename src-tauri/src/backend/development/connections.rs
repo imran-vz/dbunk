@@ -68,6 +68,84 @@ pub struct DevelopmentPostgresConnection {
     pub read_only: bool,
     pub tls: DevelopmentTlsOptions,
     pub driver_options: DevelopmentDriverOptions,
+    /// C08.a: optional owned SSH route. Absent in records written before SSH
+    /// support, so older serialized forms still deserialize unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh_tunnel: Option<DevelopmentSshTunnel>,
+}
+
+/// An enabled SSH route through stored Bastion Servers. Every stored tunnel
+/// option round-trips, including ones the native form does not edit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DevelopmentSshTunnel {
+    /// Final hop; the database endpoint is dialled from this bastion.
+    pub bastion_id: String,
+    /// Earlier hops in order, before the final bastion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jump_chain: Vec<String>,
+    /// Loopback only. A wider listener would expose the database forward.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_bind_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_port: Option<u16>,
+    #[serde(default)]
+    pub compression: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_interval_seconds: Option<u32>,
+    #[serde(default = "keepalive_want_reply_default")]
+    pub keepalive_want_reply: bool,
+    /// Runs through the user's shell to reach the first hop (`%h`/`%p`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_command: Option<String>,
+}
+
+fn keepalive_want_reply_default() -> bool {
+    true
+}
+
+impl DevelopmentSshTunnel {
+    pub fn new(bastion_id: impl Into<String>) -> Self {
+        Self {
+            bastion_id: bastion_id.into(),
+            jump_chain: Vec::new(),
+            local_bind_host: None,
+            local_port: None,
+            compression: false,
+            keepalive_interval_seconds: None,
+            keepalive_want_reply: true,
+            proxy_command: None,
+        }
+    }
+
+    fn from_config(config: &crate::SshTunnelConfig) -> Option<Self> {
+        let config = config.normalized();
+        config.enabled.then(|| Self {
+            bastion_id: config.bastion_server_id.unwrap_or_default(),
+            jump_chain: config.jump_chain,
+            local_bind_host: config.local_bind_host,
+            local_port: config.local_port,
+            compression: config.compression,
+            keepalive_interval_seconds: config.keepalive_interval_seconds,
+            keepalive_want_reply: config.keepalive_want_reply,
+            proxy_command: config.proxy_command,
+        })
+    }
+
+    fn into_config(self) -> crate::SshTunnelConfig {
+        crate::SshTunnelConfig {
+            enabled: true,
+            bastion_server_id: Some(self.bastion_id),
+            local_bind_host: self.local_bind_host,
+            local_port: self.local_port,
+            compression: self.compression,
+            keepalive_interval_seconds: self.keepalive_interval_seconds,
+            keepalive_want_reply: self.keepalive_want_reply,
+            jump_chain: self.jump_chain,
+            proxy_command: self.proxy_command,
+        }
+        .normalized()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -110,6 +188,11 @@ pub enum DevelopmentConnectionFailure {
     Tls(crate::types::TlsFailureKind),
     Authentication,
     Database,
+    /// The owned SSH route could not be established.
+    SshTunnel,
+    /// A bastion host key is untrusted or changed; review it under Bastion
+    /// Servers. Credentials were not offered to that host.
+    SshHostKey,
 }
 
 impl Backend {
@@ -347,63 +430,73 @@ impl Backend {
                 // bounded probe. It cannot outlive a later credential change.
                 let _guard = credentials::mutation_guard(&state.credentials).await;
                 let connection = prepare_probe(&state, &authority, id, form, password).await?;
-                let spec =
-                    crate::postgres::connect_spec::ResolvedPostgresConnectSpec::from_connection(
-                        &connection,
-                    )
-                    .map_err(|_| "PostgreSQL connection required")?;
-                let started = std::time::Instant::now();
                 let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-                let result = tokio::time::timeout_at(
-                    deadline,
-                    crate::postgres::dedicated::connect_tracked(
-                        &spec,
-                        crate::postgres::dedicated::NoticeSink::Ignore,
-                        Some(&tasks),
-                    ),
-                )
-                .await;
-                let reason = match result {
-                    Ok(Ok(connected)) => {
-                        if !settle_probe(&tasks, connected.close(), deadline).await {
-                            return Ok(DevelopmentConnectionTest::Failed {
-                                reason: DevelopmentConnectionFailure::Timeout,
-                            });
-                        }
-                        return Ok(DevelopmentConnectionTest::Reachable {
-                            latency_ms: started.elapsed().as_millis().min(u128::from(u64::MAX))
-                                as u64,
-                        });
-                    }
-                    Err(_) => DevelopmentConnectionFailure::Timeout,
-                    Ok(Err(error)) => match error {
-                        crate::postgres::dedicated::DedicatedError::ConnectionLost => {
-                            DevelopmentConnectionFailure::ConnectionLost
-                        }
-                        crate::postgres::dedicated::DedicatedError::Timeout { .. } => {
-                            DevelopmentConnectionFailure::Timeout
-                        }
-                        crate::postgres::dedicated::DedicatedError::Tls { kind, .. } => {
-                            DevelopmentConnectionFailure::Tls(kind)
-                        }
-                        crate::postgres::dedicated::DedicatedError::Database { code, .. }
-                            if code.as_deref().is_some_and(|code| code.starts_with("28")) =>
-                        {
-                            DevelopmentConnectionFailure::Authentication
-                        }
-                        crate::postgres::dedicated::DedicatedError::Database { .. } => {
-                            DevelopmentConnectionFailure::Database
-                        }
-                    },
-                };
-                tasks.abort_all();
-                tasks.drain().await;
-                Ok(DevelopmentConnectionTest::Failed { reason })
+                // C08.a: the route lives until the probe has joined its drivers.
+                let (_route, connection) =
+                    match crate::backend::bastions::route_probe(&state, connection, deadline).await
+                    {
+                        Ok(routed) => routed,
+                        Err(reason) => return Ok(DevelopmentConnectionTest::Failed { reason }),
+                    };
+                probe(&tasks, &connection, std::time::Duration::from_secs(10)).await
             }
             .await)
         })
         .await
         .map_err(|_| "Native backend is closing".to_string())?
+    }
+
+    /// Recurring health probe for a saved, supported connection. Like the
+    /// baseline tick it opens no session, records no activity and never retries.
+    /// Only resolution holds the development gate and credential guard; the
+    /// bounded socket probe runs after both are released, so an unreachable
+    /// endpoint cannot stall admission or credential edits. Secrets come from
+    /// the session cache, so a tick does not re-read the Keychain.
+    pub async fn health_check_development_connection(
+        &self,
+        id: String,
+    ) -> Result<DevelopmentConnectionTest, String> {
+        let authority = self.development()?;
+        let tasks = self.0.tasks.child();
+        let connection = self
+            .development_call(move |state| async move {
+                Ok(async {
+                    let _guard = credentials::mutation_guard(&state.credentials).await;
+                    let rows = storage::read_native_connections(&state.pool).await?;
+                    if rows
+                        .iter()
+                        .any(|(connection, valid)| !valid && connection.id() == id)
+                    {
+                        return Err("Stored connection options are unsupported or unreadable; metadata preserved".into());
+                    }
+                    let all = rows
+                        .into_iter()
+                        .map(|(connection, _)| connection)
+                        .collect::<Vec<_>>();
+                    let mut connection = supported(&all, &id, &authority)?.clone();
+                    if !credentials::onboarding_completed(&state.pool).await? {
+                        return Err("Configure credential storage before checking health".into());
+                    }
+                    let mode = crate::app::current_credential_mode(&state).await?;
+                    let secrets = crate::credentials::read_all_cached(&state.credentials, mode).await?;
+                    connection.set_password(secrets.get(&id).cloned().unwrap_or_default());
+                    // A tunnelled connection needs its owned route; direct ones
+                    // pass through. The route outlives the gate with the probe.
+                    let deadline =
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+                    Ok::<_, String>(
+                        crate::backend::bastions::route_probe(&state, connection, deadline).await,
+                    )
+                }
+                .await)
+            })
+            .await
+            .map_err(|_| "Native backend is closing".to_string())??;
+        let (_route, connection) = match connection {
+            Ok(routed) => routed,
+            Err(reason) => return Ok(DevelopmentConnectionTest::Failed { reason }),
+        };
+        probe(&tasks, &connection, std::time::Duration::from_secs(5)).await
     }
 
     pub async fn disconnect_development_connection(&self, id: String) -> Result<(), String> {
@@ -477,7 +570,7 @@ fn unsupported_reason(authority: &Authority) -> &'static str {
             "Outside the owned PostgreSQL fixture manifest or supported field limits"
         }
         EndpointCapability::GeneralPostgres => {
-            "Only supported direct PostgreSQL connections within field limits are available"
+            "Only supported PostgreSQL connections within field limits are available"
         }
     }
 }
@@ -537,6 +630,64 @@ pub(in crate::backend) async fn prepare_probe(
         password
     });
     Ok(connection)
+}
+
+/// One bounded connect/close probe. Driver errors are classified without
+/// returning server text or secrets.
+async fn probe(
+    tasks: &crate::postgres::dedicated::DriverJoins,
+    connection: &StoredConnection,
+    timeout: std::time::Duration,
+) -> Result<DevelopmentConnectionTest, String> {
+    let spec =
+        crate::postgres::connect_spec::ResolvedPostgresConnectSpec::from_connection(connection)
+            .map_err(|_| "PostgreSQL connection required")?;
+    let started = std::time::Instant::now();
+    let deadline = tokio::time::Instant::now() + timeout;
+    let result = tokio::time::timeout_at(
+        deadline,
+        crate::postgres::dedicated::connect_tracked(
+            &spec,
+            crate::postgres::dedicated::NoticeSink::Ignore,
+            Some(tasks),
+        ),
+    )
+    .await;
+    let reason = match result {
+        Ok(Ok(connected)) => {
+            if !settle_probe(tasks, connected.close(), deadline).await {
+                return Ok(DevelopmentConnectionTest::Failed {
+                    reason: DevelopmentConnectionFailure::Timeout,
+                });
+            }
+            return Ok(DevelopmentConnectionTest::Reachable {
+                latency_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            });
+        }
+        Err(_) => DevelopmentConnectionFailure::Timeout,
+        Ok(Err(error)) => match error {
+            crate::postgres::dedicated::DedicatedError::ConnectionLost => {
+                DevelopmentConnectionFailure::ConnectionLost
+            }
+            crate::postgres::dedicated::DedicatedError::Timeout { .. } => {
+                DevelopmentConnectionFailure::Timeout
+            }
+            crate::postgres::dedicated::DedicatedError::Tls { kind, .. } => {
+                DevelopmentConnectionFailure::Tls(kind)
+            }
+            crate::postgres::dedicated::DedicatedError::Database { code, .. }
+                if code.as_deref().is_some_and(|code| code.starts_with("28")) =>
+            {
+                DevelopmentConnectionFailure::Authentication
+            }
+            crate::postgres::dedicated::DedicatedError::Database { .. } => {
+                DevelopmentConnectionFailure::Database
+            }
+        },
+    };
+    tasks.abort_all();
+    tasks.drain().await;
+    Ok(DevelopmentConnectionTest::Failed { reason })
 }
 
 fn supported<'a>(
@@ -644,6 +795,7 @@ impl DevelopmentPostgresConnection {
                 default_search_path: options.default_search_path,
                 default_role: options.default_role,
             },
+            ssh_tunnel: DevelopmentSshTunnel::from_config(&pg.ssh_tunnel),
         }
     }
 
@@ -673,6 +825,19 @@ impl DevelopmentPostgresConnection {
             ],
             self.tls.server_name.as_deref(),
         )?;
+        // Disabling a route keeps its other stored options (as the Tauri form
+        // does) so re-enabling it elsewhere loses nothing.
+        let ssh_tunnel = match self.ssh_tunnel {
+            Some(tunnel) => tunnel.into_config(),
+            None => previous
+                .and_then(StoredConnection::ssh_tunnel)
+                .map(|stored| crate::SshTunnelConfig {
+                    enabled: false,
+                    ..stored.clone()
+                })
+                .unwrap_or_default(),
+        };
+        validate_tunnel_fields(&ssh_tunnel)?;
         let organization = previous
             .map(|value| crate::ConnectionOrganization {
                 folder: value.folder().into(),
@@ -728,7 +893,7 @@ impl DevelopmentPostgresConnection {
                 default_search_path: self.driver_options.default_search_path,
                 default_role: self.driver_options.default_role,
             }),
-            ssh_tunnel: Default::default(),
+            ssh_tunnel,
         }))
     }
 }
@@ -739,7 +904,7 @@ pub(super) fn supported_fields(connection: &StoredConnection) -> bool {
     let StoredConnection::PostgreSQL(pg) = connection else {
         return false;
     };
-    if !pg.ssh_tunnel.is_default() {
+    if validate_tunnel_fields(&pg.ssh_tunnel).is_err() {
         return false;
     }
     if [&pg.name, &pg.host, &pg.database, &pg.user]
@@ -779,6 +944,43 @@ fn validate_tls_fields(paths: [Option<&str>; 3], server_name: Option<&str>) -> R
         validate_text(name, 256)?;
     }
     Ok(())
+}
+
+/// Bounded, loopback-only SSH route options. Disabled routes are inert, but
+/// their retained text stays within the same limits.
+pub(in crate::backend) fn validate_tunnel_fields(
+    tunnel: &crate::SshTunnelConfig,
+) -> Result<(), String> {
+    const MAX_HOPS: usize = 8;
+    let ids = tunnel
+        .bastion_server_id
+        .iter()
+        .chain(tunnel.jump_chain.iter());
+    for id in ids {
+        validate_text(id, 256)?;
+    }
+    if tunnel.jump_chain.len() >= MAX_HOPS {
+        return Err("SSH route has too many jump hops".into());
+    }
+    if let Some(host) = &tunnel.local_bind_host {
+        validate_text(host, 256)?;
+        let host = host.trim();
+        let loopback = host.is_empty()
+            || host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback());
+        if tunnel.enabled && !loopback {
+            return Err("SSH tunnel local bind host must be a loopback address".into());
+        }
+    }
+    if let Some(command) = &tunnel.proxy_command {
+        validate_text(command, 4096)?;
+    }
+    if !tunnel.enabled {
+        return Ok(());
+    }
+    crate::tunnel::validate_tunnel_config(tunnel)
 }
 
 fn validate_driver_fields(
@@ -823,3 +1025,6 @@ async fn settle_probe(
 #[cfg(test)]
 #[path = "connection_bounds_tests.rs"]
 mod bounds_tests;
+#[cfg(test)]
+#[path = "tunnel_record_tests.rs"]
+mod tunnel_record_tests;

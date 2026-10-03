@@ -80,7 +80,7 @@ async fn ddl_delivery_reservation_precedes_backend_dispatch() {
             if let Some(message) = receiver.try_recv()
                 && matches!(
                     message.into_message(),
-                    TableMessage::TableDdlObserved(77, Err(_))
+                    TableMessage::TableDdlObserved(77, DdlObserved::Table(Err(_)))
                 )
             {
                 break;
@@ -138,6 +138,68 @@ async fn cancellation_before_first_poll_reuses_reserved_delivery_and_never_dispa
     assert_eq!(fake.0.load(Ordering::Relaxed), 0);
     assert_eq!(budget.used(), RESPONSE_BYTES);
     assert!(matches!(receiver.try_recv().unwrap().into_message(),
-        TableMessage::TableDdlObserved(88, Err(error)) if *error == TableDdlError::Unavailable));
+        TableMessage::TableDdlObserved(88, DdlObserved::Table(Err(error))) if *error == TableDdlError::Unavailable));
+    assert_eq!(budget.used(), 0);
+}
+
+#[test]
+fn schema_observation_keeps_exact_name_and_refuses_recreated_oid_once_pinned() {
+    use dbunk_lib::backend::schema_alter::SchemaIdentity;
+    let observed = SchemaAlterDescription {
+        identity: SchemaIdentity {
+            database_oid: 1,
+            schema_oid: 2,
+        },
+        schema: " a.b\"".into(),
+        namespace_xmin: "7".into(),
+        namespace_ctid: "(0,1)".into(),
+        comment: None,
+    };
+    let mut request = SchemaAlterRequest {
+        schema: observed.schema.clone(),
+        expected: None,
+    };
+    assert!(schema_matches(&request, &observed));
+    request.expected = Some(observed.identity);
+    assert!(schema_matches(&request, &observed));
+    let mut recreated = observed.clone();
+    recreated.identity.schema_oid = 3;
+    assert!(!schema_matches(&request, &recreated));
+    request.schema = "a.b\"".into();
+    assert!(!schema_matches(&request, &observed));
+}
+
+// A schema command consumed by the queue but never polled settles as a typed
+// pre-dispatch refusal on the schema lane, never as a table reply or unknown.
+#[tokio::test]
+async fn schema_cancellation_before_first_poll_never_dispatches_and_keeps_family() {
+    let fake = Arc::new(Fake(std::sync::atomic::AtomicUsize::new(0)));
+    let budget = ByteBudget::new(RESPONSE_BYTES);
+    let (wake, _) = async_channel::bounded(1);
+    let (controls, receiver, delivery, mut commands, mut cancellation, mut stop) =
+        channels(budget.clone(), wake);
+    controls.cancel();
+    let result = run_request(
+        &fake,
+        &(),
+        TableCommand::SchemaAlterObserve(
+            89,
+            SchemaAlterRequest {
+                schema: "s".into(),
+                expected: None,
+            },
+        ),
+        &delivery,
+        &mut commands,
+        &mut cancellation,
+        &mut stop,
+        &tokio::sync::Mutex::new(()),
+    )
+    .await;
+    assert!(result);
+    assert_eq!(fake.0.load(Ordering::Relaxed), 0);
+    assert!(matches!(receiver.try_recv().unwrap().into_message(),
+        TableMessage::TableDdlObserved(89, DdlObserved::Schema(Err(error)))
+            if *error == SchemaAlterError::Unavailable));
     assert_eq!(budget.used(), 0);
 }

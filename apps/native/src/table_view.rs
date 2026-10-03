@@ -4,7 +4,7 @@ use crate::{
     browse_controls::{BrowseControls, BrowseEvent},
     browse_preferences::{BrowsePreferences, BrowseState, PAGE_SIZES, PreferencePatch},
     controller::{Host, TableCommand, TableControls, TableMessage, TableReceiver},
-    data_model::{PageAction, TableDocument, TableQuery},
+    data_model::{PageAction, RequestTicket, TableDocument, TableQuery},
     fk_navigation::{Navigation, Selection},
     grid::{GridEvent, ResultGrid},
     grid_columns::ColumnAction,
@@ -17,8 +17,41 @@ use gpui::{
 };
 use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
 
+mod relationship_detail;
 mod whole_config;
 mod whole_export;
+
+use relationship_detail::{Back, Current, DEPTH, Detail, Origin, ROW_LIMIT, State};
+
+const BACK: &str = "Back to previous row";
+const DETAIL_BUTTONS: [&str; 7] = [
+    "Next related row",
+    "Previous detail column",
+    "Next detail column",
+    "Follow detail foreign key",
+    "Open related table",
+    BACK,
+    "Close details",
+];
+
+fn current<'a>(
+    connection: Option<&'a str>,
+    state: &'a WorkspaceTableState,
+    model: Option<&'a TableDocument>,
+) -> Option<Current<'a>> {
+    let model = model?;
+    Some(Current {
+        connection,
+        schema: &state.schema,
+        table: &state.table,
+        query: model.query(),
+        page_number: model.page(),
+        page: model
+            .page_is_current()
+            .then(|| model.shared_result())
+            .flatten(),
+    })
+}
 
 const WORKSPACE_BYTES: usize = 128 * 1024 * 1024;
 
@@ -75,6 +108,13 @@ enum Action {
     NextReference,
     OpenReference,
     CloseReference,
+    ShowRelated,
+    DetailRow,
+    DetailColumn(bool),
+    DetailForeignKeys,
+    OpenRelated,
+    DetailBack,
+    CloseDetail,
     Column(ColumnAction),
     AutoFit(bool),
     Preferences,
@@ -113,6 +153,8 @@ pub struct TableView {
     next_reference: u64,
     pending_reference: Option<(u64, Selection, bool)>,
     references: Option<Navigation>,
+    detail: Option<Detail>,
+    pending_detail: Option<(RequestTicket, u64, u64)>,
     _reference_status: Subscription,
     next_preference: u64,
     pending_preferences: Option<(u64, PreferencePatch)>,
@@ -274,6 +316,8 @@ impl TableView {
             next_reference: 0,
             pending_reference: None,
             references: None,
+            detail: None,
+            pending_detail: None,
             _reference_status: reference_status,
             next_preference: 0,
             pending_preferences: None,
@@ -329,6 +373,7 @@ impl TableView {
         valid.extend(self.grid.read(cx).export_focus());
         valid.extend(self.browse_controls.read(cx).focus_handles(cx));
         valid.extend(self.reference_handles());
+        valid.extend(self.detail_handles());
         let focus = self
             .previous_focus
             .as_ref()
@@ -354,6 +399,7 @@ impl TableView {
             .into_iter()
             .chain(self.browse_controls.read(cx).focus_handles(cx))
             .chain(self.reference_handles())
+            .chain(self.detail_handles())
             .chain(self.grid.read(cx).export_focus())
             .find(|focus| focus.contains_focused(window, cx))
             .unwrap_or_else(|| self.grid.focus_handle(cx));
@@ -371,6 +417,8 @@ impl TableView {
         self.close_whole_export(cx);
         self.references = None;
         self.pending_reference = None;
+        self.detail = None;
+        self.pending_detail = None;
         self.connection = Some(id);
         cx.emit(TableEvent::Changed);
     }
@@ -453,6 +501,8 @@ impl TableView {
         }
         self.references = None;
         self.pending_reference = None;
+        self.detail = None;
+        self.pending_detail = None;
         self.changes
             .update(cx, |changes, cx| changes.disconnected(cx));
         self.controls.take();
@@ -618,12 +668,39 @@ impl TableView {
         }
         [
             "Next constraint",
+            "Show related row",
             "Open referenced table",
             "Close reference",
         ]
         .into_iter()
         .filter_map(|label| self.buttons.get(label).cloned())
         .collect()
+    }
+    fn detail_handles(&self) -> Vec<FocusHandle> {
+        if self.detail.is_none() {
+            return vec![];
+        }
+        DETAIL_BUTTONS
+            .into_iter()
+            .filter_map(|label| self.buttons.get(label).cloned())
+            .collect()
+    }
+    fn focus_button(&mut self, label: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let focus = self
+            .buttons
+            .entry(label.to_owned())
+            .or_insert_with(|| cx.focus_handle())
+            .clone();
+        window.focus(&focus, cx);
+    }
+    /// A reference source is either the exact grid cell or the top detail cell.
+    fn reference_current(&self, selection: &Selection, cx: &gpui::App) -> bool {
+        self.selection_matches(selection, cx)
+            || (self.connection.as_deref() == Some(selection.connection.as_str())
+                && self
+                    .detail
+                    .as_ref()
+                    .is_some_and(|detail| detail.owns(selection)))
     }
     fn selection_matches(&self, selection: &Selection, cx: &gpui::App) -> bool {
         self.model.as_ref().is_some_and(|model| {
@@ -637,11 +714,24 @@ impl TableView {
                 })
         })
     }
-    fn request_references(&mut self, cx: &mut Context<Self>) {
+    fn request_references(&mut self, from_detail: bool, cx: &mut Context<Self>) {
         if self.after_analysis.is_some() || self.pending_preferences.is_some() {
             return;
         }
-        let selection = (|| {
+        let source = (|| -> Result<_, &'static str> {
+            let connection = self
+                .connection
+                .clone()
+                .ok_or("The table connection is unavailable")?;
+            if from_detail {
+                let detail = self.detail.as_ref().ok_or("Open related details first")?;
+                let frame = detail.top();
+                return Ok((
+                    detail.selection(&connection)?,
+                    frame.schema.clone(),
+                    frame.table.clone(),
+                ));
+            }
             let model = self
                 .model
                 .as_ref()
@@ -653,17 +743,14 @@ impl TableView {
                 .read(cx)
                 .selected_cell()
                 .ok_or("Select a source cell")?;
-            Selection::new(
-                page,
-                self.connection
-                    .clone()
-                    .ok_or("The table connection is unavailable")?,
-                row,
-                column,
-            )
+            Ok((
+                Selection::new(page, connection, row, column)?,
+                self.state.schema.clone(),
+                self.state.table.clone(),
+            ))
         })();
-        let selection = match selection {
-            Ok(selection) => selection,
+        let (selection, schema, table) = match source {
+            Ok(source) => source,
             Err(error) => {
                 self.status = error.into();
                 return;
@@ -675,18 +762,17 @@ impl TableView {
             .controls
             .as_ref()
             .ok_or("Connect this table first")
-            .and_then(|controls| {
-                controls.send(TableCommand::ForeignKeys(
-                    id,
-                    self.state.schema.clone(),
-                    self.state.table.clone(),
-                ))
-            }) {
+            .and_then(|controls| controls.send(TableCommand::ForeignKeys(id, schema, table)))
+        {
             Ok(()) => {
                 self.references = None;
                 self.pending_reference = Some((id, selection, false));
                 self.busy = true;
-                self.status = "Loading foreign keys for the original selected row".into();
+                self.status = if from_detail {
+                    "Loading foreign keys for the selected related row".into()
+                } else {
+                    "Loading foreign keys for the original selected row".into()
+                };
             }
             Err(error) => self.status = error.into(),
         }
@@ -695,7 +781,7 @@ impl TableView {
         let Some(review) = &self.references else {
             return;
         };
-        if !self.selection_matches(&review.selection, cx) {
+        if !self.reference_current(&review.selection, cx) {
             self.status = "The selected cell or page changed; load references again".into();
             return;
         }
@@ -708,6 +794,127 @@ impl TableView {
             }),
             Err(error) => self.status = error.message().into(),
         }
+    }
+    /// Inline read of the chosen reference. A grid source starts a new history;
+    /// a related-row source pushes one bounded step onto the current history.
+    fn show_related(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(review) = &self.references else {
+            return;
+        };
+        if !self.reference_current(&review.selection, cx) {
+            self.status = "The selected cell or page changed; load references again".into();
+            return;
+        }
+        let choice = review.choice();
+        let (key, target) = (choice.key.clone(), choice.target.clone());
+        let opened = if self
+            .detail
+            .as_ref()
+            .is_some_and(|detail| detail.owns(&review.selection))
+        {
+            self.detail.as_mut().unwrap().push(&key, target)
+        } else {
+            let cell = self.grid.read(cx).selected_cell();
+            current(self.connection.as_deref(), &self.state, self.model.as_ref())
+                .ok_or("Refresh the table first")
+                .and_then(|current| Origin::capture(&current, cell.ok_or("Select a source cell")?))
+                .and_then(|origin| Detail::open(origin, &key, target, self.retained.clone()))
+                .map(|(detail, generation)| {
+                    self.detail = Some(detail);
+                    generation
+                })
+        };
+        match opened {
+            Ok(generation) => {
+                self.references = None;
+                self.status = "Related row details opened; Back returns to the source".into();
+                if let Some(generation) = generation {
+                    self.fetch_related(generation);
+                }
+                self.focus_button(BACK, window, cx);
+            }
+            Err(error) => self.status = error.into(),
+        }
+    }
+    fn fetch_related(&mut self, generation: u64) {
+        let Some(detail) = &mut self.detail else {
+            return;
+        };
+        let frame = detail.top();
+        let request = self
+            .model
+            .as_mut()
+            .ok_or("Connect this table first".to_owned())
+            .and_then(|model| {
+                model
+                    .related(
+                        &frame.schema,
+                        &frame.table,
+                        frame.filters.clone(),
+                        ROW_LIMIT,
+                    )
+                    .map_err(|error| format!("Related row unavailable: {error:?}"))
+            })
+            .and_then(|(ticket, payload)| {
+                let request_id = payload.request_id;
+                self.controls
+                    .as_ref()
+                    .ok_or("Connect this table first")
+                    .and_then(|controls| controls.send(TableCommand::Browse(ticket, payload)))
+                    .map(|()| (ticket, request_id))
+                    .map_err(str::to_owned)
+            });
+        match request {
+            Ok((ticket, request_id)) => {
+                self.pending_detail = Some((ticket, generation, request_id));
+                self.busy = true;
+                self.status = "Loading related row".into();
+            }
+            Err(error) => {
+                detail.settle(generation, 0, Err(error.clone()));
+                self.status = error;
+            }
+        }
+    }
+    fn detail_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = current(self.connection.as_deref(), &self.state, self.model.as_ref());
+        let Some(detail) = &mut self.detail else {
+            return;
+        };
+        let result = match &current {
+            Some(current) => detail.back(current),
+            None => Err(relationship_detail::Stale::Connection),
+        };
+        match result {
+            Ok(Back::Frame) => {
+                self.references = None;
+                self.status = format!("Returned to related row via {}", detail.top().constraint);
+            }
+            Ok(Back::Origin((row, column))) => {
+                if self
+                    .grid
+                    .update(cx, |grid, cx| grid.select_source_cell(row, column, cx))
+                {
+                    self.close_detail(window, cx);
+                    self.status = "Returned to the original row and cell".into();
+                } else {
+                    self.status = "The original column is hidden; show it or close details".into();
+                }
+            }
+            Err(stale) => self.status = stale.message().into(),
+        }
+    }
+    fn close_detail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .references
+            .as_ref()
+            .zip(self.detail.as_ref())
+            .is_some_and(|(review, detail)| detail.owns(&review.selection))
+        {
+            self.references = None;
+        }
+        self.detail = None;
+        window.focus(&self.grid.focus_handle(cx), cx);
     }
     fn activate(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
         if !self.editable
@@ -766,7 +973,37 @@ impl TableView {
                     });
                 }
             }
-            Action::ForeignKeys => self.request_references(cx),
+            Action::ForeignKeys => self.request_references(false, cx),
+            Action::DetailForeignKeys => self.request_references(true, cx),
+            Action::ShowRelated => self.show_related(window, cx),
+            Action::DetailRow => {
+                if let Some(detail) = &mut self.detail {
+                    detail.next_row();
+                }
+            }
+            Action::DetailColumn(forward) => {
+                if let Some(detail) = &mut self.detail {
+                    detail.move_column(forward);
+                }
+            }
+            Action::OpenRelated => {
+                if let (Some(detail), Some(connection)) = (&self.detail, &self.connection) {
+                    let frame = detail.top();
+                    if !frame.filters.is_empty() {
+                        cx.emit(TableEvent::OpenReference {
+                            connection: connection.clone(),
+                            schema: frame.schema.clone(),
+                            table: frame.table.clone(),
+                            filters: frame.filters.clone(),
+                        });
+                    }
+                }
+            }
+            Action::DetailBack => self.detail_back(window, cx),
+            Action::CloseDetail => {
+                self.close_detail(window, cx);
+                self.status = "Related row details closed; nothing changed".into();
+            }
             Action::NextReference => {
                 if let Some(review) = &mut self.references {
                     review.next();
@@ -866,6 +1103,13 @@ impl TableView {
                 } else {
                     self.status = "Cancelled; staged changes retained".into();
                 }
+                if self.pending_detail.is_some()
+                    && self.detail.as_mut().is_some_and(Detail::cancel)
+                    && let Some(controls) = &self.controls
+                {
+                    controls.cancel();
+                    self.status = "Cancelling related row; nothing changed".into();
+                }
             }
             Action::First => self.browse(PageAction::First, false, cx),
             Action::Previous => self.browse(PageAction::Previous, false, cx),
@@ -928,7 +1172,7 @@ impl TableView {
                 self.busy = false;
                 if cancelled {
                     self.status = "Foreign-key lookup cancelled".into();
-                } else if !self.selection_matches(&selection, cx) {
+                } else if !self.reference_current(&selection, cx) {
                     self.status = "Selected cell changed; foreign-key reply discarded".into();
                 } else {
                     match result
@@ -953,6 +1197,7 @@ impl TableView {
             | TableMessage::CompletionColumns(..)
             | TableMessage::MaintenanceReviewed(..)
             | TableMessage::MaintenanceApplied(..)
+            | TableMessage::Sequence(..)
             | TableMessage::AdminApplied(..)
             | TableMessage::Admin(..)
             | TableMessage::SchemaReviewed(..)
@@ -1038,6 +1283,29 @@ impl TableView {
                         Err(error) => self.preferences_status = Some(error),
                     }
                 }
+            }
+            TableMessage::Page(ticket, result)
+                if self
+                    .pending_detail
+                    .as_ref()
+                    .is_some_and(|(pending, _, _)| *pending == ticket) =>
+            {
+                let (_, generation, request_id) = self.pending_detail.take().unwrap();
+                self.busy = false;
+                let result = result.map_err(|error| format!("Related row failed: {error:?}"));
+                let settled = self
+                    .detail
+                    .as_mut()
+                    .is_some_and(|detail| detail.settle(generation, request_id, result));
+                self.status = match self.detail.as_ref().map(|detail| &detail.top().state) {
+                    Some(State::Failed(error)) if settled => error.clone(),
+                    Some(State::NotFound) if settled => "No related row matches".into(),
+                    Some(_) if settled => "Related row loaded; read-only".into(),
+                    Some(State::Cancelled) => {
+                        "Related-row lookup cancelled; nothing changed".into()
+                    }
+                    _ => "Related-row reply discarded".into(),
+                };
             }
             TableMessage::Page(ticket, result) => match result {
                 Ok(page) => {
@@ -1168,6 +1436,148 @@ impl TableView {
         cx.notify();
         true
     }
+    fn render_detail(&mut self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
+        let detail = self.detail.as_ref()?;
+        let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
+        let value = |value: &Option<String>| match value {
+            None => "NULL".to_owned(),
+            Some(text) => {
+                let mut shown = text.chars().take(256).collect::<String>();
+                if shown.len() < text.len() {
+                    shown.push('…');
+                }
+                serde_json::to_string(&shown).unwrap_or_default()
+            }
+        };
+        let frame = detail.top();
+        let (schema, table) = detail.origin_table();
+        let filters = frame
+            .filters
+            .iter()
+            .filter_map(|filter| match filter {
+                BrowseFilter::Comparison { column, value, .. } => Some(format!(
+                    "{} = {}",
+                    quote(column),
+                    serde_json::to_string(value).unwrap_or_default()
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let header = format!(
+            "Related step {}/{DEPTH} from {}.{} loaded row {}: {} → {}.{}{}{}",
+            detail.depth(),
+            quote(schema),
+            quote(table),
+            detail.origin().cell.0 + 1,
+            quote(&frame.constraint),
+            quote(&frame.schema),
+            quote(&frame.table),
+            if filters.is_empty() { "" } else { " where " },
+            filters
+        );
+        let message = match &frame.state {
+            State::Loading => "Loading related row…".to_owned(),
+            State::Loaded(page) if frame.multiple() => format!(
+                "{} rows match{}; the referenced columns do not identify one row",
+                page.rows.len(),
+                if page.page_info.has_more {
+                    " (more exist)"
+                } else {
+                    ""
+                }
+            ),
+            State::Loaded(page) if page.truncated_cells > 0 => {
+                "One related row; some values were truncated. Read-only".to_owned()
+            }
+            State::Loaded(_) => "One related row. Read-only; staged edits are not used".to_owned(),
+            State::NotFound => {
+                "No related row matches; it may have been deleted or is not visible".to_owned()
+            }
+            State::Refused(refusal) => refusal.message().to_owned(),
+            State::Failed(error) => error.clone(),
+            State::Cancelled => "Related-row lookup cancelled; nothing changed".to_owned(),
+        };
+        let mut rows = String::new();
+        let mut selected = String::new();
+        if let Some(page) = frame.page() {
+            for (index, row) in page.rows.iter().enumerate() {
+                let cells = page
+                    .columns
+                    .iter()
+                    .zip(row)
+                    .map(|(column, cell)| format!("{} = {}", quote(&column.name), value(cell)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                rows.push_str(&format!("Row {}: {cells}\n", index + 1));
+            }
+            let (row, column) = frame.cell;
+            if let (Some(name), Some(cell)) = (
+                page.columns.get(column),
+                page.rows.get(row).and_then(|values| values.get(column)),
+            ) {
+                selected = format!(
+                    "Selected related cell: row {}/{}, {} = {}",
+                    row + 1,
+                    page.rows.len(),
+                    quote(&name.name),
+                    value(cell)
+                );
+            }
+        }
+        let summary = format!("{header}\n{message}");
+        let mut panel = div()
+            .id("relationship-detail")
+            .role(Role::Group)
+            .aria_label("Related row details")
+            .flex()
+            .flex_col()
+            .border_t_1()
+            .border_color(rgb(0x333333))
+            .child(
+                div()
+                    .id("relationship-detail-summary")
+                    .role(Role::Label)
+                    .aria_label(summary.clone())
+                    .px_2()
+                    .child(summary),
+            );
+        if !rows.is_empty() {
+            panel = panel.child(
+                div()
+                    .id("relationship-detail-rows")
+                    .role(Role::Label)
+                    .aria_label(rows.clone())
+                    .px_2()
+                    .max_h(px(160.))
+                    .overflow_y_scroll()
+                    .child(rows),
+            );
+        }
+        if !selected.is_empty() {
+            panel = panel.child(
+                div()
+                    .id("relationship-detail-cell")
+                    .role(Role::Label)
+                    .aria_label(selected.clone())
+                    .px_2()
+                    .child(selected),
+            );
+        }
+        let mut buttons = div().flex().flex_wrap();
+        for (label, action) in DETAIL_BUTTONS.into_iter().zip([
+            Action::DetailRow,
+            Action::DetailColumn(false),
+            Action::DetailColumn(true),
+            Action::DetailForeignKeys,
+            Action::OpenRelated,
+            Action::DetailBack,
+            Action::CloseDetail,
+        ]) {
+            buttons = buttons.child(self.button(label, action, cx));
+        }
+        Some(panel.child(buttons).into_any_element())
+    }
     fn button(&mut self, label: &str, action: Action, cx: &Context<Self>) -> gpui::AnyElement {
         let label = SharedString::from(label.to_owned());
         let focus = self
@@ -1224,6 +1634,33 @@ impl TableView {
                                 && review.choice().target.is_ok()
                         }),
                         Action::CloseReference => self.references.is_some(),
+                        Action::ShowRelated => self.references.as_ref().is_some_and(|review| {
+                            self.reference_current(&review.selection, cx)
+                                && self.detail.as_ref().is_none_or(|detail| {
+                                    !detail.owns(&review.selection) || detail.depth() < DEPTH
+                                })
+                        }),
+                        Action::DetailRow => self.detail.as_ref().is_some_and(|detail| {
+                            detail.top().page().is_some_and(|page| page.rows.len() > 1)
+                        }),
+                        Action::DetailColumn(_) => self.detail.as_ref().is_some_and(|detail| {
+                            detail
+                                .top()
+                                .page()
+                                .is_some_and(|page| page.columns.len() > 1)
+                        }),
+                        Action::DetailForeignKeys => {
+                            self.detail
+                                .as_ref()
+                                .is_some_and(|detail| detail.top().page().is_some())
+                                && self.after_analysis.is_none()
+                                && self.pending_preferences.is_none()
+                        }
+                        Action::OpenRelated => self
+                            .detail
+                            .as_ref()
+                            .is_some_and(|detail| !detail.top().filters.is_empty()),
+                        Action::DetailBack | Action::CloseDetail => self.detail.is_some(),
                         _ => true,
                     }
             };
@@ -1269,6 +1706,8 @@ impl Drop for TableView {
     fn drop(&mut self) {
         self.references = None;
         self.pending_reference = None;
+        self.detail = None;
+        self.pending_detail = None;
         if let Some(controls) = &self.controls {
             controls.stop();
         }
@@ -1278,7 +1717,18 @@ impl Drop for TableView {
     }
 }
 impl Render for TableView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Disconnect, rebind or restore can remove the detail panel while one
+        // of its buttons holds focus; return focus to the grid, never nowhere.
+        if self.detail.is_none()
+            && DETAIL_BUTTONS.into_iter().any(|label| {
+                self.buttons
+                    .get(label)
+                    .is_some_and(|focus| focus.is_focused(window))
+            })
+        {
+            window.focus(&self.grid.focus_handle(cx), cx);
+        }
         if let Some(view) = &self.whole_export.view {
             view.update(cx, |view, cx| {
                 view.sync(
@@ -1359,7 +1809,16 @@ impl Render for TableView {
         self.tab_order.push(self.grid.focus_handle(cx));
         let mut reference = div().flex().flex_col();
         if let Some(review) = &self.references {
-            let current = self.selection_matches(&review.selection, cx);
+            let current = self.reference_current(&review.selection, cx);
+            let source = if self
+                .detail
+                .as_ref()
+                .is_some_and(|detail| detail.owns(&review.selection))
+            {
+                "Related"
+            } else {
+                "Loaded"
+            };
             let choice = review.choice();
             let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
             let mapping = choice
@@ -1407,7 +1866,7 @@ impl Render for TableView {
                 })
                 .unwrap_or_default();
             let details = format!(
-                "Loaded row {}. {title}\n{message}\n{values}",
+                "{source} row {}. {title}\n{message}\n{values}",
                 review.selection.row + 1
             );
             reference = reference.child(
@@ -1429,9 +1888,13 @@ impl Render for TableView {
                 .flex()
                 .flex_wrap()
                 .child(self.button("Next constraint", Action::NextReference, cx))
+                .child(self.button("Show related row", Action::ShowRelated, cx))
                 .child(self.button("Open referenced table", Action::OpenReference, cx))
                 .child(self.button("Close reference", Action::CloseReference, cx));
             reference = reference.child(buttons);
+        }
+        if let Some(panel) = self.render_detail(cx) {
+            reference = reference.child(panel);
         }
         let mut paging = div().flex().flex_wrap();
         for (label, action) in [
@@ -1462,6 +1925,25 @@ impl Render for TableView {
                 {
                     return;
                 }
+                let modifiers = event.keystroke.modifiers;
+                if event.keystroke.key == "escape"
+                    && !modifiers.modified()
+                    && this
+                        .detail_handles()
+                        .iter()
+                        .any(|focus| focus.contains_focused(window, cx))
+                {
+                    // While a related read is in flight Escape cancels it;
+                    // closing would be refused by the busy gate.
+                    let action = if this.pending_detail.is_some() {
+                        Action::Cancel
+                    } else {
+                        Action::CloseDetail
+                    };
+                    this.activate(action, window, cx);
+                    cx.stop_propagation();
+                    return;
+                }
                 let mut order = this.tab_order.clone();
                 if let Some(index) = order
                     .iter()
@@ -1480,7 +1962,6 @@ impl Render for TableView {
                     order.insert(index, focus);
                 }
                 order.extend(this.changes.read(cx).focus_handles(cx));
-                let modifiers = event.keystroke.modifiers;
                 if event.keystroke.key == "tab"
                     && !modifiers.control
                     && !modifiers.alt

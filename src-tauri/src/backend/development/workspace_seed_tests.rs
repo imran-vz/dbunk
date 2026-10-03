@@ -53,7 +53,7 @@ async fn exact_seed_recovery_preserves_storage_but_never_replays_applying() {
     save(&pool, None, snapshot(job.clone())).await.unwrap();
     let before = raw(&pool).await;
     let stored: serde_json::Value = serde_json::from_str(&before).unwrap();
-    assert_eq!(stored["version"], 13);
+    assert_eq!(stored["version"], 15);
     assert_eq!(
         stored["snapshot"]["seedJobs"][0]["description"]["seedUsed"],
         u64::MAX

@@ -16,7 +16,10 @@ use std::{cell::Cell, rc::Rc, sync::Arc};
 
 mod ddl_export;
 mod maintenance;
+mod navigator;
+mod object_ddl;
 mod schema;
+mod sequence;
 mod structure;
 mod table_ddl;
 
@@ -34,8 +37,12 @@ pub enum CatalogEvent {
 #[derive(Clone, Copy)]
 enum Action {
     TableDdl,
+    SchemaAlter,
+    DropObject,
+    CreateView,
     Schema,
     Maintenance,
+    Sequence,
     Connect,
     Refresh,
     Cancel,
@@ -49,11 +56,21 @@ enum Action {
     Clear,
 }
 pub struct CatalogView {
+    object_ddl: Option<Entity<crate::object_ddl_view::ObjectDdlView>>,
+    object_ddl_recovery: Option<dbunk_lib::backend::WorkspaceObjectDdl>,
+    object_ddl_events: Option<gpui::Subscription>,
+    object_ddl_busy: bool,
+    show_object_ddl: bool,
     table_ddl: Option<Entity<crate::table_ddl_view::TableDdlView>>,
     table_ddl_recovery: Option<dbunk_lib::backend::WorkspaceTableDdl>,
     table_ddl_events: Option<gpui::Subscription>,
     table_ddl_busy: bool,
     show_table_ddl: bool,
+    schema_alter: Option<Entity<crate::schema_view::alter::SchemaAlterView>>,
+    schema_alter_recovery: Option<dbunk_lib::backend::WorkspaceSchemaAlter>,
+    schema_alter_events: Option<gpui::Subscription>,
+    schema_alter_busy: bool,
+    show_schema_alter: bool,
     ddl_export: ddl_export::DdlExport,
     structure: Option<Entity<crate::table_structure_view::StructureView>>,
     incoming_structure: Option<crate::table_structure_model::Capture>,
@@ -62,11 +79,16 @@ pub struct CatalogView {
     structure_current: bool,
     structure_navigation: Option<u64>,
     structure_after_connect: Option<dbunk_lib::backend::table_structure::TableStructureRequest>,
+    describe_after_connect: Option<dbunk_lib::backend::objects::PgObjectRef>,
     maintenance: Option<Entity<crate::maintenance_view::MaintenanceView>>,
     maintenance_recovery: Option<dbunk_lib::backend::WorkspaceMaintenance>,
     maintenance_events: Option<gpui::Subscription>,
     maintenance_busy: bool,
     show_maintenance: bool,
+    sequence: Option<Entity<crate::sequence_view::SequenceView>>,
+    sequence_events: Option<gpui::Subscription>,
+    sequence_busy: bool,
+    show_sequence: bool,
     schema: Option<Entity<crate::schema_view::SchemaView>>,
     schema_recovery: Option<dbunk_lib::backend::WorkspaceSchemaChanges>,
     schema_events: Option<gpui::Subscription>,
@@ -125,11 +147,21 @@ impl CatalogView {
             )
         });
         Self {
+            object_ddl: None,
+            object_ddl_recovery: document.object_ddl.take(),
+            object_ddl_events: None,
+            object_ddl_busy: false,
+            show_object_ddl: false,
             table_ddl: None,
             table_ddl_recovery: document.table_ddl.take(),
             table_ddl_events: None,
             table_ddl_busy: false,
             show_table_ddl: false,
+            schema_alter: None,
+            schema_alter_recovery: document.schema_alter.take(),
+            schema_alter_events: None,
+            schema_alter_busy: false,
+            show_schema_alter: false,
             ddl_export: ddl_export::DdlExport::default(),
             structure: None,
             incoming_structure: None,
@@ -138,11 +170,16 @@ impl CatalogView {
             structure_current: false,
             structure_navigation: None,
             structure_after_connect: None,
+            describe_after_connect: None,
             maintenance: None,
             maintenance_recovery: document.maintenance.take(),
             maintenance_events: None,
             maintenance_busy: false,
             show_maintenance: false,
+            sequence: None,
+            sequence_events: None,
+            sequence_busy: false,
+            show_sequence: false,
             schema: None,
             schema_recovery: document.schema_changes.take(),
             schema_events: None,
@@ -170,7 +207,7 @@ impl CatalogView {
             show_details: false,
             root: cx.focus_handle(),
             list: cx.focus_handle(),
-            buttons: (0..14).map(|_| cx.focus_handle()).collect(),
+            buttons: (0..18).map(|_| cx.focus_handle()).collect(),
             scroll: UniformListScrollHandle::new(),
             previous_focus: None,
             editable: true,
@@ -205,18 +242,34 @@ impl CatalogView {
         &self.status
     }
     pub fn has_pending(&self) -> bool {
-        self.busy || self.schema_busy || self.maintenance_busy || self.table_ddl_busy
+        self.busy
+            || self.schema_busy
+            || self.maintenance_busy
+            || self.table_ddl_busy
+            || self.sequence_busy
+            || self.schema_alter_busy
+            || self.object_ddl_busy
     }
     pub fn set_editable(&mut self, editable: bool, cx: &mut Context<Self>) {
         self.editable = editable;
         self.search
             .update(cx, |editor, _| editor.set_read_only(!editable));
         self.sync_table_ddl(cx);
+        self.sync_schema_alter(cx);
+        self.sync_object_ddl(cx);
         cx.notify();
     }
     pub fn focus_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.show_table_ddl
+        if self.show_object_ddl
+            && let Some(view) = &self.object_ddl
+        {
+            window.focus(&view.focus_handle(cx), cx);
+        } else if self.show_table_ddl
             && let Some(view) = &self.table_ddl
+        {
+            window.focus(&view.focus_handle(cx), cx);
+        } else if self.show_schema_alter
+            && let Some(view) = &self.schema_alter
         {
             window.focus(&view.focus_handle(cx), cx);
         } else if self.ddl_export.show
@@ -231,6 +284,10 @@ impl CatalogView {
             && let Some(view) = &self.maintenance
         {
             window.focus(&view.focus_handle(cx), cx);
+        } else if self.show_sequence
+            && let Some(view) = &self.sequence
+        {
+            window.focus(&view.focus_handle(cx), cx);
         } else if self.show_details
             && let Some(details) = &self.details
         {
@@ -242,7 +299,15 @@ impl CatalogView {
     pub fn remember_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.root.contains_focused(window, cx)
             || self
+                .object_ddl
+                .as_ref()
+                .is_some_and(|view| view.read(cx).contains_focus(window, cx))
+            || self
                 .table_ddl
+                .as_ref()
+                .is_some_and(|view| view.read(cx).contains_focus(window, cx))
+            || self
+                .schema_alter
                 .as_ref()
                 .is_some_and(|view| view.read(cx).contains_focus(window, cx))
             || self
@@ -258,6 +323,10 @@ impl CatalogView {
                 .details
                 .as_ref()
                 .is_some_and(|view| view.read(cx).contains_focus(window, cx))
+            || self
+                .sequence
+                .as_ref()
+                .is_some_and(|view| view.read(cx).contains_focus(window, cx))
         {
             self.previous_focus = window.focused(cx);
         }
@@ -269,7 +338,10 @@ impl CatalogView {
         if self.connection.as_ref() != Some(&id)
             && (self.has_schema_changes(cx)
                 || self.has_maintenance_changes(cx)
-                || self.has_table_ddl_changes(cx))
+                || self.has_table_ddl_changes(cx)
+                || self.has_sequence_changes(cx)
+                || self.has_schema_alter_changes(cx)
+                || self.has_object_ddl_changes(cx))
         {
             self.status =
                 "Finish or reconcile the retained Objects review before changing its connection"
@@ -278,9 +350,18 @@ impl CatalogView {
             return;
         }
         if self.controls.is_none() {
+            self.object_ddl = None;
+            self.object_ddl_events = None;
+            self.show_object_ddl = false;
             self.table_ddl = None;
             self.table_ddl_events = None;
             self.show_table_ddl = false;
+            self.sequence = None;
+            self.sequence_events = None;
+            self.show_sequence = false;
+            self.schema_alter = None;
+            self.schema_alter_events = None;
+            self.show_schema_alter = false;
             self.connection = Some(id);
             self.clear_results(cx);
         }
@@ -331,20 +412,33 @@ impl CatalogView {
         cx.notify();
     }
     pub fn mark_disconnected(&mut self, cx: &mut Context<Self>) {
+        if let Some(view) = &self.object_ddl {
+            view.update(cx, |view, cx| view.disconnected(cx));
+        }
+        self.object_ddl_busy = false;
         if let Some(view) = &self.table_ddl {
             view.update(cx, |view, cx| view.disconnected(cx));
         }
         self.table_ddl_busy = false;
+        if let Some(view) = &self.schema_alter {
+            view.update(cx, |view, cx| view.disconnected(cx));
+        }
+        self.schema_alter_busy = false;
         self.ddl_export.incoming = None;
         self.ddl_export.current = false;
         self.incoming_structure = None;
         self.structure_current = false;
         self.structure_navigation = None;
         self.structure_after_connect = None;
+        self.describe_after_connect = None;
         if let Some(view) = &self.maintenance {
             view.update(cx, |view, cx| view.disconnected(cx));
         }
         self.maintenance_busy = false;
+        if let Some(view) = &self.sequence {
+            view.update(cx, |view, cx| view.disconnected(cx));
+        }
+        self.sequence_busy = false;
         if let Some(schema) = &self.schema {
             schema.update(cx, |view, cx| view.disconnected(cx));
         }
@@ -361,7 +455,7 @@ impl CatalogView {
         cx.notify();
     }
     pub fn clear_results(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.schema_busy || self.maintenance_busy || self.table_ddl_busy {
+        if self.has_pending() {
             return;
         }
         self.ddl_export = ddl_export::DdlExport::default();
@@ -389,6 +483,9 @@ impl CatalogView {
             || self.schema_busy
             || self.maintenance_busy
             || self.table_ddl_busy
+            || self.sequence_busy
+            || self.schema_alter_busy
+            || self.object_ddl_busy
             || !self.ready
         {
             return;
@@ -434,6 +531,29 @@ impl CatalogView {
             return false;
         };
         let message = message.into_message();
+        // Table and existing-schema DDL share reply variants; route by family.
+        if matches!(
+            &message,
+            TableMessage::TableDdlObserved(_, crate::controller::DdlObserved::Schema(_))
+                | TableMessage::TableDdlReviewed(_, crate::controller::DdlReviewed::Schema(_))
+                | TableMessage::TableDdlApplied(_, crate::controller::DdlApplied::Schema(_))
+        ) {
+            if let Some(view) = &self.schema_alter {
+                view.update(cx, |view, cx| view.receive(message, cx));
+            }
+            return true;
+        }
+        if matches!(
+            &message,
+            TableMessage::TableDdlObserved(_, crate::controller::DdlObserved::Object(_))
+                | TableMessage::TableDdlReviewed(_, crate::controller::DdlReviewed::Object(_))
+                | TableMessage::TableDdlApplied(_, crate::controller::DdlApplied::Object(_))
+        ) {
+            if let Some(view) = &self.object_ddl {
+                view.update(cx, |view, cx| view.receive(message, cx));
+            }
+            return true;
+        }
         if matches!(
             &message,
             TableMessage::TableDdlObserved(..)
@@ -450,6 +570,12 @@ impl CatalogView {
             TableMessage::MaintenanceReviewed(..) | TableMessage::MaintenanceApplied(..)
         ) {
             if let Some(view) = &self.maintenance {
+                view.update(cx, |view, cx| view.receive(message, cx));
+            }
+            return true;
+        }
+        if matches!(&message, TableMessage::Sequence(..)) {
+            if let Some(view) = &self.sequence {
                 view.update(cx, |view, cx| view.receive(message, cx));
             }
             return true;
@@ -487,10 +613,13 @@ impl CatalogView {
                 self.busy = false;
                 if self.cancellation_requested {
                     self.structure_after_connect = None;
+                    self.describe_after_connect = None;
                     self.cancellation_requested = false;
                     self.status = "Connected; cancelled metadata read was not dispatched".into();
                 } else if let Some(request) = self.structure_after_connect.take() {
                     self.request_structure(request);
+                } else if let Some(reference) = self.describe_after_connect.take() {
+                    self.request_description(reference, false);
                 } else {
                     self.load(cx);
                 }
@@ -602,6 +731,9 @@ impl CatalogView {
             || self.schema_busy
             || self.maintenance_busy
             || self.table_ddl_busy
+            || self.sequence_busy
+            || self.schema_alter_busy
+            || self.object_ddl_busy
             || !self.ready
         {
             return;
@@ -615,31 +747,7 @@ impl CatalogView {
             self.status = "Descriptions are not available for this cluster object kind".into();
             return;
         };
-        self.next = self.next.wrapping_add(1);
-        match self
-            .controls
-            .as_ref()
-            .ok_or("Connect first")
-            .and_then(|controls| {
-                controls.send(if impact {
-                    TableCommand::DropImpact(self.next, reference)
-                } else {
-                    TableCommand::Describe(self.next, reference)
-                })
-            }) {
-            Ok(()) => {
-                self.pending = Some(self.next);
-                self.cancellation_requested = false;
-                self.busy = true;
-                self.status = if impact {
-                    "Reading downstream drop impact; no DDL is executed"
-                } else {
-                    "Loading object metadata"
-                }
-                .into();
-            }
-            Err(error) => self.status = error.into(),
-        }
+        self.request_description(reference, impact);
     }
     fn enabled(&self, action: Action) -> bool {
         if !self.editable {
@@ -648,6 +756,18 @@ impl CatalogView {
         let selected = self.visible.get(self.selected).is_some();
         if self.table_ddl_busy {
             return matches!(action, Action::TableDdl);
+        }
+        if self.sequence_busy {
+            // Keep the owning tool reachable so its cancel control remains.
+            return matches!(action, Action::Sequence);
+        }
+        if self.schema_alter_busy {
+            // Keep the owning review reachable for its cancel control.
+            return matches!(action, Action::SchemaAlter);
+        }
+        if self.object_ddl_busy {
+            // Keep the owned review reachable for Cancel until it settles.
+            return matches!(action, Action::DropObject | Action::CreateView);
         }
         if self.maintenance_busy {
             // Back may hide an owned operation. Keep its review reachable so
@@ -659,8 +779,26 @@ impl CatalogView {
         }
         match action {
             Action::TableDdl => !self.busy && self.connection.is_some(),
+            Action::SchemaAlter => {
+                !self.busy
+                    && self.connection.is_some()
+                    && (self.selected_schema().is_some()
+                        || self.schema_alter.is_some()
+                        || self.schema_alter_recovery.is_some())
+            }
+            // A retained or restored change reopens without a selection.
+            Action::DropObject | Action::CreateView => {
+                !self.busy
+                    && self.connection.is_some()
+                    && (selected || self.object_ddl.is_some() || self.object_ddl_recovery.is_some())
+            }
             Action::Schema | Action::Maintenance | Action::DdlExport => {
                 !self.busy && self.connection.is_some()
+            }
+            Action::Sequence => {
+                !self.busy
+                    && (self.selected_sequence().is_some()
+                        || self.sequence.is_some() && !self.show_sequence)
             }
             Action::Connect => self.controls.is_none() && !self.busy,
             Action::Refresh => self.ready && !self.busy,
@@ -686,14 +824,31 @@ impl CatalogView {
             return;
         }
         match action {
-            Action::TableDdl => self.open_table_ddl(None, window, cx),
-            Action::Schema => self.open_schema(window, cx),
+            Action::TableDdl => {
+                self.show_sequence = false;
+                self.open_table_ddl(None, window, cx)
+            }
+            Action::Schema => {
+                self.show_sequence = false;
+                self.open_schema(window, cx)
+            }
+            Action::Sequence => self.open_sequence(window, cx),
+            Action::SchemaAlter => {
+                self.show_sequence = false;
+                self.open_schema_alter(window, cx)
+            }
+            Action::DropObject => self.open_object_ddl(Some(true), window, cx),
+            Action::CreateView => self.open_object_ddl(Some(false), window, cx),
             Action::DdlExport => self.show_ddl_export(window, cx),
-            Action::Maintenance => self.open_maintenance(window, cx),
+            Action::Maintenance => {
+                self.show_sequence = false;
+                self.open_maintenance(window, cx)
+            }
             Action::Connect => self.begin_connect(cx),
             Action::Refresh => self.load(cx),
             Action::Cancel => {
                 self.structure_after_connect = None;
+                self.describe_after_connect = None;
                 if self.busy
                     && let Some(controls) = &self.controls
                 {
@@ -785,21 +940,36 @@ impl CatalogView {
 impl Render for CatalogView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_table_ddl(cx);
+        self.sync_schema_alter(cx);
+        self.sync_object_ddl(cx);
+        let maintenance_idle = self.others_idle(object_ddl::Lane::Maintenance);
         if let Some(view) = &self.maintenance {
             view.update(cx, |view, _| {
                 view.set_runtime(
                     self.controls.clone(),
-                    self.ready && !self.busy && !self.schema_busy && !self.table_ddl_busy,
-                    self.editable && !self.busy && !self.schema_busy && !self.table_ddl_busy,
+                    self.ready && maintenance_idle,
+                    self.editable && maintenance_idle,
                 )
             });
         }
+        let sequence_idle = self.others_idle(object_ddl::Lane::Sequence);
+        if let Some(view) = &self.sequence {
+            view.update(cx, |view, cx| {
+                view.set_runtime(
+                    self.controls.clone(),
+                    self.ready && sequence_idle,
+                    self.editable && sequence_idle,
+                    cx,
+                )
+            });
+        }
+        let schema_idle = self.others_idle(object_ddl::Lane::Schema);
         if let Some(schema) = &self.schema {
             schema.update(cx, |view, cx| {
                 view.set_runtime(
                     self.controls.clone(),
-                    self.ready && !self.busy && !self.table_ddl_busy && !self.maintenance_busy,
-                    self.editable && !self.busy && !self.table_ddl_busy && !self.maintenance_busy,
+                    self.ready && schema_idle,
+                    self.editable && schema_idle,
                     cx,
                 )
             });
@@ -880,6 +1050,14 @@ impl Render for CatalogView {
             .bg(rgb(0))
             .text_color(rgb(0xffffff))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.show_object_ddl
+                    && this
+                        .object_ddl
+                        .as_ref()
+                        .is_some_and(|view| view.read(cx).contains_focus(window, cx))
+                {
+                    return;
+                }
                 if this.show_table_ddl
                     && this
                         .table_ddl
@@ -888,9 +1066,25 @@ impl Render for CatalogView {
                 {
                     return;
                 }
+                if this.show_schema_alter
+                    && this
+                        .schema_alter
+                        .as_ref()
+                        .is_some_and(|view| view.read(cx).contains_focus(window, cx))
+                {
+                    return;
+                }
                 if this.show_maintenance
                     && this
                         .maintenance
+                        .as_ref()
+                        .is_some_and(|view| view.read(cx).contains_focus(window, cx))
+                {
+                    return;
+                }
+                if this.show_sequence
+                    && this
+                        .sequence
                         .as_ref()
                         .is_some_and(|view| view.read(cx).contains_focus(window, cx))
                 {
@@ -938,6 +1132,10 @@ impl Render for CatalogView {
                                     Action::Structure,
                                     Action::DdlExport,
                                     Action::TableDdl,
+                                    Action::Sequence,
+                                    Action::SchemaAlter,
+                                    Action::DropObject,
+                                    Action::CreateView,
                                 ])
                                 .filter(|(_, action)| this.enabled(*action))
                                 .map(|(focus, _)| focus.clone()),
@@ -1026,7 +1224,20 @@ impl Render for CatalogView {
                     .child(self.button(10, "Maintenance", Action::Maintenance, cx))
                     .child(self.button(11, "Structure", Action::Structure, cx))
                     .child(self.button(12, "Export DDL", Action::DdlExport, cx))
-                    .child(self.button(13, "Table change draft", Action::TableDdl, cx)),
+                    .child(self.button(13, "Table change draft", Action::TableDdl, cx))
+                    .child(self.button(14, "Sequence", Action::Sequence, cx))
+                    .child(self.button(
+                        15,
+                        if self.has_schema_alter_changes(cx) {
+                            "Schema change draft"
+                        } else {
+                            "Alter schema"
+                        },
+                        Action::SchemaAlter,
+                        cx,
+                    ))
+                    .child(self.button(16, "Drop object", Action::DropObject, cx))
+                    .child(self.button(17, "Create view", Action::CreateView, cx)),
             )
             .child(div().h(px(28.)).child(self.accessible.clone()))
             .child(
@@ -1106,11 +1317,28 @@ impl Render for CatalogView {
                     .child(details),
             )
             .when_some(
+                self.object_ddl.clone().filter(|_| self.show_object_ddl),
+                |root, view| root.child(div().h(px(360.)).flex_shrink_0().child(view)),
+            )
+            .when_some(
                 self.table_ddl.clone().filter(|_| self.show_table_ddl),
                 |root, view| root.child(div().h(px(330.)).flex_shrink_0().child(view)),
             )
             .when_some(
+                self.schema_alter.clone().filter(|_| self.show_schema_alter),
+                |root, view| root.child(div().h(px(330.)).flex_shrink_0().child(view)),
+            )
+            .when_some(
                 self.maintenance.clone().filter(|_| self.show_maintenance),
+                |root, view| root.child(div().h(px(330.)).flex_shrink_0().child(view)),
+            )
+            .when_some(
+                self.sequence.clone().filter(|_| {
+                    self.show_sequence
+                        && !self.show_table_ddl
+                        && !self.show_maintenance
+                        && !self.show_schema
+                }),
                 |root, view| root.child(div().h(px(330.)).flex_shrink_0().child(view)),
             )
             .when_some(

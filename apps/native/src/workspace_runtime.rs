@@ -307,6 +307,13 @@ impl WorkspaceRuntime {
         result
     }
 
+    /// Connections with an admitted query session; opening alone counts.
+    pub(super) fn visit_connections(&self, visit: &mut dyn FnMut(&str)) {
+        for document in self.state.documents.lock().unwrap().active.values() {
+            visit(&document.connection);
+        }
+    }
+
     pub(super) async fn disconnect_matching(&self, connection: Option<&str>) -> WorkerResult {
         let documents = self
             .state

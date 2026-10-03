@@ -8,9 +8,9 @@ pub use crate::result_mutation::protocol::{
     CancelResultMutationPayload, CancelResultMutationResult, CapabilityReason, CapabilityVerdict,
     ClearVirtualKeyPayload, CloseResultMutationPayload, ColumnOrigin, ColumnWritability, DmlParam,
     InvalidPlanReason, LoadVirtualKeyPayload, MutationIdentity, MutationIdentityKind, MutationOp,
-    MutationPlan, MutationTable, MutationValue, NotAnalyzableReason, PreviewResult,
-    PreviewResultMutationsPayload, PreviewStatement, ResultMutationError, SaveVirtualKeyPayload,
-    VirtualKey,
+    MutationPlan, MutationTable, MutationValue, NativeAnalysisContext, NotAnalyzableReason,
+    PreviewResult, PreviewResultMutationsPayload, PreviewStatement, ResultMutationError,
+    SaveVirtualKeyPayload, VirtualKey,
 };
 use crate::result_mutation::service as mutation_service;
 pub use crate::table_browse::protocol::{

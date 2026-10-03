@@ -19,6 +19,17 @@ pub(crate) enum Change {
     Delete {
         id: String,
     },
+    /// Bastion metadata and its profile-owned secrets commit together through
+    /// the same journal as connection changes.
+    SaveBastion {
+        bastion: crate::BastionServer,
+        patch: BastionSecretPatch,
+    },
+    /// The caller has already checked or reviewed references while holding
+    /// this function's guard (see `prepare`).
+    DeleteBastion {
+        id: String,
+    },
 }
 
 pub(crate) async fn recovery_required(context: &Context) -> Result<bool, String> {
@@ -70,12 +81,13 @@ pub(crate) async fn mutate(
             connection,
             copy_from,
             ..
-        } => (connection.id(), copy_from.as_deref()),
-        Change::Delete { id } => (id.as_str(), None),
+        } => (Some(connection.id()), copy_from.as_deref()),
+        Change::Delete { id } => (Some(id.as_str()), None),
+        Change::SaveBastion { .. } | Change::DeleteBastion { .. } => (None, None),
     };
     if invalid
         .iter()
-        .any(|id| id == target || Some(id.as_str()) == source)
+        .any(|id| Some(id.as_str()) == target || Some(id.as_str()) == source)
     {
         return Err(
             "Stored connection options are unsupported or unreadable; metadata preserved".into(),
@@ -99,6 +111,14 @@ pub(crate) async fn mutate(
         }
         Change::Delete { id } => {
             secrets.remove(id);
+        }
+        Change::SaveBastion { bastion, patch } => {
+            secrets = apply_bastion_secret_patch(secrets, patch);
+            require_bastion_secret(&secrets, bastion)?;
+        }
+        Change::DeleteBastion { id } => {
+            let prefix = format!("{BASTION_SECRET_NAMESPACE}:{id}:");
+            secrets.retain(|key, _| !key.starts_with(&prefix));
         }
     }
     let key = if mode == CredentialStorageMode::EncryptedSqlite {
@@ -143,6 +163,38 @@ pub(crate) async fn mutate(
                     return Err("Connection no longer exists; reload and retry".to_string());
                 }
             }
+            Change::SaveBastion { bastion, .. } => {
+                storage::bastions::upsert_bastion_server(&mut *tx, bastion)
+                    .await
+                    .map_err(|_| SAVE_FAILED)?
+            }
+            Change::DeleteBastion { id } => {
+                if !storage::bastions::delete_bastion_server(&mut *tx, id)
+                    .await
+                    .map_err(|_| SAVE_FAILED)?
+                {
+                    return Err("Bastion Server no longer exists; reload and retry".to_string());
+                }
+            }
+        }
+        if let Change::Save { connection, .. } = &change {
+            // A route may only name bastions that exist in this transaction,
+            // so a concurrent bastion delete cannot leave a new dangling route.
+            if let Some(tunnel) = connection.ssh_tunnel() {
+                for bastion_id in tunnel.referenced_bastion_ids() {
+                    let exists: Option<i64> =
+                        sqlx::query_scalar("SELECT 1 FROM bastion_servers WHERE id = ?")
+                            .bind(&bastion_id)
+                            .fetch_optional(&mut *tx)
+                            .await
+                            .map_err(|_| SAVE_FAILED)?;
+                    if exists.is_none() {
+                        return Err(
+                            "Selected Bastion Server no longer exists; reload and retry".into()
+                        );
+                    }
+                }
+            }
         }
         if mode == CredentialStorageMode::Keychain {
             sqlite::set_setting(&mut tx, JOURNAL, "committed")
@@ -177,8 +229,27 @@ pub(crate) async fn mutate(
             connection.set_password(String::new());
             Some(connection)
         }
-        Change::Delete { .. } => None,
+        Change::Delete { .. } | Change::SaveBastion { .. } | Change::DeleteBastion { .. } => None,
     })
+}
+
+/// The active authentication method must have its secret after the patch.
+fn require_bastion_secret(
+    secrets: &HashMap<String, String>,
+    bastion: &crate::BastionServer,
+) -> Result<(), String> {
+    let (slot, message) = match bastion.auth_method {
+        BastionAuthMethod::Password => ("password", "Bastion password is required"),
+        BastionAuthMethod::PrivateKeyContent => {
+            ("privateKeyContent", "Private key content is required")
+        }
+        BastionAuthMethod::PrivateKeyPath => return Ok(()),
+    };
+    if bastion_secret_present(secrets, &bastion.id, slot) {
+        Ok(())
+    } else {
+        Err(message.into())
+    }
 }
 
 pub(crate) async fn recover(context: &Context) -> Result<(), String> {
@@ -296,6 +367,94 @@ mod tests {
         assert!(state.calls.iter().all(|(_, service, account)| service
             == "dbunk-native-stage04-connection-tests"
             && account.starts_with("connection-credentials-connection-tests")));
+    }
+
+    #[tokio::test]
+    async fn keychain_bastion_change_commits_metadata_and_secrets_together() {
+        let (_directory, context, _io) = context().await;
+        let bastion = |name: &str| crate::BastionServer {
+            id: "edge".into(),
+            name: name.into(),
+            host: "edge.invalid".into(),
+            port: 22,
+            user: "jump".into(),
+            auth_method: BastionAuthMethod::Password,
+            private_key_path: None,
+            host_key_fingerprint: None,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        };
+        let patch = |value: &str| BastionSecretPatch {
+            bastion_id: "edge".into(),
+            auth_method: BastionAuthMethod::Password,
+            password: SecretChange::Set {
+                value: value.into(),
+            },
+            private_key_content: SecretChange::Keep,
+            passphrase: SecretChange::Keep,
+        };
+        let slot = bastion_secret_id("edge", "password");
+        mutate(&context, |_| {
+            Ok(Change::SaveBastion {
+                bastion: bastion("before"),
+                patch: patch("old-secret"),
+            })
+        })
+        .await
+        .unwrap();
+        sqlx::query("CREATE TRIGGER reject_bastion BEFORE UPDATE ON bastion_servers BEGIN SELECT RAISE(ABORT, 'injected'); END").execute(&context.pool).await.unwrap();
+        let error = mutate(&context, |_| {
+            Ok(Change::SaveBastion {
+                bastion: bastion("after"),
+                patch: patch("new-secret"),
+            })
+        })
+        .await
+        .unwrap_err();
+        assert!(!error.contains("new-secret"));
+        let stored = storage::bastions::read_bastion_server_by_id(&context.pool, "edge")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.name, "before");
+        assert_eq!(context.keychain.get_all().unwrap()[&slot], "old-secret");
+        assert!(!recovery_required(&context).await.unwrap());
+
+        // The active method's secret is required before anything is written.
+        sqlx::query("DROP TRIGGER reject_bastion")
+            .execute(&context.pool)
+            .await
+            .unwrap();
+        let mut cleared = patch("");
+        cleared.password = SecretChange::Clear;
+        assert!(mutate(&context, |_| {
+            Ok(Change::SaveBastion {
+                bastion: bastion("cleared"),
+                patch: cleared,
+            })
+        })
+        .await
+        .unwrap_err()
+        .contains("required"));
+        assert_eq!(context.keychain.get_all().unwrap()[&slot], "old-secret");
+
+        mutate(&context, |_| {
+            Ok(Change::DeleteBastion { id: "edge".into() })
+        })
+        .await
+        .unwrap();
+        assert!(!context.keychain.get_all().unwrap().contains_key(&slot));
+        assert!(
+            storage::bastions::read_bastion_server_by_id(&context.pool, "edge")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(mutate(&context, |_| {
+            Ok(Change::DeleteBastion { id: "edge".into() })
+        })
+        .await
+        .is_err());
     }
 
     #[tokio::test]
