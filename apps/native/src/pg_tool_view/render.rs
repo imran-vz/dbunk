@@ -72,12 +72,12 @@ impl PgToolView {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .when(selected, |element| element.bg(rgb(0x252525)))
-            .focus(|style| style.bg(rgb(0x333333)))
+            .when(selected, |element| element.bg(crate::style::select()))
+            .focus(|style| style.bg(crate::style::line()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -189,7 +189,7 @@ impl Render for PgToolView {
             .map(|capture| capture.limits());
         let fields = self.fields.clone();
         div().id("pg-tool-setup").role(Role::Group).aria_label("PostgreSQL backup and restore")
-            .track_focus(&self.focus).size_full().flex().flex_col().bg(rgb(0)).text_color(rgb(0xffffff))
+            .track_focus(&self.focus).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text())
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{
                 if this.composing(window,cx){return;}
                 let modifiers=event.keystroke.modifiers;
@@ -236,7 +236,7 @@ impl Render for PgToolView {
                     .children(jobs.into_iter().enumerate().map(|(index,(attempt,label))|{
                         let selected=self.selected==Some(attempt);let weak=cx.weak_entity();
                         div().id(("pg-tool-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).px_2().py_1()
-                            .when(selected,|row|row.bg(rgb(0x252525))).child(label)
+                            .when(selected,|row|row.bg(crate::style::select())).child(label)
                             .on_click(cx.listener(move|this,_,window,cx|{this.unknown_ack=None;this.selected=Some(attempt);window.focus(&this.list,cx);cx.notify();}))
                             .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{this.unknown_ack=None;this.selected=Some(attempt);window.focus(&this.list,cx);cx.notify();}).ok();})
                     })))

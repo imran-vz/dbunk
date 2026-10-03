@@ -359,7 +359,7 @@ impl AdminView {
             .flex()
             .flex_col()
             .border_t_1()
-            .border_color(rgb(0x333333))
+            .border_color(crate::style::line())
             .child(
                 div()
                     .flex()

@@ -194,11 +194,11 @@ impl QueryParameters {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
             .focus(|style| style.border_color(rgb(0xa9d8c5)))
             .a11y_synthetic_children(move |builder| {
@@ -293,7 +293,7 @@ impl Render for QueryParameters {
             .max_h(px(200.))
             .overflow_y_scroll()
             .border_b_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .p_2()
             .gap_2()
             .text_sm()
@@ -316,7 +316,7 @@ impl Render for QueryParameters {
                             .w(px(120.))
                             .h(px(28.))
                             .border_1()
-                            .border_color(rgb(0x444444))
+                            .border_color(crate::style::line())
                             .child(self.accessible_limit.clone()),
                     )
                     .child(self.button(
@@ -345,7 +345,7 @@ impl Render for QueryParameters {
                                 .min_w_0()
                                 .h(px(28.))
                                 .border_1()
-                                .border_color(rgb(0x444444))
+                                .border_color(crate::style::line())
                                 .child(field.accessible.clone()),
                         )
                         .child(self.button(

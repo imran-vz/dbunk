@@ -20,6 +20,7 @@ fn record(id: &str) -> DevelopmentConnection {
             driver_options: Default::default(),
             ssh_tunnel: None,
         }),
+        environment: Default::default(),
     }
 }
 #[test]

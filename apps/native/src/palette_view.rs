@@ -7,8 +7,7 @@ use crate::{
 use editor::{Editor, EditorEvent};
 use gpui::{
     Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px, rgb,
-    uniform_list,
+    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 
 const QUERY_BYTES: usize = 4096;
@@ -167,10 +166,10 @@ impl<C: 'static> Render for PaletteView<C> {
             .max_h(px(480.))
             .flex()
             .flex_col()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .border_1()
-            .border_color(rgb(0x666666))
+            .border_color(crate::style::faint())
             .child(div().h(px(28.)).px_2().child(self.accessible.clone()))
             .child(
                 div()
@@ -209,7 +208,7 @@ impl<C: 'static> Render for PaletteView<C> {
                                             .text_sm()
                                             .overflow_hidden()
                                             .whitespace_nowrap()
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
+                                            .when(selected, |row| row.bg(crate::style::select()))
                                             .child(SharedString::from(text))
                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                 this.selected = position;
@@ -231,7 +230,7 @@ impl<C: 'static> Render for PaletteView<C> {
                         .aria_label(format!("Not shown: {truncated}"))
                         .px_2()
                         .text_xs()
-                        .text_color(rgb(0xfbbf24))
+                        .text_color(crate::style::warn())
                         .child(format!("Not shown: {truncated}; refine the search")),
                 )
             })
@@ -243,7 +242,7 @@ impl<C: 'static> Render for PaletteView<C> {
                         .aria_label(note.clone())
                         .px_2()
                         .text_xs()
-                        .text_color(rgb(0xbbbbbb))
+                        .text_color(crate::style::dim())
                         .child(note),
                 )
             })

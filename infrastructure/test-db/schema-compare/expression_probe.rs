@@ -1,5 +1,5 @@
 //! Fixture CLI calls the actual native recognizer without building/launching Tauri.
-#[path = "../../../src-tauri/src/postgres/schema_compare/expression.rs"]
+#[path = "../../../backend/src/postgres/schema_compare/expression.rs"]
 mod expression;
 
 use std::io::Read;

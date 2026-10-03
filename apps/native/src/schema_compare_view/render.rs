@@ -39,11 +39,11 @@ impl SchemaCompareView {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x333333)))
+            .focus(|style| style.bg(crate::style::line()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.activate_captured(action, click_key.as_ref(), window, cx)
@@ -187,7 +187,9 @@ impl SchemaCompareView {
                                                 .aria_selected(selected)
                                                 .h(px(26.))
                                                 .px_2()
-                                                .when(selected, |row| row.bg(rgb(0x252525)))
+                                                .when(selected, |row| {
+                                                    row.bg(crate::style::select())
+                                                })
                                                 .child(label)
                                                 .on_click(cx.listener(
                                                     move |this, _, window, cx| {
@@ -339,7 +341,7 @@ impl SchemaCompareView {
                                             .aria_selected(selected)
                                             .h(px(26.))
                                             .px_2()
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
+                                            .when(selected, |row| row.bg(crate::style::select()))
                                             .child(label)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.select_schema(
@@ -547,7 +549,7 @@ impl SchemaCompareView {
                                             .aria_selected(selected)
                                             .h(px(28.))
                                             .px_2()
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
+                                            .when(selected, |row| row.bg(crate::style::select()))
                                             .child(label)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.choose_object(
@@ -715,7 +717,7 @@ impl SchemaCompareView {
                                             .aria_selected(selected)
                                             .h(px(28.))
                                             .px_2()
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
+                                            .when(selected, |row| row.bg(crate::style::select()))
                                             .child(label)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.choose_field(
@@ -832,7 +834,7 @@ impl SchemaCompareView {
                 .when(rows.is_empty(),|body|body.child("No comparison jobs observed. A missing observation does not prove a queued admission failed."))
                 .children(rows.iter().enumerate().map(|(index,job)|{
                     let label=format!("{} · {} → {} · {} source / {} target objects{}",model::phase_label(&job.state),self.endpoint_label(&job.source),self.endpoint_label(&job.target),job.source_objects,job.target_objects,match &job.state{StatusState::Failed{failure}=>format!(" · {}",model::job_failure_text(failure)),_=>String::new()});let selected=self.selected.as_deref()==Some(job.job_id.as_str());let id=job.job_id.clone();let accessible_id=id.clone();let weak=cx.weak_entity();
-                    div().id(("comparison-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).p_2().when(selected,|row|row.bg(rgb(0x252525))).child(label)
+                    div().id(("comparison-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).p_2().when(selected,|row|row.bg(crate::style::select())).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|this.select_job(id.clone(),window,cx)))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|this.select_job(accessible_id.clone(),window,cx)).ok();})
                 })))
@@ -897,8 +899,8 @@ Draft endpoints differ from this comparison."
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_size(px(12.))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.composing(window, cx) {

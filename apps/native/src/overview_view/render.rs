@@ -46,18 +46,18 @@ impl OverviewView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .bg(if selected == Some(true) {
-                rgb(0x222222)
+                crate::style::hover()
             } else {
-                rgb(0)
+                crate::style::bg()
             })
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x333333)))
+            .focus(|style| style.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -110,8 +110,8 @@ impl OverviewView {
                         .h(px(24.))
                         .px_2()
                         .truncate()
-                        .text_color(if enabled { rgb(0xffffff) } else { rgb(0x888888) })
-                        .focus(|style| style.bg(rgb(0x333333)))
+                        .text_color(if enabled { crate::style::text() } else { crate::style::dim() })
+                        .focus(|style| style.bg(crate::style::line()))
                         // GPUI activates a focused clickable element on
                         // Enter/Space key-up; no key-down duplicate.
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -135,7 +135,7 @@ impl OverviewView {
             .flex()
             .flex_col()
             .border_t_1()
-            .border_color(rgb(0x333333))
+            .border_color(crate::style::line())
             .child(div().px_2().pt_1().text_sm().child("Recent queries"))
             .child(label("overview-recent-summary", summary))
             .child(
@@ -174,9 +174,9 @@ impl OverviewView {
                                 .px_2()
                                 .truncate()
                                 .bg(if this.selected == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_row(revision, section, index, window, cx)
@@ -210,7 +210,7 @@ impl Render for OverviewView {
             .map_or(0, |capture| capture.count(self.section));
         let scope_matches = self.scope_matches(cx);
         let capture_status = self.capture.as_ref().map(Capture::status);
-        div().id("overview-view").key_context("Overview").role(Role::Group).aria_label("Read-only PostgreSQL overview and statistics").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(rgb(0)).text_color(rgb(0xffffff)).text_xs()
+        div().id("overview-view").key_context("Overview").role(Role::Group).aria_label("Read-only PostgreSQL overview and statistics").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(crate::style::bg()).text_color(crate::style::text()).text_xs()
             .on_action(cx.listener(|this,_:&NextControl,window,cx|{if !this.composing(window,cx){this.focus_control(false,window,cx);cx.stop_propagation();}}))
             .on_action(cx.listener(|this,_:&PreviousControl,window,cx|{if !this.composing(window,cx){this.focus_control(true,window,cx);cx.stop_propagation();}}))
             .capture_action(|_:&editor::actions::ToggleSoftWrap,_,cx|cx.stop_propagation())
@@ -227,7 +227,7 @@ impl Render for OverviewView {
             .when(self.capture.is_some()&&!scope_matches,|view|view.child(label("overview-scope-changed","Controls differ from the captured scope. Refresh to inspect this scope; Next is disabled.".into())))
             .child(div().id("overview-sections").role(Role::TabList).aria_label("Overview sections").flex().flex_wrap().gap_1().px_2().py_1().children(Section::ALL.iter().enumerate().map(|(index,section)|self.button(Action::Section(index),format!("{} ({})",section.label(),self.capture.as_ref().map_or(0,|capture|capture.count(*section))),cx))))
             .child(div().flex().flex_1().min_h_0()
-                .child(div().id("overview-list").role(Role::ListBox).aria_label(format!("{} captured {}; arrows select, Enter inspects",count,self.section.label())).track_focus(&self.list).tab_stop(true).tab_index(0).w(px(360.)).min_h_0().border_r_1().border_color(rgb(0x333333))
+                .child(div().id("overview-list").role(Role::ListBox).aria_label(format!("{} captured {}; arrows select, Enter inspects",count,self.section.label())).track_focus(&self.list).tab_stop(true).tab_index(0).w(px(360.)).min_h_0().border_r_1().border_color(crate::style::line())
                     .when(count==0,|view|view.child(div().p_2().child(self.capture.as_ref().map_or("Connect and refresh to capture statistics",|capture|capture.empty_label(self.section)))))
                     .when(count>0,|view|view.child(self.rows(cx))))
                 .child(div().id("overview-selected-details").role(Role::Group).aria_label("Exact selected overview statistics, read only").flex_1().min_w_0().min_h_0().when_some(self.editor.as_ref(),|view,editor|view.child(editor.accessible.clone()))))

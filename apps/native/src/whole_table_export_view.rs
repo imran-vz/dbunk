@@ -14,7 +14,7 @@ use dbunk_lib::backend::{
 };
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Subscription,
-    Window, div, prelude::*, rgb,
+    Window, div, prelude::*,
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 mod configurations;
@@ -405,13 +405,13 @@ impl WholeTableExportView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|s| s.bg(rgb(0x333333)))
+            .focus(|s| s.bg(crate::style::line()))
             // GPUI maps a focused Enter/Space pair to this click on key-up.
             // A separate key-down activation would run the action twice.
             .on_click(cx.listener(move |this, _, window, cx| this.click_button(index, window, cx)))
@@ -444,8 +444,8 @@ impl Render for WholeTableExportView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_xs()
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 this.focus_control(false, window, cx);

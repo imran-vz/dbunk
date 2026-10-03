@@ -20,7 +20,7 @@ impl ResultGrid {
             .h_full()
             .px_2()
             .border_r_1()
-            .border_color(rgb(0x333333))
+            .border_color(crate::style::line())
             .truncate()
             .child(label.clone())
             .when(self.sortable, |header| {
@@ -47,7 +47,7 @@ impl ResultGrid {
             .flex_shrink_0()
             .overflow_hidden()
             .border_b_1()
-            .border_color(rgb(0x333333))
+            .border_color(crate::style::line())
             .child(
                 div()
                     .absolute()
@@ -56,7 +56,7 @@ impl ResultGrid {
                     .h_full()
                     .w(px(panes.pinned_viewport))
                     .overflow_hidden()
-                    .bg(rgb(0))
+                    .bg(crate::style::bg())
                     .on_scroll_wheel(cx.listener(Self::scroll_pinned))
                     .child(
                         div()
@@ -76,7 +76,7 @@ impl ResultGrid {
                     .h_full()
                     .w(px(panes.scrolling_viewport))
                     .overflow_hidden()
-                    .bg(rgb(0))
+                    .bg(crate::style::bg())
                     .child(
                         div()
                             .flex()
@@ -114,9 +114,9 @@ impl ResultGrid {
             .h_full()
             .px_2()
             .border_r_1()
-            .border_color(rgb(0x222222))
+            .border_color(crate::style::hover())
             .truncate()
-            .when(selected, |cell| cell.bg(rgb(0x203247)))
+            .when(selected, |cell| cell.bg(gpui::rgb(0x203247)))
             .child(display_text(&cells[source]))
             .on_mouse_down(
                 MouseButton::Left,
@@ -148,7 +148,7 @@ impl ResultGrid {
                     .h(ROW_HEIGHT)
                     .w(px(panes.content_width))
                     .border_b_1()
-                    .border_color(rgb(0x222222))
+                    .border_color(crate::style::hover())
                     .child(
                         div()
                             .absolute()
@@ -157,7 +157,7 @@ impl ResultGrid {
                             .h_full()
                             .w(px(panes.pinned_viewport))
                             .overflow_hidden()
-                            .bg(rgb(0))
+                            .bg(crate::style::bg())
                             .on_scroll_wheel(cx.listener(Self::scroll_pinned))
                             .child(
                                 div()
@@ -179,7 +179,7 @@ impl ResultGrid {
                             .h_full()
                             .w(px(panes.scrolling_viewport))
                             .overflow_hidden()
-                            .bg(rgb(0))
+                            .bg(crate::style::bg())
                             .child(
                                 div()
                                     .flex()

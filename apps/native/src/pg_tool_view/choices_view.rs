@@ -97,7 +97,9 @@ impl PgToolView {
                                                 .h(px(28.))
                                                 .px_2()
                                                 .overflow_hidden()
-                                                .when(selected, |row| row.bg(rgb(0x252525)))
+                                                .when(selected, |row| {
+                                                    row.bg(crate::style::select())
+                                                })
                                                 .child(name)
                                                 .on_click(cx.listener(
                                                     move |this, _, window, cx| {

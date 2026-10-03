@@ -1,5 +1,5 @@
 use super::*;
-use gpui::{KeyDownEvent, Role, div, px, rgb};
+use gpui::{KeyDownEvent, Role, div, px};
 impl SchemaView {
     fn label(&self, action: Action, default: &'static str) -> &'static str {
         if matches!(action, Action::Discard) && self.recovery.unknown() {
@@ -45,15 +45,15 @@ impl SchemaView {
             .tab_stop(enabled)
             .tab_index(0)
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
-            .focus(|style| style.bg(rgb(0x222222)))
+            .border_color(crate::style::line())
+            .focus(|style| style.bg(crate::style::hover()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -115,8 +115,8 @@ impl Render for SchemaView {
             .aria_label("Create schema and SQL review")
             .track_focus(&self.root)
             .flex().flex_col().h_full().min_h_0()
-            .bg(rgb(0)).text_color(rgb(0xffffff))
-            .border_t_1().border_color(rgb(0x444444))
+            .bg(crate::style::bg()).text_color(crate::style::text())
+            .border_t_1().border_color(crate::style::line())
             .capture_key_down(cx.listener(Self::key))
             .child(div().child(format!("Connection: {}", self.recovery.connection())))
             .child(div().flex().gap_2().px_2().child("Schema")

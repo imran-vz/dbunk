@@ -76,6 +76,7 @@ mod sql_completion;
 mod sql_find;
 mod sql_format;
 mod stream;
+mod style;
 mod table_changes;
 mod table_copy_store;
 mod table_copy_view;
@@ -109,7 +110,7 @@ fn init_editor(cx: &mut App) -> anyhow::Result<()> {
     assets::Assets.load_fonts(cx)?;
     editor::init(cx);
     let theme_settings = cx.update_global::<settings::SettingsStore, _>(|store, cx| {
-        store.set_user_settings(r##"{"languages":{"SQL":{"completions":{"words":"disabled"}}},"theme":"One Dark","experimental.theme_overrides":{"background":"#000000","editor.background":"#000000","editor.foreground":"#ffffff","editor.gutter.background":"#000000","error.background":"#000000","error.border":"#f87171","text":"#ffffff"}}"##, cx)
+        store.set_user_settings(r##"{"languages":{"SQL":{"completions":{"words":"disabled"}}},"theme":"One Dark","buffer_font_size":11.5,"ui_font_size":11,"buffer_line_height":"standard","experimental.theme_overrides":{"background":"#0c0d0f","editor.background":"#0c0d0f","editor.foreground":"#cdd2d9","editor.gutter.background":"#0c0d0f","editor.active_line.background":"#15181c","editor.line_number":"#5b626c","editor.active_line_number":"#8a929c","error.background":"#0c0d0f","error.border":"#f85149","text":"#cdd2d9","text.muted":"#8a929c","border":"#24282e"}}"##, cx)
     });
     theme_settings.result()?;
     theme_settings::reload_theme(cx);
@@ -332,6 +333,13 @@ fn init_workspace_commands(cx: &mut App) {
         KeyBinding::new("cmd-shift-o", FocusNavigator, Some("NativeWorkspace")),
         KeyBinding::new("cmd-k", OpenAnything, Some("NativeWorkspace")),
         KeyBinding::new("ctrl-`", ToggleConsole, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-\\", ToggleSidebar, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-j", ToggleStatusBar, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-0", ShowAllEnvironments, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-1", ShowDevelopment, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-2", ShowTest, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-3", ShowStaging, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-4", ShowProduction, Some("NativeWorkspace")),
         KeyBinding::new("cmd-m", MinimizeWindow, Some("NativeWorkspace")),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, Some("NativeWorkspace")),
         KeyBinding::new("cmd-,", CredentialSettings, Some("NativeWorkspace")),
@@ -384,6 +392,15 @@ fn init_workspace_commands(cx: &mut App) {
             MenuItem::action("Copy retained selection as Markdown", grid::CopyMarkdown),
             MenuItem::action("Copy retained selection as HTML", grid::CopyHtml),
             MenuItem::action("Copy retained selection as TXT", grid::CopyTxt),
+        ]),
+        Menu::new("View").items([
+            MenuItem::action("Toggle sidebar", ToggleSidebar),
+            MenuItem::action("Toggle status bar", ToggleStatusBar),
+            MenuItem::action("All environments", ShowAllEnvironments),
+            MenuItem::action("Development connections", ShowDevelopment),
+            MenuItem::action("Test connections", ShowTest),
+            MenuItem::action("Staging connections", ShowStaging),
+            MenuItem::action("Production connections", ShowProduction),
         ]),
         Menu::new("Window").items([
             MenuItem::action("Minimize", MinimizeWindow),
@@ -487,9 +504,12 @@ fn run() -> anyhow::Result<()> {
                             show: false,
                             focus: false,
                             titlebar: Some(gpui::TitlebarOptions {
-                                title: Some("dbunk Native Workspace".into()),
-                                ..Default::default()
+                                title: Some("dbunk".into()),
+                                appears_transparent: true,
+                                traffic_light_position: Some(gpui::point(px(12.), px(11.))),
                             }),
+                            is_movable: true,
+                            app_owns_titlebar_drag: true,
                             ..Default::default()
                         },
                         |window, cx| {

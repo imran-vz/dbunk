@@ -8,6 +8,8 @@ mod managed_view;
 mod palette;
 #[path = "workspace_seed.rs"]
 mod seed_integration;
+#[path = "workspace_shell.rs"]
+mod shell;
 
 use crate::{
     controller::Host,
@@ -21,7 +23,7 @@ use dbunk_lib::backend::{
 };
 use gpui::{
     Context, Entity, FocusHandle, Focusable, Role, SharedString, Subscription, Task, Window,
-    actions, div, prelude::*, px, rgb,
+    actions, div, prelude::*, px,
 };
 use std::{
     cell::Cell,
@@ -57,7 +59,14 @@ actions!(
         ToggleConsole,
         MinimizeWindow,
         ZoomWindow,
-        ToggleFullScreen
+        ToggleFullScreen,
+        ToggleSidebar,
+        ToggleStatusBar,
+        ShowAllEnvironments,
+        ShowDevelopment,
+        ShowTest,
+        ShowStaging,
+        ShowProduction
     ]
 );
 
@@ -99,10 +108,16 @@ enum Operation {
     Density,
     Width(f32),
     Console,
+    ToggleSidebar,
+    ToggleStatusBar,
+    EnvFilter(Option<dbunk_lib::backend::DevelopmentEnvironment>),
+    ShellMenu(shell::ShellMenu),
+    SelectProject(String),
     ManagedServers,
 }
 
 pub struct Workspace {
+    shell: shell::ShellState,
     host: Arc<Host>,
     pg_tools: Entity<crate::pg_tool_store::ToolStore>,
     restore_changes: crate::pg_tool_jobs::RestoreChanges,
@@ -372,7 +387,9 @@ impl Workspace {
                 cx.notify();
             },
         );
+        let shell = shell::ShellState::new(window, cx);
         let mut workspace = Self {
+            shell,
             dock,
             _dock_events: dock_events,
             navigator,
@@ -739,6 +756,10 @@ impl Workspace {
                 DocumentEvent::Quit => this.close(window, cx),
                 DocumentEvent::Console(entry) => {
                     let mut entry = entry.clone();
+                    if let (Some(latency), Some(connection)) = (entry.latency_ms, &entry.connection)
+                    {
+                        this.shell.last_latency.insert(connection.clone(), latency);
+                    }
                     if let Some(name) = entry.connection.as_ref().and_then(|id| {
                         this.connections
                             .iter()
@@ -1428,6 +1449,39 @@ impl Workspace {
     }
 
     fn activate(&mut self, operation: Operation, window: &mut Window, cx: &mut Context<Self>) {
+        // View-only shell state never waits on persistence or dialogs.
+        let opened_menu = matches!(operation, Operation::ShellMenu(_));
+        if !opened_menu && self.shell.menu.take().is_some() {
+            cx.notify();
+        }
+        match &operation {
+            Operation::ToggleSidebar => {
+                self.shell.sidebar_collapsed = !self.shell.sidebar_collapsed;
+                cx.notify();
+                return;
+            }
+            Operation::ToggleStatusBar => {
+                self.shell.status_collapsed = !self.shell.status_collapsed;
+                cx.notify();
+                return;
+            }
+            Operation::EnvFilter(environment) => {
+                self.shell.env_filter = *environment;
+                cx.notify();
+                return;
+            }
+            Operation::ShellMenu(menu) => {
+                self.shell.menu = (self.shell.menu.as_ref() != Some(menu)).then(|| menu.clone());
+                cx.notify();
+                return;
+            }
+            Operation::SelectProject(project) => {
+                self.shell.project = Some(project.clone());
+                cx.notify();
+                return;
+            }
+            _ => {}
+        }
         if self.closing
             || self.busy
             || self.loading
@@ -1667,6 +1721,12 @@ impl Workspace {
                 }
             }
             Operation::Console => self.toggle_console(window, cx),
+            // Handled before the busy/dialog guard above.
+            Operation::ToggleSidebar
+            | Operation::ToggleStatusBar
+            | Operation::EnvFilter(_)
+            | Operation::ShellMenu(_)
+            | Operation::SelectProject(_) => {}
             Operation::Clear => {
                 if let Some(index) = self.active_index() {
                     self.documents[index]
@@ -2066,52 +2126,6 @@ impl Workspace {
         }));
         cx.notify();
     }
-
-    fn button<I: Into<SharedString>, L: Into<SharedString>>(
-        &self,
-        id: I,
-        label: L,
-        operation: Operation,
-        selected: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement + use<I, L> {
-        let label = label.into();
-        let click = operation.clone();
-        let ax_operation = operation.clone();
-        let weak = cx.weak_entity();
-        let is_tab = matches!(operation, Operation::SelectDocument(_));
-        div()
-            .id(id.into())
-            .role(if is_tab { Role::Tab } else { Role::Button })
-            .when(is_tab, |button| button.aria_selected(selected))
-            .aria_label(label.clone())
-            .tab_index(0)
-            .px_2()
-            .py(px(if self.density == WorkspaceDensity::Compact {
-                2.
-            } else {
-                4.
-            }))
-            .text_sm()
-            .border_b_1()
-            .border_color(if selected {
-                rgb(0xffffff)
-            } else {
-                rgb(0x333333)
-            })
-            .focus(|style| style.bg(rgb(0x222222)))
-            .cursor_pointer()
-            .child(label)
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| {
-                    this.activate(ax_operation.clone(), window, cx)
-                })
-                .ok();
-            })
-            .on_click(
-                cx.listener(move |this, _, window, cx| this.activate(click.clone(), window, cx)),
-            )
-    }
 }
 
 impl Focusable for Workspace {
@@ -2120,7 +2134,7 @@ impl Focusable for Workspace {
     }
 }
 impl Render for Workspace {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Only a saved, supported PostgreSQL connection can bind the tree.
         let navigator_connection = self.selected_connection.clone().filter(|id| {
             self.connections.iter().any(|connection| {
@@ -2131,151 +2145,21 @@ impl Render for Workspace {
         });
         self.navigator
             .update(cx, |view, cx| view.set_connection(navigator_connection, cx));
-        let tabs = self
-            .documents
-            .iter()
-            .map(|document| {
-                let name = format!(
-                    "{}{} · {}",
-                    if document.metadata.pinned { "● " } else { "" },
-                    document.metadata.name,
-                    document.view.read(cx).document_status(cx)
-                );
-                self.button(
-                    format!("tab-{}", document.metadata.id),
-                    name,
-                    Operation::SelectDocument(document.metadata.id.clone()),
-                    Some(&document.metadata.id) == self.active.as_ref(),
-                    cx,
-                )
-            })
-            .collect::<Vec<_>>();
-        let connections = self
-            .connections
-            .iter()
-            .map(|connection| {
-                let id = connection.id.clone();
-                div()
-                    .flex()
-                    .flex_col()
-                    .border_b_1()
-                    .border_color(rgb(0x333333))
-                    .child(self.button(
-                        format!("connection-{id}"),
-                        format!(
-                            "{}{}{}",
-                            if connection.organization.is_favorite {
-                                "★ "
-                            } else {
-                                ""
-                            },
-                            if connection.organization.folder.is_empty() {
-                                String::new()
-                            } else {
-                                format!("{}/", connection.organization.folder)
-                            },
-                            connection.name
-                        ),
-                        Operation::SelectConnection(id.clone()),
-                        self.selected_connection.as_ref() == Some(&id),
-                        cx,
-                    ))
-                    .when_some(self.health.label(&connection.id), |row, health| {
-                        row.child(
-                            div()
-                                .id(SharedString::from(format!("health-{}", connection.id)))
-                                .role(Role::Status)
-                                .aria_label(health.clone())
-                                .text_xs()
-                                .px_2()
-                                .text_color(if health.starts_with("Healthy") {
-                                    rgb(0x86efac)
-                                } else {
-                                    rgb(0xfbbf24)
-                                })
-                                .child(health),
-                        )
-                    })
-                    .when_some(connection.unsupported_reason.clone(), |row, reason| {
-                        row.child(
-                            div()
-                                .text_xs()
-                                .px_2()
-                                .text_color(rgb(0xfbbf24))
-                                .child(reason),
-                        )
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .child(self.button(
-                                format!("edit-{id}"),
-                                "Edit",
-                                Operation::EditConnection(id.clone()),
-                                false,
-                                cx,
-                            ))
-                            .child(self.button(
-                                format!("copy-{id}"),
-                                "Duplicate",
-                                Operation::DuplicateConnection(id.clone()),
-                                false,
-                                cx,
-                            ))
-                            .when(
-                                connection.postgres.is_some()
-                                    && connection.unsupported_reason.is_none(),
-                                |row| {
-                                    row.child(self.button(
-                                        format!("uri-{id}"),
-                                        "Copy URI",
-                                        Operation::CopyConnectionUri(id.clone()),
-                                        false,
-                                        cx,
-                                    ))
-                                },
-                            )
-                            .child(self.button(
-                                format!("favorite-{id}"),
-                                "★",
-                                Operation::Favorite(id.clone()),
-                                connection.organization.is_favorite,
-                                cx,
-                            ))
-                            .child(self.button(
-                                format!("delete-{id}"),
-                                "Delete",
-                                Operation::DeleteConnection(id),
-                                false,
-                                cx,
-                            )),
-                    )
-            })
-            .collect::<Vec<_>>();
-        let save = match &self.save_status {
-            SaveStatus::Pending => "Saving drafts".into(),
-            SaveStatus::Saved => "Saved".into(),
-            SaveStatus::Failed(error) => format!("Drafts not saved: {error}"),
-        };
-        let saved_announcement: String = if self.closing {
-            "Closing workspace".into()
-        } else if self.busy {
-            "Working".into()
-        } else {
-            save.clone()
-        };
-        div()
+        let projects = shell::projects(&self.connections);
+        if self
+            .shell
+            .project
+            .as_ref()
+            .is_none_or(|project| !projects.contains(project))
+        {
+            self.shell.project = projects.first().cloned();
+        }
+        self.render_shell(window, cx)
             .key_context("NativeWorkspace")
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &OpenTable, window, cx| {
                 this.activate(Operation::OpenTable, window, cx)
             }))
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
             .on_action(
                 cx.listener(|this, _: &NewTab, window, cx| {
                     this.activate(Operation::New, window, cx)
@@ -2310,6 +2194,53 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &ToggleConsole, window, cx| this.toggle_console(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &WidenNavigator, window, cx| {
+                this.activate(Operation::Width(24.), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NarrowNavigator, window, cx| {
+                this.activate(Operation::Width(-24.), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleSidebar, window, cx| {
+                this.activate(Operation::ToggleSidebar, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleStatusBar, window, cx| {
+                this.activate(Operation::ToggleStatusBar, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowAllEnvironments, window, cx| {
+                this.activate(Operation::EnvFilter(None), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowDevelopment, window, cx| {
+                this.activate(
+                    Operation::EnvFilter(Some(
+                        dbunk_lib::backend::DevelopmentEnvironment::Development,
+                    )),
+                    window,
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &ShowTest, window, cx| {
+                this.activate(
+                    Operation::EnvFilter(Some(dbunk_lib::backend::DevelopmentEnvironment::Test)),
+                    window,
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &ShowStaging, window, cx| {
+                this.activate(
+                    Operation::EnvFilter(Some(dbunk_lib::backend::DevelopmentEnvironment::Staging)),
+                    window,
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &ShowProduction, window, cx| {
+                this.activate(
+                    Operation::EnvFilter(Some(
+                        dbunk_lib::backend::DevelopmentEnvironment::Production,
+                    )),
+                    window,
+                    cx,
+                )
+            }))
             .on_action(|_: &MinimizeWindow, window, _| window.minimize_window())
             .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
@@ -2334,316 +2265,14 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &crate::workbench::Quit, window, cx| this.close(window, cx)),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_shrink_0()
-                    .border_b_1()
-                    .border_color(rgb(0x444444))
-                    .child(self.button("new-query", "+ Query", Operation::New, false, cx))
-                    .child(self.button(
-                        "history-tool",
-                        "History",
-                        Operation::Library(WorkspaceTool::History),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "saved-tool",
-                        "Saved",
-                        Operation::Library(WorkspaceTool::SavedQueries),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "objects-tool",
-                        "Objects",
-                        Operation::Library(WorkspaceTool::Objects),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "admin-tool",
-                        "Administration",
-                        Operation::Library(WorkspaceTool::Administration),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "pg-tools",
-                        "Backup / Restore",
-                        Operation::Library(WorkspaceTool::BackupRestore),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "csv-transfer",
-                        "CSV transfer",
-                        Operation::Library(WorkspaceTool::CsvTransfer),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "table-copy",
-                        "Copy table",
-                        Operation::Library(WorkspaceTool::TableCopy),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "schema-comparison",
-                        "Compare schemas",
-                        Operation::Library(WorkspaceTool::SchemaCompare),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "schema-map",
-                        "Schema map",
-                        Operation::Library(WorkspaceTool::SchemaMap),
-                        false,
-                        cx,
-                    ))
-                    .child(self.button("save-query", "Save query", Operation::SaveQuery, false, cx))
-                    .child(self.button("rename-query", "Rename", Operation::Rename, false, cx))
-                    .child(self.button("pin-query", "Pin", Operation::Pin, false, cx))
-                    .child(self.button("move-left", "←", Operation::Move(true), false, cx))
-                    .child(self.button("move-right", "→", Operation::Move(false), false, cx))
-                    .child(self.button("close-query", "Close", Operation::Close, false, cx))
-                    .child(div().flex_1())
-                    .when(
-                        self.host.backend.native_profile_kind()
-                            == Some(dbunk_lib::backend::NativeProfileKind::GeneralPostgres),
-                        |toolbar| {
-                            toolbar
-                                .child(self.button(
-                                    "bastions",
-                                    "Bastion servers",
-                                    Operation::Bastions,
-                                    false,
-                                    cx,
-                                ))
-                                .child(self.button(
-                                    "managed-servers",
-                                    "Managed servers",
-                                    Operation::ManagedServers,
-                                    false,
-                                    cx,
-                                ))
-                        },
-                    )
-                    .child(self.button(
-                        "credentials",
-                        "Credentials",
-                        Operation::Credentials,
-                        false,
-                        cx,
-                    )),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(
-                        div()
-                            .id("connection-navigator")
-                            .role(Role::Group)
-                            .aria_label("Connections")
-                            .w(px(self.navigator_width))
-                            .flex_shrink_0()
-                            .border_r_1()
-                            .border_color(rgb(0x444444))
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_wrap()
-                                    .child(self.button(
-                                        "new-connection",
-                                        "+ Connection",
-                                        Operation::NewConnection,
-                                        false,
-                                        cx,
-                                    ))
-                                    .child(self.button(
-                                        "open-table",
-                                        "Open table",
-                                        Operation::OpenTable,
-                                        false,
-                                        cx,
-                                    ))
-                                    .child(self.button(
-                                        "narrow-nav",
-                                        "−",
-                                        Operation::Width(-24.),
-                                        false,
-                                        cx,
-                                    ))
-                                    .child(self.button(
-                                        "wide-nav",
-                                        "+",
-                                        Operation::Width(24.),
-                                        false,
-                                        cx,
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .id("connection-list")
-                                    .overflow_y_scroll()
-                                    .flex_1()
-                                    .min_h_0()
-                                    .children(connections),
-                            )
-                            .child(self.navigator.clone())
-                            .child(self.button(
-                                "density",
-                                match self.density {
-                                    WorkspaceDensity::Compact => "Compact",
-                                    WorkspaceDensity::Comfortable => "Comfortable",
-                                },
-                                Operation::Density,
-                                false,
-                                cx,
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .id("document-tabs")
-                                    .role(Role::TabList)
-                                    .flex()
-                                    .flex_shrink_0()
-                                    .overflow_x_scroll()
-                                    .children(tabs),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_shrink_0()
-                                    .child(self.button(
-                                        "connect-document",
-                                        "Connect",
-                                        Operation::Connect,
-                                        false,
-                                        cx,
-                                    ))
-                                    .child(self.button(
-                                        "disconnect-document",
-                                        "Disconnect",
-                                        Operation::Disconnect,
-                                        false,
-                                        cx,
-                                    ))
-                                    .child(self.button(
-                                        "clear-results",
-                                        "Clear results",
-                                        Operation::Clear,
-                                        false,
-                                        cx,
-                                    )),
-                            )
-                            .when_some(self.active_index(), |area, index| {
-                                area.child(
-                                    div()
-                                        .flex_1()
-                                        .min_h_0()
-                                        .child(self.documents[index].view.clone()),
-                                )
-                            })
-                            .when(self.active_index().is_none(), |area| {
-                                area.child(div().p_4().child(if self.loading {
-                                    "Loading workspace"
-                                } else if self.restored {
-                                    "Choose a connection, then open a query"
-                                } else {
-                                    "Workspace recovery required"
-                                }))
-                            }),
-                    ),
-            )
-            .when_some(self.message.clone(), |root, message| {
+            .when_some(self.dialog.clone(), |root, dialog| {
                 root.child(
                     div()
-                        .id("workspace-error")
-                        .role(Role::Alert)
-                        .aria_label(message.clone())
-                        .px_2()
-                        .py_1()
-                        .text_color(rgb(0xfbbf24))
-                        .child(message),
+                        .absolute()
+                        .inset_0()
+                        .bg(crate::style::bg())
+                        .child(dialog),
                 )
-            })
-            .when(self.dock.read(cx).is_open(), |root| {
-                root.child(self.dock.clone())
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .border_t_1()
-                    .border_color(rgb(0x333333))
-                    .child(self.button(
-                        "console-badge",
-                        match self.dock.read(cx).unread() {
-                            0 => "Console".to_string(),
-                            unread => format!("Console · {unread} new"),
-                        },
-                        Operation::Console,
-                        self.dock.read(cx).is_open(),
-                        cx,
-                    ))
-                    .child(
-                        div()
-                            .id("workspace-save-status")
-                            .flex_1()
-                            .px_2()
-                            .text_sm()
-                            .role(Role::Status)
-                            .aria_label("Draft persistence")
-                            .a11y_synthetic_children(move |builder| {
-                                builder.parent_node().set_value(saved_announcement.clone())
-                            })
-                            .child(if self.closing {
-                                "Closing workspace".into()
-                            } else {
-                                save
-                            }),
-                    )
-                    .child(self.button("retry-save", "Retry", Operation::Retry, false, cx))
-                    .child(self.button(
-                        "export-sql",
-                        if self.load_error.is_some() {
-                            "Export saved JSON"
-                        } else {
-                            "Export SQL"
-                        },
-                        Operation::Export,
-                        false,
-                        cx,
-                    ))
-                    .child(self.button(
-                        "discard-drafts",
-                        if self.load_error.is_some() {
-                            "Reset saved workspace"
-                        } else {
-                            "Discard and quit"
-                        },
-                        Operation::Discard,
-                        false,
-                        cx,
-                    )),
-            )
-            .when_some(self.dialog.clone(), |root, dialog| {
-                root.child(div().absolute().inset_0().bg(rgb(0)).child(dialog))
             })
             .when_some(self.palette.clone(), |root, palette| {
                 root.child(
@@ -2657,7 +2286,13 @@ impl Render for Workspace {
                 )
             })
             .when_some(self.managed.clone(), |root, managed| {
-                root.child(div().absolute().inset_0().bg(rgb(0)).child(managed))
+                root.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(crate::style::bg())
+                        .child(managed),
+                )
             })
     }
 }

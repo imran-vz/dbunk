@@ -52,7 +52,7 @@ def run(operation, path, *, with_tls=False):
         source.write_text(json.dumps(manifest(owned, tls)) + "\n")
         os.chmod(source, 0o600)
         subprocess.run([
-            "cargo", "run", "--quiet", "--manifest-path", str(fixture.ROOT / "src-tauri/Cargo.toml"),
+            "cargo", "run", "--quiet", "--manifest-path", str(fixture.ROOT / "backend/Cargo.toml"),
             "--no-default-features", "--features", "isolated-profile", "--example",
             "native_keychain_probe" if keychain else "native_profile",
             "--", operation.removeprefix("keychain-"), str(path), str(source),

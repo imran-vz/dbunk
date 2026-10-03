@@ -29,10 +29,10 @@ def run(path, out):
     print(f"Plain target: {fixture.ENDPOINT} instance={owned['instance']}", flush=True)
     print(f"TLS target: 127.0.0.1:15433/dbunk_tls_demo instance={tls_owned['instance']}; profile={path}", flush=True)
     print(f"Evidence: {out}", flush=True)
-    build = ["cargo", "build", "--manifest-path", str(fixture.ROOT / "src-tauri/Cargo.toml"), "--no-default-features", "--features", "isolated-profile", "--example", "native_tls_probe"]
+    build = ["cargo", "build", "--manifest-path", str(fixture.ROOT / "backend/Cargo.toml"), "--no-default-features", "--features", "isolated-profile", "--example", "native_tls_probe"]
     with (out / "build.txt").open("w") as log:
         subprocess.run(build, cwd=fixture.ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
-    executable = fixture.ROOT / "src-tauri/target/debug/examples/native_tls_probe"
+    executable = fixture.ROOT / "backend/target/debug/examples/native_tls_probe"
     baseline = {"plain": fixture.backend_count(), "tls": tls_fixture.backend_count(tls_owned)}
     with tempfile.TemporaryDirectory(prefix="dbunk-native-tls-manifest-") as temporary:
         manifest = Path(temporary) / "fixture.json"

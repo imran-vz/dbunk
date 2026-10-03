@@ -80,7 +80,7 @@ def build_tls_image():
 
 
 def cargo_test(env, *args):
-    subprocess.run(['cargo', 'test', '--manifest-path', str(ROOT / 'src-tauri/Cargo.toml'),
+    subprocess.run(['cargo', 'test', '--manifest-path', str(ROOT / 'backend/Cargo.toml'),
                     *args], cwd=ROOT, env=env, check=True, timeout=1800)
 
 

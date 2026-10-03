@@ -42,18 +42,18 @@ impl StructureView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .bg(if selected == Some(true) {
-                rgb(0x222222)
+                crate::style::hover()
             } else {
-                rgb(0)
+                crate::style::bg()
             })
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x333333)))
+            .focus(|style| style.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -83,9 +83,9 @@ impl StructureView {
                                 .px_2()
                                 .overflow_hidden()
                                 .bg(if this.selected == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_row(section, index, window, cx)
@@ -131,8 +131,8 @@ impl Render for StructureView {
             .flex_col()
             .size_full()
             .min_h_0()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_xs()
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 this.focus_control(false, window, cx);
@@ -231,7 +231,7 @@ impl Render for StructureView {
                             .w(px(340.))
                             .min_h_0()
                             .border_r_1()
-                            .border_color(rgb(0x333333))
+                            .border_color(crate::style::line())
                             .when(count == 0, |list| {
                                 list.child(
                                     div().p_2().child(self.capture.empty_label(self.section)),

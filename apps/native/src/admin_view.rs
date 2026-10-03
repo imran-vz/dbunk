@@ -8,7 +8,7 @@ use crate::{
 use dbunk_lib::backend::{WorkspaceDocument, data::DataCloseOutcome};
 use gpui::{
     ClipboardItem, Context, Entity, FocusHandle, Focusable, KeyDownEvent, Role, ScrollHandle,
-    SharedString, UniformListScrollHandle, Window, div, prelude::*, px, rgb, uniform_list,
+    SharedString, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 mod control;
@@ -636,13 +636,13 @@ impl AdminView {
             .tab_stop(enabled)
             .px_2()
             .py_1()
-            .when(selected, |button| button.bg(rgb(0x252525)))
+            .when(selected, |button| button.bg(crate::style::select()))
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x333333)))
+            .focus(|style| style.bg(crate::style::line()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -703,8 +703,8 @@ impl Render for AdminView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.filter.focus_handle(cx).is_focused(window)
                     && this
@@ -908,7 +908,7 @@ impl Render for AdminView {
                                             .px_2()
                                             .overflow_hidden()
                                             .when(Some(index) == this.selected_index(), |row| {
-                                                row.bg(rgb(0x252525))
+                                                row.bg(crate::style::select())
                                             })
                                             .child(SharedString::from(label))
                                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -946,7 +946,7 @@ impl Render for AdminView {
                         .px_2()
                         .py_1()
                         .border_t_1()
-                        .border_color(rgb(0x333333))
+                        .border_color(crate::style::line())
                         .child(details),
                 )
             })
@@ -959,7 +959,7 @@ impl Render for AdminView {
                     .px_2()
                     .py_1()
                     .border_t_1()
-                    .border_color(rgb(0x333333))
+                    .border_color(crate::style::line())
                     .child(self.status.clone()),
             )
     }

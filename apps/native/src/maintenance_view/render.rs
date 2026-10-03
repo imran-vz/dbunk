@@ -33,13 +33,13 @@ impl MaintenanceView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -117,8 +117,8 @@ impl Render for MaintenanceView {
             .flex_col()
             .size_full()
             .min_h_0()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(Self::key))
             .child(
                 div()

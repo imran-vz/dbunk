@@ -11,7 +11,7 @@ use dbunk_lib::backend::{
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle,
     ScrollStrategy, Subscription, UniformListScrollHandle, Window, accesskit::Role, div,
-    prelude::*, px, rgb, uniform_list,
+    prelude::*, px, uniform_list,
 };
 use std::{cell::Cell, rc::Rc};
 mod actions;

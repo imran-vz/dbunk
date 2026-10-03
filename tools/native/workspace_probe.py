@@ -28,13 +28,13 @@ def run(path, *, general_profile=False):
     # Compile before the final ownership check. cargo run could otherwise spend
     # minutes building between checking the fixture and contacting its port.
     build = [
-        "cargo", "build", "--quiet", "--locked", "--manifest-path", str(fixture.ROOT / "src-tauri/Cargo.toml"),
+        "cargo", "build", "--quiet", "--locked", "--manifest-path", str(fixture.ROOT / "backend/Cargo.toml"),
         "--no-default-features", "--features", "isolated-profile", "--example", "native_workspace_probe",
     ]
     subprocess.run(build, cwd=fixture.ROOT, check=True)
     metadata = json.loads(subprocess.check_output([
         "cargo", "metadata", "--locked", "--no-deps", "--format-version", "1",
-        "--manifest-path", str(fixture.ROOT / "src-tauri/Cargo.toml"),
+        "--manifest-path", str(fixture.ROOT / "backend/Cargo.toml"),
     ], cwd=fixture.ROOT, text=True))
     executable = Path(metadata["target_directory"]) / "debug/examples/native_workspace_probe"
     if not executable.is_file() or executable.is_symlink():

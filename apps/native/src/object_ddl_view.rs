@@ -11,7 +11,7 @@ use crate::{
 use dbunk_lib::backend::{WorkspaceObjectDdl, object_ddl::*};
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, ScrollHandle,
-    Subscription, Window, div, prelude::*, px, rgb,
+    Subscription, Window, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 mod actions;

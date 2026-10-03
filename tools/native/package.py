@@ -43,7 +43,7 @@ def assemble(executable, destination):
     (contents / "Resources").mkdir()
     binary = contents / "MacOS/dbunk-native"
     shutil.copy2(executable, binary)
-    shutil.copy2(fixture.ROOT / "src-tauri/icons/icon.icns", contents / "Resources/dbunk.icns")
+    shutil.copy2(fixture.ROOT / "backend/icons/icon.icns", contents / "Resources/dbunk.icns")
     shutil.copy2(fixture.ROOT / "apps/native/THIRD-PARTY-NOTICES.txt", contents / "Resources/THIRD-PARTY-NOTICES.txt")
     info = {
         "CFBundleDevelopmentRegion": "en",

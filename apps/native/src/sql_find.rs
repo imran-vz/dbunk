@@ -6,7 +6,7 @@ use crate::accessible_editor::AccessibleEditor;
 use editor::{Editor, EditorEvent, SelectionEffects};
 use gpui::{
     Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    Subscription, Window, div, prelude::*, px, rgb,
+    Subscription, Window, div, prelude::*, px,
 };
 use multi_buffer::MultiBufferOffset;
 use std::ops::Range;
@@ -226,7 +226,7 @@ impl Render for FindView {
             .gap_2()
             .px_2()
             .border_b_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .child(div().w(px(280.)).h(px(24.)).child(self.accessible.clone()))
             .child(
                 div()
@@ -234,7 +234,7 @@ impl Render for FindView {
                     .role(Role::Status)
                     .aria_label(self.status.clone())
                     .text_xs()
-                    .text_color(rgb(0xbbbbbb))
+                    .text_color(crate::style::dim())
                     .child(self.status.clone()),
             )
     }

@@ -14,7 +14,7 @@ use gpui::{
     accesskit::{Action, Live, Toggled},
     div,
     prelude::*,
-    px, rgb,
+    px,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -513,16 +513,16 @@ impl ManagedServersView {
             .py_1()
             .border_b_1()
             .border_color(if selected == Some(true) {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x333333)
+                crate::style::line()
             })
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x202020)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if let Some(selected) = selected {
                     builder.parent_node().set_toggled(Toggled::from(selected));
@@ -593,7 +593,7 @@ impl ManagedServersView {
                             .w(px(320.))
                             .h(px(26.))
                             .border_b_1()
-                            .border_color(rgb(0x444444))
+                            .border_color(crate::style::line())
                             .child(field.accessible.clone()),
                     ),
             );
@@ -787,8 +787,8 @@ impl Render for ManagedServersView {
             .id("managed-servers")
             .role(Role::Dialog)
             .aria_label("Managed servers")
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_sm()
             .p_4()
             .size_full()

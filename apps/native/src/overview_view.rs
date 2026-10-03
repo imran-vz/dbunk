@@ -12,7 +12,7 @@ use dbunk_lib::backend::overview::{OverviewSnapshot, RelationStatsRequest};
 use editor::Editor;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, ScrollHandle,
-    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, rgb, uniform_list,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 use std::{cell::Cell, rc::Rc};
 mod actions;

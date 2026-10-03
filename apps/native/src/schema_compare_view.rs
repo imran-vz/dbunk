@@ -9,7 +9,7 @@ use crate::{
 use dbunk_lib::backend::{WorkspaceDocument, schema_comparisons::*};
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle, Subscription,
-    UniformListScrollHandle, Window, accesskit::Role, div, prelude::*, px, rgb,
+    UniformListScrollHandle, Window, accesskit::Role, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 mod render;

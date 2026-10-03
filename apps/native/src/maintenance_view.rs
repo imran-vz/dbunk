@@ -13,7 +13,7 @@ use dbunk_lib::backend::objects::{PgObjectKind, PgObjectRef};
 use dbunk_lib::backend::{WorkspaceMaintenance, WorkspaceMaintenanceState};
 use gpui::{
     ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, ScrollHandle,
-    Window, div, prelude::*, px, rgb,
+    Window, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 

@@ -11,7 +11,7 @@ use dbunk_lib::backend::data::*;
 use editor::Editor;
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, SharedString,
-    Window, div, prelude::*, px, rgb,
+    Window, div, prelude::*, px,
 };
 use std::{collections::HashMap, rc::Rc};
 
@@ -373,11 +373,11 @@ impl BrowseControls {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x777777)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .child(label)
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
@@ -694,7 +694,7 @@ impl Render for BrowseControls {
             .flex_col()
             .text_sm()
             .border_b_1()
-            .border_color(rgb(0x333333))
+            .border_color(crate::style::line())
             .child(controls)
             .child(active)
             .child(history)

@@ -1,9 +1,13 @@
 # dbunk — Domain Context
 
-dbunk is a desktop database client (Tauri + React) for exploring data, running
-SQL, and managing connections across PostgreSQL, MySQL, SQLite, ClickHouse,
-and Redis. This file is the canonical domain glossary. New work should reuse
-these terms rather than coining synonyms.
+dbunk is a native desktop database client (Rust + GPUI) for exploring data,
+running SQL, and managing connections across PostgreSQL, MySQL, SQLite,
+ClickHouse, and Redis. This file is the canonical domain glossary. New work
+should reuse these terms rather than coining synonyms.
+
+The Tauri/React app was retired (ADR-0033). Entries below that name React
+components, `src/` files or Tauri commands describe that retired host and are
+kept until the native equivalents are documented.
 
 ## Top-level entities
 

@@ -12,7 +12,7 @@ use dbunk_lib::backend::{
 use editor::Editor;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Subscription,
-    Window, div, prelude::*, rgb,
+    Window, div, prelude::*,
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 mod actions;

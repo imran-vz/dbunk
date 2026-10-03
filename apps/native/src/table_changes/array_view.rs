@@ -370,11 +370,11 @@ impl ArrayView {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x202020)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();

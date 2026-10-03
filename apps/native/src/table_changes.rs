@@ -10,7 +10,7 @@ use dbunk_lib::backend::{WorkspaceMutationDraft, WorkspaceTableState, data::*};
 use editor::Editor;
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, SharedString,
-    Window, div, prelude::*, px, rgb,
+    Window, div, prelude::*, px,
 };
 use std::{cell::Cell, collections::HashMap, rc::Rc};
 

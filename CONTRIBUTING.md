@@ -14,17 +14,17 @@ Thanks for helping make dbunk better. Contributions of all sizes are welcome.
 
 ## Development Setup
 
+See the README for requirements, then:
+
 ```bash
-pnpm install
-pnpm run dev
+just dev-native
 ```
 
 Before opening a pull request, run:
 
 ```bash
-pnpm run test
-pnpx tsc --noEmit
-pnpm run lint
+just fmt && just lint && just test
+just fmt-native && just lint-native && just test-native
 ```
 
 ## Pull Request Guidelines
