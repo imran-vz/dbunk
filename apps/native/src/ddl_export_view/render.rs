@@ -46,18 +46,18 @@ impl DdlExportView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .bg(if selected == Some(true) {
-                rgb(0x222222)
+                crate::style::hover()
             } else {
-                rgb(0)
+                crate::style::bg()
             })
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|s| s.bg(rgb(0x333333)))
+            .focus(|s| s.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -78,7 +78,7 @@ impl Render for DdlExportView {
             .capture
             .as_ref()
             .is_some_and(|capture| self.request(cx).is_ok_and(|r| !capture.matches(&r)));
-        div().id("ddl-export-view").key_context("DdlExport").role(Role::Group).aria_label("Read-only PostgreSQL DDL export").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(rgb(0)).text_color(rgb(0xffffff)).text_xs()
+        div().id("ddl-export-view").key_context("DdlExport").role(Role::Group).aria_label("Read-only PostgreSQL DDL export").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(crate::style::bg()).text_color(crate::style::text()).text_xs()
             .on_action(cx.listener(|this,_:&NextControl,window,cx|{if !this.composing(window,cx){this.focus_control(false,window,cx);cx.stop_propagation();}}))
             .on_action(cx.listener(|this,_:&PreviousControl,window,cx|{if !this.composing(window,cx){this.focus_control(true,window,cx);cx.stop_propagation();}}))
             .capture_action(|_:&editor::actions::ToggleSoftWrap,_,cx|cx.stop_propagation())

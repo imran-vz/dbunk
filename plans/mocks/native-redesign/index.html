@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dbunk — native redesign mock</title>
+<style>
+/* One direction: a compact instrument panel. Graphite surfaces, 11px type,
+   data in monospace, and one loud signal: the environment colour that frames
+   the whole window. Everything else stays quiet so that signal is never missed. */
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --fs: 11px;
+  --fs-s: 10px;
+  --row: 20px;
+  --bg: #0c0d0f;
+  --panel: #111316;
+  --raised: #171a1e;
+  --hover: #1d2126;
+  --select: #22324a;
+  --line: #24282e;
+  --line-soft: #1b1e22;
+  --text: #cdd2d9;
+  --dim: #8a929c;
+  --faint: #5b626c;
+  --accent: #6aa6ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --dev: #3fb950;
+  --staging: #d29922;
+  --prod: #f85149;
+  --local: #8a929c;
+  --env: var(--dev);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: #050506; color: var(--text); font: var(--fs)/1.35 var(--font);
+  -webkit-font-smoothing: antialiased; display: grid; place-items: center;
+  padding: 18px; min-height: 100%;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+svg.i { width: 11px; height: 11px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Controls for the mock itself, outside the app window. */
+.mockbar { width: min(1400px, 100%); display: flex; gap: 14px; align-items: center; margin-bottom: 10px; color: var(--dim); flex-wrap: wrap; }
+.mockbar b { color: var(--text); font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg button { padding: 3px 8px; color: var(--dim); }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+
+/* The window. The env frame is the decisive move. */
+.app {
+  --frame: 2px;
+  width: min(1400px, 100%); height: min(860px, calc(100vh - 80px)); min-height: 560px;
+  display: grid; grid-template-columns: var(--sidebar, 248px) 1fr; grid-template-rows: 1fr auto;
+  background: var(--bg); border-radius: 10px; overflow: hidden; position: relative;
+  box-shadow: 0 30px 80px #000a, 0 0 0 1px #000;
+}
+.app[data-indicator="border"], .app[data-indicator="both"] { box-shadow: 0 30px 80px #000a, 0 0 0 var(--frame) var(--env); }
+.app::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: transparent; transition: background .2s; }
+.app[data-indicator="tint"]::after, .app[data-indicator="both"]::after {
+  background: color-mix(in srgb, var(--env) 5%, transparent);
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--env) 70%, transparent);
+}
+.app[data-sidebar="collapsed"] { --sidebar: 0px; }
+.app[data-sidebar="collapsed"] .sidebar { display: none; }
+
+/* Sidebar */
+.sidebar { grid-row: 1 / 3; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+.titlerow { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; flex: none; }
+.lights { display: flex; gap: 7px; margin-right: 4px; }
+.lights span { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+.lights span:nth-child(2) { background: #febc2e; }
+.lights span:nth-child(3) { background: #28c840; }
+.iconbtn { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px; color: var(--dim); }
+.iconbtn:hover { background: var(--hover); color: var(--text); }
+.logo { display: flex; align-items: center; gap: 5px; margin-left: auto; color: var(--text); font-weight: 600; letter-spacing: .02em; }
+.logo .mark { width: 13px; height: 13px; border-radius: 3px; background: linear-gradient(135deg, var(--env), color-mix(in srgb, var(--env) 30%, #000)); transition: background .2s; }
+
+.top-third { display: flex; flex-direction: column; min-height: 0; flex: 0 0 38%; border-bottom: 1px solid var(--line); }
+.switcher { display: flex; gap: 4px; padding: 0 8px 6px; align-items: center; }
+.project { flex: 1; display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--raised); min-width: 0; }
+.project select { appearance: none; background: none; border: 0; flex: 1; min-width: 0; font-weight: 600; outline: none; cursor: pointer; color: var(--text); }
+.project select option { background: var(--raised); }
+.envs { display: flex; gap: 2px; }
+.env-chip { height: 22px; min-width: 22px; padding: 0 5px; border-radius: 4px; display: flex; align-items: center; gap: 4px; color: var(--dim); border: 1px solid transparent; font-size: var(--fs-s); text-transform: uppercase; letter-spacing: .04em; }
+.env-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+.env-chip[aria-pressed="true"] { border-color: var(--line); background: var(--raised); color: var(--text); }
+.search { margin: 0 8px 6px; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 7px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; color: var(--faint); }
+.search input { background: none; border: 0; outline: none; flex: 1; min-width: 0; color: var(--text); }
+.search kbd { font: var(--fs-s) var(--mono); color: var(--faint); }
+.list { overflow: auto; flex: 1; padding-bottom: 6px; }
+.group-h { height: var(--row); display: flex; align-items: center; gap: 5px; padding: 0 10px; color: var(--faint); font-size: var(--fs-s); text-transform: uppercase; letter-spacing: .06em; }
+.group-h .dot { width: 6px; height: 6px; border-radius: 50%; }
+.conn { width: 100%; height: var(--row); display: flex; align-items: center; gap: 6px; padding: 0 10px 0 16px; text-align: left; }
+.conn:hover { background: var(--hover); }
+.conn[aria-current="true"] { background: var(--select); }
+.conn .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conn .meta { color: var(--faint); font: var(--fs-s) var(--mono); }
+.live { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 20%, transparent); }
+.idle { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--faint); }
+.engine { width: 14px; height: 14px; border-radius: 3px; display: grid; place-items: center; font: 600 8px/1 var(--mono); color: #0c0d0f; flex: none; }
+.e-pg { background: #6c9bd2; } .e-my { background: #e6a23c; } .e-ch { background: #f4d03f; } .e-rd { background: #e5534b; color: #fff; } .e-sq { background: #8bb8a8; }
+.empty { padding: 10px 16px; color: var(--faint); }
+
+.objects { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.objects-h { height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; color: var(--dim); flex: none; }
+.objects-h .title { flex: 1; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filter { margin: 0 8px 4px; height: 20px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: 1px solid var(--line-soft); border-radius: 4px; color: var(--faint); }
+.filter input { background: none; border: 0; outline: none; flex: 1; min-width: 0; }
+.tree { overflow: auto; flex: 1; padding: 2px 0 8px; }
+.node { width: 100%; height: var(--row); display: flex; align-items: center; gap: 5px; padding-right: 8px; text-align: left; white-space: nowrap; }
+.node:hover { background: var(--hover); }
+.node[aria-selected="true"] { background: var(--select); }
+.node .caret { width: 11px; color: var(--faint); transition: transform .12s; flex: none; }
+.node[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.node .label { overflow: hidden; text-overflow: ellipsis; }
+.node .count { margin-left: auto; color: var(--faint); font: var(--fs-s) var(--mono); }
+.node .kind { color: var(--faint); }
+.k-table { color: #6aa6ff; } .k-view { color: #b392f0; } .k-mat { color: #d2a8ff; } .k-fn { color: #56d4dd; } .k-seq { color: #d29922; } .k-type { color: #79c0ff; }
+.k-string { color: #7ee787; } .k-hash { color: #d2a8ff; } .k-list { color: #79c0ff; } .k-set { color: #ffa657; } .k-zset { color: #ff7b72; } .k-stream { color: #56d4dd; } .k-dict { color: #e3b341; }
+
+/* Main column */
+.main { display: grid; grid-template-rows: 34px 1fr; min-width: 0; min-height: 0; }
+.tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
+.tabbar .reveal { display: none; align-items: center; padding-left: 78px; }
+.app[data-sidebar="collapsed"] .tabbar .reveal { display: flex; }
+.tabs { display: flex; overflow-x: auto; flex: 1; scrollbar-width: none; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border-right: 1px solid var(--line-soft); color: var(--dim); min-width: 120px; max-width: 200px; position: relative; }
+.tab:hover { background: var(--hover); }
+.tab[aria-selected="true"] { background: var(--bg); color: var(--text); }
+.tab[aria-selected="true"]::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--env); }
+.tab .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .x { opacity: 0; }
+.tab:hover .x, .tab[aria-selected="true"] .x { opacity: .7; }
+.tab .dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.tabbar .actions { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-left: 1px solid var(--line-soft); }
+.workspace { min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Toolbars inside documents */
+.toolbar { height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border-bottom: 1px solid var(--line-soft); color: var(--dim); flex: none; }
+.tool { height: 20px; padding: 0 6px; border-radius: 4px; display: flex; align-items: center; gap: 4px; }
+.tool:hover { background: var(--hover); color: var(--text); }
+.tool.primary { color: var(--text); background: var(--raised); border: 1px solid var(--line); }
+.sep { width: 1px; height: 14px; background: var(--line); margin: 0 4px; }
+.crumbs { color: var(--faint); font-family: var(--mono); }
+.crumbs b { color: var(--text); font-weight: 500; }
+.grow { flex: 1; }
+
+/* Data grid */
+.grid { flex: 1; overflow: auto; font-family: var(--mono); }
+table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+th, td { height: var(--row); padding: 0 8px; text-align: left; white-space: nowrap; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+th { position: sticky; top: 0; background: var(--panel); color: var(--dim); font: 500 var(--fs) var(--font); z-index: 1; }
+th .ty { color: var(--faint); font: var(--fs-s) var(--mono); margin-left: 4px; }
+td.rn, th.rn { position: sticky; left: 0; background: var(--panel); color: var(--faint); text-align: right; width: 44px; z-index: 2; }
+th.rn { z-index: 3; }
+tr:hover td { background: #14171b; }
+td.num { text-align: right; color: #79c0ff; }
+td.null { color: var(--faint); font-style: italic; }
+td.bool { color: #d2a8ff; }
+td.sel { background: var(--select) !important; box-shadow: inset 0 0 0 1px var(--accent); }
+td.edited { background: color-mix(in srgb, var(--warn) 14%, transparent) !important; }
+.gridfoot { height: 24px; display: flex; align-items: center; gap: 12px; padding: 0 8px; border-top: 1px solid var(--line); color: var(--faint); flex: none; font-family: var(--mono); font-size: var(--fs-s); }
+.pending { color: var(--warn); }
+
+/* Query editor */
+.split { flex: 1; display: grid; grid-template-rows: minmax(120px, 42%) 1fr; min-height: 0; }
+.editor { font: 11px/18px var(--mono); padding: 6px 0; overflow: auto; border-bottom: 1px solid var(--line); counter-reset: ln; }
+.editor div { padding-left: 46px; position: relative; white-space: pre; }
+.editor div::before { counter-increment: ln; content: counter(ln); position: absolute; left: 0; width: 34px; text-align: right; color: var(--faint); }
+.editor div.cur { background: #15181c; }
+.kw { color: #ff7b72; } .str { color: #a5d6ff; } .fnc { color: #d2a8ff; } .cm { color: var(--faint); } .nm { color: #79c0ff; }
+.results { display: flex; flex-direction: column; min-height: 0; }
+.rtabs { height: 24px; display: flex; gap: 2px; padding: 0 6px; align-items: center; border-bottom: 1px solid var(--line-soft); color: var(--dim); flex: none; }
+.rtabs button { height: 18px; padding: 0 6px; border-radius: 3px; }
+.rtabs button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+
+/* Structure view */
+.struct { flex: 1; overflow: auto; padding: 8px 10px; display: grid; gap: 12px; align-content: start; }
+.struct h3 { margin: 0 0 4px; font-size: var(--fs); color: var(--dim); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+.struct table { font-family: var(--mono); min-width: 0; width: 100%; }
+.badge { font: var(--fs-s) var(--mono); padding: 0 4px; border-radius: 3px; border: 1px solid var(--line); color: var(--dim); }
+.badge.pk { color: #e3b341; border-color: #e3b34155; }
+.badge.fk { color: #6aa6ff; border-color: #6aa6ff55; }
+
+/* Redis console */
+.console { flex: 1; display: flex; flex-direction: column; min-height: 0; font: 11px/17px var(--mono); }
+.out { flex: 1; overflow: auto; padding: 8px 10px; }
+.out .p { color: var(--faint); }
+.out .c { color: var(--text); }
+.out .r { color: #a5d6ff; padding-left: 14px; }
+.out .r.int { color: #79c0ff; }
+.out .r.err { color: var(--bad); }
+.prompt { display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); align-items: center; }
+.prompt span { color: var(--env); }
+.prompt input { flex: 1; background: none; border: 0; outline: none; font: inherit; }
+
+/* Production guard banner inside the workspace */
+.guard { display: none; height: 22px; align-items: center; gap: 6px; padding: 0 10px; background: color-mix(in srgb, var(--prod) 14%, var(--bg)); color: #ffb3ad; border-bottom: 1px solid color-mix(in srgb, var(--prod) 40%, transparent); flex: none; }
+.app[data-env="prod"] .guard { display: flex; }
+
+/* Status bar */
+.status { grid-column: 2; height: 22px; display: flex; align-items: center; gap: 12px; padding: 0 8px; background: var(--panel); border-top: 1px solid var(--line); color: var(--dim); font-size: var(--fs-s); white-space: nowrap; }
+.app[data-sidebar="collapsed"] .status { grid-column: 1 / 3; }
+.status .env-tag { padding: 0 5px; border-radius: 3px; color: #0c0d0f; background: var(--env); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.status .mono { font-family: var(--mono); }
+.status .grow { flex: 1; }
+.app[data-status="collapsed"] .status { height: 4px; padding: 0; gap: 0; overflow: hidden; background: var(--env); border: 0; }
+.app[data-status="collapsed"] .status > * { display: none; }
+.status-toggle { position: absolute; right: 10px; bottom: 6px; z-index: 5; display: none; }
+.app[data-status="collapsed"] .status-toggle { display: grid; }
+
+/* Narrow screens: keep the workspace, overlay the sidebar. */
+@media (max-width: 760px) {
+  body { padding: 0; }
+  .app { border-radius: 0; height: 100vh; grid-template-columns: 1fr; }
+  .sidebar { position: absolute; inset: 0 auto 0 0; width: 248px; z-index: 10; box-shadow: 10px 0 30px #000a; }
+  .main, .status { grid-column: 1; }
+  .app[data-sidebar="expanded"] .main { pointer-events: none; opacity: .4; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="mockbar" role="group" aria-label="Mock controls">
+  <b>dbunk · native redesign</b>
+  <span>Environment signal</span>
+  <div class="seg" id="indicator">
+    <button data-v="border" aria-pressed="true">Frame</button>
+    <button data-v="tint" aria-pressed="false">Tint</button>
+    <button data-v="both" aria-pressed="false">Frame + tint</button>
+  </div>
+  <span>Try: pick connections of different engines and environments · ⌘\ sidebar · ⌘J status bar · ⌘1–4 environments</span>
+</div>
+
+<div class="app" id="app" data-indicator="border" data-sidebar="expanded" data-status="expanded" data-env="dev">
+  <aside class="sidebar" aria-label="Sidebar">
+    <div class="top-third">
+      <div class="titlerow">
+        <div class="lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <button class="iconbtn" id="collapse" aria-label="Collapse sidebar (⌘\)" title="Collapse sidebar ⌘\">
+          <svg class="i" viewBox="0 0 12 12"><rect x="1" y="1.5" width="10" height="9" rx="1.5"/><path d="M4.5 1.5v9"/></svg>
+        </button>
+        <div class="logo"><span class="mark"></span>dbunk</div>
+      </div>
+      <div class="switcher">
+        <label class="project" title="Project (⌘P)">
+          <svg class="i" viewBox="0 0 12 12"><path d="M1.5 3.5h3l1 1h5v5h-9z"/></svg>
+          <select id="project" aria-label="Project"></select>
+        </label>
+        <div class="envs" id="envs" role="group" aria-label="Environment filter"></div>
+      </div>
+      <label class="search">
+        <svg class="i" viewBox="0 0 12 12"><circle cx="5" cy="5" r="3.5"/><path d="m8 8 2.5 2.5"/></svg>
+        <input id="connSearch" placeholder="Search connections" aria-label="Search connections">
+        <kbd>⌘K</kbd>
+      </label>
+      <div class="list" id="connList" role="listbox" aria-label="Connections"></div>
+    </div>
+    <div class="objects">
+      <div class="objects-h">
+        <span class="title" id="objTitle"></span>
+        <button class="iconbtn" aria-label="Refresh objects" title="Refresh">
+          <svg class="i" viewBox="0 0 12 12"><path d="M10 6a4 4 0 1 1-1.2-2.8M10 1.5v2.5H7.5"/></svg>
+        </button>
+        <button class="iconbtn" id="collapseAll" aria-label="Collapse all" title="Collapse all">
+          <svg class="i" viewBox="0 0 12 12"><path d="m3 7.5 3-3 3 3"/></svg>
+        </button>
+      </div>
+      <label class="filter">
+        <svg class="i" viewBox="0 0 12 12"><path d="M1.5 2.5h9l-3.5 4v3l-2 1v-4z"/></svg>
+        <input id="objFilter" placeholder="Filter objects" aria-label="Filter objects">
+      </label>
+      <div class="tree" id="tree" role="tree" aria-label="Objects"></div>
+    </div>
+  </aside>
+
+  <section class="main">
+    <nav class="tabbar" aria-label="Tabs for the current connection">
+      <div class="reveal"><button class="iconbtn" id="expand" aria-label="Show sidebar">
+        <svg class="i" viewBox="0 0 12 12"><rect x="1" y="1.5" width="10" height="9" rx="1.5"/><path d="M4.5 1.5v9"/></svg>
+      </button></div>
+      <div class="tabs" id="tabs" role="tablist"></div>
+      <div class="actions">
+        <button class="iconbtn" id="newQuery" aria-label="New query tab (⌘T)" title="New query ⌘T">
+          <svg class="i" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8"/></svg>
+        </button>
+      </div>
+    </nav>
+    <div class="workspace" id="workspace"></div>
+  </section>
+
+  <footer class="status" id="status" aria-label="Status"></footer>
+  <button class="iconbtn status-toggle" id="statusShow" aria-label="Show status bar (⌘J)">
+    <svg class="i" viewBox="0 0 12 12"><path d="m3 7.5 3-3 3 3"/></svg>
+  </button>
+</div>
+
+<script>
+const ENVS = [
+  { id: "local", label: "Local", color: "var(--local)" },
+  { id: "dev", label: "Dev", color: "var(--dev)" },
+  { id: "staging", label: "Stage", color: "var(--staging)" },
+  { id: "prod", label: "Prod", color: "var(--prod)" },
+];
+const ENGINES = { pg: ["PG", "e-pg", "PostgreSQL 17.6"], my: ["MY", "e-my", "MySQL 8.4"], ch: ["CH", "e-ch", "ClickHouse 25.3"], rd: ["RD", "e-rd", "Redis 7.4"], sq: ["SQ", "e-sq", "SQLite 3.46"] };
+
+const CONNECTIONS = [
+  { id: "c1", project: "Billing", env: "local", engine: "pg", name: "billing (docker)", db: "billing_dev", host: "127.0.0.1:5433", live: true },
+  { id: "c2", project: "Billing", env: "dev", engine: "pg", name: "billing-dev", db: "billing", host: "dev-db-1.internal:5432", live: true },
+  { id: "c3", project: "Billing", env: "staging", engine: "pg", name: "billing-staging", db: "billing", host: "stg-db.internal:5432", live: false },
+  { id: "c4", project: "Billing", env: "prod", engine: "pg", name: "billing-primary", db: "billing", host: "prod-db.internal:5432", live: true },
+  { id: "c5", project: "Billing", env: "prod", engine: "rd", name: "billing-cache", db: "db0", host: "cache.internal:6379", live: true },
+  { id: "c6", project: "Analytics", env: "dev", engine: "ch", name: "events-dev", db: "events", host: "ch-dev.internal:8123", live: true },
+  { id: "c7", project: "Analytics", env: "prod", engine: "ch", name: "events-prod", db: "events", host: "ch.internal:8123", live: false },
+  { id: "c8", project: "Storefront", env: "dev", engine: "my", name: "shop-dev", db: "shop", host: "mysql-dev:3306", live: true },
+  { id: "c9", project: "Storefront", env: "staging", engine: "my", name: "shop-staging", db: "shop", host: "mysql-stg:3306", live: false },
+  { id: "c10", project: "Storefront", env: "local", engine: "sq", name: "fixtures.sqlite", db: "main", host: "~/shop/fixtures.sqlite", live: false },
+];
+
+// Object trees per engine. Shapes follow each engine's real namespace model:
+// PostgreSQL database → schemas → kinds; MySQL database = schema → kinds;
+// ClickHouse has databases (no schemas) → tables/views/MVs/dictionaries;
+// Redis has logical DBs → keys grouped by type; SQLite has one schema.
+function pgTree() {
+  return [
+    { label: "public", kind: "schema", open: true, children: [
+      { label: "Tables", kind: "group", open: true, children: ["accounts", "invoices", "invoice_lines", "payments", "plans", "subscriptions", "webhook_events"].map(t => ({ label: t, kind: "table" })) },
+      { label: "Views", kind: "group", children: ["active_subscriptions", "mrr_by_month"].map(t => ({ label: t, kind: "view" })) },
+      { label: "Materialized views", kind: "group", children: [{ label: "revenue_daily", kind: "mat" }] },
+      { label: "Functions", kind: "group", children: ["next_invoice_number()", "prorate(integer, date)"].map(t => ({ label: t, kind: "fn" })) },
+      { label: "Sequences", kind: "group", children: [{ label: "invoice_number_seq", kind: "seq" }] },
+      { label: "Types", kind: "group", children: [{ label: "invoice_status", kind: "type" }] },
+    ]},
+    { label: "audit", kind: "schema", children: [
+      { label: "Tables", kind: "group", children: [{ label: "events", kind: "table" }, { label: "events_2026_10", kind: "table" }] },
+    ]},
+    { label: "Extensions", kind: "group", children: [{ label: "pgcrypto 1.3", kind: "ext" }, { label: "pg_stat_statements 1.11", kind: "ext" }] },
+    { label: "Roles", kind: "group", children: [{ label: "billing_app", kind: "role" }, { label: "readonly", kind: "role" }] },
+  ];
+}
+function myTree() {
+  return [
+    { label: "shop", kind: "schema", open: true, children: [
+      { label: "Tables", kind: "group", open: true, children: ["carts", "customers", "orders", "order_items", "products", "stock_levels"].map(t => ({ label: t, kind: "table" })) },
+      { label: "Views", kind: "group", children: [{ label: "low_stock", kind: "view" }] },
+      { label: "Routines", kind: "group", children: [{ label: "recalc_cart(id)", kind: "fn" }] },
+      { label: "Events", kind: "group", children: [{ label: "purge_carts", kind: "fn" }] },
+    ]},
+    { label: "shop_archive", kind: "schema", children: [{ label: "Tables", kind: "group", children: [{ label: "orders_2024", kind: "table" }] }] },
+  ];
+}
+function chTree() {
+  return [
+    { label: "events", kind: "database", open: true, children: [
+      { label: "Tables", kind: "group", open: true, children: [
+        { label: "page_views", kind: "table", note: "MergeTree" },
+        { label: "sessions", kind: "table", note: "ReplacingMergeTree" },
+        { label: "page_views_dist", kind: "table", note: "Distributed" },
+      ]},
+      { label: "Views", kind: "group", children: [{ label: "top_pages", kind: "view" }] },
+      { label: "Materialized views", kind: "group", children: [{ label: "page_views_hourly_mv", kind: "mat", note: "→ page_views_hourly" }] },
+      { label: "Dictionaries", kind: "group", children: [{ label: "country_names", kind: "dict" }] },
+    ]},
+    { label: "system", kind: "database", children: [{ label: "Tables", kind: "group", children: ["parts", "query_log", "merges"].map(t => ({ label: t, kind: "table", note: "System" })) }] },
+  ];
+}
+function rdTree() {
+  return ["db0 · 18,204 keys", "db1 · 312 keys"].map((label, i) => ({ label, kind: "database", open: i === 0, children: i === 0 ? [
+    { label: "string", kind: "string", count: "9,880", children: ["session:7f2c…", "rate:ip:10.0.4.12", "feature:checkout_v2"].map(k => ({ label: k, kind: "string" })) },
+    { label: "hash", kind: "hash", count: "6,104", open: true, children: ["user:1042", "user:1043", "plan:pro"].map(k => ({ label: k, kind: "hash" })) },
+    { label: "list", kind: "list", count: "12", children: [{ label: "queue:emails", kind: "list" }] },
+    { label: "set", kind: "set", count: "980", children: [{ label: "online:users", kind: "set" }] },
+    { label: "zset", kind: "zset", count: "1,201", children: [{ label: "leaderboard:weekly", kind: "zset" }] },
+    { label: "stream", kind: "stream", count: "7", children: [{ label: "events:billing", kind: "stream" }] },
+  ] : [] }));
+}
+function sqTree() {
+  return [{ label: "main", kind: "schema", open: true, children: [
+    { label: "Tables", kind: "group", open: true, children: ["fixtures", "products", "variants"].map(t => ({ label: t, kind: "table" })) },
+    { label: "Views", kind: "group", children: [{ label: "v_variants", kind: "view" }] },
+    { label: "Indexes", kind: "group", children: [{ label: "idx_variants_sku", kind: "idx" }] },
+    { label: "Triggers", kind: "group", children: [{ label: "trg_touch", kind: "fn" }] },
+  ]}];
+}
+const TREES = { pg: pgTree, my: myTree, ch: chTree, rd: rdTree, sq: sqTree };
+const KIND_ICON = {
+  table: '<svg class="i k-table" viewBox="0 0 12 12"><rect x="1.5" y="2" width="9" height="8" rx="1"/><path d="M1.5 5h9M5 5v5"/></svg>',
+  view: '<svg class="i k-view" viewBox="0 0 12 12"><path d="M1 6s2-3.5 5-3.5S11 6 11 6 9 9.5 6 9.5 1 6 1 6z"/><circle cx="6" cy="6" r="1.3"/></svg>',
+  mat: '<svg class="i k-mat" viewBox="0 0 12 12"><rect x="1.5" y="2" width="9" height="8" rx="1"/><path d="M4 7.5 6 4.5l2 3"/></svg>',
+  fn: '<svg class="i k-fn" viewBox="0 0 12 12"><path d="M7.5 2H6.5a1.5 1.5 0 0 0-1.5 1.5V10M3.5 5.5h4"/></svg>',
+  seq: '<svg class="i k-seq" viewBox="0 0 12 12"><path d="M2 9h2V7h2V5h2V3h2"/></svg>',
+  type: '<svg class="i k-type" viewBox="0 0 12 12"><path d="M3 3h6M6 3v6"/></svg>',
+  dict: '<svg class="i k-dict" viewBox="0 0 12 12"><path d="M2.5 2h6a1 1 0 0 1 1 1v7h-6a1 1 0 0 1-1-1z"/><path d="M4.5 4.5h3"/></svg>',
+  schema: '<svg class="i" viewBox="0 0 12 12"><path d="M1.5 3.5h3l1 1h5v5h-9z"/></svg>',
+  database: '<svg class="i" viewBox="0 0 12 12"><ellipse cx="6" cy="3" rx="4" ry="1.5"/><path d="M2 3v6c0 .8 1.8 1.5 4 1.5s4-.7 4-1.5V3M2 6c0 .8 1.8 1.5 4 1.5S10 6.8 10 6"/></svg>',
+  group: '<svg class="i" viewBox="0 0 12 12"><path d="M2 3h8M2 6h8M2 9h5"/></svg>',
+  ext: '<svg class="i" viewBox="0 0 12 12"><path d="M4 2h4v2.5h2V10H2V4.5h2z"/></svg>',
+  role: '<svg class="i" viewBox="0 0 12 12"><circle cx="6" cy="4" r="2"/><path d="M2.5 10.5a3.5 3.5 0 0 1 7 0"/></svg>',
+  idx: '<svg class="i" viewBox="0 0 12 12"><path d="M3 2v8M3 6h6M9 4v4"/></svg>',
+};
+["string", "hash", "list", "set", "zset", "stream"].forEach(k => KIND_ICON[k] = `<svg class="i k-${k}" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="2"/></svg>`);
+
+const params = new URLSearchParams(location.search);
+const initial = CONNECTIONS.find(c => c.id === params.get("conn")) || CONNECTIONS[1];
+const state = {
+  project: initial.project, env: "all", search: "", conn: initial.id, filter: "",
+  trees: {}, tabs: {}, activeTab: {}, lastLatency: { c1: 4, c2: 12, c4: 38, c5: 1, c6: 64, c8: 9 },
+};
+const $ = s => document.querySelector(s);
+const app = $("#app");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const conn = () => CONNECTIONS.find(c => c.id === state.conn);
+const envOf = id => ENVS.find(e => e.id === id);
+
+function tabsFor(c) {
+  if (!state.tabs[c.id]) {
+    const t = c.engine === "rd"
+      ? [{ id: "console", kind: "console", name: "Console" }]
+      : c.engine === "ch"
+        ? [{ id: "t1", kind: "table", name: "page_views" }, { id: "q1", kind: "query", name: "Query 1", dirty: true }]
+        : [{ id: "t1", kind: "table", name: c.engine === "my" ? "orders" : "invoices" }, { id: "s1", kind: "structure", name: (c.engine === "my" ? "orders" : "invoices") + " · structure" }, { id: "q1", kind: "query", name: "Query 1", dirty: true }];
+    state.tabs[c.id] = t; state.activeTab[c.id] = t[0].id;
+  }
+  return state.tabs[c.id];
+}
+
+function renderSwitcher() {
+  const projects = [...new Set(CONNECTIONS.map(c => c.project))];
+  $("#project").innerHTML = projects.map(p => `<option ${p === state.project ? "selected" : ""}>${p}</option>`).join("");
+  $("#envs").innerHTML = [{ id: "all", label: "All" }, ...ENVS].map((e, i) =>
+    `<button class="env-chip" data-env="${e.id}" aria-pressed="${state.env === e.id}" title="${e.label}${i ? " (⌘" + i + ")" : ""}">${e.color ? `<span class="dot" style="background:${e.color}"></span>` : ""}${e.id === "all" ? "All" : e.label[0]}</button>`).join("");
+}
+
+function renderConnections() {
+  const q = state.search.toLowerCase();
+  const list = CONNECTIONS.filter(c =>
+    (q ? true : c.project === state.project) &&
+    (state.env === "all" || c.env === state.env) &&
+    (!q || [c.name, c.db, c.host, c.project].join(" ").toLowerCase().includes(q)));
+  if (!list.length) { $("#connList").innerHTML = `<div class="empty">No connections match</div>`; return; }
+  const groups = [];
+  for (const c of list) {
+    const key = q ? `${c.project} · ${envOf(c.env).label}` : envOf(c.env).label;
+    let g = groups.find(x => x.key === key);
+    if (!g) groups.push(g = { key, env: c.env, items: [] });
+    g.items.push(c);
+  }
+  groups.sort((a, b) => ENVS.findIndex(e => e.id === a.env) - ENVS.findIndex(e => e.id === b.env));
+  $("#connList").innerHTML = groups.map(g => `
+    <div class="group-h"><span class="dot" style="background:${envOf(g.env).color}"></span>${esc(g.key)}</div>
+    ${g.items.map(c => `<button class="conn" role="option" data-id="${c.id}" aria-current="${c.id === state.conn}" aria-selected="${c.id === state.conn}">
+      <span class="engine ${ENGINES[c.engine][1]}">${ENGINES[c.engine][0]}</span>
+      <span class="name">${esc(c.name)}</span>
+      <span class="meta">${esc(c.db)}</span>
+      <span class="${c.live ? "live" : "idle"}" title="${c.live ? "Connected" : "Not connected"}"></span>
+    </button>`).join("")}`).join("");
+}
+
+function nodeHtml(n, depth, path) {
+  const kids = n.children && n.children.length;
+  const id = path;
+  const open = kids && (state.filter ? true : n.open);
+  let html = `<button class="node" role="treeitem" data-path="${id}" ${kids ? `aria-expanded="${!!open}"` : ""} style="padding-left:${8 + depth * 12}px">
+    ${kids ? '<svg class="i caret" viewBox="0 0 12 12"><path d="m4.5 3 3 3-3 3"/></svg>' : '<span style="width:11px"></span>'}
+    ${KIND_ICON[n.kind] || ""}<span class="label">${esc(n.label)}</span>${n.note ? `<span class="kind">${esc(n.note)}</span>` : ""}
+    ${n.count || (kids && n.kind === "group") ? `<span class="count">${n.count || n.children.length}</span>` : ""}
+  </button>`;
+  if (open) html += n.children.map((c, i) => nodeHtml(c, depth + 1, `${id}.${i}`)).join("");
+  return html;
+}
+function filterTree(nodes, q) {
+  return nodes.map(n => {
+    if (n.label.toLowerCase().includes(q)) return n;
+    if (!n.children) return null;
+    const kids = filterTree(n.children, q);
+    return kids.length ? { ...n, children: kids } : null;
+  }).filter(Boolean);
+}
+function renderTree() {
+  const c = conn();
+  if (!state.trees[c.id]) state.trees[c.id] = TREES[c.engine]();
+  $("#objTitle").textContent = `${c.name} · ${c.engine === "rd" ? "keyspace" : c.engine === "ch" ? "databases" : "objects"}`;
+  $("#objFilter").placeholder = c.engine === "rd" ? "Filter key patterns" : "Filter objects";
+  const q = state.filter.toLowerCase();
+  const nodes = q ? filterTree(state.trees[c.id], q) : state.trees[c.id];
+  $("#tree").innerHTML = nodes.length ? nodes.map((n, i) => nodeHtml(n, 0, String(i))).join("") : `<div class="empty">No objects match “${esc(state.filter)}”</div>`;
+}
+function nodeAt(path) {
+  return path.split(".").reduce((acc, i, d) => d === 0 ? acc[+i] : acc.children[+i], state.trees[state.conn]);
+}
+
+function renderTabs() {
+  const c = conn(); const tabs = tabsFor(c);
+  const icon = { table: KIND_ICON.table, query: '<svg class="i" viewBox="0 0 12 12"><path d="m3 4 2 2-2 2M6.5 8.5H9"/></svg>', structure: KIND_ICON.idx, console: '<svg class="i" viewBox="0 0 12 12"><path d="m2.5 4 2 2-2 2M6 8.5h3.5"/></svg>' };
+  $("#tabs").innerHTML = tabs.map(t => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === state.activeTab[c.id]}">
+    ${icon[t.kind]}<span class="tname">${esc(t.name)}</span>${t.dirty ? '<span class="dirty" title="Unsaved changes"></span>' : ""}
+    <span class="x" data-close="${t.id}" aria-label="Close tab"><svg class="i" viewBox="0 0 12 12"><path d="m3 3 6 6M9 3 3 9"/></svg></span>
+  </button>`).join("");
+}
+
+const ROWS = [
+  [1042, "INV-2026-00981", "acme-corp", "paid", 1299.00, "USD", "2026-09-30 14:02:11+00", null],
+  [1043, "INV-2026-00982", "globex", "open", 349.50, "EUR", "2026-10-01 08:44:03+00", "net 30"],
+  [1044, "INV-2026-00983", "initech", "void", 0.00, "USD", "2026-10-01 09:10:57+00", "duplicate"],
+  [1045, "INV-2026-00984", "umbrella", "paid", 8820.00, "GBP", "2026-10-02 17:20:00+00", null],
+  [1046, "INV-2026-00985", "hooli", "open", 77.20, "USD", "2026-10-02 21:05:44+00", null],
+  [1047, "INV-2026-00986", "stark-ind", "past_due", 15400.00, "USD", "2026-09-12 11:00:00+00", "2nd reminder sent"],
+  [1048, "INV-2026-00987", "wayne-ent", "paid", 640.00, "USD", "2026-10-03 06:31:18+00", null],
+  [1049, "INV-2026-00988", "soylent", "open", 92.10, "EUR", "2026-10-03 07:12:40+00", null],
+];
+function gridHtml() {
+  const cols = [["id", "bigint"], ["number", "text"], ["account", "text"], ["status", "invoice_status"], ["total", "numeric(12,2)"], ["currency", "char(3)"], ["issued_at", "timestamptz"], ["note", "text"]];
+  let rows = "";
+  for (let r = 0; r < 34; r++) {
+    const v = ROWS[r % ROWS.length];
+    rows += `<tr><td class="rn">${r + 1}</td>${v.map((x, i) => {
+      const cls = x === null ? "null" : typeof x === "number" ? "num" : "";
+      const extra = (r === 1 && i === 3) ? " edited" : (r === 4 && i === 2) ? " sel" : "";
+      const txt = x === null ? "NULL" : (r === 1 && i === 3) ? "paid" : typeof x === "number" && i === 4 ? x.toFixed(2) : i === 0 ? x + r - (r % ROWS.length) : x;
+      return `<td class="${cls}${extra}">${esc(txt)}</td>`;
+    }).join("")}</tr>`;
+  }
+  return `<div class="grid" tabindex="0" aria-label="Rows"><table><thead><tr><th class="rn">#</th>${cols.map(([n, t]) => `<th>${n}<span class="ty">${t}</span></th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function tableView(c, t) {
+  return `<div class="toolbar">
+      <span class="crumbs">${esc(c.db)}.public.<b>${esc(t.name)}</b></span><span class="sep"></span>
+      <button class="tool"><svg class="i" viewBox="0 0 12 12"><path d="M1.5 2.5h9l-3.5 4v3l-2 1v-4z"/></svg>Filter</button>
+      <button class="tool">Sort: issued_at ↓</button>
+      <button class="tool">Columns 8/8</button>
+      <span class="grow"></span>
+      <button class="tool"><svg class="i" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8"/></svg>Row</button>
+      <button class="tool">Export</button>
+      <button class="tool primary">Review 1 change ⌘S</button>
+    </div>${gridHtml()}
+    <div class="gridfoot"><span>rows 1–50 of 18,204 (estimate)</span><span>page 1</span><span class="pending">1 staged update</span><span class="grow"></span><span>12 ms</span></div>`;
+}
+function queryView(c, t) {
+  const sql = c.engine === "ch"
+    ? [`<span class="kw">SELECT</span> toStartOfHour(ts) <span class="kw">AS</span> hour, <span class="fnc">count</span>() <span class="kw">AS</span> views`, `<span class="kw">FROM</span> events.page_views`, `<span class="kw">WHERE</span> ts &gt;= now() - <span class="kw">INTERVAL</span> <span class="nm">1</span> <span class="kw">DAY</span>`, `<span class="kw">GROUP BY</span> hour <span class="kw">ORDER BY</span> hour <span class="kw">DESC</span>`, `<span class="kw">SETTINGS</span> max_threads = <span class="nm">8</span>;`]
+    : [`<span class="cm">-- open invoices older than 30 days</span>`, `<span class="kw">SELECT</span> i.number, a.name, i.total, i.issued_at`, `<span class="kw">FROM</span> invoices i`, `<span class="kw">JOIN</span> accounts a <span class="kw">ON</span> a.id = i.account_id`, `<span class="kw">WHERE</span> i.status = <span class="str">'open'</span>`, `  <span class="kw">AND</span> i.issued_at &lt; <span class="fnc">now</span>() - <span class="kw">interval</span> <span class="str">'30 days'</span>`, `<span class="kw">ORDER BY</span> i.issued_at;`];
+  return `<div class="toolbar">
+      <button class="tool primary"><svg class="i" viewBox="0 0 12 12"><path d="M3.5 2.5v7l6-3.5z"/></svg>Run ⌘↵</button>
+      <button class="tool">Run all ⇧⌘↵</button><button class="tool">Explain</button><span class="sep"></span>
+      <button class="tool">Auto-commit</button><button class="tool">Limit 500</button>
+      <span class="grow"></span><span class="crumbs">${esc(c.name)} · <b>${esc(c.db)}</b></span>
+    </div>
+    <div class="split">
+      <div class="editor" tabindex="0" aria-label="SQL editor">${sql.map((l, i) => `<div class="${i === 4 ? "cur" : ""}">${l}</div>`).join("")}</div>
+      <div class="results"><div class="rtabs"><button aria-pressed="true">Result 1 · 8 rows</button><button aria-pressed="false">Messages</button><button aria-pressed="false">Plan</button><span class="grow"></span><span style="font-family:var(--mono)">${state.lastLatency[c.id] || 20} ms</span></div>${gridHtml()}</div>
+    </div>`;
+}
+function structureView(c, t) {
+  const cols = [["id", "bigint", "not null", "nextval('invoices_id_seq')", "pk"], ["number", "text", "not null", "", ""], ["account_id", "bigint", "not null", "", "fk"], ["status", "invoice_status", "not null", "'open'", ""], ["total", "numeric(12,2)", "not null", "0", ""], ["currency", "char(3)", "not null", "'USD'", ""], ["issued_at", "timestamptz", "not null", "now()", ""], ["note", "text", "null", "", ""]];
+  return `<div class="toolbar"><span class="crumbs">${esc(c.db)}.public.<b>invoices</b></span><span class="sep"></span><button class="tool">Columns</button><button class="tool">Indexes 3</button><button class="tool">Constraints 4</button><button class="tool">Triggers 1</button><button class="tool">DDL</button><span class="grow"></span><button class="tool primary">Edit structure</button></div>
+    <div class="struct">
+      <section><h3>Columns <span class="badge">8</span></h3><table><thead><tr><th>name</th><th>type</th><th>null</th><th>default</th><th>keys</th></tr></thead><tbody>
+      ${cols.map(r => `<tr><td>${r[0]}</td><td style="color:#79c0ff">${r[1]}</td><td class="${r[2] === "null" ? "null" : ""}">${r[2]}</td><td>${esc(r[3])}</td><td>${r[4] ? `<span class="badge ${r[4]}">${r[4].toUpperCase()}</span>` : ""}</td></tr>`).join("")}
+      </tbody></table></section>
+      <section><h3>Indexes <span class="badge">3</span></h3><table><tbody>
+        <tr><td>invoices_pkey</td><td>btree (id)</td><td>unique</td></tr>
+        <tr><td>invoices_number_key</td><td>btree (number)</td><td>unique</td></tr>
+        <tr><td>invoices_account_issued_idx</td><td>btree (account_id, issued_at DESC)</td><td></td></tr>
+      </tbody></table></section>
+    </div>`;
+}
+function consoleView(c) {
+  return `<div class="toolbar"><span class="crumbs">${esc(c.host)} · <b>${esc(c.db)}</b></span><span class="sep"></span><button class="tool">SELECT db</button><button class="tool">History</button><span class="grow"></span><button class="tool">Clear</button></div>
+    <div class="console">
+      <div class="out" id="out" tabindex="0" aria-label="Console output" aria-live="polite">
+        <div class="p"># ${esc(c.name)} — ${ENGINES.rd[2]} — writes on this connection need confirmation</div>
+        <div class="c">&gt; SCAN 0 MATCH user:* COUNT 100</div><div class="r">1) "1840"</div><div class="r">2) 1) "user:1042"  2) "user:1043"  3) "user:1077"</div>
+        <div class="c">&gt; HGETALL user:1042</div><div class="r">1) "email"  2) "ops@acme.example"  3) "plan"  4) "pro"  5) "seats"  6) "25"</div>
+        <div class="c">&gt; TTL session:7f2c</div><div class="r int">(integer) 3412</div>
+        <div class="c">&gt; ZREVRANGE leaderboard:weekly 0 2 WITHSCORES</div><div class="r">1) "acme"  2) "1820"  3) "globex"  4) "1204"  5) "hooli"  6) "980"</div>
+      </div>
+      <div class="prompt"><span>${esc(c.db)}&gt;</span><input id="cmd" aria-label="Redis command" placeholder="Type a command, ↑ for history"></div>
+    </div>`;
+}
+function renderWorkspace() {
+  const c = conn(); const t = tabsFor(c).find(x => x.id === state.activeTab[c.id]);
+  const guard = `<div class="guard"><svg class="i" viewBox="0 0 12 12"><path d="M6 1.5 10.5 10h-9z M6 5v2M6 8.5v.1"/></svg>Production · writes require review and confirmation</div>`;
+  const body = !t ? `<div class="empty" style="padding:24px">No tabs. ⌘T opens a query.</div>`
+    : t.kind === "console" ? consoleView(c) : t.kind === "query" ? queryView(c, t) : t.kind === "structure" ? structureView(c, t) : tableView(c, t);
+  $("#workspace").innerHTML = guard + body;
+  const cmd = $("#cmd");
+  if (cmd) cmd.addEventListener("keydown", e => {
+    if (e.key !== "Enter" || !cmd.value.trim()) return;
+    const out = $("#out"); const v = cmd.value.trim();
+    const reply = /^ping$/i.test(v) ? '<div class="r">PONG</div>' : /^dbsize$/i.test(v) ? '<div class="r int">(integer) 18204</div>' : /^(set|del|flushdb|hset|expire)\b/i.test(v) ? '<div class="r err">Review required: write commands on production need confirmation</div>' : '<div class="r">(mock) command accepted</div>';
+    out.insertAdjacentHTML("beforeend", `<div class="c">&gt; ${esc(v)}</div>${reply}`); cmd.value = ""; out.scrollTop = out.scrollHeight;
+  });
+}
+function renderStatus() {
+  const c = conn(); const env = envOf(c.env); const latency = state.lastLatency[c.id];
+  $("#status").innerHTML = `
+    <span class="env-tag">${env.label}</span>
+    <span class="${c.live ? "live" : "idle"}"></span>
+    <span>${c.live ? "Connected" : "Disconnected"}</span>
+    <span class="mono">${esc(c.name)} · ${esc(c.db)} · ${ENGINES[c.engine][2]}</span>
+    <span class="mono">last query ${latency ? latency + " ms" : "—"}</span>
+    <span class="grow"></span>
+    <span class="mono">${esc(c.host)}</span>
+    <button class="iconbtn" id="statusHide" aria-label="Collapse status bar (⌘J)" title="Collapse ⌘J"><svg class="i" viewBox="0 0 12 12"><path d="m3 4.5 3 3 3-3"/></svg></button>`;
+  $("#statusHide").onclick = () => setStatus("collapsed");
+}
+function applyEnv() {
+  const c = conn();
+  app.dataset.env = c.env;
+  app.style.setProperty("--env", envOf(c.env).color);
+}
+function render() { renderSwitcher(); renderConnections(); renderTree(); renderTabs(); renderWorkspace(); renderStatus(); applyEnv(); }
+function setStatus(v) { app.dataset.status = v; }
+function setSidebar(v) { app.dataset.sidebar = v; }
+
+$("#project").onchange = e => { state.project = e.target.value; const first = CONNECTIONS.find(c => c.project === state.project && (state.env === "all" || c.env === state.env)); if (first) state.conn = first.id; render(); };
+$("#envs").onclick = e => { const b = e.target.closest("[data-env]"); if (!b) return; state.env = b.dataset.env; render(); };
+$("#connSearch").oninput = e => { state.search = e.target.value; renderConnections(); };
+$("#connList").onclick = e => { const b = e.target.closest(".conn"); if (!b) return; state.conn = b.dataset.id; state.filter = ""; $("#objFilter").value = ""; render(); };
+$("#objFilter").oninput = e => { state.filter = e.target.value; renderTree(); };
+$("#tree").onclick = e => {
+  const b = e.target.closest(".node"); if (!b) return;
+  const n = nodeAt(b.dataset.path);
+  $("#tree").querySelectorAll('[aria-selected="true"]').forEach(x => x.removeAttribute("aria-selected"));
+  if (n.children) { n.open = !n.open; renderTree(); return; }
+  b.setAttribute("aria-selected", "true");
+  const c = conn(); const tabs = tabsFor(c);
+  const kind = c.engine === "rd" ? "console" : "table";
+  let t = tabs.find(x => x.name === n.label && x.kind === kind);
+  if (!t && kind === "table") tabs.push(t = { id: "o" + Date.now(), kind, name: n.label });
+  if (t) state.activeTab[c.id] = t.id;
+  renderTabs(); renderWorkspace();
+};
+$("#tree").onkeydown = e => {
+  const items = [...$("#tree").querySelectorAll(".node")]; const i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" && i < items.length - 1) { items[i + 1].focus(); e.preventDefault(); }
+  if (e.key === "ArrowUp" && i > 0) { items[i - 1].focus(); e.preventDefault(); }
+  if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && i >= 0) {
+    const n = nodeAt(items[i].dataset.path);
+    if (n.children && n.open !== (e.key === "ArrowRight")) { n.open = e.key === "ArrowRight"; const p = items[i].dataset.path; renderTree(); $(`[data-path="${p}"]`).focus(); }
+    e.preventDefault();
+  }
+};
+$("#collapseAll").onclick = () => { const walk = ns => ns.forEach(n => { if (n.children) { n.open = false; walk(n.children); } }); walk(state.trees[state.conn]); renderTree(); };
+$("#tabs").onclick = e => {
+  const c = conn(); const close = e.target.closest("[data-close]");
+  if (close) { const tabs = tabsFor(c); const i = tabs.findIndex(t => t.id === close.dataset.close); tabs.splice(i, 1); if (state.activeTab[c.id] === close.dataset.close) state.activeTab[c.id] = (tabs[i] || tabs[i - 1] || {}).id; renderTabs(); renderWorkspace(); return; }
+  const b = e.target.closest(".tab"); if (b) { state.activeTab[c.id] = b.dataset.tab; renderTabs(); renderWorkspace(); }
+};
+$("#newQuery").onclick = () => { const c = conn(); const tabs = tabsFor(c); if (c.engine === "rd") return; const n = tabs.filter(t => t.kind === "query").length + 1; const t = { id: "q" + Date.now(), kind: "query", name: "Query " + n }; tabs.push(t); state.activeTab[c.id] = t.id; renderTabs(); renderWorkspace(); };
+$("#collapse").onclick = () => setSidebar("collapsed");
+$("#expand").onclick = () => setSidebar("expanded");
+$("#statusShow").onclick = () => setStatus("expanded");
+$("#indicator").onclick = e => { const b = e.target.closest("button"); if (!b) return; app.dataset.indicator = b.dataset.v; $("#indicator").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
+document.addEventListener("keydown", e => {
+  if (!e.metaKey) return;
+  if (e.key === "\\") { setSidebar(app.dataset.sidebar === "collapsed" ? "expanded" : "collapsed"); e.preventDefault(); }
+  if (e.key === "j") { setStatus(app.dataset.status === "collapsed" ? "expanded" : "collapsed"); e.preventDefault(); }
+  if (e.key === "k") { setSidebar("expanded"); $("#connSearch").focus(); e.preventDefault(); }
+  if (e.key === "t") { $("#newQuery").click(); e.preventDefault(); }
+  if (/^[1-4]$/.test(e.key)) { state.env = ENVS[+e.key - 1].id; const first = CONNECTIONS.find(c => c.project === state.project && c.env === state.env); if (first) state.conn = first.id; render(); e.preventDefault(); }
+});
+if (params.get("indicator")) app.dataset.indicator = params.get("indicator");
+if (params.get("tab")) { tabsFor(initial); state.activeTab[initial.id] = params.get("tab"); }
+render();
+</script>
+</body>
+</html>

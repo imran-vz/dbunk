@@ -13,7 +13,7 @@ use dbunk_lib::backend::QueryEvent;
 use gpui::{
     App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
     ListHorizontalSizingBehavior, MouseButton, MouseDownEvent, Pixels, Role, ScrollStrategy,
-    SharedString, Subscription, UniformListScrollHandle, Window, actions, div, prelude::*, px, rgb,
+    SharedString, Subscription, UniformListScrollHandle, Window, actions, div, prelude::*, px,
     uniform_list,
 };
 
@@ -1038,8 +1038,8 @@ impl Render for ResultGrid {
             .size_full()
             .min_h_0()
             .min_w_0()
-            .bg(rgb(0x000000))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_sm()
             .child(
                 div()
@@ -1047,7 +1047,7 @@ impl Render for ResultGrid {
                     .flex_shrink_0()
                     .px_2()
                     .border_b_1()
-                    .border_color(rgb(0x333333))
+                    .border_color(crate::style::line())
                     .id("grid-status")
                     .role(Role::Label)
                     .aria_label(status.clone())
@@ -1062,7 +1062,7 @@ impl Render for ResultGrid {
                         .track_focus(&self.export_focus)
                         .tab_stop(true)
                         .tab_index(0)
-                        .focus(|s| s.bg(rgb(0x222222)))
+                        .focus(|s| s.bg(crate::style::hover()))
                         .px_2()
                         .py_1()
                         .child("Export retained rows")

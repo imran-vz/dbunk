@@ -7,7 +7,7 @@ use dbunk_lib::backend::{
 };
 use gpui::{
     App, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Window,
-    div, prelude::*, px, rgb, uniform_list,
+    div, prelude::*, px, uniform_list,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -194,7 +194,7 @@ impl ExplainView {
             .tab_index(0)
             .px_2()
             .py_1()
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
@@ -238,8 +238,8 @@ impl Render for ExplainView {
             .flex()
             .flex_col()
             .min_h_0()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 let modifiers = event.keystroke.modifiers;
@@ -342,7 +342,7 @@ impl Render for ExplainView {
                                                 .pr_2()
                                                 .overflow_hidden()
                                                 .when(row == this.selected, |item| {
-                                                    item.bg(rgb(0x252525))
+                                                    item.bg(crate::style::select())
                                                 })
                                                 .child(label)
                                                 .on_click(cx.listener(

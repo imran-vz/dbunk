@@ -5,7 +5,7 @@ use dbunk_lib::backend::objects::{PgObjectDescription, PgObjectFacts, PgObjectKi
 use editor::Editor;
 use gpui::{
     ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    Window, div, prelude::*, rgb,
+    Window, div, prelude::*,
 };
 use std::{cell::Cell, rc::Rc};
 const LIMIT: usize = 128 * 1024 * 1024;
@@ -197,16 +197,16 @@ impl DetailsView {
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -250,8 +250,8 @@ impl Render for DetailsView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let m = &event.keystroke.modifiers;
                 if m.control || m.alt || m.platform {

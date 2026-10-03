@@ -32,8 +32,8 @@ impl SchemaMapView {
             .tab_stop(enabled)
             .px_2()
             .py_1()
-            .text_color(rgb(if enabled { 0xffffff } else { 0x777777 }))
-            .focus(|s| s.bg(rgb(0x333333)))
+            .text_color(gpui::rgb(if enabled { 0xffffff } else { 0x777777 }))
+            .focus(|s| s.bg(crate::style::line()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -66,8 +66,8 @@ impl SchemaMapView {
             .tab_index(0)
             .px_2()
             .py_1()
-            .when(selected, |s| s.bg(rgb(0x252525)))
-            .focus(|s| s.bg(rgb(0x333333)))
+            .when(selected, |s| s.bg(crate::style::select()))
+            .focus(|s| s.bg(crate::style::line()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.activate(Action::Scope(scope), window, cx)
@@ -120,7 +120,7 @@ impl SchemaMapView {
                             .h(px(25.))
                             .px_2()
                             .truncate()
-                            .when(is_selected, |row| row.bg(rgb(0x252525)))
+                            .when(is_selected, |row| row.bg(crate::style::select()))
                             .child(label)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 if this.scene.as_ref().map(Scene::key) == key {
@@ -221,7 +221,7 @@ impl Render for SchemaMapView {
         div().id("schema-map-tool").role(Role::Group)
             .aria_label(format!("PostgreSQL schema map for {}", self.connection.as_deref().unwrap_or("unbound connection")))
             .track_focus(&self.root).size_full().flex().flex_col()
-            .bg(rgb(0)).text_color(rgb(0xffffff)).key_context("SchemaMap")
+            .bg(crate::style::bg()).text_color(crate::style::text()).key_context("SchemaMap")
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 if !this.composing(window, cx) {
                     this.focus_control(false, window, cx);

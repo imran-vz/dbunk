@@ -13,7 +13,7 @@ use crate::{
 use dbunk_lib::backend::{WorkspaceDocument, WorkspaceTableState, data::*};
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, SharedString,
-    Subscription, Window, div, prelude::*, px, rgb,
+    Subscription, Window, div, prelude::*, px,
 };
 use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
 
@@ -1533,7 +1533,7 @@ impl TableView {
             .flex()
             .flex_col()
             .border_t_1()
-            .border_color(rgb(0x333333))
+            .border_color(crate::style::line())
             .child(
                 div()
                     .id("relationship-detail-summary")
@@ -1678,11 +1678,11 @@ impl TableView {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x202020)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -1747,7 +1747,7 @@ impl Render for TableView {
             .flex()
             .flex_wrap()
             .border_b_1()
-            .border_color(rgb(0x333333));
+            .border_color(crate::style::line());
         for (label, action) in [
             ("Connect", Action::Connect),
             (
@@ -1787,7 +1787,7 @@ impl Render for TableView {
             .flex()
             .flex_wrap()
             .border_b_1()
-            .border_color(rgb(0x333333));
+            .border_color(crate::style::line());
         for (label, action) in [
             ("Narrow column", Action::Column(ColumnAction::Narrow)),
             ("Widen column", Action::Column(ColumnAction::Widen)),
@@ -1912,8 +1912,8 @@ impl Render for TableView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.grid.read(cx).inspector_has_focus(window, cx)
                     || this

@@ -249,7 +249,7 @@ impl Form {
                             .flex_1()
                             .h(px(26.))
                             .border_b_1()
-                            .border_color(rgb(0x444444))
+                            .border_color(crate::style::line())
                             .child(field.accessible.clone()),
                     ),
             );

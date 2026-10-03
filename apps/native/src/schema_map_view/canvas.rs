@@ -243,9 +243,9 @@ identity,..}
                         .top(px(origin.y as f32))
                         .w(px(width as f32))
                         .h(px(height as f32))
-                        .bg(rgb(0))
+                        .bg(crate::style::bg())
                         .border_1()
-                        .border_color(rgb(if selected { 0xffffff } else { 0x666666 }))
+                        .border_color(gpui::rgb(if selected { 0xffffff } else { 0x666666 }))
                         .text_size(px((12. * camera.zoom) as f32))
                         .overflow_hidden()
                         .child(
@@ -358,7 +358,7 @@ identity,..}
                 };
                 for edge in scene.edges() {
                     let selected = matches!(view.selection, Some(Selection::Edge { identity, .. }) if identity == edge.identity);
-                    let color = rgb(if selected { 0xffffff } else { 0x888888 });
+                    let color = gpui::rgb(if selected { 0xffffff } else { 0x888888 });
                     let mut path = PathBuilder::stroke(px(if selected { 2.5 } else { 1.5 }));
                     match &edge.path {
                         Path::Curve(p) => {
@@ -379,7 +379,7 @@ identity,..}
         div().id("schema-map-canvas").role(Role::Group)
             .aria_label("Schema map canvas. Drag background to pan; Command-scroll zooms at pointer; drag nodes to save positions. Keyboard arrows pan; Shift+Arrow moves the selected table 10 world units and saves; plus/minus zoom, F fits. The list below exposes exact tables and relationships.")
             .track_focus(&self.canvas_focus).tab_stop(true).tab_index(0)
-            .relative().flex_1().min_h(px(140.)).overflow_hidden().bg(rgb(0))
+            .relative().flex_1().min_h(px(140.)).overflow_hidden().bg(crate::style::bg())
             .on_mouse_down(MouseButton::Left, cx.listener(Self::pointer_down))
             .on_mouse_move(cx.listener(Self::pointer_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::pointer_up))

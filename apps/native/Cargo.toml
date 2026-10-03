@@ -14,7 +14,7 @@ description = "Native PostgreSQL fixture workspace"
 fixture-verification = []
 
 [dependencies]
-dbunk_lib = { package = "dbunk", path = "../../src-tauri", default-features = false, features = ["isolated-profile"] }
+dbunk_lib = { package = "dbunk", path = "../../backend", default-features = false, features = ["isolated-profile"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 async-channel = "2"
 futures-util = "0.3"

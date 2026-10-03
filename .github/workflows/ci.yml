@@ -11,37 +11,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend:
-    name: Frontend (lint + typecheck + test)
-    runs-on: [self-hosted, Linux, ARM64, homeserver, docker, orbstack]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes build-essential python3
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm run check:slice-isolation
-      - run: pnpm run check:redis-commands
-      - run: pnpm run check:ui-gates
-
-  rust:
-    name: Rust (fmt + clippy + test)
+  backend:
+    name: Backend (fmt + clippy + test)
     runs-on: [self-hosted, Linux, ARM64, homeserver, docker, orbstack]
     # Credential tests still share the legacy AES key/password cache (Plan 027).
     env:
       RUST_TEST_THREADS: "1"
     defaults:
       run:
-        working-directory: src-tauri
+        working-directory: backend
     steps:
       - uses: actions/checkout@v7
       # rustup-init edits shell profiles by default, and the Docker runner's
@@ -60,18 +38,16 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: backend
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+          sudo apt-get install -y build-essential pkg-config libssl-dev
       - run: cargo fmt -- --check
-      # The backend without the Tauri host: nothing below the command layer
-      # may depend on Tauri (ADR-0032).
-      - run: cargo clippy --no-default-features --all-targets -- -D warnings
-      - run: cargo test --no-default-features
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - run: cargo clippy --features isolated-profile --all-targets -- -D warnings
+      - run: cargo test --features isolated-profile
 
   native:
     name: Native macOS (pinned GPUI checks)
@@ -92,15 +68,11 @@ jobs:
           workspaces: apps/native
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo clippy --locked --features fixture-verification --all-targets -- -D warnings
       - run: cargo test --locked
-      - run: cargo build --locked
       - run: cargo clippy --release --locked --all-targets -- -D warnings
       - run: cargo test --release --locked
-      - run: cargo build --release --locked
-      - run: cargo clippy --manifest-path ../../src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
-      - run: cargo test --manifest-path ../../src-tauri/Cargo.toml --no-default-features --features isolated-profile
-      - run: cargo test --manifest-path ../../src-tauri/Cargo.toml --features isolated-profile backend::
       - run: python3 ../../tools/native/dependencies.py
       - run: python3 -m unittest discover -s ../../tools/native -p 'test_*.py'
-      - run: python3 ../../tools/native/package.py --out ../../tools/native/.state/ci-bundle
+      - run: python3 ../../tools/native/package.py --out "$RUNNER_TEMP/ci-bundle"
       # Interactive AX, VoiceOver and PostgreSQL E2E remain explicit fixture gates.

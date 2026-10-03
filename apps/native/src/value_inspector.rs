@@ -3,7 +3,7 @@
 use crate::{cell_value, results::encoded_size};
 use gpui::{
     App, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Window,
-    div, prelude::*, px, rgb,
+    div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -176,7 +176,7 @@ impl ValueInspector {
             })
             .px_2()
             .py_1()
-            .focus(|style| style.bg(rgb(0x202020)))
+            .focus(|style| style.bg(crate::style::hover()))
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
                 if enabled {
@@ -237,9 +237,9 @@ impl Render for ValueInspector {
             .h(px(230.))
             .flex_shrink_0()
             .border_t_1()
-            .border_color(rgb(0x444444))
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .border_color(crate::style::line())
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .child(
                 div()
                     .flex()

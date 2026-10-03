@@ -118,9 +118,9 @@ impl TableDdlView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
-            .text_color(rgb(if enabled { 0xffffff } else { 0x888888 }))
-            .focus(|s| s.bg(rgb(0x333333)))
+            .border_color(crate::style::line())
+            .text_color(gpui::rgb(if enabled { 0xffffff } else { 0x888888 }))
+            .focus(|s| s.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.click(index, window, cx))
@@ -220,8 +220,8 @@ impl Render for TableDdlView {
             .flex()
             .flex_col()
             .min_h_0()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_xs()
             .capture_key_down(cx.listener(Self::key))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {

@@ -2,7 +2,7 @@
 //! GPUI's focused-click path only (no duplicate Enter/Space key handler), and
 //! element/focus keys are stable indexes independent of labels or state.
 use super::*;
-use gpui::{KeyDownEvent, Role, div, px, rgb};
+use gpui::{KeyDownEvent, Role, div, px};
 
 impl SequenceView {
     fn button(&self, index: usize, cx: &Context<Self>) -> gpui::AnyElement {
@@ -43,13 +43,13 @@ impl SequenceView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .child(text)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -133,10 +133,10 @@ impl Render for SequenceView {
             .flex_col()
             .size_full()
             .min_h_0()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .border_t_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .capture_key_down(cx.listener(Self::key))
             .child(
                 div()

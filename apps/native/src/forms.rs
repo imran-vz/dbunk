@@ -9,7 +9,7 @@ use gpui::{
     accesskit::{Action, Live, Toggled},
     div,
     prelude::*,
-    px, rgb,
+    px,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -200,6 +200,14 @@ impl Form {
             ("database", "Database", data.database),
             ("user", "User", data.user),
             ("password", "Database password", String::new()),
+            (
+                "project",
+                "Project",
+                connection
+                    .as_ref()
+                    .map(|c| c.organization.project.clone())
+                    .unwrap_or_default(),
+            ),
             (
                 "folder",
                 "Folder",
@@ -576,6 +584,7 @@ impl Form {
                     folder: self.value("folder", cx),
                     is_favorite: self.favorite,
                     color: self.value("color", cx),
+                    project: self.value("project", cx),
                 };
                 Box::pin(async move {
                     match backend
@@ -737,16 +746,16 @@ impl Form {
             .py_1()
             .border_b_1()
             .border_color(if selected {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x333333)
+                crate::style::line()
             })
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x202020)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if choice || toggle {
                     builder.parent_node().set_toggled(Toggled::from(selected));
@@ -836,7 +845,7 @@ impl Render for Form {
                                 .flex_1()
                                 .h(px(26.))
                                 .border_b_1()
-                                .border_color(rgb(0x444444))
+                                .border_color(crate::style::line())
                                 .child(field.accessible.clone()),
                         ),
                 );
@@ -970,7 +979,7 @@ impl Render for Form {
                                 .w(px(320.))
                                 .h(px(28.))
                                 .border_b_1()
-                                .border_color(rgb(0x444444))
+                                .border_color(crate::style::line())
                                 .child(field.accessible.clone()),
                         ),
                     );
@@ -1071,8 +1080,8 @@ impl Render for Form {
             .id("native-form")
             .role(Role::Dialog)
             .aria_label(title)
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_sm()
             .p_4()
             .size_full()

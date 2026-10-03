@@ -10,7 +10,7 @@ use dbunk_lib::backend::result_files as files;
 use editor::{Editor, EditorEvent, EditorMode};
 use gpui::{
     Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    Subscription, Window, div, prelude::*, rgb,
+    Subscription, Window, div, prelude::*,
 };
 use multi_buffer::MultiBufferOffset;
 use std::{cell::Cell, rc::Rc, sync::Arc};
@@ -540,15 +540,15 @@ impl ExportView {
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .focus(|s| s.bg(rgb(0x222222)))
+            .focus(|s| s.bg(crate::style::hover()))
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
@@ -576,8 +576,8 @@ impl Render for ExportView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 for editor in [&this.null, &this.target] {
                     if editor.focus_handle(cx).is_focused(window)

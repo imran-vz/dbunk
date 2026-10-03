@@ -112,12 +112,12 @@ impl CsvTransferView {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .when(selected, |element| element.bg(rgb(0x252525)))
-            .focus(|style| style.bg(rgb(0x333333)))
+            .when(selected, |element| element.bg(crate::style::select()))
+            .focus(|style| style.bg(crate::style::line()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -210,7 +210,7 @@ impl CsvTransferView {
                     let Some(data)=this.inspection_data(cx).filter(|data|data.inspection_id==id)else{return div().into_any_element();};let Some(source)=data.source_columns.get(index)else{return div().into_any_element();};
                     let target=this.mapping.as_ref().and_then(|mapping|mapping.target_index(index)).and_then(|index|data.target_columns.get(index));
                     let label=format!("{}: {} → {}",index+1,if source.name.is_empty(){"(blank)".into()}else{preview(&source.name)},target.map_or_else(||"Skip column".into(),|column|format!("{} ({})",column.name,preview(&column.data_type))));let selected=this.mapping_source==Some(index);let weak=cx.weak_entity();
-                    div().id(("csv-source-column",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(rgb(0x252525))).child(label)
+                    div().id(("csv-source-column",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(crate::style::select())).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{if this.inspection_data(cx).is_some_and(|data|data.inspection_id==id){this.mapping_source=Some(index);window.focus(&this.mapping_focus,cx);cx.notify();}}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{if this.inspection_data(cx).is_some_and(|data|data.inspection_id==id){this.mapping_source=Some(index);window.focus(&this.mapping_focus,cx);cx.notify();}}).ok();}).into_any_element()
                 }).collect()})).h(px(140.))))
@@ -247,7 +247,7 @@ impl CsvTransferView {
                     let Some(review)=this.current_review(cx).filter(|review|review.inspection().inspection_id()==id&&review.attempt_id()==attempt)else{return div().into_any_element();};
                     let Some(pair)=review.mapping().get(index)else{return div().into_any_element();};let source=review.inspection().data().source_columns.get(pair.source_index).map_or("Unavailable",|column|column.name.as_str());
                     let label=format!("{}: {} → {}",pair.source_index+1,preview(source),pair.target_column);let selected=this.review_pair==Some(index);let weak=cx.weak_entity();
-                    div().id(("csv-reviewed-pair",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(rgb(0x252525))).child(label)
+                    div().id(("csv-reviewed-pair",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(crate::style::select())).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{if this.current_review(cx).is_some_and(|review|review.inspection().inspection_id()==id&&review.attempt_id()==attempt){this.review_pair=Some(index);window.focus(&this.review_focus,cx);cx.notify();}}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{if this.current_review(cx).is_some_and(|review|review.inspection().inspection_id()==id&&review.attempt_id()==attempt){this.review_pair=Some(index);window.focus(&this.review_focus,cx);cx.notify();}}).ok();}).into_any_element()
                 }).collect()})).h(px(140.))))
@@ -359,7 +359,7 @@ impl CsvTransferView {
                                             .aria_selected(selected)
                                             .h(px(28.))
                                             .px_2()
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
+                                            .when(selected, |row| row.bg(crate::style::select()))
                                             .child(label)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 if this
@@ -472,7 +472,7 @@ impl Render for CsvTransferView {
         let fields = self.fields.clone();
         let workbook = self.workbook_element(cx);
         let has_data = self.inspection_data(cx).is_some();
-        div().id("csv-transfer-view").key_context("CsvTransfer").track_focus(&self.focus).size_full().flex().flex_col().bg(rgb(0)).text_color(rgb(0xffffff)).text_size(px(12.))
+        div().id("csv-transfer-view").key_context("CsvTransfer").track_focus(&self.focus).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(12.))
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if this.composing(window,cx){return;}
                 if event.keystroke.key=="tab" && !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt && !event.keystroke.modifiers.platform{let order=this.focus_order(cx);if !order.is_empty(){let current=order.iter().position(|focus|focus.is_focused(window));let next=if event.keystroke.modifiers.shift{current.map_or(order.len()-1,|index|(index+order.len()-1)%order.len())}else{current.map_or(0,|index|(index+1)%order.len())};window.focus(&order[next],cx);cx.stop_propagation();window.prevent_default();}}}))
             .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if this.scroll_key(event,window,cx){return;}
@@ -496,7 +496,7 @@ impl Render for CsvTransferView {
                 .when_some(limits,|body,limits|body.child(limits))
                 .child(div().id("csv-job-list").role(Role::ListBox).aria_label("CSV transfers in this session").track_focus(&self.list).tab_index(0)
                     .when(jobs.is_empty(),|body|body.child("No observed transfers for this connection."))
-                    .children(jobs.into_iter().enumerate().map(|(index,(id,label))|{let selected=self.selected==Some(id);let weak=cx.weak_entity();div().id(("csv-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).px_2().py_1().when(selected,|row|row.bg(rgb(0x252525))).child(label)
+                    .children(jobs.into_iter().enumerate().map(|(index,(id,label))|{let selected=self.selected==Some(id);let weak=cx.weak_entity();div().id(("csv-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).px_2().py_1().when(selected,|row|row.bg(crate::style::select())).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{this.selected=Some(id);this.unknown_ack=None;window.focus(&this.list,cx);cx.notify();}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{this.selected=Some(id);this.unknown_ack=None;window.focus(&this.list,cx);cx.notify();}).ok();})})))
                 .when_some(details,|body,details|body.child(div().id("csv-job-details").role(Role::Label).aria_label(details.clone()).track_focus(&self.details).tab_index(0).p_2().whitespace_normal().child(details)))

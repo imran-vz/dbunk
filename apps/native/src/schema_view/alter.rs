@@ -9,7 +9,7 @@ use crate::{
 use dbunk_lib::backend::{WorkspaceSchemaAlter, schema_alter::*};
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, ScrollHandle,
-    Subscription, Window, div, prelude::*, px, rgb,
+    Subscription, Window, div, prelude::*, px,
 };
 use model::{Lease, Recovery, Selection, Settlement, TOKEN_BYTES};
 use std::{cell::Cell, rc::Rc};

@@ -12,7 +12,7 @@ use dbunk_lib::backend::{
 use editor::Editor;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, SharedString,
-    Window, div, prelude::*, px, rgb,
+    Window, div, prelude::*, px,
 };
 use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
 
@@ -387,11 +387,11 @@ impl LibraryView {
             .px_2()
             .py_1()
             .border_b_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .cursor_pointer()
             .when(
                 matches!(action, Action::Select(index) if self.selected == Some(index)),
-                |button| button.bg(rgb(0x222222)),
+                |button| button.bg(crate::style::hover()),
             )
             .child(match &action {
                 Action::Refresh => "Refresh".into(),
@@ -487,8 +487,8 @@ impl Render for LibraryView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .text_sm()
             .gap_2()
             .p_2()

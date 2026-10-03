@@ -1,27 +1,22 @@
-tauri_manifest := "src-tauri/Cargo.toml"
+backend_manifest := "backend/Cargo.toml"
 
 default:
     @just --list
 
-lint: lint-core
-    cargo clippy --manifest-path {{tauri_manifest}} --all-targets -- -D warnings
+# The backend builds bare (engine core) and with the native host facade.
+lint:
+    cargo clippy --manifest-path {{backend_manifest}} --all-targets -- -D warnings
+    cargo clippy --manifest-path {{backend_manifest}} --features isolated-profile --all-targets -- -D warnings
 
-# The backend without the Tauri host: nothing below the command layer may
-# depend on Tauri (ADR-0032).
-lint-core:
-    cargo clippy --manifest-path {{tauri_manifest}} --no-default-features --all-targets -- -D warnings
-
-test: test-core
-    cargo test --manifest-path {{tauri_manifest}}
-
-test-core:
-    cargo test --manifest-path {{tauri_manifest}} --no-default-features
+test:
+    cargo test --manifest-path {{backend_manifest}}
+    cargo test --manifest-path {{backend_manifest}} --features isolated-profile
 
 build:
-    cargo build --manifest-path {{tauri_manifest}}
+    cargo build --manifest-path {{backend_manifest}}
 
 fmt:
-    cargo fmt --manifest-path {{tauri_manifest}}
+    cargo fmt --manifest-path {{backend_manifest}}
 
 # Native target is macOS-only and uses the pinned Rust/Zed graph in its workspace.
 fmt-native:
@@ -35,24 +30,17 @@ test-native:
     cd apps/native && cargo +1.98.1 test --locked
     python3 -m unittest discover -s tools/native -p 'test_*.py'
 
-check-native: fmt-native lint-native test-native check-native-backend
+check-native: fmt-native lint-native test-native
     cd apps/native && cargo +1.98.1 build --locked
     cd apps/native && cargo +1.98.1 clippy --release --locked --all-targets -- -D warnings
     cd apps/native && cargo +1.98.1 test --release --locked
     cd apps/native && cargo +1.98.1 build --release --locked
     python3 tools/native/dependencies.py
 
-# Opt-in facade remains covered independently from the default Tauri adapter.
-check-native-backend:
-    cargo clippy --manifest-path {{tauri_manifest}} --no-default-features --features isolated-profile --all-targets -- -D warnings
-    cargo test --manifest-path {{tauri_manifest}} --no-default-features --features isolated-profile
-    cargo test --manifest-path {{tauri_manifest}} --features isolated-profile backend::
-
 test-native-live:
     python3 tools/native/fixture.py check
     cd apps/native && DBUNK_NATIVE_FIXTURE_VERIFIED=1 cargo +1.98.1 test --locked live_tests -- --ignored --test-threads=1
 
-# Includes native checks on macOS without breaking the backend's Linux checks.
 check-all: fmt lint test check-native
 
 native-fixture-up:

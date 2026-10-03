@@ -182,7 +182,7 @@ impl CsvTransferView {
                                             .aria_selected(selected)
                                             .h(px(28.))
                                             .px_2()
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
+                                            .when(selected, |row| row.bg(crate::style::select()))
                                             .child(label)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.pick_sheet(id, index, window, cx)

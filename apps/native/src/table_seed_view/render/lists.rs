@@ -22,9 +22,9 @@ impl TableSeedView {
                                 .aria_label(text.clone())
                                 .aria_selected(this.choice == Some(index))
                                 .bg(if this.choice == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.choose(index, revision, window, cx)
@@ -66,9 +66,9 @@ impl TableSeedView {
                                 .aria_label(text.clone())
                                 .aria_selected(this.selected == Some(id))
                                 .bg(if this.selected == Some(id) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_job(id, window, cx)
@@ -123,9 +123,9 @@ impl TableSeedView {
                                 .aria_label(text.clone())
                                 .aria_selected(this.column == Some(index))
                                 .bg(if this.column == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_column(id, index, window, cx)
@@ -168,9 +168,9 @@ impl TableSeedView {
                                 .aria_label(text)
                                 .aria_selected(this.mode_choice == Some(index))
                                 .bg(if this.mode_choice == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_mode(id, column, index, window, cx)
@@ -227,9 +227,9 @@ impl TableSeedView {
                                 .aria_label(text.clone())
                                 .aria_selected(this.review_column == Some(index))
                                 .bg(if this.review_column == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_review_column(id, index, window, cx)

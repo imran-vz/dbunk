@@ -10,7 +10,7 @@ use dbunk_lib::backend::{WorkspaceDocument, csv_transfers::*};
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Focusable, KeyDownEvent, PathPromptOptions,
     ScrollHandle, Subscription, Task, UniformListScrollHandle, Window, accesskit::Role, div,
-    prelude::*, px, rgb,
+    prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 mod choices;

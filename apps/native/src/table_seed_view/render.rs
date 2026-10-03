@@ -32,13 +32,13 @@ impl TableSeedView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -220,7 +220,7 @@ impl Render for TableSeedView {
         if let Some(text) = self.details(cx) {
             content = content.child(label("seed-attempt-details", text));
         }
-        div().id("seed-view").key_context("TableSeed").role(Role::Group).aria_label("PostgreSQL table seed").track_focus(&self.root).size_full().bg(rgb(0)).text_color(rgb(0xffffff))
+        div().id("seed-view").key_context("TableSeed").role(Role::Group).aria_label("PostgreSQL table seed").track_focus(&self.root).size_full().bg(crate::style::bg()).text_color(crate::style::text())
             .on_action(cx.listener(|this, _: &NextControl, window, cx| this.focus_control(false, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousControl, window, cx| this.focus_control(true, window, cx)))
             .capture_key_down(cx.listener(Self::key)).overflow_y_scroll().track_scroll(&self.scroll)

@@ -44,11 +44,11 @@ impl TableChanges {
             .px_2()
             .py_1()
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x202020)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -125,7 +125,7 @@ impl Render for TableChanges {
             .flex()
             .flex_col()
             .border_t_1()
-            .border_color(rgb(0x333333));
+            .border_color(crate::style::line());
         if pending {
             content = content.child(self.button(
                 "Cancel change operation",
@@ -373,7 +373,7 @@ impl Render for TableChanges {
                                         .role(Role::Image)
                                         .aria_label(format!("Geometry preview: {summary}"))
                                         .border_1()
-                                        .border_color(rgb(0x444444))
+                                        .border_color(crate::style::line())
                                         .child(crate::geometry_preview::render(&preview)),
                                 )
                                 .child(div().text_xs().child(summary));
@@ -385,7 +385,7 @@ impl Render for TableChanges {
                                     .role(Role::Label)
                                     .aria_label(message)
                                     .text_xs()
-                                    .text_color(rgb(0xfbbf24))
+                                    .text_color(crate::style::warn())
                                     .child(message),
                             );
                         }

@@ -665,11 +665,23 @@ impl Workbench {
         detail: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        self.console_with_latency(severity, source, message, detail, None, cx);
+    }
+    fn console_with_latency(
+        &mut self,
+        severity: crate::console_model::Severity,
+        source: crate::console_model::Source,
+        message: String,
+        detail: Option<String>,
+        latency_ms: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
         cx.emit(WorkbenchEvent::Console(crate::console_model::Entry {
             severity,
             source,
             message,
             detail,
+            latency_ms,
             connection: self
                 .document
                 .as_ref()
@@ -981,11 +993,12 @@ impl Workbench {
                         Some(error) => format!("{sql}\n{}", error.message),
                         None => sql,
                     };
-                    self.console(
+                    self.console_with_latency(
                         severity,
                         crate::console_model::Source::Query,
                         message,
                         Some(detail),
+                        Some(elapsed.min(u128::from(u64::MAX)) as u64),
                         cx,
                     );
                     if let Some(source) = self
@@ -1750,14 +1763,14 @@ impl Workbench {
             .py_1()
             .border_1()
             .border_color(if selected {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x444444)
+                crate::style::line()
             })
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
             .text_sm()
             .focus(|style| style.border_color(rgb(0xa9d8c5)))
@@ -1831,7 +1844,7 @@ impl Render for Workbench {
                     .h(gpui::relative(if compact { 0.20 } else { 0.42 }))
                     .border_b_1()
             })
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .flex()
             .flex_col()
             .child(
@@ -2056,8 +2069,8 @@ impl Render for Workbench {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(0x000000))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.sync_completion_input(window, cx);
                 let Some(view) = this.query_changes.view.clone() else { return; };
@@ -2122,7 +2135,7 @@ impl Render for Workbench {
                     .p_2()
                     .flex_shrink_0()
                     .border_b_1()
-                    .border_color(rgb(0x333333))
+                    .border_color(crate::style::line())
                     .child(
                         div()
                             .flex_1()
@@ -2183,7 +2196,7 @@ impl Render for Workbench {
                 let reviewed_sql = review.sql.clone();
                 pane.child(
                     div().id("query-confirmation").role(Role::Group).aria_label("Safe Mode query review")
-                        .flex().flex_col().flex_shrink_0().p_2().gap_2().border_b_1().border_color(rgb(0x444444))
+                        .flex().flex_col().flex_shrink_0().p_2().gap_2().border_b_1().border_color(crate::style::line())
                         .child(div().id("query-confirmation-announcement").role(Role::Alert)
                             .aria_label("Safe Mode requires confirmation. Review the exact SQL, then confirm or cancel. Query has not run.")
                             .child("Safe Mode requires confirmation"))
@@ -2222,7 +2235,7 @@ impl Render for Workbench {
             .when(self.document.is_some(), |pane| {
                 let transaction_label = self.transaction_label();
                 pane.child(div().id("transaction-controls").role(Role::Group).aria_label("Transaction controls")
-                    .flex().flex_col().flex_shrink_0().border_t_1().border_color(rgb(0x333333)).p_2().gap_2()
+                    .flex().flex_col().flex_shrink_0().border_t_1().border_color(crate::style::line()).p_2().gap_2()
                     .child(div().id("transaction-state").role(Role::Status).aria_label("Transaction state")
                         .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(transaction_label.clone()); })
                         .text_sm().child(self.transaction_label()))
@@ -2252,7 +2265,7 @@ impl Render for Workbench {
                     .px_2()
                     .py_1()
                     .border_t_1()
-                    .border_color(rgb(0x333333))
+                    .border_color(crate::style::line())
                     .flex_shrink_0()
                     .text_sm()
                     .child(self.status.clone()),

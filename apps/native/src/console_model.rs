@@ -56,6 +56,8 @@ pub struct Entry {
     pub message: String,
     pub detail: Option<String>,
     pub connection: Option<String>,
+    /// Wall time of a finished query, for the status bar.
+    pub latency_ms: Option<u64>,
 }
 pub struct Event {
     pub at: SystemTime,
@@ -121,6 +123,7 @@ mod tests {
             message: message.into(),
             detail: None,
             connection: None,
+            latency_ms: None,
         }
     }
 

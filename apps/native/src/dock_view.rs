@@ -143,11 +143,11 @@ impl Render for DockView {
                     .text_xs()
                     .border_b_1()
                     .border_color(if selected {
-                        rgb(0xffffff)
+                        crate::style::text()
                     } else {
-                        rgb(0x333333)
+                        crate::style::line()
                     })
-                    .focus(|style| style.bg(rgb(0x222222)))
+                    .focus(|style| style.bg(crate::style::hover()))
                     .child(*label)
                     .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
                     .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
@@ -164,7 +164,7 @@ impl Render for DockView {
             .flex()
             .flex_col()
             .border_t_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .child(
                 div()
                     .flex()
@@ -199,8 +199,8 @@ impl Render for DockView {
                                             .overflow_hidden()
                                             .whitespace_nowrap()
                                             .text_color(match severity {
-                                                Severity::Info => rgb(0xdddddd),
-                                                Severity::Warning => rgb(0xfbbf24),
+                                                Severity::Info => crate::style::dim(),
+                                                Severity::Warning => crate::style::warn(),
                                                 Severity::Error => rgb(0xf87171),
                                             })
                                             .child(text)

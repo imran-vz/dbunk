@@ -33,13 +33,13 @@ impl TableCopyView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(crate::style::line())
             .text_color(if enabled {
-                rgb(0xffffff)
+                crate::style::text()
             } else {
-                rgb(0x888888)
+                crate::style::dim()
             })
-            .focus(|style| style.bg(rgb(0x222222)))
+            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -151,9 +151,9 @@ impl TableCopyView {
                                 .aria_label(label.clone())
                                 .aria_selected(this.choice == Some(index))
                                 .bg(if this.choice == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.choose(index, revision, window, cx)
@@ -196,9 +196,9 @@ impl TableCopyView {
                                 .aria_label(label.clone())
                                 .aria_selected(this.selected == Some(id))
                                 .bg(if this.selected == Some(id) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select(id, cx);
@@ -253,9 +253,9 @@ impl TableCopyView {
                                 .aria_label(label.clone())
                                 .aria_selected(this.column == Some(index))
                                 .bg(if this.column == Some(index) {
-                                    rgb(0x222222)
+                                    crate::style::hover()
                                 } else {
-                                    rgb(0)
+                                    crate::style::bg()
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.select_column(attempt, index, window, cx)
@@ -393,8 +393,8 @@ impl Render for TableCopyView {
             .aria_label("PostgreSQL table copy")
             .track_focus(&self.root)
             .size_full()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(Self::key))
             .overflow_y_scroll()
             .track_scroll(&self.details_scroll)

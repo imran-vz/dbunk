@@ -8,7 +8,7 @@ use dbunk_lib::backend::table_structure::{TableIdentity, TableStructureRequest};
 use editor::Editor;
 use gpui::{
     ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    UniformListScrollHandle, Window, div, prelude::*, px, rgb, uniform_list,
+    UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 
 mod render;

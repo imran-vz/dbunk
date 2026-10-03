@@ -41,7 +41,8 @@ If a tradeoff is required, choose correctness and robustness over short-term con
 
 ### Task completion requirements
 
-- All of `pnpm format`, `pnpm lint`, and `pnpm typecheck` must pass before considering tasks completed.
-- Rust changes are complete only after `just fmt`, `just lint`, and `just test` run successfully.
+- The Tauri/React app was removed (hard migration); the native GPUI app in `apps/native` is the product and `backend/` is its library.
+- Backend changes are complete only after `just fmt`, `just lint`, and `just test` pass.
+- Native changes are complete only after `just fmt-native`, `just lint-native`, and `just test-native` pass.
 - Add focused tests for meaningful behavior and failure modes. Avoid tests that merely mirror implementation or assert feature deletion.
 - After required checks pass, repeat or expand verification only for changed code, failures, or unresolved concerns. Report blocked checks honestly.

@@ -2,7 +2,7 @@
 use crate::bounded_field::Field;
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Window, div,
-    prelude::*, rgb,
+    prelude::*,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -138,8 +138,8 @@ impl GoToRowView {
             .px_2()
             .py_1()
             .border_1()
-            .border_color(rgb(0x444444))
-            .focus(|style| style.bg(rgb(0x222222)))
+            .border_color(crate::style::line())
+            .focus(|style| style.bg(crate::style::hover()))
             .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(index == 0, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
@@ -165,8 +165,8 @@ impl Render for GoToRowView {
             .gap_2()
             .p_2()
             .size_full()
-            .bg(rgb(0))
-            .text_color(rgb(0xffffff))
+            .bg(crate::style::bg())
+            .text_color(crate::style::text())
             .capture_key_down(cx.listener(Self::key))
             .child("Go to row")
             .child(

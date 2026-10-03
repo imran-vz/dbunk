@@ -6,13 +6,13 @@ use crate::{
     catalog::Catalog,
     controller::{Host, TableCommand, TableControls, TableMessage, TableReceiver},
     navigator_model::{self, Key, Move, Row, RowKind, Tree},
+    style,
 };
 use dbunk_lib::backend::objects::PgObjectRef;
 use editor::{Editor, EditorEvent};
 use gpui::{
     Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px, rgb,
-    uniform_list,
+    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 use std::{
     cell::Cell,
@@ -86,7 +86,11 @@ impl NavigatorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let filter = cx.new(|cx| Editor::single_line(window, cx));
+        let filter = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_placeholder_text("Filter objects", window, cx);
+            editor
+        });
         let accessible = cx.new(|cx| {
             AccessibleEditor::field(filter.clone(), "Filter schemas and objects", false, cx)
         });
@@ -171,10 +175,15 @@ impl NavigatorView {
         self.rebuild();
         if self.controls.is_none() {
             self.status = if self.connection.is_some() {
-                "Load objects to browse schemas".into()
+                "Loading objects".into()
             } else {
-                "Select a connection, then Load objects".into()
+                "Select a connection".into()
             };
+        }
+        // Selecting a connection is the explicit request to browse it; a
+        // lane still closing from the previous connection blocks the read.
+        if self.connection.is_some() && self.controls.is_none() {
+            self.load(cx);
         }
         cx.notify();
     }
@@ -423,6 +432,7 @@ impl NavigatorView {
         &self,
         index: usize,
         label: &'static str,
+        icon: &'static str,
         action: Action,
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
@@ -442,18 +452,23 @@ impl NavigatorView {
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .focus(|style| style.bg(rgb(0x222222)))
-            .text_color(if enabled {
-                rgb(0xffffff)
-            } else {
-                rgb(0x888888)
-            })
-            .px_2()
-            .py_1()
-            .text_sm()
-            .border_1()
-            .border_color(rgb(0x444444))
-            .child(label)
+            .size(px(20.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(4.))
+            .hover(|s| s.bg(style::hover()))
+            .focus(|s| s.bg(style::hover()))
+            .child(
+                gpui::svg()
+                    .path(icon)
+                    .size(px(style::ICON))
+                    .text_color(if enabled {
+                        style::dim()
+                    } else {
+                        style::faint()
+                    }),
+            )
             .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
                 weak.update(cx, |this, cx| this.activate(action, cx)).ok();
@@ -553,6 +568,32 @@ impl Focusable for NavigatorView {
         self.list.clone()
     }
 }
+/// Icon and colour for a tree row; colours separate object kinds at a glance.
+fn row_icon(row: &Row, catalog: Option<&Catalog>) -> (&'static str, u32) {
+    use dbunk_lib::backend::objects::PgObjectKind as K;
+    match row.kind {
+        RowKind::Schema { .. } => ("icons/folder.svg", 0x8a929c),
+        RowKind::Database => ("icons/database_zap.svg", 0x8a929c),
+        RowKind::Group { .. } => ("icons/list_tree.svg", 0x8a929c),
+        RowKind::ShowMore { .. } => ("icons/plus.svg", 0x5b626c),
+        RowKind::Truncated => ("icons/warning.svg", 0xd29922),
+        RowKind::Object(index) => match catalog.map(|catalog| catalog.rows[index].kind) {
+            Some(crate::catalog::Kind::Object(K::Table)) => ("icons/table.svg", 0x6aa6ff),
+            Some(crate::catalog::Kind::Object(K::View)) => ("icons/eye.svg", 0xb392f0),
+            Some(crate::catalog::Kind::Object(K::MaterializedView)) => {
+                ("icons/table.svg", 0xd2a8ff)
+            }
+            Some(crate::catalog::Kind::Object(K::ForeignTable)) => ("icons/link.svg", 0x79c0ff),
+            Some(crate::catalog::Kind::Object(K::Function | K::Procedure | K::Aggregate)) => {
+                ("icons/code.svg", 0x56d4dd)
+            }
+            Some(crate::catalog::Kind::Object(K::Sequence)) => ("icons/hash.svg", 0xd29922),
+            Some(crate::catalog::Kind::Object(K::Type | K::Domain)) => ("icons/box.svg", 0x79c0ff),
+            Some(crate::catalog::Kind::Object(K::Extension)) => ("icons/box_open.svg", 0x8a929c),
+            _ => ("icons/circle.svg", 0x8a929c),
+        },
+    }
+}
 impl Render for NavigatorView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected_label = self
@@ -565,6 +606,7 @@ impl Render for NavigatorView {
         } else {
             self.status.clone()
         };
+        let show_status = self.controls.is_some() || self.catalog.is_none() || self.stale;
         div()
             .id("object-navigator")
             .role(Role::Group)
@@ -574,13 +616,26 @@ impl Render for NavigatorView {
             .flex_col()
             .flex_1()
             .min_h_0()
-            .border_t_1()
-            .border_color(rgb(0x444444))
             .on_key_down(cx.listener(Self::key_down))
             .child(
                 div()
+                    .h(px(26.))
+                    .flex_none()
                     .flex()
-                    .flex_wrap()
+                    .items_center()
+                    .gap(px(2.))
+                    .pl(px(10.))
+                    .pr(px(6.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(style::text())
+                            .child("Objects"),
+                    )
+                    .when(self.enabled(Action::Cancel), |row| {
+                        row.child(self.button(1, "Cancel loading", "icons/close.svg", Action::Cancel, cx))
+                    })
                     .child(self.button(
                         0,
                         if self.catalog.is_some() {
@@ -588,22 +643,45 @@ impl Render for NavigatorView {
                         } else {
                             "Load objects"
                         },
+                        "icons/rotate_cw.svg",
                         Action::Load,
                         cx,
-                    ))
-                    .child(self.button(1, "Cancel", Action::Cancel, cx)),
+                    )),
             )
-            .child(div().h(px(26.)).child(self.accessible.clone()))
             .child(
                 div()
-                    .id("navigator-status")
-                    .role(Role::Status)
-                    .aria_label(status.clone())
-                    .text_xs()
-                    .px_2()
-                    .text_color(rgb(0xbbbbbb))
-                    .child(status),
+                    .mx(px(8.))
+                    .mb(px(4.))
+                    .h(px(20.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(6.))
+                    .rounded(px(4.))
+                    .border_1()
+                    .border_color(style::line_soft())
+                    .child(
+                        gpui::svg()
+                            .path("icons/filter.svg")
+                            .size(px(style::ICON))
+                            .text_color(style::faint()),
+                    )
+                    .child(div().flex_1().min_w_0().h(px(16.)).child(self.accessible.clone())),
             )
+            .when(show_status, |root| {
+                root.child(
+                    div()
+                        .id("navigator-status")
+                        .role(Role::Status)
+                        .aria_label(status.clone())
+                        .px(px(10.))
+                        .pb(px(2.))
+                        .text_size(px(style::FONT_SMALL))
+                        .text_color(style::faint())
+                        .child(status),
+                )
+            })
             .child(
                 div()
                     .id("navigator-tree")
@@ -616,49 +694,81 @@ impl Render for NavigatorView {
                     .track_focus(&self.list)
                     .tab_stop(true)
                     .tab_index(0)
-                    .focus(|style| style.border_1().border_color(rgb(0x666666)))
                     .flex_1()
                     .min_h_0()
                     .child(
                         uniform_list(
                             "navigator-rows",
                             self.rows.len(),
-                            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                                let focused = this.list.is_focused(window);
                                 range
                                     .map(|position| {
                                         let row = &this.rows[position];
-                                        let marker = match row.kind {
-                                            RowKind::Schema { expanded: true }
-                                            | RowKind::Group { expanded: true } => "▾ ",
-                                            RowKind::Schema { expanded: false }
-                                            | RowKind::Group { expanded: false } => "▸ ",
-                                            _ => "",
+                                        let expanded = match row.kind {
+                                            RowKind::Schema { expanded }
+                                            | RowKind::Group { expanded } => Some(expanded),
+                                            _ => None,
                                         };
-                                        let text = match row.count {
-                                            Some(count) => format!("{marker}{}  {count}", row.label),
-                                            None => format!("{marker}{}", row.label),
-                                        };
+                                        let (path, color) = row_icon(row, this.catalog.as_ref());
                                         let selected = position == this.selected;
                                         div()
                                             .id(("navigator-row", position))
                                             .role(Role::TreeItem)
                                             .aria_label(this.row_label(row))
                                             .aria_selected(selected)
-                                            .h(px(22.))
+                                            .h(px(style::ROW))
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(5.))
                                             .pl(px(8. + 12. * (row.level.saturating_sub(1)) as f32))
-                                            .pr_2()
-                                            .text_sm()
+                                            .pr(px(8.))
                                             .overflow_hidden()
                                             .whitespace_nowrap()
                                             .text_color(match row.kind {
-                                                RowKind::Truncated => rgb(0xfbbf24),
-                                                RowKind::Group { .. } | RowKind::Database => {
-                                                    rgb(0xbbbbbb)
-                                                }
-                                                _ => rgb(0xffffff),
+                                                RowKind::Truncated => style::warn(),
+                                                RowKind::ShowMore { .. } => style::dim(),
+                                                _ => style::text(),
                                             })
-                                            .when(selected, |row| row.bg(rgb(0x252525)))
-                                            .child(SharedString::from(text))
+                                            .hover(|s| s.bg(style::hover()))
+                                            .when(selected, |row| {
+                                                row.bg(if focused { style::select() } else { style::raised() })
+                                            })
+                                            .child(match expanded {
+                                                Some(open) => gpui::svg()
+                                                    .path(if open {
+                                                        "icons/chevron_down.svg"
+                                                    } else {
+                                                        "icons/chevron_right.svg"
+                                                    })
+                                                    .size(px(style::ICON))
+                                                    .flex_none()
+                                                    .text_color(style::faint())
+                                                    .into_any_element(),
+                                                None => div().w(px(style::ICON)).flex_none().into_any_element(),
+                                            })
+                                            .child(
+                                                gpui::svg()
+                                                    .path(path)
+                                                    .size(px(style::ICON))
+                                                    .flex_none()
+                                                    .text_color(gpui::rgb(color)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .overflow_hidden()
+                                                    .child(SharedString::from(row.label.clone())),
+                                            )
+                                            .when_some(row.count, |row, count| {
+                                                row.child(
+                                                    div()
+                                                        .text_size(px(style::FONT_SMALL))
+                                                        .text_color(style::faint())
+                                                        .child(count.to_string()),
+                                                )
+                                            })
                                             .on_click(cx.listener(
                                                 move |this, event: &gpui::ClickEvent, window, cx| {
                                                     // Rows may have shrunk since this frame.

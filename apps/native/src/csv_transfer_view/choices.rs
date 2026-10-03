@@ -266,7 +266,7 @@ impl CsvTransferView {
                 .child(gpui::uniform_list("csv-choices",count,cx.processor(|this,range:std::ops::Range<usize>,_,cx|{range.map(|index|{
                     let Some(row)=this.metadata.capture.as_ref().and_then(|capture|capture.visible.get(index).and_then(|row|capture.catalog.rows.get(*row)))else{return div().into_any_element();};
                     let label=row.entry.name.clone();let revision=this.metadata.revision;let filter=this.metadata.filter_revision;let selected=this.metadata.selected==Some(index);let weak=cx.weak_entity();
-                    div().id(("csv-choice",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(rgb(0x252525))).child(label)
+                    div().id(("csv-choice",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(crate::style::select())).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{if revision==this.metadata.revision&&filter==this.metadata.filter_revision{this.metadata.selected=Some(index);window.focus(&this.choice_focus,cx);cx.notify();}}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{if revision==this.metadata.revision&&filter==this.metadata.filter_revision{this.metadata.selected=Some(index);window.focus(&this.choice_focus,cx);cx.notify();}}).ok();}).into_any_element()
                 }).collect()})).h(px(112.)).track_scroll(&self.choice_scroll)))).into_any_element()
