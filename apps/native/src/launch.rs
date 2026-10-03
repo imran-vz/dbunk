@@ -1,9 +1,15 @@
 //! Launch modes never infer endpoint authority from a directory's contents.
-//! General profile creation and opening are separate explicit operations.
+//! General profile creation and opening are separate operations; only the
+//! app's own default location chooses between them, by the path's existence.
 use dbunk_lib::backend::{
     Backend, DevelopmentFixtures, import_legacy_profile, snapshot_legacy_profile,
 };
 use std::{ffi::OsString, io::Read, path::PathBuf};
+
+/// Shared with the log directory so one app owns one Application Support name.
+/// Distinct from the removed Tauri app's `codes.imran.dbunk` data.
+const APP_DIRECTORY: &str = "dbunk Native";
+const DEFAULT_PROFILE: &str = "profile";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Launch {
@@ -25,13 +31,51 @@ pub enum Launch {
 }
 
 impl Launch {
+    /// With no arguments the app opens its default general profile in the
+    /// workspace window, creating it on first launch. An existing path is only
+    /// ever opened, so a damaged profile fails instead of being replaced.
+    pub fn from_args(
+        args: impl IntoIterator<Item = OsString>,
+        fixture_verification_requested: bool,
+        home: Option<OsString>,
+    ) -> anyhow::Result<Self> {
+        let mut args = args.into_iter().peekable();
+        if args.peek().is_some() {
+            return Self::parse(args, fixture_verification_requested);
+        }
+        anyhow::ensure!(
+            !fixture_verification_requested,
+            "Fixture verification requires an explicit fixture profile"
+        );
+        let home = PathBuf::from(
+            home.filter(|home| !home.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("HOME is unset; pass --native-profile PATH"))?,
+        );
+        anyhow::ensure!(home.is_absolute(), "HOME must be an absolute path");
+        let directory = home.join("Library/Application Support").join(APP_DIRECTORY);
+        std::fs::create_dir_all(&directory)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+        }
+        // The backend requires a canonical parent; HOME may be a symlink.
+        let profile = directory.canonicalize()?.join(DEFAULT_PROFILE);
+        let create = match std::fs::symlink_metadata(&profile) {
+            Ok(_) => false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Self::Native { profile, create })
+    }
+
     pub fn parse(
         args: impl IntoIterator<Item = OsString>,
         fixture_verification_requested: bool,
     ) -> anyhow::Result<Self> {
         let mut args = args.into_iter();
         let mode = args.next().ok_or_else(|| anyhow::anyhow!(
-            "Usage: dbunk-native --profile PATH | --workspace-profile PATH --fixture-manifest FILE | --create-native-profile PATH | --native-profile PATH | --import-legacy-profile DB --snapshot DIR --into PATH"
+            "Usage: dbunk-native [--profile PATH | --workspace-profile PATH --fixture-manifest FILE | --create-native-profile PATH | --native-profile PATH | --import-legacy-profile DB --snapshot DIR --into PATH]"
         ))?;
         let profile = PathBuf::from(
             args.next()
@@ -309,5 +353,61 @@ mod tests {
         ] {
             assert!(parse(&args, false).is_err(), "accepted {args:?}");
         }
+    }
+
+    #[test]
+    fn no_arguments_open_the_default_profile_in_the_workspace() {
+        let home = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("dbunk-launch-home-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&home).unwrap();
+        let launch = |verification| {
+            Launch::from_args(
+                Vec::<OsString>::new(),
+                verification,
+                Some(home.clone().into()),
+            )
+        };
+        let directory = home.join("Library/Application Support/dbunk Native");
+        let first = launch(false).unwrap();
+        assert_eq!(
+            first,
+            Launch::Native {
+                profile: directory.join("profile"),
+                create: true,
+            }
+        );
+        assert!(first.workspace());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&directory).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+        // Any existing entry, even a damaged one, is opened and never recreated.
+        std::fs::create_dir(directory.join("profile")).unwrap();
+        assert_eq!(
+            launch(false).unwrap(),
+            Launch::Native {
+                profile: directory.join("profile"),
+                create: false,
+            }
+        );
+        assert!(launch(true).is_err());
+        std::fs::remove_dir_all(&home).unwrap();
+
+        for home in [None, Some(OsString::new()), Some("relative/home".into())] {
+            assert!(Launch::from_args(Vec::<OsString>::new(), false, home).is_err());
+        }
+        assert_eq!(
+            Launch::from_args(
+                ["--profile", "/owned/profile"].map(OsString::from),
+                false,
+                None,
+            )
+            .unwrap(),
+            Launch::Fixture("/owned/profile".into())
+        );
     }
 }

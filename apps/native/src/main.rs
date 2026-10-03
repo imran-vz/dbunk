@@ -418,9 +418,10 @@ fn init_workspace_commands(cx: &mut App) {
 }
 
 fn run() -> anyhow::Result<()> {
-    let launch = launch::Launch::parse(
+    let launch = launch::Launch::from_args(
         std::env::args_os().skip(1),
         std::env::var_os("DBUNK_NATIVE_VERIFY").is_some(),
+        std::env::var_os("HOME"),
     )?;
     match file_log::install(launch.profile()) {
         Ok(path) => log::info!(

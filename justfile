@@ -49,7 +49,16 @@ native-fixture-up:
 native-fixture-down:
     python3 tools/native/fixture.py down
 
+# Workspace window against the owned fixture, on a fresh retained profile.
 dev-native:
+    python3 tools/native/workspace_launch.py
+
+# Opens YOUR default profile (~/Library/Application Support/dbunk Native).
+run-native:
+    cd apps/native && cargo +1.98.1 run --release --locked
+
+# Legacy stage03 single-query window; the AX probe below still drives it.
+dev-native-stage03:
     python3 tools/native/launch.py
 
 test-native-e2e:

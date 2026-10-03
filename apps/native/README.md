@@ -43,17 +43,27 @@ ownership record. It never adopts another fixture or invokes the broad
 `db:down` command. Cleanup validates the container's Compose identity and
 instance label before removing that container and its empty, labelled network.
 
-`dev-native` verifies the fixture, builds the locked release target, creates a
-canonical private temporary directory, writes its `.dbunk-native-stage03`
-marker, and passes `--profile <absolute-path>` explicitly. It prints fixture
-identity, profile path, PID and diagnostic output location. Startup configures
-plain SQLite credentials through backend services. It does not resolve a
-normal profile, migrate credentials, or use Keychain.
+`dev-native` runs the workspace launcher described under
+[Persistent stage04 workspace](#persistent-stage04-workspace) on a fresh path
+under a new private temporary directory, so every run opens the redesigned
+window (sidebar, tab bar, status bar and environment frame) against the owned
+fixture. The profile is retained after quit and its path is printed.
 
-Every ordinary launch gets a fresh profile. Layout preference survives
-reopening the same marked profile; an ordinary successful launcher exit
-removes its own disposable profile. On failure the launcher retains its
-profile and diagnostics rather than pretending cleanup passed.
+The legacy stage03 single-query window is still available as
+`just dev-native-stage03`. It passes `--profile <absolute-path>` on a fresh
+`.dbunk-native-stage03` profile, uses plain SQLite credentials, and removes
+the profile after a successful exit. `just test-native-e2e` drives that
+window.
+
+## Default launch
+
+Launched without arguments (`just run-native`, or opening the app bundle), the
+app opens its own general profile at
+`~/Library/Application Support/dbunk Native/profile` in the workspace window.
+The first launch creates it; later launches only open it, so a damaged
+profile is reported rather than replaced. Nothing is imported from the
+removed Tauri app's data. Agents must not use this launch: it is the user's
+daily-driver profile.
 
 Do not point the executable at a daily-driver profile. A manually reused
 profile must retain its marker, private permissions and loopback fixture
@@ -107,8 +117,9 @@ human VoiceOver or full shell acceptance is established by this probe.
 The separate stage04 window provides the selected Navigator, PostgreSQL connection
 forms, credential setup, query tabs and durable SQL drafts. Its launcher creates
 or reopens a persistent marked profile, with a private verified fixture manifest.
-It does not resolve the normal app profile. Do not pass a stage04 directory to
-`dev-native` or the old stage03 bundle probe.
+It does not resolve the default app profile. Do not pass a stage04 directory to
+`dev-native-stage03` or the old stage03 bundle probe. `just dev-native` runs this
+launcher without a path, on a fresh temporary profile.
 
 ```sh
 just native-fixture-up
@@ -402,8 +413,8 @@ still identifies that launch.
 The separate native app also accepts `--create-native-profile ABSOLUTE_PATH` for
 a new private profile and `--native-profile ABSOLUTE_PATH` to reopen it. These
 modes have a distinct marker/SQLite identity and support user-selected direct
-PostgreSQL endpoints. They never select a default personal profile or convert
-fixture profiles. Save/restore does not connect; Test and Connect are explicit.
+PostgreSQL endpoints. They never convert fixture profiles; only a launch
+without arguments selects the [default profile](#default-launch). Save/restore does not connect; Test and Connect are explicit.
 SSH and other engines remain unsupported in this entry point. Existing fixture
 launch modes are unchanged. No production identity or daily-driver cutover is
 approved by this capability.
