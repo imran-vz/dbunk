@@ -1,0 +1,14 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.44s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 6 tests
+test backend::connection_uri::tests::ambiguous_or_unsupported_uri_shapes_refuse_without_endpoint_normalization ... ok
+test backend::connection_uri::tests::baseline_postgres_defaults_password_and_component_encoding ... ok
+test backend::connection_uri::tests::export_round_trips_exact_identifiers_hosts_and_raw_dot_database_names ... ok
+test backend::connection_uri::tests::only_exact_sslmode_applies_and_ignored_keys_are_ordered_and_unique ... ok
+test backend::connection_uri::tests::parser_and_export_bounds_refuse_atomically_at_byte_limits ... ok
+test backend::connection_uri::tests::secrets_never_enter_export_omission_flags_debug_or_errors ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 916 filtered out; finished in 0.01s
+

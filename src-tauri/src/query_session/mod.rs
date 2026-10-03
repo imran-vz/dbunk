@@ -195,6 +195,8 @@ impl Outbox {
     }
 }
 struct Session {
+    #[cfg(feature = "isolated-profile")]
+    instance: uuid::Uuid,
     outbox: Outbox,
     owner_id: String,
     window_label: String,
@@ -205,6 +207,7 @@ struct Session {
     probes: ProbeOrder,
     last_liveness: Mutex<Instant>,
     focused: Mutex<bool>,
+    native_tasks: Option<crate::postgres::dedicated::DriverJoins>,
 }
 impl std::ops::Deref for Session {
     type Target = Outbox;
@@ -248,6 +251,14 @@ struct ManagerState {
     opening: HashMap<String, String>,
     observer_opening: HashMap<String, watch::Sender<bool>>,
     global_closing: bool,
+    native_sessions: HashMap<String, NativeSessionTasks>,
+    native_observers: HashMap<String, Vec<crate::postgres::dedicated::DriverJoins>>,
+}
+struct NativeSessionTasks {
+    #[cfg(feature = "isolated-profile")]
+    window: String,
+    connection_id: String,
+    tasks: crate::postgres::dedicated::DriverJoins,
 }
 #[derive(Clone)]
 pub(crate) struct QuerySessionManager {
@@ -286,6 +297,18 @@ pub(crate) struct ExecutionSafety<'a> {
 }
 
 impl QuerySessionManager {
+    fn native_child(&self) -> Option<crate::postgres::dedicated::DriverJoins> {
+        #[cfg(feature = "isolated-profile")]
+        {
+            self.native_tasks
+                .as_ref()
+                .map(crate::postgres::dedicated::DriverJoins::child)
+        }
+        #[cfg(not(feature = "isolated-profile"))]
+        {
+            None
+        }
+    }
     pub(crate) fn new(pool: SqlitePool) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ManagerState::default())),
@@ -329,6 +352,16 @@ impl QuerySessionManager {
     pub(crate) async fn retire_window(&self, window: &str) {
         self.inner.lock().await.owners.remove(window);
         self.close_window(window).await;
+        let ids = self
+            .inner
+            .lock()
+            .await
+            .native_sessions
+            .iter()
+            .filter(|(_, entry)| entry.window == window)
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        self.join_native_sessions(&ids).await;
     }
     /// Called only after native opens/workers have been joined or aborted.
     #[cfg(feature = "isolated-profile")]
@@ -338,6 +371,8 @@ impl QuerySessionManager {
         state.opening.clear();
         state.observer_opening.clear();
         state.observers.clear();
+        state.native_sessions.clear();
+        state.native_observers.clear();
         state.sessions.clear();
     }
     async fn expire_stalled(&self) {
@@ -416,12 +451,24 @@ impl QuerySessionManager {
         sink: SharedSink<QueryEventEnvelope>,
         spec: ResolvedPostgresConnectSpec,
     ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
+        let session_tasks = self.native_child();
         {
             let mut state = self.inner.lock().await;
             self.check_admission(&state, window, &payload)?;
             state
                 .opening
                 .insert(payload.session_id.clone(), payload.connection_id.clone());
+            if let Some(tasks) = &session_tasks {
+                state.native_sessions.insert(
+                    payload.session_id.clone(),
+                    NativeSessionTasks {
+                        #[cfg(feature = "isolated-profile")]
+                        window: window.into(),
+                        connection_id: payload.connection_id.clone(),
+                        tasks: tasks.clone(),
+                    },
+                );
+            }
         }
         let observer = match self.observer_for_open(&payload.connection_id, &spec).await {
             Ok(observer) => observer,
@@ -430,7 +477,7 @@ impl QuerySessionManager {
                 return Err(error);
             }
         };
-        let connection = match postgres::connect_tracked(&spec, self.native_tasks.as_ref()).await {
+        let connection = match postgres::connect_tracked(&spec, session_tasks.as_ref()).await {
             Ok(connection) => connection,
             Err(error) => {
                 self.release_opening(&payload.session_id).await;
@@ -453,6 +500,8 @@ impl QuerySessionManager {
                 .entry(payload.connection_id.clone())
                 .or_default();
             let session = Arc::new(Session {
+                #[cfg(feature = "isolated-profile")]
+                instance: uuid::Uuid::new_v4(),
                 outbox: Outbox::new(
                     payload.session_id.clone(),
                     payload.tab_id,
@@ -469,6 +518,7 @@ impl QuerySessionManager {
                 probes: ProbeOrder::default(),
                 last_liveness: Mutex::new(Instant::now()),
                 focused: Mutex::new(true),
+                native_tasks: session_tasks,
             });
             state.sessions.insert(payload.session_id, session.clone());
             session
@@ -519,7 +569,17 @@ impl QuerySessionManager {
                 continue;
             }
 
-            let result = Observer::connect_tracked(spec, self.native_tasks.as_ref())
+            let observer_tasks = self.native_child();
+            if let Some(tasks) = &observer_tasks {
+                self.inner
+                    .lock()
+                    .await
+                    .native_observers
+                    .entry(connection_id.into())
+                    .or_default()
+                    .push(tasks.clone());
+            }
+            let result = Observer::connect_tracked(spec, observer_tasks.as_ref())
                 .await
                 .map(|observer| Arc::new(Mutex::new(observer)));
             let mut state = self.inner.lock().await;
@@ -549,6 +609,7 @@ impl QuerySessionManager {
         }
         if state.sessions.contains_key(&payload.session_id)
             || state.opening.contains_key(&payload.session_id)
+            || state.native_sessions.contains_key(&payload.session_id)
         {
             return Err(QuerySessionError::InvalidSequence);
         }
@@ -609,6 +670,16 @@ impl QuerySessionManager {
     ) -> Result<String, QuerySessionError> {
         Ok(self.bound(id, window).await?.connection_id.clone())
     }
+    /// Native confirmation binds to this particular session, not a reusable
+    /// caller-supplied ID or the connection's shared event generation.
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn instance(
+        &self,
+        id: &str,
+        window: &str,
+    ) -> Result<uuid::Uuid, QuerySessionError> {
+        Ok(self.bound(id, window).await?.instance)
+    }
     pub(crate) async fn execute(
         &self,
         id: &str,
@@ -642,6 +713,7 @@ impl QuerySessionManager {
         credit.begin(execution_id.clone());
         drop(credit);
         drop(sequence);
+        let tracked = session.native_tasks.clone();
         let task = tokio::spawn(run_execution(
             self.clone(),
             session,
@@ -654,7 +726,7 @@ impl QuerySessionManager {
                 authorization,
             }),
         ));
-        if let Some(tracked) = &self.native_tasks {
+        if let Some(tracked) = &tracked {
             tracked.track_task(task);
         }
         Ok(AcceptedResult { accepted: true })
@@ -721,7 +793,17 @@ impl QuerySessionManager {
         let session = self.bound(id, window).await?;
         observe_session(&session).await;
         if session.transaction.lock().await.status == QueryTransactionStatus::Unknown {
-            let replacement = Observer::connect_tracked(&spec, self.native_tasks.as_ref()).await?;
+            let observer_tasks = self.native_child();
+            if let Some(tasks) = &observer_tasks {
+                self.inner
+                    .lock()
+                    .await
+                    .native_observers
+                    .entry(session.connection_id.clone())
+                    .or_default()
+                    .push(tasks.clone());
+            }
+            let replacement = Observer::connect_tracked(&spec, observer_tasks.as_ref()).await?;
             *session.observer.lock().await = replacement;
             observe_session(&session).await;
         }
@@ -793,6 +875,75 @@ impl QuerySessionManager {
         self.remove_and_close(id, true).await;
         Ok(())
     }
+
+    /// The native facade holds startup admission while closing. Records outlive
+    /// failed opens and monitor removals so every socket and query worker can be
+    /// joined even after its session has disappeared from the live map.
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn close_native(
+        &self,
+        id: &str,
+        window: &str,
+    ) -> Result<(), QuerySessionError> {
+        if self
+            .inner
+            .lock()
+            .await
+            .native_sessions
+            .get(id)
+            .is_some_and(|entry| entry.window != window)
+        {
+            return Err(QuerySessionError::OwnerMismatch);
+        }
+        match self.close(id, window).await {
+            Ok(()) | Err(QuerySessionError::SessionNotFound) => {}
+            Err(error) => return Err(error),
+        }
+        self.join_native_sessions(&[id.to_string()]).await;
+        Ok(())
+    }
+
+    async fn join_native_sessions(&self, ids: &[String]) {
+        let groups = {
+            let mut state = self.inner.lock().await;
+            let retired = ids
+                .iter()
+                .filter_map(|id| state.native_sessions.remove(id))
+                .collect::<Vec<_>>();
+            let connections = retired
+                .iter()
+                .map(|entry| entry.connection_id.clone())
+                .collect::<HashSet<_>>();
+            let mut groups = retired
+                .into_iter()
+                .map(|entry| entry.tasks)
+                .collect::<Vec<_>>();
+            for connection in connections {
+                let in_use = state
+                    .native_sessions
+                    .values()
+                    .any(|entry| entry.connection_id == connection)
+                    || state.opening.values().any(|id| id == &connection);
+                if !in_use {
+                    state.observers.remove(&connection);
+                    groups.extend(
+                        state
+                            .native_observers
+                            .remove(&connection)
+                            .into_iter()
+                            .flatten(),
+                    );
+                }
+            }
+            groups
+        };
+        // Abort is scoped to these retired sessions. A late query task registered
+        // after admission observes the child's latched abort; other tabs survive.
+        for group in &groups {
+            group.abort_all();
+        }
+        futures_util::future::join_all(groups.iter().map(|group| group.drain())).await;
+    }
     async fn remove_and_close(&self, id: &str, emit: bool) {
         let session = {
             let mut state = self.inner.lock().await;
@@ -862,6 +1013,10 @@ impl QuerySessionManager {
             state.observers.retain(|id, _| live.contains(id));
             sessions
         };
+        let native_ids = sessions
+            .iter()
+            .map(|session| session.id.clone())
+            .collect::<Vec<_>>();
         let close = futures_util::future::join_all(
             sessions
                 .into_iter()
@@ -869,6 +1024,7 @@ impl QuerySessionManager {
         );
         if self.native_tasks.is_some() {
             close.await;
+            self.join_native_sessions(&native_ids).await;
         } else {
             let _ = tokio::time::timeout(Duration::from_secs(3), close).await;
         }
@@ -975,7 +1131,7 @@ async fn run_execution(
         plan,
         entry,
         session.clone(),
-        manager.native_tasks.as_ref(),
+        session.native_tasks.as_ref(),
     );
     let mut terminal = None;
     while let Some(event) = events.recv().await {
@@ -3200,3 +3356,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, feature = "isolated-profile"))]
+mod native_cleanup_tests;

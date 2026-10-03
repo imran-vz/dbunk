@@ -1,0 +1,8 @@
+{
+  "initial_process_check": "false positive: command-text search matched the invoking shell text",
+  "launcher": "owned workspace launcher independently validated ownership and started PID14499",
+  "corrected_comm_check": [
+    "14499 /private/tmp/dbunk-native-package-20261003-xlsx-keyboard/dbunk Native Preflight.app/Contents/MacOS/dbunk-native"
+  ],
+  "single_native_process": true
+}

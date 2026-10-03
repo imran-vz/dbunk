@@ -1,0 +1,22 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			78 button Apply reviewed copy
+~			93 text Attempt 467e3795-c0f3-4580-acfb-34689c115a13
+Durable recovery: Staged
+Source: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.source
+Source endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.slow_destination
+Destination endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination safe mode: Protected; read-only: false
++			95 text Exact accepted review
+Source: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.source
+Source endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_copy_window_20261003.slow_destination
+Destination endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Destination safe mode: Protected; read-only: false
+Columns: 3 copied (0 identity), 0 defaulted or 
++			96 list Exact name-mapped destination column review
++				97 text (selectable) id: Copy source value, Secondary Actions: Pick
++				98 text (selectable) value: Copy source value, Secondary Actions: Pick
++				99 text (selectable) amount: Copy source value, Secondary Actions: Pick
+~		59 container (settable) Draft persistence, Value: Saving drafts
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,7 @@
+{
+  "source_files": 463,
+  "changed_from_initial_maintenance": [
+    "apps/native/src/maintenance_view.rs",
+    "src-tauri/src/backend/maintenance/types.rs"
+  ]
+}

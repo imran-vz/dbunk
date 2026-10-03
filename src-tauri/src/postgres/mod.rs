@@ -19,7 +19,31 @@ mod ddl;
 pub(crate) mod dedicated;
 pub(crate) mod identity;
 mod mutations;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_admin_control;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_catalog;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_ddl_export;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_maintenance;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_overview;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_schema_ddl;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_schema_map;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_table_copy;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_table_ddl;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_table_export;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_table_seed;
+pub(crate) mod native_tasks;
 pub(crate) mod object_ddl;
+pub(crate) mod object_service;
 pub(crate) mod objects;
 pub(crate) mod options;
 mod pool;

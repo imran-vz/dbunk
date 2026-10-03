@@ -1,0 +1,149 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · Disconnected, Value: off
+			38 tab (settable, boolean) Query 2 · Completed · 22 ms, Value: on
+		39 button Connect
+		40 button Disconnect
+		41 button Clear results
+		42 radio button (selectable, settable, boolean) Stacked
+		43 radio button (selectable, settable, boolean) Side by side
+		44 radio button (selectable, settable, boolean) Results first
+		45 button (disabled) Edit selected cell
+		46 button Run
+		47 button Run script
+		48 button (disabled) Stop
+		49 button Bindings
+		50 button Explain draft
+		51 button Analyze draft
+		52 text entry area (settable) SQL editor, Value:     SELECT g AS x, g + 1000 AS x, repeat('2:', 20) || g::text AS c2, repeat('3:', 20) || g::text AS c3, repeat('4:', 20) || g::text AS c4, repeat('5:', 20) || g::text AS c5, repeat('6:', 20) || g::text AS c6, repeat('7:', 20) || g::text AS c7, repeat('8:', 20) || g::text AS c8, repeat('9:', 20) || g::text AS c9, repeat('10:', 20) || g::text AS c10, repeat('11:', 20) || g::text AS c11, repeat('12:', 20) || g::text AS c12, repeat('13:', 20) || g::text AS c13, repeat('14:', 20) || g::text AS c14, repeat('15:', 20) || g::text AS c15, repeat('16:', 20) || g::text AS c16, repeat('17:', 20) || g::text AS c17, repeat('18:', 20) || g::text AS c18, repeat('19:', 20) || g::text AS c19, repeat('20:', 20) || g::text AS c20, repeat('21:', 20) || g::text AS c21, repeat('22:', 20) || g::text AS c22, repeat('23:', 20) || g::text AS c23, repeat('24:', 20) || g::text AS c24 FROM generate_series(1,250) g;  
+		53 tab (settable, boolean) Result 1 · 250 rows, Value: on
+		54 toggle button (settable, boolean) Notices 0, Value: off
+		55 table (settable) Query results, Value: 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:1
+			56 text 250 rows returned · 250 retained · 25 columns · 2 pinned
+			57 button Export selected cells, or all retained rows when no selection
+			58 cell x
+			59 cell c2
+			60 cell c21
+			61 cell c22
+			62 cell c23
+			63 cell c24
+			64 row
+				65 cell (settable) 1001
+				66 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:1
+				67 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:1
+				68 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:1
+				69 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:1
+				70 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:1
+			71 row
+				72 cell (settable) 1002
+				73 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2
+				74 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:2
+				75 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:2
+				76 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:2
+				77 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:2
+			78 row
+				79 cell (settable) 1003
+				80 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:3
+				81 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:3
+				82 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:3
+				83 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:3
+				84 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:3
+			85 row
+				86 cell (settable) 1004
+				87 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:4
+				88 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:4
+				89 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:4
+				90 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:4
+				91 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:4
+			92 row
+				93 cell (settable) 1005
+				94 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:5
+				95 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:5
+				96 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:5
+				97 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:5
+				98 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:5
+			99 row
+				100 cell (settable) 1006
+				101 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:6
+				102 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:6
+				103 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:6
+				104 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:6
+				105 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:6
+			106 row
+				107 cell (settable) 1007
+				108 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:7
+				109 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:7
+				110 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:7
+				111 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:7
+				112 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:7
+			113 row
+				114 cell (settable) 1008
+				115 cell (settable) 2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:2:8
+				116 cell (settable) 21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:21:8
+				117 cell (settable) 22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:22:8
+				118 cell (settable) 23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:23:8
+				119 cell (settable) 24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:24:8
+		120 container Transaction controls
+			121 container (settable) Transaction state, Value: Autocommit · idle
+			122 radio button (selectable, settable, boolean) Autocommit
+			123 radio button (selectable, settable, boolean) Manual
+			124 radio button (selectable, settable, boolean) Read committed
+			125 radio button (selectable, settable, boolean) Repeatable read
+			126 radio button (selectable, settable, boolean) Serializable
+			127 button (disabled) Commit
+			128 button (disabled) Rollback
+			129 button Recheck
+		130 container Result editing unavailable: Result editing requires a supported SELECT with every FROM/JOIN table fully schema-qualified outside temporary schemas; execution and analysis use separate session contexts
+		131 container SQL completion ready; invoke in the editor
+		132 container (settable) Query status, Value: Completed · 22 ms
+		133 container (settable) Draft persistence, Value: Saved
+		134 button Retry
+		135 button Export SQL
+		136 button Discard and quit
+	137 close button
+	138 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	139 minimize button
+	140 text dbunk Native Workspace
+141 menu bar
+	142 dbunk Native Preflight
+	143 Query
+	144 Results
+	145 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

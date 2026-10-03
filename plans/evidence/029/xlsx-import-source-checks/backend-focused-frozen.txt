@@ -1,0 +1,30 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 23 tests
+test backend::csv_transfers::live_tests::native_csv_owned_import_export_rollback_and_joined_cleanup ... ignored, owned stage03 only; DBUNK_NATIVE_FIXTURE_VERIFIED=1; serial explicit opt-in
+test backend::csv_transfers::live_tests::xlsx::native_xlsx_owned_exact_import_and_private_source_cleanup ... ignored, owned stage03 only; DBUNK_NATIVE_FIXTURE_VERIFIED=1; serial explicit opt-in
+test backend::csv_transfers::artifacts::tests::canonical_limit_is_distinct_from_io_failure_and_refuses_before_write ... ok
+test backend::csv_transfers::tests::options_and_identity_refuse_before_unbounded_clone_and_keep_exact_dialect ... ok
+test backend::csv_transfers::artifacts::tests::failed_unlink_keeps_owner_until_explicit_success ... ok
+test backend::csv_transfers::artifacts::tests::cleanup_joins_abandoned_file_work_before_unlink ... ok
+test backend::csv_transfers::tests::native_connection_edit_retires_confirmation_and_refuses_unresolved_cleanup ... ok
+test backend::csv_transfers::tests::cancellation_between_registration_and_worker_admission_finishes_without_orphan ... ok
+test backend::csv_transfers::tests::consuming_lock_refuses_replaced_same_id_inspection_without_consuming_new_review ... ok
+test backend::csv_transfers::tests::execution_workspace_refuses_before_dispatch_and_does_not_audit ... ok
+test backend::csv_transfers::tests::inspection_preserves_bounded_parser_diagnostics_without_sample_content ... ok
+test backend::csv_transfers::tests::retirement_cancels_confirmation_and_blocks_synchronous_registration_through_mutation ... ok
+test backend::csv_transfers::tests::cancelled_blocking_inspection_retains_admission_until_real_worker_join ... ok
+test backend::csv_transfers::tests::exact_confirmation_reacquisition_and_consumed_inspection_release_do_not_replay ... ok
+test backend::csv_transfers::tests::dispatch_lock_refuses_old_confirmation_after_same_attempt_id_replacement ... ok
+test backend::csv_transfers::tests::eight_ready_inspections_are_separate_from_active_admission_and_expire_on_observation ... ok
+test backend::csv_transfers::workbook::tests::accepted_confirmation_owns_source_after_setup_release_until_cancel_cleanup ... ok
+test backend::csv_transfers::tests::retirement_deadline_refuses_mutation_and_preserves_registered_worker ... ok
+test backend::csv_transfers::tests::shutdown_deadline_retains_registered_runner_and_execution_workspace_until_actual_join ... ok
+test backend::csv_transfers::workbook::tests::selection_uses_private_snapshot_and_revokes_previous_mapping_authority ... ok
+test backend::csv_transfers::tests::import_retires_old_data_and_refuses_new_data_and_restore_until_cleanup ... ok
+test backend::csv_transfers::tests::committed_and_unknown_imports_invalidate_once_and_only_known_success_audits ... ok
+test backend::csv_transfers::workbook::tests::cancelled_inspection_retains_artifacts_until_its_file_reader_has_joined ... ok
+
+test result: ok. 21 passed; 0 failed; 2 ignored; 0 measured; 1072 filtered out; finished in 1.33s
+

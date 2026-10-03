@@ -1,0 +1,10 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.20s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 2 tests
+test postgres::tls::native::tests::bounded_opened_material_refuses_oversize_directory_and_symlink ... ok
+test postgres::tls::native::tests::native_and_legacy_preserve_mode_and_incomplete_client_pair_policy ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1050 filtered out; finished in 0.00s
+

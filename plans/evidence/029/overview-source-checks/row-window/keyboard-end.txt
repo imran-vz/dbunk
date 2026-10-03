@@ -1,0 +1,28 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				105 text (selectable) "native_parity_20261003"."rows" · Table · rows 60 · size 32768, Secondary Actions: Pick
+~				111 text (selected) "plan026"."policy_probe" · Table · rows Unknown · size 32768, Secondary Actions: Pick
+~				112 text entry area (settable) Read-only exact overview statistics, Value: Database: "dbunk_demo"
+Database OID: 16384
+Reader PID: 86731
+Collection started: 2026-10-03T09:21:52.095599+00:00
+Collection ended: 2026-10-03T09:21:52.102976+00:00
+Statistics and physical sizes can change during collection; this is not an atomic server-wide measurement.
+
+Requested scope: Database scope
+Schema OID: Not scoped to one object
+Relation OID: Not scoped to one object
+
+Relation: "plan026"."policy_probe"
+Database OID: 16384
+Schema OID: 16399
+Relation OID: 16409
+Kind: Table
+Is a partition: false
+Estimated rows: Unknown
+Physical total size (bytes): 32768
+
+Database-wide scope excludes system namespaces and partition children. Explicit schema scope includes that namespace but excludes partition children. Explicit relation scope may inspect a child.
+Rows are planner estimates, not exact counts. Views are Not applicable. Unknown and Restricted never imply zero. Sizes are physical per relation, not recursive partition totals.
+Pages use a fresh read-only capture and stable keyset order; concurrent changes may affect later pages.
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

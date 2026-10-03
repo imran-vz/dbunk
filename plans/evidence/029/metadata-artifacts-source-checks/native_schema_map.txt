@@ -1,0 +1,16 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.53s
+     Running unittests src/lib.rs (target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 8 tests
+test backend::schema_map::live_tests::native_schema_map_complete_scopes_identity_metadata_and_joined_cleanup ... ignored, explicit owned stage03 schema-map probe; creates only named UUID schemas and owned objects
+test postgres::native_schema_map::tests::actual_capacity_and_text_bounds_refuse_without_constructing_a_partial_graph ... ok
+test postgres::native_schema_map::tests::compact_trigger_column_anchors_and_events_are_validated ... ok
+test postgres::native_schema_map::tests::dotted_identifiers_external_targets_and_exact_refresh_do_not_collide ... ok
+test postgres::native_schema_map::tests::key_subset_uniqueness_and_junctions_use_relation_and_constraint_identity ... ok
+test postgres::native_schema_map::tests::permission_errors_and_unknown_metadata_stay_errors ... ok
+test postgres::native_schema_map::tests::predecode_accounting_refuses_before_json_or_vector_growth_and_does_not_advance ... ok
+test postgres::native_schema_map::tests::relation_scope_refuses_neighbor_edges_missing_anchors_and_orphan_nodes ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 1143 filtered out; finished in 0.01s
+

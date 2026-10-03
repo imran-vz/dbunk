@@ -1,0 +1,10 @@
+{
+  "pid": 83616,
+  "signal": "SIGTERM",
+  "exact_command_verified": "/private/tmp/dbunk-native-package-20261003-comparison/dbunk Native Preflight.app/Contents/MacOS/dbunk-native --create-native-profile /private/tmp/dbunk-native-comparison-20261003-review",
+  "binary_profile_manifest_identity_checked": true,
+  "normal_quit_pass": false,
+  "profile_preserved": "/private/tmp/dbunk-native-comparison-20261003-review",
+  "fixture_activity_after": 0,
+  "time_utc": "2026-10-03T03:11:13.283077+00:00"
+}

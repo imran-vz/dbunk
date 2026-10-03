@@ -1,0 +1,31 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~		121 checkbox (settable, boolean) Import CSV, Value: off
+~		122 checkbox (settable, boolean) Export CSV, Value: on
+~		130 checkbox (settable, boolean) Header row, Value: on
+~		131 checkbox (settable, boolean) Comma delimiter, Value: on
+~		132 checkbox (settable, boolean) Semicolon delimiter, Value: off
+~		133 checkbox (settable, boolean) Tab delimiter, Value: off
+~		134 checkbox (settable, boolean) Pipe delimiter, Value: off
+~		135 button Load choices
+~		141 button Choose CSV file
+~		142 button Inspect target and source
+~		152 button (disabled) Cancel selected transfer
+~		153 button Dismiss finished transfer
+~			164 text (selected) export.csv · Export CSV · Completed, Secondary Actions: Pick
+~		165 text Export CSV · export.csv
+Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+Target: native_parity_20261003.rows
+Attempt: 94e0efc1-6a16-4240-a89f-9a16715f378c
+State: Completed
+Started: 2026-10-03T06:51:30.076928+00:00
+Finished: 2026-10-03T06:51:30.093990+00:00
+Source size: Unavailable
+Bytes processed: 1805
+Rows processed: Unavailable
+Rows committed: Unavailable
+Commit or publication succeeded
+Cleanup complete
+
+
+Export covers the whole committed relation, including partitions. It excludes grid filters and staged
+The focused UI element is 77 standard window dbunk Native Workspace, Secondary Actions: Raise

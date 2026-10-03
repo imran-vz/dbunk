@@ -1,0 +1,230 @@
+[
+  {
+    "name": "simple",
+    "sql": "select id,name from public.users where id=$1;",
+    "exit": 0,
+    "output": "select\n  id,\n  name\nfrom\n  public.users\nwhere\n  id=$1;"
+  },
+  {
+    "name": "cte",
+    "sql": "with a as (select 1 as n), b as (select n from a) select * from b;",
+    "exit": 0,
+    "output": "with a as (\n  select\n    1 as n\n), b as (\n  select\n    n\n  from\n    a\n)\nselect\n  *\nfrom\n  b;"
+  },
+  {
+    "name": "multi",
+    "sql": "select 1; select 2;",
+    "exit": 0,
+    "output": "select\n  1;\n\nselect\n  2;"
+  },
+  {
+    "name": "line_comment",
+    "sql": "select 1 -- keep ; comment\n + 2;",
+    "exit": 0,
+    "output": "select\n  1 -- keep ; comment\n+ 2;"
+  },
+  {
+    "name": "block_comment",
+    "sql": "select /* first\n  body untouched? */ 1;",
+    "exit": 0,
+    "output": "select\n  /* first\n  body untouched? */ 1;"
+  },
+  {
+    "name": "nested_comment",
+    "sql": "select /* outer /* nested */ still comment */ 1;",
+    "exit": 0,
+    "output": "select\n  /* outer /* nested */ still comment */ 1;"
+  },
+  {
+    "name": "dollar_string",
+    "sql": "select $tag$a  b\nselect x; -- text$tag$ as body;",
+    "exit": 0,
+    "output": "select\n  $tag$a  b\nselect x; -- text$tag$ as body;"
+  },
+  {
+    "name": "dollar_anon",
+    "sql": "select $$abc ' ; SELECT  1$$;",
+    "exit": 0,
+    "output": "select\n  $$abc ' ; SELECT  1$$;"
+  },
+  {
+    "name": "do_dollar",
+    "sql": "do $$ begin raise notice 'a  b'; end $$;",
+    "exit": 0,
+    "output": "do $$ begin raise notice 'a  b'; end $$;"
+  },
+  {
+    "name": "e_upper",
+    "sql": "select E'a\\'b  c', E'\\n';",
+    "exit": 0,
+    "output": "select\n  E'a\\'b  c',\n  E'\\n';"
+  },
+  {
+    "name": "e_lower",
+    "sql": "select e'a\\'b  c', e'\\n';",
+    "exit": 0,
+    "output": "select\n  e'a\\'b  c',\n  e'\\n';"
+  },
+  {
+    "name": "unicode_string",
+    "sql": "select U&'d\\0061t\\+000061', U&'d!0061t' UESCAPE '!';",
+    "exit": 0,
+    "output": "select\n  U&'d\\0061t\\+000061',\n  U&'d!0061t' UESCAPE '!';"
+  },
+  {
+    "name": "unicode_ident",
+    "sql": "select U&\"d\\0061t\" from public.t;",
+    "exit": 0,
+    "output": "select\n  U&\"d\\0061t\"\nfrom\n  public.t;"
+  },
+  {
+    "name": "unicode_literal",
+    "sql": "select 'é雪😀é', \"雪 name\" from \"Sch.é\".\"T\";",
+    "exit": 0,
+    "output": "select\n  'é雪😀é',\n  \"雪 name\"\nfrom\n  \"Sch.é\".\"T\";"
+  },
+  {
+    "name": "cast",
+    "sql": "select 1::numeric(10,2), $1::uuid, :value::text;",
+    "exit": 0,
+    "output": "select\n  1::numeric(10, 2),\n  $1::uuid,\n  :value::text;"
+  },
+  {
+    "name": "json_operators",
+    "sql": "select data->'a', data->>'b', data#>>'{a,b}', data ? 'x', data ?| array['x'], data @> '{}'::jsonb from t;",
+    "exit": 0,
+    "output": "select\n  data->'a',\n  data->>'b',\n  data#>>'{a,b}',\n  data ? 'x',\n  data ?| array ['x'],\n  data @> '{}'::jsonb\nfrom\n  t;"
+  },
+  {
+    "name": "custom_operator",
+    "sql": "select a <@ b, a @@ b, a !~* b, a OPERATOR(public.===) b from t;",
+    "exit": 0,
+    "output": "select\n  a <@ b,\n  a @@ b,\n  a !~* b,\n  a OPERATOR(public.===) b\nfrom\n  t;"
+  },
+  {
+    "name": "named_params",
+    "sql": "select :user_id, @name, $value, $1 from public.t where id=:user_id;",
+    "exit": 0,
+    "output": "select\n  :user_id,\n  @name,\n  $value,\n  $1\nfrom\n  public.t\nwhere\n  id=:user_id;"
+  },
+  {
+    "name": "array",
+    "sql": "select ARRAY[1, 2], a[1:2] from public.t;",
+    "exit": 0,
+    "output": "select\n  ARRAY [1, 2],\n  a [1:2]\nfrom\n  public.t;"
+  },
+  {
+    "name": "newline_strings",
+    "sql": "select 'foo'\n'bar';",
+    "exit": 0,
+    "output": "select\n  'foo'\n'bar';"
+  },
+  {
+    "name": "space_strings",
+    "sql": "select 'foo' 'bar';",
+    "exit": 0,
+    "output": "select\n  'foo' 'bar';"
+  },
+  {
+    "name": "comment_strings",
+    "sql": "select 'foo' -- join\n'bar';",
+    "exit": 0,
+    "output": "select\n  'foo' -- join\n'bar';"
+  },
+  {
+    "name": "quoted_ident",
+    "sql": "select \"MiXeD\", \"a\"\"b\", \"x.y\" from \"S\".\"T\";",
+    "exit": 0,
+    "output": "select\n  \"MiXeD\",\n  \"a\"\"b\",\n  \"x.y\"\nfrom\n  \"S\".\"T\";"
+  },
+  {
+    "name": "identifier_dollar",
+    "sql": "select foo$bar, $1 from public.t;",
+    "exit": 0,
+    "output": "select\n  foo$bar,\n  $1\nfrom\n  public.t;"
+  },
+  {
+    "name": "numeric",
+    "sql": "select 9223372036854775807, 1234567890.12345678901234567890, 1e-10, .5;",
+    "exit": 0,
+    "output": "select\n  9223372036854775807,\n  1234567890.12345678901234567890,\n  1e-10,\n  .5;"
+  },
+  {
+    "name": "bit_hex",
+    "sql": "select B'101010', X'FF', b'01', x'ff';",
+    "exit": 0,
+    "output": "select\n  B'101010',\n  X'FF',\n  b'01',\n  x'ff';"
+  },
+  {
+    "name": "minus",
+    "sql": "select a-1, a - -1, 1--comment\n+2;",
+    "exit": 0,
+    "output": "select\n  a-1,\n  a - -1,\n  1 --comment\n+2;"
+  },
+  {
+    "name": "unicode_word",
+    "sql": "select café, 雪 from public.表;",
+    "exit": 0,
+    "output": "select\n  café,\n  雪\nfrom\n  public.表;"
+  },
+  {
+    "name": "incomplete",
+    "sql": "select 'unterminated",
+    "exit": 2,
+    "output": "SQL contains an unfinished string, identifier or comment\n"
+  },
+  {
+    "name": "zero_parameter",
+    "sql": "select $0;",
+    "exit": 0,
+    "output": "select\n  $0;"
+  },
+  {
+    "name": "adjacent_comments",
+    "sql": "select 'foo' /*comment*/ 'bar';",
+    "exit": 0,
+    "output": "select\n  'foo' /*comment*/ 'bar';"
+  },
+  {
+    "name": "adjacent_block_newline",
+    "sql": "select 'foo' /*one\ntwo*/ 'bar';",
+    "exit": 0,
+    "output": "select\n  'foo' /*one\ntwo*/ 'bar';"
+  },
+  {
+    "name": "only_operator",
+    "sql": "select a @> b, a <@ b, a ?& b, a ?| b, a # b from t;",
+    "exit": 0,
+    "output": "select\n  a @> b,\n  a <@ b,\n  a ?& b,\n  a ?| b,\n  a # b\nfrom\n  t;"
+  },
+  {
+    "name": "identifier_prefixes",
+    "sql": "select n'x', N'x', e'x', E'x';",
+    "exit": 0,
+    "output": "select\n  n'x',\n  N'x',\n  e'x',\n  E'x';"
+  },
+  {
+    "name": "escaped_string_backslashes",
+    "sql": "select E'\\\\\\'x', E'\\\\\\\\', 'a\\\\b';",
+    "exit": 0,
+    "output": "select\n  E'\\\\\\'x',\n  E'\\\\\\\\',\n  'a\\\\b';"
+  },
+  {
+    "name": "named_real",
+    "sql": "select :ID, :id, $1, :name::text;",
+    "exit": 0,
+    "output": "select\n  :ID,\n  :id,\n  $1,\n  :name::text;"
+  },
+  {
+    "name": "numeric_underscores",
+    "sql": "select 1_000, 0xFF, 0b101, 1.2e+10;",
+    "exit": 0,
+    "output": "select\n  1_000,\n  0xFF,\n  0b101,\n  1.2e+10;"
+  },
+  {
+    "name": "unicode_space",
+    "sql": "select a b from t;",
+    "exit": 2,
+    "output": "Non-ASCII whitespace outside quoted text cannot be formatted safely\n"
+  }
+]

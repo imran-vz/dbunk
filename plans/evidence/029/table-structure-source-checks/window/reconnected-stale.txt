@@ -1,0 +1,5 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			39 tab (settable, boolean) Objects · 37 objects, Value: on
+~			97 button Refresh
+~			120 container 37 objects
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

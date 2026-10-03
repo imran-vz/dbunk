@@ -1,0 +1,18 @@
+[
+  {
+    "check": "just-fmt",
+    "exit_code": 0
+  },
+  {
+    "check": "just-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "just-test",
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-test",
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,15 @@
+# Native CSV transfer ownership reconnaissance
+
+2026-10-03. Read-only baseline review; no CSV implementation or live verification is claimed here. Baseline `102568b`, ADR 0029, `postgres/transfer`, and `commands/pg_transfer.rs` were inspected.
+
+The existing UTF-8 CSV parser, SQL generator, mapping validation and transactional runner remain reusable. They already cover BOM, quoted multiline values, NULL versus quoted NULL, 1 MiB fields, 8 MiB records, 1,600 columns and bounded output chunks. The manager retains four active/resolving jobs, one per connection, eight five-minute inspections and 32 terminal jobs for one hour.
+
+Native activation still requires synchronous observable preparation/start registration, profile and stored-policy checks before credential hydration, tracked dedicated drivers/cancel sockets, non-abortable filesystem joins, shared absolute shutdown deadlines, and checked publication cleanup. Dropping an async waiter or aborting a worker does not prove that filesystem or socket work ended. Large streaming transfers must not inherit the short catalog-read timeout.
+
+Successful no-clobber publication must remain a known success even if removal of the private temporary name fails. Failed cleanup retains ownership/admission and never deletes the destination. Imports must retire old data/mutation handles before dispatch and after known or unknown commit, publish a monotonic change revision surviving history expiry, and preserve SQL sessions, manual transactions and visible drafts.
+
+The 64 KiB sample limit counts values only. Fifty rows of 1,600 empty Option<String> cells already occupy about 1.9 MiB before vector overhead. Inspection/review limits must include capacities, headers, catalog metadata and mappings. Stream and SQL-bound catalog text before client allocation. Do not claim a 1 MiB sample allowance without explicit truncation. Measure execution workspace separately and avoid cloning the full internal review at start.
+
+Approved Tool tabs cover direction, exact target, native source/destination pickers, delimiter/quote/escape/NULL/header options, fixed UTF-8, indexed source columns including duplicate/empty headers, skipped/mapped targets, excluded generated/identity columns, required-column errors, explicit review/confirmation and observed jobs. Preserve baseline disclosures about unchanged source, append-only single-transaction imports, defaults/triggers and surviving external/sequence effects, whole-table export scope, and unknown-commit reconciliation. Source/path/sample values remain transient. Eight ready inspections and four active job slots are distinct allowances.
+
+Focused checks must cover lost waiters/starts, expiry/stale confirmation, duplicate indexed mapping, source changes, malformed late records and rollback, catalog/default changes, cancel/commit/publication races, retained failed cleanup, joined shutdown, policy refusal before hydration and mutation-source invalidation. Existing parser/manager/live cases can be reused. XLSX, table copy and seeding remain separate parity work.

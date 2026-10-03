@@ -1,0 +1,25 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: this `if` statement can be collapsed
+   --> src/schema_view.rs:176:9
+    |
+176 | /         if let Some(mut flow) = self.applying.take() {
+177 | |             if flow.cancel_before_dispatch() {
+178 | |                 self.recovery.not_sent();
+179 | |             }
+180 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+176 ~         if let Some(mut flow) = self.applying.take()
+177 ~             && flow.cancel_before_dispatch() {
+178 |                 self.recovery.not_sent();
+179 ~             }
+    |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

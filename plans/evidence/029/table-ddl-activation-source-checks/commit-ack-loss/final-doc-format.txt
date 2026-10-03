@@ -1,0 +1,6 @@
+Already up to date
+Done in 153ms using pnpm v11.4.0
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 24ms on 449 files using 14 threads.

@@ -1,0 +1,94 @@
+The following is a diff from the previous accessibility tree for Window: "Keyboard" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 59-417
+~57 standard window Keyboard, ID: Main, Secondary Actions: Raise
+~	58 split group Main, SidebarNavigationSplitView
++		59 container
++			60 scroll area Secondary Actions: Scroll Up, Scroll Down
++				61 list Description: Sidebar, ID: com.apple.settings.sidebar.collectionView
++					62 row (selectable)
++					63 row (selectable) Imran M, Apple Account
++					64 row (selectable)
++					65 row (selectable) Wi-Fi
++					66 row (selectable) Bluetooth
++					67 row (selectable) Network
++					68 row (selectable) VPN
++					69 row (selectable) Battery
++					70 row (selectable)
++					71 row (selectable) General
++					72 row (selectable) Accessibility
++					73 row (selectable) Appearance
++					74 row (selectable) Desktop & Dock
++					75 row (selectable) Displays
++					76 row (selectable) Menu Bar
++					77 row (selectable) Siri
++					78 row (selectable) Spotlight
++					79 row (selectable) Wallpaper
++					80 row (selectable)
++					81 row (selectable) Notifications
++					82 row (selectable) Sound
++					83 row (selectable) Focus
++					84 row (selectable) Screen Time
++					85 row (selectable)
++					86 row (selectable) Lock Screen
++					87 row (selectable) Privacy & Security
++					88 row (selectable) Touch ID & Password
++					89 row (selectable) Users & Groups
++					90 row (selectable)
++					91 row (selectable) Game Center
++					92 row (selectable) iCloud
++					93 row (selectable) Internet Accounts
++					94 row (selectable) Wallet & Apple Pay
++					95 row (selectable)
++					96 row (selected) Keyboard
++					97 row (selectable) Trackpad
++					98 row (selectable) Printers & Scanners
++				99 scroll bar (settable, float) 0
++					100 value indicator (settable, float) 0
++					101 increment arrow button
++					102 decrement arrow button
++					103 increment page button
++					104 decrement page button
++		105 search text field (settable) Search
++			106 button Search
++		107 splitter (disabled, settable, float) 232
++		108 scroll area Secondary Actions: Scroll Up, Scroll Down
++			109 container
++				110 slider (settable, float) Description: Key repeat rate, Value: 6
++				111 slider (settable, float) Description: Delay until repeat, Value: 4
++			112 container
++				113 switch Adjust keyboard brightness in low light, Value: on
++				114 pop up button Turn keyboard backlight off after inactivity, Value: Never
++				115 pop up button Press 🌐︎ key to, Value: Do Nothing
++				116 switch Value: off, Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.
++				117 button Keyboard Shortcuts…
++			118 heading Text Input
++			119 container
++				120 text Input Sources ABC
++				121 button Edit…
++				122 button Text Replacements…
++			123 heading Dictation
++			124 container
++				125 switch Value: on, Support for processing Chinese (Mandarin) on your Mac will download later when an Internet connection is available.
++				126 text Languages English (United States)
++				127 button Edit…
++				128 pop up button Microphone source, Value: MacBook Pro Microphone
++				129 text Shortcut
++				130 pop up button Press 🎤︎
++				131 button About Ask Siri, Dictation & Privacy…
++			132 button Set Up Keyboard…
++			133 button Help
++			134 scroll bar (settable, float) 0.8868552412645591
++				135 value indicator (settable, float) 0.8868552412645591
++				136 increment arrow button
++				137 decrement arrow button
++				138 increment page button
++				139 decrement page button
++	140 toolbar
++		141 container
++			142 button Description: Go Back, ID: chevron.backward
++			143 menu button (disabled) Description: Go Forward, ID: chevron.forward
++	144 close button
++	145 zoom button
++	146 minimize button
++	147 text Keyboard
+The focused UI element is 105 search text field (settable) Search

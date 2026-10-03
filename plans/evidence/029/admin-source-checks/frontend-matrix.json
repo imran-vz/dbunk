@@ -1,0 +1,26 @@
+[
+  {
+    "name": "frontend-format",
+    "command": [
+      "pnpm",
+      "format"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "frontend-lint",
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "frontend-typecheck",
+    "command": [
+      "pnpm",
+      "typecheck"
+    ],
+    "exit": 0
+  }
+]

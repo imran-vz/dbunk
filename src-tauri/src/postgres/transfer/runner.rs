@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::csv::{self, CsvCell, CsvOptions, Parser};
 use super::files::{self, FileFingerprint, PartialFile, SourceFile};
 use super::manager::JobContext;
+use super::native::IoContext;
 #[cfg(test)]
 use super::protocol::TargetColumn;
 use super::protocol::{
@@ -17,8 +18,8 @@ use crate::postgres::dedicated::{self, DedicatedConnection, DedicatedError, Noti
 use crate::StoredConnection;
 use futures_util::{SinkExt, StreamExt};
 
-mod catalog;
-mod sql;
+pub(crate) mod catalog;
+pub(crate) mod sql;
 
 #[cfg(test)]
 use catalog::CatalogColumn;
@@ -39,6 +40,80 @@ pub(crate) struct Review {
     relation: RelationState,
 }
 
+impl Review {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn private_heap_bytes(&self) -> usize {
+        let strings = self.payload.connection_id.capacity()
+            + self.payload.schema.capacity()
+            + self.payload.table.capacity()
+            + self
+                .payload
+                .source_path
+                .as_ref()
+                .map_or(0, String::capacity)
+            + self.payload.options.delimiter.capacity()
+            + self.payload.options.quote.capacity()
+            + self.payload.options.escape.capacity()
+            + self.payload.options.null_token.capacity();
+        std::mem::size_of::<Self>()
+            + strings
+            + self.inspection.inspection_token.capacity()
+            + self.inspection.connection_id.capacity()
+            + self.inspection.schema.capacity()
+            + self.inspection.table.capacity()
+            + self
+                .inspection
+                .file_name
+                .as_ref()
+                .map_or(0, String::capacity)
+            + self.inspection.options.delimiter.capacity()
+            + self.inspection.options.quote.capacity()
+            + self.inspection.options.escape.capacity()
+            + self.inspection.options.null_token.capacity()
+            + self.inspection.target_columns.capacity()
+                * std::mem::size_of::<super::protocol::TargetColumn>()
+            + self
+                .inspection
+                .target_columns
+                .iter()
+                .map(|c| c.name.capacity() + c.data_type.capacity())
+                .sum::<usize>()
+            + self.inspection.sample_rows.capacity() * std::mem::size_of::<Vec<Option<String>>>()
+            + self
+                .inspection
+                .sample_rows
+                .iter()
+                .map(|row| {
+                    row.capacity() * std::mem::size_of::<Option<String>>()
+                        + row.iter().flatten().map(String::capacity).sum::<usize>()
+                })
+                .sum::<usize>()
+            + self.relation.kind.capacity()
+            + self.relation.columns.capacity() * std::mem::size_of::<catalog::CatalogColumn>()
+            + self
+                .relation
+                .columns
+                .iter()
+                .map(|c| {
+                    c.public.name.capacity()
+                        + c.public.data_type.capacity()
+                        + c.default_fingerprint.as_ref().map_or(0, String::capacity)
+                })
+                .sum::<usize>()
+            + self.inspection.source_columns.capacity() * std::mem::size_of::<SourceColumn>()
+            + self
+                .inspection
+                .source_columns
+                .iter()
+                .map(|c| c.name.capacity())
+                .sum::<usize>()
+    }
+}
+impl AsRef<Review> for Review {
+    fn as_ref(&self) -> &Review {
+        self
+    }
+}
 pub(crate) enum RunRequest {
     Import { mapping: Vec<ColumnMapping> },
     Export { destination_path: String },
@@ -48,6 +123,13 @@ pub(crate) async fn inspect(
     connection: StoredConnection,
     payload: InspectPayload,
 ) -> Result<Review, TransferError> {
+    inspect_in(connection, payload, IoContext::default()).await
+}
+pub(crate) async fn inspect_in(
+    connection: StoredConnection,
+    payload: InspectPayload,
+    io: IoContext,
+) -> Result<Review, TransferError> {
     validate_inspect_payload(&connection, &payload)?;
     payload
         .options
@@ -56,19 +138,21 @@ pub(crate) async fn inspect(
 
     let spec = ResolvedPostgresConnectSpec::from_connection(&connection)
         .map_err(|_| TransferError::UnsupportedEngine)?;
-    let dedicated = dedicated::connect(&spec, NoticeSink::Ignore)
+    let dedicated = dedicated::connect_tracked(&spec, NoticeSink::Ignore, io.drivers())
         .await
         .map_err(map_dedicated_error)?;
-    let result = inspect_connected(&dedicated, payload).await;
-    dedicated.close().await;
+    let result = inspect_connected(&dedicated, payload, io.clone()).await;
+    io.close(dedicated).await;
     result
 }
 
 async fn inspect_connected(
     connection: &DedicatedConnection,
     payload: InspectPayload,
+    io: IoContext,
 ) -> Result<Review, TransferError> {
-    let relation = catalog::inspect(connection, &payload.schema, &payload.table).await?;
+    let relation =
+        catalog::inspect(connection, &payload.schema, &payload.table, io.tracked()).await?;
     relation.ensure_supported(payload.direction)?;
 
     let (file_name, total_bytes, source_columns, sample_rows, sample_truncated, fingerprint) =
@@ -78,7 +162,7 @@ async fn inspect_connected(
                     Path::new(payload.source_path.as_deref().ok_or_else(|| {
                         TransferError::invalid("sourcePath", "A source is required")
                     })?);
-                let source = files::open_source(path).await?;
+                let source = files::open_source_in(path, io.clone()).await?;
                 let fingerprint = source.fingerprint.clone();
                 let total_bytes = fingerprint.len();
                 let (source_columns, sample_rows, sample_truncated) =
@@ -124,32 +208,34 @@ async fn inspect_connected(
 pub(crate) async fn run(
     context: JobContext,
     connection: StoredConnection,
-    review: Review,
+    review: impl AsRef<Review>,
     request: RunRequest,
 ) -> Result<(), TransferError> {
-    validate_run_request(&connection, &review, &request)?;
+    let review = review.as_ref();
+    let io = context.io();
+    validate_run_request(&connection, review, &request)?;
     let spec = ResolvedPostgresConnectSpec::from_connection(&connection)
         .map_err(|_| TransferError::UnsupportedEngine)?;
     let dedicated = tokio::select! {
         biased;
         _ = context.cancelled() => return Err(TransferError::Cancelled),
-        result = dedicated::connect(&spec, NoticeSink::Ignore) => {
+        result = dedicated::connect_tracked(&spec, NoticeSink::Ignore, io.drivers()) => {
             result.map_err(map_dedicated_error)?
         }
     };
     let result = match request {
-        RunRequest::Import { mapping } => run_import(&context, &dedicated, &review, &mapping).await,
+        RunRequest::Import { mapping } => run_import(&context, &dedicated, review, &mapping).await,
         RunRequest::Export { destination_path } => {
             run_export(
                 &context,
                 &dedicated,
-                &review,
+                review,
                 PathBuf::from(destination_path),
             )
             .await
         }
     };
-    dedicated.close().await;
+    io.close(dedicated).await;
     result
 }
 
@@ -299,7 +385,7 @@ async fn run_import(
             .as_deref()
             .ok_or(TransferError::InspectionExpired)?,
     );
-    let source = files::open_source(path)
+    let source = files::open_source_in(path, context.io())
         .await
         .map_err(|_| TransferError::SourceChanged)?;
     let expected_fingerprint = review
@@ -407,7 +493,7 @@ async fn import_transaction(
         .current_fingerprint()
         .await
         .map_err(|_| TransferError::SourceChanged)?;
-    let path_fingerprint = files::path_fingerprint(source_path)
+    let path_fingerprint = files::path_fingerprint_in(source_path, &context.io())
         .await
         .map_err(|_| TransferError::SourceChanged)?;
     if &handle_fingerprint != review.source_fingerprint.as_ref().unwrap()
@@ -481,7 +567,7 @@ async fn run_export(
     review: &Review,
     destination: PathBuf,
 ) -> Result<(), TransferError> {
-    let mut partial = PartialFile::create(destination, &context.job_id).await?;
+    let mut partial = PartialFile::create_in(destination, &context.job_id, context.io()).await?;
     context.progress(0, None);
     cancellable_pg(
         context,
@@ -565,7 +651,7 @@ async fn set_session(
     .await
 }
 
-fn validate_mapping(
+pub(crate) fn validate_mapping(
     review: &Review,
     mapping: &[ColumnMapping],
 ) -> Result<Vec<(usize, String)>, TransferError> {

@@ -1,0 +1,23 @@
+{
+  "source_files": 439,
+  "changed_sources": [],
+  "package": {
+    "version": 1,
+    "bundle_id": "codes.imran.dbunk.native.stage04.preflight",
+    "bundle": "/private/tmp/dbunk-native-package-20261003-keywords/dbunk Native Preflight.app",
+    "executable": "/private/tmp/dbunk-native-package-20261003-keywords/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+    "files_sha256": {
+      "Contents/Info.plist": "cd1a53d7146ce991c1044387f92c2a6aa2a7932d10d06c302c11bdc37a47f2db",
+      "Contents/MacOS/dbunk-native": "e796a13a6fc8adb33b554ff1cd0af63b8e7fc591488c8c2554f9a5ae0ce2d697",
+      "Contents/PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+      "Contents/Resources/THIRD-PARTY-NOTICES.txt": "273f3b68bd38e789f470fd52cdf3585560ab996137ac7a7a9844a813ba6dea4e",
+      "Contents/Resources/dbunk.icns": "a6ddc3252c787a5972271e85bbe8d7597eee23782ae401f01c54bcb3cc3f0a91"
+    },
+    "bundle_bytes": 129045263,
+    "resources": "Fonts, keymaps, themes and SQL grammar embedded in the release executable; icon in Contents/Resources",
+    "signing": "No signing command; copied linker-produced signature unchanged"
+  },
+  "executable_bytes": 127350832,
+  "executable_sha256": "e796a13a6fc8adb33b554ff1cd0af63b8e7fc591488c8c2554f9a5ae0ce2d697",
+  "notice_resource_verified": true
+}

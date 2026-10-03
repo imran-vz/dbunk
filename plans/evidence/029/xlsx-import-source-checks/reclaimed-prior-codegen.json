@@ -1,0 +1,8 @@
+{
+  "scope": "obsolete prior table-copy compiler codegen objects only",
+  "prefix": "dbunk_lib-823aad939f962c25",
+  "count": 12800,
+  "logical_bytes": 37476348040,
+  "glob": "src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25.*.rcgu.o",
+  "source_profiles_frozen_packages_preserved": true
+}

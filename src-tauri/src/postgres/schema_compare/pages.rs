@@ -3,9 +3,9 @@ use super::{
     protocol::*,
     values::{encode, validate_response_id, EncodedPage, ValueRef},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ObservedSides<T> {
     Both { source: T, target: T },
@@ -13,7 +13,7 @@ pub enum ObservedSides<T> {
     Target { target: T },
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SummaryDifference<T> {
     Equal {

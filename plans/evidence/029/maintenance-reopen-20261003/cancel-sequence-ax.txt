@@ -1,0 +1,440 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · 32 objects, Value: on
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 container PostgreSQL objects
+			42 button (disabled) Connect
+			43 button (disabled) Refresh
+			44 button (disabled) Cancel
+			45 button (disabled) Search
+			46 button (disabled) Open
+			47 button (disabled) Copy identity
+			48 button (disabled) Clear
+			49 button (disabled) Describe
+			50 button (disabled) Drop impact
+			51 button (disabled) Create schema
+			52 button Maintenance
+			53 text field (settable) Search object names, schemas or signatures
+			54 text 32 objects
+			55 list (settable) 32 matching objects; arrows select, Enter opens, Value: Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+				56 text (selectable) Schema  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee", Secondary Actions: Pick
+				57 text (selectable) Table  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."rows", Secondary Actions: Pick
+				58 text (selected) Materialized view  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary", Secondary Actions: Pick
+				59 text (selectable) Schema  "native_parity_20261003", Secondary Actions: Pick
+				60 text (selectable) Table  "native_parity_20261003"."rows", Secondary Actions: Pick
+				61 text (selectable) Schema  "plan024", Secondary Actions: Pick
+				62 text (selectable) View  "plan024"."fixture_large", Secondary Actions: Pick
+				63 text (selectable) View  "plan024"."fixture_many", Secondary Actions: Pick
+				64 text (selectable) View  "plan024"."fixture_wide", Secondary Actions: Pick
+				65 text (selectable) Schema  "plan026", Secondary Actions: Pick
+				66 text (selectable) Table  "plan026"."fixture_identity", Secondary Actions: Pick
+			67 text Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+			68 container PostgreSQL maintenance review
+				69 button (disabled) Review VACUUM
+				70 button (disabled) Review ANALYZE
+				71 button (disabled) Review REINDEX TABLE
+				72 button (disabled) Review REFRESH
+				73 button (disabled) Review REFRESH CONCURRENTLY
+				74 button (disabled) Apply maintenance
+				75 button (disabled) Confirm maintenance
+				76 button Cancel request
+				77 button (disabled) Reconcile maintenance outcome
+				78 button Copy review
+				79 button Back to objects
+				80 container Maintenance dispatched; exact recovery saved. Waiting for its receipt.
+				81 container (settable) Observed target, SQL, deadlines and recovery, Value: Attempt: 08b9998b-c1e2-413c-b242-f2b2cba16cc6
+Action: Refresh
+Database: "dbunk_demo" (OID 16384)
+Schema: "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee" (OID 16784)
+Relation: "summary" (OID 16790, MaterializedView)
+State: OutcomeUnknown
+SQL: REFRESH MATERIALIZED VIEW "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+Effects: transactional database changes
+Operation deadline: 300000 ms
+Statement timeout: inherited/server default
+
+The observed object identity is rechecked before executio
+		82 container (settable) Draft persistence, Value: Saving drafts
+		83 button Retry
+		84 button Export SQL
+		85 button Discard and quit
+	86 close button
+	87 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	88 minimize button
+	89 text dbunk Native Workspace
+90 menu bar
+	91 dbunk Native Preflight
+	92 Query
+	93 Results
+	94 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise
+
+NEXT STATE
+
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · 32 objects, Value: on
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 container PostgreSQL objects
+			42 button (disabled) Connect
+			43 button (disabled) Refresh
+			44 button (disabled) Cancel
+			45 button (disabled) Search
+			46 button (disabled) Open
+			47 button (disabled) Copy identity
+			48 button (disabled) Clear
+			49 button (disabled) Describe
+			50 button (disabled) Drop impact
+			51 button (disabled) Create schema
+			52 button Maintenance
+			53 text field (settable) Search object names, schemas or signatures
+			54 text 32 objects
+			55 list (settable) 32 matching objects; arrows select, Enter opens, Value: Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+				56 text (selectable) Schema  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee", Secondary Actions: Pick
+				57 text (selectable) Table  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."rows", Secondary Actions: Pick
+				58 text (selected) Materialized view  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary", Secondary Actions: Pick
+				59 text (selectable) Schema  "native_parity_20261003", Secondary Actions: Pick
+				60 text (selectable) Table  "native_parity_20261003"."rows", Secondary Actions: Pick
+				61 text (selectable) Schema  "plan024", Secondary Actions: Pick
+				62 text (selectable) View  "plan024"."fixture_large", Secondary Actions: Pick
+				63 text (selectable) View  "plan024"."fixture_many", Secondary Actions: Pick
+				64 text (selectable) View  "plan024"."fixture_wide", Secondary Actions: Pick
+				65 text (selectable) Schema  "plan026", Secondary Actions: Pick
+				66 text (selectable) Table  "plan026"."fixture_identity", Secondary Actions: Pick
+				67 text (selectable) Table  "plan026"."policy_probe", Secondary Actions: Pick
+				68 text (selectable) View  "plan026"."exact_values", Secondary Actions: Pick
+				69 text (selectable) Schema  "public", Secondary Actions: Pick
+				70 text (selectable) Role  "dbunk", Secondary Actions: Pick
+				71 text (selectable) Role  "pg_checkpoint", Secondary Actions: Pick
+				72 text (selectable) Role  "pg_create_subscription", Secondary Actions: Pick
+				73 text (selectable) Role  "pg_database_owner", Secondary Actions: Pick
+				74 text (selectable) Role  "pg_execute_server_program", Secondary Actions: Pick
+				75 text (selectable) Role  "pg_maintain", Secondary Actions: Pick
+				76 text (selectable) Role  "pg_monitor", Secondary Actions: Pick
+				77 text (selectable) Role  "pg_read_all_data", Secondary Actions: Pick
+				78 text (selectable) Role  "pg_read_all_settings", Secondary Actions: Pick
+				79 text (selectable) Role  "pg_read_all_stats", Secondary Actions: Pick
+			80 text Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+		81 container (settable) Draft persistence, Value: Saved
+		82 button Retry
+		83 button Export SQL
+		84 button Discard and quit
+	85 close button
+	86 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	87 minimize button
+	88 text dbunk Native Workspace
+89 menu bar
+	90 dbunk Native Preflight
+	91 Query
+	92 Results
+	93 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise
+
+NEXT STATE
+
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · 32 objects, Value: on
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 container PostgreSQL objects
+			42 button (disabled) Connect
+			43 button (disabled) Refresh
+			44 button (disabled) Cancel
+			45 button (disabled) Search
+			46 button (disabled) Open
+			47 button (disabled) Copy identity
+			48 button (disabled) Clear
+			49 button (disabled) Describe
+			50 button (disabled) Drop impact
+			51 button (disabled) Create schema
+			52 button Maintenance
+			53 text field (settable) Search object names, schemas or signatures
+			54 text 32 objects
+			55 list (settable) 32 matching objects; arrows select, Enter opens, Value: Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+				56 text (selectable) Schema  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee", Secondary Actions: Pick
+				57 text (selectable) Table  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."rows", Secondary Actions: Pick
+				58 text (selected) Materialized view  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary", Secondary Actions: Pick
+				59 text (selectable) Schema  "native_parity_20261003", Secondary Actions: Pick
+				60 text (selectable) Table  "native_parity_20261003"."rows", Secondary Actions: Pick
+				61 text (selectable) Schema  "plan024", Secondary Actions: Pick
+				62 text (selectable) View  "plan024"."fixture_large", Secondary Actions: Pick
+				63 text (selectable) View  "plan024"."fixture_many", Secondary Actions: Pick
+				64 text (selectable) View  "plan024"."fixture_wide", Secondary Actions: Pick
+				65 text (selectable) Schema  "plan026", Secondary Actions: Pick
+				66 text (selectable) Table  "plan026"."fixture_identity", Secondary Actions: Pick
+			67 text Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+			68 container PostgreSQL maintenance review
+				69 button (disabled) Review VACUUM
+				70 button (disabled) Review ANALYZE
+				71 button (disabled) Review REINDEX TABLE
+				72 button (disabled) Review REFRESH
+				73 button (disabled) Review REFRESH CONCURRENTLY
+				74 button (disabled) Apply maintenance
+				75 button (disabled) Confirm maintenance
+				76 button Cancel request
+				77 button (disabled) Reconcile maintenance outcome
+				78 button Copy review
+				79 button Back to objects
+				80 container Maintenance dispatched; exact recovery saved. Waiting for its receipt.
+				81 container (settable) Observed target, SQL, deadlines and recovery, Value: Attempt: 08b9998b-c1e2-413c-b242-f2b2cba16cc6
+Action: Refresh
+Database: "dbunk_demo" (OID 16384)
+Schema: "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee" (OID 16784)
+Relation: "summary" (OID 16790, MaterializedView)
+State: OutcomeUnknown
+SQL: REFRESH MATERIALIZED VIEW "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+Effects: transactional database changes
+Operation deadline: 300000 ms
+Statement timeout: inherited/server default
+
+The observed object identity is rechecked before executio
+		82 container (settable) Draft persistence, Value: Saved
+		83 button Retry
+		84 button Export SQL
+		85 button Discard and quit
+	86 close button
+	87 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	88 minimize button
+	89 text dbunk Native Workspace
+90 menu bar
+	91 dbunk Native Preflight
+	92 Query
+	93 Results
+	94 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise
+
+NEXT STATE
+
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Compare schemas
+		10 button Save query
+		11 button Rename
+		12 button Pin
+		13 button ←
+		14 button →
+		15 button Close
+		16 button Credentials
+		17 container Connections
+			18 button + Connection
+			19 button Open table
+			20 button −
+			21 button +
+			22 button Auto-fit fixture
+			23 button Edit
+			24 button Duplicate
+			25 button Copy URI
+			26 button ★
+			27 button Delete
+			28 button Comfortable
+		29 tab group
+			30 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			31 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			32 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			33 tab (settable, boolean) History · Open tab to load records, Value: off
+			34 tab (settable, boolean) History query · Disconnected, Value: off
+			35 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			36 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			37 tab (settable, boolean) Objects · 32 objects, Value: on
+		38 button Connect
+		39 button Disconnect
+		40 button Clear results
+		41 container PostgreSQL objects
+			42 button (disabled) Connect
+			43 button Refresh
+			44 button (disabled) Cancel
+			45 button Search
+			46 button Open
+			47 button Copy identity
+			48 button Clear
+			49 button Describe
+			50 button Drop impact
+			51 button Create schema
+			52 button Maintenance
+			53 text field (settable) Search object names, schemas or signatures
+			54 text 32 objects
+			55 list (settable) 32 matching objects; arrows select, Enter opens, Value: Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+				56 text (selectable) Schema  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee", Secondary Actions: Pick
+				57 text (selectable) Table  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."rows", Secondary Actions: Pick
+				58 text (selected) Materialized view  "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary", Secondary Actions: Pick
+				59 text (selectable) Schema  "native_parity_20261003", Secondary Actions: Pick
+				60 text (selectable) Table  "native_parity_20261003"."rows", Secondary Actions: Pick
+				61 text (selectable) Schema  "plan024", Secondary Actions: Pick
+				62 text (selectable) View  "plan024"."fixture_large", Secondary Actions: Pick
+				63 text (selectable) View  "plan024"."fixture_many", Secondary Actions: Pick
+				64 text (selectable) View  "plan024"."fixture_wide", Secondary Actions: Pick
+				65 text (selectable) Schema  "plan026", Secondary Actions: Pick
+				66 text (selectable) Table  "plan026"."fixture_identity", Secondary Actions: Pick
+			67 text Materialized view
+"native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee
+			68 container PostgreSQL maintenance review
+				69 button (disabled) Review VACUUM
+				70 button (disabled) Review ANALYZE
+				71 button (disabled) Review REINDEX TABLE
+				72 button (disabled) Review REFRESH
+				73 button (disabled) Review REFRESH CONCURRENTLY
+				74 button (disabled) Apply maintenance
+				75 button (disabled) Confirm maintenance
+				76 button (disabled) Cancel request
+				77 button (disabled) Clear recovery
+				78 button Copy review
+				79 button Back to objects
+				80 container Transactional changes rolled back: Maintenance interrupted. Sequence or external effects are not covered.
+				81 container (settable) Observed target, SQL, deadlines and recovery, Value: 
+The observed object identity is rechecked before execution. PostgreSQL maintenance SQL resolves names again; concurrent schema or object changes can still retarget it. This is not an atomic OID-bound operation.
+Completion acknowledges the command, not a measured amount of work. Warnings may report skipped work. VACUUM, ANALYZE and partitioned REINDEX can leave effects after interruption. Transaction rollback covers transactional database changes, not sequence or external effects from user-defined functions
+		82 container (settable) Draft persistence, Value: Saving drafts
+		83 button Retry
+		84 button Export SQL
+		85 button Discard and quit
+	86 close button
+	87 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	88 minimize button
+	89 text dbunk Native Workspace
+90 menu bar
+	91 dbunk Native Preflight
+	92 Query
+	93 Results
+	94 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

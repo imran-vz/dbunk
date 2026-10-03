@@ -1,0 +1,21 @@
+The following is a diff from the previous accessibility tree for Window: "" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 112-180
+~					102 row (selected) All Input Sources
+~			107 button (disabled) Remove
+~			110 scroll area
+~				111 switch Show Input menu in menu bar, Value: off
++				112 container
++					113 switch Correct spelling automatically, Value: on
++					114 switch Capitalize words automatically, Value: on
++					115 switch Show inline predictive text, Value: on
++					116 switch Add period with double-space, Value: on
++				117 pop up button Spelling, Value: Automatic by Language
++				118 container
++					119 switch Use smart quotes and dashes, Value: on
++					120 pop up button For double quotes, Value: “abc”
++					121 pop up button For single quotes, Value: ‘abc’
++			122 button Done
+Selected:
+	102 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

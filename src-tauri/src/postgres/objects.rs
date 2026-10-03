@@ -10,7 +10,7 @@ pub(crate) const CATALOG_KIND_CAP: usize = 2_000;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum PgObjectKind {
+pub enum PgObjectKind {
     Schema,
     Table,
     View,
@@ -27,7 +27,7 @@ pub(crate) enum PgObjectKind {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum PgTypeClass {
+pub enum PgTypeClass {
     Enum,
     Composite,
     Range,
@@ -36,7 +36,7 @@ pub(crate) enum PgTypeClass {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgObjectRef {
+pub struct PgObjectRef {
     pub kind: PgObjectKind,
     pub schema: Option<String>,
     pub name: String,
@@ -45,7 +45,7 @@ pub(crate) struct PgObjectRef {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgCatalogEntry {
+pub struct PgCatalogEntry {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identity_args: Option<String>,
@@ -57,7 +57,7 @@ pub(crate) struct PgCatalogEntry {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgSchemaObjects {
+pub struct PgSchemaObjects {
     pub name: String,
     pub tables: Vec<PgCatalogEntry>,
     pub views: Vec<PgCatalogEntry>,
@@ -93,14 +93,14 @@ impl PgSchemaObjects {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgCatalogTruncation {
+pub struct PgCatalogTruncation {
     pub schema: Option<String>,
     pub kind: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgObjectCatalog {
+pub struct PgObjectCatalog {
     pub schemas: Vec<PgSchemaObjects>,
     pub event_triggers: Vec<PgCatalogEntry>,
     pub roles: Vec<PgCatalogEntry>,
@@ -2002,7 +2002,7 @@ WHERE n.nspname = $1 AND t.typname = $2 AND t.typtype::text = ANY($3)
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgTypeAttribute {
+pub struct PgTypeAttribute {
     pub name: String,
     pub data_type: String,
     pub nullable: bool,
@@ -2014,7 +2014,7 @@ pub(crate) struct PgTypeAttribute {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-pub(crate) enum PgObjectFacts {
+pub enum PgObjectFacts {
     Schema,
     Table,
     View {
@@ -2071,7 +2071,7 @@ pub(crate) enum PgObjectFacts {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgObjectDescription {
+pub struct PgObjectDescription {
     pub reference: PgObjectRef,
     pub owner: Option<String>,
     pub comment: Option<String>,
@@ -2081,7 +2081,7 @@ pub(crate) struct PgObjectDescription {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgDropDependent {
+pub struct PgDropDependent {
     pub object_type: String,
     pub identity: String,
     pub depth: u32,
@@ -2089,7 +2089,7 @@ pub(crate) struct PgDropDependent {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PgDropImpact {
+pub struct PgDropImpact {
     pub dependents: Vec<PgDropDependent>,
     pub truncated: bool,
 }

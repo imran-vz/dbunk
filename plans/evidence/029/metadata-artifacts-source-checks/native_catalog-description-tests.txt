@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 8 tests
+test postgres::native_catalog::description::tests::descriptions_refuse_large_text_and_expanded_output_without_partial_values ... ok
+test postgres::native_catalog::description::tests::every_kind_accepts_typed_identity_but_unsafe_or_oversized_reference_is_refused ... ok
+test postgres::native_catalog::description::tests::incompatible_facts_cannot_be_published_under_another_kind ... ok
+test postgres::native_catalog::description::tests::overload_identity_is_required_exact_and_empty_zero_arg_identity_is_valid ... ok
+test postgres::native_catalog::description::tests::quoted_whitespace_identifiers_preserve_exact_schema_and_name ... ok
+test postgres::native_catalog::description::tests::schema_and_extension_quote_typed_identity_and_refuse_stale_extension_schema ... ok
+test postgres::native_catalog::description::tests::sequence_extremes_and_ownership_identifiers_never_round_or_split_on_dots ... ok
+test postgres::native_catalog::description::tests::view_and_materialized_view_reconstruct_one_terminator_and_preserve_populated_state ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1143 filtered out; finished in 0.26s
+

@@ -1,6 +1,9 @@
 //! Ignored fixture-only integration tests of Host -> services -> PostgreSQL ->
 //! mailbox -> result reducer. These exercise no GPUI window and are not UI E2E.
 
+#[path = "workspace_live_tests.rs"]
+mod workspace_live_tests;
+
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -224,6 +227,10 @@ impl Fixture {
                 Message::Rejected { message, .. } => bail!("execution refused: {message}"),
                 Message::CancelFailed { message, .. } => bail!("cancellation refused: {message}"),
                 Message::Ready => bail!("unexpected reconnect"),
+                Message::HistoryFailed(message) => bail!("history persistence failed: {message}"),
+                Message::Review { .. } | Message::Transaction { .. } => {
+                    bail!("unexpected query control response")
+                }
             }
         }
     }
@@ -685,6 +692,37 @@ async fn native_background_beyond_lease_and_refocus_stay_usable() -> Result<()> 
             // must renew the lease instead of immediately expiring the old timestamp.
             tokio::time::sleep(Duration::from_secs(12)).await;
             fixture.query("SELECT 'usable after refocus';").await?;
+            Ok(())
+        })
+    })
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires explicitly verified owned stage03 PostgreSQL fixture"]
+async fn native_explain_and_analyze_use_query_session_complete_plan_output() -> Result<()> {
+    run_case(|fixture| {
+        Box::pin(async move {
+            for analyze in [false, true] {
+                let sql = crate::explain_view::draft(
+                    "SELECT id FROM plan024.fixture_many WHERE id < 3",
+                    analyze,
+                )
+                .map_err(|error| anyhow!(error))?;
+                let mut result = fixture.query(&sql).await?;
+                let budget = std::rc::Rc::new(std::cell::Cell::new(0));
+                let plan =
+                    crate::explain_view::PlanData::from_result(&result, &sql, 0, budget.clone())
+                        .map_err(|error| anyhow!(error))?;
+                ensure!(budget.get() > 0, "plan retention was not charged");
+                drop(plan);
+                ensure!(budget.get() == 0, "plan retention lease leaked");
+                result.sets[0].partial = true;
+                ensure!(
+                    crate::explain_view::PlanData::from_result(&result, &sql, 0, budget).is_err(),
+                    "partial plan was accepted"
+                );
+            }
             Ok(())
         })
     })

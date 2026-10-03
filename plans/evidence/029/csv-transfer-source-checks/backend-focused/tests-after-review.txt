@@ -1,0 +1,16 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.19s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 8 tests
+test backend::csv_transfers::live_tests::native_csv_owned_import_export_rollback_and_joined_cleanup ... ignored, owned stage03 only; DBUNK_NATIVE_FIXTURE_VERIFIED=1; serial explicit opt-in
+test backend::csv_transfers::tests::cancelled_blocking_inspection_retains_admission_until_real_worker_join ... ok
+test backend::csv_transfers::tests::committed_and_unknown_imports_invalidate_once_and_only_known_success_audits ... ok
+test backend::csv_transfers::tests::eight_ready_inspections_are_separate_from_active_admission_and_expire_on_observation ... ok
+test backend::csv_transfers::tests::exact_confirmation_reacquisition_and_consumed_inspection_release_do_not_replay ... ok
+test backend::csv_transfers::tests::execution_workspace_refuses_before_dispatch_and_does_not_audit ... ok
+test backend::csv_transfers::tests::inspection_preserves_bounded_parser_diagnostics_without_sample_content ... ok
+test backend::csv_transfers::tests::options_and_identity_refuse_before_unbounded_clone_and_keep_exact_dialect ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 975 filtered out; finished in 0.39s
+

@@ -1,0 +1,1 @@
+ERROR:  cannot delete from scalar

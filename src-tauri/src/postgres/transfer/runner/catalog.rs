@@ -3,27 +3,27 @@ use super::{cancellable_pg, sql, JobContext, Review};
 use crate::postgres::dedicated::DedicatedConnection;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RelationState {
-    pub(super) oid: u32,
-    pub(super) kind: String,
-    pub(super) row_security: bool,
-    pub(super) force_row_security: bool,
-    pub(super) populated: bool,
-    pub(super) columns: Vec<CatalogColumn>,
+pub(crate) struct RelationState {
+    pub(crate) oid: u32,
+    pub(crate) kind: String,
+    pub(crate) row_security: bool,
+    pub(crate) force_row_security: bool,
+    pub(crate) populated: bool,
+    pub(crate) columns: Vec<CatalogColumn>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CatalogColumn {
-    pub(super) number: i32,
-    pub(super) type_oid: u32,
-    pub(super) type_modifier: i32,
-    pub(super) collation_oid: u32,
+pub(crate) struct CatalogColumn {
+    pub(crate) number: i32,
+    pub(crate) type_oid: u32,
+    pub(crate) type_modifier: i32,
+    pub(crate) collation_oid: u32,
     // Retain bounded DDL identity without storing a potentially large or sensitive literal.
-    pub(super) default_fingerprint: Option<String>,
-    pub(super) public: TargetColumn,
+    pub(crate) default_fingerprint: Option<String>,
+    pub(crate) public: TargetColumn,
 }
 
-pub(super) async fn lock_and_validate(
+pub(crate) async fn lock_and_validate(
     context: &JobContext,
     connection: &DedicatedConnection,
     review: &Review,
@@ -52,7 +52,7 @@ pub(super) async fn lock_and_validate(
     validate(context, connection, review).await
 }
 
-pub(super) async fn validate(
+pub(crate) async fn validate(
     context: &JobContext,
     connection: &DedicatedConnection,
     review: &Review,
@@ -86,19 +86,24 @@ async fn cancellable(
     .await?
     .ok_or(TransferError::TargetChanged)?;
     let oid = relation.get::<_, u32>(0);
-    let columns = cancellable_pg(
-        context,
-        connection,
-        connection.client.query(COLUMNS_SQL, &[&oid]),
-    )
-    .await?;
+    let columns = if context.io().tracked() {
+        tokio::select! {biased;_=context.cancelled()=>return Err(TransferError::Cancelled),value=bounded_columns(connection,oid)=>value?}
+    } else {
+        cancellable_pg(
+            context,
+            connection,
+            connection.client.query(COLUMNS_SQL, &[&oid]),
+        )
+        .await?
+    };
     Ok(from_rows(relation, columns))
 }
 
-pub(super) async fn inspect(
+pub(crate) async fn inspect(
     connection: &DedicatedConnection,
     schema: &str,
     table: &str,
+    bounded: bool,
 ) -> Result<RelationState, TransferError> {
     let relation = connection
         .client
@@ -109,14 +114,55 @@ pub(super) async fn inspect(
             reason: "The target relation does not exist".into(),
         })?;
     let oid = relation.get::<_, u32>(0);
-    let columns = connection
-        .client
-        .query(COLUMNS_SQL, &[&oid])
-        .await
-        .map_err(|error| TransferError::database(&error))?;
+    let columns = if bounded {
+        bounded_columns(connection, oid).await?
+    } else {
+        connection
+            .client
+            .query(COLUMNS_SQL, &[&oid])
+            .await
+            .map_err(|error| TransferError::database(&error))?
+    };
     Ok(from_rows(relation, columns))
 }
 
+async fn bounded_columns(
+    connection: &DedicatedConnection,
+    oid: u32,
+) -> Result<Vec<tokio_postgres::Row>, TransferError> {
+    use futures_util::{pin_mut, TryStreamExt};
+    let sql=COLUMNS_SQL.replace("pg_catalog.format_type(a.atttypid, a.atttypmod)","CASE WHEN pg_catalog.octet_length(pg_catalog.format_type(a.atttypid,a.atttypmod))<=8192 THEN pg_catalog.format_type(a.atttypid,a.atttypmod) ELSE NULL END");
+    let stream = connection
+        .client
+        .query_raw(&sql, [&oid as &(dyn tokio_postgres::types::ToSql + Sync)])
+        .await
+        .map_err(|e| TransferError::database(&e))?;
+    pin_mut!(stream);
+    let mut rows = Vec::new();
+    let mut bytes = 0usize;
+    while let Some(row) = stream
+        .try_next()
+        .await
+        .map_err(|e| TransferError::database(&e))?
+    {
+        let name: &str = row.get(1);
+        let datatype: Option<&str> = row.get(2);
+        let datatype = datatype.ok_or_else(|| {
+            TransferError::invalid("metadata", "Native CSV target type exceeds 8 KiB")
+        })?;
+        bytes = bytes
+            .saturating_add(name.len())
+            .saturating_add(datatype.len());
+        if name.len() > 63 || rows.len() >= 1600 || bytes > 256 * 1024 {
+            return Err(TransferError::invalid(
+                "metadata",
+                "Native CSV target metadata exceeds its bound",
+            ));
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
 fn from_rows(relation: tokio_postgres::Row, columns: Vec<tokio_postgres::Row>) -> RelationState {
     RelationState {
         oid: relation.get(0),
@@ -149,7 +195,7 @@ fn from_rows(relation: tokio_postgres::Row, columns: Vec<tokio_postgres::Row>) -
 }
 
 impl RelationState {
-    pub(super) fn ensure_supported(&self, direction: Direction) -> Result<(), TransferError> {
+    pub(crate) fn ensure_supported(&self, direction: Direction) -> Result<(), TransferError> {
         match direction {
             Direction::Import if !matches!(self.kind.as_str(), "r" | "p") => {
                 Err(TransferError::UnsupportedTarget {

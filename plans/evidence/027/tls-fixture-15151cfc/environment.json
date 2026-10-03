@@ -1,0 +1,33 @@
+{
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "tracked_diff_sha256": "6918b0fa130d3f9e6d3d9331719e64cbbead54e93f7b81f01edbbafbcf321998",
+  "source_sha256": {
+    "tools/native/tls_runtime.py": "cd27cc06622f9d69a98499337bfc523f50b552cb129012e37a09fdb78fd9b92a",
+    "tools/native/tls_fixture.py": "4e10d30412b6a2362beed7be7528696f0c972c98859b713ab138db232f3d9aff",
+    "tools/native/tls_probe.py": "90f94790f023c0112ba7f50ad21a4a366ab666de69b02eeb94f1c05b4028a402",
+    "tools/native/profile.py": "6183b5e04402120d93c6156bf68b89c2bc276669b1a49d23d65be7caebabbf97",
+    "tools/native/workspace_launch.py": "c221dbb1e9973a1b5e978acec4d2addf21f4724bd76e660eeae665d3852e8ec6",
+    "src-tauri/examples/native_tls_probe.rs": "c994fb7771c9ffdbef1925ddc242463cccc381963bc18c2daedee74cfd9cd74d",
+    "src-tauri/src/backend/development.rs": "8113efa2e477575b2e5335e60d74b568f340afdf2d30c4878feed5e3f1e03576",
+    "src-tauri/src/backend/development/connections.rs": "44e91e997bb107df890d2e669a1e018a682ffcaea102f642b7edef9c98ab2818",
+    "src-tauri/src/postgres/tls.rs": "5445686d2b251fd2e32417cc1a31913f60812f3d4b12ebd0296ba8e2ac51510b",
+    "src-tauri/src/postgres/dedicated.rs": "1b1b45393c22bf8e1776ca667e4a955e00715b9387e949ec21f8fde7bc2094f4",
+    "src-tauri/Cargo.toml": "4908518d21b491bce3ef1094842a2d52ecfea2395d9488aeb94f85b94cd85c07",
+    "src-tauri/Cargo.lock": "605a2c0bf709dc2848aa2ac5127d74d688dda07aefbfa5e58c5e55203c004f97"
+  },
+  "plain_fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "tls_fixture_instance": "15151cfc-5885-4066-831f-2717ed9b4587",
+  "postgres_pid": 35510,
+  "commands": [
+    "python3 tools/native/tls_fixture.py prepare",
+    "python3 tools/native/tls_fixture.py up",
+    "python3 tools/native/tls_fixture.py matrix",
+    "python3 tools/native/tls_probe.py /private/tmp/dbunk-stage04-native-tls-15151cfc --out plans/evidence/027/tls-fixture-15151cfc/native-facade"
+  ],
+  "global_trust": "unchanged",
+  "existing_plain_fixture": "unchanged; actual backend count0 after tests",
+  "cleanup": "fixture retained for actual-window acceptance; python3 tools/native/tls_fixture.py down stops/deletes only this owned UUID; private TLS build retained",
+  "scope": "libpq+native facade; actual GPUI/window validation remains separate"
+}

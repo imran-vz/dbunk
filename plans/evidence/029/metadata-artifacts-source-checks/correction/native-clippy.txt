@@ -1,0 +1,14 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0599]: no method named `preferences` found for struct `schema_map_model::Scene` in the current scope
+   --> src/schema_map_model/tests.rs:689:15
+    |
+689 |             a.preferences(),
+    |               ^^^^^^^^^^^ method not found in `schema_map_model::Scene`
+    |
+   ::: src/schema_map_model.rs:169:1
+    |
+169 | pub struct Scene {
+    | ---------------- method `preferences` not found for this struct
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

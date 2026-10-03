@@ -1,0 +1,13 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.28s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 5 tests
+test backend::safety_audit::tests::continuation_is_exact_stable_and_profile_bound ... ok
+test backend::safety_audit::tests::encoded_byte_limit_continues_without_skipping_a_row ... ok
+test backend::safety_audit::tests::global_retention_can_end_a_continuation_with_an_empty_page ... ok
+test backend::safety_audit::tests::persisted_corruption_is_refused_without_leaking_its_values ... ok
+test backend::safety_audit::tests::public_capture_validation_accounts_for_capacities_order_and_redacts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 946 filtered out; finished in 0.15s
+

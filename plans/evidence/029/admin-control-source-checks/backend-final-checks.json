@@ -1,0 +1,18 @@
+[
+  {
+    "check": "isolated-lint-final",
+    "exit_code": 0
+  },
+  {
+    "check": "isolated-test-final",
+    "exit_code": 0
+  },
+  {
+    "check": "facade-test",
+    "exit_code": 0
+  },
+  {
+    "check": "tauri-package",
+    "exit_code": 0
+  }
+]

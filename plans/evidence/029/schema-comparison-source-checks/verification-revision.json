@@ -1,0 +1,7 @@
+{
+  "reason": "Five isolated tests used stale workspace version fixtures/expectations or omitted selection normalization; native-only revision also closes source-audited comparison presentation/copy/keyboard/cache gaps.",
+  "original_native": "All pinned checks pass;241passed13ignored in debug/release",
+  "original_backend": "Required just fmt/lint/serializedtest pass; isolated913passed5failed87ignored; corrected test fixtures now in backend-corrected",
+  "source_manifest": "source-sha256.json",
+  "preserved_logs": true
+}

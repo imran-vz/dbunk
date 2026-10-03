@@ -1,0 +1,13 @@
+
+running 1 test
+test backend::table_export::live_tests::native_table_export_exact_values_views_empty_and_refusal ... verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+TABLE_EXPORT_SETUP {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","schema":"native_export_2a23c13c87844b95a2da8c77d86819db"}
+TABLE_EXPORT_OBJECTS {"relations":[{"kind":"r","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"table \"雪","oid":20474,"owner":"dbunk"},{"kind":"v","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"view.dot","oid":20479,"owner":"dbunk"},{"kind":"m","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"materialized 雪","oid":20483,"owner":"dbunk"},{"kind":"v","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"empty","oid":20494,"owner":"dbunk"},{"kind":"v","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"oversize","oid":20498,"owner":"dbunk"},{"kind":"p","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"partition root","oid":20502,"owner":"dbunk"},{"kind":"r","marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"partition.0","oid":20505,"owner":"dbunk"}],"schema":{"marker":"dbunk owned table export 2a23c13c87844b95a2da8c77d86819db","name":"native_export_2a23c13c87844b95a2da8c77d86819db","oid":20473,"owner":"dbunk"}}
+verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+TABLE_EXPORT_CLEANUP {"activity":0,"backend_joined":true,"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","schema":"native_export_2a23c13c87844b95a2da8c77d86819db","schema_absent":true}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1177 filtered out; finished in 1.03s
+

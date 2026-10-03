@@ -1,0 +1,18 @@
+[
+  {
+    "check": "pnpm-format",
+    "exit_code": 0
+  },
+  {
+    "check": "pnpm-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "pnpm-typecheck",
+    "exit_code": 0
+  },
+  {
+    "check": "diff-check",
+    "exit_code": 0
+  }
+]

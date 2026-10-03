@@ -1,0 +1,7 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			36 tab (settable, boolean) Administration · Disconnected; retained readings may be stale, Value: on
+~			102 button Connect
+~			103 button (disabled) Refresh scope
+~			139 container Disconnected; retained readings may be stale
+~		87 container (settable) Draft persistence, Value: Saving drafts
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,11 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.46s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 3 tests
+test backend::explain::tests::absent_timing_and_parallel_children_do_not_invent_negative_durations ... ok
+test backend::explain::tests::baseline_nested_timing_estimates_and_insights_use_preorder_identity ... ok
+test backend::explain::tests::malformed_truncated_and_over_budget_plans_are_explicit_refusals ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 807 filtered out; finished in 0.02s
+

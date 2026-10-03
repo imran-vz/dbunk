@@ -1,0 +1,7 @@
+{
+  "file": "apps/native/src/table_copy_store.rs",
+  "change": "Admission receipt no longer claims to await a transaction after completion.",
+  "checks": "receipt-native-checks.json",
+  "window": "window-final",
+  "source_manifest": "source-sha256.json"
+}

@@ -1,0 +1,13 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: manual slice size calculation
+   --> src/query_result/tests.rs:162:11
+    |
+162 |         + names.len() * std::mem::size_of::<String>()
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::mem::size_of_val(names)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#manual_slice_size_calculation
+    = note: `-D clippy::manual-slice-size-calculation` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_slice_size_calculation)]`
+
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

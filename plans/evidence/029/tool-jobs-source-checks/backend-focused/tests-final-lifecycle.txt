@@ -1,0 +1,24 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.35s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 16 tests
+test backend::pg_tools::tests::backend_shutdown_reports_unjoined_registered_job_and_keeps_its_owner ... ok
+test backend::pg_tools::tests::backup_publication_preserves_existing_destination_and_never_audits ... ok
+test backend::pg_tools::tests::cancel_during_finalizing_obeys_the_actual_publication_claim ... ok
+test backend::pg_tools::tests::cancellation_interrupts_preparation_waiting_for_lifecycle_gate ... ok
+test backend::pg_tools::tests::cancelled_review_releases_source_and_foreign_or_stale_review_never_dispatches ... ok
+test backend::pg_tools::tests::consumed_preparation_watch_does_not_turn_into_a_ready_poll_loop ... ok
+test backend::pg_tools::tests::intent_bounds_and_source_snapshot_reject_symlinks_and_keep_selected_bytes ... ok
+test backend::pg_tools::tests::lifecycle_fence_cancels_ready_review_and_admission_is_bounded ... ok
+test backend::pg_tools::tests::lost_confirmation_can_be_explicitly_reacquired_but_cancelled_tokens_refuse ... ok
+test backend::pg_tools::tests::pending_attempt_survives_lost_reply_and_restore_uses_immutable_snapshot ... ok
+test backend::pg_tools::tests::restore_failure_after_dispatch_is_unknown_and_invalidates_once_without_audit ... ok
+test backend::pg_tools::tests::restore_fences_existing_and_new_data_documents_until_cleanup ... ok
+test backend::pg_tools::tests::running_restore_cancellation_remains_owned_until_success_reconciliation ... ok
+test backend::pg_tools::tests::source_replacement_during_copy_and_changed_length_are_refused ... ok
+test backend::pg_tools::tests::unjoined_cleanup_is_reported_at_absolute_deadline_without_aborting_owner ... ok
+test backend::pg_tools::tests::unsupported_connection_and_read_only_policy_refuse_before_source_work ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 953 filtered out; finished in 1.30s
+

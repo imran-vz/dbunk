@@ -1,0 +1,31 @@
+[
+  {
+    "name": "native-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native-focused",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "sql_completion"
+    ],
+    "exit": 0
+  }
+]

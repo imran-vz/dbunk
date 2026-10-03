@@ -1,0 +1,37 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 112-113
+~				98 tab (settable, boolean) Database metrics (8), Value: off
+~				100 tab (settable, boolean) Relations (7), Value: on
+~			101 list 7 captured Relations; arrows select, Enter inspects
+~				105 text (selected) "native_parity_20261003"."rows" · Table · rows 60 · size 32768, Secondary Actions: Pick
+~				106 text (selectable) "plan024"."fixture_large" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
+~				107 text (selectable) "plan024"."fixture_many" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
+~				108 text (selectable) "plan024"."fixture_wide" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
+~				109 text (selectable) "plan026"."exact_values" · View · rows Not applicable · size Not applicable, Secondary Actions: Pick
+~				110 text (selectable) "plan026"."fixture_identity" · Table · rows Unknown · size 24576, Secondary Actions: Pick
+~				111 text (selectable) "plan026"."policy_probe" · Table · rows Unknown · size 32768, Secondary Actions: Pick
++				112 text entry area (settable) Read-only exact overview statistics, Value: Database: "dbunk_demo"
+Database OID: 16384
+Reader PID: 86731
+Collection started: 2026-10-03T09:21:52.095599+00:00
+Collection ended: 2026-10-03T09:21:52.102976+00:00
+Statistics and physical sizes can change during collection; this is not an atomic server-wide measurement.
+
+Requested scope: Database scope
+Schema OID: Not scoped to one object
+Relation OID: Not scoped to one object
+
+Relation: "native_parity_20261003"."rows"
+Database OID: 16384
+Schema OID: 16466
+Relation OID: 16467
+Kind: Table
+Is a partition: false
+Estimated rows: 60
+Physical total size (bytes): 32768
+
+Database-wide scope excludes system namespaces and partition children. Explicit schema scope includes that namespace but excludes partition children. Explicit relation scope may inspect a child.
+Rows are planner estimates, not exact counts. Views are Not applicable. Unknown and Restricted never imply zero. Sizes are physical per relation, not recursive partition totals.
+Pages use a fresh read-only capture and stable keyset order; concurrent changes may affect later pages.
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

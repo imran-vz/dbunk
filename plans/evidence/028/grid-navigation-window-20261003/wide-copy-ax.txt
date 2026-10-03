@@ -1,0 +1,3 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~		93 text entry area (settable) SQL editor, Value: 249	col1-249	col2-249	col3-249	col4-249	col5-249	col6-249	col7-249	col8-249	col9-249	col10-249	col11-249	col12-249	col13-249	col14-249	col15-249	col16-249	col17-249	col18-249	col19-249	col20-249	col21-249	col22-249	col23-249	col24-249
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

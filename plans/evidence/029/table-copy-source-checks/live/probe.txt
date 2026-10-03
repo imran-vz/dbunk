@@ -1,0 +1,5 @@
+TARGET private disposable profile /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpVTRWTz/profile
+TARGET owned stage03 2283820d-33ec-4c4c-ae03-7051092bd410 schema native_copy_a72969bef0ef4e48816c58946cfe337c; five tables and slow trigger function
+OWNED {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","function_oid":16840,"schema":"native_copy_a72969bef0ef4e48816c58946cfe337c","schema_oid":16809,"table_oids":[{"name":"destination","oid":16816},{"name":"failure_destination","oid":16828},{"name":"failure_source","oid":16823},{"name":"slow_destination","oid":16835},{"name":"source","oid":16810}]}
+PASS exact values, identity/default/generated review, finite self-copy, late rollback, stale target/authority, in-flight cancel, success-only audit
+PASS owned cleanup RESTRICT, joined shutdown, activity 0→0

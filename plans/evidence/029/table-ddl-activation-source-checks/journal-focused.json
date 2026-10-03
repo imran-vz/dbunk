@@ -1,0 +1,15 @@
+{
+  "command": [
+    "cargo",
+    "+1.97.1",
+    "test",
+    "--manifest-path",
+    "src-tauri/Cargo.toml",
+    "--no-default-features",
+    "--features",
+    "isolated-profile",
+    "workspace::table_ddl_tests"
+  ],
+  "exit_code": 0,
+  "seconds": 45.84
+}

@@ -1,0 +1,21 @@
+Owner: /root/export_models. Synthetic temporary profiles and injected Keychain stores only. No live fixture or OS Keychain access.
+Working directory: /Users/imran/projects/Code/dbunk
+
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::native_profile::tests -- --test-threads=1
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::development::connections::bounds_tests -- --test-threads=1
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::development::tests -- --test-threads=1
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::development::connection_tests -- --test-threads=1
+cargo +1.97.1 clippy --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+
+Initial native-profile-tests.txt preserves a test setup failure (missing active_document_id). Fixed in native-profile-tests-final.txt.
+Initial backend-clippy.txt preserves large_enum_variant finding. Fixture capability payload boxed; backend-clippy-final.txt passes.
+The after-clippy test logs verify the final boxed variant. Final format check in backend-format-final.txt.
+
+Duplicate-name review follow-up (only connections.rs and native_profile/tests.rs):
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile maximum_name_duplicates_remain_supported_and_preserve_original_secret -- --test-threads=1
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::development::connection_tests -- --test-threads=1
+cargo +1.97.1 clippy --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check
+Logs: duplicate-name-test.txt, connection-tests-after-duplicate-name.txt, clippy-after-duplicate-name.txt, format-after-duplicate-name.txt.

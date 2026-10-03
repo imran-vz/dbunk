@@ -1,0 +1,11 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0507]: cannot move out of `done` in pattern guard
+   --> src/backend/pg_tools/registry.rs:397:45
+    |
+397 |         matches!(work, Ok(done) if matches!(done.await, Ok(Ok(Ok(())))))
+    |                                             ^^^^ move occurs because `done` has type `tokio::sync::oneshot::Receiver<Result<Result<(), ()>, ()>>`, which does not implement the `Copy` trait
+    |
+    = note: variables bound in patterns cannot be moved from until after the end of the pattern guard
+
+For more information about this error, try `rustc --explain E0507`.
+error: could not compile `dbunk` (lib test) due to 1 previous error

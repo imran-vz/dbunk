@@ -1,0 +1,302 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0004]: non-exhaustive patterns: `LibraryCommand::Load(WorkspaceTool::TableCopy, _)` and `LibraryCommand::Delete(WorkspaceTool::TableCopy, _)` not covered
+   --> src/query_library_runtime.rs:209:24
+    |
+209 |     let result = match command {
+    |                        ^^^^^^^ patterns `LibraryCommand::Load(WorkspaceTool::TableCopy, _)` and `LibraryCommand::Delete(WorkspaceTool::TableCopy, _)` not covered
+    |
+note: `LibraryCommand` defined here
+   --> src/query_library_runtime.rs:25:10
+    |
+ 25 | pub enum LibraryCommand {
+    |          ^^^^^^^^^^^^^^
+ 26 |     SafetyAudit(u64, String, Option<SafetyAuditCursor>),
+ 27 |     Load(WorkspaceTool, LibraryRequest),
+    |     ---- not covered
+...
+ 30 |     Delete(WorkspaceTool, String),
+    |     ------ not covered
+    = note: the matched value is of type `LibraryCommand`
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern, a match arm with multiple or-patterns as shown, or multiple match arms
+    |
+264 ~             .map(|_| LibraryReply::Changed),
+265 ~         LibraryCommand::Load(WorkspaceTool::TableCopy, _) | LibraryCommand::Delete(WorkspaceTool::TableCopy, _) => todo!(),
+    |
+
+error[E0277]: the trait bound `ElementId: From<gpui::Entity<table_copy_view::TableCopyView>>` is not satisfied
+   --> src/table_copy_view/render.rs:144:13
+    |
+143 |         uniform_list(
+    |         ------------ required by a bound introduced by this call
+144 |             cx.entity(),
+    |             ^^^^^^^^^^^ the trait `From<gpui::Entity<table_copy_view::TableCopyView>>` is not implemented for `ElementId`
+    |
+    = help: `ElementId` implements trait `From<T>`:
+              From<&gpui::FocusHandle>
+              From<&std::panic::Location<'_>>
+              From<&str>
+              From<(&str, EntityId)>
+              From<(&str, u32)>
+              From<(&str, u64)>
+              From<(&str, usize)>
+              From<(ElementId, T)>
+            and 13 others
+    = note: required for `gpui::Entity<table_copy_view::TableCopyView>` to implement `Into<ElementId>`
+note: required by a bound in `gpui::uniform_list`
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:23:14
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ------------ required by a bound in this function
+ 23 |     id: impl Into<ElementId>,
+    |              ^^^^^^^^^^^^^^^ required by this bound in `uniform_list`
+
+error[E0277]: expected an `Fn(std::ops::Range<usize>, &mut gpui::Window, &mut gpui::App)` closure, found `usize`
+   --> src/table_copy_view/render.rs:146:13
+    |
+143 |         uniform_list(
+    |         ------------ required by a bound introduced by this call
+...
+146 |             count,
+    |             ^^^^^ expected an `Fn(std::ops::Range<usize>, &mut gpui::Window, &mut gpui::App)` closure, found `usize`
+    |
+    = help: the trait `for<'a, 'b> Fn(std::ops::Range<usize>, &'a mut gpui::Window, &'b mut gpui::App)` is not implemented for `usize`
+note: required by a bound in `gpui::uniform_list`
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:25:23
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ------------ required by a bound in this function
+...
+ 25 |     f: impl 'static + Fn(Range<usize>, &mut Window, &mut App) -> Vec<R>,
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `uniform_list`
+
+error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+   --> src/table_copy_view/render.rs:143:9
+    |
+143 |           uniform_list(
+    |           ^^^^^^^^^^^^
+144 |               cx.entity(),
+145 |               "table-copy-connections",
+    |               ------------------------ expected `usize`, found `&str`
+146 |               count,
+147 | /             |this, range: std::ops::Range<usize>, _, cx| {
+148 | |                 range
+149 | |                     .filter_map(|index| {
+150 | |                         let (id, name) = this.connections.as_ref()?.rows.get(index)?;
+...   |
+180 | |                     .collect()
+181 | |             },
+    | |_____________- unexpected argument #4
+    |
+note: function defined here
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:22:8
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ^^^^^^^^^^^^
+help: remove the extra argument
+    |
+145 ~             /* usize */,
+146 ~             count,
+    |
+
+error[E0277]: the trait bound `ElementId: From<gpui::Entity<table_copy_view::TableCopyView>>` is not satisfied
+   --> src/table_copy_view/render.rs:190:13
+    |
+189 |         uniform_list(
+    |         ------------ required by a bound introduced by this call
+190 |             cx.entity(),
+    |             ^^^^^^^^^^^ the trait `From<gpui::Entity<table_copy_view::TableCopyView>>` is not implemented for `ElementId`
+    |
+    = help: `ElementId` implements trait `From<T>`:
+              From<&gpui::FocusHandle>
+              From<&std::panic::Location<'_>>
+              From<&str>
+              From<(&str, EntityId)>
+              From<(&str, u32)>
+              From<(&str, u64)>
+              From<(&str, usize)>
+              From<(ElementId, T)>
+            and 13 others
+    = note: required for `gpui::Entity<table_copy_view::TableCopyView>` to implement `Into<ElementId>`
+note: required by a bound in `gpui::uniform_list`
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:23:14
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ------------ required by a bound in this function
+ 23 |     id: impl Into<ElementId>,
+    |              ^^^^^^^^^^^^^^^ required by this bound in `uniform_list`
+
+error[E0277]: expected an `Fn(std::ops::Range<usize>, &mut gpui::Window, &mut gpui::App)` closure, found `usize`
+   --> src/table_copy_view/render.rs:192:13
+    |
+189 |         uniform_list(
+    |         ------------ required by a bound introduced by this call
+...
+192 |             count,
+    |             ^^^^^ expected an `Fn(std::ops::Range<usize>, &mut gpui::Window, &mut gpui::App)` closure, found `usize`
+    |
+    = help: the trait `for<'a, 'b> Fn(std::ops::Range<usize>, &'a mut gpui::Window, &'b mut gpui::App)` is not implemented for `usize`
+note: required by a bound in `gpui::uniform_list`
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:25:23
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ------------ required by a bound in this function
+...
+ 25 |     f: impl 'static + Fn(Range<usize>, &mut Window, &mut App) -> Vec<R>,
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `uniform_list`
+
+error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+   --> src/table_copy_view/render.rs:189:9
+    |
+189 |           uniform_list(
+    |           ^^^^^^^^^^^^
+190 |               cx.entity(),
+191 |               "table-copy-job-list",
+    |               --------------------- expected `usize`, found `&str`
+192 |               count,
+193 | /             |this, range: std::ops::Range<usize>, _, cx| {
+194 | |                 let ids = this.ids(cx);
+195 | |                 range
+196 | |                     .filter_map(|index| {
+...   |
+228 | |                     .collect()
+229 | |             },
+    | |_____________- unexpected argument #4
+    |
+note: function defined here
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:22:8
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ^^^^^^^^^^^^
+help: remove the extra argument
+    |
+191 ~             /* usize */,
+192 ~             count,
+    |
+
+error[E0277]: the trait bound `ElementId: From<gpui::Entity<table_copy_view::TableCopyView>>` is not satisfied
+   --> src/table_copy_view/render.rs:243:13
+    |
+242 |         uniform_list(
+    |         ------------ required by a bound introduced by this call
+243 |             cx.entity(),
+    |             ^^^^^^^^^^^ the trait `From<gpui::Entity<table_copy_view::TableCopyView>>` is not implemented for `ElementId`
+    |
+    = help: `ElementId` implements trait `From<T>`:
+              From<&gpui::FocusHandle>
+              From<&std::panic::Location<'_>>
+              From<&str>
+              From<(&str, EntityId)>
+              From<(&str, u32)>
+              From<(&str, u64)>
+              From<(&str, usize)>
+              From<(ElementId, T)>
+            and 13 others
+    = note: required for `gpui::Entity<table_copy_view::TableCopyView>` to implement `Into<ElementId>`
+note: required by a bound in `gpui::uniform_list`
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:23:14
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ------------ required by a bound in this function
+ 23 |     id: impl Into<ElementId>,
+    |              ^^^^^^^^^^^^^^^ required by this bound in `uniform_list`
+
+error[E0277]: expected an `Fn(std::ops::Range<usize>, &mut gpui::Window, &mut gpui::App)` closure, found `usize`
+   --> src/table_copy_view/render.rs:245:13
+    |
+242 |         uniform_list(
+    |         ------------ required by a bound introduced by this call
+...
+245 |             count,
+    |             ^^^^^ expected an `Fn(std::ops::Range<usize>, &mut gpui::Window, &mut gpui::App)` closure, found `usize`
+    |
+    = help: the trait `for<'a, 'b> Fn(std::ops::Range<usize>, &'a mut gpui::Window, &'b mut gpui::App)` is not implemented for `usize`
+note: required by a bound in `gpui::uniform_list`
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:25:23
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ------------ required by a bound in this function
+...
+ 25 |     f: impl 'static + Fn(Range<usize>, &mut Window, &mut App) -> Vec<R>,
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `uniform_list`
+
+error[E0061]: this function takes 3 arguments but 4 arguments were supplied
+   --> src/table_copy_view/render.rs:242:9
+    |
+242 |           uniform_list(
+    |           ^^^^^^^^^^^^
+243 |               cx.entity(),
+244 |               "table-copy-columns",
+    |               -------------------- expected `usize`, found `&str`
+245 |               count,
+246 | /             |this, range: std::ops::Range<usize>, _, cx| {
+247 | |                 range
+248 | |                     .filter_map(|index| {
+249 | |                         let review = this
+...   |
+284 | |                     .collect()
+285 | |             },
+    | |_____________- unexpected argument #4
+    |
+note: function defined here
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:22:8
+    |
+ 22 | pub fn uniform_list<R>(
+    |        ^^^^^^^^^^^^
+help: remove the extra argument
+    |
+244 ~             /* usize */,
+245 ~             count,
+    |
+
+error: lifetime may not live long enough
+   --> src/table_copy_view.rs:259:9
+    |
+257 |       fn observation(&self, cx: &gpui::App) -> Option<&TableCopyObservation> {
+    |                      -          - let's call the lifetime of this reference `'1`
+    |                      |
+    |                      let's call the lifetime of this reference `'2`
+258 |           let id = self.selected?;
+259 | /         self.store
+260 | |             .read(cx)
+261 | |             .jobs()
+262 | |             .iter()
+263 | |             .find(|job| job.attempt_id == id)
+    | |_____________________________________________^ method was supposed to return data with lifetime `'2` but it is returning data with lifetime `'1`
+    |
+help: consider introducing a named lifetime parameter and update trait if needed
+    |
+257 |     fn observation<'a>(&self, cx: &'a gpui::App) -> Option<&'a TableCopyObservation> {
+    |                   ++++             ++                       ++
+help: consider adding 'move' keyword before the nested closure
+    |
+263 |             .find(move |job| job.attempt_id == id)
+    |                   ++++
+
+error: lifetime may not live long enough
+   --> src/table_copy_view.rs:267:9
+    |
+265 |       fn journal(&self, cx: &gpui::App) -> Option<&WorkspaceTableCopy> {
+    |                  -          - let's call the lifetime of this reference `'1`
+    |                  |
+    |                  let's call the lifetime of this reference `'2`
+266 |           let id = self.selected?;
+267 | /         self.store
+268 | |             .read(cx)
+269 | |             .journal()
+270 | |             .iter()
+271 | |             .find(|job| job.attempt_id == id)
+    | |_____________________________________________^ method was supposed to return data with lifetime `'2` but it is returning data with lifetime `'1`
+    |
+help: consider introducing a named lifetime parameter and update trait if needed
+    |
+265 |     fn journal<'a>(&self, cx: &'a gpui::App) -> Option<&'a WorkspaceTableCopy> {
+    |               ++++             ++                       ++
+help: consider adding 'move' keyword before the nested closure
+    |
+271 |             .find(move |job| job.attempt_id == id)
+    |                   ++++
+
+Some errors have detailed explanations: E0004, E0061, E0277.
+For more information about an error, try `rustc --explain E0004`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 12 previous errors

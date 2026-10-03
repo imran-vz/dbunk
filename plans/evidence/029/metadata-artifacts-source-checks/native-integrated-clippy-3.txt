@@ -1,0 +1,156 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: fields `source_index` and `primary_key` are never read
+  --> src/schema_map_model.rs:61:9
+   |
+59 | pub struct ColumnRow {
+   |            --------- fields in this struct
+60 |     pub attnum: i16,
+61 |     pub source_index: usize,
+   |         ^^^^^^^^^^^^
+62 |     pub label: String,
+63 |     pub primary_key: bool,
+   |         ^^^^^^^^^^^
+   |
+   = note: `ColumnRow` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `-D dead-code` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: methods `preferences`, `retained_bytes`, and `anchor` are never used
+   --> src/schema_map_model.rs:322:12
+    |
+155 | impl Scene {
+    | ---------- methods in this implementation
+...
+322 |     pub fn preferences(&self) -> MapPrefs {
+    |            ^^^^^^^^^^^
+...
+334 |     pub fn retained_bytes(&self) -> usize {
+    |            ^^^^^^^^^^^^^^
+...
+379 |     pub fn anchor(
+    |            ^^^^^^
+
+error: method `raster_size` is never used
+   --> src/schema_map_model/camera.rs:196:12
+    |
+183 | impl Viewport {
+    | ------------- method in this implementation
+...
+196 |     pub fn raster_size(self, scale: u32) -> Result<(u32, u32), &'static str> {
+    |            ^^^^^^^^^^^
+
+error: field `page` is never read
+ --> src/schema_map_model/detail_pages.rs:6:9
+  |
+4 | pub struct DetailPage {
+  |            ---------- field in this struct
+5 |     pub text: String,
+6 |     pub page: usize,
+  |         ^^^^
+
+error: struct `Detail` is never constructed
+ --> src/schema_map_model/details.rs:2:8
+  |
+2 | struct Detail {
+  |        ^^^^^^
+
+error: method `details` is never used
+  --> src/schema_map_model/details.rs:54:12
+   |
+49 | impl Scene {
+   | ---------- method in this implementation
+...
+54 |     pub fn details(&self, selection: Selection) -> Result<String, &'static str> {
+   |            ^^^^^^^
+
+error: constant `MAX_EXPORT_PIXELS` is never used
+ --> src/schema_map_model/svg.rs:3:11
+  |
+3 | pub const MAX_EXPORT_PIXELS: u64 = 8_000_000;
+  |           ^^^^^^^^^^^^^^^^^
+
+error: field `lease` is never read
+  --> src/schema_map_model/svg.rs:10:5
+   |
+ 6 | pub struct PreparedSvg {
+   |            ----------- field in this struct
+...
+10 |     lease: Lease,
+   |     ^^^^^
+
+error: method `retained_bytes` is never used
+  --> src/schema_map_model/svg.rs:21:12
+   |
+12 | impl PreparedSvg {
+   | ---------------- method in this implementation
+...
+21 |     pub fn retained_bytes(&self) -> usize {
+   |            ^^^^^^^^^^^^^^
+
+error: field `expected` is never read
+  --> src/schema_map_view.rs:33:9
+   |
+29 |     OpenTable {
+   |     --------- field in this variant
+...
+33 |         expected: SchemaMapIdentity,
+   |         ^^^^^^^^
+
+error: methods `connection` and `set_relation` are never used
+   --> src/schema_map_view.rs:309:12
+    |
+221 | impl SchemaMapView {
+    | ------------------ methods in this implementation
+...
+309 |     pub fn connection(&self) -> Option<&str> {
+    |            ^^^^^^^^^^
+...
+367 |     pub fn set_relation(
+    |            ^^^^^^^^^^^^
+
+error: this `if` statement can be collapsed
+  --> src/schema_map_model/drag.rs:36:13
+   |
+36 | /             if edge.source == index || edge.target == index {
+37 | |                 if let Err(error) = layout::route(
+38 | |                     &self.nodes[edge.source],
+39 | |                     &self.nodes[edge.target],
+...  |
+46 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+   = note: `-D clippy::collapsible-if` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+   |
+36 ~             if (edge.source == index || edge.target == index) {
+37 ~                 && let Err(error) = layout::route(
+38 |                     &self.nodes[edge.source],
+...
+44 |                     return Err(error);
+45 ~                 }
+   |
+
+error: using `chunks_exact` with a constant chunk size
+   --> src/schema_map_png.rs:163:31
+    |
+163 |             for pixel in part.chunks_exact(4) {
+    |                               ^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<4>().0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#chunks_exact_to_as_chunks
+    = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 13 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: method `preferences` is never used
+   --> src/schema_map_model.rs:322:12
+    |
+155 | impl Scene {
+    | ---------- method in this implementation
+...
+322 |     pub fn preferences(&self) -> MapPrefs {
+    |            ^^^^^^^^^^^
+
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 8 previous errors

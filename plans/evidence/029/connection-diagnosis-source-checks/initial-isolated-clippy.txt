@@ -1,0 +1,30 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/backend/development/connections.rs:473:39
+    |
+473 |         .map(|id| supported(&all, id, &authority))
+    |                                       ^^^^^^^^^^ help: change this to: `authority`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+    = note: `-D clippy::needless-borrow` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_borrow)]`
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/backend/development/connections.rs:480:36
+    |
+480 |     require_supported(&connection, &authority)?;
+    |                                    ^^^^^^^^^^ help: change this to: `authority`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/backend/development/connections.rs:492:52
+    |
+492 |     let mode = crate::app::current_credential_mode(&state).await?;
+    |                                                    ^^^^^^ help: change this to: `state`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_borrow
+
+error: could not compile `dbunk` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (lib test) due to 3 previous errors

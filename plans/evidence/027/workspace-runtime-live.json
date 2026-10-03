@@ -1,0 +1,36 @@
+{
+  "recorded_at_utc": "2026-10-02T16:50:01.790738+00:00",
+  "scope": "Headless actual stage04 WorkspaceRuntime; no GPUI window; owned stage03 PostgreSQL endpoint only",
+  "command": "DBUNK_NATIVE_FIXTURE_VERIFIED=1 cargo +1.98.1 test --locked workspace_live_tests -- --ignored --test-threads=1 --nocapture",
+  "working_directory": "apps/native",
+  "test_result": {
+    "passed": 3,
+    "failed": 0
+  },
+  "additional_checks": [
+    "cargo +1.98.1 clippy --locked --all-targets -- -D warnings passed",
+    "cargo +1.98.1 test --locked mailbox -- --test-threads=1: 10 passed, 1 ignored"
+  ],
+  "fixture": {
+    "project": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "driver": "local",
+    "executable": "/Users/imran/projects/Code/dbunk/tools/native/.state/runtime/installed/bin/postgres",
+    "pid": 3519
+  },
+  "post_run_backend_count": 0,
+  "source_sha256": {
+    "apps/native/src/workspace_live_tests.rs": "d7d3d344e9cde8b15653dfd768a71cf68191ca3df7889e39f5417fcbe7a9aca8",
+    "apps/native/src/workspace_runtime.rs": "8fe7bd9cc7a10bf1c773a96e296227c12ea56830ee4b3712c52f6ed0b685ce66",
+    "apps/native/src/controller.rs": "7107af571d645a7c6c4849a4fbe097680ead1d1a6eaf35a6c826355f3273bd29",
+    "apps/native/src/mailbox.rs": "aaa27334dce51d3e99acb6c07d1e8e3b4e09e42ff36a4daf1199a9413eb6c785",
+    "apps/native/src/stream.rs": "c8337afd7a2eeb7d7e21af90bfc6877f8987d56bb40c09843b8426b482d40ab5",
+    "src-tauri/src/backend/development.rs": "8113efa2e477575b2e5335e60d74b568f340afdf2d30c4878feed5e3f1e03576",
+    "src-tauri/src/backend.rs": "acaea22cefbac335feb49280df89be6322df55239468dfe65c7c8880aa41ed02",
+    "apps/native/Cargo.lock": "a57452da17c8d9e1328ae2577601540d62a2bf3e2736a7ec623717a724df13af"
+  },
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "test_executable_sha256": "fbd4f5f0137fcc9eb7b829d4fcb292d97e8217b89272b2097c06c63e283ce2b2",
+  "note": "Test source received only an equivalent Clippy unit-variant-pattern cleanup after live run; subsequent all-target Clippy passed."
+}

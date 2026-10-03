@@ -1,0 +1,14 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.62s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 6 tests
+test diagnosis::native::tests::report_bound_accounts_actual_capacity ... ok
+test diagnosis::native::tests::prefer_fallback_remains_visible_after_authentication_failure ... ok
+test diagnosis::native::tests::failed_authentication_does_not_echo_server_or_password ... ok
+test diagnosis::native::tests::cancellation_after_startup_closes_and_joins_driver ... ok
+test diagnosis::native::tests::database_deadline_is_not_misattributed_and_driver_is_joined ... ok
+test diagnosis::native::tests::tls_deadline_and_dropped_control_are_explicit ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1047 filtered out; finished in 0.16s
+

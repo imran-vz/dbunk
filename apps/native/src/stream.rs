@@ -4,15 +4,20 @@ use dbunk_lib::backend::QueryEventEnvelope;
 pub struct Stream {
     session: String,
     connection: String,
+    tab: String,
     generation: Option<u64>,
     sequence: u64,
     retired: bool,
 }
 impl Stream {
     pub fn new(session: String, connection: String) -> Self {
+        Self::for_document(session, connection, "query".into())
+    }
+    pub fn for_document(session: String, connection: String, tab: String) -> Self {
         Self {
             session,
             connection,
+            tab,
             generation: None,
             sequence: 0,
             retired: false,
@@ -29,7 +34,7 @@ impl Stream {
         if self.retired
             || event.session_id != self.session
             || event.connection_id != self.connection
-            || event.tab_id != "query"
+            || event.tab_id != self.tab
         {
             return Ok(false);
         }
@@ -111,6 +116,19 @@ mod tests {
                 .admit(&event("new", 2, 3, Some("run")), Some("run"))
                 .unwrap()
         );
+    }
+    #[test]
+    fn document_identity_is_checked_before_advancing_sequence() {
+        let mut stream = Stream::for_document("s".into(), "fixture".into(), "document-a".into());
+        let mut incoming = event("s", 1, 1, None);
+        assert!(!stream.admit(&incoming, None).unwrap());
+        incoming.tab_id = "document-b".into();
+        assert!(!stream.admit(&incoming, None).unwrap());
+        incoming.tab_id = "document-a".into();
+        assert!(stream.admit(&incoming, None).unwrap());
+        incoming.sequence = 2;
+        incoming.execution_id = Some("run".into());
+        assert!(stream.admit(&incoming, Some("run")).unwrap());
     }
     #[test]
     fn gap_and_retirement_are_sticky() {

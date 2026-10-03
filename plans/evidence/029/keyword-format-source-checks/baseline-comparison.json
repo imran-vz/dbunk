@@ -1,0 +1,6492 @@
+[
+  {
+    "sql": "select distinct sample",
+    "baseline": "SELECT DISTINCT\n  sample",
+    "native": "SELECT\n  DISTINCT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "select all sample",
+    "baseline": "SELECT ALL\n  sample",
+    "native": "SELECT\n  ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "select sample",
+    "baseline": "SELECT\n  sample",
+    "native": "SELECT\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace trusted procedural language sample",
+    "baseline": "CREATE OR REPLACE TRUSTED PROCEDURAL LANGUAGE sample",
+    "native": "CREATE OR REPLACE TRUSTED PROCEDURAL LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global temporary table if not exists sample",
+    "baseline": "CREATE GLOBAL TEMPORARY TABLE IF NOT EXISTS sample",
+    "native": "CREATE GLOBAL TEMPORARY TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global unlogged table if not exists sample",
+    "baseline": "CREATE GLOBAL UNLOGGED TABLE IF NOT EXISTS sample",
+    "native": "CREATE GLOBAL UNLOGGED TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local temporary table if not exists sample",
+    "baseline": "CREATE LOCAL TEMPORARY TABLE IF NOT EXISTS sample",
+    "native": "CREATE LOCAL TEMPORARY TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace temporary recursive view sample",
+    "baseline": "CREATE OR REPLACE TEMPORARY RECURSIVE VIEW sample",
+    "native": "CREATE OR REPLACE TEMPORARY RECURSIVE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local unlogged table if not exists sample",
+    "baseline": "CREATE LOCAL UNLOGGED TABLE IF NOT EXISTS sample",
+    "native": "CREATE LOCAL UNLOGGED TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global temp table if not exists sample",
+    "baseline": "CREATE GLOBAL TEMP TABLE IF NOT EXISTS sample",
+    "native": "CREATE GLOBAL TEMP TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create materialized view if not exists sample",
+    "baseline": "CREATE MATERIALIZED VIEW IF NOT EXISTS sample",
+    "native": "CREATE MATERIALIZED VIEW IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local temp table if not exists sample",
+    "baseline": "CREATE LOCAL TEMP TABLE IF NOT EXISTS sample",
+    "native": "CREATE LOCAL TEMP TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace procedural language sample",
+    "baseline": "CREATE OR REPLACE PROCEDURAL LANGUAGE sample",
+    "native": "CREATE OR REPLACE PROCEDURAL LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace temp recursive view sample",
+    "baseline": "CREATE OR REPLACE TEMP RECURSIVE VIEW sample",
+    "native": "CREATE OR REPLACE TEMP RECURSIVE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace constraint trigger sample",
+    "baseline": "CREATE OR REPLACE CONSTRAINT TRIGGER sample",
+    "native": "CREATE OR REPLACE CONSTRAINT TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temporary table if not exists sample",
+    "baseline": "CREATE TEMPORARY TABLE IF NOT EXISTS sample",
+    "native": "CREATE TEMPORARY TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create unlogged table if not exists sample",
+    "baseline": "CREATE UNLOGGED TABLE IF NOT EXISTS sample",
+    "native": "CREATE UNLOGGED TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace trusted language sample",
+    "baseline": "CREATE OR REPLACE TRUSTED LANGUAGE sample",
+    "native": "CREATE OR REPLACE TRUSTED LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create trusted procedural language sample",
+    "baseline": "CREATE TRUSTED PROCEDURAL LANGUAGE sample",
+    "native": "CREATE TRUSTED PROCEDURAL LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global table if not exists sample",
+    "baseline": "CREATE GLOBAL TABLE IF NOT EXISTS sample",
+    "native": "CREATE GLOBAL TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local table if not exists sample",
+    "baseline": "CREATE LOCAL TABLE IF NOT EXISTS sample",
+    "native": "CREATE LOCAL TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace recursive view sample",
+    "baseline": "CREATE OR REPLACE RECURSIVE VIEW sample",
+    "native": "CREATE OR REPLACE RECURSIVE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace temporary view sample",
+    "baseline": "CREATE OR REPLACE TEMPORARY VIEW sample",
+    "native": "CREATE OR REPLACE TEMPORARY VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create text search configuration sample",
+    "baseline": "CREATE TEXT SEARCH CONFIGURATION sample",
+    "native": "CREATE TEXT SEARCH CONFIGURATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop materialized view if exists sample",
+    "baseline": "DROP MATERIALIZED VIEW IF EXISTS sample",
+    "native": "DROP MATERIALIZED VIEW IF EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter text search configuration sample",
+    "baseline": "ALTER TEXT SEARCH CONFIGURATION sample",
+    "native": "ALTER TEXT SEARCH CONFIGURATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temp table if not exists sample",
+    "baseline": "CREATE TEMP TABLE IF NOT EXISTS sample",
+    "native": "CREATE TEMP TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temporary recursive view sample",
+    "baseline": "CREATE TEMPORARY RECURSIVE VIEW sample",
+    "native": "CREATE TEMPORARY RECURSIVE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop text search configuration sample",
+    "baseline": "DROP TEXT SEARCH CONFIGURATION sample",
+    "native": "DROP TEXT SEARCH CONFIGURATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter table all in tablespace sample",
+    "baseline": "ALTER TABLE ALL IN TABLESPACE sample",
+    "native": "ALTER TABLE ALL IN TABLESPACE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global temporary table sample",
+    "baseline": "CREATE GLOBAL TEMPORARY TABLE sample",
+    "native": "CREATE GLOBAL TEMPORARY TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create text search dictionary sample",
+    "baseline": "CREATE TEXT SEARCH DICTIONARY sample",
+    "native": "CREATE TEXT SEARCH DICTIONARY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter text search dictionary sample",
+    "baseline": "ALTER TEXT SEARCH DICTIONARY sample",
+    "native": "ALTER TEXT SEARCH DICTIONARY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global unlogged table sample",
+    "baseline": "CREATE GLOBAL UNLOGGED TABLE sample",
+    "native": "CREATE GLOBAL UNLOGGED TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local temporary table sample",
+    "baseline": "CREATE LOCAL TEMPORARY TABLE sample",
+    "native": "CREATE LOCAL TEMPORARY TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create foreign data wrapper sample",
+    "baseline": "CREATE FOREIGN DATA WRAPPER sample",
+    "native": "CREATE FOREIGN DATA WRAPPER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local unlogged table sample",
+    "baseline": "CREATE LOCAL UNLOGGED TABLE sample",
+    "native": "CREATE LOCAL UNLOGGED TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace aggregate sample",
+    "baseline": "CREATE OR REPLACE AGGREGATE sample",
+    "native": "CREATE OR REPLACE AGGREGATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace procedure sample",
+    "baseline": "CREATE OR REPLACE PROCEDURE sample",
+    "native": "CREATE OR REPLACE PROCEDURE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace temp view sample",
+    "baseline": "CREATE OR REPLACE TEMP VIEW sample",
+    "native": "CREATE OR REPLACE TEMP VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace transform sample",
+    "baseline": "CREATE OR REPLACE TRANSFORM sample",
+    "native": "CREATE OR REPLACE TRANSFORM sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create schema authorization sample",
+    "baseline": "CREATE SCHEMA AUTHORIZATION sample",
+    "native": "CREATE SCHEMA AUTHORIZATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create text search template sample",
+    "baseline": "CREATE TEXT SEARCH TEMPLATE sample",
+    "native": "CREATE TEXT SEARCH TEMPLATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop text search dictionary sample",
+    "baseline": "DROP TEXT SEARCH DICTIONARY sample",
+    "native": "DROP TEXT SEARCH DICTIONARY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reset session authorization sample",
+    "baseline": "RESET SESSION AUTHORIZATION sample",
+    "native": "RESET SESSION AUTHORIZATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter foreign data wrapper sample",
+    "baseline": "ALTER FOREIGN DATA WRAPPER sample",
+    "native": "ALTER FOREIGN DATA WRAPPER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter table if exists only sample",
+    "baseline": "ALTER TABLE IF EXISTS ONLY sample",
+    "native": "ALTER TABLE IF EXISTS ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter text search template sample",
+    "baseline": "ALTER TEXT SEARCH TEMPLATE sample",
+    "native": "ALTER TEXT SEARCH TEMPLATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace function sample",
+    "baseline": "CREATE OR REPLACE FUNCTION sample",
+    "native": "CREATE OR REPLACE FUNCTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace language sample",
+    "baseline": "CREATE OR REPLACE LANGUAGE sample",
+    "native": "CREATE OR REPLACE LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create procedural language sample",
+    "baseline": "CREATE PROCEDURAL LANGUAGE sample",
+    "native": "CREATE PROCEDURAL LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create table if not exists sample",
+    "baseline": "CREATE TABLE IF NOT EXISTS sample",
+    "native": "CREATE TABLE IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temp recursive view sample",
+    "baseline": "CREATE TEMP RECURSIVE VIEW sample",
+    "native": "CREATE TEMP RECURSIVE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create constraint trigger sample",
+    "baseline": "CREATE CONSTRAINT TRIGGER sample",
+    "native": "CREATE CONSTRAINT TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create default conversion sample",
+    "baseline": "CREATE DEFAULT CONVERSION sample",
+    "native": "CREATE DEFAULT CONVERSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace trigger sample",
+    "baseline": "CREATE OR REPLACE TRIGGER sample",
+    "native": "CREATE OR REPLACE TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temporary sequence sample",
+    "baseline": "CREATE TEMPORARY SEQUENCE sample",
+    "native": "CREATE TEMPORARY SEQUENCE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create text search parser sample",
+    "baseline": "CREATE TEXT SEARCH PARSER sample",
+    "native": "CREATE TEXT SEARCH PARSER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create view if not exists sample",
+    "baseline": "CREATE VIEW IF NOT EXISTS sample",
+    "native": "CREATE VIEW IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop foreign data wrapper sample",
+    "baseline": "DROP FOREIGN DATA WRAPPER sample",
+    "native": "DROP FOREIGN DATA WRAPPER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop text search template sample",
+    "baseline": "DROP TEXT SEARCH TEMPLATE sample",
+    "native": "DROP TEXT SEARCH TEMPLATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "refresh materialized view sample",
+    "baseline": "REFRESH MATERIALIZED VIEW sample",
+    "native": "REFRESH MATERIALIZED VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set session authorization sample",
+    "baseline": "SET SESSION AUTHORIZATION sample",
+    "native": "SET SESSION AUTHORIZATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "add column if not exists sample",
+    "baseline": "ADD COLUMN IF NOT EXISTS sample",
+    "native": "ADD COLUMN IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter default privileges sample",
+    "baseline": "ALTER DEFAULT PRIVILEGES sample",
+    "native": "ALTER DEFAULT PRIVILEGES sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter text search parser sample",
+    "baseline": "ALTER TEXT SEARCH PARSER sample",
+    "native": "ALTER TEXT SEARCH PARSER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global temp table sample",
+    "baseline": "CREATE GLOBAL TEMP TABLE sample",
+    "native": "CREATE GLOBAL TEMP TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create materialized view sample",
+    "baseline": "CREATE MATERIALIZED VIEW sample",
+    "native": "CREATE MATERIALIZED VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create unlogged sequence sample",
+    "baseline": "CREATE UNLOGGED SEQUENCE sample",
+    "native": "CREATE UNLOGGED SEQUENCE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter materialized view sample",
+    "baseline": "ALTER MATERIALIZED VIEW sample",
+    "native": "ALTER MATERIALIZED VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local temp table sample",
+    "baseline": "CREATE LOCAL TEMP TABLE sample",
+    "native": "CREATE LOCAL TEMP TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create trusted language sample",
+    "baseline": "CREATE TRUSTED LANGUAGE sample",
+    "native": "CREATE TRUSTED LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop text search parser sample",
+    "baseline": "DROP TEXT SEARCH PARSER sample",
+    "native": "DROP TEXT SEARCH PARSER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "overriding system value sample",
+    "baseline": "OVERRIDING SYSTEM VALUE sample",
+    "native": "OVERRIDING SYSTEM VALUE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create operator family sample",
+    "baseline": "CREATE OPERATOR FAMILY sample",
+    "native": "CREATE OPERATOR FAMILY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace rule sample",
+    "baseline": "CREATE OR REPLACE RULE sample",
+    "native": "CREATE OR REPLACE RULE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create or replace view sample",
+    "baseline": "CREATE OR REPLACE VIEW sample",
+    "native": "CREATE OR REPLACE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temporary table sample",
+    "baseline": "CREATE TEMPORARY TABLE sample",
+    "native": "CREATE TEMPORARY TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop materialized view sample",
+    "baseline": "DROP MATERIALIZED VIEW sample",
+    "native": "DROP MATERIALIZED VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter operator family sample",
+    "baseline": "ALTER OPERATOR FAMILY sample",
+    "native": "ALTER OPERATOR FAMILY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter table if exists sample",
+    "baseline": "ALTER TABLE IF EXISTS sample",
+    "native": "ALTER TABLE IF EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create operator class sample",
+    "baseline": "CREATE OPERATOR CLASS sample",
+    "native": "CREATE OPERATOR CLASS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create recursive view sample",
+    "baseline": "CREATE RECURSIVE VIEW sample",
+    "native": "CREATE RECURSIVE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temporary view sample",
+    "baseline": "CREATE TEMPORARY VIEW sample",
+    "native": "CREATE TEMPORARY VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create unlogged table sample",
+    "baseline": "CREATE UNLOGGED TABLE sample",
+    "native": "CREATE UNLOGGED TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop column if exists sample",
+    "baseline": "DROP COLUMN IF EXISTS sample",
+    "native": "DROP COLUMN IF EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "import foreign schema sample",
+    "baseline": "IMPORT FOREIGN SCHEMA sample",
+    "native": "IMPORT FOREIGN SCHEMA sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rollback to savepoint sample",
+    "baseline": "ROLLBACK TO SAVEPOINT sample",
+    "native": "ROLLBACK TO SAVEPOINT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter operator class sample",
+    "baseline": "ALTER OPERATOR CLASS sample",
+    "native": "ALTER OPERATOR CLASS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create access method sample",
+    "baseline": "CREATE ACCESS METHOD sample",
+    "native": "CREATE ACCESS METHOD sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create event trigger sample",
+    "baseline": "CREATE EVENT TRIGGER sample",
+    "native": "CREATE EVENT TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create foreign table sample",
+    "baseline": "CREATE FOREIGN TABLE sample",
+    "native": "CREATE FOREIGN TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temp sequence sample",
+    "baseline": "CREATE TEMP SEQUENCE sample",
+    "native": "CREATE TEMP SEQUENCE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop operator family sample",
+    "baseline": "DROP OPERATOR FAMILY sample",
+    "native": "DROP OPERATOR FAMILY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop table if exists sample",
+    "baseline": "DROP TABLE IF EXISTS sample",
+    "native": "DROP TABLE IF EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for no key update of sample",
+    "baseline": "FOR NO KEY UPDATE OF\n  sample",
+    "native": "FOR NO KEY UPDATE OF sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter event trigger sample",
+    "baseline": "ALTER EVENT TRIGGER sample",
+    "native": "ALTER EVENT TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter foreign table sample",
+    "baseline": "ALTER FOREIGN TABLE sample",
+    "native": "ALTER FOREIGN TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create global table sample",
+    "baseline": "CREATE GLOBAL TABLE sample",
+    "native": "CREATE GLOBAL TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create subscription sample",
+    "baseline": "CREATE SUBSCRIPTION sample",
+    "native": "CREATE SUBSCRIPTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create unique index sample",
+    "baseline": "CREATE UNIQUE INDEX sample",
+    "native": "CREATE UNIQUE INDEX sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create user mapping sample",
+    "baseline": "CREATE USER MAPPING sample",
+    "native": "CREATE USER MAPPING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop operator class sample",
+    "baseline": "DROP OPERATOR CLASS sample",
+    "native": "DROP OPERATOR CLASS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "prepare transaction sample",
+    "baseline": "PREPARE TRANSACTION sample",
+    "native": "PREPARE TRANSACTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "truncate table only sample",
+    "baseline": "TRUNCATE TABLE ONLY sample",
+    "native": "TRUNCATE TABLE ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter large object sample",
+    "baseline": "ALTER LARGE OBJECT sample",
+    "native": "ALTER LARGE OBJECT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter subscription sample",
+    "baseline": "ALTER SUBSCRIPTION sample",
+    "native": "ALTER SUBSCRIPTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter user mapping sample",
+    "baseline": "ALTER USER MAPPING sample",
+    "native": "ALTER USER MAPPING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create local table sample",
+    "baseline": "CREATE LOCAL TABLE sample",
+    "native": "CREATE LOCAL TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create publication sample",
+    "baseline": "CREATE PUBLICATION sample",
+    "native": "CREATE PUBLICATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop access method sample",
+    "baseline": "DROP ACCESS METHOD sample",
+    "native": "DROP ACCESS METHOD sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop event trigger sample",
+    "baseline": "DROP EVENT TRIGGER sample",
+    "native": "DROP EVENT TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop foreign table sample",
+    "baseline": "DROP FOREIGN TABLE sample",
+    "native": "DROP FOREIGN TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "add if not exists sample",
+    "baseline": "ADD IF NOT EXISTS sample",
+    "native": "ADD IF NOT EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter publication sample",
+    "baseline": "ALTER PUBLICATION sample",
+    "native": "ALTER PUBLICATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create conversion sample",
+    "baseline": "CREATE CONVERSION sample",
+    "native": "CREATE CONVERSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create statistics sample",
+    "baseline": "CREATE STATISTICS sample",
+    "native": "CREATE STATISTICS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create tablespace sample",
+    "baseline": "CREATE TABLESPACE sample",
+    "native": "CREATE TABLESPACE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temp table sample",
+    "baseline": "CREATE TEMP TABLE sample",
+    "native": "CREATE TEMP TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop subscription sample",
+    "baseline": "DROP SUBSCRIPTION sample",
+    "native": "DROP SUBSCRIPTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop user mapping sample",
+    "baseline": "DROP USER MAPPING sample",
+    "native": "DROP USER MAPPING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for no key update sample",
+    "baseline": "FOR NO KEY UPDATE\n  sample",
+    "native": "FOR NO KEY UPDATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "group by distinct sample",
+    "baseline": "GROUP BY DISTINCT\n  sample",
+    "native": "GROUP BY\n  DISTINCT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "release savepoint sample",
+    "baseline": "RELEASE SAVEPOINT sample",
+    "native": "RELEASE SAVEPOINT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rollback prepared sample",
+    "baseline": "ROLLBACK PREPARED sample",
+    "native": "ROLLBACK PREPARED sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "start transaction sample",
+    "baseline": "START TRANSACTION sample",
+    "native": "START TRANSACTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter conversion sample",
+    "baseline": "ALTER CONVERSION sample",
+    "native": "ALTER CONVERSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter statistics sample",
+    "baseline": "ALTER STATISTICS sample",
+    "native": "ALTER STATISTICS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter table only sample",
+    "baseline": "ALTER TABLE ONLY sample",
+    "native": "ALTER TABLE ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter tablespace sample",
+    "baseline": "ALTER TABLESPACE sample",
+    "native": "ALTER TABLESPACE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create aggregate sample",
+    "baseline": "CREATE AGGREGATE sample",
+    "native": "CREATE AGGREGATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create collation sample",
+    "baseline": "CREATE COLLATION sample",
+    "native": "CREATE COLLATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create extension sample",
+    "baseline": "CREATE EXTENSION sample",
+    "native": "CREATE EXTENSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create procedure sample",
+    "baseline": "CREATE PROCEDURE sample",
+    "native": "CREATE PROCEDURE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create temp view sample",
+    "baseline": "CREATE TEMP VIEW sample",
+    "native": "CREATE TEMP VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create transform sample",
+    "baseline": "CREATE TRANSFORM sample",
+    "native": "CREATE TRANSFORM sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "delete from only sample",
+    "baseline": "DELETE FROM ONLY sample",
+    "native": "DELETE\nFROM\n  ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop publication sample",
+    "baseline": "DROP PUBLICATION sample",
+    "native": "DROP PUBLICATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for key share of sample",
+    "baseline": "FOR KEY SHARE OF\n  sample",
+    "native": "FOR KEY SHARE OF sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "where current of sample",
+    "baseline": "WHERE CURRENT OF sample",
+    "native": "WHERE\n  CURRENT OF sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter aggregate sample",
+    "baseline": "ALTER AGGREGATE sample",
+    "native": "ALTER AGGREGATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter collation sample",
+    "baseline": "ALTER COLLATION sample",
+    "native": "ALTER COLLATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter extension sample",
+    "baseline": "ALTER EXTENSION sample",
+    "native": "ALTER EXTENSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter procedure sample",
+    "baseline": "ALTER PROCEDURE sample",
+    "native": "ALTER PROCEDURE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "commit prepared sample",
+    "baseline": "COMMIT PREPARED sample",
+    "native": "COMMIT PREPARED sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create database sample",
+    "baseline": "CREATE DATABASE sample",
+    "native": "CREATE DATABASE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create function sample",
+    "baseline": "CREATE FUNCTION sample",
+    "native": "CREATE FUNCTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create language sample",
+    "baseline": "CREATE LANGUAGE sample",
+    "native": "CREATE LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create operator sample",
+    "baseline": "CREATE OPERATOR sample",
+    "native": "CREATE OPERATOR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create sequence sample",
+    "baseline": "CREATE SEQUENCE sample",
+    "native": "CREATE SEQUENCE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop conversion sample",
+    "baseline": "DROP CONVERSION sample",
+    "native": "DROP CONVERSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop statistics sample",
+    "baseline": "DROP STATISTICS sample",
+    "native": "DROP STATISTICS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop tablespace sample",
+    "baseline": "DROP TABLESPACE sample",
+    "native": "DROP TABLESPACE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set constraints sample",
+    "baseline": "SET CONSTRAINTS sample",
+    "native": "SET CONSTRAINTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set transaction sample",
+    "baseline": "SET TRANSACTION sample",
+    "native": "SET TRANSACTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter database sample",
+    "baseline": "ALTER DATABASE sample",
+    "native": "ALTER DATABASE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter function sample",
+    "baseline": "ALTER FUNCTION sample",
+    "native": "ALTER FUNCTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter language sample",
+    "baseline": "ALTER LANGUAGE sample",
+    "native": "ALTER LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter operator sample",
+    "baseline": "ALTER OPERATOR sample",
+    "native": "ALTER OPERATOR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter sequence sample",
+    "baseline": "ALTER SEQUENCE sample",
+    "native": "ALTER SEQUENCE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create trigger sample",
+    "baseline": "CREATE TRIGGER sample",
+    "native": "CREATE TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "default values sample",
+    "baseline": "DEFAULT VALUES\n  sample",
+    "native": "DEFAULT VALUES sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop aggregate sample",
+    "baseline": "DROP AGGREGATE sample",
+    "native": "DROP AGGREGATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop collation sample",
+    "baseline": "DROP COLLATION sample",
+    "native": "DROP COLLATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop extension sample",
+    "baseline": "DROP EXTENSION sample",
+    "native": "DROP EXTENSION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop if exists sample",
+    "baseline": "DROP IF EXISTS sample",
+    "native": "DROP IF EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop procedure sample",
+    "baseline": "DROP PROCEDURE sample",
+    "native": "DROP PROCEDURE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop transform sample",
+    "baseline": "DROP TRANSFORM sample",
+    "native": "DROP TRANSFORM sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reassign owned sample",
+    "baseline": "REASSIGN OWNED sample",
+    "native": "REASSIGN OWNED sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "security label sample",
+    "baseline": "SECURITY LABEL sample",
+    "native": "SECURITY LABEL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "truncate table sample",
+    "baseline": "TRUNCATE TABLE sample",
+    "native": "TRUNCATE TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "with recursive sample",
+    "baseline": "WITH RECURSIVE\n  sample",
+    "native": "WITH RECURSIVE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter routine sample",
+    "baseline": "ALTER ROUTINE sample",
+    "native": "ALTER ROUTINE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter trigger sample",
+    "baseline": "ALTER TRIGGER sample",
+    "native": "ALTER TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create domain sample",
+    "baseline": "CREATE DOMAIN sample",
+    "native": "CREATE DOMAIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create policy sample",
+    "baseline": "CREATE POLICY sample",
+    "native": "CREATE POLICY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create schema sample",
+    "baseline": "CREATE SCHEMA sample",
+    "native": "CREATE SCHEMA sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create server sample",
+    "baseline": "CREATE SERVER sample",
+    "native": "CREATE SERVER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop database sample",
+    "baseline": "DROP DATABASE sample",
+    "native": "DROP DATABASE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop function sample",
+    "baseline": "DROP FUNCTION sample",
+    "native": "DROP FUNCTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop identity sample",
+    "baseline": "DROP IDENTITY sample",
+    "native": "DROP IDENTITY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop language sample",
+    "baseline": "DROP LANGUAGE sample",
+    "native": "DROP LANGUAGE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop not null sample",
+    "baseline": "DROP NOT NULL sample",
+    "native": "DROP NOT NULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop operator sample",
+    "baseline": "DROP OPERATOR sample",
+    "native": "DROP OPERATOR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop sequence sample",
+    "baseline": "DROP SEQUENCE sample",
+    "native": "DROP SEQUENCE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for key share sample",
+    "baseline": "FOR KEY SHARE\n  sample",
+    "native": "FOR KEY SHARE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for update of sample",
+    "baseline": "FOR UPDATE OF\n  sample",
+    "native": "FOR UPDATE OF sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rename column sample",
+    "baseline": "RENAME COLUMN sample",
+    "native": "RENAME COLUMN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set data type sample",
+    "baseline": "SET DATA TYPE sample",
+    "native": "SET DATA TYPE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "truncate only sample",
+    "baseline": "TRUNCATE ONLY sample",
+    "native": "TRUNCATE ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter column sample",
+    "baseline": "ALTER COLUMN sample",
+    "native": "ALTER COLUMN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter domain sample",
+    "baseline": "ALTER DOMAIN sample",
+    "native": "ALTER DOMAIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter policy sample",
+    "baseline": "ALTER POLICY sample",
+    "native": "ALTER POLICY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter schema sample",
+    "baseline": "ALTER SCHEMA sample",
+    "native": "ALTER SCHEMA sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter server sample",
+    "baseline": "ALTER SERVER sample",
+    "native": "ALTER SERVER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter system sample",
+    "baseline": "ALTER SYSTEM sample",
+    "native": "ALTER SYSTEM sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create group sample",
+    "baseline": "CREATE GROUP sample",
+    "native": "CREATE GROUP sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create index sample",
+    "baseline": "CREATE INDEX sample",
+    "native": "CREATE INDEX sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create table sample",
+    "baseline": "CREATE TABLE sample",
+    "native": "CREATE TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop default sample",
+    "baseline": "DROP DEFAULT sample",
+    "native": "DROP DEFAULT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop routine sample",
+    "baseline": "DROP ROUTINE sample",
+    "native": "DROP ROUTINE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop trigger sample",
+    "baseline": "DROP TRIGGER sample",
+    "native": "DROP TRIGGER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for share of sample",
+    "baseline": "FOR SHARE OF\n  sample",
+    "native": "FOR SHARE OF sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "group by all sample",
+    "baseline": "GROUP BY ALL\n  sample",
+    "native": "GROUP BY\n  ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "partition by sample",
+    "baseline": "PARTITION BY\n  sample",
+    "native": "PARTITION BY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set not null sample",
+    "baseline": "SET NOT NULL sample",
+    "native": "SET NOT NULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter group sample",
+    "baseline": "ALTER GROUP sample",
+    "native": "ALTER GROUP sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter index sample",
+    "baseline": "ALTER INDEX sample",
+    "native": "ALTER INDEX sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter table sample",
+    "baseline": "ALTER TABLE sample",
+    "native": "ALTER TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create cast sample",
+    "baseline": "CREATE CAST sample",
+    "native": "CREATE CAST sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create role sample",
+    "baseline": "CREATE ROLE sample",
+    "native": "CREATE ROLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create rule sample",
+    "baseline": "CREATE RULE sample",
+    "native": "CREATE RULE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create type sample",
+    "baseline": "CREATE TYPE sample",
+    "native": "CREATE TYPE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create user sample",
+    "baseline": "CREATE USER sample",
+    "native": "CREATE USER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create view sample",
+    "baseline": "CREATE VIEW sample",
+    "native": "CREATE VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "delete from sample",
+    "baseline": "DELETE FROM sample",
+    "native": "DELETE\nFROM\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop column sample",
+    "baseline": "DROP COLUMN sample",
+    "native": "DROP COLUMN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop domain sample",
+    "baseline": "DROP DOMAIN sample",
+    "native": "DROP DOMAIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop policy sample",
+    "baseline": "DROP POLICY sample",
+    "native": "DROP POLICY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop schema sample",
+    "baseline": "DROP SCHEMA sample",
+    "native": "DROP SCHEMA sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop server sample",
+    "baseline": "DROP SERVER sample",
+    "native": "DROP SERVER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "fetch first sample",
+    "baseline": "FETCH FIRST\n  sample",
+    "native": "FETCH FIRST sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "insert into sample",
+    "baseline": "INSERT INTO\n  sample",
+    "native": "INSERT INTO sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on conflict sample",
+    "baseline": "ON CONFLICT sample",
+    "native": "ON CONFLICT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "select into sample",
+    "baseline": "SELECT INTO sample",
+    "native": "SELECT\n  INTO sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set default sample",
+    "baseline": "SET DEFAULT sample",
+    "native": "SET DEFAULT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "update only sample",
+    "baseline": "UPDATE ONLY sample",
+    "native": "UPDATE ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "add column sample",
+    "baseline": "ADD COLUMN sample",
+    "native": "ADD COLUMN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter role sample",
+    "baseline": "ALTER ROLE sample",
+    "native": "ALTER ROLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter rule sample",
+    "baseline": "ALTER RULE sample",
+    "native": "ALTER RULE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter type sample",
+    "baseline": "ALTER TYPE sample",
+    "native": "ALTER TYPE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter user sample",
+    "baseline": "ALTER USER sample",
+    "native": "ALTER USER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter view sample",
+    "baseline": "ALTER VIEW sample",
+    "native": "ALTER VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "checkpoint sample",
+    "baseline": "CHECKPOINT sample",
+    "native": "CHECKPOINT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "comment on sample",
+    "baseline": "COMMENT ON sample",
+    "native": "COMMENT\nON sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "deallocate sample",
+    "baseline": "DEALLOCATE sample",
+    "native": "DEALLOCATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop group sample",
+    "baseline": "DROP GROUP sample",
+    "native": "DROP GROUP sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop index sample",
+    "baseline": "DROP INDEX sample",
+    "native": "DROP INDEX sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop owned sample",
+    "baseline": "DROP OWNED sample",
+    "native": "DROP OWNED sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop table sample",
+    "baseline": "DROP TABLE sample",
+    "native": "DROP TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "fetch next sample",
+    "baseline": "FETCH NEXT\n  sample",
+    "native": "FETCH NEXT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for update sample",
+    "baseline": "FOR UPDATE\n  sample",
+    "native": "FOR UPDATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reset role sample",
+    "baseline": "RESET ROLE sample",
+    "native": "RESET ROLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set schema sample",
+    "baseline": "SET SCHEMA sample",
+    "native": "SET SCHEMA sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop cast sample",
+    "baseline": "DROP CAST sample",
+    "native": "DROP CAST sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop role sample",
+    "baseline": "DROP ROLE sample",
+    "native": "DROP ROLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop rule sample",
+    "baseline": "DROP RULE sample",
+    "native": "DROP RULE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop type sample",
+    "baseline": "DROP TYPE sample",
+    "native": "DROP TYPE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop user sample",
+    "baseline": "DROP USER sample",
+    "native": "DROP USER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop view sample",
+    "baseline": "DROP VIEW sample",
+    "native": "DROP VIEW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for share sample",
+    "baseline": "FOR SHARE\n  sample",
+    "native": "FOR SHARE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rename to sample",
+    "baseline": "RENAME TO sample",
+    "native": "RENAME TO sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reset all sample",
+    "baseline": "RESET ALL sample",
+    "native": "RESET ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "returning sample",
+    "baseline": "RETURNING\n  sample",
+    "native": "RETURNING\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "savepoint sample",
+    "baseline": "SAVEPOINT sample",
+    "native": "SAVEPOINT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "group by sample",
+    "baseline": "GROUP BY\n  sample",
+    "native": "GROUP BY\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "order by sample",
+    "baseline": "ORDER BY\n  sample",
+    "native": "ORDER BY\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rollback sample",
+    "baseline": "ROLLBACK sample",
+    "native": "ROLLBACK sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set role sample",
+    "baseline": "SET ROLE sample",
+    "native": "SET ROLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "truncate sample",
+    "baseline": "TRUNCATE sample",
+    "native": "TRUNCATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "unlisten sample",
+    "baseline": "UNLISTEN sample",
+    "native": "UNLISTEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "analyze sample",
+    "baseline": "ANALYZE sample",
+    "native": "ANALYZE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cluster sample",
+    "baseline": "CLUSTER sample",
+    "native": "CLUSTER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "declare sample",
+    "baseline": "DECLARE sample",
+    "native": "DECLARE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "discard sample",
+    "baseline": "DISCARD sample",
+    "native": "DISCARD sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "execute sample",
+    "baseline": "EXECUTE sample",
+    "native": "EXECUTE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "explain sample",
+    "baseline": "EXPLAIN sample",
+    "native": "EXPLAIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "prepare sample",
+    "baseline": "PREPARE sample",
+    "native": "PREPARE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reindex sample",
+    "baseline": "REINDEX sample",
+    "native": "REINDEX sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "commit sample",
+    "baseline": "COMMIT sample",
+    "native": "COMMIT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "having sample",
+    "baseline": "HAVING\n  sample",
+    "native": "HAVING\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "listen sample",
+    "baseline": "LISTEN sample",
+    "native": "LISTEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "notify sample",
+    "baseline": "NOTIFY sample",
+    "native": "NOTIFY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "offset sample",
+    "baseline": "OFFSET\n  sample",
+    "native": "OFFSET\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rename sample",
+    "baseline": "RENAME sample",
+    "native": "RENAME sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "revoke sample",
+    "baseline": "REVOKE sample",
+    "native": "REVOKE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "update sample",
+    "baseline": "UPDATE sample",
+    "native": "UPDATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "vacuum sample",
+    "baseline": "VACUUM sample",
+    "native": "VACUUM sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "values sample",
+    "baseline": "VALUES\n  sample",
+    "native": "VALUES sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "window sample",
+    "baseline": "WINDOW\n  sample",
+    "native": "WINDOW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "abort sample",
+    "baseline": "ABORT sample",
+    "native": "ABORT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "after sample",
+    "baseline": "AFTER sample",
+    "native": "AFTER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "alter sample",
+    "baseline": "ALTER sample",
+    "native": "ALTER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "begin sample",
+    "baseline": "BEGIN sample",
+    "native": "BEGIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "close sample",
+    "baseline": "CLOSE sample",
+    "native": "CLOSE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "fetch sample",
+    "baseline": "FETCH sample",
+    "native": "FETCH sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "grant sample",
+    "baseline": "GRANT sample",
+    "native": "GRANT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "limit sample",
+    "baseline": "LIMIT\n  sample",
+    "native": "LIMIT\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reset sample",
+    "baseline": "RESET sample",
+    "native": "RESET sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "where sample",
+    "baseline": "WHERE\n  sample",
+    "native": "WHERE\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "call sample",
+    "baseline": "CALL sample",
+    "native": "CALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "copy sample",
+    "baseline": "COPY sample",
+    "native": "COPY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "drop sample",
+    "baseline": "DROP sample",
+    "native": "DROP sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "from sample",
+    "baseline": "FROM\n  sample",
+    "native": "FROM\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "load sample",
+    "baseline": "LOAD sample",
+    "native": "LOAD sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lock sample",
+    "baseline": "LOCK sample",
+    "native": "LOCK sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "move sample",
+    "baseline": "MOVE sample",
+    "native": "MOVE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "show sample",
+    "baseline": "SHOW sample",
+    "native": "SHOW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "with sample",
+    "baseline": "WITH\n  sample",
+    "native": "WITH sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "add sample",
+    "baseline": "ADD sample",
+    "native": "ADD sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set sample",
+    "baseline": "SET\n  sample",
+    "native": "SET sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "intersect distinct sample",
+    "baseline": "INTERSECT DISTINCT\nsample",
+    "native": "INTERSECT DISTINCT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "except distinct sample",
+    "baseline": "EXCEPT DISTINCT\nsample",
+    "native": "EXCEPT DISTINCT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "union distinct sample",
+    "baseline": "UNION DISTINCT\nsample",
+    "native": "UNION DISTINCT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "intersect all sample",
+    "baseline": "INTERSECT ALL\nsample",
+    "native": "INTERSECT ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "except all sample",
+    "baseline": "EXCEPT ALL\nsample",
+    "native": "EXCEPT ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "intersect sample",
+    "baseline": "INTERSECT\nsample",
+    "native": "INTERSECT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "union all sample",
+    "baseline": "UNION ALL\nsample",
+    "native": "UNION ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "except sample",
+    "baseline": "EXCEPT\nsample",
+    "native": "EXCEPT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "union sample",
+    "baseline": "UNION\nsample",
+    "native": "UNION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural right outer join sample",
+    "baseline": "NATURAL RIGHT OUTER JOIN sample",
+    "native": "NATURAL\nRIGHT OUTER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural full outer join sample",
+    "baseline": "NATURAL FULL OUTER JOIN sample",
+    "native": "NATURAL\nFULL OUTER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural left outer join sample",
+    "baseline": "NATURAL LEFT OUTER JOIN sample",
+    "native": "NATURAL\nLEFT OUTER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural inner join sample",
+    "baseline": "NATURAL INNER JOIN sample",
+    "native": "NATURAL\nINNER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural right join sample",
+    "baseline": "NATURAL RIGHT JOIN sample",
+    "native": "NATURAL\nRIGHT JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural full join sample",
+    "baseline": "NATURAL FULL JOIN sample",
+    "native": "NATURAL\nFULL JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural left join sample",
+    "baseline": "NATURAL LEFT JOIN sample",
+    "native": "NATURAL\nLEFT JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "right outer join sample",
+    "baseline": "RIGHT OUTER JOIN sample",
+    "native": "RIGHT OUTER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "full outer join sample",
+    "baseline": "FULL OUTER JOIN sample",
+    "native": "FULL OUTER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "left outer join sample",
+    "baseline": "LEFT OUTER JOIN sample",
+    "native": "LEFT OUTER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural join sample",
+    "baseline": "NATURAL JOIN sample",
+    "native": "NATURAL JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cross join sample",
+    "baseline": "CROSS JOIN sample",
+    "native": "CROSS JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inner join sample",
+    "baseline": "INNER JOIN sample",
+    "native": "INNER JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "right join sample",
+    "baseline": "RIGHT JOIN sample",
+    "native": "RIGHT JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "full join sample",
+    "baseline": "FULL JOIN sample",
+    "native": "FULL JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "left join sample",
+    "baseline": "LEFT JOIN sample",
+    "native": "LEFT JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "join sample",
+    "baseline": "JOIN sample",
+    "native": "JOIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "generated by default as identity sample",
+    "baseline": "GENERATED BY DEFAULT AS IDENTITY sample",
+    "native": "GENERATED BY DEFAULT AS IDENTITY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "generated always as identity sample",
+    "baseline": "GENERATED ALWAYS AS IDENTITY sample",
+    "native": "GENERATED ALWAYS AS IDENTITY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on delete set default sample",
+    "baseline": "ON DELETE SET DEFAULT sample",
+    "native": "ON DELETE SET DEFAULT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on update set default sample",
+    "baseline": "ON UPDATE SET DEFAULT sample",
+    "native": "ON UPDATE SET DEFAULT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "is not distinct from sample",
+    "baseline": "IS NOT DISTINCT FROM sample",
+    "native": "IS NOT DISTINCT\nFROM\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on delete no action sample",
+    "baseline": "ON DELETE NO ACTION sample",
+    "native": "ON DELETE NO ACTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on update no action sample",
+    "baseline": "ON UPDATE NO ACTION sample",
+    "native": "ON UPDATE NO ACTION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on delete restrict sample",
+    "baseline": "ON DELETE RESTRICT sample",
+    "native": "ON DELETE RESTRICT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on delete set null sample",
+    "baseline": "ON DELETE SET NULL sample",
+    "native": "ON DELETE SET NULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on update restrict sample",
+    "baseline": "ON UPDATE RESTRICT sample",
+    "native": "ON UPDATE RESTRICT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on update set null sample",
+    "baseline": "ON UPDATE SET NULL sample",
+    "native": "ON UPDATE SET NULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on delete cascade sample",
+    "baseline": "ON DELETE CASCADE sample",
+    "native": "ON DELETE CASCADE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on update cascade sample",
+    "baseline": "ON UPDATE CASCADE sample",
+    "native": "ON UPDATE CASCADE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "is distinct from sample",
+    "baseline": "IS DISTINCT FROM sample",
+    "native": "IS DISTINCT\nFROM\n  sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "as materialized sample",
+    "baseline": "AS MATERIALIZED sample",
+    "native": "AS MATERIALIZED sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "with ordinality sample",
+    "baseline": "WITH ORDINALITY sample",
+    "native": "WITH ORDINALITY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "groups between sample",
+    "baseline": "GROUPS BETWEEN sample",
+    "native": "GROUPS BETWEEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "range between sample",
+    "baseline": "RANGE BETWEEN sample",
+    "native": "RANGE BETWEEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rows between sample",
+    "baseline": "ROWS BETWEEN sample",
+    "native": "ROWS BETWEEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "nulls first sample",
+    "baseline": "NULLS FIRST sample",
+    "native": "NULLS FIRST sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "primary key sample",
+    "baseline": "PRIMARY KEY sample",
+    "native": "PRIMARY KEY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "do nothing sample",
+    "baseline": "DO NOTHING sample",
+    "native": "DO NOTHING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "nulls last sample",
+    "baseline": "NULLS LAST sample",
+    "native": "NULLS LAST sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "do update sample",
+    "baseline": "DO UPDATE sample",
+    "native": "DO UPDATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on delete sample",
+    "baseline": "ON DELETE sample",
+    "native": "ON DELETE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on update sample",
+    "baseline": "ON UPDATE sample",
+    "native": "ON UPDATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "timestamp without time zone sample",
+    "baseline": "timestamp without time zone sample",
+    "native": "timestamp without time zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "timestamp with time zone sample",
+    "baseline": "timestamp with time zone sample",
+    "native": "timestamp with time zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "time without time zone sample",
+    "baseline": "time without time zone sample",
+    "native": "time without time zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "time with time zone sample",
+    "baseline": "time with time zone sample",
+    "native": "time with time zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "without time zone sample",
+    "baseline": "without time zone sample",
+    "native": "without time zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "with time zone sample",
+    "baseline": "with time zone sample",
+    "native": "with time zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_timestamp sample",
+    "baseline": "current_timestamp sample",
+    "native": "current_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_catalog sample",
+    "baseline": "current_catalog sample",
+    "native": "current_catalog sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_schema sample",
+    "baseline": "current_schema sample",
+    "native": "current_schema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "localtimestamp sample",
+    "baseline": "localtimestamp sample",
+    "native": "localtimestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "authorization sample",
+    "baseline": "AUTHORIZATION sample",
+    "native": "AUTHORIZATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "concurrently sample",
+    "baseline": "CONCURRENTLY sample",
+    "native": "CONCURRENTLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_date sample",
+    "baseline": "current_date sample",
+    "native": "current_date sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_role sample",
+    "baseline": "current_role sample",
+    "native": "current_role sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_time sample",
+    "baseline": "current_time sample",
+    "native": "current_time sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_user sample",
+    "baseline": "current_user sample",
+    "native": "current_user sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "session_user sample",
+    "baseline": "session_user sample",
+    "native": "session_user sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tablesample sample",
+    "baseline": "TABLESAMPLE sample",
+    "native": "TABLESAMPLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "asymmetric sample",
+    "baseline": "ASYMMETRIC sample",
+    "native": "ASYMMETRIC sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "constraint sample",
+    "baseline": "CONSTRAINT sample",
+    "native": "CONSTRAINT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "deferrable sample",
+    "baseline": "DEFERRABLE sample",
+    "native": "DEFERRABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "references sample",
+    "baseline": "REFERENCES sample",
+    "native": "REFERENCES sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "collation sample",
+    "baseline": "COLLATION sample",
+    "native": "COLLATION sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "initially sample",
+    "baseline": "INITIALLY sample",
+    "native": "INITIALLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "localtime sample",
+    "baseline": "localtime sample",
+    "native": "localtime sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "symmetric sample",
+    "baseline": "SYMMETRIC sample",
+    "native": "SYMMETRIC sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "distinct sample",
+    "baseline": "DISTINCT sample",
+    "native": "DISTINCT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "overlaps sample",
+    "baseline": "OVERLAPS sample",
+    "native": "OVERLAPS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "trailing sample",
+    "baseline": "TRAILING sample",
+    "native": "TRAILING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "variadic sample",
+    "baseline": "VARIADIC sample",
+    "native": "VARIADIC sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "analyse sample",
+    "baseline": "ANALYSE sample",
+    "native": "ANALYSE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "between sample",
+    "native": "BETWEEN sample",
+    "baselineError": "Parse error at token: «EOF» at line 1 column 15"
+  },
+  {
+    "sql": "collate sample",
+    "baseline": "COLLATE sample",
+    "native": "COLLATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "default sample",
+    "baseline": "DEFAULT sample",
+    "native": "DEFAULT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "foreign sample",
+    "baseline": "FOREIGN sample",
+    "native": "FOREIGN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lateral sample",
+    "baseline": "LATERAL sample",
+    "native": "LATERAL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "leading sample",
+    "baseline": "LEADING sample",
+    "native": "LEADING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "natural sample",
+    "baseline": "NATURAL sample",
+    "native": "NATURAL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "notnull sample",
+    "baseline": "NOTNULL sample",
+    "native": "NOTNULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "placing sample",
+    "baseline": "PLACING sample",
+    "native": "PLACING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "primary sample",
+    "baseline": "PRIMARY sample",
+    "native": "PRIMARY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "similar sample",
+    "baseline": "SIMILAR sample",
+    "native": "SIMILAR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "verbose sample",
+    "baseline": "VERBOSE sample",
+    "native": "VERBOSE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "without sample",
+    "baseline": "WITHOUT sample",
+    "native": "WITHOUT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "binary sample",
+    "baseline": "BINARY sample",
+    "native": "BINARY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "column sample",
+    "baseline": "COLUMN sample",
+    "native": "COLUMN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "create sample",
+    "baseline": "CREATE sample",
+    "native": "CREATE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "exists sample",
+    "baseline": "EXISTS sample",
+    "native": "EXISTS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "filter sample",
+    "baseline": "FILTER sample",
+    "native": "FILTER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "freeze sample",
+    "baseline": "FREEZE sample",
+    "native": "FREEZE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "isnull sample",
+    "baseline": "ISNULL sample",
+    "native": "ISNULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "minute sample",
+    "baseline": "MINUTE sample",
+    "native": "MINUTE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "nullif sample",
+    "baseline": "nullif sample",
+    "native": "nullif sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "second sample",
+    "baseline": "SECOND sample",
+    "native": "SECOND sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "unique sample",
+    "baseline": "UNIQUE sample",
+    "native": "UNIQUE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "within sample",
+    "baseline": "WITHIN sample",
+    "native": "WITHIN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "check sample",
+    "baseline": "CHECK sample",
+    "native": "CHECK sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cross sample",
+    "baseline": "CROSS sample",
+    "native": "CROSS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "false sample",
+    "baseline": "FALSE sample",
+    "native": "FALSE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "group sample",
+    "baseline": "GROUP sample",
+    "native": "GROUP sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ilike sample",
+    "baseline": "ILIKE sample",
+    "native": "ILIKE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inner sample",
+    "baseline": "INNER sample",
+    "native": "INNER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inout sample",
+    "baseline": "INOUT sample",
+    "native": "INOUT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "month sample",
+    "baseline": "MONTH sample",
+    "native": "MONTH sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "order sample",
+    "baseline": "ORDER sample",
+    "native": "ORDER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "outer sample",
+    "baseline": "OUTER sample",
+    "native": "OUTER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "right sample",
+    "baseline": "right sample",
+    "native": "right sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "table sample",
+    "baseline": "TABLE sample",
+    "native": "TABLE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "using sample",
+    "baseline": "USING sample",
+    "native": "USING sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "both sample",
+    "baseline": "BOTH sample",
+    "native": "BOTH sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "case sample",
+    "native": "!ERROR!SQL has unmatched parentheses, brackets or CASE/END",
+    "baselineError": "Parse error at token: «EOF» at line 1 column 12"
+  },
+  {
+    "sql": "cast sample",
+    "baseline": "cast sample",
+    "native": "cast sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "desc sample",
+    "baseline": "DESC sample",
+    "native": "DESC sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "else sample",
+    "baseline": "ELSE sample",
+    "native": "ELSE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "full sample",
+    "baseline": "FULL sample",
+    "native": "FULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "hour sample",
+    "baseline": "HOUR sample",
+    "native": "HOUR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "into sample",
+    "baseline": "INTO sample",
+    "native": "INTO sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "left sample",
+    "baseline": "left sample",
+    "native": "left sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "like sample",
+    "baseline": "LIKE sample",
+    "native": "LIKE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "null sample",
+    "baseline": "NULL sample",
+    "native": "NULL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "only sample",
+    "baseline": "ONLY sample",
+    "native": "ONLY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "over sample",
+    "baseline": "OVER sample",
+    "native": "OVER sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "some sample",
+    "baseline": "SOME sample",
+    "native": "SOME sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "then sample",
+    "baseline": "THEN sample",
+    "native": "THEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "true sample",
+    "baseline": "TRUE sample",
+    "native": "TRUE sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "user sample",
+    "baseline": "user sample",
+    "native": "user sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "when sample",
+    "baseline": "WHEN sample",
+    "native": "WHEN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "year sample",
+    "baseline": "YEAR sample",
+    "native": "YEAR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "all sample",
+    "baseline": "ALL sample",
+    "native": "ALL sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "and sample",
+    "baseline": "AND sample",
+    "native": "AND sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "any sample",
+    "baseline": "ANY sample",
+    "native": "ANY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "asc sample",
+    "baseline": "ASC sample",
+    "native": "ASC sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "day sample",
+    "baseline": "DAY sample",
+    "native": "DAY sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "end sample",
+    "baseline": "END sample",
+    "native": "END sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "for sample",
+    "baseline": "FOR sample",
+    "native": "FOR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "not sample",
+    "baseline": "NOT sample",
+    "native": "NOT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "out sample",
+    "baseline": "OUT sample",
+    "native": "OUT sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "row sample",
+    "baseline": "ROW sample",
+    "native": "ROW sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "as sample",
+    "baseline": "AS sample",
+    "native": "AS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "do sample",
+    "baseline": "DO sample",
+    "native": "DO sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "in sample",
+    "baseline": "IN sample",
+    "native": "IN sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "is sample",
+    "baseline": "IS sample",
+    "native": "IS sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "on sample",
+    "baseline": "ON sample",
+    "native": "ON sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "or sample",
+    "baseline": "OR sample",
+    "native": "OR sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to sample",
+    "baseline": "TO sample",
+    "native": "TO sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "character varying sample",
+    "baseline": "character varying sample",
+    "native": "character varying sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit varying sample",
+    "baseline": "bit varying sample",
+    "native": "bit varying sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "timestamptz sample",
+    "baseline": "timestamptz sample",
+    "native": "timestamptz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "character sample",
+    "baseline": "character sample",
+    "native": "character sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "precision sample",
+    "baseline": "precision sample",
+    "native": "precision sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "timestamp sample",
+    "baseline": "timestamp sample",
+    "native": "timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "interval sample",
+    "baseline": "interval sample",
+    "native": "interval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "smallint sample",
+    "baseline": "smallint sample",
+    "native": "smallint sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "boolean sample",
+    "baseline": "boolean sample",
+    "native": "boolean sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "decimal sample",
+    "baseline": "decimal sample",
+    "native": "decimal sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "integer sample",
+    "baseline": "integer sample",
+    "native": "integer sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "numeric sample",
+    "baseline": "numeric sample",
+    "native": "numeric sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "varchar sample",
+    "baseline": "varchar sample",
+    "native": "varchar sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bigint sample",
+    "baseline": "bigint sample",
+    "native": "bigint sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "double sample",
+    "baseline": "double sample",
+    "native": "double sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array sample",
+    "baseline": "array sample",
+    "native": "array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "float sample",
+    "baseline": "float sample",
+    "native": "float sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb sample",
+    "baseline": "jsonb sample",
+    "native": "jsonb sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "nchar sample",
+    "baseline": "nchar sample",
+    "native": "nchar sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bool sample",
+    "baseline": "bool sample",
+    "native": "bool sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "char sample",
+    "baseline": "char sample",
+    "native": "char sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "enum sample",
+    "baseline": "enum sample",
+    "native": "enum sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json sample",
+    "baseline": "json sample",
+    "native": "json sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "real sample",
+    "baseline": "real sample",
+    "native": "real sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "text sample",
+    "baseline": "text sample",
+    "native": "text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "time sample",
+    "baseline": "time sample",
+    "native": "time sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "uuid sample",
+    "baseline": "uuid sample",
+    "native": "uuid sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "zone sample",
+    "baseline": "zone sample",
+    "native": "zone sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit sample",
+    "baseline": "bit sample",
+    "native": "bit sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "dec sample",
+    "baseline": "dec sample",
+    "native": "dec sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "int sample",
+    "baseline": "int sample",
+    "native": "int sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xml sample",
+    "baseline": "xml sample",
+    "native": "xml sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_session_is_setup sample",
+    "baseline": "pg_replication_origin_session_is_setup sample",
+    "native": "pg_replication_origin_session_is_setup sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_session_progress sample",
+    "baseline": "pg_replication_origin_session_progress sample",
+    "native": "pg_replication_origin_session_progress sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_event_trigger_table_rewrite_reason sample",
+    "baseline": "pg_event_trigger_table_rewrite_reason sample",
+    "native": "pg_event_trigger_table_rewrite_reason sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_create_physical_replication_slot sample",
+    "baseline": "pg_create_physical_replication_slot sample",
+    "native": "pg_create_physical_replication_slot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_logical_slot_peek_binary_changes sample",
+    "baseline": "pg_logical_slot_peek_binary_changes sample",
+    "native": "pg_logical_slot_peek_binary_changes sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_session_reset sample",
+    "baseline": "pg_replication_origin_session_reset sample",
+    "native": "pg_replication_origin_session_reset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_session_setup sample",
+    "baseline": "pg_replication_origin_session_setup sample",
+    "native": "pg_replication_origin_session_setup sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_foreign_data_wrapper_privilege sample",
+    "baseline": "has_foreign_data_wrapper_privilege sample",
+    "native": "has_foreign_data_wrapper_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_create_logical_replication_slot sample",
+    "baseline": "pg_create_logical_replication_slot sample",
+    "native": "pg_create_logical_replication_slot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_event_trigger_table_rewrite_oid sample",
+    "baseline": "pg_event_trigger_table_rewrite_oid sample",
+    "native": "pg_event_trigger_table_rewrite_oid sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_function_identity_arguments sample",
+    "baseline": "pg_get_function_identity_arguments sample",
+    "native": "pg_get_function_identity_arguments sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_logical_slot_get_binary_changes sample",
+    "baseline": "pg_logical_slot_get_binary_changes sample",
+    "native": "pg_logical_slot_get_binary_changes sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "suppress_redundant_updates_trigger sample",
+    "baseline": "suppress_redundant_updates_trigger sample",
+    "native": "suppress_redundant_updates_trigger sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_copy_physical_replication_slot sample",
+    "baseline": "pg_copy_physical_replication_slot sample",
+    "native": "pg_copy_physical_replication_slot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_copy_logical_replication_slot sample",
+    "baseline": "pg_copy_logical_replication_slot sample",
+    "native": "pg_copy_logical_replication_slot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_event_trigger_dropped_objects sample",
+    "baseline": "pg_event_trigger_dropped_objects sample",
+    "native": "pg_event_trigger_dropped_objects sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_xact_reset sample",
+    "baseline": "pg_replication_origin_xact_reset sample",
+    "native": "pg_replication_origin_xact_reset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_xact_setup sample",
+    "baseline": "pg_replication_origin_xact_setup sample",
+    "native": "pg_replication_origin_xact_setup sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_try_advisory_xact_lock_shared sample",
+    "baseline": "pg_try_advisory_xact_lock_shared sample",
+    "native": "pg_try_advisory_xact_lock_shared sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_xact_commit_timestamp_origin sample",
+    "baseline": "pg_xact_commit_timestamp_origin sample",
+    "native": "pg_xact_commit_timestamp_origin sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_xact_id_if_assigned sample",
+    "baseline": "pg_current_xact_id_if_assigned sample",
+    "native": "pg_current_xact_id_if_assigned sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_log_backend_memory_contexts sample",
+    "baseline": "pg_log_backend_memory_contexts sample",
+    "native": "pg_log_backend_memory_contexts sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_progress sample",
+    "baseline": "pg_replication_origin_progress sample",
+    "native": "pg_replication_origin_progress sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_safe_snapshot_blocking_pids sample",
+    "baseline": "pg_safe_snapshot_blocking_pids sample",
+    "native": "pg_safe_snapshot_blocking_pids sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tsvector_update_trigger_column sample",
+    "baseline": "tsvector_update_trigger_column sample",
+    "native": "tsvector_update_trigger_column sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "database_to_xml_and_xmlschema sample",
+    "baseline": "database_to_xml_and_xmlschema sample",
+    "native": "database_to_xml_and_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_event_trigger_ddl_commands sample",
+    "baseline": "pg_event_trigger_ddl_commands sample",
+    "native": "pg_event_trigger_ddl_commands sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_wal_replay_pause_state sample",
+    "baseline": "pg_get_wal_replay_pause_state sample",
+    "native": "pg_get_wal_replay_pause_state sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_identify_object_as_address sample",
+    "baseline": "pg_identify_object_as_address sample",
+    "native": "pg_identify_object_as_address sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_last_xact_replay_timestamp sample",
+    "baseline": "pg_last_xact_replay_timestamp sample",
+    "native": "pg_last_xact_replay_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_advance sample",
+    "baseline": "pg_replication_origin_advance sample",
+    "native": "pg_replication_origin_advance sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_xact_lock_shared sample",
+    "baseline": "pg_advisory_xact_lock_shared sample",
+    "native": "pg_advisory_xact_lock_shared sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_index_column_has_property sample",
+    "baseline": "pg_index_column_has_property sample",
+    "native": "pg_index_column_has_property sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_logical_slot_peek_changes sample",
+    "baseline": "pg_logical_slot_peek_changes sample",
+    "native": "pg_logical_slot_peek_changes sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_create sample",
+    "baseline": "pg_replication_origin_create sample",
+    "native": "pg_replication_origin_create sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_statistics_obj_is_visible sample",
+    "baseline": "pg_statistics_obj_is_visible sample",
+    "native": "pg_statistics_obj_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_collation_actual_version sample",
+    "baseline": "pg_collation_actual_version sample",
+    "native": "pg_collation_actual_version sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_catalog_foreign_keys sample",
+    "baseline": "pg_get_catalog_foreign_keys sample",
+    "native": "pg_get_catalog_foreign_keys sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_import_system_collations sample",
+    "baseline": "pg_import_system_collations sample",
+    "native": "pg_import_system_collations sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_logical_slot_get_changes sample",
+    "baseline": "pg_logical_slot_get_changes sample",
+    "native": "pg_logical_slot_get_changes sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_notification_queue_usage sample",
+    "baseline": "pg_notification_queue_usage sample",
+    "native": "pg_notification_queue_usage sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_slot_advance sample",
+    "baseline": "pg_replication_slot_advance sample",
+    "native": "pg_replication_slot_advance sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_try_advisory_lock_shared sample",
+    "baseline": "pg_try_advisory_lock_shared sample",
+    "native": "pg_try_advisory_lock_shared sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "schema_to_xml_and_xmlschema sample",
+    "baseline": "schema_to_xml_and_xmlschema sample",
+    "native": "schema_to_xml_and_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xml_is_well_formed_document sample",
+    "baseline": "xml_is_well_formed_document sample",
+    "native": "xml_is_well_formed_document sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_drop sample",
+    "baseline": "pg_replication_origin_drop sample",
+    "native": "pg_replication_origin_drop sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "query_to_xml_and_xmlschema sample",
+    "baseline": "query_to_xml_and_xmlschema sample",
+    "native": "query_to_xml_and_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "table_to_xml_and_xmlschema sample",
+    "baseline": "table_to_xml_and_xmlschema sample",
+    "native": "table_to_xml_and_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xml_is_well_formed_content sample",
+    "baseline": "xml_is_well_formed_content sample",
+    "native": "xml_is_well_formed_content sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "brin_summarize_new_values sample",
+    "baseline": "brin_summarize_new_values sample",
+    "native": "brin_summarize_new_values sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_array_elements_text sample",
+    "baseline": "jsonb_array_elements_text sample",
+    "native": "jsonb_array_elements_text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_query_array_tz sample",
+    "baseline": "jsonb_path_query_array_tz sample",
+    "native": "jsonb_path_query_array_tz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_query_first_tz sample",
+    "baseline": "jsonb_path_query_first_tz sample",
+    "native": "jsonb_path_query_first_tz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_unlock_shared sample",
+    "baseline": "pg_advisory_unlock_shared sample",
+    "native": "pg_advisory_unlock_shared sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_wal_insert_lsn sample",
+    "baseline": "pg_current_wal_insert_lsn sample",
+    "native": "pg_current_wal_insert_lsn sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_function_arguments sample",
+    "baseline": "pg_get_function_arguments sample",
+    "native": "pg_get_function_arguments sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_replication_origin_oid sample",
+    "baseline": "pg_replication_origin_oid sample",
+    "native": "pg_replication_origin_oid sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_try_advisory_xact_lock sample",
+    "baseline": "pg_try_advisory_xact_lock sample",
+    "native": "pg_try_advisory_xact_lock sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ts_template_is_visible sample",
+    "baseline": "pg_ts_template_is_visible sample",
+    "native": "pg_ts_template_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_any_column_privilege sample",
+    "baseline": "has_any_column_privilege sample",
+    "native": "has_any_column_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_tablespace_privilege sample",
+    "baseline": "has_tablespace_privilege sample",
+    "native": "has_tablespace_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_array_elements_text sample",
+    "baseline": "json_array_elements_text sample",
+    "native": "json_array_elements_text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_populate_recordset sample",
+    "baseline": "jsonb_populate_recordset sample",
+    "native": "jsonb_populate_recordset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_conversion_is_visible sample",
+    "baseline": "pg_conversion_is_visible sample",
+    "native": "pg_conversion_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_wal_flush_lsn sample",
+    "baseline": "pg_current_wal_flush_lsn sample",
+    "native": "pg_current_wal_flush_lsn sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_drop_replication_slot sample",
+    "baseline": "pg_drop_replication_slot sample",
+    "native": "pg_drop_replication_slot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_postmaster_start_time sample",
+    "baseline": "pg_postmaster_start_time sample",
+    "native": "pg_postmaster_start_time sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_xact_commit_timestamp sample",
+    "baseline": "pg_xact_commit_timestamp sample",
+    "native": "pg_xact_commit_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_current_if_assigned sample",
+    "baseline": "txid_current_if_assigned sample",
+    "native": "txid_current_if_assigned sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_visible_in_snapshot sample",
+    "baseline": "txid_visible_in_snapshot sample",
+    "native": "txid_visible_in_snapshot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_populate_recordset sample",
+    "baseline": "json_populate_recordset sample",
+    "native": "json_populate_recordset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_extract_path_text sample",
+    "baseline": "jsonb_extract_path_text sample",
+    "native": "jsonb_extract_path_text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_lock_shared sample",
+    "baseline": "pg_advisory_lock_shared sample",
+    "native": "pg_advisory_lock_shared sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_collation_is_visible sample",
+    "baseline": "pg_collation_is_visible sample",
+    "native": "pg_collation_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_create_restore_point sample",
+    "baseline": "pg_create_restore_point sample",
+    "native": "pg_create_restore_point sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_statisticsobjdef sample",
+    "baseline": "pg_get_statisticsobjdef sample",
+    "native": "pg_get_statisticsobjdef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_indexam_has_property sample",
+    "baseline": "pg_indexam_has_property sample",
+    "native": "pg_indexam_has_property sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_is_other_temp_schema sample",
+    "baseline": "pg_is_other_temp_schema sample",
+    "native": "pg_is_other_temp_schema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_is_wal_replay_paused sample",
+    "baseline": "pg_is_wal_replay_paused sample",
+    "native": "pg_is_wal_replay_paused sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_last_wal_receive_lsn sample",
+    "baseline": "pg_last_wal_receive_lsn sample",
+    "native": "pg_last_wal_receive_lsn sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_logical_emit_message sample",
+    "baseline": "pg_logical_emit_message sample",
+    "native": "pg_logical_emit_message sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ls_archive_statusdir sample",
+    "baseline": "pg_ls_archive_statusdir sample",
+    "native": "pg_ls_archive_statusdir sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_tablespace_databases sample",
+    "baseline": "pg_tablespace_databases sample",
+    "native": "pg_tablespace_databases sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ts_config_is_visible sample",
+    "baseline": "pg_ts_config_is_visible sample",
+    "native": "pg_ts_config_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ts_parser_is_visible sample",
+    "baseline": "pg_ts_parser_is_visible sample",
+    "native": "pg_ts_parser_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tsvector_update_trigger sample",
+    "baseline": "tsvector_update_trigger sample",
+    "native": "tsvector_update_trigger sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "brin_desummarize_range sample",
+    "baseline": "brin_desummarize_range sample",
+    "native": "brin_desummarize_range sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "gin_clean_pending_list sample",
+    "baseline": "gin_clean_pending_list sample",
+    "native": "gin_clean_pending_list sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_database_privilege sample",
+    "baseline": "has_database_privilege sample",
+    "native": "has_database_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_function_privilege sample",
+    "baseline": "has_function_privilege sample",
+    "native": "has_function_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_language_privilege sample",
+    "baseline": "has_language_privilege sample",
+    "native": "has_language_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_sequence_privilege sample",
+    "baseline": "has_sequence_privilege sample",
+    "native": "has_sequence_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_extract_path_text sample",
+    "baseline": "json_extract_path_text sample",
+    "native": "json_extract_path_text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_query_array sample",
+    "baseline": "jsonb_path_query_array sample",
+    "native": "jsonb_path_query_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_query_first sample",
+    "baseline": "jsonb_path_query_first sample",
+    "native": "jsonb_path_query_first sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_unlock_all sample",
+    "baseline": "pg_advisory_unlock_all sample",
+    "native": "pg_advisory_unlock_all sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_function_is_visible sample",
+    "baseline": "pg_function_is_visible sample",
+    "native": "pg_function_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_function_result sample",
+    "baseline": "pg_get_function_result sample",
+    "native": "pg_get_function_result sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_serial_sequence sample",
+    "baseline": "pg_get_serial_sequence sample",
+    "native": "pg_get_serial_sequence sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_last_committed_xact sample",
+    "baseline": "pg_last_committed_xact sample",
+    "native": "pg_last_committed_xact sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_last_wal_replay_lsn sample",
+    "baseline": "pg_last_wal_replay_lsn sample",
+    "native": "pg_last_wal_replay_lsn sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_operator_is_visible sample",
+    "baseline": "pg_operator_is_visible sample",
+    "native": "pg_operator_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_opfamily_is_visible sample",
+    "baseline": "pg_opfamily_is_visible sample",
+    "native": "pg_opfamily_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_partition_ancestors sample",
+    "baseline": "pg_partition_ancestors sample",
+    "native": "pg_partition_ancestors sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_tablespace_location sample",
+    "baseline": "pg_tablespace_location sample",
+    "native": "pg_tablespace_location sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_total_relation_size sample",
+    "baseline": "pg_total_relation_size sample",
+    "native": "pg_total_relation_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_visible_in_snapshot sample",
+    "baseline": "pg_visible_in_snapshot sample",
+    "native": "pg_visible_in_snapshot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_walfile_name_offset sample",
+    "baseline": "pg_walfile_name_offset sample",
+    "native": "pg_walfile_name_offset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "uuid_extract_timestamp sample",
+    "baseline": "uuid_extract_timestamp sample",
+    "native": "uuid_extract_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "database_to_xmlschema sample",
+    "baseline": "database_to_xmlschema sample",
+    "native": "database_to_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "get_current_ts_config sample",
+    "baseline": "get_current_ts_config sample",
+    "native": "get_current_ts_config sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_populate_record sample",
+    "baseline": "jsonb_populate_record sample",
+    "native": "jsonb_populate_record sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_xact_lock sample",
+    "baseline": "pg_advisory_xact_lock sample",
+    "native": "pg_advisory_xact_lock sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_column_compression sample",
+    "baseline": "pg_column_compression sample",
+    "native": "pg_column_compression sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_control_checkpoint sample",
+    "baseline": "pg_control_checkpoint sample",
+    "native": "pg_control_checkpoint sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_object_address sample",
+    "baseline": "pg_get_object_address sample",
+    "native": "pg_get_object_address sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_owned_sequence sample",
+    "baseline": "pg_get_owned_sequence sample",
+    "native": "pg_get_owned_sequence sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_index_has_property sample",
+    "baseline": "pg_index_has_property sample",
+    "native": "pg_index_has_property sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_listening_channels sample",
+    "baseline": "pg_listening_channels sample",
+    "native": "pg_listening_channels sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_opclass_is_visible sample",
+    "baseline": "pg_opclass_is_visible sample",
+    "native": "pg_opclass_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ts_dict_is_visible sample",
+    "baseline": "pg_ts_dict_is_visible sample",
+    "native": "pg_ts_dict_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regexp_split_to_array sample",
+    "baseline": "regexp_split_to_array sample",
+    "native": "regexp_split_to_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regexp_split_to_table sample",
+    "baseline": "regexp_split_to_table sample",
+    "native": "regexp_split_to_table sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "transaction_timestamp sample",
+    "baseline": "transaction_timestamp sample",
+    "native": "transaction_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_current_snapshot sample",
+    "baseline": "txid_current_snapshot sample",
+    "native": "txid_current_snapshot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "brin_summarize_range sample",
+    "baseline": "brin_summarize_range sample",
+    "native": "brin_summarize_range sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_column_privilege sample",
+    "baseline": "has_column_privilege sample",
+    "native": "has_column_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_schema_privilege sample",
+    "baseline": "has_schema_privilege sample",
+    "native": "has_schema_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_server_privilege sample",
+    "baseline": "has_server_privilege sample",
+    "native": "has_server_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_populate_record sample",
+    "baseline": "json_populate_record sample",
+    "native": "json_populate_record sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_array_elements sample",
+    "baseline": "jsonb_array_elements sample",
+    "native": "jsonb_array_elements sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_exists_tz sample",
+    "baseline": "jsonb_path_exists_tz sample",
+    "native": "jsonb_path_exists_tz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_backup_start_time sample",
+    "baseline": "pg_backup_start_time sample",
+    "native": "pg_backup_start_time sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_filenode_relation sample",
+    "baseline": "pg_filenode_relation sample",
+    "native": "pg_filenode_relation sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_constraintdef sample",
+    "baseline": "pg_get_constraintdef sample",
+    "native": "pg_get_constraintdef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_relation_filenode sample",
+    "baseline": "pg_relation_filenode sample",
+    "native": "pg_relation_filenode sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_relation_filepath sample",
+    "baseline": "pg_relation_filepath sample",
+    "native": "pg_relation_filepath sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_terminate_backend sample",
+    "baseline": "pg_terminate_backend sample",
+    "native": "pg_terminate_backend sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_try_advisory_lock sample",
+    "baseline": "pg_try_advisory_lock sample",
+    "native": "pg_try_advisory_lock sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_wal_replay_resume sample",
+    "baseline": "pg_wal_replay_resume sample",
+    "native": "pg_wal_replay_resume sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "uuid_extract_version sample",
+    "baseline": "uuid_extract_version sample",
+    "native": "uuid_extract_version sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "websearch_to_tsquery sample",
+    "baseline": "websearch_to_tsquery sample",
+    "native": "websearch_to_tsquery sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cursor_to_xmlschema sample",
+    "baseline": "cursor_to_xmlschema sample",
+    "native": "cursor_to_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "generate_subscripts sample",
+    "baseline": "generate_subscripts sample",
+    "native": "generate_subscripts sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_table_privilege sample",
+    "baseline": "has_table_privilege sample",
+    "native": "has_table_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_array_elements sample",
+    "baseline": "json_array_elements sample",
+    "native": "json_array_elements sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_match_tz sample",
+    "baseline": "jsonb_path_match_tz sample",
+    "native": "jsonb_path_match_tz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_query_tz sample",
+    "baseline": "jsonb_path_query_tz sample",
+    "native": "jsonb_path_query_tz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_snapshot sample",
+    "baseline": "pg_current_snapshot sample",
+    "native": "pg_current_snapshot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_options_to_table sample",
+    "baseline": "pg_options_to_table sample",
+    "native": "pg_options_to_table sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_read_binary_file sample",
+    "baseline": "pg_read_binary_file sample",
+    "native": "pg_read_binary_file sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_table_is_visible sample",
+    "baseline": "pg_table_is_visible sample",
+    "native": "pg_table_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_wal_replay_pause sample",
+    "baseline": "pg_wal_replay_pause sample",
+    "native": "pg_wal_replay_pause sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "range_intersect_agg sample",
+    "baseline": "range_intersect_agg sample",
+    "native": "range_intersect_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "row_security_active sample",
+    "baseline": "row_security_active sample",
+    "native": "row_security_active sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "schema_to_xmlschema sample",
+    "baseline": "schema_to_xmlschema sample",
+    "native": "schema_to_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "statement_timestamp sample",
+    "baseline": "statement_timestamp sample",
+    "native": "statement_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "has_type_privilege sample",
+    "baseline": "has_type_privilege sample",
+    "native": "has_type_privilege sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_array_length sample",
+    "baseline": "jsonb_array_length sample",
+    "native": "jsonb_array_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_build_object sample",
+    "baseline": "jsonb_build_object sample",
+    "native": "jsonb_build_object sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_extract_path sample",
+    "baseline": "jsonb_extract_path sample",
+    "native": "jsonb_extract_path sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_to_recordset sample",
+    "baseline": "jsonb_to_recordset sample",
+    "native": "jsonb_to_recordset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_unlock sample",
+    "baseline": "pg_advisory_unlock sample",
+    "native": "pg_advisory_unlock sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_client_encoding sample",
+    "baseline": "pg_client_encoding sample",
+    "native": "pg_client_encoding sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_logfile sample",
+    "baseline": "pg_current_logfile sample",
+    "native": "pg_current_logfile sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_wal_lsn sample",
+    "baseline": "pg_current_wal_lsn sample",
+    "native": "pg_current_wal_lsn sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_current_xact_id sample",
+    "baseline": "pg_current_xact_id sample",
+    "native": "pg_current_xact_id sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_describe_object sample",
+    "baseline": "pg_describe_object sample",
+    "native": "pg_describe_object sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_export_snapshot sample",
+    "baseline": "pg_export_snapshot sample",
+    "native": "pg_export_snapshot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_functiondef sample",
+    "baseline": "pg_get_functiondef sample",
+    "native": "pg_get_functiondef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_identify_object sample",
+    "baseline": "pg_identify_object sample",
+    "native": "pg_identify_object sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_tablespace_size sample",
+    "baseline": "pg_tablespace_size sample",
+    "native": "pg_tablespace_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_type_is_visible sample",
+    "baseline": "pg_type_is_visible sample",
+    "native": "pg_type_is_visible sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "query_to_xmlschema sample",
+    "baseline": "query_to_xmlschema sample",
+    "native": "query_to_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "table_to_xmlschema sample",
+    "baseline": "table_to_xmlschema sample",
+    "native": "table_to_xmlschema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_snapshot_xmax sample",
+    "baseline": "txid_snapshot_xmax sample",
+    "native": "txid_snapshot_xmax sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_snapshot_xmin sample",
+    "baseline": "txid_snapshot_xmin sample",
+    "native": "txid_snapshot_xmin sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xml_is_well_formed sample",
+    "baseline": "xml_is_well_formed sample",
+    "native": "xml_is_well_formed sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_to_tsvector sample",
+    "baseline": "array_to_tsvector sample",
+    "native": "array_to_tsvector sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_array_length sample",
+    "baseline": "json_array_length sample",
+    "native": "json_array_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_build_object sample",
+    "baseline": "json_build_object sample",
+    "native": "json_build_object sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_extract_path sample",
+    "baseline": "json_extract_path sample",
+    "native": "json_extract_path sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_to_recordset sample",
+    "baseline": "json_to_recordset sample",
+    "native": "json_to_recordset sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_build_array sample",
+    "baseline": "jsonb_build_array sample",
+    "native": "jsonb_build_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_object_keys sample",
+    "baseline": "jsonb_object_keys sample",
+    "native": "jsonb_object_keys sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_exists sample",
+    "baseline": "jsonb_path_exists sample",
+    "native": "jsonb_path_exists sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_strip_nulls sample",
+    "baseline": "jsonb_strip_nulls sample",
+    "native": "jsonb_strip_nulls sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_to_tsvector sample",
+    "baseline": "jsonb_to_tsvector sample",
+    "native": "jsonb_to_tsvector sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_cancel_backend sample",
+    "baseline": "pg_cancel_backend sample",
+    "native": "pg_cancel_backend sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_conf_load_time sample",
+    "baseline": "pg_conf_load_time sample",
+    "native": "pg_conf_load_time sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_control_system sample",
+    "baseline": "pg_control_system sample",
+    "native": "pg_control_system sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_triggerdef sample",
+    "baseline": "pg_get_triggerdef sample",
+    "native": "pg_get_triggerdef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_is_in_recovery sample",
+    "baseline": "pg_is_in_recovery sample",
+    "native": "pg_is_in_recovery sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_mcv_list_items sample",
+    "baseline": "pg_mcv_list_items sample",
+    "native": "pg_mcv_list_items sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_my_temp_schema sample",
+    "baseline": "pg_my_temp_schema sample",
+    "native": "pg_my_temp_schema sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_partition_root sample",
+    "baseline": "pg_partition_root sample",
+    "native": "pg_partition_root sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_partition_tree sample",
+    "baseline": "pg_partition_tree sample",
+    "native": "pg_partition_tree sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_rotate_logfile sample",
+    "baseline": "pg_rotate_logfile sample",
+    "native": "pg_rotate_logfile sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "shobj_description sample",
+    "baseline": "shobj_description sample",
+    "native": "shobj_description sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tsvector_to_array sample",
+    "baseline": "tsvector_to_array sample",
+    "native": "tsvector_to_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_snapshot_xip sample",
+    "baseline": "txid_snapshot_xip sample",
+    "native": "txid_snapshot_xip sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "character_length sample",
+    "baseline": "character_length sample",
+    "native": "character_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_database sample",
+    "baseline": "current_database sample",
+    "native": "current_database sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inet_client_addr sample",
+    "baseline": "inet_client_addr sample",
+    "native": "inet_client_addr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inet_client_port sample",
+    "baseline": "inet_client_port sample",
+    "native": "inet_client_port sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inet_same_family sample",
+    "baseline": "inet_same_family sample",
+    "native": "inet_same_family sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inet_server_addr sample",
+    "baseline": "inet_server_addr sample",
+    "native": "inet_server_addr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inet_server_port sample",
+    "baseline": "inet_server_port sample",
+    "native": "inet_server_port sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_build_array sample",
+    "baseline": "json_build_array sample",
+    "native": "json_build_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_object_keys sample",
+    "baseline": "json_object_keys sample",
+    "native": "json_object_keys sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_strip_nulls sample",
+    "baseline": "json_strip_nulls sample",
+    "native": "json_strip_nulls sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_to_tsvector sample",
+    "baseline": "json_to_tsvector sample",
+    "native": "json_to_tsvector sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_object_agg sample",
+    "baseline": "jsonb_object_agg sample",
+    "native": "jsonb_object_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_match sample",
+    "baseline": "jsonb_path_match sample",
+    "native": "jsonb_path_match sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_path_query sample",
+    "baseline": "jsonb_path_query sample",
+    "native": "jsonb_path_query sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "justify_interval sample",
+    "baseline": "justify_interval sample",
+    "native": "justify_interval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "macaddr8_set7bit sample",
+    "baseline": "macaddr8_set7bit sample",
+    "native": "macaddr8_set7bit sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "make_timestamptz sample",
+    "baseline": "make_timestamptz sample",
+    "native": "make_timestamptz sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_advisory_lock sample",
+    "baseline": "pg_advisory_lock sample",
+    "native": "pg_advisory_lock sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_blocking_pids sample",
+    "baseline": "pg_blocking_pids sample",
+    "native": "pg_blocking_pids sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_database_size sample",
+    "baseline": "pg_database_size sample",
+    "native": "pg_database_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_jit_available sample",
+    "baseline": "pg_jit_available sample",
+    "native": "pg_jit_available sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_relation_size sample",
+    "baseline": "pg_relation_size sample",
+    "native": "pg_relation_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_snapshot_xmax sample",
+    "baseline": "pg_snapshot_xmax sample",
+    "native": "pg_snapshot_xmax sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_snapshot_xmin sample",
+    "baseline": "pg_snapshot_xmin sample",
+    "native": "pg_snapshot_xmin sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_trigger_depth sample",
+    "baseline": "pg_trigger_depth sample",
+    "native": "pg_trigger_depth sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "phraseto_tsquery sample",
+    "baseline": "phraseto_tsquery sample",
+    "native": "phraseto_tsquery sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_positions sample",
+    "baseline": "array_positions sample",
+    "native": "array_positions sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_to_string sample",
+    "baseline": "array_to_string sample",
+    "native": "array_to_string sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "clock_timestamp sample",
+    "baseline": "clock_timestamp sample",
+    "native": "clock_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "col_description sample",
+    "baseline": "col_description sample",
+    "native": "col_description sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_schemas sample",
+    "baseline": "current_schemas sample",
+    "native": "current_schemas sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_setting sample",
+    "baseline": "current_setting sample",
+    "native": "current_setting sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "database_to_xml sample",
+    "baseline": "database_to_xml sample",
+    "native": "database_to_xml sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "gen_random_uuid sample",
+    "baseline": "gen_random_uuid sample",
+    "native": "gen_random_uuid sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "generate_series sample",
+    "baseline": "generate_series sample",
+    "native": "generate_series sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_object_agg sample",
+    "baseline": "json_object_agg sample",
+    "native": "json_object_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_each_text sample",
+    "baseline": "jsonb_each_text sample",
+    "native": "jsonb_each_text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_to_record sample",
+    "baseline": "jsonb_to_record sample",
+    "native": "jsonb_to_record sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "obj_description sample",
+    "baseline": "obj_description sample",
+    "native": "obj_description sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "percentile_cont sample",
+    "baseline": "percentile_cont sample",
+    "native": "percentile_cont sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "percentile_disc sample",
+    "baseline": "percentile_disc sample",
+    "native": "percentile_disc sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_control_init sample",
+    "baseline": "pg_control_init sample",
+    "native": "pg_control_init sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_indexdef sample",
+    "baseline": "pg_get_indexdef sample",
+    "native": "pg_get_indexdef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_keywords sample",
+    "baseline": "pg_get_keywords sample",
+    "native": "pg_get_keywords sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_userbyid sample",
+    "baseline": "pg_get_userbyid sample",
+    "native": "pg_get_userbyid sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_indexes_size sample",
+    "baseline": "pg_indexes_size sample",
+    "native": "pg_indexes_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_is_in_backup sample",
+    "baseline": "pg_is_in_backup sample",
+    "native": "pg_is_in_backup sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_snapshot_xip sample",
+    "baseline": "pg_snapshot_xip sample",
+    "native": "pg_snapshot_xip sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_start_backup sample",
+    "baseline": "pg_start_backup sample",
+    "native": "pg_start_backup sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_wal_lsn_diff sample",
+    "baseline": "pg_wal_lsn_diff sample",
+    "native": "pg_wal_lsn_diff sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_walfile_name sample",
+    "baseline": "pg_walfile_name sample",
+    "native": "pg_walfile_name sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "plainto_tsquery sample",
+    "baseline": "plainto_tsquery sample",
+    "native": "plainto_tsquery sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pqserverversion sample",
+    "baseline": "pqserverversion sample",
+    "native": "pqserverversion sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "string_to_array sample",
+    "baseline": "string_to_array sample",
+    "native": "string_to_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "string_to_table sample",
+    "baseline": "string_to_table sample",
+    "native": "string_to_table sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regcollation sample",
+    "baseline": "to_regcollation sample",
+    "native": "to_regcollation sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regnamespace sample",
+    "baseline": "to_regnamespace sample",
+    "native": "to_regnamespace sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regprocedure sample",
+    "baseline": "to_regprocedure sample",
+    "native": "to_regprocedure sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_position sample",
+    "baseline": "array_position sample",
+    "native": "array_position sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_each_text sample",
+    "baseline": "json_each_text sample",
+    "native": "json_each_text sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_to_record sample",
+    "baseline": "json_to_record sample",
+    "native": "json_to_record sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "make_timestamp sample",
+    "baseline": "make_timestamp sample",
+    "native": "make_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_backend_pid sample",
+    "baseline": "pg_backend_pid sample",
+    "native": "pg_backend_pid sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_column_size sample",
+    "baseline": "pg_column_size sample",
+    "native": "pg_column_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_ruledef sample",
+    "baseline": "pg_get_ruledef sample",
+    "native": "pg_get_ruledef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_viewdef sample",
+    "baseline": "pg_get_viewdef sample",
+    "native": "pg_get_viewdef sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_reload_conf sample",
+    "baseline": "pg_reload_conf sample",
+    "native": "pg_reload_conf sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_size_pretty sample",
+    "baseline": "pg_size_pretty sample",
+    "native": "pg_size_pretty sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_sleep_until sample",
+    "baseline": "pg_sleep_until sample",
+    "native": "pg_sleep_until sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_stop_backup sample",
+    "baseline": "pg_stop_backup sample",
+    "native": "pg_stop_backup sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_xact_status sample",
+    "baseline": "pg_xact_status sample",
+    "native": "pg_xact_status sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "quote_nullable sample",
+    "baseline": "quote_nullable sample",
+    "native": "quote_nullable sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regexp_matches sample",
+    "baseline": "regexp_matches sample",
+    "native": "regexp_matches sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regexp_replace sample",
+    "baseline": "regexp_replace sample",
+    "native": "regexp_replace sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_intercept sample",
+    "baseline": "regr_intercept sample",
+    "native": "regr_intercept sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regoperator sample",
+    "baseline": "to_regoperator sample",
+    "native": "to_regoperator sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tsquery_phrase sample",
+    "baseline": "tsquery_phrase sample",
+    "native": "tsquery_phrase sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_prepend sample",
+    "baseline": "array_prepend sample",
+    "native": "array_prepend sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_replace sample",
+    "baseline": "array_replace sample",
+    "native": "array_replace sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_to_json sample",
+    "baseline": "array_to_json sample",
+    "native": "array_to_json sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "current_query sample",
+    "baseline": "current_query sample",
+    "native": "current_query sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cursor_to_xml sample",
+    "baseline": "cursor_to_xml sample",
+    "native": "cursor_to_xml sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_set_lax sample",
+    "baseline": "jsonb_set_lax sample",
+    "native": "jsonb_set_lax sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "justify_hours sample",
+    "baseline": "justify_hours sample",
+    "native": "justify_hours sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "make_interval sample",
+    "baseline": "make_interval sample",
+    "native": "make_interval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_size_bytes sample",
+    "baseline": "pg_size_bytes sample",
+    "native": "pg_size_bytes sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_switch_wal sample",
+    "baseline": "pg_switch_wal sample",
+    "native": "pg_switch_wal sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_table_size sample",
+    "baseline": "pg_table_size sample",
+    "native": "pg_table_size sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "quote_literal sample",
+    "baseline": "quote_literal sample",
+    "native": "quote_literal sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "schema_to_xml sample",
+    "baseline": "schema_to_xml sample",
+    "native": "schema_to_xml sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_token_type sample",
+    "baseline": "ts_token_type sample",
+    "native": "ts_token_type sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_append sample",
+    "baseline": "array_append sample",
+    "native": "array_append sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_length sample",
+    "baseline": "array_length sample",
+    "native": "array_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_remove sample",
+    "baseline": "array_remove sample",
+    "native": "array_remove sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "convert_from sample",
+    "baseline": "convert_from sample",
+    "native": "convert_from sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_insert sample",
+    "baseline": "jsonb_insert sample",
+    "native": "jsonb_insert sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_object sample",
+    "baseline": "jsonb_object sample",
+    "native": "jsonb_object sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_pretty sample",
+    "baseline": "jsonb_pretty sample",
+    "native": "jsonb_pretty sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_typeof sample",
+    "baseline": "jsonb_typeof sample",
+    "native": "jsonb_typeof sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "justify_days sample",
+    "baseline": "justify_days sample",
+    "native": "justify_days sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "octet_length sample",
+    "baseline": "octet_length sample",
+    "native": "octet_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "percent_rank sample",
+    "baseline": "percent_rank sample",
+    "native": "percent_rank sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ls_logdir sample",
+    "baseline": "pg_ls_logdir sample",
+    "native": "pg_ls_logdir sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ls_tmpdir sample",
+    "baseline": "pg_ls_tmpdir sample",
+    "native": "pg_ls_tmpdir sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ls_waldir sample",
+    "baseline": "pg_ls_waldir sample",
+    "native": "pg_ls_waldir sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_read_file sample",
+    "baseline": "pg_read_file sample",
+    "native": "pg_read_file sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_sleep_for sample",
+    "baseline": "pg_sleep_for sample",
+    "native": "pg_sleep_for sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_stat_file sample",
+    "baseline": "pg_stat_file sample",
+    "native": "pg_stat_file sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "query_to_xml sample",
+    "baseline": "query_to_xml sample",
+    "native": "query_to_xml sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regexp_match sample",
+    "baseline": "regexp_match sample",
+    "native": "regexp_match sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "table_to_xml sample",
+    "baseline": "table_to_xml sample",
+    "native": "table_to_xml sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_timestamp sample",
+    "baseline": "to_timestamp sample",
+    "native": "to_timestamp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_current sample",
+    "baseline": "txid_current sample",
+    "native": "txid_current sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "width_bucket sample",
+    "baseline": "width_bucket sample",
+    "native": "width_bucket sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlserialize sample",
+    "baseline": "xmlserialize sample",
+    "native": "xmlserialize sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xpath_exists sample",
+    "baseline": "xpath_exists sample",
+    "native": "xpath_exists sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_lower sample",
+    "baseline": "array_lower sample",
+    "native": "array_lower sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_ndims sample",
+    "baseline": "array_ndims sample",
+    "native": "array_ndims sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_upper sample",
+    "baseline": "array_upper sample",
+    "native": "array_upper sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cardinality sample",
+    "baseline": "cardinality sample",
+    "native": "cardinality sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "char_length sample",
+    "baseline": "char_length sample",
+    "native": "char_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "first_value sample",
+    "baseline": "first_value sample",
+    "native": "first_value sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "format_type sample",
+    "baseline": "format_type sample",
+    "native": "format_type sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_object sample",
+    "baseline": "json_object sample",
+    "native": "json_object sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_typeof sample",
+    "baseline": "json_typeof sample",
+    "native": "json_typeof sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "makeaclitem sample",
+    "baseline": "makeaclitem sample",
+    "native": "makeaclitem sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "parse_ident sample",
+    "baseline": "parse_ident sample",
+    "native": "parse_ident sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_get_expr sample",
+    "baseline": "pg_get_expr sample",
+    "native": "pg_get_expr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_has_role sample",
+    "baseline": "pg_has_role sample",
+    "native": "pg_has_role sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "quote_ident sample",
+    "baseline": "quote_ident sample",
+    "native": "quote_ident sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "range_merge sample",
+    "baseline": "range_merge sample",
+    "native": "range_merge sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "row_to_json sample",
+    "baseline": "row_to_json sample",
+    "native": "row_to_json sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set_masklen sample",
+    "baseline": "set_masklen sample",
+    "native": "set_masklen sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "starts_with sample",
+    "baseline": "starts_with sample",
+    "native": "starts_with sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "stddev_samp sample",
+    "baseline": "stddev_samp sample",
+    "native": "stddev_samp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regclass sample",
+    "baseline": "to_regclass sample",
+    "native": "to_regclass sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_tsvector sample",
+    "baseline": "to_tsvector sample",
+    "native": "to_tsvector sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_headline sample",
+    "baseline": "ts_headline sample",
+    "native": "ts_headline sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "txid_status sample",
+    "baseline": "txid_status sample",
+    "native": "txid_status sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "acldefault sample",
+    "baseline": "acldefault sample",
+    "native": "acldefault sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "aclexplode sample",
+    "baseline": "aclexplode sample",
+    "native": "aclexplode sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_dims sample",
+    "baseline": "array_dims sample",
+    "native": "array_dims sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_fill sample",
+    "baseline": "array_fill sample",
+    "native": "array_fill sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit_length sample",
+    "baseline": "bit_length sample",
+    "native": "bit_length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "convert_to sample",
+    "baseline": "convert_to sample",
+    "native": "convert_to sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "covar_samp sample",
+    "baseline": "covar_samp sample",
+    "native": "covar_samp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "date_trunc sample",
+    "baseline": "date_trunc sample",
+    "native": "date_trunc sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "dense_rank sample",
+    "baseline": "dense_rank sample",
+    "native": "dense_rank sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "enum_first sample",
+    "baseline": "enum_first sample",
+    "native": "enum_first sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "enum_range sample",
+    "baseline": "enum_range sample",
+    "native": "enum_range sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "inet_merge sample",
+    "baseline": "inet_merge sample",
+    "native": "inet_merge sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_each sample",
+    "baseline": "jsonb_each sample",
+    "native": "jsonb_each sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "last_value sample",
+    "baseline": "last_value sample",
+    "native": "last_value sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "multirange sample",
+    "baseline": "multirange sample",
+    "native": "multirange sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_promote sample",
+    "baseline": "pg_promote sample",
+    "native": "pg_promote sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_count sample",
+    "baseline": "regr_count sample",
+    "native": "regr_count sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_slope sample",
+    "baseline": "regr_slope sample",
+    "native": "regr_slope sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "row_number sample",
+    "baseline": "row_number sample",
+    "native": "row_number sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set_config sample",
+    "baseline": "set_config sample",
+    "native": "set_config sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "split_part sample",
+    "baseline": "split_part sample",
+    "native": "split_part sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "stddev_pop sample",
+    "baseline": "stddev_pop sample",
+    "native": "stddev_pop sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "string_agg sample",
+    "baseline": "string_agg sample",
+    "native": "string_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regoper sample",
+    "baseline": "to_regoper sample",
+    "native": "to_regoper sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regproc sample",
+    "baseline": "to_regproc sample",
+    "native": "to_regproc sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regrole sample",
+    "baseline": "to_regrole sample",
+    "native": "to_regrole sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_regtype sample",
+    "baseline": "to_regtype sample",
+    "native": "to_regtype sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_tsquery sample",
+    "baseline": "to_tsquery sample",
+    "native": "to_tsquery sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "trim_array sample",
+    "baseline": "trim_array sample",
+    "native": "trim_array sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "trim_scale sample",
+    "baseline": "trim_scale sample",
+    "native": "trim_scale sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_rank_cd sample",
+    "baseline": "ts_rank_cd sample",
+    "native": "ts_rank_cd sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_rewrite sample",
+    "baseline": "ts_rewrite sample",
+    "native": "ts_rewrite sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlcomment sample",
+    "baseline": "xmlcomment sample",
+    "native": "xmlcomment sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlelement sample",
+    "baseline": "xmlelement sample",
+    "native": "xmlelement sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_agg sample",
+    "baseline": "array_agg sample",
+    "native": "array_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "array_cat sample",
+    "baseline": "array_cat sample",
+    "native": "array_cat sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit_count sample",
+    "baseline": "bit_count sample",
+    "native": "bit_count sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bound_box sample",
+    "baseline": "bound_box sample",
+    "native": "bound_box sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "broadcast sample",
+    "baseline": "broadcast sample",
+    "native": "broadcast sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "concat_ws sample",
+    "baseline": "concat_ws sample",
+    "native": "concat_ws sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "covar_pop sample",
+    "baseline": "covar_pop sample",
+    "native": "covar_pop sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cume_dist sample",
+    "baseline": "cume_dist sample",
+    "native": "cume_dist sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "date_part sample",
+    "baseline": "date_part sample",
+    "native": "date_part sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "enum_last sample",
+    "baseline": "enum_last sample",
+    "native": "enum_last sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "factorial sample",
+    "baseline": "factorial sample",
+    "native": "factorial sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_each sample",
+    "baseline": "json_each sample",
+    "native": "json_each sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_agg sample",
+    "baseline": "jsonb_agg sample",
+    "native": "jsonb_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "jsonb_set sample",
+    "baseline": "jsonb_set sample",
+    "native": "jsonb_set sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lower_inc sample",
+    "baseline": "lower_inc sample",
+    "native": "lower_inc sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lower_inf sample",
+    "baseline": "lower_inf sample",
+    "native": "lower_inf sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "make_date sample",
+    "baseline": "make_date sample",
+    "native": "make_date sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "make_time sample",
+    "baseline": "make_time sample",
+    "native": "make_time sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "min_scale sample",
+    "baseline": "min_scale sample",
+    "native": "min_scale sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "normalize sample",
+    "baseline": "normalize sample",
+    "native": "normalize sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "nth_value sample",
+    "baseline": "nth_value sample",
+    "native": "nth_value sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_ls_dir sample",
+    "baseline": "pg_ls_dir sample",
+    "native": "pg_ls_dir sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_typeof sample",
+    "baseline": "pg_typeof sample",
+    "native": "pg_typeof sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "querytree sample",
+    "baseline": "querytree sample",
+    "native": "querytree sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "range_agg sample",
+    "baseline": "range_agg sample",
+    "native": "range_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_avgx sample",
+    "baseline": "regr_avgx sample",
+    "native": "regr_avgx sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_avgy sample",
+    "baseline": "regr_avgy sample",
+    "native": "regr_avgy sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "setweight sample",
+    "baseline": "setweight sample",
+    "native": "setweight sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "substring sample",
+    "baseline": "substring sample",
+    "native": "substring sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "timeofday sample",
+    "baseline": "timeofday sample",
+    "native": "timeofday sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_number sample",
+    "baseline": "to_number sample",
+    "native": "to_number sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "translate sample",
+    "baseline": "translate sample",
+    "native": "translate sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_delete sample",
+    "baseline": "ts_delete sample",
+    "native": "ts_delete sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_filter sample",
+    "baseline": "ts_filter sample",
+    "native": "ts_filter sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_lexize sample",
+    "baseline": "ts_lexize sample",
+    "native": "ts_lexize sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "upper_inc sample",
+    "baseline": "upper_inc sample",
+    "native": "upper_inc sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "upper_inf sample",
+    "baseline": "upper_inf sample",
+    "native": "upper_inf sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlconcat sample",
+    "baseline": "xmlconcat sample",
+    "native": "xmlconcat sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlexists sample",
+    "baseline": "xmlexists sample",
+    "native": "xmlexists sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlforest sample",
+    "baseline": "xmlforest sample",
+    "native": "xmlforest sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bool_and sample",
+    "baseline": "bool_and sample",
+    "native": "bool_and sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "coalesce sample",
+    "baseline": "coalesce sample",
+    "native": "coalesce sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "date_bin sample",
+    "baseline": "date_bin sample",
+    "native": "date_bin sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "diagonal sample",
+    "baseline": "diagonal sample",
+    "native": "diagonal sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "diameter sample",
+    "baseline": "diameter sample",
+    "native": "diameter sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "get_byte sample",
+    "baseline": "get_byte sample",
+    "native": "get_byte sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "greatest sample",
+    "baseline": "greatest sample",
+    "native": "greatest sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "grouping sample",
+    "baseline": "grouping sample",
+    "native": "grouping sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "hostmask sample",
+    "baseline": "hostmask sample",
+    "native": "hostmask sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "isclosed sample",
+    "baseline": "isclosed sample",
+    "native": "isclosed sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "isfinite sample",
+    "baseline": "isfinite sample",
+    "native": "isfinite sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "json_agg sample",
+    "baseline": "json_agg sample",
+    "native": "json_agg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pg_sleep sample",
+    "baseline": "pg_sleep sample",
+    "native": "pg_sleep sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "position sample",
+    "baseline": "position sample",
+    "native": "position sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_sxx sample",
+    "baseline": "regr_sxx sample",
+    "native": "regr_sxx sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_sxy sample",
+    "baseline": "regr_sxy sample",
+    "native": "regr_sxy sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_syy sample",
+    "baseline": "regr_syy sample",
+    "native": "regr_syy sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set_byte sample",
+    "baseline": "set_byte sample",
+    "native": "set_byte sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_ascii sample",
+    "baseline": "to_ascii sample",
+    "native": "to_ascii sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_jsonb sample",
+    "baseline": "to_jsonb sample",
+    "native": "to_jsonb sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_debug sample",
+    "baseline": "ts_debug sample",
+    "native": "ts_debug sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_parse sample",
+    "baseline": "ts_parse sample",
+    "native": "ts_parse sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "var_samp sample",
+    "baseline": "var_samp sample",
+    "native": "var_samp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "variance sample",
+    "baseline": "variance sample",
+    "native": "variance sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlparse sample",
+    "baseline": "xmlparse sample",
+    "native": "xmlparse sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmltable sample",
+    "baseline": "xmltable sample",
+    "native": "xmltable sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit_and sample",
+    "baseline": "bit_and sample",
+    "native": "bit_and sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit_xor sample",
+    "baseline": "bit_xor sample",
+    "native": "bit_xor sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bool_or sample",
+    "baseline": "bool_or sample",
+    "native": "bool_or sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ceiling sample",
+    "baseline": "ceiling sample",
+    "native": "ceiling sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "convert sample",
+    "baseline": "convert sample",
+    "native": "convert sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "currval sample",
+    "baseline": "currval sample",
+    "native": "currval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "degrees sample",
+    "baseline": "degrees sample",
+    "native": "degrees sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "extract sample",
+    "baseline": "extract sample",
+    "native": "extract sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "get_bit sample",
+    "baseline": "get_bit sample",
+    "native": "get_bit sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "initcap sample",
+    "baseline": "initcap sample",
+    "native": "initcap sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "isempty sample",
+    "baseline": "isempty sample",
+    "native": "isempty sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lastval sample",
+    "baseline": "lastval sample",
+    "native": "lastval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "masklen sample",
+    "baseline": "masklen sample",
+    "native": "masklen sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "netmask sample",
+    "baseline": "netmask sample",
+    "native": "netmask sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "network sample",
+    "baseline": "network sample",
+    "native": "network sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "nextval sample",
+    "baseline": "nextval sample",
+    "native": "nextval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "npoints sample",
+    "baseline": "npoints sample",
+    "native": "npoints sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "numnode sample",
+    "baseline": "numnode sample",
+    "native": "numnode sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "overlay sample",
+    "baseline": "overlay sample",
+    "native": "overlay sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "polygon sample",
+    "baseline": "polygon sample",
+    "native": "polygon sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "radians sample",
+    "baseline": "radians sample",
+    "native": "radians sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "regr_r2 sample",
+    "baseline": "regr_r2 sample",
+    "native": "regr_r2 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "replace sample",
+    "baseline": "replace sample",
+    "native": "replace sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "reverse sample",
+    "baseline": "reverse sample",
+    "native": "reverse sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "set_bit sample",
+    "baseline": "set_bit sample",
+    "native": "set_bit sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "setseed sample",
+    "baseline": "setseed sample",
+    "native": "setseed sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sprintf sample",
+    "baseline": "sprintf sample",
+    "native": "sprintf sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_char sample",
+    "baseline": "to_char sample",
+    "native": "to_char sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_date sample",
+    "baseline": "to_date sample",
+    "native": "to_date sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_json sample",
+    "baseline": "to_json sample",
+    "native": "to_json sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_rank sample",
+    "baseline": "ts_rank sample",
+    "native": "ts_rank sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ts_stat sample",
+    "baseline": "ts_stat sample",
+    "native": "ts_stat sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "var_pop sample",
+    "baseline": "var_pop sample",
+    "native": "var_pop sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "version sample",
+    "baseline": "version sample",
+    "native": "version sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlroot sample",
+    "baseline": "xmlroot sample",
+    "native": "xmlroot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "abbrev sample",
+    "baseline": "abbrev sample",
+    "native": "abbrev sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "atan2d sample",
+    "baseline": "atan2d sample",
+    "native": "atan2d sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "bit_or sample",
+    "baseline": "bit_or sample",
+    "native": "bit_or sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "center sample",
+    "baseline": "center sample",
+    "native": "center sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "circle sample",
+    "baseline": "circle sample",
+    "native": "circle sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "concat sample",
+    "baseline": "concat sample",
+    "native": "concat sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "decode sample",
+    "baseline": "decode sample",
+    "native": "decode sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "encode sample",
+    "baseline": "encode sample",
+    "native": "encode sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "family sample",
+    "baseline": "family sample",
+    "native": "family sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "format sample",
+    "baseline": "format sample",
+    "native": "format sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "height sample",
+    "baseline": "height sample",
+    "native": "height sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "isopen sample",
+    "baseline": "isopen sample",
+    "native": "isopen sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "length sample",
+    "baseline": "length sample",
+    "native": "length sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pclose sample",
+    "baseline": "pclose sample",
+    "native": "pclose sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "radius sample",
+    "baseline": "radius sample",
+    "native": "radius sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "random sample",
+    "baseline": "random sample",
+    "native": "random sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "repeat sample",
+    "baseline": "repeat sample",
+    "native": "repeat sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "setval sample",
+    "baseline": "setval sample",
+    "native": "setval sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sha224 sample",
+    "baseline": "sha224 sample",
+    "native": "sha224 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sha256 sample",
+    "baseline": "sha256 sample",
+    "native": "sha256 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sha384 sample",
+    "baseline": "sha384 sample",
+    "native": "sha384 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sha512 sample",
+    "baseline": "sha512 sample",
+    "native": "sha512 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "stddev sample",
+    "baseline": "stddev sample",
+    "native": "stddev sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "string sample",
+    "baseline": "string sample",
+    "native": "string sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "strpos sample",
+    "baseline": "strpos sample",
+    "native": "strpos sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "substr sample",
+    "baseline": "substr sample",
+    "native": "substr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "to_hex sample",
+    "baseline": "to_hex sample",
+    "native": "to_hex sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "unistr sample",
+    "baseline": "unistr sample",
+    "native": "unistr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "unnest sample",
+    "baseline": "unnest sample",
+    "native": "unnest sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "uuidv4 sample",
+    "baseline": "uuidv4 sample",
+    "native": "uuidv4 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "uuidv7 sample",
+    "baseline": "uuidv7 sample",
+    "native": "uuidv7 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlagg sample",
+    "baseline": "xmlagg sample",
+    "native": "xmlagg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "acosd sample",
+    "baseline": "acosd sample",
+    "native": "acosd sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "acosh sample",
+    "baseline": "acosh sample",
+    "native": "acosh sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ascii sample",
+    "baseline": "ascii sample",
+    "native": "ascii sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "asind sample",
+    "baseline": "asind sample",
+    "native": "asind sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "asinh sample",
+    "baseline": "asinh sample",
+    "native": "asinh sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "atan2 sample",
+    "baseline": "atan2 sample",
+    "native": "atan2 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "atand sample",
+    "baseline": "atand sample",
+    "native": "atand sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "atanh sample",
+    "baseline": "atanh sample",
+    "native": "atanh sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "btrim sample",
+    "baseline": "btrim sample",
+    "native": "btrim sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "count sample",
+    "baseline": "count sample",
+    "native": "count sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "every sample",
+    "baseline": "every sample",
+    "native": "every sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "floor sample",
+    "baseline": "floor sample",
+    "native": "floor sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "least sample",
+    "baseline": "least sample",
+    "native": "least sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "log10 sample",
+    "baseline": "log10 sample",
+    "native": "log10 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lower sample",
+    "baseline": "lower sample",
+    "native": "lower sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ltrim sample",
+    "baseline": "ltrim sample",
+    "native": "ltrim sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ntile sample",
+    "baseline": "ntile sample",
+    "native": "ntile sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "point sample",
+    "baseline": "point sample",
+    "native": "point sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "popen sample",
+    "baseline": "popen sample",
+    "native": "popen sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "power sample",
+    "baseline": "power sample",
+    "native": "power sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "round sample",
+    "baseline": "round sample",
+    "native": "round sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rtrim sample",
+    "baseline": "rtrim sample",
+    "native": "rtrim sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "scale sample",
+    "baseline": "scale sample",
+    "native": "scale sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "slope sample",
+    "baseline": "slope sample",
+    "native": "slope sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "strip sample",
+    "baseline": "strip sample",
+    "native": "strip sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "trunc sample",
+    "baseline": "trunc sample",
+    "native": "trunc sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "upper sample",
+    "baseline": "upper sample",
+    "native": "upper sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "width sample",
+    "baseline": "width sample",
+    "native": "width sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xmlpi sample",
+    "baseline": "xmlpi sample",
+    "native": "xmlpi sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "xpath sample",
+    "baseline": "xpath sample",
+    "native": "xpath sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "acos sample",
+    "baseline": "acos sample",
+    "native": "acos sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "area sample",
+    "baseline": "area sample",
+    "native": "area sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "asin sample",
+    "baseline": "asin sample",
+    "native": "asin sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "atan sample",
+    "baseline": "atan sample",
+    "native": "atan sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cbrt sample",
+    "baseline": "cbrt sample",
+    "native": "cbrt sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ceil sample",
+    "baseline": "ceil sample",
+    "native": "ceil sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "corr sample",
+    "baseline": "corr sample",
+    "native": "corr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cosd sample",
+    "baseline": "cosd sample",
+    "native": "cosd sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cosh sample",
+    "baseline": "cosh sample",
+    "native": "cosh sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cotd sample",
+    "baseline": "cotd sample",
+    "native": "cotd sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "host sample",
+    "baseline": "host sample",
+    "native": "host sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lead sample",
+    "baseline": "lead sample",
+    "native": "lead sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "line sample",
+    "baseline": "line sample",
+    "native": "line sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lpad sample",
+    "baseline": "lpad sample",
+    "native": "lpad sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lseg sample",
+    "baseline": "lseg sample",
+    "native": "lseg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "mode sample",
+    "baseline": "mode sample",
+    "native": "mode sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "path sample",
+    "baseline": "path sample",
+    "native": "path sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rank sample",
+    "baseline": "rank sample",
+    "native": "rank sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "rpad sample",
+    "baseline": "rpad sample",
+    "native": "rpad sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sign sample",
+    "baseline": "sign sample",
+    "native": "sign sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sind sample",
+    "baseline": "sind sample",
+    "native": "sind sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sinh sample",
+    "baseline": "sinh sample",
+    "native": "sinh sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sqrt sample",
+    "baseline": "sqrt sample",
+    "native": "sqrt sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tand sample",
+    "baseline": "tand sample",
+    "native": "tand sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tanh sample",
+    "baseline": "tanh sample",
+    "native": "tanh sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "trim sample",
+    "baseline": "trim sample",
+    "native": "trim sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "abs sample",
+    "baseline": "abs sample",
+    "native": "abs sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "avg sample",
+    "baseline": "avg sample",
+    "native": "avg sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "box sample",
+    "baseline": "box sample",
+    "native": "box sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "chr sample",
+    "baseline": "chr sample",
+    "native": "chr sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cos sample",
+    "baseline": "cos sample",
+    "native": "cos sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "cot sample",
+    "baseline": "cot sample",
+    "native": "cot sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "div sample",
+    "baseline": "div sample",
+    "native": "div sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "exp sample",
+    "baseline": "exp sample",
+    "native": "exp sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "gcd sample",
+    "baseline": "gcd sample",
+    "native": "gcd sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lag sample",
+    "baseline": "lag sample",
+    "native": "lag sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "lcm sample",
+    "baseline": "lcm sample",
+    "native": "lcm sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "log sample",
+    "baseline": "log sample",
+    "native": "log sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "max sample",
+    "baseline": "max sample",
+    "native": "max sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "md5 sample",
+    "baseline": "md5 sample",
+    "native": "md5 sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "min sample",
+    "baseline": "min sample",
+    "native": "min sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "mod sample",
+    "baseline": "mod sample",
+    "native": "mod sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "now sample",
+    "baseline": "now sample",
+    "native": "now sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sin sample",
+    "baseline": "sin sample",
+    "native": "sin sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "sum sample",
+    "baseline": "sum sample",
+    "native": "sum sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "tan sample",
+    "baseline": "tan sample",
+    "native": "tan sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "ln sample",
+    "baseline": "ln sample",
+    "native": "ln sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "pi sample",
+    "baseline": "pi sample",
+    "native": "pi sample",
+    "sameTokens": true
+  },
+  {
+    "sql": "select count(*),cast(x as integer),current_date,coalesce(x,1),a::timestamp with time zone from MyTable;",
+    "baseline": "SELECT\n  count(*),\n  cast(x AS integer),\n  current_date,\n  coalesce(x, 1),\n  a::timestamp with time zone\nFROM\n  MyTable;",
+    "native": "SELECT\n  count(*),\n  cast(x AS integer),\n  current_date,\n  coalesce(x, 1),\n  a::timestamp with time zone\nFROM\n  MyTable;",
+    "sameTokens": true
+  },
+  {
+    "sql": "create table t (id integer generated by default as identity primary key, x timestamp without time zone);",
+    "baseline": "CREATE TABLE t (\n  id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,\n  x timestamp without time zone\n);",
+    "native": "CREATE TABLE t (id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, x timestamp without time zone);",
+    "sameTokens": true
+  },
+  {
+    "sql": "select t.select,t./*x*/case,t.current_date,public.count(*),select$Id from t;",
+    "baseline": "SELECT\n  t.select,\n  t./*x*/ case,\n  t.current_date,\n  public.count (*),\n  select$Id\nFROM\n  t;",
+    "native": "SELECT\n  t.select,\n  t./*x*/ case,\n  t.current_date,\n  public.count(*),\n  select$Id\nFROM\n  t;",
+    "sameTokens": true
+  },
+  {
+    "sql": "select case when x is not null then a else b end from t order by x nulls first;",
+    "baseline": "SELECT\n  CASE\n    WHEN x IS NOT NULL THEN a\n    ELSE b\n  END\nFROM\n  t\nORDER BY\n  x NULLS FIRST;",
+    "native": "SELECT\n  CASE WHEN x IS NOT NULL THEN a ELSE b END\nFROM\n  t\nORDER BY\n  x NULLS FIRST;",
+    "sameTokens": true
+  },
+  {
+    "sql": "select left(x,1) from a left join b on a.id=b.id;",
+    "baseline": "SELECT\n  left(x, 1)\nFROM\n  a\n  LEFT JOIN b ON a.id = b.id;",
+    "native": "SELECT\n  left(x, 1)\nFROM\n  a\nLEFT JOIN b\nON a.id=b.id;",
+    "sameTokens": true
+  },
+  {
+    "sql": "select x from t group /* boundary */ by x;",
+    "baseline": "SELECT\n  x\nFROM\n  t GROUP /* boundary */ by x;",
+    "native": "SELECT\n  x\nFROM\n  t GROUP /* boundary */ by x;",
+    "sameTokens": true
+  },
+  {
+    "sql": "select :select,$1;",
+    "baseline": "SELECT\n:\nSELECT\n,\n  $1;",
+    "native": "SELECT\n  :select,\n  $1;",
+    "sameTokens": false
+  }
+]

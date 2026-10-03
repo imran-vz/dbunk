@@ -2199,12 +2199,14 @@ dependencies = [
  "base64",
  "calamine",
  "chrono",
+ "flate2",
  "futures-core",
  "futures-util",
  "keyring",
  "libc",
  "log",
  "once_cell",
+ "quick-xml 0.31.0",
  "rand 0.8.6",
  "redis",
  "reqwest",
@@ -2222,6 +2224,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "uuid",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]
@@ -2242,8 +2245,10 @@ dependencies = [
  "lsp",
  "markdown",
  "multi_buffer",
+ "png 0.18.0",
  "project",
  "release_channel",
+ "resvg",
  "semver",
  "serde",
  "serde_json",

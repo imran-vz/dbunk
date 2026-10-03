@@ -19,6 +19,7 @@ use crate::{CredentialStorageMode, StoredConnection};
 
 pub(crate) struct AppState {
     pub(crate) pool: SqlitePool,
+    pub(crate) credentials: std::sync::Arc<credentials::Context>,
     pub(crate) paths: Paths,
     pub(crate) query_sessions: QuerySessionManager,
     pub(crate) result_mutations: ResultMutationManager,
@@ -33,7 +34,17 @@ impl AppState {
     /// passed in because a WebView host has to create it before setup: a
     /// configured window can commit its first document before setup runs.
     pub(crate) fn new(pool: SqlitePool, paths: Paths, pg_schema_compare: CompareManager) -> Self {
+        Self::with_credentials(paths, pg_schema_compare, credentials::Context::legacy(pool))
+    }
+
+    pub(crate) fn with_credentials(
+        paths: Paths,
+        pg_schema_compare: CompareManager,
+        credentials: std::sync::Arc<credentials::Context>,
+    ) -> Self {
+        let pool = credentials.pool().clone();
         Self {
+            credentials,
             query_sessions: QuerySessionManager::new(pool.clone()),
             result_mutations: ResultMutationManager::new(),
             table_browse: TableBrowseManager::new(),
@@ -113,8 +124,15 @@ pub(crate) async fn find_connection(
     let mut connection = storage::read_connection_by_id(&state.pool, connection_id)
         .await?
         .ok_or_else(|| "Connection not found".to_string())?;
-    credentials::hydrate(&state.pool, mode, &mut connection).await?;
-    crate::tunnel::resolve_connection(&state.pool, mode, connection_id, &connection).await
+    credentials::hydrate(&state.credentials, mode, &mut connection).await?;
+    crate::tunnel::resolve_connection(
+        &state.credentials,
+        &state.pool,
+        mode,
+        connection_id,
+        &connection,
+    )
+    .await
 }
 
 /// Run `op` against a connection and bump its `lastActivityAt` on success.
@@ -192,10 +210,11 @@ pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
     let directory = tempfile::tempdir().expect("app state temp dir");
     let paths = Paths::from_dir(directory.path().to_path_buf());
     let pool = storage::open_pool(&paths).await.expect("app state pool");
-    credentials::configure(&pool, CredentialStorageMode::PlainSqlite, None)
+    let state = AppState::new(pool, paths, CompareManager::new());
+    credentials::configure(&state.credentials, CredentialStorageMode::PlainSqlite, None)
         .await
         .expect("plain SQLite credential storage");
-    (directory, AppState::new(pool, paths, CompareManager::new()))
+    (directory, state)
 }
 
 /// A stored connection to the disposable PostgreSQL fixture (`pnpm

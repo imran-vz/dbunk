@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 use editor::display_map::{DisplayPoint, DisplayRow, ToDisplayPoint};
 use editor::{Editor, EditorEvent, SelectionEffects};
 use gpui::{
-    Bounds, Context, Entity, Focusable, Pixels, Subscription, Window,
+    Bounds, Context, Entity, Focusable, Pixels, SharedString, Subscription, Window,
     accesskit::{
         Action, ActionData, Node, NodeId, Rect, Role, TextDirection, TextPosition, TextSelection,
     },
@@ -20,14 +20,20 @@ use unicode_segmentation::UnicodeSegmentation;
 
 pub struct AccessibleEditor {
     editor: Entity<Editor>,
-    label: &'static str,
+    label: SharedString,
     document: Option<Rc<TextDocument>>,
     revision: u64,
+    single_line: bool,
+    secret: bool,
     _subscription: Subscription,
 }
 
 impl AccessibleEditor {
-    pub fn new(editor: Entity<Editor>, label: &'static str, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        editor: Entity<Editor>,
+        label: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let subscription = cx.subscribe(&editor, |this, _, event, cx| match event {
             EditorEvent::BufferEdited => {
                 this.document = None;
@@ -44,11 +50,25 @@ impl AccessibleEditor {
         });
         Self {
             editor,
-            label,
+            label: label.into(),
             document: None,
             revision: 0,
+            single_line: false,
+            secret: false,
             _subscription: subscription,
         }
+    }
+
+    pub fn field(
+        editor: Entity<Editor>,
+        label: impl Into<SharedString>,
+        secret: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut field = Self::new(editor, label, cx);
+        field.single_line = true;
+        field.secret = secret;
+        field
     }
 }
 
@@ -56,12 +76,36 @@ impl Render for AccessibleEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut element = div()
             .id("accessible-editor")
-            .role(Role::MultilineTextInput)
-            .aria_label(self.label)
+            .role(if self.secret {
+                Role::PasswordInput
+            } else if self.single_line {
+                Role::TextInput
+            } else {
+                Role::MultilineTextInput
+            })
+            .aria_label(self.label.clone())
             .track_focus(&self.editor.focus_handle(cx))
             .relative()
             .size_full()
             .child(self.editor.clone());
+
+        if self.secret {
+            // Secure fields never publish the real buffer to the accessibility
+            // tree or clipboard. The editor still owns IME and native selection.
+            let masked = "•".repeat(self.editor.read(cx).text(cx).chars().count());
+            return element
+                .capture_action(|_: &editor::actions::Copy, _, cx| cx.stop_propagation())
+                .capture_action(|_: &editor::actions::Cut, _, cx| cx.stop_propagation())
+                .capture_action(|_: &editor::actions::CopyAndTrim, _, cx| cx.stop_propagation())
+                .capture_action(|_: &editor::actions::CopyHighlightJson, _, cx| {
+                    cx.stop_propagation()
+                })
+                .capture_action(|_: &editor::actions::CutToEndOfLine, _, cx| cx.stop_propagation())
+                .capture_action(|_: &editor::actions::KillRingCut, _, cx| cx.stop_propagation())
+                .a11y_synthetic_children(move |builder| {
+                    builder.parent_node().set_value(masked.clone())
+                });
+        }
 
         // Large documents incur no text-tree work until an assistive client
         // activates accessibility. Cache text runs across caret-only changes.

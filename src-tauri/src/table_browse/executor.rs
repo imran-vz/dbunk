@@ -1,16 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::{oneshot, Mutex, Notify};
 
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
+use crate::postgres::native_tasks::{TabWork, TaskGroup};
 
 use super::builder::RelationDescriptor;
 use super::interrupt::{finalize_interrupt, Interrupt};
 use super::postgres::BrowseConnection;
 use super::protocol::*;
-use super::{postgres, service};
+use super::{postgres, runner};
 
 pub(crate) enum JobKind {
     Browse(BrowseTableDataPayload),
@@ -39,6 +40,7 @@ pub(crate) struct TabSlot {
 }
 
 pub(crate) struct ExecutorInner {
+    pub(crate) closing_tabs: HashSet<String>,
     pub(crate) connection: Option<BrowseConnection>,
     pub(crate) cache: HashMap<(String, String), RelationDescriptor>,
     pub(crate) tabs: HashMap<String, TabSlot>,
@@ -52,6 +54,7 @@ pub(crate) struct ExecutorInner {
 }
 
 pub(crate) struct Executor {
+    pub(crate) native: Option<TaskGroup>,
     pub(crate) spec: ResolvedPostgresConnectSpec,
     pub(crate) inner: Mutex<ExecutorInner>,
     pub(crate) notify: Notify,
@@ -150,9 +153,18 @@ async fn drain_pending_cancel(executor: &Executor) {
 pub(crate) async fn spawn_executor(
     spec: ResolvedPostgresConnectSpec,
 ) -> Result<Arc<Executor>, TableBrowseError> {
+    Ok(spawn_executor_tracked(spec, None))
+}
+
+pub(crate) fn spawn_executor_tracked(
+    spec: ResolvedPostgresConnectSpec,
+    native: Option<TaskGroup>,
+) -> Arc<Executor> {
     let executor = Arc::new(Executor {
+        native,
         spec,
         inner: Mutex::new(ExecutorInner {
+            closing_tabs: HashSet::new(),
             connection: None,
             cache: HashMap::new(),
             tabs: HashMap::new(),
@@ -164,10 +176,13 @@ pub(crate) async fn spawn_executor(
         notify: Notify::new(),
     });
     let worker = executor.clone();
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         run_executor(worker).await;
     });
-    Ok(executor)
+    if let Some(native) = &executor.native {
+        native.track(task);
+    }
+    executor
 }
 
 async fn run_executor(executor: Arc<Executor>) {
@@ -176,7 +191,7 @@ async fn run_executor(executor: Arc<Executor>) {
             break;
         }
         let job = next_job(&executor).await;
-        let Some(job) = job else {
+        let Some((job, _completion)) = job else {
             executor.notify.notified().await;
             continue;
         };
@@ -184,7 +199,7 @@ async fn run_executor(executor: Arc<Executor>) {
     }
 }
 
-async fn next_job(executor: &Executor) -> Option<Job> {
+async fn next_job(executor: &Executor) -> Option<(Job, Option<TabWork>)> {
     drain_pending_cancel(executor).await;
     let mut inner = executor.inner.lock().await;
     if inner.closed {
@@ -217,7 +232,11 @@ async fn next_job(executor: &Executor) -> Option<Job> {
         tab.interrupt = Interrupt::None;
         inner.busy = true;
         inner.last_used = Instant::now();
-        Some(job)
+        let completion = executor
+            .native
+            .as_ref()
+            .map(|group| group.begin_tab(&job.tab_id));
+        Some((job, completion))
     });
     drop(inner);
     for job in expired {
@@ -230,7 +249,7 @@ async fn next_job(executor: &Executor) -> Option<Job> {
 
 async fn execute_job(executor: &Arc<Executor>, job: Job) {
     let result = {
-        let run = service::run_kind(executor, &job);
+        let run = runner::run_kind(executor, &job);
         tokio::pin!(run);
         loop {
             drain_pending_cancel(executor).await;
@@ -333,6 +352,7 @@ pub(crate) fn dummy_spec(id: &str) -> ResolvedPostgresConnectSpec {
 #[cfg(test)]
 pub(crate) fn dummy_executor() -> Arc<Executor> {
     Arc::new(Executor {
+        native: None,
         spec: dummy_spec("c"),
         inner: Mutex::new(inner()),
         notify: Notify::new(),
@@ -342,6 +362,7 @@ pub(crate) fn dummy_executor() -> Arc<Executor> {
 #[cfg(test)]
 pub(crate) fn inner() -> ExecutorInner {
     ExecutorInner {
+        closing_tabs: HashSet::new(),
         connection: None,
         cache: HashMap::new(),
         tabs: HashMap::new(),

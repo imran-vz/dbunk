@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 3 tests
+test backend::development::connections::bounds_tests::general_authority_accepts_only_bounded_direct_postgres_metadata ... ok
+test backend::development::connections::bounds_tests::probe_cleanup_expires_at_original_deadline_and_joins_hung_driver ... ok
+test backend::development::connections::bounds_tests::tls_limits_match_saved_and_loaded_metadata_without_file_access ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 912 filtered out; finished in 0.00s
+

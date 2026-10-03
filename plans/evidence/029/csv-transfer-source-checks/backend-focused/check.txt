@@ -1,0 +1,16 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+warning: type `csv_transfers::registry::State` is more private than the item `csv_transfers::registry::Registry::state`
+  --> src/backend/csv_transfers/registry.rs:73:5
+   |
+73 |     pub state: Arc<Mutex<State>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `csv_transfers::registry::Registry::state` is reachable at visibility `pub(in crate::backend)`
+   |
+note: but type `csv_transfers::registry::State` is only usable at visibility `pub(in crate::backend::csv_transfers)`
+  --> src/backend/csv_transfers/registry.rs:39:1
+   |
+39 | pub(super) struct State {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: `dbunk` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.45s

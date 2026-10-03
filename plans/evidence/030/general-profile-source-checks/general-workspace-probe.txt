@@ -1,0 +1,7 @@
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Persistent probe profile: /private/tmp/dbunk-native-general-profile-probe-20261003
+Profile capability: general PostgreSQL
+Probe executable: /Users/imran/projects/Code/dbunk/src-tauri/target/debug/examples/native_workspace_probe; SHA256: 97febf98e5276a103d4c1946d25d63378a24a91c8063cb80bd64aacbee647c9e
+PASS: two saved connections, explicit probes, query sessions and durable drafts and joined backend shutdown
+PASS: encrypted profile unlock and exact disconnected draft restoration and joined backend shutdown
+PASS: PostgreSQL activity 0 -> 0; profile retained

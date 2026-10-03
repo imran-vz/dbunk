@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 3 tests
+test backend::pg_tools::registry::connection_settled_tests::preparation_registered_after_settled_check_cannot_cross_generation_fence ... ok
+test backend::pg_tools::registry::connection_settled_tests::preparing_and_confirmation_refuse_edits_until_cancelled_and_joined ... ok
+test backend::pg_tools::registry::connection_settled_tests::running_and_published_backup_with_failed_cleanup_refuse_connection_mutation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 993 filtered out; finished in 0.22s
+

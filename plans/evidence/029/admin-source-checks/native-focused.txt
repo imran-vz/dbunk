@@ -1,0 +1,17 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.97s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 6 tests
+test admin_model::tests::cancellation_discards_late_success_without_settling_a_new_request ... ok
+test admin_model::tests::reconnect_keeps_monotonic_identity_and_never_accepts_old_reply ... ok
+test admin_model::tests::empty_restricted_listing_is_not_presented_as_an_unrestricted_empty_result ... ok
+test admin_model::tests::candidate_refusal_preserves_old_lease_and_heap_capacity_is_counted ... ok
+test admin_model::tests::missing_lock_pid_and_blocker_metadata_are_not_reported_as_empty ... ok
+test admin_model::tests::metric_absence_and_query_clipping_never_become_zero_or_complete_text ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 170 filtered out; finished in 0.00s
+

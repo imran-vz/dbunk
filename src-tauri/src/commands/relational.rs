@@ -5,6 +5,7 @@ use tauri::Emitter;
 use tauri::State;
 
 use crate::dispatch;
+use crate::query_library;
 use crate::safety::policy::{AuditDisposition, WriteIntent};
 use crate::storage;
 use crate::{
@@ -20,7 +21,7 @@ use crate::{
     RefreshMaterializedViewPayload, RelationInfo, RunQueryPayload, SaveSchemaMapPositionPayload,
     SaveSchemaMapPrefsPayload, SavedQuery, SchemaExplorer, SchemaMapPrefs, SchemaMapScopePayload,
     SchemaRelationships, SeedTablePayload, SeedTableResult, ServerDetails, TableDataResult,
-    TableStructure, DEFAULT_TABLE_PAGE_SIZE, MAX_QUERY_HISTORY, MAX_TABLE_PAGE_SIZE,
+    TableStructure, DEFAULT_TABLE_PAGE_SIZE, MAX_TABLE_PAGE_SIZE,
 };
 
 use super::{
@@ -766,7 +767,7 @@ pub async fn load_query_history(
     state: State<'_, AppState>,
     limit: Option<u32>,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    storage::read_query_history(&state.inner().pool, limit).await
+    query_library::load_query_history(state.inner(), limit).await
 }
 
 #[tauri::command]
@@ -774,19 +775,17 @@ pub async fn append_query_history(
     state: State<'_, AppState>,
     entry: QueryHistoryEntry,
 ) -> Result<Vec<QueryHistoryEntry>, String> {
-    let state = state.inner();
-    storage::insert_query_history(&state.pool, &entry).await?;
-    storage::read_query_history(&state.pool, Some(MAX_QUERY_HISTORY as u32)).await
+    query_library::append_query_history(state.inner(), entry).await
 }
 
 #[tauri::command]
 pub async fn clear_query_history(state: State<'_, AppState>) -> Result<(), String> {
-    storage::clear_query_history(&state.inner().pool).await
+    query_library::clear_query_history(state.inner()).await
 }
 
 #[tauri::command]
 pub async fn load_saved_queries(state: State<'_, AppState>) -> Result<Vec<SavedQuery>, String> {
-    storage::read_saved_queries(&state.inner().pool).await
+    query_library::load_saved_queries(state.inner()).await
 }
 
 /// Insert or update by `id` (idempotent). Bumps `updatedAt` automatically;
@@ -796,15 +795,7 @@ pub async fn save_saved_query(
     state: State<'_, AppState>,
     query: SavedQuery,
 ) -> Result<Vec<SavedQuery>, String> {
-    let state = state.inner();
-    let now = chrono::Utc::now().to_rfc3339();
-    let mut next = query.clone();
-    next.updated_at = now.clone();
-    if query.created_at.is_empty() {
-        next.created_at = now;
-    }
-    storage::upsert_saved_query(&state.pool, &next).await?;
-    storage::read_saved_queries(&state.pool).await
+    query_library::save_saved_query(state.inner(), query).await
 }
 
 #[tauri::command]
@@ -812,9 +803,7 @@ pub async fn delete_saved_query(
     state: State<'_, AppState>,
     payload: DeleteSavedQueryPayload,
 ) -> Result<Vec<SavedQuery>, String> {
-    let state = state.inner();
-    storage::delete_saved_query(&state.pool, &payload.id).await?;
-    storage::read_saved_queries(&state.pool).await
+    query_library::delete_saved_query(state.inner(), payload).await
 }
 
 #[cfg(test)]

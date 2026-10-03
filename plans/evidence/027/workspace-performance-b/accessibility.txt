@@ -1,0 +1,435 @@
+PASS: owned workspace window visible
+PASS: fresh credential onboarding ready
+PASS: control available: Plain SQLite
+PASS: control available: Save
+PASS: plain fixture credential mode committed
+PASS: control available: + Connection
+PASS: field available: Name
+PASS: field text updated: Name
+PASS: field available: Database password
+PASS: control available: Save
+PASS: fixture connection saved
+PASS: control available: Performance fixture
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Performance 1 connected explicitly
+PASS: control available: Stacked
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: owned workspace window visible
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: owned workspace window visible
+PASS: owned workspace window visible
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: wide expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: owned workspace window visible
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: owned workspace window visible
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Performance 2 connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Performance 3 connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Performance 4 connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: owned workspace window visible
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: owned workspace window visible
+PASS: owned workspace window visible
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: wide expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: owned workspace window visible
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: owned workspace window visible
+PASS: tab exists: Performance 4
+PASS: control available: Close
+PASS: extra document closed
+PASS: tab exists: Performance 3
+PASS: control available: Close
+PASS: extra document closed
+PASS: tab exists: Performance 2
+PASS: control available: Close
+PASS: extra document closed
+PASS: tab exists: Performance 1
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: many expectedRows=10000 observed=Result 1 · 10000 rows
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: control available: + Query
+PASS: control available: Rename
+PASS: field available: Query name
+PASS: field text updated: Query name
+PASS: control available: Save
+PASS: rename committed
+PASS: control available: Connect
+PASS: Memory cycle connected explicitly
+PASS: field available: SQL editor
+PASS: field text updated: SQL editor
+PASS: Run available before metrics query
+PASS: metrics result completed with terminal ACK
+RESULT: large expectedRows=400 observed=Result 1 · 400 rows
+PASS: control available: Close
+PASS: cycle document fully closed
+PASS: 20 actual-window open/run/close cycles and 30-second settled-memory trace
+PASS: owned workspace window visible
+PASS: workspace quit joined

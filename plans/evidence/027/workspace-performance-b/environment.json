@@ -1,0 +1,38 @@
+{
+  "command": [
+    "tools/native/workspace_performance.py",
+    "/private/tmp/dbunk-stage04-performance-20261002b",
+    "--no-build",
+    "--out",
+    "/Users/imran/projects/Code/dbunk/plans/evidence/027/workspace-performance-b"
+  ],
+  "build_variant": "release, existing native binary",
+  "os": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "dirty_diff_sha256": "9b987fad8157c0ef1f67ca50164f721ef1a14418c6558a42c4f32ab2ba67567c",
+  "source_sha256": {
+    "tools/native/workspace_performance.py": "87b2266dabf4352594126044a80b337d61870b5352e9b45004a3e15d643a5ec2",
+    "tools/measure/workspace-performance.swift": "99c26632c8b06e055256f57e91500c3c6a628bb71081c326f0185adf3a354af2",
+    "tools/native/workspace_launch.py": "c221dbb1e9973a1b5e978acec4d2addf21f4724bd76e660eeae665d3852e8ec6",
+    "tools/measure/Sources/measure/main.swift": "8540139ff7e22603440e9961fa93993e91400fa6661f5bd851ab763709041ab3",
+    "tools/measure/fixtures/editor-2000.sql": "ed1f8a7edf743258ba944fbad8f29f03cab4ac644cc07da45f3fb796e0602716",
+    "apps/native/Cargo.lock": "a57452da17c8d9e1328ae2577601540d62a2bf3e2736a7ec623717a724df13af"
+  },
+  "probe_sha256": "d27d9cbdd1bc93a078e58e822d250e2eba8e2d86ef472d407b189df0e7928544",
+  "measure_sha256": "ddc605b3dbbf0a486aa4e3ce22e90c783877379f4f7b048979bca164cdde0cd9",
+  "fixture": {
+    "project": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "driver": "local",
+    "executable": "/Users/imran/projects/Code/dbunk/tools/native/.state/runtime/installed/bin/postgres",
+    "pid": 3519
+  },
+  "baseline": 0,
+  "native_source_variant": {
+    "source": "apps/native/src/workspace.rs",
+    "built_sha256": "83ff764c44c7fe249d23eb130f26a429d367b6b78d7a98ab47b2c8db8699cfcf",
+    "current_after_capture_sha256": "7224bb14834deaf2345a7d5c282662b6cc71435486a6e8424714ae18c257ace5",
+    "provenance": "Build-owning agent reported exact built source hash. Binary frozen throughout captures; launch/identity.json records executable SHA256.",
+    "difference": "Current source removes a quit refusal specific to corrupt/future workspace snapshots. Captured healthy-workspace performance path unchanged. This capture does not verify the later recovery-quit fix."
+  }
+}

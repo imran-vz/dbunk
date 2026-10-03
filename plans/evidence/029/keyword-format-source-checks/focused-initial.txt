@@ -1,0 +1,21 @@
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.09s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-2f6ac1a865a21ee0)
+
+running 11 tests
+test sql_format::tests::comments_and_dollar_bodies_are_byte_exact ... ok
+test sql_format::tests::continuation_gaps_remain_exact_even_across_comments ... ok
+test sql_format::tests::incomplete_or_ambiguous_input_never_produces_partial_edits ... ok
+test sql_format::tests::input_tokens_depth_and_output_are_bounded_before_growth ... ok
+test sql_format::tests::keyword_case_preserves_types_functions_names_and_bound_parameters ... ok
+test sql_format::tests::keyword_phrases_do_not_case_unrelated_identifiers_or_span_comments ... ok
+test sql_format::tests::maximal_keyword_and_gap_edits_are_ordered_and_bounded ... ok
+test sql_format::tests::maximal_operators_identifiers_parameters_and_numbers_do_not_split ... ok
+test sql_format::tests::model_working_allowance_covers_all_simultaneous_storage ... ok
+test sql_format::tests::quoted_prefixes_escapes_and_unicode_are_exact ... ok
+test sql_format::tests::useful_clause_layout_normalizes_keywords_and_multiple_statements ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.57s
+

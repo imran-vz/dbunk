@@ -1,69 +1,16 @@
-//! App settings, credential onboarding, and theme commands.
+//! Tauri adapters for the host-neutral settings service.
 
-use tauri::State;
-
-use crate::credentials;
-use crate::storage;
+use crate::settings;
+use crate::settings::{DeleteUiStatePayload, SaveUiStatePayload, UiStateEntry};
 use crate::{
     AppSettingsSnapshot, AppState, ChangeCredentialStoragePayload,
-    ConfigureCredentialStoragePayload, CredentialState, CredentialStorageMode,
-    SaveAppSettingsPayload, UnlockCredentialsPayload,
+    ConfigureCredentialStoragePayload, SaveAppSettingsPayload, UnlockCredentialsPayload,
 };
-
-// ---------------------------------------------------------------------------
-// Theme validation
-// ---------------------------------------------------------------------------
-
-/// Persisted theme keys on the shared `app_settings` table.
-const SETTING_THEME: &str = "theme";
-const SETTING_THEME_PRESET: &str = "themePreset";
-
-fn validate_theme(value: &str) -> Result<&str, String> {
-    match value {
-        "system" | "light" | "dark" => Ok(value),
-        _ => Err(format!("unknown theme mode '{value}'")),
-    }
-}
-
-fn validate_theme_preset(value: &str) -> Result<&str, String> {
-    match value {
-        "default" | "dracula" | "github" | "gruvbox" => Ok(value),
-        _ => Err(format!("unknown theme preset '{value}'")),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
+use tauri::State;
 
 #[tauri::command]
 pub async fn load_app_settings(state: State<'_, AppState>) -> Result<AppSettingsSnapshot, String> {
-    let state = state.inner();
-    let onboarding_completed = credentials::onboarding_completed(&state.pool).await?;
-    let credential_storage_mode = credentials::credential_mode(&state.pool).await?;
-    let credential_state = if !onboarding_completed || credential_storage_mode.is_none() {
-        CredentialState::NeedsOnboarding
-    } else if credential_storage_mode == Some(CredentialStorageMode::EncryptedSqlite)
-        && !credentials::is_unlocked()
-    {
-        CredentialState::NeedsUnlock
-    } else {
-        CredentialState::Ready
-    };
-    let theme = storage::get_setting(&state.pool, SETTING_THEME)
-        .await?
-        .and_then(|raw| validate_theme(&raw).ok().map(str::to_string));
-    let theme_preset = storage::get_setting(&state.pool, SETTING_THEME_PRESET)
-        .await?
-        .and_then(|raw| validate_theme_preset(&raw).ok().map(str::to_string));
-    Ok(AppSettingsSnapshot {
-        onboarding_completed,
-        credential_storage_mode,
-        credential_state,
-        config_dir: state.paths.config_dir().display().to_string(),
-        theme,
-        theme_preset,
-    })
+    settings::load_app_settings(state.inner()).await
 }
 
 #[tauri::command]
@@ -71,16 +18,7 @@ pub async fn save_app_settings(
     state: State<'_, AppState>,
     payload: SaveAppSettingsPayload,
 ) -> Result<AppSettingsSnapshot, String> {
-    let inner = state.inner();
-    if let Some(theme) = payload.theme.as_deref() {
-        validate_theme(theme)?;
-        storage::set_setting(&inner.pool, SETTING_THEME, theme).await?;
-    }
-    if let Some(preset) = payload.theme_preset.as_deref() {
-        validate_theme_preset(preset)?;
-        storage::set_setting(&inner.pool, SETTING_THEME_PRESET, preset).await?;
-    }
-    load_app_settings(state).await
+    settings::save_app_settings(state.inner(), payload).await
 }
 
 #[tauri::command]
@@ -88,19 +26,7 @@ pub async fn configure_credential_storage(
     state: State<'_, AppState>,
     payload: ConfigureCredentialStoragePayload,
 ) -> Result<AppSettingsSnapshot, String> {
-    configure_credential_storage_inner(state.inner(), payload).await?;
-    load_app_settings(state).await
-}
-
-pub(crate) async fn configure_credential_storage_inner(
-    state: &AppState,
-    payload: ConfigureCredentialStoragePayload,
-) -> Result<(), String> {
-    crate::socket_lifecycle::with_global_fence(
-        state,
-        credentials::configure(&state.pool, payload.mode, payload.password.as_deref()),
-    )
-    .await
+    settings::configure_credential_storage(state.inner(), payload).await
 }
 
 #[tauri::command]
@@ -108,8 +34,7 @@ pub async fn unlock_credentials(
     state: State<'_, AppState>,
     payload: UnlockCredentialsPayload,
 ) -> Result<AppSettingsSnapshot, String> {
-    credentials::unlock(&state.inner().pool, &payload.password).await?;
-    load_app_settings(state).await
+    settings::unlock_credentials(state.inner(), payload).await
 }
 
 #[tauri::command]
@@ -117,78 +42,19 @@ pub async fn change_credential_storage(
     state: State<'_, AppState>,
     payload: ChangeCredentialStoragePayload,
 ) -> Result<AppSettingsSnapshot, String> {
-    change_credential_storage_inner(state.inner(), payload).await?;
-    load_app_settings(state).await
-}
-
-pub(crate) async fn change_credential_storage_inner(
-    state: &AppState,
-    payload: ChangeCredentialStoragePayload,
-) -> Result<(), String> {
-    if !payload.confirm {
-        return Err("Credential storage change must be confirmed".to_string());
-    }
-    crate::socket_lifecycle::with_global_fence(state, async {
-        let current = super::current_credential_mode(state).await?;
-        if current == payload.mode {
-            return Ok(());
-        }
-        credentials::change_mode(
-            &state.pool,
-            current,
-            payload.mode,
-            payload.password.as_deref(),
-        )
-        .await
-    })
-    .await
+    settings::change_credential_storage(state.inner(), payload).await
 }
 
 #[tauri::command]
 pub async fn reset_credential_storage(
     state: State<'_, AppState>,
 ) -> Result<AppSettingsSnapshot, String> {
-    reset_credential_storage_inner(state.inner()).await?;
-    load_app_settings(state).await
-}
-
-pub(crate) async fn reset_credential_storage_inner(state: &AppState) -> Result<(), String> {
-    crate::socket_lifecycle::with_global_fence(state, credentials::reset(&state.pool)).await
-}
-
-// ---------------------------------------------------------------------------
-// UI state (P8) — the frontend's namespaced `ui.v1.*` layout/session store
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UiStateEntry {
-    pub key: String,
-    pub value: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveUiStatePayload {
-    pub entries: Vec<UiStateEntry>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteUiStatePayload {
-    #[serde(default)]
-    pub keys: Vec<String>,
-    #[serde(default)]
-    pub prefixes: Vec<String>,
+    settings::reset_credential_storage(state.inner()).await
 }
 
 #[tauri::command]
 pub async fn load_ui_state(state: State<'_, AppState>) -> Result<Vec<UiStateEntry>, String> {
-    let entries = storage::read_ui_state(&state.inner().pool).await?;
-    Ok(entries
-        .into_iter()
-        .map(|(key, value)| UiStateEntry { key, value })
-        .collect())
+    settings::load_ui_state(state.inner()).await
 }
 
 #[tauri::command]
@@ -196,12 +62,7 @@ pub async fn save_ui_state(
     state: State<'_, AppState>,
     payload: SaveUiStatePayload,
 ) -> Result<(), String> {
-    let entries: Vec<(String, String)> = payload
-        .entries
-        .into_iter()
-        .map(|entry| (entry.key, entry.value))
-        .collect();
-    storage::upsert_ui_state(&state.inner().pool, &entries).await
+    settings::save_ui_state(state.inner(), payload).await
 }
 
 #[tauri::command]
@@ -209,5 +70,5 @@ pub async fn delete_ui_state(
     state: State<'_, AppState>,
     payload: DeleteUiStatePayload,
 ) -> Result<(), String> {
-    storage::delete_ui_state(&state.inner().pool, &payload.keys, &payload.prefixes).await
+    settings::delete_ui_state(state.inner(), payload).await
 }

@@ -1,0 +1,1 @@
+/private/tmp/dbunk-native-plan027-context-20261002/dbunk Native Preflight.app/Contents/MacOS/dbunk-native: Mach-O 64-bit executable arm64

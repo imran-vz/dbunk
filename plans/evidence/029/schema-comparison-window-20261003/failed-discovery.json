@@ -1,0 +1,17 @@
+{
+  "attempts": [
+    {
+      "target": "/private/tmp/dbunk-native-package-20261003-comparison/dbunk Native Preflight.app",
+      "error": "Computer Use server error -10005: cgWindowNotFound"
+    },
+    {
+      "target": "codes.imran.dbunk.native.stage04.preflight",
+      "error": "Computer Use server error -10005: cgWindowNotFound"
+    }
+  ],
+  "inventory_running": true,
+  "native_window_pass": false,
+  "keyboard_ax": "pending",
+  "real_ime": "pending",
+  "voiceover": "deferred"
+}

@@ -1,0 +1,30 @@
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `dbunk` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::table_ddl::live_tests::native_table_ddl_live_exact_changes_races_and_joined_cleanup ... target fixture=2283820d-33ec-4c4c-ae03-7051092bd410 endpoint=127.0.0.1:15432/dbunk_demo schemas=["native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1ba", "native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1bb"] spare=native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1bx baseline=0
+isolated profile=/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpacPA7a
+created schema=native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1ba oid=20525 table_oid=20526
+created schema=native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1bb oid=20529 table_oid=20530
+owned table_ddl race/cancel backend_pid=89853
+race external_namespace_swap aba=false transactional_rollback=true
+owned table_ddl race/cancel backend_pid=89946
+race external_namespace_swap aba=true transactional_rollback=true
+owned table_ddl race/cancel backend_pid=90032
+cancel_after_statement_before_commit=acknowledged_rollback
+owned table_ddl race/cancel backend_pid=90035
+lost_commit_runner_ack=outcome_unknown real_commit_visible=true commit_count=1 exact_receipt=true explicit_reconciliation=true
+stale_oid_refused=true replaced_owned_oid=20530 replacement_oid=20533
+confirmed_success_audits=6 rollback_added_audits=0
+cleanup name=native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1ba schema_oid=20525 table_oid=20526 owner=dbunk RESTRICT absent=true
+cleanup name=native_table_ddl_20261003_27ae20cbd0c74e2f8912bf1bb schema_oid=20529 table_oid=20533 owner=dbunk RESTRICT absent=true
+fixture=2283820d-33ec-4c4c-ae03-7051092bd410 baseline=0 final=0 joined_before_cleanup=true
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1183 filtered out; finished in 2.76s
+

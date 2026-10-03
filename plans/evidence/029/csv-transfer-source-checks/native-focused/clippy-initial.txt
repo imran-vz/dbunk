@@ -1,0 +1,93 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+warning: type `csv_transfers::registry::State` is more private than the item `csv_transfers::registry::Registry::state`
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/csv_transfers/registry.rs:73:5
+   |
+73 |     pub state: Arc<Mutex<State>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `csv_transfers::registry::Registry::state` is reachable at visibility `pub(in crate::backend)`
+   |
+note: but type `csv_transfers::registry::State` is only usable at visibility `pub(in crate::backend::csv_transfers)`
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/csv_transfers/registry.rs:39:1
+   |
+39 | pub(super) struct State {
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: `dbunk` (lib) generated 1 warning
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: unused imports: `ImportInvalidation` and `phase_label`
+  --> src/csv_transfer_model.rs:14:29
+   |
+14 |     Capture, ImportChanges, ImportInvalidation, ObservationOrder, direction_label, phase_label,
+   |                             ^^^^^^^^^^^^^^^^^^                                     ^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: this looks like an `else if` but the `else` is missing
+   --> src/csv_transfer_view/render.rs:399:117
+    |
+399 | ...   .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if this.composing(window,cx){return;}if event.keystroke.ke...
+    |                                                                                                               ^
+    |
+    = note: to remove this lint, add the missing `else` or add a new line before the second `if`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#possible_missing_else
+    = note: `-D clippy::possible-missing-else` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::possible_missing_else)]`
+
+error[E0599]: no method named `prevent_default` found for mutable reference `&mut gpui::Context<'_, csv_transfer_view::CsvTransferView>` in the current scope
+   --> src/csv_transfer_view/render.rs:399:600
+    |
+399 | ...ropagation();cx.prevent_default();}}}))
+    |                    ^^^^^^^^^^^^^^^ method not found in `&mut gpui::Context<'_, csv_transfer_view::CsvTransferView>`
+
+error[E0282]: type annotations needed
+   --> src/csv_transfer_view/choices.rs:266:82
+    |
+266 |                 .child(gpui::uniform_list("csv-choices",count,cx.processor(|this,range,_,cx|{range.map(|index|{
+    |                                                                                  ^^^^^       ----- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+266 |                 .child(gpui::uniform_list("csv-choices",count,cx.processor(|this,range: /* Type */,_,cx|{range.map(|index|{
+    |                                                                                       ++++++++++++
+
+error[E0282]: type annotations needed
+   --> src/csv_transfer_view/render.rs:150:86
+    |
+150 |                 .child(gpui::uniform_list("csv-mapping",count,cx.processor(move|this,range,_,cx|{range.map(|index|{
+    |                                                                                      ^^^^^       ----- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+150 |                 .child(gpui::uniform_list("csv-mapping",count,cx.processor(move|this,range: /* Type */,_,cx|{range.map(|index|{
+    |                                                                                           ++++++++++++
+
+error[E0282]: type annotations needed
+   --> src/csv_transfer_view/render.rs:187:95
+    |
+187 |                 .child(gpui::uniform_list("csv-reviewed-mapping",count,cx.processor(move|this,range,_,cx|{range.map(|index|{
+    |                                                                                               ^^^^^       ----- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+187 |                 .child(gpui::uniform_list("csv-reviewed-mapping",count,cx.processor(move|this,range: /* Type */,_,cx|{range.map(|index|{
+    |                                                                                                    ++++++++++++
+
+error[E0282]: type annotations needed
+   --> src/csv_transfer_view/render.rs:262:54
+    |
+262 | ...                   cx.processor(move |this, range, _, cx| {
+    |                                                ^^^^^
+263 | ...                       range
+    |                           ----- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+262 |                             cx.processor(move |this, range: /* Type */, _, cx| {
+    |                                                           ++++++++++++
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 7 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 7 previous errors

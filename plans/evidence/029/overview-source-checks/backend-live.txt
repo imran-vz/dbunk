@@ -1,0 +1,17 @@
+   Compiling libz-sys v1.1.29
+   Compiling libssh2-sys v0.3.1
+   Compiling ssh2 v0.9.5
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.31s
+     Running unittests src/lib.rs (target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::overview::live_tests::native_overview_owned_identity_scopes_and_joined_cleanup ... verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+verified owned fixture idle: 2283820d-33ec-4c4c-ae03-7051092bd410
+
+OVERVIEW_READ_ONLY_CLEANUP fixture=2283820d-33ec-4c4c-ae03-7051092bd410 activity=0 no_fixture_objects_created
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1130 filtered out; finished in 0.37s
+

@@ -1,0 +1,29 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 175-183
+~		155 button (disabled) Review exact transfer
+~		156 button Start reviewed transfer
++		173 text Exact reviewed target
+Connection: Auto-fit fixture
+Host: 127.0.0.1
+Port: 15432
+Database: dbunk_demo
+User: dbunk
+Environment: Development
+Safe mode: Protected
+Read-only: false
+Relation: native_xlsx_window_20261003.destination
+Direction: Import XLSX
+Mapped columns: 3
+Inspection expires: 2026-10-03T07:26:54.429823+00:00
+Selected file name: exact-values.xlsx
+Observed source bytes: 47
+UTF-8 · Header: true
+Delimiter: "," · Quote: "\"" · Escape: "\""
+NULL token (exact text): "NULL"
+XLSX sheet 2: Other values
+Workb
++		174 list Immutable reviewed CSV mapping
++			175 text (selectable) 1: id → id, Secondary Actions: Pick
++			176 text (selectable) 2: value → value, Secondary Actions: Pick
++			177 text (selectable) 3: amount → amount, Secondary Actions: Pick
+The focused UI element is 92 standard window dbunk Native Workspace, Secondary Actions: Raise

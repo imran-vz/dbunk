@@ -1,0 +1,22 @@
+[
+  {
+    "check": "native-fmt-message",
+    "exit_code": 0
+  },
+  {
+    "check": "native-clippy-message",
+    "exit_code": 0
+  },
+  {
+    "check": "native-test-message",
+    "exit_code": 0
+  },
+  {
+    "check": "native-release-clippy-message",
+    "exit_code": 0
+  },
+  {
+    "check": "native-release-test-message",
+    "exit_code": 0
+  }
+]

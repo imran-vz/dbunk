@@ -1,0 +1,21 @@
+python3 tools/native/fixture.py check
+Verified dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+cd apps/native && DBUNK_NATIVE_FIXTURE_VERIFIED=1 cargo +1.98.1 test --locked live_tests -- --ignored --test-threads=1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/dbunk_native-772a36ec0cbab884)
+
+running 9 tests
+test live_tests::native_background_beyond_lease_and_refocus_stay_usable ... ok
+test live_tests::native_foreground_heartbeats_do_not_prevent_ack_timeout ... ok
+test live_tests::native_full_queue_retires_and_explicit_reconnect_restores_queries ... ok
+test live_tests::native_idle_and_active_owned_socket_loss_require_reconnect ... ok
+test live_tests::native_retention_refusal_drains_terminal_ack_and_preserves_session ... ok
+test live_tests::native_select_error_and_terminal_ack_allow_next_run ... ok
+test live_tests::native_shutdown_during_sleep_joins_and_is_idempotent ... ok
+test live_tests::native_shutdown_with_streaming_credit_held_joins ... ok
+test live_tests::native_stop_with_four_batches_of_held_credit_resumes_and_finishes ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 299.97s
+

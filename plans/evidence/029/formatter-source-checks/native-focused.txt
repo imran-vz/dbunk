@@ -1,0 +1,18 @@
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.22s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 8 tests
+test sql_format::tests::model_working_allowance_covers_all_simultaneous_storage ... ok
+test sql_format::tests::incomplete_or_ambiguous_input_never_produces_partial_edits ... ok
+test sql_format::tests::continuation_gaps_remain_exact_even_across_comments ... ok
+test sql_format::tests::comments_and_dollar_bodies_are_byte_exact ... ok
+test sql_format::tests::quoted_prefixes_escapes_and_unicode_are_exact ... ok
+test sql_format::tests::useful_clause_layout_preserves_case_and_multiple_statements ... ok
+test sql_format::tests::maximal_operators_identifiers_parameters_and_numbers_do_not_split ... ok
+test sql_format::tests::input_tokens_depth_and_output_are_bounded_before_growth ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 189 filtered out; finished in 0.01s
+

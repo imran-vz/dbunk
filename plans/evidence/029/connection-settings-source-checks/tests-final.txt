@@ -1,0 +1,16 @@
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.14s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-aa775f6503202b64)
+
+running 6 tests
+test connection_settings_model::tests::exact_absence_empty_zero_and_search_path_order ... ok
+test connection_settings_model::tests::identity_and_supported_dispatch_are_exact ... ok
+test connection_settings_model::tests::newline_heavy_and_oversize_refuse_before_formatting ... ok
+test connection_settings_model::tests::overlap_refuses_atomically_and_drop_releases ... ok
+test connection_settings_model::tests::replacement_accounts_for_both_captures_and_does_not_clone_spare_capacity ... ok
+test connection_settings_model::tests::unsupported_record_remains_readable_without_edit_authority ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 368 filtered out; finished in 0.00s
+

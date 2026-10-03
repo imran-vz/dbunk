@@ -1,0 +1,99 @@
+The following is a diff from the previous accessibility tree for Window: "Keyboard" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 33-391
+~31 standard window Keyboard, ID: Main, Secondary Actions: Raise
+~	32 split group Main, SidebarNavigationSplitView
++		33 container
++			34 scroll area Secondary Actions: Scroll Up, Scroll Down
++				35 list Description: Sidebar, ID: com.apple.settings.sidebar.collectionView
++					36 row (selectable)
++					37 row (selectable) Imran M, Apple Account
++					38 row (selectable)
++					39 row (selectable) Wi-Fi
++					40 row (selectable) Bluetooth
++					41 row (selectable) Network
++					42 row (selectable) VPN
++					43 row (selectable) Battery
++					44 row (selectable)
++					45 row (selectable) General
++					46 row (selectable) Accessibility
++					47 row (selectable) Appearance
++					48 row (selectable) Desktop & Dock
++					49 row (selectable) Displays
++					50 row (selectable) Menu Bar
++					51 row (selectable) Siri
++					52 row (selectable) Spotlight
++					53 row (selectable) Wallpaper
++					54 row (selectable)
++					55 row (selectable) Notifications
++					56 row (selectable) Sound
++					57 row (selectable) Focus
++					58 row (selectable) Screen Time
++					59 row (selectable)
++					60 row (selectable) Lock Screen
++					61 row (selectable) Privacy & Security
++					62 row (selectable) Touch ID & Password
++					63 row (selectable) Users & Groups
++					64 row (selectable)
++					65 row (selectable) Game Center
++					66 row (selectable) iCloud
++					67 row (selectable) Internet Accounts
++					68 row (selectable) Wallet & Apple Pay
++					69 row (selectable)
++					70 row (selectable) AirPods Pro
++					71 row (selected) Keyboard
++					72 row (selectable) Trackpad
++					73 row (selectable) Printers & Scanners
++				74 scroll bar (settable, float) 0
++					75 value indicator (settable, float) 0
++					76 increment arrow button
++					77 decrement arrow button
++					78 increment page button
++					79 decrement page button
++		80 search text field (settable) Search
++			81 button Search
++		82 splitter (disabled, settable, float) 232
++		83 scroll area Secondary Actions: Scroll Up, Scroll Down
++			84 container
++				85 slider (settable, float) Description: Key repeat rate, Value: 6
++				86 slider (settable, float) Description: Delay until repeat, Value: 4
++			87 container
++				88 switch Adjust keyboard brightness in low light, Value: on
++				89 text Keyboard brightness
++					90 button Reduce Brightness
++					91 slider (settable, float) 0.2714761
++					92 button Increase Brightness
++				93 pop up button Turn keyboard backlight off after inactivity, Value: Never
++				94 pop up button Press 🌐︎ key to, Value: Do Nothing
++				95 switch Value: off, Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.
++				96 button Keyboard Shortcuts…
++			97 heading Text Input
++			98 container
++				99 text Input Sources ABC
++				100 button Edit…
++				101 button Text Replacements…
++			102 heading Dictation
++			103 container
++				104 switch Value: on, Support for processing Chinese (Mandarin) on your Mac will download later when an Internet connection is available.
++				105 text Languages English (United States)
++				106 button Edit…
++				107 pop up button Microphone source, Value: MacBook Pro Microphone
++				108 text Shortcut
++				109 pop up button Press 🎤︎
++				110 button About Ask Siri, Dictation & Privacy…
++			111 button Set Up Keyboard…
++			112 button Help
++			113 scroll bar (settable, float) 1
++				114 value indicator (settable, float) 1
++				115 increment arrow button
++				116 decrement arrow button
++				117 increment page button
++				118 decrement page button
++	119 toolbar
++		120 container
++			121 button Description: Go Back, ID: chevron.backward
++			122 menu button (disabled) Description: Go Forward, ID: chevron.forward
++	123 close button
++	124 zoom button
++	125 minimize button
++	126 text Keyboard
+The focused UI element is 80 search text field (settable) Search

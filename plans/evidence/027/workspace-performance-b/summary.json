@@ -1,0 +1,276 @@
+{
+  "scope": "Release actual-window AX-active diagnostics; no human VoiceOver or IME claim",
+  "baseline": "plans/evidence/026/final-verification/performance-summary.json",
+  "sessions": {
+    "1": {
+      "typing_samples": 900,
+      "typing_p50_ms_median": 27.601937,
+      "typing_p95_ms_median": 35.102858,
+      "typing_p95_ms_delta_vs_plan026": -2.2801377999999985,
+      "missed": 0,
+      "idle_cpu_percent_one_core": 3.944137583496236,
+      "idle_footprint_mib": {
+        "count": 30,
+        "max": 297.0636901855469,
+        "mean": 297.01160685221356,
+        "min": 296.9699401855469,
+        "p50": 297.0011901855469,
+        "p95": 297.0636901855469,
+        "p99": 297.0636901855469
+      },
+      "fixture_footprints_mib": {
+        "many": {
+          "count": 5,
+          "max": 274.9074172973633,
+          "mean": 274.8324172973633,
+          "min": 274.8136672973633,
+          "p50": 274.8136672973633,
+          "p95": 274.88866729736327,
+          "p99": 274.90366729736326
+        },
+        "wide": {
+          "count": 5,
+          "max": 348.07933807373047,
+          "mean": 348.07933807373047,
+          "min": 348.07933807373047,
+          "p50": 348.07933807373047,
+          "p95": 348.07933807373047,
+          "p99": 348.07933807373047
+        },
+        "large": {
+          "count": 5,
+          "max": 318.12623596191406,
+          "mean": 318.12623596191406,
+          "min": 318.12623596191406,
+          "p50": 318.12623596191406,
+          "p95": 318.12623596191406,
+          "p99": 318.12623596191406
+        }
+      },
+      "scroll_runs": 12,
+      "scroll_p95_ms_range": [
+        10.022729,
+        10.62516865
+      ],
+      "long_frames": 0,
+      "environment": {
+        "displayMaxHz": 120,
+        "displayPoints": [
+          1728,
+          1117
+        ],
+        "displayScale": 2,
+        "lowPowerMode": false,
+        "model": "Mac16,7",
+        "os": "Version 27.0.1 (Build 26A434)",
+        "power": "Now drawing from 'AC Power'",
+        "recordedAt": "2026-10-02T17:00:27Z",
+        "thermalState": 0
+      },
+      "baseline_environment_differences": {
+        "power": {
+          "baseline": "Now drawing from 'Battery Power'",
+          "current": "Now drawing from 'AC Power'"
+        }
+      },
+      "comparison_note": "Same workload, capture tool, 1440x932 window, input count and cadence. Four sessions retain three additional many-fixture results. Review environmental differences and raw samples before interpreting deltas."
+    },
+    "4": {
+      "typing_samples": 900,
+      "typing_p50_ms_median": 30.6756665,
+      "typing_p95_ms_median": 35.3438333,
+      "typing_p95_ms_delta_vs_plan026": -2.039162499999996,
+      "missed": 0,
+      "idle_cpu_percent_one_core": 3.8871702014252447,
+      "idle_footprint_mib": {
+        "count": 30,
+        "max": 295.17313385009766,
+        "mean": 295.15750885009766,
+        "min": 295.14188385009766,
+        "p50": 295.15750885009766,
+        "p95": 295.17313385009766,
+        "p99": 295.17313385009766
+      },
+      "fixture_footprints_mib": {
+        "many": {
+          "count": 5,
+          "max": 337.54813385009766,
+          "mean": 337.54813385009766,
+          "min": 337.54813385009766,
+          "p50": 337.54813385009766,
+          "p95": 337.54813385009766,
+          "p99": 337.54813385009766
+        },
+        "wide": {
+          "count": 5,
+          "max": 304.06378173828125,
+          "mean": 304.06378173828125,
+          "min": 304.06378173828125,
+          "p50": 304.06378173828125,
+          "p95": 304.06378173828125,
+          "p99": 304.06378173828125
+        },
+        "large": {
+          "count": 5,
+          "max": 304.14190673828125,
+          "mean": 304.14190673828125,
+          "min": 304.14190673828125,
+          "p50": 304.14190673828125,
+          "p95": 304.14190673828125,
+          "p99": 304.14190673828125
+        }
+      },
+      "scroll_runs": 12,
+      "scroll_p95_ms_range": [
+        9.964553649999997,
+        10.5944161
+      ],
+      "long_frames": 0,
+      "environment": {
+        "displayMaxHz": 120,
+        "displayPoints": [
+          1728,
+          1117
+        ],
+        "displayScale": 2,
+        "lowPowerMode": false,
+        "model": "Mac16,7",
+        "os": "Version 27.0.1 (Build 26A434)",
+        "power": "Now drawing from 'AC Power'",
+        "recordedAt": "2026-10-02T17:05:27Z",
+        "thermalState": 0
+      },
+      "baseline_environment_differences": {
+        "power": {
+          "baseline": "Now drawing from 'Battery Power'",
+          "current": "Now drawing from 'AC Power'"
+        }
+      },
+      "comparison_note": "Same workload, capture tool, 1440x932 window, input count and cadence. Four sessions retain three additional many-fixture results. Review environmental differences and raw samples before interpreting deltas."
+    }
+  },
+  "memory_cycles": {
+    "cycles": 20,
+    "sampled_peak_bytes": 325240128,
+    "process_lifetime_peak_bytes": 367772920,
+    "before_median_bytes": 313935168,
+    "last_5_seconds_median_bytes": 297387328.0,
+    "settled_delta_bytes": -16547840.0,
+    "sampling": "100ms while settling plus before open, after completed query and after each close; OS lifetime peak separately includes the whole process lifetime",
+    "note": "Physical footprint includes allocator/caches and is distinct from encoded retained-result and queue limits; investigate persistent growth rather than infer a leak from one delta."
+  },
+  "queue_high_water": [
+    {
+      "scope": "document",
+      "peak_bytes": 87104
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 87465
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 87028
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788259
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788336
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788391
+    },
+    {
+      "scope": "workspace",
+      "peak_bytes": 788703
+    },
+    {
+      "scope": "document",
+      "peak_bytes": 788703
+    }
+  ],
+  "largest_reported_document_encoded_result_bytes": 26224498,
+  "encoded_model_scope": "Per-document terminal observations. Aggregate result-model peak is not directly instrumented by this run.",
+  "teardown": {
+    "exit_code": 0,
+    "backend_baseline": 0,
+    "backend_final": 0,
+    "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "tls_backend_baseline": null,
+    "tls_backend_final": null,
+    "profile_retained": "/private/tmp/dbunk-stage04-performance-20261002b"
+  },
+  "acceptance": "Diagnostic capture and cleanup completed. Numerical regressions and settle trace require review; no universal performance threshold asserted."
+}

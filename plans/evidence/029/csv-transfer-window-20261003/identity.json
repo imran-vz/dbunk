@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pid": 16684,
+  "executable": "/private/tmp/dbunk-native-package-20261003-csv/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "executable_sha256": "6743917f18e4c9580b5a183b8f2198f3da05963acf613cd3754c4fd27bf104b9",
+  "profile": "/private/tmp/dbunk-native-csv-20261003-review",
+  "profile_mode": "stage04-fixture",
+  "general_profile_owner": null,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-tr2i_fpv",
+  "tls_fixture_instance": null,
+  "bundle": "/private/tmp/dbunk-native-package-20261003-csv/dbunk Native Preflight.app"
+}

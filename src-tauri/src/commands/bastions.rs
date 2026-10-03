@@ -49,8 +49,8 @@ pub(crate) async fn save_bastion_server_inner(
         // Serialize this read-modify-write with `credentials::upsert` /
         // `delete` so a concurrent connection save or duplicate can't
         // be erased by our whole-map `write_all` below.
-        let _credentials_guard = credentials::mutation_guard().await;
-        let current_secrets = credentials::read_all(&state.pool, mode).await?;
+        let _credentials_guard = credentials::mutation_guard(&state.credentials).await;
+        let current_secrets = credentials::read_all(&state.credentials, mode).await?;
         let secret_patch = secret_patch_from_payload(&payload);
         let next_secrets = credentials::apply_bastion_secret_patch(current_secrets, &secret_patch);
         validate_required_secret(&next_secrets, &payload)?;
@@ -79,7 +79,7 @@ pub(crate) async fn save_bastion_server_inner(
         };
 
         storage::bastions::upsert_bastion_server(&state.pool, &bastion).await?;
-        if let Err(error) = credentials::write_all(&state.pool, mode, &next_secrets).await {
+        if let Err(error) = credentials::write_all(&state.credentials, mode, &next_secrets).await {
             let rollback =
                 rollback_bastion_metadata(&state.pool, existing.as_ref(), &payload.id).await;
             if let Err(rollback_error) = rollback {
@@ -124,7 +124,7 @@ pub(crate) async fn delete_bastion_server_inner(
         if !storage::bastions::delete_bastion_server(&state.pool, bastion_server_id).await? {
             return Err(format!("Bastion Server '{}' not found", bastion_server_id));
         }
-        credentials::delete_bastion_secrets(&state.pool, mode, bastion_server_id).await?;
+        credentials::delete_bastion_secrets(&state.credentials, mode, bastion_server_id).await?;
         tunnel::drop_bastion_async(bastion_server_id).await;
         Ok::<_, String>(())
     })
@@ -170,7 +170,13 @@ pub async fn test_bastion_server(
 ) -> Result<TestBastionResult, String> {
     let state = state.inner();
     let mode = current_credential_mode(state).await?;
-    tunnel::test_bastion(&state.pool, mode, &payload.bastion_server_id).await
+    tunnel::test_bastion(
+        &state.credentials,
+        &state.pool,
+        mode,
+        &payload.bastion_server_id,
+    )
+    .await
 }
 
 async fn public_bastion_servers(
@@ -178,7 +184,7 @@ async fn public_bastion_servers(
     mode: CredentialStorageMode,
 ) -> Result<Vec<PublicBastionServer>, String> {
     let servers = storage::bastions::read_bastion_servers(&state.pool).await?;
-    let all_secrets = credentials::read_all(&state.pool, mode).await?;
+    let all_secrets = credentials::read_all(&state.credentials, mode).await?;
     Ok(servers
         .into_iter()
         .map(|server| public_bastion(server, &all_secrets))

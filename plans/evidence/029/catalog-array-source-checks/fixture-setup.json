@@ -1,0 +1,7 @@
+{
+  "fixture": "127.0.0.1:15432/dbunk_demo",
+  "uuid": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema": "native_objects_20261003",
+  "schema_preexisting": false,
+  "schema_oid": "16475"
+}

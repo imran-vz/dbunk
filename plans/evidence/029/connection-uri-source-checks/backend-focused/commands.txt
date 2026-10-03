@@ -1,0 +1,5 @@
+Owner /root/export_models. Pure URI tests only, no profiles/credentials/fixture/OS network or UI access.
+Working directory /Users/imran/projects/Code/dbunk.
+cargo +1.97.1 test --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile backend::connection_uri::tests -- --test-threads=1
+cargo +1.97.1 clippy --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+cargo +1.97.1 fmt --manifest-path src-tauri/Cargo.toml -- --check

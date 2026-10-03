@@ -1,0 +1,22 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.80s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-3ca73272a16fe647)
+
+running 11 tests
+test controller::schema_compare_runtime::tests::disconnect_preserves_reader_lane_until_actual_tab_disposal ... ok
+test controller::schema_compare_runtime::tests::receiver_drop_joins_observer_and_reclaims_unconsumed_reply_allowance ... ok
+test controller::schema_compare_runtime::tests::response_budget_refuses_before_job_admission_and_stop_destroys_queued_delivery ... ok
+test schema_compare_model::tests::connection_choices_refuse_duplicate_or_large_retention_without_replacing_old ... ok
+test schema_compare_model::tests::field_identity_does_not_use_colliding_display_paths ... ok
+test schema_compare_model::tests::job_selection_is_exact_and_release_never_substitutes_another_job ... ok
+test schema_compare_model::tests::page_history_commits_only_after_exact_successful_reply ... ok
+test schema_compare_model::tests::replacement_admission_refusal_retains_old_capture_and_releases_overlap ... ok
+test schema_compare_model::tests::stale_reply_settles_without_capture_and_only_latest_intent_dispatches ... ok
+test schema_compare_model::tests::unavailable_never_becomes_empty_and_excluded_counterpart_is_not_absence ... ok
+test schema_compare_model::tests::value_previous_uses_observed_utf8_cut_and_sides_remain_independent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.07s
+

@@ -17,7 +17,7 @@ follows before it is executed.
 
 | Proposal | Scope | Status |
 | --- | --- | --- |
-| [GPUI migration](./gpui-migration.html) | macOS first; current feature parity before replacing Tauri | APPROVED TO START by Imran on 2026-10-02. Stage 00 decided the same day: reason is architecture with no performance gain required, margins 30% and 10%, licence GPL-3.0-or-later (path Z, Zed's editor), feature rule backend-first with baseline `102568b`. Stage 01 is Plan 024; the first slice of stage 02 is Plan 025. Both are READY FOR REVIEW pending completion commits. **Stage 01 gate CLOSED: PASS / continue, 2026-10-02**, under Imran's request to finish and close it. All four criteria are met: text geometry and editor/results/cell-editor keyboard focus are verified; remaining full-application work is costed in the [gate review](./evidence/024/stage01-gate.md). Imran confirmed VoiceOver complete on 2026-10-02. No accessibility waiver or daily-driver cutover is approved. Stage 03 is [Plan 026](./026-native-postgres-workflow.md), with A + B + C selected by Imran on 2026-10-02 and a user-facing layout switcher. Stages 04 to 07 are not planned. |
+| [GPUI migration](./gpui-migration.html) | macOS first; current feature parity before replacing Tauri | APPROVED TO START by Imran on 2026-10-02. Stage 00 decided the same day: reason is architecture with no performance gain required, margins 30% and 10%, licence GPL-3.0-or-later (path Z, Zed's editor), feature rule backend-first with baseline `102568b`. Stage 01 is Plan 024; the first slice of stage 02 is Plan 025. Both are READY FOR REVIEW pending completion commits. **Stage 01 gate CLOSED: PASS / continue, 2026-10-02**, under Imran's request to finish and close it. All four criteria are met: text geometry and editor/results/cell-editor keyboard focus are verified; remaining full-application work is costed in the [gate review](./evidence/024/stage01-gate.md). Imran confirmed VoiceOver complete on 2026-10-02. On 2026-10-03 Imran deferred VoiceOver from the blocking verification gate; keyboard/AX and real IME remain required. No daily-driver cutover is approved. Stage 03 is [Plan 026](https://github.com/imran-vz/dbunk/blob/3f987c96640d6738b48ae1113ceac3ebbdc8563f/plans/026-native-postgres-workflow.md), DONE at `3f987c9` after evidence review on 2026-10-02, with A + B + C and a user-facing layout switcher. Stage 04 is drafted as [Plan 027](./027-native-workspace-shell.md), with A, Persistent Navigator, selected by Imran on 2026-10-02; implementation in progress; [three static options](./mocks/native-workspace/index.html). Stage 05 is [Plan 028](./028-native-postgres-data-workflow.md), with backend and selected native UI implementation in progress; acceptance remains dependent on Plan 027 gates; table-review A selected. The PostgreSQL stage 06 tools are [Plan 029](./029-native-postgres-tools.md); stage 07 parity/profile/package acceptance is [Plan 030](./030-native-postgres-parity-acceptance.md). Tool layout A, Tool tabs, is selected. Imran clarified on 2026-10-02 that the target is **complete PostgreSQL parity with Tauri**, not only the fixture query workflow; see the [scope and design review](./mocks/native-postgres-parity/index.html) and [native parity inventory](./native-postgres-parity-inventory.md). |
 
 The stage 01 closure activates the stage 00 backend-first rule: React receives
 correctness, safety and data-loss fixes only; new capability lands dark in the
@@ -55,7 +55,11 @@ review.
 | [023](./023-query-session-bound-parameters-and-row-limit.md) | Bound parameters and row-limited reads in PostgreSQL Query Sessions (dark) | P0 | L | 001, 002, 007 | READY FOR REVIEW |
 | [024](./024-gpui-baseline-and-spike.md) | Tauri baseline, external measurement harness and GPUI spike (migration stage 01) | P1 | L | Migration stage 00 | READY FOR REVIEW: stage 01 gate CLOSED, PASS / continue on 2026-10-02; all four criteria met ([review](./evidence/024/stage01-gate.md)); completion SHA pending an authorized commit |
 | [025](./025-shared-core-query-session-extraction.md) | Host-neutral core seam and Query Session service extraction (migration stage 02, first slice) | P1 | L | Migration stage 00 | READY FOR REVIEW |
-| [026](./026-native-postgres-workflow.md) | First working native PostgreSQL workflow (migration stage 03) | P1 | L | Stage 01 gate closed; 025 implementation | READY FOR REVIEW: all five steps verified; 27 actual-window race runs, guarded real-result release performance and final release AX workflow pass ([final evidence](./evidence/026/implementation-review.md#final-verification)). Human VoiceOver PASS; A + B + C retained. Completion SHA pending an authorized commit |
+| 026 | First working native PostgreSQL workflow (migration stage 03) | P1 | L | Stage 01 gate closed; 025 implementation | DONE: 3f987c9 (selected mocks: A + B + C; [completion review](./evidence/026/completion-review.md)) |
+| [027](./027-native-workspace-shell.md) | Native PostgreSQL workspace shell (migration stage 04) | P1 | XL | 026; stage 01 gate closed | IN PROGRESS: Step 1 typed connection/draft services, native admission and durable credential recovery ([progress](./evidence/027/step01-services-progress.md)); injected/headless and scoped OS Keychain CLI checks pass; native workspace/forms/writer implemented; release TLS/query/reopen, multi-session runtime and performance captures pass; recovery and packaged credentials pass; scoped real Pinyin SQL/form/cell checks pass; remaining actual-window acceptance pending; VoiceOver deferred by Imran on 2026-10-03 ([workspace progress](./evidence/027/step02-workspace-progress.md)); selected mock A, Persistent Navigator |
+| [028](./028-native-postgres-data-workflow.md) | Native PostgreSQL transactions, Table Browse and mutations (migration stage 05) | P1 | XL | 027 | IN PROGRESS: typed data facade, owned task cleanup and confirmation services implemented; focused live data/transaction checks and corrected query harness rerun pass ([progress](./evidence/028/backend-progress.md)); selected mock A, Bottom review; native query controls, table paging, staged writes, exact-save apply barrier and v2 recovery implemented in source; column preferences, scoped query/table/review/apply/reopen and real Pinyin checks pass ([window evidence](./evidence/028/table-window-verification-20261003.md)); typed browse/presets, value inspection, specialized literal/array-element editors and virtual keys now have [source checks](./evidence/028/browse-inspector-source-checks/README.md); composite FK navigation also has [source/live checks](./evidence/029/metadata-fk-source-checks/README.md); new-control window acceptance and further data features remain pending; VoiceOver is deferred |
+| [029](./029-native-postgres-tools.md) | Native PostgreSQL catalog, SQL tools, jobs and administration (migration stage 06 subset) | P1 | XL | 027, 028 | IN PROGRESS: history/saved-query Tool tabs and execution capture implemented; bounded copy formats integrated; frozen source checks pass; EXPLAIN drafts/tree and owned catalog reads have source/live checks; Objects Tool tab and [all twelve baseline description kinds](./evidence/029/metadata-fk-source-checks/README.md) implemented with scoped live probes passed; retained file exports and downstream drop impact now have [focused source/live evidence](./evidence/029/export-impact-source-checks/README.md); [whole-table exports and saved configurations](./evidence/029/whole-table-export-source-checks/README.md) now have exact scoped file/window evidence, with corrected AX/focus/status and recipe reopen checks passed; the broader duplicate button keyboard and dynamic-toggle focus corrections pass scoped window checks; existing-table comment/rename now has native recovery/review source under verification; full tools acceptance and remaining object-service lifecycle work remain pending; selected tools mock A, Tool tabs; other per-family gates remain open |
+| [030](./030-native-postgres-parity-acceptance.md) | Native PostgreSQL parity, profile compatibility and package acceptance (stage 07 subset) | P1 | XL | 027–029 | IN PROGRESS: [action-level capability ledger](./evidence/030/capability-ledger.md) prepared; explicit general native profiles have source/live checks; disposable migration and complete package/window acceptance remain pending; VoiceOver deferred |
 
 Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 `DONE: <completion SHA>`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
@@ -63,6 +67,19 @@ Status values: `TODO`, `IN PROGRESS: through Step N`, `READY FOR REVIEW`,
 Executors update their own status row after each completed step and mark
 `READY FOR REVIEW` after all gates. The reviewer or operator records
 `DONE: <completion SHA>` after the work is committed.
+
+Plan 026 is DONE at `3f987c9`, reviewed on 2026-10-02 under Imran's request.
+The [completion review](./evidence/026/completion-review.md) confirms that all
+220 recorded source/lockfile hashes match the committed implementation, the
+27 actual-window race runs and release AX workflow pass with clean teardown,
+and the guarded performance captures reproduce the reported results. The
+separate human VoiceOver correction recheck passed. Required repository,
+backend and native check logs were reviewed; `pnpm format`, `pnpm lint` and
+`pnpm typecheck` also pass freshly during closure. Runtime tests were not rerun.
+The completed plan body is retired; its [historical execution record](https://github.com/imran-vz/dbunk/blob/3f987c96640d6738b48ae1113ceac3ebbdc8563f/plans/026-native-postgres-workflow.md)
+and [verification evidence](./evidence/026/implementation-review.md) remain.
+Plans 024 and 025 retain their separate review status. This completes the
+isolated macOS PostgreSQL slice, without authorizing daily-driver cutover.
 
 **Plan 023 is READY FOR REVIEW** (PAR-001 follow-ons, chosen by Imran on
 2026-10-01, authored against `49c50e8`, now `677a7e8` on `main` with an
@@ -131,3 +148,95 @@ validation limitations known at completion.
   and `just test`.
 - Publishing, production changes, commits, pushes, and PR creation require
   separate authorization.
+
+Latest native data-workflow increment: [duplicate/bulk rows, snippets and snapshot ownership](./evidence/028/duplicate-bulk-source-checks/README.md).
+Plans 027–030 remain IN PROGRESS; the new controls still require actual-window acceptance.
+
+Latest query-edit increment: [executed source, version 3 recovery and guarded query UPDATEs](./evidence/028/query-mutation-source-checks/README.md).
+This is a restricted implementation, not complete query-result parity. Unqualified
+sources, context-dependent types and non-ASCII row guards remain unsupported;
+new native-window acceptance is pending. Plans 027–030 remain IN PROGRESS.
+
+Latest tools increment: [read-only Administration Tool tab](./evidence/029/admin-source-checks/README.md).
+Owned sessions/locks/pending-transaction reads, required source checks and the
+separate package pass. CUA window discovery failed for that exact package. Session control, maintenance and actual-window acceptance
+remain open. Plans 027–030 remain IN PROGRESS.
+
+Latest SQL tools increment: [native completion](./evidence/029/completion-source-checks/README.md).
+Bounded suggestions and exact owned column metadata are integrated. Focused
+source/live probes, debug/release checks and the isolated package pass. Actual-window acceptance remains open.
+A [conservative format command](./evidence/029/formatter-source-checks/README.md) now preserves token spelling and applies bounded whitespace edits with separate undo boundaries. Required/native debug/release checks and the separate package pass. Keyword normalization and full formatter/window acceptance remain open. Plans 027–030 remain IN PROGRESS.
+
+Latest Plan 030 increment: [explicit general PostgreSQL profiles](./evidence/030/general-profile-source-checks/README.md). Separate marker/SQLite identity, endpoint authority, explicit create/open launch modes and owned verification receipts are implemented. Required checks, owned service probe and a separate frozen package pass; window discovery failed, so actual-window acceptance remains pending. Fixture guards remain in place; profile import, production identity and full package/window acceptance remain open.
+
+Latest Plan 029 connection increment: [URI import and secret-free copy](./evidence/029/connection-uri-source-checks/README.md). Required source checks, both pinned URL-parser corpora and the separate frozen package pass; actual-window acceptance remains pending. General-form TLS now defaults to Prefer; fixture defaults remain unchanged. Full staged diagnosis, SSH and managed PostgreSQL remain open.
+
+Latest Plan 029 inspection increment: [server facts, settings and extensions](./evidence/029/server-details-source-checks/README.md). Scoped live and frozen repository/native checks pass; the separate frozen package passes, but CUA discovery failed before interaction and actual-window acceptance remains pending. Readings disclose reader-session scope and inspection overrides. Statistics, audit, Settings mirror/Edit and administration write actions remain open.
+
+Latest Plan 029 DDL increment: [atomic Create Schema with optional comment](./evidence/029/schema-create-source-checks/README.md). The dedicated write fence, exact-revision recovery and native bottom review are implemented; focused/frozen checks, owned live verification and packaging pass; CUA discovery failed and window acceptance remains pending. This does not complete object lifecycle or designer parity.
+
+Latest local administration increment: [retained safety overrides](./evidence/029/safety-audit-source-checks/README.md), with bounded profile-local pages and disconnected inspection. Focused/frozen checks and the separate package pass; actual-window acceptance remains pending. PostgreSQL control and maintenance actions remain open.
+
+Current file-job increment: [native backup/restore progress](./evidence/029/tool-jobs-progress.md). Stable attempt registration, owned source/process cleanup, restore data fences, transient Tool-tab setup and the shared observer are under implementation and verification. Final source/package, real-tool and window evidence remain pending; this does not close any plan.
+
+Backup/Restore now has [frozen source, package and owned real-client evidence](./evidence/029/tool-jobs-source-checks/README.md). Plain/custom backup and restore pass the scoped fixture probe. Native window discovery failed before interaction, so keyboard/AX, real IME and complete job acceptance remain pending. CSV transfer ownership work follows; full PostgreSQL parity remains IN PROGRESS.
+
+CSV transfer now has [frozen source, package and owned import/export evidence](./evidence/029/csv-transfer-source-checks/README.md). Indexed mapping, dialect/NULL controls, exact review, app-owned observation, joined cancellation and import-source invalidation are implemented. The real probe passed exact values, source replacement refusal and late-error rollback. Required/native checks and the separate package pass; CUA discovery failed before interaction, so keyboard/AX, real IME and full transfer acceptance remain pending. Workspace format 6 persists only CSV-tab identity/binding. Full PostgreSQL parity remains IN PROGRESS.
+
+Current comparison increment: [native PostgreSQL 16 comparison progress](./evidence/029/schema-comparison-progress.md). App-owned jobs, exact request reconciliation, dedicated result-reader generations, bounded typed pages and UTF-8 value chunks are implemented. Focused checks and the owned PG16 facade probe pass; the corrected backend and refined native checks pass, and the separate package matches 435 source hashes. CUA window discovery failed; actual-window acceptance remains pending. Cached schema suggestions and presentation/copy/keyboard parity refinements are now source-implemented. This does not close any plan.
+
+Current formatter increment: [keyword normalization progress](./evidence/029/keyword-format-progress.md). Known PostgreSQL keywords and phrases now normalize through Format SQL; exact bound parameters and protected text remain unchanged. Focused tests and the pinned baseline vocabulary probe pass. Required checks and the separate package pass against 439 source hashes. Actual-window acceptance remains pending.
+
+Current grid sizing increment: [content-derived widths and auto-fit](./evidence/028/auto-fit-progress.md). Query/table defaults sample retained rows; explicit auto-fit preserves per-result query geometry and the table preference acknowledgement barrier. Required/native checks and separate packaging pass against 440 source hashes. Actual-window acceptance remains pending.
+
+Latest unlocked-desktop attempt: [scoped auto-fit window and reopen evidence](./evidence/028/auto-fit-window-20261003/README.md). Formatting/undo, grid sizing, persisted table geometry and selected library/administration workflows were exercised; both normal quits returned fixture activity to zero. Full keyboard/AX and newer-control IME acceptance remain open. Restoring both library tabs exposed a delivery-budget refusal; the [deferred library activation fix](./evidence/029/library-activation-source-checks/README.md) passes required/native checks and the same-profile window retry. Plans 027–030 remain IN PROGRESS.
+
+Native administration cancel/terminate now has an immutable captured-target
+review, stored-policy confirmation, exact-save dispatch barrier and version-8
+read-only recovery. Its owned stage03 backend probe passed with activity 0 → 0;
+[source and verification scope](./evidence/029/admin-control-source-checks/README.md)
+records the PostgreSQL signal-identity race. Required/native/backend checks and
+the isolated package pass; [scoped window checks](./evidence/029/admin-control-window-20261003/README.md)
+pass cancel, policy confirmation/termination, staged reopen and explicitly
+injected unknown recovery, with normal quit and activity 0 → 0.
+Full parity remains IN PROGRESS; VoiceOver stays deferred.
+
+Current grid navigation increment: [Go to retained row and whole-row rectangles](./evidence/028/grid-navigation-progress.md). Required/native checks and packaging pass; scoped window navigation/copy passes with clean teardown. Missing AX range/error labels were corrected and verified in the [maintenance package](./evidence/029/maintenance-reopen-20261003/README.md). Independent checkbox row selection and complete grid parity remain open.
+
+Current maintenance increment: [owned PostgreSQL maintenance and refresh](./evidence/029/maintenance-progress.md). Required/backend/native checks, owned live probe, packaging and scoped window/recovery/cancellation checks pass; the second launcher gate and guarded helper cleanup are recorded explicitly. Receipt/disclosure corrections also pass separate checks and a clean window recheck; full acceptance remains pending. Residual concurrent-DDL targeting limits are explicit. Full PostgreSQL parity remains IN PROGRESS.
+
+Current grid pinning increment: [ordered left pins](./evidence/028/pinning-progress.md).
+Required/native debug and release checks, independent review and the isolated
+package pass. Scoped AX projection/copy, exact cell editor and table-persistence
+reopen checks pass with clean teardown. Visual scrolling/resize and broader IME
+acceptance remain open; missing-content capture also reproduced on the preceding
+package. Full PostgreSQL parity remains IN PROGRESS.
+
+Current keyboard increment: [retained-grid commands](./evidence/028/grid-keyboard-source-checks/README.md).
+Home/End, Page Up/Down, Shift extension and Escape pass source/native/package
+checks; actual keyboard/AX verification is pending native desktop tool access.
+
+Current connection increment: [direct staged diagnosis](./evidence/029/connection-diagnosis-progress.md).
+The native form now uses a bounded six-stage report with cancellation, credential
+destination checks and shared payload accounting. Required/backend/native
+checks, the owned TLS matrix and separate package pass; scoped direct-diagnosis
+window checks and rebuilt warning AX labels also pass. Full connection and IME
+acceptance remain open. Full PostgreSQL parity remains IN PROGRESS.
+
+Native CUA access returned for the [diagnosis/grid keyboard window run](./evidence/029/diagnosis-window-20261003/README.md). Scoped diagnosis, retained-grid commands and clean shutdown passed. Missing warning AX names were source-corrected and verified in the rebuilt table-copy package. Intermittent capture/AX activation limits and unobserved IME composition remain explicit. VoiceOver stays deferred.
+
+Current transfer increment: [table copy and durable app-owned recovery](./evidence/029/table-copy-progress.md) is under implementation and verification. It uses the approved Tool tab and Bottom review. Required backend checks, bounded native source checks, owned live copy and scoped actual-window review/apply/tab-closure checks pass. Final-package interrupted-apply/reopen/refusal/reconciliation checks also pass. Broader AX/IME and full parity acceptance remain open; see [evidence](./evidence/029/table-copy-source-checks/README.md). Full parity stays IN PROGRESS.
+
+Scoped [CSV actual-window export/import](./evidence/029/csv-window-20261003/README.md) now passes on the frozen table-copy receipt package: 60 rows, exact two-way equality, native file dialogs, immutable indexed mapping and guarded cleanup. Complete keyboard/AX/IME acceptance remains open. XLSX import preparation follows the [reviewed existing dependency edges](./evidence/029/xlsx-import-source-checks/dependency-review.md); scoped import evidence is recorded separately.
+
+Current XLSX increment: [bounded workbook and sheet import](./evidence/029/xlsx-import-progress.md) reuses the approved transfer layout. Required/source checks and scoped actual-window import pass. The two window corrections also pass their separate recheck; full keyboard/AX/IME and parity acceptance remain open.
+
+Current Structure increment: [bounded typed reader and native inspector](./evidence/029/table-structure-source-checks/README.md) passes backend/live and scoped release-window checks, including stale-capture and changed-identity refusal. Two observed catalog/partition-label issues were corrected and rechecked. DDL editing and complete parity remain open.
+
+Current seed increment: [column-aware setup, owned execution and format-11 recovery](./evidence/029/seed-progress.md) has focused source and owned PostgreSQL probe coverage. Required checks, corrected release keyboard/receipt checks and scoped interrupted-write recovery pass. Complete keyboard/AX/IME and full parity remain open.
+
+Current overview increment: [bounded database/schema/relation statistics](./evidence/029/overview-source-checks/README.md) adds Administration inspection with explicit estimates and document-bound pages. Required/backend/native checks and scoped window paging, estimates, cancellation, stale identity and corrected row rendering pass. Complete keyboard and Tool-tab IME acceptance remain open. Full PostgreSQL parity remains IN PROGRESS.
+
+Current metadata-artifact increment: [DDL export and real schema maps](./evidence/029/metadata-artifacts-source-checks/README.md) integrate owned read-only captures, scoped preferences, native Tool tabs and bounded file exports. Source/live checks and integrated release packaging pass; scoped corrected-window evidence covers DDL files, map rendering, movement, persistence/reopen and exports. Full acceptance remains in progress. Unicode PNG, legacy preference import and full keyboard/IME acceptance remain open. Plans 027–030 stay IN PROGRESS.
+
+Existing-table comment/rename now has [native review and version-13 recovery](./evidence/029/table-ddl-activation-source-checks/README.md). Corrected debug/release checks and packaging pass (383 native tests, 13 ignored). Native automation failed at pipe startup before any DDL window interaction; scoped recovery/keyboard/IME acceptance remains pending. The owned process and unused fixture were cleaned up. Full PostgreSQL parity remains IN PROGRESS.

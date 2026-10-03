@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::csv_transfers::live_tests::native_csv_owned_import_export_rollback_and_joined_cleanup ... CSV probe fixture target: 2283820d-33ec-4c4c-ae03-7051092bd410 at 127.0.0.1:15432/dbunk_demo
+owned CSV baseline activity: 0
+owned CSV targets: fixture=2283820d-33ec-4c4c-ae03-7051092bd410 endpoint=127.0.0.1:15432/dbunk_demo schema=native_csv_64f2ddf8dcbc4e07b7186dfe63ec4a63 files=/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpqLQe05 profile=/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpTSERIi
+owned CSV export bytes: 214
+owned CSV result: imported=2 exported=2 exact_values=true source_replacement_refused=true late_error_rolled_back=true successful_audits=1 import_revision=1
+owned CSV cleanup: schema=native_csv_64f2ddf8dcbc4e07b7186dfe63ec4a63 schema_oid=16659 table_oid=16661 mode=RESTRICT
+owned CSV final activity: 0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 995 filtered out; finished in 1.61s
+

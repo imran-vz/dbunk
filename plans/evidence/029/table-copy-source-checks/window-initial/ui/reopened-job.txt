@@ -1,0 +1,25 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 75, 77-103
+~			37 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
++			75 tab (settable, boolean) Value: on, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+~		76 container PostgreSQL table copy
++			77 button Source: Choose a connection
++			78 button Destination: Choose a connection
++			79 button (disabled) Prepare table copy
++			80 button Refresh copy jobs
++			81 button (disabled) Review selected copy
++			82 button (disabled) Apply reviewed copy
++			83 button (disabled) Cancel selected copy
++			84 button (disabled) Reconcile unknown outcome
++			85 button (disabled) Dismiss finished copy
++			86 text Prepare reads both tables; destination rows change only after exact review and saved admission.
++			87 text Append matching columns in one destination transaction. No table creation or replacement. Identity values are copied; destination defaults and generated expressions remain authoritative. Cancellation after COMMIT cannot undo copied rows. Jobs survive tab closure.
++			88 text Copy admitted; awaiting transaction outcome
++			89 text field (settable) Source schema
++			90 text field (settable) Source table
++			91 text field (settable) Destination schema
++			92 text field (settable) Destination table
++			93 list Table copy attempts and durable recovery records
++				94 text (selectable) Secondary Actions: Pick, Completed: Completed { rows: 3 } | native_copy_window_20261003.source → native_copy_window_20261003.destination
++				95 text (selectable) Running: Pending | native_copy_window_20261003.source → native_copy_window_20261003.slow_destination, Secondary Actions: Pick
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

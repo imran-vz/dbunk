@@ -1,0 +1,58 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0603]: unit struct `ShowCompletions` is private
+   --> src/sql_completion.rs:422:42
+    |
+422 |         editor.show_completions(&editor::ShowCompletions, window, cx);
+    |                                          ^^^^^^^^^^^^^^^ private unit struct
+    |
+note: the unit struct `ShowCompletions` is defined here
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/editor/src/editor.rs:78:16
+    |
+ 78 | pub(crate) use actions::*;
+    |                ^^^^^^^
+help: import `ShowCompletions` directly
+    |
+422 |         editor.show_completions(&editor::actions::ShowCompletions::ShowCompletions, window, cx);
+    |                                          ++++++++++++++++++++++++++
+
+error[E0599]: no method named `new` found for mutable reference `&mut gpui::Context<'_, editor::Editor>` in the current scope
+   --> src/sql_completion/provider.rs:125:32
+    |
+125 |                 let lease = cx.new(|_| lease);
+    |                                ^^^ method not found in `&mut gpui::Context<'_, editor::Editor>`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `AppContext` which provides `new` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use gpui::AppContext;
+    |
+
+error[E0308]: mismatched types
+   --> src/sql_completion/provider.rs:145:65
+    |
+145 | ...                   label: CodeLabel::plain(label, Some(0..filter_end)),
+    |                                                      ---- ^^^^^^^^^^^^^ expected `&str`, found `Range<usize>`
+    |                                                      |
+    |                                                      arguments to this enum variant are incorrect
+    |
+    = note: expected reference `&str`
+                  found struct `std::ops::Range<usize>`
+help: the type constructed contains `std::ops::Range<usize>` due to the type of the argument passed
+   --> src/sql_completion/provider.rs:145:60
+    |
+145 | ...                   label: CodeLabel::plain(label, Some(0..filter_end)),
+    |                                                      ^^^^^-------------^
+    |                                                           |
+    |                                                           this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /Users/imran/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/option.rs:606:5
+    |
+606 |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^^^
+
+Some errors have detailed explanations: E0308, E0599, E0603.
+For more information about an error, try `rustc --explain E0308`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 3 previous errors

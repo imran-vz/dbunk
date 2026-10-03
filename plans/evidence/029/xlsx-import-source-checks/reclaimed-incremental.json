@@ -1,0 +1,7 @@
+{
+  "regenerable_caches_removed": [
+    "/Users/imran/projects/Code/dbunk/apps/native/target/debug/incremental",
+    "/Users/imran/projects/Code/dbunk/src-tauri/target/debug/incremental"
+  ],
+  "source_profiles_bundles_preserved": true
+}

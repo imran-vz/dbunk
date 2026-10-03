@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 1 test
+test backend::objects::remaining_live_tests::remaining_descriptions_exact_metadata_and_owned_cleanup ... FAILED
+
+failures:
+
+---- backend::objects::remaining_live_tests::remaining_descriptions_exact_metadata_and_owned_cleanup stdout ----
+
+thread 'backend::objects::remaining_live_tests::remaining_descriptions_exact_metadata_and_owned_cleanup' (8586789) panicked at src/backend/objects/remaining_live_tests.rs:69:13:
+assertion failed: entries.iter().any(|entry| entry.name == name)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    backend::objects::remaining_live_tests::remaining_descriptions_exact_metadata_and_owned_cleanup
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 863 filtered out; finished in 0.41s
+
+error: test failed, to rerun pass `--lib`

@@ -1,0 +1,21 @@
+   Compiling libz-sys v1.1.29
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling libssh2-sys v0.3.1
+   Compiling ssh2 v0.9.5
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `dbunk` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 47.91s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 5 tests
+test backend::export_configurations::tests::configuration_bounds_preserve_exact_values ... ok
+test backend::export_configurations::tests::encoded_escape_expansion_refuses_before_commit ... ok
+test backend::export_configurations::tests::exact_latest_scope_and_stale_save_preserve_intervening_records ... ok
+test backend::export_configurations::tests::invalid_storage_is_not_absence_and_is_never_replaced ... ok
+test backend::export_configurations::tests::storage_limits_refuse_without_eviction_and_profiles_are_separate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1170 filtered out; finished in 0.34s
+

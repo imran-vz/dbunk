@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "profile": "/private/tmp/dbunk-native-workspace-recovery-20261002",
+  "profile_id": "d9d53cf4-1160-4861-ab56-d59d8953951d",
+  "kind": "future",
+  "seeded_sha256": "8137d71357ada811e4835c3691246a8d158ae42710f3e656ebf305b58d7682ce",
+  "seeded_revision": "c2a4f553-fada-4bac-bdcb-2e711badc885",
+  "connection_ids": [
+    "c794c03d-4446-49b6-aad6-39b75426658e"
+  ],
+  "other_state_sha256": "b6ebff47f93e8d42eb5d71db04a77983367aa95531205bd4ebd3bb4df2dc91a0"
+}

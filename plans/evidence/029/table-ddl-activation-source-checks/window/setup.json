@@ -1,0 +1,28 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "endpoint": "127.0.0.1:15432/dbunk_demo",
+  "objects": {
+    "schema_oid": "20517",
+    "table_oid": "20518",
+    "owner": "dbunk",
+    "schema": "native_ddl_window_20261003",
+    "table": " original table ",
+    "schema_comment": "dbunk owned ddl window 20261003",
+    "table_comment": "dbunk owned ddl window table 20261003",
+    "column_attnum": 2,
+    "column": " original column ",
+    "column_comment": "old column comment"
+  },
+  "rows": [
+    [
+      "1",
+      "preserved 雪"
+    ],
+    [
+      "2",
+      null
+    ]
+  ],
+  "stage03_backends": 0,
+  "stage04_backends": 0
+}

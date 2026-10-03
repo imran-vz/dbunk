@@ -1,0 +1,21 @@
+{
+  "fixture_uuid": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema": "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee",
+  "schema_oid": 16784,
+  "objects": [
+    {
+      "name": "rows",
+      "oid": 16785,
+      "owner": "dbunk",
+      "comment": "owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee"
+    },
+    {
+      "name": "summary",
+      "oid": 16790,
+      "owner": "dbunk",
+      "comment": "owned maintenance window 432c769c4fe84cfe8224a15f1753e6ee"
+    }
+  ],
+  "cleanup": "identity/owner/comment checked; explicit RESTRICT; schema absent",
+  "activity": 0
+}

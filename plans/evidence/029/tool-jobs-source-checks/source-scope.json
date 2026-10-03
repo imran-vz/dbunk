@@ -1,0 +1,29 @@
+{
+  "files": 400,
+  "new_paths": [
+    "apps/native/src/bounded_field.rs",
+    "apps/native/src/pg_tool_jobs.rs",
+    "apps/native/src/pg_tool_jobs/tests.rs",
+    "apps/native/src/pg_tool_runtime.rs",
+    "apps/native/src/pg_tool_store.rs",
+    "apps/native/src/pg_tool_view.rs",
+    "apps/native/src/pg_tool_view/choices.rs",
+    "apps/native/src/pg_tool_view/choices_view.rs",
+    "apps/native/src/pg_tool_view/render.rs",
+    "src-tauri/src/backend/pg_tools.rs",
+    "src-tauri/src/backend/pg_tools/live_tests.rs",
+    "src-tauri/src/backend/pg_tools/prepare.rs",
+    "src-tauri/src/backend/pg_tools/registry.rs",
+    "src-tauri/src/backend/pg_tools/tests.rs",
+    "src-tauri/src/backend/pg_tools/types.rs",
+    "src-tauri/src/postgres/backup/native.rs",
+    "src-tauri/src/postgres/backup/native/archive.rs",
+    "src-tauri/src/postgres/backup/native/source.rs",
+    "src-tauri/src/postgres/backup/native/tests.rs",
+    "src-tauri/src/postgres/backup/service.rs"
+  ],
+  "removed_paths": [
+    "apps/native/src/schema_view/field.rs"
+  ],
+  "scope": "Previous safety audit freeze plus all native, backend and PostgreSQL Rust sources and pg_backup adapters"
+}

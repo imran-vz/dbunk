@@ -1,0 +1,8 @@
+{
+  "fixture_uuid": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "type_oid": "16545",
+  "parent_range": "native_metadata_20261003.custom_range",
+  "from": "public.custom_multirange",
+  "to": "native_metadata_20261003.custom_multirange",
+  "verified": true
+}

@@ -1,0 +1,101 @@
+The following is a diff from the previous accessibility tree for Window: "Keyboard" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 72-430
+~70 standard window Keyboard, ID: Main, Secondary Actions: Raise
+~	71 split group Main, SidebarNavigationSplitView
++		72 scroll area Secondary Actions: Scroll Up, Scroll Down
++			73 list Description: Sidebar, ID: com.apple.settings.sidebar.collectionView
++				74 row (selectable)
++				75 row (selectable) Imran M, Apple Account
++				76 row (selectable)
++				77 row (selectable) Wi-Fi
++				78 row (selectable) Bluetooth
++				79 row (selectable) Network
++				80 row (selectable) VPN
++				81 row (selectable) Battery
++				82 row (selectable)
++				83 row (selectable) General
++				84 row (selectable) Accessibility
++				85 row (selectable) Appearance
++				86 row (selectable) Desktop & Dock
++				87 row (selectable) Displays
++				88 row (selectable) Menu Bar
++				89 row (selectable) Siri
++				90 row (selectable) Spotlight
++				91 row (selectable) Wallpaper
++				92 row (selectable)
++				93 row (selectable) Notifications
++				94 row (selectable) Sound
++				95 row (selectable) Focus
++				96 row (selectable) Screen Time
++				97 row (selectable)
++				98 row (selectable) Lock Screen
++				99 row (selectable) Privacy & Security
++				100 row (selectable) Touch ID & Password
++				101 row (selectable) Users & Groups
++				102 row (selectable)
++				103 row (selectable) Game Center
++				104 row (selectable) iCloud
++				105 row (selectable) Internet Accounts
++				106 row (selectable) Wallet & Apple Pay
++				107 row (selectable)
++				108 row (selectable) AirPods Pro
++				109 row (selected) Keyboard
++				110 row (selectable) Trackpad
++				111 row (selectable) Printers & Scanners
++			112 scroll bar (settable, float) 0.9678510998307953
++				113 value indicator (settable, float) 0.9678510998307953
++				114 increment arrow button
++				115 decrement arrow button
++				116 increment page button
++				117 decrement page button
++		118 search text field (settable) Search
++			119 button Search
++		120 splitter (disabled, settable, float) 232
++		121 scroll area Secondary Actions: Scroll Up, Scroll Down
++			122 container
++				123 slider (settable, float) Description: Key repeat rate, Value: 6
++				124 slider (settable, float) Description: Delay until repeat, Value: 4
++			125 container
++				126 switch Adjust keyboard brightness in low light, Value: on
++				127 text Keyboard brightness
++					128 button Reduce Brightness
++					129 slider (settable, float) 0.1055325
++					130 button Increase Brightness
++				131 pop up button Turn keyboard backlight off after inactivity, Value: Never
++				132 pop up button Press 🌐︎ key to, Value: Do Nothing
++				133 switch Value: off, Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.
++				134 button Keyboard Shortcuts…
++			135 heading Text Input
++			136 container
++				137 text Input Sources ABC
++				138 button Edit…
++				139 button Text Replacements…
++			140 heading Dictation
++			141 container
++				142 switch Value: on, Support for processing Chinese (Mandarin) on your Mac will download later when an Internet connection is available.
++				143 text Languages English (United States)
++				144 button Edit…
++				145 pop up button Microphone source, Value: MacBook Pro Microphone
++				146 text Shortcut
++				147 pop up button Press 🎤︎
++				148 button About Ask Siri, Dictation & Privacy…
++			149 button Set Up Keyboard…
++			150 button Help
++			151 scroll bar (settable, float) 1
++				152 value indicator (settable, float) 1
++				153 increment arrow button
++				154 decrement arrow button
++				155 increment page button
++				156 decrement page button
++	157 toolbar
++		158 container
++			159 button Description: Go Back, ID: chevron.backward
++			160 menu button (disabled) Description: Go Forward, ID: chevron.forward
++	161 close button
++	162 zoom button
++	163 minimize button
++	164 text Keyboard
+Selected:
+	109 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

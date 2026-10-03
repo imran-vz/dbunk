@@ -1,0 +1,39 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: unused import: `detail_pages::DetailPage`
+  --> src/schema_map_model.rs:20:9
+   |
+20 | pub use detail_pages::DetailPage;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: unused import: `MAX_EXPORT_BYTES`
+  --> src/schema_map_model.rs:26:15
+   |
+26 | pub use svg::{MAX_EXPORT_BYTES, MAX_EXPORT_PIXELS, PreparedSvg};
+   |               ^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> src/schema_map_view/render.rs:154:38
+    |
+154 |                     })).track_scroll(self.scroll.clone()).size_full()))
+    |                         ------------ ^^^^^^^^^^^^^^^^^^^ expected `&UniformListScrollHandle`, found `UniformListScrollHandle`
+    |                         |
+    |                         arguments to this method are incorrect
+    |
+note: method defined here
+   --> /Users/imran/.cargo/git/checkouts/zed-a70e2ad075855582/506beb3/crates/gpui/src/elements/uniform_list.rs:683:12
+    |
+683 |     pub fn track_scroll(mut self, handle: &UniformListScrollHandle) -> Self {
+    |            ^^^^^^^^^^^^
+help: consider borrowing here
+    |
+154 |                     })).track_scroll(&self.scroll.clone()).size_full()))
+    |                                      +
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 3 previous errors

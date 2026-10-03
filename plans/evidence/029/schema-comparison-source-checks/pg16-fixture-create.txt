@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "kind": "dbunk-native-schema-comparison",
+  "instance_uuid": "8471e5c3-99b1-4bb9-8517-7d38adf9dbd6",
+  "root": "/private/tmp/dbunk-native-comparison-runtime-20261003/fixture-8471e5c3-99b1-4bb9-8517-7d38adf9dbd6",
+  "host": "127.0.0.1",
+  "port": 15434,
+  "database": "schema_compare_native",
+  "user": "dbunk",
+  "executable": "/private/tmp/dbunk-native-comparison-runtime-20261003/installed/bin/postgres",
+  "executable_sha256": "ee2badd127739f243f99ba25af8191e8605601465b339ab051aeb9e1ef531331",
+  "pid": 70045
+}
+PostgreSQL 16.14 on aarch64-apple-darwin27.0.0, compiled by Apple clang version 21.0.0 (clang-2100.3.34.2), 64-bit
+8471e5c3-99b1-4bb9-8517-7d38adf9dbd6

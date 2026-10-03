@@ -129,6 +129,23 @@ if nativeMode {
     marker["host"] as? String == "127.0.0.1", marker["port"] as? Int == 15432,
     marker["database"] as? String == "dbunk_demo"
   else { fail("native PID, executable and launch-owned fixture marker must match") }
+  if let bundlePath = launch["bundle"] as? String {
+    let bundleID = "codes.imran.dbunk.native.stage04.preflight"
+    require(bundlePath == canonicalPath(bundlePath)
+      && launch["bundle_id"] as? String == bundleID
+      && app.bundleIdentifier == bundleID
+      && app.bundleURL?.path == bundlePath
+      && executable == bundlePath + "/Contents/MacOS/dbunk-native",
+      "packaged native process has the separate preflight bundle identity")
+    // Packaged probes cannot derive repository helpers from the executable.
+    // Keep the ordinary CLI fault-injection and performance guards unchanged.
+    require(checkStartup || windowStep == "recovery" || windowStep == "quit",
+      "packaged probe uses only startup, query and quit actions")
+    print("PASS: packaged AX identity \(bundleID) at \(bundlePath)")
+  } else {
+    require(launch["bundle_id"] == nil && app.bundleIdentifier != "codes.imran.dbunk.native.stage04.preflight",
+      "preflight bundle requires launcher-owned bundle identity")
+  }
   nativeLaunch = (executable, fixtureInstance)
   let identity = Process()
   identity.executableURL = URL(fileURLWithPath: "/bin/ps")

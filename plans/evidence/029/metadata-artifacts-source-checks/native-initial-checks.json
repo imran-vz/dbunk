@@ -1,0 +1,25 @@
+[
+  {
+    "check": "native-fmt-initial",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt"
+    ],
+    "exit_code": 0
+  },
+  {
+    "check": "native-clippy-initial",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 101
+  }
+]

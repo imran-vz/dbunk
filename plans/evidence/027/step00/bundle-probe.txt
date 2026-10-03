@@ -1,0 +1,9 @@
+python3 tools/native/package.py --out '/private/tmp/dbunk-native-plan027-preflight-20261002' --verify
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.44s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+PASS: one GPUI revision 506beb34de3f433707b7ebe8d8ad2d80f856af6c; no Tauri/Wry/Tao/WebKit packages
+Built /private/tmp/dbunk-native-plan027-preflight-20261002/dbunk Native Preflight.app (113550924 bytes)
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Bundle: /private/tmp/dbunk-native-plan027-preflight-20261002/dbunk Native Preflight.app; isolated profile: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-stage03-hs5p_ra8
+PASS: packaged AX identity, external-cwd startup, query and clean quit

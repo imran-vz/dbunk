@@ -25,27 +25,23 @@
 //! - The OS keychain (independent).
 //! - The SQLite `credentials` table (shared by Plain + Encrypted).
 //!
-//! [`clear_inactive_storage`] encodes this: when the active mode is
+//! The legacy [`clear_inactive_storage`] policy encodes this: when the active mode is
 //! Keychain, we clear the SQLite credentials table; when the active
 //! mode is either SQLite mode, we clear the keychain. We do NOT iterate
 //! "every other mode and call `clear()`" because Plain and Encrypted
-//! share rows — that would wipe what we just wrote.
+//! share rows — that would wipe what we just wrote. SQLite-only fixture
+//! contexts never clean up Keychain; their lifecycle changes use one SQLite
+//! transaction, including settings and the encryption verifier.
 //!
-//! ## Process-local state
+//! ## Profile-local state
 //!
-//! - [`SESSION_KEY`] — the AES key for encrypted mode, set after a
-//!   successful `unlock` or fresh `configure`. Cleared on `reset`,
-//!   mode-switch away from Encrypted, and process exit.
-//! - [`PASSWORD_CACHE`] — decoded credential map used by hot paths
-//!   (`hydrate`, repeated `read_all`s).
-//!
-//! Both are `OnceLock<Mutex<…>>` globals. Tests that exercise the
-//! Encrypted backend coordinate by setting/clearing `SESSION_KEY` in
-//! setup.
+//! [`Context`] binds one SQLite pool, Keychain store, encryption key, decoded
+//! cache and mutation lock. Callers must carry that context across background
+//! jobs and cleanup; there is no ambient credential state.
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex},
 };
 
 use aes_gcm::{
@@ -62,6 +58,11 @@ use crate::{
     StoredConnection,
 };
 
+mod native;
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native_connections;
+mod sqlite;
+
 const SETTING_ONBOARDING_COMPLETED: &str = "onboardingCompleted";
 const SETTING_CREDENTIAL_STORAGE_MODE: &str = "credentialStorageMode";
 const KDF_NAME: &str = "argon2id-v1";
@@ -77,35 +78,89 @@ const ALL_MODES: [CredentialStorageMode; 3] = [
     CredentialStorageMode::EncryptedSqlite,
 ];
 
-static SESSION_KEY: OnceLock<Mutex<Option<[u8; 32]>>> = OnceLock::new();
-static PASSWORD_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-
-fn session_key() -> &'static Mutex<Option<[u8; 32]>> {
-    SESSION_KEY.get_or_init(|| Mutex::new(None))
+/// Secret-bearing state stays behind the backend boundary. Clones used by jobs
+/// retain the same pool, cache and mutation lock for the lifetime of the profile.
+pub(crate) struct Context {
+    pool: SqlitePool,
+    keychain: Arc<keychain::Store>,
+    session_key: Mutex<Option<[u8; 32]>>,
+    password_cache: Mutex<HashMap<String, String>>,
+    mutation_lock: tokio::sync::Mutex<()>,
+    lifecycle: LifecyclePolicy,
 }
 
-fn password_cache() -> &'static Mutex<HashMap<String, String>> {
-    PASSWORD_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LifecyclePolicy {
+    Legacy,
+    SqliteOnly,
+    Native,
 }
 
-/// Serializes every credential read-modify-write. Each backend stores
-/// the credential set as one whole map (keychain blob / full-table
-/// rewrite), so two concurrent `upsert`/`delete` calls would otherwise
-/// snapshot the map independently and the last `write_all` would erase
-/// the other caller's change — e.g. a `duplicate_connection` racing a
-/// `delete_connection` silently losing the copy's password.
-static MUTATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+impl Context {
+    pub(crate) fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
 
-/// Hold this across any `read_all` → `write_all` sequence performed
-/// outside this module (bastion secret saves) so it serializes with
-/// `upsert` / `delete` instead of racing them.
-pub async fn mutation_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    MUTATION_LOCK.lock().await
+    pub(crate) fn legacy(pool: SqlitePool) -> Arc<Self> {
+        Self::new(pool, keychain::legacy(), LifecyclePolicy::Legacy)
+    }
+
+    #[cfg(any(test, feature = "isolated-profile"))]
+    pub(crate) fn fixture(pool: SqlitePool) -> Arc<Self> {
+        Self::new(pool, keychain::disabled(), LifecyclePolicy::SqliteOnly)
+    }
+
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn development(pool: SqlitePool, namespace: uuid::Uuid) -> Arc<Self> {
+        Self::new(pool, keychain::isolated(namespace), LifecyclePolicy::Native)
+    }
+
+    fn new(
+        pool: SqlitePool,
+        keychain: Arc<keychain::Store>,
+        lifecycle: LifecyclePolicy,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            pool,
+            keychain,
+            lifecycle,
+            session_key: Mutex::new(None),
+            password_cache: Mutex::new(HashMap::new()),
+            mutation_lock: tokio::sync::Mutex::new(()),
+        })
+    }
+}
+
+/// Hold across external read-modify-write sequences (bastion secret saves).
+pub async fn mutation_guard(context: &Context) -> tokio::sync::MutexGuard<'_, ()> {
+    context.mutation_lock.lock().await
 }
 
 // ---------------------------------------------------------------------------
 // App-settings shims (onboarding flag + active mode)
 // ---------------------------------------------------------------------------
+
+/// Onboarding must not overwrite an inconsistent or partially populated store.
+/// Only an explicit reset may discard existing secrets in a SQLite-only profile.
+pub(crate) async fn ensure_onboarding_empty(context: &Context) -> Result<(), String> {
+    let flag = storage::get_setting(&context.pool, SETTING_ONBOARDING_COMPLETED).await?;
+    if !matches!(flag.as_deref(), None | Some("false")) {
+        return Err("Credential onboarding state is not empty; profile preserved".into());
+    }
+    let populated: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM credentials) OR EXISTS(SELECT 1 FROM credential_verifier)",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    if populated {
+        return Err(
+            "Unconfigured profile contains credentials; reset explicitly or recover the profile"
+                .into(),
+        );
+    }
+    Ok(())
+}
 
 pub async fn onboarding_completed(pool: &SqlitePool) -> Result<bool, String> {
     Ok(storage::get_setting(pool, SETTING_ONBOARDING_COMPLETED)
@@ -144,18 +199,21 @@ fn parse_mode(value: &str) -> Result<CredentialStorageMode, String> {
 /// Test-only: drop the in-memory session key and cache so encrypted-
 /// mode paths exercise their locked behavior from other modules' tests.
 #[cfg(test)]
-pub(crate) fn lock_for_tests() {
-    *session_key()
+pub(crate) fn lock_for_tests(context: &Context) {
+    *context
+        .session_key
         .lock()
         .expect("credential session key poisoned") = None;
-    password_cache()
+    context
+        .password_cache
         .lock()
         .expect("credential password cache poisoned")
         .clear();
 }
 
-pub fn is_unlocked() -> bool {
-    session_key()
+pub fn is_unlocked(context: &Context) -> bool {
+    context
+        .session_key
         .lock()
         .expect("credential session key poisoned")
         .is_some()
@@ -194,15 +252,17 @@ impl CredentialBackend {
 
 /// OS-keychain credential storage. Backend-wrapper over `keychain.rs`'s
 /// single-blob shape (ADR-0005, retained as a backend by ADR-0007).
-pub(crate) struct KeychainBackend;
+pub(crate) struct KeychainBackend {
+    store: Arc<keychain::Store>,
+}
 
 impl KeychainBackend {
     async fn read_all(&self) -> Result<HashMap<String, String>, String> {
-        Ok(keychain::get_all())
+        self.store.get_all()
     }
 
     async fn write_all(&self, credentials: &HashMap<String, String>) -> Result<(), String> {
-        keychain::replace_all(credentials)
+        self.store.replace_all(credentials)
     }
 }
 
@@ -223,24 +283,13 @@ impl PlainSqliteBackend {
     }
 
     async fn write_all(&self, credentials: &HashMap<String, String>) -> Result<(), String> {
-        storage::clear_sqlite_credentials(&self.pool).await?;
-        for (id, password) in credentials {
-            storage::upsert_sqlite_credential(
-                &self.pool,
-                id,
-                CredentialStorageMode::PlainSqlite,
-                None,
-                password,
-            )
-            .await?;
-        }
-        Ok(())
+        sqlite::replace(&self.pool, credentials, None).await
     }
 }
 
 /// SQLite-backed encrypted credential storage. AES-256-GCM with a
 /// per-credential random nonce; the key is derived from a user
-/// password via Argon2id and held in [`SESSION_KEY`]. The key is
+/// password via Argon2id and held in the profile context. The key is
 /// resolved at construction time via [`backend_for`]; when locked,
 /// `key` is `None` and read/write surface "Credential storage is
 /// locked".
@@ -268,20 +317,7 @@ impl EncryptedSqliteBackend {
     }
 
     async fn write_all(&self, credentials: &HashMap<String, String>) -> Result<(), String> {
-        let key = self.key()?;
-        storage::clear_sqlite_credentials(&self.pool).await?;
-        for (id, password) in credentials {
-            let encrypted = encrypt_text(key, password.as_bytes())?;
-            storage::upsert_sqlite_credential(
-                &self.pool,
-                id,
-                CredentialStorageMode::EncryptedSqlite,
-                Some(&encrypted.nonce),
-                &encrypted.ciphertext,
-            )
-            .await?;
-        }
-        Ok(())
+        sqlite::replace(&self.pool, credentials, Some(self.key()?)).await
     }
 }
 
@@ -292,16 +328,20 @@ impl EncryptedSqliteBackend {
 /// cleanup (`clear_inactive_storage`) run even when encrypted mode
 /// can't be read — clearing the SQLite credentials table needs no
 /// key.
-fn backend_for(mode: CredentialStorageMode, pool: &SqlitePool) -> CredentialBackend {
+fn backend_for(mode: CredentialStorageMode, context: &Context) -> CredentialBackend {
+    let pool = &context.pool;
     match mode {
-        CredentialStorageMode::Keychain => CredentialBackend::Keychain(KeychainBackend),
+        CredentialStorageMode::Keychain => CredentialBackend::Keychain(KeychainBackend {
+            store: context.keychain.clone(),
+        }),
         CredentialStorageMode::PlainSqlite => {
             CredentialBackend::PlainSqlite(PlainSqliteBackend { pool: pool.clone() })
         }
         CredentialStorageMode::EncryptedSqlite => {
             CredentialBackend::EncryptedSqlite(EncryptedSqliteBackend {
                 pool: pool.clone(),
-                key: session_key()
+                key: context
+                    .session_key
                     .lock()
                     .expect("credential session key poisoned")
                     .as_ref()
@@ -325,12 +365,17 @@ fn backend_for(mode: CredentialStorageMode, pool: &SqlitePool) -> CredentialBack
 /// would wipe what `write_all` just wrote.
 async fn clear_inactive_storage(
     active: CredentialStorageMode,
-    pool: &SqlitePool,
+    context: &Context,
 ) -> Result<(), String> {
+    let pool = &context.pool;
     match active {
         CredentialStorageMode::Keychain => storage::clear_sqlite_credentials(pool).await,
         CredentialStorageMode::PlainSqlite | CredentialStorageMode::EncryptedSqlite => {
-            keychain::clear_all()
+            if context.lifecycle != LifecyclePolicy::Legacy {
+                Ok(())
+            } else {
+                context.keychain.replace_all(&HashMap::new())
+            }
         }
     }
 }
@@ -340,35 +385,38 @@ async fn clear_inactive_storage(
 // ---------------------------------------------------------------------------
 
 pub async fn read_all(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
 ) -> Result<HashMap<String, String>, String> {
-    backend_for(mode, pool).read_all().await
+    native::ensure_settled(context).await?;
+    backend_for(mode, context).read_all().await
 }
 
 pub async fn write_all(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     credentials: &HashMap<String, String>,
 ) -> Result<(), String> {
-    backend_for(mode, pool).write_all(credentials).await?;
-    clear_inactive_storage(mode, pool).await?;
-    *password_cache()
+    native::ensure_settled(context).await?;
+    backend_for(mode, context).write_all(credentials).await?;
+    clear_inactive_storage(mode, context).await?;
+    *context
+        .password_cache
         .lock()
         .expect("credential password cache poisoned") = credentials.clone();
     Ok(())
 }
 
 pub async fn upsert(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     connection: &StoredConnection,
 ) -> Result<(), String> {
     if matches!(connection, StoredConnection::SQLite(_)) {
         return Ok(());
     }
-    let _guard = MUTATION_LOCK.lock().await;
-    let mut all = read_all_cached(pool, mode).await?;
+    let _guard = context.mutation_lock.lock().await;
+    let mut all = read_all_cached(context, mode).await?;
     if connection.password().is_empty() {
         all.remove(connection.id());
     } else {
@@ -377,23 +425,23 @@ pub async fn upsert(
             connection.password().to_string(),
         );
     }
-    write_all(pool, mode, &all).await
+    write_all(context, mode, &all).await
 }
 
 pub async fn delete(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     connection_id: &str,
 ) -> Result<(), String> {
-    let _guard = MUTATION_LOCK.lock().await;
+    let _guard = context.mutation_lock.lock().await;
     // Read the backend, not the cache: a partially failed `upsert`
     // (backend written, cache not yet updated) must still be
     // reversible by id — the managed-server rollback relies on it.
-    let mut all = read_all(pool, mode).await?;
+    let mut all = read_all(context, mode).await?;
     if all.remove(connection_id).is_none() {
         return Ok(());
     }
-    write_all(pool, mode, &all).await
+    write_all(context, mode, &all).await
 }
 
 pub fn bastion_secret_id(bastion_id: &str, slot: &str) -> String {
@@ -409,12 +457,12 @@ pub(crate) struct BastionSecretPatch {
 }
 
 pub async fn read_bastion_secret(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     bastion_id: &str,
     slot: &str,
 ) -> Result<Option<String>, String> {
-    let all = read_all_cached(pool, mode).await?;
+    let all = read_all_cached(context, mode).await?;
     Ok(all.get(&bastion_secret_id(bastion_id, slot)).cloned())
 }
 
@@ -470,23 +518,23 @@ pub fn bastion_secret_present(all: &HashMap<String, String>, bastion_id: &str, s
 }
 
 pub async fn delete_bastion_secrets(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     bastion_id: &str,
 ) -> Result<(), String> {
-    let _guard = MUTATION_LOCK.lock().await;
-    let mut all = read_all_cached(pool, mode).await?;
+    let _guard = context.mutation_lock.lock().await;
+    let mut all = read_all_cached(context, mode).await?;
     let prefix = format!("{BASTION_SECRET_NAMESPACE}:{bastion_id}:");
     let before = all.len();
     all.retain(|key, _| !key.starts_with(&prefix));
     if all.len() == before {
         return Ok(());
     }
-    write_all(pool, mode, &all).await
+    write_all(context, mode, &all).await
 }
 
 pub async fn hydrate(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     connection: &mut StoredConnection,
 ) -> Result<(), String> {
@@ -494,7 +542,7 @@ pub async fn hydrate(
         connection.set_password(String::new());
         return Ok(());
     }
-    let all = read_all_cached(pool, mode).await?;
+    let all = read_all_cached(context, mode).await?;
     let id = connection.id().to_string();
     connection.set_password(all.get(&id).cloned().unwrap_or_default());
     Ok(())
@@ -537,18 +585,26 @@ pub(crate) fn destination_matches(supplied: &StoredConnection, stored: &StoredCo
 /// Encrypted; clear verifier + key for the others), and records the
 /// chosen mode + onboarding-complete flag.
 pub async fn configure(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     password: Option<&str>,
 ) -> Result<(), String> {
-    setup_mode(pool, mode, password).await?;
+    if context.lifecycle == LifecyclePolicy::Native {
+        return native::configure(context, mode, password).await;
+    }
+    if context.lifecycle == LifecyclePolicy::SqliteOnly {
+        return sqlite::configure(context, mode, password).await;
+    }
+    let pool = &context.pool;
+    setup_mode(context, mode, password).await?;
     // Clean every backend — onboarding has no prior credentials to
     // preserve. Iterating all_modes is safe here because we haven't
     // written anything yet.
     for backend_mode in ALL_MODES {
-        let _ = clear_storage_for(backend_mode, pool).await;
+        let _ = clear_storage_for(backend_mode, context).await;
     }
-    password_cache()
+    context
+        .password_cache
         .lock()
         .expect("credential password cache poisoned")
         .clear();
@@ -556,28 +612,42 @@ pub async fn configure(
     mark_onboarding_completed(pool).await
 }
 
-pub async fn unlock(pool: &SqlitePool, password: &str) -> Result<(), String> {
+pub async fn unlock(context: &Context, password: &str) -> Result<(), String> {
+    let _guard = mutation_guard(context).await;
+    native::ensure_settled(context).await?;
+    let pool = &context.pool;
     let key = verify_password(pool, password).await?;
-    *session_key()
+    *context
+        .session_key
         .lock()
         .expect("credential session key poisoned") = Some(key);
-    password_cache()
+    context
+        .password_cache
         .lock()
         .expect("credential password cache poisoned")
         .clear();
     Ok(())
 }
 
-pub async fn reset(pool: &SqlitePool) -> Result<(), String> {
+pub async fn reset(context: &Context) -> Result<(), String> {
+    if context.lifecycle == LifecyclePolicy::Native {
+        return native::reset(context).await;
+    }
+    if context.lifecycle == LifecyclePolicy::SqliteOnly {
+        return sqlite::reset(context).await;
+    }
+    let pool = &context.pool;
     storage::clear_sqlite_credentials(pool).await?;
     storage::clear_verifier(pool).await?;
-    keychain::clear_all()?;
+    context.keychain.replace_all(&HashMap::new())?;
     storage::set_setting(pool, SETTING_ONBOARDING_COMPLETED, "false").await?;
-    password_cache()
+    context
+        .password_cache
         .lock()
         .expect("credential password cache poisoned")
         .clear();
-    *session_key()
+    *context
+        .session_key
         .lock()
         .expect("credential session key poisoned") = None;
     Ok(())
@@ -588,15 +658,22 @@ pub async fn reset(pool: &SqlitePool) -> Result<(), String> {
 /// state, writes via the new backend, then clears whichever storage
 /// areas the new mode doesn't own.
 pub async fn change_mode(
-    pool: &SqlitePool,
+    context: &Context,
     from: CredentialStorageMode,
     to: CredentialStorageMode,
     password: Option<&str>,
 ) -> Result<(), String> {
-    let existing = backend_for(from, pool).read_all().await?;
-    setup_mode(pool, to, password).await?;
-    backend_for(to, pool).write_all(&existing).await?;
-    clear_inactive_storage(to, pool).await?;
+    if context.lifecycle == LifecyclePolicy::Native {
+        return native::change_mode(context, from, to, password).await;
+    }
+    if context.lifecycle == LifecyclePolicy::SqliteOnly {
+        return sqlite::change_mode(context, from, to, password).await;
+    }
+    let pool = &context.pool;
+    let existing = backend_for(from, context).read_all().await?;
+    setup_mode(context, to, password).await?;
+    backend_for(to, context).write_all(&existing).await?;
+    clear_inactive_storage(to, context).await?;
     set_credential_mode(pool, to).await
 }
 
@@ -605,19 +682,22 @@ pub async fn change_mode(
 // ---------------------------------------------------------------------------
 
 async fn read_all_cached(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
 ) -> Result<HashMap<String, String>, String> {
+    native::ensure_settled(context).await?;
     {
-        let cache = password_cache()
+        let cache = context
+            .password_cache
             .lock()
             .expect("credential password cache poisoned");
         if !cache.is_empty() {
             return Ok(cache.clone());
         }
     }
-    let all = read_all(pool, mode).await?;
-    *password_cache()
+    let all = read_all(context, mode).await?;
+    *context
+        .password_cache
         .lock()
         .expect("credential password cache poisoned") = all.clone();
     Ok(all)
@@ -626,23 +706,26 @@ async fn read_all_cached(
 /// Per-mode session setup: derive verifier + cache key for
 /// Encrypted; clear verifier + key for the others.
 async fn setup_mode(
-    pool: &SqlitePool,
+    context: &Context,
     mode: CredentialStorageMode,
     password: Option<&str>,
 ) -> Result<(), String> {
+    let pool = &context.pool;
     match mode {
         CredentialStorageMode::EncryptedSqlite => {
             let password = password
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Encryption password is required".to_string())?;
             let key = create_verifier(pool, password).await?;
-            *session_key()
+            *context
+                .session_key
                 .lock()
                 .expect("credential session key poisoned") = Some(key);
         }
         CredentialStorageMode::PlainSqlite | CredentialStorageMode::Keychain => {
             storage::clear_verifier(pool).await?;
-            *session_key()
+            *context
+                .session_key
                 .lock()
                 .expect("credential session key poisoned") = None;
         }
@@ -654,9 +737,10 @@ async fn setup_mode(
 /// `configure` (clean slate). Cross-backend cleanup elsewhere goes
 /// through [`clear_inactive_storage`] which knows the shared-table
 /// topology.
-async fn clear_storage_for(mode: CredentialStorageMode, pool: &SqlitePool) -> Result<(), String> {
+async fn clear_storage_for(mode: CredentialStorageMode, context: &Context) -> Result<(), String> {
+    let pool = &context.pool;
     match mode {
-        CredentialStorageMode::Keychain => keychain::clear_all(),
+        CredentialStorageMode::Keychain => context.keychain.replace_all(&HashMap::new()),
         CredentialStorageMode::PlainSqlite | CredentialStorageMode::EncryptedSqlite => {
             storage::clear_sqlite_credentials(pool).await
         }
@@ -734,7 +818,12 @@ fn decrypt_text(key: &[u8; 32], nonce: &str, ciphertext: &str) -> Result<String,
 
 fn decrypt_bytes(key: &[u8; 32], nonce: &str, ciphertext: &str) -> Result<Vec<u8>, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|error| error.to_string())?;
-    let nonce = B64.decode(nonce).map_err(|error| error.to_string())?;
+    let nonce = B64
+        .decode(nonce)
+        .map_err(|_| "Invalid credential nonce".to_string())?;
+    if nonce.len() != 12 {
+        return Err("Invalid credential nonce".into());
+    }
     let ciphertext = B64.decode(ciphertext).map_err(|error| error.to_string())?;
     cipher
         .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
@@ -754,22 +843,19 @@ mod tests {
     //! covered via the two SQLite-backed variants, which exercises
     //! the same enum dispatch + topology helper.
     //!
-    //! Tests are `#[serial]` because they share the process-global
-    //! `SESSION_KEY` and `PASSWORD_CACHE`. Without serialization a
-    //! test that sets the key races with one that clears it. The
-    //! globals are a deliberate design choice (see module-level
-    //! docs) — the serial gate is the cost.
+    //! Each fixture owns its key and password cache. Legacy Keychain tests
+    //! remain serialized because they intentionally share its single entry.
     use super::*;
     use crate::storage::{open_pool, Paths};
     use tempfile::TempDir;
 
-    async fn fixture() -> (TempDir, SqlitePool) {
+    async fn fixture() -> (TempDir, SqlitePool, Arc<Context>) {
         crate::configure_test_keyring();
 
         let dir = tempfile::tempdir().expect("tempdir");
         let paths = Paths::from_dir(dir.path().to_path_buf());
         let pool = open_pool(&paths).await.expect("open_pool");
-        (dir, pool)
+        (dir, pool.clone(), Context::legacy(pool))
     }
 
     /// Seed `connections` rows for the database credential IDs we'll
@@ -810,17 +896,20 @@ mod tests {
             .collect()
     }
 
-    fn set_session_key(key: [u8; 32]) {
-        *session_key()
+    fn set_session_key(context: &Context, key: [u8; 32]) {
+        *context
+            .session_key
             .lock()
             .expect("credential session key poisoned") = Some(key);
     }
 
-    fn clear_session_key() {
-        *session_key()
+    fn clear_session_key(context: &Context) {
+        *context
+            .session_key
             .lock()
             .expect("credential session key poisoned") = None;
-        password_cache()
+        context
+            .password_cache
             .lock()
             .expect("credential password cache poisoned")
             .clear();
@@ -829,10 +918,10 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn plain_sqlite_round_trip() {
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
+        let (_dir, pool, context) = fixture().await;
+        clear_session_key(&context);
         seed_connections(&pool, &["conn-1", "conn-2"]).await;
-        let backend = backend_for(CredentialStorageMode::PlainSqlite, &pool);
+        let backend = backend_for(CredentialStorageMode::PlainSqlite, &context);
         let original = creds(&[("conn-1", "secret-one"), ("conn-2", "secret-two")]);
         backend.write_all(&original).await.expect("write_all");
         let roundtrip = backend.read_all().await.expect("read_all");
@@ -844,26 +933,26 @@ mod tests {
     async fn encrypted_sqlite_round_trip() {
         // Set up a fresh verifier so `read_all`'s decrypt path
         // exercises the same key that wrote the ciphertext.
-        let (_dir, pool) = fixture().await;
+        let (_dir, pool, context) = fixture().await;
         seed_connections(&pool, &["conn-1", "conn-2"]).await;
         let key = create_verifier(&pool, "correct horse battery staple")
             .await
             .expect("verifier");
-        set_session_key(key);
-        let backend = backend_for(CredentialStorageMode::EncryptedSqlite, &pool);
+        set_session_key(&context, key);
+        let backend = backend_for(CredentialStorageMode::EncryptedSqlite, &context);
         let original = creds(&[("conn-1", "secret-one"), ("conn-2", "secret-two")]);
         backend.write_all(&original).await.expect("write_all");
         let roundtrip = backend.read_all().await.expect("read_all");
         assert_eq!(roundtrip, original);
-        clear_session_key();
+        clear_session_key(&context);
     }
 
     #[tokio::test]
     #[serial_test::serial]
     async fn encrypted_read_fails_when_locked() {
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
-        let backend = backend_for(CredentialStorageMode::EncryptedSqlite, &pool);
+        let (_dir, _pool, context) = fixture().await;
+        clear_session_key(&context);
+        let backend = backend_for(CredentialStorageMode::EncryptedSqlite, &context);
         let error = backend.read_all().await.expect_err("expected locked error");
         assert!(error.contains("locked"));
     }
@@ -871,11 +960,11 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn upsert_empty_password_deletes_stale_credential() {
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
+        let (_dir, pool, context) = fixture().await;
+        clear_session_key(&context);
         seed_connections(&pool, &["conn-1"]).await;
         write_all(
-            &pool,
+            &context,
             CredentialStorageMode::PlainSqlite,
             &creds(&[("conn-1", "old-secret")]),
         )
@@ -902,10 +991,10 @@ mod tests {
             ssh_tunnel: crate::SshTunnelConfig::default(),
         });
 
-        upsert(&pool, CredentialStorageMode::PlainSqlite, &connection)
+        upsert(&context, CredentialStorageMode::PlainSqlite, &connection)
             .await
             .expect("clear credential");
-        let roundtrip = read_all(&pool, CredentialStorageMode::PlainSqlite)
+        let roundtrip = read_all(&context, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read_all");
         assert!(!roundtrip.contains_key("conn-1"));
@@ -914,18 +1003,18 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn bastion_secret_namespace_does_not_collide_with_database_password() {
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
+        let (_dir, pool, context) = fixture().await;
+        clear_session_key(&context);
         seed_connections(&pool, &["bastion-1"]).await;
         write_all(
-            &pool,
+            &context,
             CredentialStorageMode::PlainSqlite,
             &creds(&[("bastion-1", "database-secret")]),
         )
         .await
         .expect("seed database credential");
 
-        let original = read_all(&pool, CredentialStorageMode::PlainSqlite)
+        let original = read_all(&context, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read original");
         let patched = apply_bastion_secret_patch(
@@ -940,11 +1029,11 @@ mod tests {
                 passphrase: SecretChange::Keep,
             },
         );
-        write_all(&pool, CredentialStorageMode::PlainSqlite, &patched)
+        write_all(&context, CredentialStorageMode::PlainSqlite, &patched)
             .await
             .expect("write bastion secret");
 
-        let roundtrip = read_all(&pool, CredentialStorageMode::PlainSqlite)
+        let roundtrip = read_all(&context, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read_all");
         assert_eq!(
@@ -957,7 +1046,7 @@ mod tests {
         );
         assert_eq!(
             read_bastion_secret(
-                &pool,
+                &context,
                 CredentialStorageMode::PlainSqlite,
                 "bastion-1",
                 "password"
@@ -1059,14 +1148,14 @@ mod tests {
         // PlainSqliteBackend just wrote. `clear_inactive_storage` is
         // the topology-aware helper that prevents this — confirm it
         // does.
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
+        let (_dir, pool, context) = fixture().await;
+        clear_session_key(&context);
         seed_connections(&pool, &["conn-1", "conn-2"]).await;
         let entries = creds(&[("conn-1", "alpha"), ("conn-2", "beta")]);
-        write_all(&pool, CredentialStorageMode::PlainSqlite, &entries)
+        write_all(&context, CredentialStorageMode::PlainSqlite, &entries)
             .await
             .expect("write_all");
-        let roundtrip = read_all(&pool, CredentialStorageMode::PlainSqlite)
+        let roundtrip = read_all(&context, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read_all");
         assert_eq!(roundtrip, entries);
@@ -1078,26 +1167,26 @@ mod tests {
         // The headline mode-switch invariant: every credential
         // survives the move. Run a full Plain → Encrypted migration
         // and assert the new backend reports the same map.
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
+        let (_dir, pool, context) = fixture().await;
+        clear_session_key(&context);
         seed_connections(&pool, &["a", "b", "c"]).await;
         let entries = creds(&[("a", "alpha"), ("b", "beta"), ("c", "gamma")]);
-        write_all(&pool, CredentialStorageMode::PlainSqlite, &entries)
+        write_all(&context, CredentialStorageMode::PlainSqlite, &entries)
             .await
             .expect("seed plain");
         change_mode(
-            &pool,
+            &context,
             CredentialStorageMode::PlainSqlite,
             CredentialStorageMode::EncryptedSqlite,
             Some("a different passphrase"),
         )
         .await
         .expect("change_mode");
-        let migrated = read_all(&pool, CredentialStorageMode::EncryptedSqlite)
+        let migrated = read_all(&context, CredentialStorageMode::EncryptedSqlite)
             .await
             .expect("read encrypted");
         assert_eq!(migrated, entries);
-        clear_session_key();
+        clear_session_key(&context);
     }
 
     #[tokio::test]
@@ -1107,29 +1196,38 @@ mod tests {
         // clears the session key (setup_mode for non-encrypted modes
         // unsets it), so we verify final state via a fresh PlainSqlite
         // backend without a session key.
-        let (_dir, pool) = fixture().await;
-        clear_session_key();
+        let (_dir, pool, context) = fixture().await;
+        clear_session_key(&context);
         seed_connections(&pool, &["a", "b"]).await;
         let key = create_verifier(&pool, "passphrase")
             .await
             .expect("verifier");
-        set_session_key(key);
+        set_session_key(&context, key);
         let entries = creds(&[("a", "alpha"), ("b", "beta")]);
-        write_all(&pool, CredentialStorageMode::EncryptedSqlite, &entries)
+        write_all(&context, CredentialStorageMode::EncryptedSqlite, &entries)
             .await
             .expect("seed encrypted");
         change_mode(
-            &pool,
+            &context,
             CredentialStorageMode::EncryptedSqlite,
             CredentialStorageMode::PlainSqlite,
             None,
         )
         .await
         .expect("change_mode");
-        assert!(!is_unlocked(), "session key cleared after move to plain");
-        let migrated = read_all(&pool, CredentialStorageMode::PlainSqlite)
+        assert!(
+            !is_unlocked(&context),
+            "session key cleared after move to plain"
+        );
+        let migrated = read_all(&context, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read plain");
         assert_eq!(migrated, entries);
     }
 }
+
+#[cfg(test)]
+mod context_tests;
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) use native::{recover as recover_native, recovery_required as native_recovery_required};

@@ -1,0 +1,40 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.33s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 4 tests
+test backend::native_profile::tests::fixture_profile_cannot_be_reopened_or_switched_to_general ... ok
+test backend::native_profile::tests::general_namespace_is_lazy_strict_and_independent ... ok
+test backend::native_profile::tests::mismatched_markers_and_databases_are_preserved_without_credentials ... ok
+test backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer ... FAILED
+
+failures:
+
+---- backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer stdout ----
+
+thread 'backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer' (8932354) panicked at src/backend/native_profile/tests.rs:35:5:
+
+running 1 test
+test backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer ... FAILED
+
+failures:
+
+failures:
+    backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 913 filtered out; finished in 0.03s
+
+
+thread 'backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer' (8932358) panicked at src/backend/native_profile/tests.rs:169:10:
+called `Result::unwrap()` on an `Err` value: InvalidSnapshot
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    backend::native_profile::tests::save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 910 filtered out; finished in 0.21s
+
+error: test failed, to rerun pass `--lib`

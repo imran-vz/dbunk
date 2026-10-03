@@ -1,0 +1,10 @@
+[
+  {
+    "check": "fmt",
+    "exit_code": 0
+  },
+  {
+    "check": "native-clippy",
+    "exit_code": 101
+  }
+]

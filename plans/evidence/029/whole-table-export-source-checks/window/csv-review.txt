@@ -1,0 +1,22 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~		153 button (disabled) Review exact transfer
+~		154 button Start reviewed transfer
++		171 text Exact reviewed target
+Connection: Auto-fit fixture
+Host: 127.0.0.1
+Port: 15432
+Database: dbunk_demo
+User: dbunk
+Environment: Development
+Safe mode: Protected
+Read-only: false
+Relation: native_export_window_20261003.quoted export
+Direction: Export CSV
+Mapped columns: 0
+Inspection expires: 2026-10-03T11:04:41.485915+00:00
+Selected file name: dbunk-native-whole-export-20261003.csv
+Observed source bytes: Unavailable
+UTF-8 · Header: true
+Delimiter: "," · Quote: "\"" · Escape: "\""
+NULL token (exact text): "NULL雪
+The focused UI element is 77 standard window dbunk Native Workspace, Secondary Actions: Raise

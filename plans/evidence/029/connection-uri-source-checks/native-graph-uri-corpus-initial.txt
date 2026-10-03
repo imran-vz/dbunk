@@ -1,0 +1,101 @@
+Exact native Cargo build artifact: /Users/imran/projects/Code/dbunk/apps/native/target/debug/deps/libdbunk_lib.rlib
+error[E0425]: cannot find type `DevelopmentPostgresConnection` in this scope
+ --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:4:15
+  |
+4 | fn input() -> DevelopmentPostgresConnection {
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `DevelopmentPostgresConnection` in this scope
+ --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:5:5
+  |
+5 |     DevelopmentPostgresConnection {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:15:19
+   |
+15 |             mode: DevelopmentTlsMode::Prefer,
+   |                   ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+   |
+help: an enum with a similar name exists
+   |
+15 -             mode: DevelopmentTlsMode::Prefer,
+15 +             mode: DevelopmentSafeMode::Prefer,
+   |
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:96:10
+   |
+96 |         (DevelopmentTlsMode::Disable, "disable"),
+   |          ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+   |
+help: an enum with a similar name exists
+   |
+96 -         (DevelopmentTlsMode::Disable, "disable"),
+96 +         (DevelopmentSafeMode::Disable, "disable"),
+   |
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:97:10
+   |
+97 |         (DevelopmentTlsMode::Prefer, "prefer"),
+   |          ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+   |
+help: an enum with a similar name exists
+   |
+97 -         (DevelopmentTlsMode::Prefer, "prefer"),
+97 +         (DevelopmentSafeMode::Prefer, "prefer"),
+   |
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:98:10
+   |
+98 |         (DevelopmentTlsMode::Require, "require"),
+   |          ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+   |
+help: an enum with a similar name exists
+   |
+98 -         (DevelopmentTlsMode::Require, "require"),
+98 +         (DevelopmentSafeMode::Require, "require"),
+   |
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+  --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:99:10
+   |
+99 |         (DevelopmentTlsMode::VerifyCa, "verify-ca"),
+   |          ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+   |
+help: an enum with a similar name exists
+   |
+99 -         (DevelopmentTlsMode::VerifyCa, "verify-ca"),
+99 +         (DevelopmentSafeMode::VerifyCa, "verify-ca"),
+   |
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:100:10
+    |
+100 |         (DevelopmentTlsMode::VerifyFull, "verify-full"),
+    |          ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+    |
+help: an enum with a similar name exists
+    |
+100 -         (DevelopmentTlsMode::VerifyFull, "verify-full"),
+100 +         (DevelopmentSafeMode::VerifyFull, "verify-full"),
+    |
+
+error[E0433]: cannot find type `DevelopmentTlsMode` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/connection_uri/tests.rs:110:20
+    |
+110 |         if mode == DevelopmentTlsMode::Prefer {
+    |                    ^^^^^^^^^^^^^^^^^^ use of undeclared type `DevelopmentTlsMode`
+    |
+help: an enum with a similar name exists
+    |
+110 -         if mode == DevelopmentTlsMode::Prefer {
+110 +         if mode == DevelopmentSafeMode::Prefer {
+    |
+
+error: aborting due to 9 previous errors
+
+Some errors have detailed explanations: E0422, E0425, E0433.
+For more information about an error, try `rustc --explain E0422`.

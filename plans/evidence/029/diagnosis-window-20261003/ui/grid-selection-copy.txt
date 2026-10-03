@@ -1,0 +1,6 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~		52 text entry area (settable) SQL editor, Value: 7	70	row-7
+~		55 table (settable) Query results, Value: row-7
+~			56 text 250 rows returned · 250 retained · 3 columns · Copied 1 selected rows
+~		106 container (settable) Draft persistence, Value: Saving drafts
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

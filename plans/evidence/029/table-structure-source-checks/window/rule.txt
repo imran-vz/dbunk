@@ -1,0 +1,20 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 67, 70-77, 79
+~				63 tab (settable, boolean) Relation grants (9), Value: off
+~				64 tab (settable, boolean) Rules (1), Value: on
+~			68 list 1 captured Rules; arrows select, Enter inspects
+~				69 text (selected) "ignore_delete", Secondary Actions: Pick
++				94 text entry area (settable) Read-only selected table structure details, Value: Rules · "native_structure_window_20261003"."child"
+Database OID: 16384; relation OID: 17075
+Captured: 2026-10-03 08:39:01.31935+00
+
+Rule: "ignore_delete"
+OID: 17094
+Event: DELETE
+INSTEAD: true
+Enabled: Origin
+Definition (text, 104 UTF-8 bytes):
+CREATE RULE ignore_delete AS
+    ON DELETE TO native_structure_window_20261003.child DO INSTEAD NOTHING;
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

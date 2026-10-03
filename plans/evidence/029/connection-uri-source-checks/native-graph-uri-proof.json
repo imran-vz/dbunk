@@ -1,0 +1,16 @@
+{
+  "backend_library": "/Users/imran/projects/Code/dbunk/apps/native/target/debug/deps/libdbunk_lib.rlib",
+  "backend_library_sha256": "ea92c48d77fad236478c7c6ab99668ed9915be322fa5872e9e1ff497f378eea5",
+  "native_url_versions": [
+    "2.5.7"
+  ],
+  "corpus_source": "src-tauri/src/backend/connection_uri/tests.rs",
+  "corpus_source_sha256": "3ae72ef6e91d822e5ab33f31ed4b73fe90b8f5f661b6cf717e026e3b4f462efd",
+  "result": "6 passed; 0 failed",
+  "setup_failures": [
+    "Cargo -p dbunk refused dependency dev-test membership",
+    "Temporary rustc harness initially omitted two parent imports; corrected, repository source unchanged"
+  ],
+  "commands_log": "native-graph-uri-corpus.txt",
+  "artifact_log": "native-build-artifacts.jsonl"
+}

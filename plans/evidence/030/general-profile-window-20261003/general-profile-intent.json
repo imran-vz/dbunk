@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "mode": "create-general-profile",
+  "profile": "/private/tmp/dbunk-native-general-profile-20261003-review",
+  "fixtures": {
+    "version": 1,
+    "fixture": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "database": "dbunk_demo",
+    "user": "dbunk"
+  },
+  "launch_id": "373912c2-7dfd-4cbd-a111-b087f0ae80e9",
+  "executable_sha256": "7103b11501b31c3683e9ce36724bf70a3da5f40fa439aa9957a59833085da337"
+}

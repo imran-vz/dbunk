@@ -30,9 +30,9 @@ pub async fn diagnose_connection(
                         .to_string(),
                 );
             }
-            credentials::hydrate(&state.pool, mode, &mut stored).await?;
+            credentials::hydrate(&state.credentials, mode, &mut stored).await?;
             connection.set_password(stored.password().to_string());
         }
     }
-    diagnosis::run(&state.pool, mode, &connection).await
+    diagnosis::run(&state.credentials, &state.pool, mode, &connection).await
 }

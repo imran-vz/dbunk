@@ -1,0 +1,15 @@
+{
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "os": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "fixture_endpoint": "127.0.0.1:15432/dbunk_demo",
+  "profile_path": "/private/tmp/dbunk-native-workspace-services-20261002",
+  "profile_id": "a0306c90-514c-4551-8e3b-095475c3f85f",
+  "keychain_exercised": "injected stores only",
+  "native_ui": "existing stage03 query window only",
+  "rust_backend": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "rust_native": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "pnpm": "11.4.0",
+  "python": "Python 3.14.7"
+}

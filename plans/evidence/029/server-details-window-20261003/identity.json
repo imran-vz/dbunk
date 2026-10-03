@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pid": 30652,
+  "executable": "/private/tmp/dbunk-native-package-20261003-server-details/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "executable_sha256": "8d5a87a5862ad14767f5c49d959afc0128f6964fd159c29ab0e4a47843bf9c4a",
+  "profile": "/private/tmp/dbunk-native-server-details-20261003-review",
+  "profile_mode": "stage04-fixture",
+  "general_profile_owner": null,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-kf8spm41",
+  "tls_fixture_instance": null,
+  "bundle": "/private/tmp/dbunk-native-package-20261003-server-details/dbunk Native Preflight.app"
+}

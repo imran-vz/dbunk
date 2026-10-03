@@ -1,0 +1,16 @@
+{
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+  "architecture": "arm64",
+  "native_rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "backend_rust": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "python": "3.14.7",
+  "pnpm": "11.4.0",
+  "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "build_variant": "native release, default features, no fixture-verification hooks",
+  "source_manifest_files": 925,
+  "source_manifest_sha256": "22af18018cd2910a501680ffd354a7907633dfe7e910e9061d1291ae5d026779",
+  "manifest_scope": "All present tracked and nonignored untracked files, excluding plans/evidence to avoid self-reference. Includes source, locks, docs, configuration and current dirty changes.",
+  "git_diff_sha256": "932b69df68f3f0b7c95fae0ee89399909ff4e1f33975b679df481419331c0ae0",
+  "git_status": "## main...origin/main\n M .github/workflows/ci.yml\n M apps/native/README.md\n M justfile\n D plans/026-native-postgres-workflow.md\n M plans/README.md\n M plans/evidence/025/stage03-review.md\n M plans/evidence/026/implementation-review.md\n M plans/gpui-migration.html\n M tools/measure/editor-accessibility.swift\n?? plans/027-native-workspace-shell.md\n?? plans/evidence/026/completion-review.md\n?? plans/evidence/027/planning-review.md\n?? plans/evidence/027/step00-review.md\n?? plans/evidence/027/step00/backend-custom-protocol.txt\n?? plans/evidence/027/step00/bundle-build-only.txt\n?? plans/evidence/027/step00/bundle-probe.txt\n?? plans/evidence/027/step00/bundle/accessibility.txt\n?? plans/evidence/027/step00/bundle/binary.txt\n?? plans/evidence/027/step00/bundle/bundle.json\n?? plans/evidence/027/step00/bundle/identity.json\n?? plans/evidence/027/step00/bundle/linked-libraries.txt\n?? plans/evidence/027/step00/bundle/native.txt\n?? plans/evidence/027/step00/bundle/signature.txt\n?? plans/evidence/027/step00/bundle/teardown.json\n?? plans/evidence/027/step00/cli-e2e.txt\n?? plans/evidence/027/step00/cli-e2e/accessibility.txt\n?? plans/evidence/027/step00/cli-e2e/native.txt\n?? plans/evidence/027/step00/cli-e2e/teardown.json\n?? plans/evidence/027/step00/format.txt\n?? plans/evidence/027/step00/frontend-test.txt\n?? plans/evidence/027/step00/lint.txt\n?? plans/evidence/027/step00/native-check.txt\n?? plans/evidence/027/step00/rust-fmt.txt\n?? plans/evidence/027/step00/rust-lint.txt\n?? plans/evidence/027/step00/rust-test.txt\n?? plans/evidence/027/step00/source-sha256.txt\n?? plans/evidence/027/step00/typecheck.txt\n?? plans/mocks/native-workspace/index.html\n?? tools/native/package.py\n?? tools/native/test_package.py"
+}

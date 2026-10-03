@@ -1,0 +1,10 @@
+cargo clippy --manifest-path src-tauri/Cargo.toml --no-default-features --all-targets -- -D warnings
+   Compiling libz-sys v1.1.29
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling libssh2-sys v0.3.1
+    Checking ssh2 v0.9.5
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.91s
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    Checking ssh2 v0.9.5
+    Checking dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 18.04s

@@ -1,0 +1,11 @@
+{
+  "pid": 86764,
+  "command_and_hash_verified": true,
+  "signal": "SIGTERM",
+  "profile_retained": "/private/tmp/dbunk-native-pg-tools-20261003-review",
+  "normal_quit_pass": false,
+  "initial_guard_refusal": "Expected --profile instead of actual --workspace-profile/--fixture-manifest. Refused before signal; corrected exact command check.",
+  "stopped": true,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "backend_final": 0
+}

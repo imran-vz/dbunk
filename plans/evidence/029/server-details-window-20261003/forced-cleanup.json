@@ -1,0 +1,10 @@
+{
+  "pid": 30652,
+  "verified_executable_sha256": "8d5a87a5862ad14767f5c49d959afc0128f6964fd159c29ab0e4a47843bf9c4a",
+  "verified_profile": "/private/tmp/dbunk-native-server-details-20261003-review",
+  "signal": "SIGTERM",
+  "process_stopped": true,
+  "backend_final": 0,
+  "normal_quit_gate": false,
+  "profile_retained": true
+}

@@ -1,0 +1,23 @@
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: this let-binding has unit value
+  --> src/file_runtime.rs:93:13
+   |
+93 | /             let _ = tokio::time::timeout_at(deadline, join)
+94 | |                 .await
+95 | |                 .map_err(|_| {
+96 | |                     "File worker did not terminate within the shutdown budget".to_owned()
+97 | |                 })??;
+   | |_____________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#let_unit_value
+   = note: `-D clippy::let-unit-value` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::let_unit_value)]`
+help: omit the `let` binding
+   |
+93 -             let _ = tokio::time::timeout_at(deadline, join)
+93 +             tokio::time::timeout_at(deadline, join)
+   |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

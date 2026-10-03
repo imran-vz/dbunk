@@ -1,0 +1,11 @@
+{
+  "captured_utc": "2026-10-02T19:07:10.407448+00:00",
+  "base_commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "dirty_workspace": true,
+  "platform": "Darwin arm64",
+  "backend_rust": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "native_rust": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "node": "v24.21.0",
+  "scope": "headless source checks; no foreground automation or live fixture tests",
+  "human_gate": "pending"
+}

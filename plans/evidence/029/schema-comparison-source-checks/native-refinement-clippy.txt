@@ -1,0 +1,13 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: calling `push_str()` using a single-character string literal
+   --> src/schema_compare_model/tests.rs:550:5
+    |
+550 |     inflated.push_str("x");
+    |     ^^^^^^^^^^^^^^^^^^^^^^ help: consider using `push` with a character literal: `inflated.push('x')`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#single_char_add_str
+    = note: `-D clippy::single-char-add-str` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::single_char_add_str)]`
+
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

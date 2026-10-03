@@ -1,0 +1,27 @@
+{
+  "source_files": 476,
+  "changed_from_grid_keyboard": [
+    "apps/native/src/controller.rs",
+    "apps/native/src/diagnosis_runtime.rs",
+    "apps/native/src/forms.rs",
+    "apps/native/src/forms/diagnosis.rs",
+    "apps/native/src/workspace.rs",
+    "src-tauri/examples/native_tls_probe.rs",
+    "src-tauri/src/backend.rs",
+    "src-tauri/src/backend/connection_diagnosis.rs",
+    "src-tauri/src/backend/development.rs",
+    "src-tauri/src/backend/development/connections.rs",
+    "src-tauri/src/backend/development/probe_credentials_tests.rs",
+    "src-tauri/src/backend/development/settings.rs",
+    "src-tauri/src/diagnosis.rs",
+    "src-tauri/src/diagnosis/native.rs",
+    "src-tauri/src/diagnosis/native/tests.rs",
+    "src-tauri/src/diagnosis/native/types.rs",
+    "src-tauri/src/postgres/tls.rs",
+    "src-tauri/src/postgres/tls/native.rs"
+  ],
+  "session_option_correction": [
+    "src-tauri/src/diagnosis/native.rs",
+    "src-tauri/src/diagnosis/native/tests.rs"
+  ]
+}

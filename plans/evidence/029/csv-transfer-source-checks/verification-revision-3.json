@@ -1,0 +1,7 @@
+{
+  "changed_paths": [
+    "src-tauri/src/backend/development/workspace_tests.rs"
+  ],
+  "reason": "Two existing future-version fixtures already supplied version7 but still expected UnsupportedVersion(6). Correct only these assertions to7. Production sources unchanged. Initial908pass/2fail/86ignored log preserved.",
+  "checks": "Rerun affected isolated all-target Clippy and full isolated suite; finish pending Tauri facade/custom-protocol build. Native matrix, required default checks, owned probe and package production graph remain unchanged."
+}

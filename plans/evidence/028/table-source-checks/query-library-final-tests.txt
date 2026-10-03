@@ -1,0 +1,14 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.70s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-c7596a2b0f95a274)
+
+running 6 tests
+test backend::query_library::tests::control_admission_and_shutdown_fence_library_mutations ... ok
+test backend::query_library::tests::saved_paging_preserves_exact_work_and_failed_write_does_not_replace_it ... ok
+test backend::query_library::tests::history_retention_is_atomic_and_payload_or_legacy_row_limits_fail_explicitly ... ok
+test backend::query_library::tests::history_filters_unicode_tied_cursors_and_deletes_remain_profile_local ... ok
+test backend::query_library::tests::scan_budget_and_encoded_byte_budget_keep_continuations_truthful ... ok
+test backend::query_library::tests::escaped_continuation_is_included_in_the_complete_page_budget ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 814 filtered out; finished in 0.36s
+

@@ -7,6 +7,9 @@
 //! stored record and rendered per backend here, so a mode means the same
 //! thing everywhere and a new mode is a change to this file only.
 
+#[cfg(feature = "isolated-profile")]
+pub(crate) mod native;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Once, OnceLock};
@@ -202,12 +205,25 @@ pub(crate) fn client_config(
         return Ok(None);
     }
     let client_auth = load_client_auth(tls)?;
+    let roots = if tls.mode.verifies_chain() {
+        Some(root_store(tls.root_cert_path.as_deref())?)
+    } else {
+        None
+    };
+    config_from_parts(tls, client_auth, roots)
+}
+
+fn config_from_parts(
+    tls: &ResolvedTls,
+    client_auth: Option<ClientAuth>,
+    roots: Option<Arc<RootCertStore>>,
+) -> Result<Option<Arc<rustls::ClientConfig>>, TlsMaterialError> {
     let builder = rustls::ClientConfig::builder_with_provider(ring_provider())
         .with_safe_default_protocol_versions()
         .expect("ring protocol versions");
 
     let verifier: Arc<dyn ServerCertVerifier> = if tls.mode.verifies_chain() {
-        let roots = root_store(tls.root_cert_path.as_deref())?;
+        let roots = roots.expect("verifying TLS mode supplies roots");
         let webpki = WebPkiServerVerifier::builder_with_provider(roots, ring_provider())
             .build()
             .map_err(|error| TlsMaterialError::Malformed {
@@ -287,7 +303,10 @@ fn read_pem(path: &Path) -> Result<Vec<u8>, TlsMaterialError> {
 
 fn load_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, TlsMaterialError> {
     let pem = read_pem(path)?;
-    let certs = CertificateDer::pem_slice_iter(&pem)
+    parse_certs(path, &pem)
+}
+fn parse_certs(path: &Path, pem: &[u8]) -> Result<Vec<CertificateDer<'static>>, TlsMaterialError> {
+    let certs = CertificateDer::pem_slice_iter(pem)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| TlsMaterialError::Malformed {
             path: display_path(path),
@@ -304,13 +323,15 @@ fn load_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, TlsMaterialEr
 
 fn load_private_key(path: &Path) -> Result<PrivateKeyDer<'static>, TlsMaterialError> {
     let pem = read_pem(path)?;
-    if pem_contains(&pem, b"ENCRYPTED PRIVATE KEY") || pem_contains(&pem, b"Proc-Type: 4,ENCRYPTED")
-    {
+    parse_private_key(path, &pem)
+}
+fn parse_private_key(path: &Path, pem: &[u8]) -> Result<PrivateKeyDer<'static>, TlsMaterialError> {
+    if pem_contains(pem, b"ENCRYPTED PRIVATE KEY") || pem_contains(pem, b"Proc-Type: 4,ENCRYPTED") {
         return Err(TlsMaterialError::ClientKeyEncrypted {
             path: display_path(path),
         });
     }
-    PrivateKeyDer::from_pem_slice(&pem).map_err(|error| TlsMaterialError::Malformed {
+    PrivateKeyDer::from_pem_slice(pem).map_err(|error| TlsMaterialError::Malformed {
         path: display_path(path),
         detail: error.to_string(),
     })

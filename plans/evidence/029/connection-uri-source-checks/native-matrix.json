@@ -1,0 +1,90 @@
+[
+  {
+    "name": "native-format",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native-harness-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "--features",
+      "fixture-verification",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native-graph-uri-tests",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "-p",
+      "dbunk",
+      "--lib",
+      "backend::connection_uri::tests"
+    ],
+    "exit": 101
+  },
+  {
+    "name": "native-release-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--release",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native-release-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--release",
+      "--locked"
+    ],
+    "exit": 0
+  }
+]

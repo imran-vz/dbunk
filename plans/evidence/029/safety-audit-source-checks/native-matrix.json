@@ -1,0 +1,109 @@
+[
+  {
+    "name": "native-format",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "fmt",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--check"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "native-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "native-harness-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "--features",
+      "fixture-verification",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "native-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "native-build",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "build",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "native-release-clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--release",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  },
+  {
+    "name": "native-release-test",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--release",
+      "--locked"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": false
+  }
+]

@@ -1,0 +1,13 @@
+    Blocking waiting for file lock on build directory
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 52.97s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity ... STRUCTURE_CREATE_INTENT {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","marker":"dbunk native structure owned 7d7992b0-8ddd-4939-a7fd-799c0015d0ee","schema":"structure_035d50a54a244f078feda1e8c7725af5"}
+STRUCTURE_OWNED {"schema":17030,"tables":[{"name":"child","oid":17037},{"name":"inherited","oid":17063},{"name":"leaf","oid":17060},{"name":"parent","oid":17031},{"name":"partitioned","oid":17057}],"function":17053}
+STRUCTURE_CLEANUP {"absent":true,"joined":true,"schema":"structure_035d50a54a244f078feda1e8c7725af5"}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1122 filtered out; finished in 0.67s
+

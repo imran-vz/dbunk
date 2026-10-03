@@ -1,0 +1,42 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
++		125 dialog PostgreSQL connection
++			126 text field (settable) Name, Value: Auto-fit fixture
++			127 text field (settable) Host, Value: 127.0.0.1
++			128 text field (settable) Port, Value: 15432
++			129 text field (settable) Database, Value: dbunk_demo
++			130 text field (settable) User, Value: dbunk
++			131 secure text field (settable) Database password
++			132 text field (settable) Folder
++			133 text field (settable) Color
++			134 text field (settable) Root certificate
++			135 text field (settable) Client certificate
++			136 text field (settable) Client key
++			137 text field (settable) TLS server name
++			138 text field (settable) Statement timeout (ms)
++			139 text field (settable) Idle transaction timeout (ms)
++			140 text field (settable) Connect timeout (ms)
++			141 text field (settable) Keepalive (seconds)
++			142 text field (settable) Search path (comma separated)
++			143 text field (settable) Default role
++			144 radio button (selectable, settable, boolean) Development
++			145 radio button (selectable, settable, boolean) Test
++			146 radio button (selectable, settable, boolean) Staging
++			147 radio button (selectable, settable, boolean) Production
++			148 radio button (selectable, settable, boolean) Inherit
++			149 radio button (selectable, settable, boolean) Disabled
++			150 radio button (selectable, settable, boolean) Protected
++			151 radio button (selectable, settable, boolean) Strict
++			152 checkbox (settable, boolean) Read-only: off, Value: off
++			153 checkbox (settable, boolean) Favorite: no, Value: off
++			154 radio button (selectable, settable, boolean) Disable TLS
++			155 radio button (selectable, settable, boolean) Prefer TLS
++			156 radio button (selectable, settable, boolean) Require TLS
++			157 radio button (selectable, settable, boolean) Verify CA
++			158 radio button (selectable, settable, boolean) Verify full
++			159 button Choose root certificate
++			160 button Choose client certificate
++			161 button Choose client key
++			162 button Save
++			163 button Test connection
++			164 button Cancel
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

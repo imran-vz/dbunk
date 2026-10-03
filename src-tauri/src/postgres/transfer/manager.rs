@@ -46,6 +46,10 @@ struct Entry {
     snapshot: Snapshot,
     active: Option<Control>,
     finished: Option<Instant>,
+    io: super::native::IoContext,
+    #[cfg(feature = "isolated-profile")]
+    native_join:
+        Option<futures_util::future::Shared<futures_util::future::BoxFuture<'static, bool>>>,
 }
 #[derive(Default)]
 struct State {
@@ -58,6 +62,11 @@ struct State {
 #[derive(Clone, Default)]
 pub(crate) struct TransferManager {
     inner: Arc<Mutex<State>>,
+    #[cfg(feature = "isolated-profile")]
+    native: Option<(
+        crate::postgres::backup::native::Ownership,
+        crate::postgres::dedicated::DriverJoins,
+    )>,
 }
 
 /// A reservation covers credential/tunnel and file/catalog inspection work too.
@@ -72,6 +81,16 @@ pub(crate) struct Admission {
     reserved: bool,
 }
 impl Admission {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn current(&self) -> bool {
+        self.manager
+            .upgrade()
+            .is_some_and(|state| check_admission(&state.lock().unwrap(), self).is_ok())
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn cancellation(&self) -> watch::Receiver<bool> {
+        self.cancel.clone()
+    }
     pub(crate) async fn cancelled(&mut self) {
         let _ = self.cancel.wait_for(|v| *v).await;
     }
@@ -92,8 +111,12 @@ pub(crate) struct JobContext {
     pub(crate) job_id: String,
     cancel: watch::Receiver<bool>,
     claim: Arc<AtomicU8>,
+    io: super::native::IoContext,
 }
 impl JobContext {
+    pub(crate) fn io(&self) -> super::native::IoContext {
+        self.io.clone()
+    }
     pub(crate) async fn cancelled(&self) {
         let mut rx = self.cancel.clone();
         let _ = rx.wait_for(|v| *v).await;
@@ -103,6 +126,19 @@ impl JobContext {
     }
     /// Cancellation and the irreversible commit/publication boundary have one winner.
     pub(crate) fn begin_finalizing(&self) -> bool {
+        // Share the scope-retirement lock with commit/publication admission.
+        let mut state = self.manager.inner.lock().unwrap();
+        if self.io.tracked()
+            && (state.global.closing > 0
+                || state.jobs.get(&self.job_id).is_none_or(|entry| {
+                    state
+                        .connections
+                        .get(&entry.snapshot.connection_id)
+                        .is_some_and(|scope| scope.closing > 0)
+                }))
+        {
+            return false;
+        }
         if self
             .claim
             .compare_exchange(OPEN, FINALIZING, Ordering::AcqRel, Ordering::Acquire)
@@ -110,7 +146,6 @@ impl JobContext {
         {
             return false;
         }
-        let mut state = self.manager.inner.lock().unwrap();
         if let Some(entry) = state.jobs.get_mut(&self.job_id) {
             entry.snapshot.phase = Phase::Finalizing;
         }
@@ -145,10 +180,34 @@ impl JobContext {
     }
 }
 impl TransferManager {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn with_native_ownership(
+        mut self,
+        owner: crate::postgres::backup::native::Ownership,
+        drivers: crate::postgres::dedicated::DriverJoins,
+    ) -> Self {
+        self.native = Some((owner, drivers));
+        self
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn observation(&self, id: &str) -> Option<(Snapshot, super::native::IoContext)> {
+        self.inner
+            .lock()
+            .unwrap()
+            .jobs
+            .get(id)
+            .map(|entry| (entry.snapshot.clone(), entry.io.clone()))
+    }
     pub(crate) fn new() -> Self {
         Self::default()
     }
     pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
+        drop(self.spawn_monitor(runtime));
+    }
+    pub(crate) fn spawn_monitor(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> tokio::task::JoinHandle<()> {
         let weak = Arc::downgrade(&self.inner);
         runtime.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(60));
@@ -157,7 +216,7 @@ impl TransferManager {
                 let Some(inner) = weak.upgrade() else { break };
                 prune(&mut inner.lock().unwrap(), Instant::now());
             }
-        });
+        })
     }
     pub(crate) fn admission(&self, id: &str) -> Result<Admission, TransferError> {
         if id.is_empty() || id.len() > 128 {
@@ -171,11 +230,15 @@ impl TransferManager {
         if s.global.closing > 0 || s.connections.get(id).is_some_and(|c| c.closing > 0) {
             return Err(TransferError::ConnectionClosing);
         }
-        let active = s.jobs.values().filter(|e| e.active.is_some()).count();
+        let active = s
+            .jobs
+            .values()
+            .filter(|e| e.active.is_some() || e.io.retains_cleanup())
+            .count();
         if active + s.pending.len() >= MAX_ACTIVE
-            || s.jobs
-                .values()
-                .any(|e| e.active.is_some() && e.snapshot.connection_id == id)
+            || s.jobs.values().any(|e| {
+                (e.active.is_some() || e.io.retains_cleanup()) && e.snapshot.connection_id == id
+            })
             || s.pending.values().any(|p| p.connection_id == id)
         {
             return Err(TransferError::JobLimitReached);
@@ -201,6 +264,30 @@ impl TransferManager {
             done,
             reserved: true,
         })
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn insert_shared_review(
+        &self,
+        admission: &Admission,
+        review: Arc<Review>,
+    ) -> Result<String, TransferError> {
+        let mut s = self.inner.lock().unwrap();
+        prune(&mut s, Instant::now());
+        check_admission(&s, admission)?;
+        if s.reviews.len() >= MAX_REVIEWS {
+            return Err(TransferError::JobLimitReached);
+        }
+        let token = uuid::Uuid::new_v4().to_string();
+        s.reviews.insert(
+            token.clone(),
+            ReviewEntry {
+                review,
+                created: Instant::now(),
+                connection: admission.connection,
+                global: admission.global,
+            },
+        );
+        Ok(token)
     }
     pub(crate) fn insert_review(
         &self,
@@ -280,14 +367,23 @@ impl TransferManager {
         let (cancel, rx) = watch::channel(false);
         let (done, _) = watch::channel(false);
         let claim = Arc::new(AtomicU8::new(OPEN));
+        #[cfg(feature = "isolated-profile")]
+        let io = self
+            .native
+            .as_ref()
+            .map(|(owner, drivers)| super::native::IoContext::new(owner.child(), drivers.child()))
+            .unwrap_or_default();
+        #[cfg(not(feature = "isolated-profile"))]
+        let io = super::native::IoContext::default();
         let context = JobContext {
             manager: self.clone(),
             job_id: snapshot.job_id.clone(),
             cancel: rx,
             claim: claim.clone(),
+            io: io.clone(),
         };
         let manager = self.clone();
-        let task = tokio::spawn(async move {
+        let work = async move {
             let result = std::panic::AssertUnwindSafe(run(context.clone()))
                 .catch_unwind()
                 .await
@@ -298,7 +394,21 @@ impl TransferManager {
                     })
                 });
             manager.complete(context, result, completion).await;
-        });
+        };
+        #[cfg(feature = "isolated-profile")]
+        let (task, native_join) = if let Some((owner, _)) = &self.native {
+            let completed = owner
+                .spawn(work)
+                .map_err(|_| TransferError::JobLimitReached)?;
+            (
+                None,
+                Some(async move { completed.await.is_ok() }.boxed().shared()),
+            )
+        } else {
+            (Some(tokio::spawn(work)), None)
+        };
+        #[cfg(not(feature = "isolated-profile"))]
+        let task = Some(tokio::spawn(work));
         s.jobs.insert(
             snapshot.job_id.clone(),
             Entry {
@@ -307,9 +417,12 @@ impl TransferManager {
                     cancel,
                     done,
                     claim,
-                    task: Some(task),
+                    task,
                 }),
                 finished: None,
+                io,
+                #[cfg(feature = "isolated-profile")]
+                native_join,
             },
         );
         Ok(snapshot)
@@ -418,6 +531,10 @@ impl TransferManager {
         let snapshot = e.snapshot.clone();
         let done = e.active.as_ref().map(|c| c.done.subscribe());
         drop(s);
+        #[cfg(feature = "isolated-profile")]
+        if self.native.is_some() {
+            return Ok(snapshot);
+        }
         if let Some(mut done) = done.filter(|_| accepted) {
             let manager = self.clone();
             let id = id.to_owned();
@@ -433,6 +550,10 @@ impl TransferManager {
         Ok(snapshot)
     }
     async fn abort_cancelled(&self, connection: Option<&str>, job: Option<&str>) {
+        #[cfg(feature = "isolated-profile")]
+        if self.native.is_some() {
+            return;
+        }
         let (tasks, waits) = {
             let mut s = self.inner.lock().unwrap();
             let mut tasks = Vec::new();
@@ -524,6 +645,27 @@ impl TransferManager {
             self.abort_cancelled(id, None).await;
         }
     }
+    /// Native caller holds profile admission; join just this core worker and its
+    /// IO, never the facade monitor which needs the same profile gate.
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn settle_native(
+        &self,
+        id: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), ()> {
+        let (join, io) = {
+            let state = self.inner.lock().unwrap();
+            let entry = state.jobs.get(id).ok_or(())?;
+            (entry.native_join.clone().ok_or(())?, entry.io.clone())
+        };
+        if !tokio::time::timeout_at(deadline, join)
+            .await
+            .map_err(|_| ())?
+        {
+            return Err(());
+        }
+        io.cleanup(deadline).await
+    }
     pub(crate) async fn begin_connection_teardown(&self, id: &str) {
         self.begin_teardown(Some(id), STOP_TIMEOUT).await;
     }
@@ -571,11 +713,13 @@ fn cancel_entry(e: &mut Entry) -> bool {
 fn prune(s: &mut State, now: Instant) {
     s.reviews
         .retain(|_, e| now.duration_since(e.created) < REVIEW_TTL);
-    s.jobs
-        .retain(|_, e| e.finished.is_none_or(|t| now.duration_since(t) < RETENTION));
+    s.jobs.retain(|_, e| {
+        e.io.retains_cleanup() || e.finished.is_none_or(|t| now.duration_since(t) < RETENTION)
+    });
     let mut terminal: Vec<_> = s
         .jobs
         .iter()
+        .filter(|(_, e)| !e.io.retains_cleanup())
         .filter_map(|(id, e)| e.finished.map(|t| (id.clone(), t)))
         .collect();
     terminal.sort_by_key(|(_, t)| *t);

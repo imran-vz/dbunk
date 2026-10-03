@@ -1,0 +1,38 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 104, 106
+~			81 button Next page
+~			105 text field (settable) Exact schema name, Value: native_overview_window_20261003
+~			95 container Schema "native_overview_window_20261003" | database "dbunk_demo" (OID 16384) | 256 rows on this page of 259 captured relations | 2026-10-03T09:10:26.935682+00:00 to 2026-10-03T09:10:26.939792+00:00
+~				89 tab (settable, boolean) Database metrics (0), Value: off
+~				90 tab (settable, boolean) Scope totals (8), Value: on
+~				91 tab (settable, boolean) Relations (256), Value: off
+~			92 list 8 captured Scope totals; arrows select, Enter inspects
+~				96 text (selected) Relations: 259, Secondary Actions: Pick
+~				97 text (selectable) Tables: 2, Secondary Actions: Pick
+~				98 text (selectable) Views: 257, Secondary Actions: Pick
+~				99 text (selectable) Materialized views: 0, Secondary Actions: Pick
+~				100 text (selectable) Estimated rows: Unknown, Secondary Actions: Pick
+~				101 text (selectable) Known row estimate subtotal: 0, Secondary Actions: Pick
+~				102 text (selectable) Relations with unknown estimates: 1, Secondary Actions: Pick
+~				103 text (selectable) Physical size (bytes): 0, Secondary Actions: Pick
++				106 text entry area (settable) Read-only exact overview statistics, Value: Database: "dbunk_demo"
+Database OID: 16384
+Reader PID: 76857
+Collection started: 2026-10-03T09:10:26.935682+00:00
+Collection ended: 2026-10-03T09:10:26.939792+00:00
+Statistics and physical sizes can change during collection; this is not an atomic server-wide measurement.
+
+Requested scope: Schema "native_overview_window_20261003"
+Schema OID: 19181
+Relation OID: Not scoped to one object
+
+Relations: 259
+Totals cover the full requested scope, not only the 256 rows on this page.
+Known estimate subtotal: 0
+Relations with unknown estimates: 1
+
+Database-wide scope excludes system namespaces and partition children. Explicit schema scope includes that namespace but excludes partition children. Explicit relation scope may inspect a child.
+Rows are planner estimates, not exact counts. Views are Not applicable. Unknown and Restricted never imply zero. Sizes are physical per relation, not recursive partition totals.
+Pages use a fresh read-only capture and stable keyset order; concurrent changes may affect later pages.
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

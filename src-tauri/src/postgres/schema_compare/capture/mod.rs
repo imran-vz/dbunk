@@ -45,6 +45,12 @@ impl CaptureControl {
         }
     }
 
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn with_drivers(mut self, drivers: dedicated::DriverJoins) -> Self {
+        self.drivers = drivers;
+        self
+    }
+
     pub(crate) async fn join_drivers(&self) {
         self.drivers.drain().await;
     }

@@ -1,0 +1,49 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 85-102
+~			39 tab (settable, boolean) Objects · 32 objects, Value: on
+~		77 container PostgreSQL objects
+~			78 button (disabled) Connect
+~			80 button (disabled) Cancel
+~			81 button Search
+~			82 button Open
+~			83 button Copy identity
+~			84 button Clear
++			85 button Describe
++			86 button Drop impact
++			87 button Create schema
++			88 button Maintenance
++			89 button (disabled) Structure
++			90 text field (settable) Search object names, schemas or signatures
++			91 text 32 objects
++			92 list (settable) 32 matching objects; arrows select, Enter opens, Value: Schema
+"native_parity_20261003"
+
++				93 text (selected) Schema  "native_parity_20261003", Secondary Actions: Pick
++				94 text (selectable) Table  "native_parity_20261003"."rows", Secondary Actions: Pick
++				95 text (selectable) Schema  "native_structure_catalog_20261003", Secondary Actions: Pick
++				96 text (selectable) Table  "native_structure_catalog_20261003"."leaf", Secondary Actions: Pick
++				97 text (selectable) Table  "native_structure_catalog_20261003"."parent", Secondary Actions: Pick
++				98 text (selectable) Schema  "plan024", Secondary Actions: Pick
++				99 text (selectable) View  "plan024"."fixture_large", Secondary Actions: Pick
++				100 text (selectable) View  "plan024"."fixture_many", Secondary Actions: Pick
++				101 text (selectable) View  "plan024"."fixture_wide", Secondary Actions: Pick
++				102 text (selectable) Schema  "plan026", Secondary Actions: Pick
++				103 text (selectable) Table  "plan026"."fixture_identity", Secondary Actions: Pick
++				104 text (selectable) Table  "plan026"."policy_probe", Secondary Actions: Pick
++				105 text (selectable) View  "plan026"."exact_values", Secondary Actions: Pick
++				106 text (selectable) Schema  "public", Secondary Actions: Pick
++				107 text (selectable) Role  "dbunk", Secondary Actions: Pick
++				108 text (selectable) Role  "pg_checkpoint", Secondary Actions: Pick
++				109 text (selectable) Role  "pg_create_subscription", Secondary Actions: Pick
++				110 text (selectable) Role  "pg_database_owner", Secondary Actions: Pick
++				111 text (selectable) Role  "pg_execute_server_program", Secondary Actions: Pick
++				112 text (selectable) Role  "pg_maintain", Secondary Actions: Pick
++				113 text (selectable) Role  "pg_monitor", Secondary Actions: Pick
++				114 text (selectable) Role  "pg_read_all_data", Secondary Actions: Pick
++				115 text (selectable) Role  "pg_read_all_settings", Secondary Actions: Pick
++				116 text (selectable) Role  "pg_read_all_stats", Secondary Actions: Pick
++			117 text Schema
+"native_parity_20261003"
+
+~		64 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,26 @@
+[
+  {
+    "check": "native-format",
+    "exit_code": 0
+  },
+  {
+    "check": "native-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "native-harness-lint",
+    "exit_code": 0
+  },
+  {
+    "check": "native-test",
+    "exit_code": 0
+  },
+  {
+    "check": "native-release-clippy",
+    "exit_code": 0
+  },
+  {
+    "check": "native-release-test",
+    "exit_code": 0
+  }
+]

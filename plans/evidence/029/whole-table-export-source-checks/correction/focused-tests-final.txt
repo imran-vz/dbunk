@@ -1,0 +1,18 @@
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.42s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-aa775f6503202b64)
+
+running 8 tests
+test table_view::whole_config::tests::whole_table_export_closed_local_lane_releases_pending_and_fences_late_reply ... ok
+test whole_table_export_model::formatting::tests::complete_empty_table_and_cancellation_remain_truthful ... ok
+test whole_table_export_model::formatting::tests::complete_source_all_six_formats_and_exact_json_sql_values ... ok
+test whole_table_export_model::formatting::tests::malformed_rows_and_csv_cannot_bypass_capture_or_stream_contract ... ok
+test whole_table_export_model::tests::cancelled_and_late_replies_cannot_replace_a_new_capture ... ok
+test whole_table_export_model::tests::csv_route_is_independent_and_never_silently_changes_options ... ok
+test whole_table_export_model::tests::file_waiter_clone_keeps_source_allowance_and_overlap_refuses ... ok
+test whole_table_export_model::tests::literal_null_token_and_utf8_bounds ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 374 filtered out; finished in 0.01s
+

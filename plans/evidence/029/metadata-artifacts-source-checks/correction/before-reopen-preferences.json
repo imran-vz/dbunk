@@ -1,0 +1,7 @@
+[
+  [
+    "native.schema-map.preferences.v1:[\"18477c6a-4ee3-4ce6-b63e-defb702d5b7e\",{\"Schema\":{\"name\":\"native_map_window_20261003\"}}]",
+    "{\"version\":1,\"revision\":\"66eeef81-88c9-4e06-ae93-80a4954ea272\",\"connection_id\":\"18477c6a-4ee3-4ce6-b63e-defb702d5b7e\",\"scope\":{\"Schema\":{\"name\":\"native_map_window_20261003\"}},\"value\":{\"database_oid\":16384,\"prefs\":{\"routing\":\"step\",\"attributes\":\"all\",\"show_types\":true,\"show_nulls\":false,\"show_comments\":true},\"positions\":[{\"identity\":{\"database_oid\":16384,\"relation_oid\":20380},\"position\":{\"x\":556.07,\"y\":73.035}}]}}",
+    "66eeef81-88c9-4e06-ae93-80a4954ea272"
+  ]
+]

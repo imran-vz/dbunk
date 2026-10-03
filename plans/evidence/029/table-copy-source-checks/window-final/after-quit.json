@@ -1,0 +1,25 @@
+{
+  "slow_destination_rows": 0,
+  "saved_copy_jobs": [
+    {
+      "attemptId": "02def5e8-7c66-4aa6-894c-cd5bb510d98c",
+      "state": {
+        "completed": {
+          "rows": 3
+        }
+      }
+    },
+    {
+      "attemptId": "aa3d33b3-a837-4668-8af9-12dafdf8cd3d",
+      "state": {
+        "completed": {
+          "rows": 3
+        }
+      }
+    },
+    {
+      "attemptId": "467e3795-c0f3-4580-acfb-34689c115a13",
+      "state": "applying"
+    }
+  ]
+}

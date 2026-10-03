@@ -1,0 +1,16 @@
+    Blocking waiting for file lock on build directory
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.31s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-772a36ec0cbab884)
+
+running 4 tests
+test query_library::tests::counts_use_authoritative_completions_without_adding_omissions ... ok
+test query_library::tests::empty_search_page_continues_and_retention_is_shared_and_released ... ok
+test controller::workspace_runtime::tests::query_library_close_fences_queued_edits_and_releases_delivery_budget ... ok
+test controller::workspace_runtime::tests::query_library_save_acknowledgement_survives_document_close_and_reopen ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 102 filtered out; finished in 0.03s
+

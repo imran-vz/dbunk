@@ -1,0 +1,27 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 85-86
+~				59 tab (settable, boolean) Indexes (2), Value: off
+~				61 tab (settable, boolean) Triggers (1), Value: on
+~			67 list 1 captured Triggers; arrows select, Enter inspects
+~				68 text (selected) "changed", Secondary Actions: Pick
++				85 text entry area (settable) Read-only selected table structure details, Value: Triggers · "native_structure_window_20261003"."child"
+Database OID: 16384; relation OID: 17075
+Captured: 2026-10-03 08:39:01.31935+00
+
+User trigger: "changed"
+OID: 17092
+Enabled: Origin
+Timing: BEFORE
+Level: ROW
+Function: "native_structure_window_20261003"."touch"
+Function OID: 17091
+Parent trigger OID (inherited/partition clone): NULL (absent)
+Events, in captured order:
+1. UPDATE
+UPDATE OF columns, in captured order (2):
+1. "x" (attribute 2)
+2. "y" (attribute 3)
+Definition (text, 157 UTF-8 bytes):
+CREATE TRIGGER changed BEFORE UPDATE OF x, y ON native_structure_window_20261003.child FOR EACH ROW EXECUTE FUNCTION native_structure_window_20261003.touch()
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

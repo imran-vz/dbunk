@@ -29,6 +29,26 @@ pub(crate) fn lex_sql(sql: &str) -> Result<Vec<SqlToken>, ()> {
 /// The one scan behind every caller, so a classifier and a span-reading
 /// caller can never disagree about where a string or comment ends.
 pub(crate) fn lex_sql_spanned(sql: &str) -> Result<Vec<SpannedToken>, ()> {
+    lex_sql_spanned_bounded(sql, usize::MAX).map_err(|_| ())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SqlLexError {
+    InvalidSql,
+    TooManyTokens,
+}
+impl From<()> for SqlLexError {
+    fn from(_: ()) -> Self {
+        Self::InvalidSql
+    }
+}
+
+/// Same tokenization, with refusal before a token beyond the caller's cap can
+/// grow the output vector. Whitespace and comments consume no token allowance.
+pub(crate) fn lex_sql_spanned_bounded(
+    sql: &str,
+    maximum_tokens: usize,
+) -> Result<Vec<SpannedToken>, SqlLexError> {
     let bytes = sql.as_bytes();
     let mut tokens = Vec::new();
     let mut index = 0usize;
@@ -90,8 +110,11 @@ pub(crate) fn lex_sql_spanned(sql: &str) -> Result<Vec<SpannedToken>, ()> {
                 index += 1;
                 SqlToken::Opaque
             }
-            _ => return Err(()),
+            _ => return Err(SqlLexError::InvalidSql),
         };
+        if tokens.len() == maximum_tokens {
+            return Err(SqlLexError::TooManyTokens);
+        }
         tokens.push(SpannedToken {
             token,
             start,
@@ -217,6 +240,29 @@ fn is_identifier_continue(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_lexer_matches_shared_tokens_and_refuses_at_exact_cap() {
+        let sql = "/* ignored */ SELECT :name, ':hidden', $$:also_hidden$$ -- ignored\n";
+        let expected = lex_sql_spanned(sql).unwrap();
+        assert_eq!(
+            lex_sql_spanned_bounded(sql, expected.len()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            lex_sql_spanned_bounded(sql, expected.len() - 1),
+            Err(SqlLexError::TooManyTokens)
+        );
+        assert_eq!(lex_sql_spanned_bounded(" -- comment", 0).unwrap(), vec![]);
+        assert_eq!(
+            lex_sql_spanned_bounded("SELECT", 0),
+            Err(SqlLexError::TooManyTokens)
+        );
+        assert_eq!(
+            lex_sql_spanned_bounded("'unterminated", 8),
+            Err(SqlLexError::InvalidSql)
+        );
+    }
 
     fn identifier(value: &str) -> SqlToken {
         SqlToken::Identifier(SqlIdentifier {

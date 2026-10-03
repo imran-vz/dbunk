@@ -1,0 +1,12 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.20s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 1 test
+test backend::schema_comparisons::live_tests::native_pg16_facade_pages_utf8_identity_invalidation_and_joined_cleanup ... PG16 native facade: 101 objects, 100/1 pages, 65535/90000 UTF-8 cuts, shared/independent snapshots, release and endpoint invalidation
+owned comparison schema cleaned: native_compare_7b91ef5764314165980723538535c7fe_s oid=16397 RESTRICT
+owned comparison schema cleaned: native_compare_7b91ef5764314165980723538535c7fe_t oid=16903 RESTRICT
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1004 filtered out; finished in 0.69s
+

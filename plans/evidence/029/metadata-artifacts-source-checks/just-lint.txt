@@ -1,0 +1,6 @@
+cargo clippy --manifest-path src-tauri/Cargo.toml --no-default-features --all-targets -- -D warnings
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.60s
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.43s

@@ -1,0 +1,17 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0063]: missing field `table_ddl` in initializer of `dbunk_lib::backend::WorkspaceDocument`
+   --> examples/native_keychain_probe.rs:210:33
+    |
+210 |                 documents: vec![WorkspaceDocument {
+    |                                 ^^^^^^^^^^^^^^^^^ missing `table_ddl`
+
+error[E0063]: missing field `table_ddl` in initializer of `dbunk_lib::backend::WorkspaceDocument`
+   --> examples/native_workspace_probe.rs:126:36
+    |
+126 |         .map(|(index, connection)| WorkspaceDocument {
+    |                                    ^^^^^^^^^^^^^^^^^ missing `table_ddl`
+
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `dbunk` (example "native_workspace_probe") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (example "native_keychain_probe") due to 1 previous error

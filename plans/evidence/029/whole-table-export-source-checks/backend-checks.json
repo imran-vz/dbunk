@@ -1,0 +1,11 @@
+[
+  {
+    "name": "just-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 101,
+    "seconds": 13.61
+  }
+]

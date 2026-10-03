@@ -1,0 +1,10 @@
+
+running 5 tests
+test backend::table_export::live_tests::native_table_export_exact_values_views_empty_and_refusal ... ignored, explicit owned stage03 capture probe; UUID schema and OID/marker cleanup
+test backend::table_export::tests::table_export_foreign_closed_and_invalid_documents_refuse_before_credentials ... ok
+test postgres::native_table_export::tests::exact_values_and_capacity_and_encoded_limits_are_independent ... ok
+test postgres::native_table_export::tests::generated_query_keeps_exact_names_canonical_output_and_empty_relation_witness ... ok
+test postgres::native_table_export::tests::headers_count_toward_cell_limit_and_inconsistent_rows_refuse ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 1173 filtered out; finished in 0.26s
+

@@ -1,0 +1,9 @@
+   Compiling tauri v2.11.2
+   Compiling tauri-macros v2.6.2
+   Compiling tauri-plugin-fs v2.5.2
+   Compiling tauri-plugin-opener v2.5.4
+   Compiling tauri-plugin-window-state v2.4.1
+   Compiling tauri-plugin-log v2.8.0
+   Compiling tauri-plugin-dialog v2.7.3
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 34.27s

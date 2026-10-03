@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity ... STRUCTURE_CREATE_INTENT {"fixture":"2283820d-33ec-4c4c-ae03-7051092bd410","marker":"dbunk native structure owned 3027e44c-844c-4ce3-9186-66c3c20aa563","schema":"structure_73e20381c1b94826b248832483d8fdf8"}
+STRUCTURE_OWNED {"schema":16953,"tables":[{"name":"child","oid":16960},{"name":"inherited","oid":16986},{"name":"leaf","oid":16983},{"name":"parent","oid":16954},{"name":"partitioned","oid":16980}],"function":16976}
+
+thread 'backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity' (10582749) panicked at src/backend/table_structure/live_tests.rs:150:14:
+called `Result::unwrap()` on an `Err` value: Catalog(InvalidResponse)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+STRUCTURE_CLEANUP {"absent":true,"joined":true,"schema":"structure_73e20381c1b94826b248832483d8fdf8"}
+FAILED
+
+failures:
+
+failures:
+    backend::table_structure::live_tests::native_structure_owned_complete_metadata_and_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1122 filtered out; finished in 0.47s
+
+error: test failed, to rerun pass `--lib`

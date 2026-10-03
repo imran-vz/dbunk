@@ -1,0 +1,9 @@
+Executable=/private/tmp/dbunk-native-plan027-repaired-20261002/dbunk Native Preflight.app/Contents/MacOS/dbunk-native
+Identifier=dbunk_native-2fe686de680fd31a
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=863542 flags=0x20002(adhoc,linker-signed) hashes=26982+0 location=embedded
+Signature=adhoc
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements=none

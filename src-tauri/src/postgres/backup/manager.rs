@@ -26,6 +26,14 @@ struct Entry {
     snapshot: PgToolJobSnapshot,
     active: Option<Control>,
     finished: Option<Instant>,
+    #[cfg(feature = "isolated-profile")]
+    native: Option<super::native::Ownership>,
+    #[cfg(feature = "isolated-profile")]
+    restore_dispatched: bool,
+    #[cfg(feature = "isolated-profile")]
+    native_archive: Option<Arc<super::native::archive::Archive>>,
+    #[cfg(feature = "isolated-profile")]
+    native_cleanup_complete: bool,
 }
 struct Control {
     cancel: watch::Sender<bool>,
@@ -135,6 +143,31 @@ pub(crate) struct Admission {
     reserved: bool,
 }
 impl Admission {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn cancellation(&self) -> watch::Receiver<bool> {
+        self.cancel.clone()
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn current(&self) -> bool {
+        let Some(manager) = self.manager.upgrade() else {
+            return false;
+        };
+        let state = manager.lock().unwrap();
+        !*self.cancel.borrow()
+            && state.global.closing == 0
+            && state.global.generation == self.global
+            && state
+                .connections
+                .get(
+                    state
+                        .pending
+                        .get(&self.id)
+                        .map(|p| p.connection_id.as_str())
+                        .unwrap_or(""),
+                )
+                .is_none_or(|scope| scope.closing == 0 && scope.generation == self.connection)
+            && state.pending.contains_key(&self.id)
+    }
     pub(crate) async fn cancelled(&mut self) {
         let _ = self.cancel.wait_for(|cancelled| *cancelled).await;
     }
@@ -157,6 +190,8 @@ impl Drop for Admission {
 #[derive(Clone, Default)]
 pub(crate) struct PgToolJobManager {
     inner: Arc<Mutex<State>>,
+    #[cfg(feature = "isolated-profile")]
+    native: Option<super::native::Ownership>,
 }
 
 #[derive(Clone)]
@@ -165,6 +200,8 @@ pub(crate) struct JobContext {
     pub(crate) job_id: String,
     cancel: watch::Receiver<bool>,
     outcome: Arc<OutcomeClaim>,
+    #[cfg(feature = "isolated-profile")]
+    native: Option<super::native::Ownership>,
 }
 
 impl PgToolJobManager {
@@ -172,6 +209,12 @@ impl PgToolJobManager {
         Self::default()
     }
     pub(crate) fn start_monitor(&self, runtime: &tokio::runtime::Handle) {
+        drop(self.spawn_monitor(runtime));
+    }
+    pub(crate) fn spawn_monitor(
+        &self,
+        runtime: &tokio::runtime::Handle,
+    ) -> tokio::task::JoinHandle<()> {
         let weak = Arc::downgrade(&self.inner);
         runtime.spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(60));
@@ -180,7 +223,13 @@ impl PgToolJobManager {
                 let Some(inner) = weak.upgrade() else { break };
                 prune(&mut inner.lock().unwrap(), Instant::now());
             }
-        });
+        })
+    }
+
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn with_native_ownership(mut self, owner: super::native::Ownership) -> Self {
+        self.native = Some(owner);
+        self
     }
 
     pub(crate) fn admission(&self, connection_id: &str) -> Result<Admission, PgToolJobError> {
@@ -279,16 +328,20 @@ impl PgToolJobManager {
         let (cancel, receiver) = watch::channel(false);
         let (done, _) = watch::channel(false);
         let outcome = Arc::new(OutcomeClaim::new());
+        #[cfg(feature = "isolated-profile")]
+        let native = self.native.as_ref().map(|owner| owner.child());
         let context = JobContext {
             manager: self.clone(),
             job_id: snapshot.job_id.clone(),
             cancel: receiver,
             outcome: outcome.clone(),
+            #[cfg(feature = "isolated-profile")]
+            native: native.clone(),
         };
         let manager = self.clone();
         let task_context = context.clone();
         let task_done = done.clone();
-        let task = tokio::spawn(async move {
+        let work = async move {
             let result = std::panic::AssertUnwindSafe(async { run(task_context.clone()).await })
                 .catch_unwind()
                 .await
@@ -302,7 +355,19 @@ impl PgToolJobManager {
                 .complete(&task_context.job_id, result, completion)
                 .await;
             task_done.send_replace(true);
-        });
+        };
+        #[cfg(feature = "isolated-profile")]
+        let task = if let Some(owner) = &native {
+            if owner.spawn(work).is_err() {
+                state.reaper_permits = state.reaper_permits.saturating_sub(1);
+                return Err(PgToolJobError::JobLimitReached);
+            }
+            None
+        } else {
+            Some(tokio::spawn(work))
+        };
+        #[cfg(not(feature = "isolated-profile"))]
+        let task = Some(tokio::spawn(work));
         state.jobs.insert(
             snapshot.job_id.clone(),
             Entry {
@@ -311,11 +376,19 @@ impl PgToolJobManager {
                     cancel,
                     done,
                     outcome,
-                    task: Some(task),
+                    task,
                     reaper_permit: true,
                     reaper_in_flight: false,
                 }),
                 finished: None,
+                #[cfg(feature = "isolated-profile")]
+                native,
+                #[cfg(feature = "isolated-profile")]
+                restore_dispatched: false,
+                #[cfg(feature = "isolated-profile")]
+                native_archive: None,
+                #[cfg(feature = "isolated-profile")]
+                native_cleanup_complete: false,
             },
         );
         drop(state);
@@ -342,14 +415,12 @@ impl PgToolJobManager {
                     drop(ready);
                     Err(PgToolJobError::Cancelled)
                 } else {
-                    tokio::task::spawn_blocking(move || ready.publish())
-                        .await
-                        .unwrap_or_else(|_| {
-                            Err(PgToolJobError::Io {
-                                operation: "publish".into(),
-                                message: "File worker stopped".into(),
-                            })
+                    self.publish_ready(ready).await.unwrap_or_else(|_| {
+                        Err(PgToolJobError::Io {
+                            operation: "publish".into(),
+                            message: "File worker stopped".into(),
                         })
+                    })
                 }
             }
             Err(error) => Err(error),
@@ -391,6 +462,19 @@ impl PgToolJobManager {
         self.publish_terminal(job_id, result);
     }
 
+    async fn publish_ready(&self, ready: Ready) -> Result<Result<(), PgToolJobError>, ()> {
+        #[cfg(feature = "isolated-profile")]
+        if let Some(owner) = &self.native {
+            return owner
+                .spawn_blocking(move || ready.publish())?
+                .await
+                .map_err(|_| ())?;
+        }
+        tokio::task::spawn_blocking(move || ready.publish())
+            .await
+            .map_err(|_| ())
+    }
+
     fn publish_terminal(&self, job_id: &str, result: Result<(), PgToolJobError>) {
         let mut state = self.inner.lock().unwrap();
         let Some(entry) = state.jobs.get_mut(job_id) else {
@@ -428,6 +512,36 @@ impl PgToolJobManager {
             .map(|e| e.snapshot.clone())
             .ok_or(PgToolJobError::JobNotFound)
     }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn native_cleanup_archive(&self, id: &str) -> Result<(), ()> {
+        let archive = self
+            .inner
+            .lock()
+            .unwrap()
+            .jobs
+            .get(id)
+            .ok_or(())?
+            .native_archive
+            .clone();
+        if let Some(archive) = archive {
+            archive.cleanup()?;
+        }
+        let mut state = self.inner.lock().unwrap();
+        let entry = state.jobs.get_mut(id).ok_or(())?;
+        entry.native_archive = None;
+        entry.native_cleanup_complete = true;
+        Ok(())
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn native_observe(&self, id: &str) -> Option<(PgToolJobSnapshot, bool, bool)> {
+        let state = self.inner.lock().unwrap();
+        let entry = state.jobs.get(id)?;
+        Some((
+            entry.snapshot.clone(),
+            entry.restore_dispatched,
+            entry.native.as_ref().is_none_or(|owner| owner.settled()),
+        ))
+    }
     pub(crate) fn list(&self, connection_id: Option<&str>) -> Vec<PgToolJobSnapshot> {
         let state = self.inner.lock().unwrap();
         let mut jobs: Vec<_> = state
@@ -462,13 +576,19 @@ impl PgToolJobManager {
         if accepted {
             let manager = self.clone();
             let job_id = job_id.to_string();
-            tokio::spawn(async move {
+            let watchdog = async move {
                 let cleanup_timeout = (timeout / 50).min(Duration::from_millis(100));
                 tokio::time::sleep(timeout.saturating_sub(cleanup_timeout)).await;
                 manager
                     .abort_stalled_cancellations(None, Some(&job_id), cleanup_timeout)
                     .await;
-            });
+            };
+            #[cfg(feature = "isolated-profile")]
+            if self.native.is_none() {
+                tokio::spawn(watchdog);
+            }
+            #[cfg(not(feature = "isolated-profile"))]
+            tokio::spawn(watchdog);
         }
         Ok(snapshot)
     }
@@ -534,6 +654,10 @@ impl PgToolJobManager {
         job_id: Option<&str>,
         cleanup_timeout: Duration,
     ) {
+        #[cfg(feature = "isolated-profile")]
+        if self.native.is_some() {
+            return;
+        }
         let tasks = {
             let mut state = self.inner.lock().unwrap();
             state
@@ -679,6 +803,40 @@ pub(super) fn transition(
 }
 
 impl JobContext {
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn native_owner(&self) -> Option<super::native::Ownership> {
+        self.native.clone()
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn retain_native_archive(
+        &self,
+        file: Arc<tempfile::NamedTempFile>,
+    ) -> Option<Arc<super::native::archive::Archive>> {
+        self.native.as_ref()?;
+        let archive = Arc::new(super::native::archive::Archive::new(file));
+        self.manager
+            .inner
+            .lock()
+            .unwrap()
+            .jobs
+            .get_mut(&self.job_id)
+            .expect("active job retained")
+            .native_archive = Some(archive.clone());
+        Some(archive)
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn mark_restore_dispatch(&self) {
+        if let Some(entry) = self
+            .manager
+            .inner
+            .lock()
+            .unwrap()
+            .jobs
+            .get_mut(&self.job_id)
+        {
+            entry.restore_dispatched = true;
+        }
+    }
     pub(crate) async fn cancelled(&self) {
         let mut cancel = self.cancel.clone();
         let _ = cancel.wait_for(|cancelled| *cancelled).await;
@@ -722,7 +880,7 @@ impl JobContext {
     pub(crate) fn spawn_reaper<T, F>(
         &self,
         work: F,
-    ) -> tokio::sync::oneshot::Receiver<Result<T, tokio::task::JoinError>>
+    ) -> tokio::sync::oneshot::Receiver<Result<T, ()>>
     where
         T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
@@ -738,13 +896,40 @@ impl JobContext {
         active.reaper_in_flight = true;
         // Create the cleanup owner before releasing the manager lock, so a
         // teardown watchdog cannot free its permit between spawn and transfer.
+        #[cfg(feature = "isolated-profile")]
+        if let Some(owner) = &self.native {
+            let weak = Arc::downgrade(&self.manager.inner);
+            let job_id = self.job_id.clone();
+            let result = owner.spawn(async move {
+                let result = work.await;
+                if transferred {
+                    if let Some(inner) = weak.upgrade() {
+                        let mut state = inner.lock().unwrap();
+                        if let Some(active) = state
+                            .jobs
+                            .get_mut(&job_id)
+                            .and_then(|entry| entry.active.as_mut())
+                        {
+                            active.reaper_in_flight = false;
+                        }
+                        state.reaper_permits = state.reaper_permits.saturating_sub(1);
+                    }
+                }
+                Ok(result)
+            });
+            return result.unwrap_or_else(|_| {
+                let (send, receive) = tokio::sync::oneshot::channel();
+                let _ = send.send(Err(()));
+                receive
+            });
+        }
         let task = tokio::spawn(work);
         drop(state);
         let weak = Arc::downgrade(&self.manager.inner);
         let job_id = self.job_id.clone();
         let (finished, receiver) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
-            let result = task.await;
+            let result = task.await.map_err(|_| ());
             if transferred {
                 if let Some(inner) = weak.upgrade() {
                     let mut state = inner.lock().unwrap();
@@ -782,16 +967,27 @@ impl JobContext {
     }
 }
 
+fn retains_native_cleanup(_entry: &Entry) -> bool {
+    #[cfg(feature = "isolated-profile")]
+    {
+        _entry.native.is_some() && !_entry.native_cleanup_complete
+    }
+    #[cfg(not(feature = "isolated-profile"))]
+    {
+        false
+    }
+}
 fn prune(state: &mut State, now: Instant) {
     state.jobs.retain(|_, e| {
         e.active.is_some()
+            || retains_native_cleanup(e)
             || e.finished
                 .is_none_or(|at| now.duration_since(at) < RETENTION)
     });
     let mut terminal: Vec<_> = state
         .jobs
         .iter()
-        .filter(|(_, e)| e.active.is_none())
+        .filter(|(_, e)| e.active.is_none() && !retains_native_cleanup(e))
         .map(|(id, e)| (id.clone(), e.finished))
         .collect();
     terminal.sort_by_key(|(_, at)| *at);
@@ -811,7 +1007,7 @@ impl PgToolJobManager {
             .get(id)
             .is_none_or(|e| e.active.is_none())
     }
-    pub(super) fn expire_for_test(&self) {
+    pub(crate) fn expire_for_test(&self) {
         prune(&mut self.inner.lock().unwrap(), Instant::now() + RETENTION);
     }
     pub(crate) async fn begin_connection_teardown_with_timeout_for_test(

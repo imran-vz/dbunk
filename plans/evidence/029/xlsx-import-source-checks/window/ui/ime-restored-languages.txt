@@ -1,0 +1,100 @@
+Window: "Keyboard", App: System Settings.
+0 standard window Keyboard, ID: Main, Secondary Actions: Raise
+	1 split group Main, SidebarNavigationSplitView
+		2 container
+			3 scroll area Secondary Actions: Scroll Up, Scroll Down
+				4 list Description: Sidebar, ID: com.apple.settings.sidebar.collectionView
+					5 row (selectable)
+					6 row (selectable) Imran M, Apple Account
+					7 row (selectable)
+					8 row (selectable) Wi-Fi
+					9 row (selectable) Bluetooth
+					10 row (selectable) Network
+					11 row (selectable) VPN
+					12 row (selectable) Battery
+					13 row (selectable)
+					14 row (selectable) General
+					15 row (selectable) Accessibility
+					16 row (selectable) Appearance
+					17 row (selectable) Desktop & Dock
+					18 row (selectable) Displays
+					19 row (selectable) Menu Bar
+					20 row (selectable) Siri
+					21 row (selectable) Spotlight
+					22 row (selectable) Wallpaper
+					23 row (selectable)
+					24 row (selectable) Notifications
+					25 row (selectable) Sound
+					26 row (selectable) Focus
+					27 row (selectable) Screen Time
+					28 row (selectable)
+					29 row (selectable) Lock Screen
+					30 row (selectable) Privacy & Security
+					31 row (selectable) Touch ID & Password
+					32 row (selectable) Users & Groups
+					33 row (selectable)
+					34 row (selectable) Game Center
+					35 row (selectable) iCloud
+					36 row (selectable) Internet Accounts
+					37 row (selectable) Wallet & Apple Pay
+					38 row (selectable)
+					39 row (selected) Keyboard
+					40 row (selectable) Trackpad
+					41 row (selectable) Printers & Scanners
+				42 scroll bar (settable, float) 0
+					43 value indicator (settable, float) 0
+					44 increment arrow button
+					45 decrement arrow button
+					46 increment page button
+					47 decrement page button
+		48 search text field (settable) Search
+			49 button Search
+		50 splitter (disabled, settable, float) 232
+		51 scroll area Secondary Actions: Scroll Up, Scroll Down
+			52 container
+				53 slider (settable, float) Description: Key repeat rate, Value: 6
+				54 slider (settable, float) Description: Delay until repeat, Value: 4
+			55 container
+				56 switch Adjust keyboard brightness in low light, Value: on
+				57 pop up button Turn keyboard backlight off after inactivity, Value: Never
+				58 pop up button Press 🌐︎ key to, Value: Do Nothing
+				59 switch Value: off, Use keyboard navigation to move focus between controls. Press the Tab key to move focus forward and Shift Tab to move focus backward.
+				60 button Keyboard Shortcuts…
+			61 heading Text Input
+			62 container
+				63 text Input Sources ABC
+				64 button Edit…
+				65 button Text Replacements…
+			66 heading Dictation
+			67 container
+				68 switch Dictation processes many voice inputs on your Mac. Information will be sent to Apple in some cases., Value: on
+				69 text Languages English (United States)
+				70 button Edit…
+				71 pop up button Microphone source, Value: MacBook Pro Microphone
+				72 text Shortcut
+				73 pop up button Press 🎤︎
+				74 button About Ask Siri, Dictation & Privacy…
+			75 button Set Up Keyboard…
+			76 button Help
+			77 scroll bar (settable, float) 1
+				78 value indicator (settable, float) 1
+				79 increment arrow button
+				80 decrement arrow button
+				81 increment page button
+				82 decrement page button
+	83 toolbar
+		84 container
+			85 button Description: Go Back, ID: chevron.backward
+			86 menu button (disabled) Description: Go Forward, ID: chevron.forward
+	87 close button
+	88 zoom button
+	89 minimize button
+	90 text Keyboard
+91 menu bar
+	92 System Settings
+	93 Edit
+	94 View
+	95 Window
+	96 Help
+
+The focused UI element is 48 search text field (settable) Search

@@ -1,0 +1,11 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			46 tab (settable, boolean) native_export_window_20261003.quoted export · Capturing complete table; grid state is not used, Value: on
+~			53 button (disabled) Format: SQL INSERT
+~			54 button (disabled) Encoding: Utf16Le
+~			55 button (disabled) Compression: Gzip
+~			56 button (disabled) Capture whole table
+~			57 button (disabled) Save captured table
+~			58 button Cancel
+~			59 button (disabled) Clear capture
+~			62 button (disabled) Load latest configuration
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

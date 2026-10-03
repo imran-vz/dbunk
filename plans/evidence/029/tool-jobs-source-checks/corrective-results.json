@@ -1,0 +1,29 @@
+{
+  "format_final": 0,
+  "isolated_clippy_final": 0,
+  "isolated_backend_tests": {
+    "passed": 889,
+    "ignored": 85,
+    "doctests": 2
+  },
+  "combined_recipe_exit": 101,
+  "combined_recipe_failure": "Tauri facade compilation ran out of disk space; passing isolated checks retained",
+  "recovery": "Removed only inactive generated src-tauri/target/debug/incremental cache; source/profiles/packages/evidence preserved",
+  "tauri_facade_retry": {
+    "exit": 0,
+    "passed": 132,
+    "ignored": 14
+  },
+  "custom_protocol_exit": 0,
+  "owned_tool_live": {
+    "exit": 0,
+    "passed": 1,
+    "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "schema": "native_tools_2992919491894779a988d40147d4c38a",
+    "formats": [
+      "plain",
+      "custom"
+    ],
+    "cleanup": "identity guarded RESTRICT, joined backend, activity baseline restored"
+  }
+}

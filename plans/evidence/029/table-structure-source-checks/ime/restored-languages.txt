@@ -1,0 +1,4 @@
+The following is a diff from the previous accessibility tree for Window: "Keyboard" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~					160 slider (settable, float) 0.1746756
+~				173 switch Dictation processes many voice inputs on your Mac. Information will be sent to Apple in some cases., Value: on
+The focused UI element is 149 search text field (settable) Search

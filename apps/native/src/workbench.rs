@@ -1,14 +1,18 @@
 //! One editor and result model, with three interchangeable pane arrangements.
 use crate::{
     accessible_editor::AccessibleEditor,
-    controller::{Command, Controls, Host},
+    controller::{Command, Controls, Host, transaction_allowed},
     diagnostics::{self, ExecutedSql},
     grid::ResultGrid,
     mailbox::{self, Message},
     results::TerminalStatus,
     sql,
 };
-use dbunk_lib::backend::{self, AckPayload, ExecutePayload, ExecutionPayload, Layout, QueryEvent};
+use dbunk_lib::backend::{
+    self, AckPayload, ExecutePayload, ExecutionPayload, Layout, QueryEvent, QuerySessionError,
+    QueryTransactionIsolation, QueryTransactionMode, QueryTransactionSnapshot,
+    QueryTransactionStatus, TransactionControl,
+};
 use editor::{Editor, EditorEvent};
 use gpui::accesskit::{Action, Live};
 use gpui::{
@@ -20,11 +24,23 @@ use multi_buffer::MultiBufferOffset;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[path = "query_parameters.rs"]
+mod query_parameters;
+use query_parameters::{ParametersEvent, QueryParameters};
+mod completion;
+mod formatting;
+mod query_changes;
+
 actions!(
     native,
     [
         RunStatement,
         RunScript,
+        InsertTopRows,
+        InsertGroupedCount,
+        InsertRecentRows,
+        RefreshCompletionMetadata,
+        FormatSql,
         StopQuery,
         Reconnect,
         SwitchPane,
@@ -50,12 +66,25 @@ enum Control {
     Result(usize),
     Notices,
     ReturnToSql,
+    Transaction(TransactionControl),
+    ConfirmQuery,
+    CancelReview,
+    Bindings,
+    Explain(bool),
+    Plan,
+    EditCell,
 }
 struct Execution {
     id: String,
     started: Instant,
     terminal: Option<u64>,
     source: Option<ExecutedSql>,
+    review_revision: u64,
+}
+struct QueryReview {
+    sql: String,
+    classification: String,
+    bindings: String,
 }
 
 struct QueryFailure {
@@ -76,13 +105,43 @@ impl QueryFailure {
     }
 }
 
+pub enum WorkbenchEvent {
+    DraftChanged,
+    PersistApply(u64),
+    LayoutChanged(Layout),
+    Quit,
+    OpenQuery(crate::query_library_view::OpenQuery),
+}
+impl gpui::EventEmitter<WorkbenchEvent> for Workbench {}
+
+struct DocumentBinding {
+    id: String,
+    connection_id: Option<String>,
+    wake: async_channel::Sender<()>,
+}
+
 pub struct Workbench {
+    completion: Option<crate::sql_completion::CompletionHandle>,
+    completion_inflight: Option<u64>,
+    completion_reset: bool,
+    completion_status: String,
+    completion_composing: bool,
+    query_changes: query_changes::QueryChanges,
+    query_changes_return_focus: bool,
+    document: Option<DocumentBinding>,
+    receiver: Option<mailbox::Receiver>,
+    retained_budget: Option<std::rc::Rc<std::cell::Cell<usize>>>,
+    retained_bytes: usize,
     host: Arc<Host>,
     editor: Entity<Editor>,
     buffer: Entity<Buffer>,
     failure: Option<QueryFailure>,
     accessible: Entity<AccessibleEditor>,
     grid: Entity<ResultGrid>,
+    plan: Option<Entity<crate::explain_view::ExplainView>>,
+    show_plan: bool,
+    plan_return_focus: bool,
+    plan_events: Option<Subscription>,
     layout: Layout,
     expanded: bool,
     owner: String,
@@ -91,6 +150,15 @@ pub struct Workbench {
     controls: Option<Controls>,
     events: Option<Task<()>>,
     execution: Option<Execution>,
+    review: Option<QueryReview>,
+    parameters: Entity<QueryParameters>,
+    show_parameters: bool,
+    parameters_return_focus: bool,
+    _parameters_events: Subscription,
+    editor_revision: u64,
+    transaction: Option<QueryTransactionSnapshot>,
+    transaction_pending: bool,
+    transaction_error: Option<String>,
     connected: bool,
     connecting: bool,
     closing: bool,
@@ -109,15 +177,34 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::build(host, layout, INITIAL_SQL, window, cx)
+    }
+
+    fn build(
+        host: Arc<Host>,
+        layout: Layout,
+        initial_sql: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let language = sql::language(cx).expect("SQL grammar");
         let buffer = cx.new(|cx| {
-            let mut buffer = Buffer::local(INITIAL_SQL, cx);
+            let mut buffer = Buffer::local(initial_sql, cx);
             buffer.set_language(Some(language), cx);
             buffer
         });
         let editor = cx.new(|cx| Editor::for_buffer(buffer.clone(), None, window, cx));
         diagnostics::install(&editor, cx);
         let editor_events = cx.subscribe(&editor, |this, _, event, cx| {
+            if matches!(
+                event,
+                EditorEvent::BufferEdited | EditorEvent::SelectionsChanged { local: true }
+            ) {
+                this.invalidate_review(cx);
+                if let Some(completion) = &this.completion {
+                    completion.editor_changed();
+                }
+            }
             if matches!(event, EditorEvent::BufferEdited) {
                 // Even editing and undoing invalidates an in-flight source position.
                 if let Some(execution) = &mut this.execution {
@@ -127,23 +214,53 @@ impl Workbench {
                     failure.location = None;
                 }
                 diagnostics::clear(&this.editor, &this.buffer, cx);
+                cx.emit(WorkbenchEvent::DraftChanged);
                 cx.notify();
+            } else if matches!(event, EditorEvent::SelectionsChanged { local: true }) {
+                cx.emit(WorkbenchEvent::DraftChanged);
             }
         });
         let accessible = cx.new(|cx| AccessibleEditor::new(editor.clone(), "SQL editor", cx));
+        let parameters = cx.new(|cx| QueryParameters::new(window, cx));
+        let parameters_events = cx.subscribe(&parameters, |this, _, event, cx| {
+            match event {
+                ParametersEvent::Changed => this.invalidate_review(cx),
+                ParametersEvent::Close => {
+                    this.show_parameters = false;
+                    this.parameters_return_focus = true;
+                }
+            }
+            cx.notify();
+        });
         let grid = cx.new(ResultGrid::new);
+        grid.update(cx, |grid, _| grid.set_export_host(host.clone()));
         let activation = cx.observe_window_activation(window, |this, window, _| {
             if let Some(controls) = &this.controls {
                 controls.focus(window.is_window_active());
             }
         });
         Self {
+            completion: None,
+            completion_inflight: None,
+            completion_reset: false,
+            completion_status: String::new(),
+            completion_composing: false,
+            query_changes: query_changes::QueryChanges::default(),
+            query_changes_return_focus: false,
+            document: None,
+            receiver: None,
+            retained_budget: None,
+            retained_bytes: 0,
             host,
             editor,
             buffer,
             failure: None,
             accessible,
             grid,
+            plan: None,
+            show_plan: false,
+            plan_return_focus: false,
+            plan_events: None,
             layout,
             expanded: false,
             owner: String::new(),
@@ -152,11 +269,20 @@ impl Workbench {
             controls: None,
             events: None,
             execution: None,
+            review: None,
+            parameters,
+            show_parameters: false,
+            parameters_return_focus: false,
+            _parameters_events: parameters_events,
+            editor_revision: 0,
+            transaction: None,
+            transaction_pending: false,
+            transaction_error: None,
             connected: false,
             connecting: false,
             closing: false,
             status: "Connecting".into(),
-            toolbar_focus: (0..10).map(|_| cx.focus_handle()).collect(),
+            toolbar_focus: (0..25).map(|_| cx.focus_handle()).collect(),
             previous_focus: None,
             result_focus: Vec::new(),
             show_notices: false,
@@ -164,40 +290,298 @@ impl Workbench {
             _editor_events: editor_events,
         }
     }
+    pub fn new_document(
+        host: Arc<Host>,
+        document: &mut backend::WorkspaceDocument,
+        layout: Layout,
+        wake: async_channel::Sender<()>,
+        retained_budget: std::rc::Rc<std::cell::Cell<usize>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut view = Self::build(host, layout, &document.sql, window, cx);
+        view.owner = view.host.owner().unwrap_or_default().into();
+        view.document = Some(DocumentBinding {
+            id: document.id.clone(),
+            connection_id: document.connection_id.clone(),
+            wake,
+        });
+        view.grid.update(cx, |grid, _| {
+            grid.set_inspection_budget(retained_budget.clone())
+        });
+        view.retained_budget = Some(retained_budget);
+        view.install_completion(cx);
+        if let Some(saved) = document.query_changes.take() {
+            view.restore_query_changes(saved, cx);
+        }
+        view.status = "Disconnected".into();
+        let selection = document.selection;
+        view.editor.update(cx, |editor, cx| {
+            editor.change_selections(Default::default(), window, cx, |selections| {
+                selections.select_ranges([
+                    MultiBufferOffset(selection.anchor)..MultiBufferOffset(selection.head)
+                ]);
+            });
+        });
+        view
+    }
+
+    pub fn draft(&self, cx: &mut gpui::App) -> (String, backend::WorkspaceSelection) {
+        self.editor.update(cx, |editor, cx| {
+            let selection = editor
+                .selections
+                .newest::<MultiBufferOffset>(&editor.display_snapshot(cx));
+            let (anchor, head) = if selection.reversed {
+                (selection.end.0, selection.start.0)
+            } else {
+                (selection.start.0, selection.end.0)
+            };
+            (
+                editor.text(cx),
+                backend::WorkspaceSelection { anchor, head },
+            )
+        })
+    }
+
+    pub fn draft_bytes(&self, cx: &gpui::App) -> usize {
+        self.editor.read(cx).buffer().read(cx).len(cx).0
+    }
+    pub fn remember_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.previous_focus = Some(
+            if let Some(focus) = self.query_changes.view.as_ref().and_then(|view| {
+                view.read(cx)
+                    .focus_handles(cx)
+                    .into_iter()
+                    .find(|focus| focus.contains_focused(window, cx))
+            }) {
+                focus
+            } else if let Some(plan) = &self.plan
+                && plan.focus_handle(cx).contains_focused(window, cx)
+            {
+                plan.focus_handle(cx)
+            } else if self.grid.read(cx).content_has_focus(window, cx) {
+                self.grid.focus_handle(cx)
+            } else {
+                self.editor.focus_handle(cx)
+            },
+        );
+    }
+    pub fn focus_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.restore_content_focus(window, cx);
+    }
+
+    pub fn document_status(&self) -> &str {
+        &self.status
+    }
+    pub fn set_document_layout(&mut self, layout: Layout, cx: &mut Context<Self>) {
+        self.layout = layout;
+        cx.notify();
+    }
+    pub fn bind_connection(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.query_changes_blocked(cx) {
+            self.status = "Resolve pending result changes before changing connection".into();
+            cx.notify();
+            return;
+        }
+        self.retire_query_changes(cx);
+        self.invalidate_review(cx);
+        if let Some(binding) = &mut self.document {
+            binding.connection_id = Some(id);
+        }
+        self.reset_completion(false, cx);
+        cx.emit(WorkbenchEvent::DraftChanged);
+    }
+    pub fn begin_connect(&mut self, cx: &mut Context<Self>) {
+        self.connect(cx);
+    }
+    pub fn mark_disconnected(&mut self, cx: &mut Context<Self>) {
+        self.receiver.take();
+        self.events.take();
+        self.disconnected("Connection closed".into(), cx);
+        cx.notify();
+    }
+    pub fn set_editable(&mut self, editable: bool, cx: &mut Context<Self>) {
+        if !editable {
+            self.invalidate_review(cx);
+        }
+        self.closing = !editable;
+        if !editable {
+            self.reset_completion(false, cx);
+        } else if let Some(handle) = &self.completion {
+            handle.set_connected(self.connected);
+        }
+        if let Some(view) = &self.query_changes.view {
+            view.update(cx, |view, cx| view.set_enabled(editable, cx));
+        }
+        self.editor.update(cx, |editor, _| {
+            editor.set_read_only(!editable || self.completion_reset)
+        });
+        cx.notify();
+    }
+    pub fn clear_results(&mut self, cx: &mut Context<Self>) {
+        if self.execution.is_some() || self.query_changes_blocked(cx) {
+            self.status = "Resolve pending result changes before clearing results".into();
+            cx.notify();
+            return;
+        }
+        self.retire_query_changes(cx);
+        self.plan.take();
+        self.plan_events.take();
+        self.show_plan = false;
+        self.grid.update(cx, |grid, cx| grid.begin(cx));
+        self.account_retained(cx);
+        cx.notify();
+    }
+    fn account_retained(&mut self, cx: &gpui::App) {
+        let bytes = self.grid.read(cx).model().retained_bytes;
+        if let Some(budget) = &self.retained_budget {
+            budget.set(
+                budget
+                    .get()
+                    .saturating_sub(self.retained_bytes)
+                    .saturating_add(bytes),
+            );
+        }
+        self.retained_bytes = bytes;
+    }
+
+    /// The workspace owns the aggregate fair drain. A view consumes at most
+    /// one envelope per call, including when it is not the selected tab.
+    pub fn drain_one(&mut self, cx: &mut Context<Self>) -> bool {
+        if let Some(completion) = &self.completion {
+            let status = completion.status();
+            if status != self.completion_status {
+                self.completion_status = status;
+                cx.notify();
+            }
+        }
+        if self.drain_completion(cx) {
+            return true;
+        }
+        self.query_changes.turn = !self.query_changes.turn;
+        if self.query_changes.turn && self.drain_query_changes(cx) {
+            return true;
+        }
+        let Some(receiver) = &self.receiver else {
+            return self.drain_query_changes(cx);
+        };
+        if let Some(error) = receiver.failure() {
+            self.disconnected(error.to_string(), cx);
+            self.receiver.take();
+            self.events.take();
+            cx.notify();
+            return true;
+        }
+        let Some(message) = receiver.receive() else {
+            return self.drain_query_changes(cx);
+        };
+        self.consume(message, cx);
+        cx.notify();
+        true
+    }
+    pub fn has_pending(&self, cx: &gpui::App) -> bool {
+        self.completion_pending(cx)
+            || self.query_changes.pending()
+            || self
+                .receiver
+                .as_ref()
+                .is_some_and(|receiver| receiver.pending())
+    }
+
     pub fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.editor.focus_handle(cx), cx);
         self.connect(cx);
     }
     fn connect(&mut self, cx: &mut Context<Self>) {
+        if self
+            .query_changes
+            .view
+            .as_ref()
+            .is_some_and(|view| view.read(cx).navigation_blocked())
+        {
+            self.status = "Finish the result edit or pending operation before reconnecting".into();
+            cx.notify();
+            return;
+        }
         if self.closing || self.connecting {
             return;
         }
+        self.disconnect_query_changes(cx);
+        self.invalidate_review(cx);
+        self.review = None;
+        self.transaction = None;
+        self.transaction_pending = false;
+        self.transaction_error = None;
         self.failure = None;
         diagnostics::clear(&self.editor, &self.buffer, cx);
         self.connected = false;
         self.connecting = true;
         self.execution = None;
-        self.owner = uuid::Uuid::new_v4().to_string();
+        if self.document.is_none() {
+            self.owner = uuid::Uuid::new_v4().to_string();
+        }
         self.session = uuid::Uuid::new_v4().to_string();
-        self.stream =
-            crate::stream::Stream::new(self.session.clone(), self.host.backend.fixture().id);
-        self.status = "Connecting to dbunk_demo".into();
+        let connection_id = match &self.document {
+            Some(document) => match &document.connection_id {
+                Some(id) => id.clone(),
+                None => {
+                    self.connecting = false;
+                    self.status = "Choose a connection in the Navigator".into();
+                    cx.notify();
+                    return;
+                }
+            },
+            None => self.host.backend.fixture().id,
+        };
+        self.stream = match &self.document {
+            Some(document) => crate::stream::Stream::for_document(
+                self.session.clone(),
+                connection_id.clone(),
+                document.id.clone(),
+            ),
+            None => crate::stream::Stream::new(self.session.clone(), connection_id.clone()),
+        };
+        self.status = "Connecting".into();
         self.events.take();
         #[cfg(not(feature = "fixture-verification"))]
         let capacity = mailbox::QUEUE_CAPACITY;
         #[cfg(feature = "fixture-verification")]
         let capacity = crate::verification::capacity();
-        let (sender, receiver) = mailbox::channel(capacity, mailbox::QUEUE_BYTES);
-        match self
-            .host
-            .connect(self.owner.clone(), self.session.clone(), sender)
-        {
+        let (sender, receiver) = if self.document.is_some() {
+            self.host.mailbox()
+        } else {
+            mailbox::channel(capacity, mailbox::QUEUE_BYTES)
+        };
+        let connected = match &self.document {
+            Some(document) => self.host.connect_document(
+                document.id.clone(),
+                connection_id,
+                self.session.clone(),
+                sender,
+            ),
+            None => self
+                .host
+                .connect(self.owner.clone(), self.session.clone(), sender),
+        };
+        match connected {
             Ok(controls) => self.controls = Some(controls),
             Err(error) => {
                 self.disconnected(error.into(), cx);
                 cx.notify();
                 return;
             }
+        }
+        if let Some(document) = &self.document {
+            let wake = document.wake.clone();
+            let awakened = receiver.wake.clone();
+            self.receiver = Some(receiver);
+            self.events = Some(cx.spawn(async move |_, _| {
+                while awakened.recv().await.is_ok() {
+                    let _ = wake.try_send(());
+                }
+            }));
+            cx.notify();
+            return;
         }
         let owner = self.owner.clone();
         self.events = Some(cx.spawn(async move |this, cx| {
@@ -249,6 +633,12 @@ impl Workbench {
         cx.notify();
     }
     fn disconnected(&mut self, message: String, cx: &mut Context<Self>) {
+        self.disconnect_query_changes(cx);
+        self.invalidate_review(cx);
+        self.review = None;
+        self.transaction = None;
+        self.transaction_pending = false;
+        self.transaction_error = None;
         diagnostics::clear(&self.editor, &self.buffer, cx);
         self.connected = false;
         self.connecting = false;
@@ -261,10 +651,93 @@ impl Workbench {
     }
     fn consume(&mut self, message: Message, cx: &mut Context<Self>) {
         match message {
+            Message::HistoryFailed(error) => {
+                self.status = format!("History was not saved: {error}");
+            }
             Message::Ready => {
                 self.connected = true;
+                if let Some(completion) = &self.completion {
+                    completion.set_connected(true);
+                }
                 self.connecting = false;
                 self.status = "Ready".into();
+                self.connect_query_changes(cx);
+            }
+            Message::Review {
+                execution,
+                sql,
+                statements,
+                parameters,
+                row_limit,
+            } => {
+                let current = self
+                    .execution
+                    .as_ref()
+                    .is_some_and(|value| value.id == execution);
+                let unchanged = self
+                    .execution
+                    .as_ref()
+                    .is_some_and(|value| value.review_revision == self.editor_revision);
+                if current && unchanged && self.connected && !self.closing {
+                    self.review = Some(QueryReview {
+                        sql,
+                        bindings: review_bindings(parameters.as_deref(), row_limit),
+                        classification: statements
+                            .iter()
+                            .map(|statement| {
+                                format!(
+                                    "Statement {}: {:?}{}{}",
+                                    statement.index + 1,
+                                    statement.class,
+                                    if statement.unbounded {
+                                        " · all rows"
+                                    } else {
+                                        ""
+                                    },
+                                    if statement.destructive {
+                                        " · destructive"
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" · "),
+                    });
+                    self.status = "Review required; query has not run".into();
+                } else {
+                    if let Some(controls) = &self.controls {
+                        controls.discard_confirmation(execution);
+                    }
+                    if current {
+                        self.execution = None;
+                        self.status = "Query inputs changed; review discarded".into();
+                    }
+                }
+            }
+            Message::Transaction { session, result } => {
+                if session != self.session {
+                    return;
+                }
+                self.transaction_pending = false;
+                match result {
+                    Ok(snapshot) => {
+                        self.transaction = Some(snapshot);
+                        self.transaction_error = None;
+                    }
+                    Err(error) => {
+                        let status = match &error {
+                            QuerySessionError::InvalidTransactionTransition { status, .. } => {
+                                *status
+                            }
+                            _ => QueryTransactionStatus::Unknown,
+                        };
+                        if let Some(snapshot) = &mut self.transaction {
+                            snapshot.status = status;
+                        }
+                        self.transaction_error = Some(crate::controller::error_message(error));
+                    }
+                }
             }
             Message::Rejected { execution, message } => {
                 if self
@@ -273,6 +746,8 @@ impl Workbench {
                     .is_some_and(|current| current.id == execution)
                 {
                     self.execution = None;
+                    self.query_changes.source = None;
+                    self.review = None;
                     self.status = "Query failed".into();
                     self.failure = Some(QueryFailure {
                         announcement_id: uuid::Uuid::new_v4().to_string(),
@@ -319,6 +794,9 @@ impl Workbench {
                     }
                 }
                 match &envelope.event {
+                    QueryEvent::SessionState { transaction } => {
+                        self.transaction = Some(transaction.clone());
+                    }
                     QueryEvent::SessionLost { reason } => {
                         self.disconnected(reason.clone(), cx);
                         return;
@@ -327,7 +805,8 @@ impl Workbench {
                         self.disconnected("Connection closed".into(), cx);
                         return;
                     }
-                    QueryEvent::ExecutionCompleted { .. } => {
+                    QueryEvent::ExecutionCompleted { transaction, .. } => {
+                        self.transaction = Some(transaction.clone());
                         eprintln!(
                             "Native retained bytes: {}",
                             self.grid.read(cx).model().retained_bytes
@@ -339,11 +818,26 @@ impl Workbench {
                     _ => {}
                 }
                 let completed = matches!(&envelope.event, QueryEvent::ExecutionCompleted { .. });
-                let retain_more_rows = self
-                    .grid
-                    .update(cx, |grid, cx| grid.consume(envelope.event, cx));
+                let allowance = self.retained_budget.as_ref().map(|budget| {
+                    (128 * 1024 * 1024usize)
+                        .saturating_sub(budget.get())
+                        .saturating_add(self.retained_bytes)
+                });
+                let retain_more_rows = self.grid.update(cx, |grid, cx| match allowance {
+                    Some(limit) => grid.consume_with_limit(envelope.event, limit, cx),
+                    None => grid.consume(envelope.event, cx),
+                });
+                self.account_retained(cx);
                 if completed && let Some(completion) = self.grid.read(cx).model().completion.clone()
                 {
+                    let exact_source = self.query_changes.source.as_ref().is_some_and(|source| {
+                        envelope.execution_id.as_deref().is_some_and(|execution| {
+                            source.matches(&envelope.connection_id, &envelope.session_id, execution)
+                        })
+                    });
+                    if completion.status != TerminalStatus::Completed || !exact_source {
+                        self.query_changes.source = None;
+                    }
                     let elapsed = self
                         .execution
                         .as_ref()
@@ -354,6 +848,42 @@ impl Workbench {
                         TerminalStatus::Failed => "Failed",
                     };
                     self.status = format!("{label} · {elapsed} ms");
+                    if let Some(source) = self
+                        .execution
+                        .as_ref()
+                        .and_then(|execution| execution.source.as_ref())
+                        && source
+                            .sql()
+                            .get(..7)
+                            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("EXPLAIN"))
+                    {
+                        let budget = self
+                            .retained_budget
+                            .clone()
+                            .unwrap_or_else(|| std::rc::Rc::new(std::cell::Cell::new(0)));
+                        match crate::explain_view::PlanData::from_result(
+                            self.grid.read(cx).model(),
+                            source.sql(),
+                            elapsed.min(u128::from(u64::MAX)) as u64,
+                            budget,
+                        ) {
+                            Ok(data) => {
+                                let view =
+                                    cx.new(|cx| crate::explain_view::ExplainView::new(data, cx));
+                                self.plan_events = Some(cx.subscribe(
+                                    &view,
+                                    |this, _, _: &crate::explain_view::Close, cx| {
+                                        this.show_plan = false;
+                                        cx.notify();
+                                    },
+                                ));
+                                self.plan = Some(view);
+                                self.show_plan = true;
+                            }
+                            Err(error) => self.status = format!("{label} · {elapsed} ms · {error}"),
+                        }
+                    }
+
                     if completion.status == TerminalStatus::Failed && self.failure.is_none() {
                         let mut location = None;
                         if let Some(error) = &completion.error
@@ -408,8 +938,232 @@ impl Workbench {
             }
         }
     }
+    /// Keep the SQL session and manual transaction intact. Retired mutation
+    /// sources cannot be reconstructed from an older in-flight result stream.
+    pub fn invalidate_after_restore(&mut self, cx: &mut Context<Self>) {
+        self.disconnect_query_changes(cx);
+        self.invalidate_review(cx);
+        self.query_changes.unavailable = Some(
+            "Database may have changed; run SQL explicitly to obtain a fresh editing source".into(),
+        );
+        self.status =
+            "Database may have changed; retained results may be stale. SQL session preserved"
+                .into();
+        cx.notify();
+    }
+    fn invalidate_review(&mut self, cx: &mut Context<Self>) {
+        self.editor_revision = self.editor_revision.wrapping_add(1);
+        if let (Some(execution), Some(controls)) = (&self.execution, &self.controls) {
+            controls.discard_confirmation(execution.id.clone());
+        }
+        if self.review.take().is_some() {
+            self.execution = None;
+            self.status = "Review discarded; query has not run".into();
+            cx.notify();
+        }
+    }
+
+    fn confirm_query(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.review.is_none() || !self.connected || self.closing || self.transaction_pending {
+            return;
+        }
+        let Some(execution) = &self.execution else {
+            return;
+        };
+        if execution.review_revision != self.editor_revision {
+            self.invalidate_review(cx);
+            return;
+        }
+        let Some(controls) = &self.controls else {
+            return;
+        };
+        match controls.send(Command::Confirm(execution.id.clone())) {
+            Ok(()) => {
+                self.restore_content_focus(window, cx);
+                self.review = None;
+                if let Some(execution) = &mut self.execution {
+                    execution.started = Instant::now();
+                }
+                self.status = "Running".into();
+            }
+            Err(error) => self.status = error.into(),
+        }
+        cx.notify();
+    }
+
+    fn transaction_controls() -> [(&'static str, TransactionControl, usize); 8] {
+        [
+            (
+                "Autocommit",
+                TransactionControl::Mode(QueryTransactionMode::Autocommit),
+                10,
+            ),
+            (
+                "Manual",
+                TransactionControl::Mode(QueryTransactionMode::Manual),
+                11,
+            ),
+            (
+                "Read committed",
+                TransactionControl::Isolation(QueryTransactionIsolation::ReadCommitted),
+                12,
+            ),
+            (
+                "Repeatable read",
+                TransactionControl::Isolation(QueryTransactionIsolation::RepeatableRead),
+                13,
+            ),
+            (
+                "Serializable",
+                TransactionControl::Isolation(QueryTransactionIsolation::Serializable),
+                14,
+            ),
+            ("Commit", TransactionControl::Commit, 15),
+            ("Rollback", TransactionControl::Rollback, 16),
+            ("Recheck", TransactionControl::Recheck, 17),
+        ]
+    }
+
+    fn can_control_transaction(&self, control: TransactionControl) -> bool {
+        self.connected
+            && !self.closing
+            && !self.transaction_pending
+            && self.execution.is_none()
+            && transaction_allowed(self.transaction.as_ref(), control)
+    }
+
+    fn control_transaction(
+        &mut self,
+        control: TransactionControl,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.can_control_transaction(control) {
+            return;
+        }
+        let Some(controls) = &self.controls else {
+            return;
+        };
+        match controls.send(Command::Transaction(control)) {
+            Ok(()) => {
+                self.restore_content_focus(window, cx);
+                self.transaction_pending = true;
+                self.transaction_error = None;
+            }
+            Err(error) => self.transaction_error = Some(error.into()),
+        }
+        cx.notify();
+    }
+
+    fn transaction_label(&self) -> String {
+        if !self.connected {
+            return "Transaction: no session".into();
+        }
+        if self.transaction_pending {
+            return "Transaction update pending".into();
+        }
+        let Some(snapshot) = &self.transaction else {
+            return "Transaction state unknown; recheck".into();
+        };
+        let mode = match snapshot.mode {
+            QueryTransactionMode::Autocommit => "Autocommit",
+            QueryTransactionMode::Manual => "Manual",
+        };
+        let status = match snapshot.status {
+            QueryTransactionStatus::Idle => "idle",
+            QueryTransactionStatus::Active => "active",
+            QueryTransactionStatus::Failed => "failed; rollback required",
+            QueryTransactionStatus::Unknown => "unknown; recheck required",
+        };
+        format!("{mode} · {status}")
+    }
+
+    fn explain_draft(&mut self, analyze: bool, cx: &mut Context<Self>) {
+        if self.closing || self.document.is_none() {
+            return;
+        }
+        // Avoid copying an unbounded editor buffer into a new persisted document.
+        if self.editor.read(cx).buffer().read(cx).len(cx).0 > backend::explain::MAX_PLAN_BYTES {
+            self.status = "EXPLAIN source exceeds 1 MiB".into();
+            cx.notify();
+            return;
+        }
+        let source = self.editor.update(cx, |editor, cx| {
+            let text = editor.text(cx);
+            let selection = editor
+                .selections
+                .newest::<MultiBufferOffset>(&editor.display_snapshot(cx));
+            backend::select_sql(&text, &(selection.start.0..selection.end.0), false)
+        });
+        let result = source
+            .map_err(|_| "SQL cannot be parsed")
+            .and_then(|sql| sql.ok_or("Select one SQL statement"))
+            .and_then(|sql| crate::explain_view::draft(&sql, analyze));
+        match result {
+            Ok(sql) => cx.emit(WorkbenchEvent::OpenQuery(
+                crate::query_library_view::OpenQuery {
+                    sql,
+                    name: if analyze {
+                        "EXPLAIN ANALYZE"
+                    } else {
+                        "EXPLAIN"
+                    }
+                    .into(),
+                    connection: self
+                        .document
+                        .as_ref()
+                        .and_then(|document| document.connection_id.clone()),
+                    saved_id: None,
+                },
+            )),
+            Err(error) => self.status = error.into(),
+        }
+        cx.notify();
+    }
+
+    fn insert_snippet(
+        &mut self,
+        snippet: sql::Snippet,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.closing || self.execution.is_some() {
+            return;
+        }
+        let composed = self.editor.update(cx, |editor, cx| {
+            gpui::EntityInputHandler::marked_text_range(editor, window, cx).is_some()
+        });
+        if composed {
+            self.status = "Finish composing before inserting a snippet".into();
+            cx.notify();
+            return;
+        }
+        // Match the baseline append behavior, preserving the existing document
+        // and applying the insertion as one ordinary undoable editor transaction.
+        self.editor.update(cx, |editor, cx| {
+            let end = editor.buffer().read(cx).len(cx);
+            let text = format!("{}{}", if end.0 == 0 { "" } else { "\n\n" }, snippet.sql());
+            let caret = MultiBufferOffset(end.0 + text.len());
+            editor.transact(window, cx, |editor, window, cx| {
+                editor.edit([(end..end, text)], cx);
+                editor.change_selections(Default::default(), window, cx, |selection| {
+                    selection.select_ranges([caret..caret]);
+                });
+            });
+        });
+        self.previous_focus = Some(self.editor.focus_handle(cx));
+        window.focus(&self.editor.focus_handle(cx), cx);
+        self.status = "Snippet appended; edit the placeholders before running".into();
+        cx.notify();
+    }
+
     fn run(&mut self, script: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.connected || self.execution.is_some() || self.closing {
+        if self.query_changes_blocked(cx) {
+            self.status = "Review or discard result changes before running another query".into();
+            cx.notify();
+            return;
+        }
+        if !self.connected || self.execution.is_some() || self.transaction_pending || self.closing {
             return;
         }
         let selection = self.editor.update(cx, |editor, cx| {
@@ -434,15 +1188,47 @@ impl Workbench {
             }
         };
         let sql = text[range.clone()].to_owned();
+        let (parameters, row_limit) = if self.document.is_some() {
+            match self
+                .parameters
+                .update(cx, |parameters, cx| parameters.prepare(&sql, window, cx))
+            {
+                Ok(values) => values,
+                Err(message) => {
+                    self.show_parameters = true;
+                    self.status = message;
+                    cx.notify();
+                    return;
+                }
+            }
+        } else {
+            (None, None)
+        };
         let source = ExecutedSql::new(text, range);
         let id = uuid::Uuid::new_v4().to_string();
+        let mutation_source = self.retained_budget.clone().and_then(|budget| {
+            let connection = self.document.as_ref()?.connection_id.as_deref()?;
+            Some(crate::query_result::ExecutedSource::prepare(
+                &sql,
+                parameters.is_some(),
+                connection,
+                &self.session,
+                &id,
+                budget,
+            ))
+        });
+        let (mutation_source, mutation_refusal) = match mutation_source {
+            Some(Ok(source)) => (Some(source), None),
+            Some(Err(error)) => (None, Some(error)),
+            None => (None, None),
+        };
         let payload = ExecutePayload {
             session_id: self.session.clone(),
             execution_id: id.clone(),
             sql,
             confirmed: false,
-            parameters: None,
-            row_limit: None,
+            parameters,
+            row_limit,
         };
         if let Some(controls) = &self.controls {
             #[cfg(feature = "fixture-verification")]
@@ -459,13 +1245,21 @@ impl Workbench {
                     }
                     self.failure = None;
                     diagnostics::clear(&self.editor, &self.buffer, cx);
+                    self.plan.take();
+                    self.plan_events.take();
+                    self.show_plan = false;
+                    self.retire_query_changes(cx);
+                    self.query_changes.source = mutation_source;
+                    self.query_changes.unavailable = mutation_refusal;
                     self.grid.update(cx, |grid, cx| grid.begin(cx));
+                    self.account_retained(cx);
                     self.show_notices = false;
                     self.execution = Some(Execution {
                         id,
                         started: Instant::now(),
                         terminal: None,
                         source,
+                        review_revision: self.editor_revision,
                     });
                     self.status = "Running".into();
                 }
@@ -475,6 +1269,10 @@ impl Workbench {
         cx.notify();
     }
     fn stop(&mut self, cx: &mut Context<Self>) {
+        if self.review.is_some() {
+            self.invalidate_review(cx);
+            return;
+        }
         if let (Some(execution), Some(controls)) = (&self.execution, &self.controls)
             && execution.terminal.is_none()
         {
@@ -489,6 +1287,10 @@ impl Workbench {
         cx.notify();
     }
     pub fn close(&mut self, cx: &mut Context<Self>) {
+        if self.document.is_some() {
+            cx.emit(WorkbenchEvent::Quit);
+            return;
+        }
         if self.closing {
             return;
         }
@@ -519,7 +1321,11 @@ impl Workbench {
             return;
         }
         self.layout = layout;
-        if let Some(controls) = &self.controls
+        if self.document.is_some() {
+            cx.emit(WorkbenchEvent::LayoutChanged(layout));
+        }
+        if self.document.is_none()
+            && let Some(controls) = &self.controls
             && let Err(error) = controls.send(Command::Layout(layout))
         {
             self.status = error.into();
@@ -527,22 +1333,69 @@ impl Workbench {
         cx.notify();
     }
     fn switch_pane(&mut self, _: &SwitchPane, window: &mut Window, cx: &mut Context<Self>) {
-        let focus = if self.grid.focus_handle(cx).contains_focused(window, cx) {
+        if self
+            .query_changes
+            .view
+            .as_ref()
+            .is_some_and(|view| view.update(cx, |view, cx| view.composition_active(window, cx)))
+        {
+            return;
+        }
+        if !self.show_plan && !self.grid.read(cx).inspector_has_focus(window, cx) {
+            let mut handles = vec![
+                self.editor.focus_handle(cx),
+                self.grid.read(cx).pane_focus(cx),
+            ];
+            handles.extend(self.grid.read(cx).export_focus());
+            if let Some(view) = &self.query_changes.view {
+                handles.extend(view.read(cx).focus_handles(cx));
+            }
+            let current = handles.iter().position(|h| h.is_focused(window));
+            let next = if window.modifiers().shift {
+                current.map_or(handles.len() - 1, |i| {
+                    (i + handles.len() - 1) % handles.len()
+                })
+            } else {
+                current.map_or(0, |i| (i + 1) % handles.len())
+            };
+            self.show_notices = false;
+            window.focus(&handles[next], cx);
+            cx.notify();
+            return;
+        }
+        let focus = if self.grid.read(cx).content_has_focus(window, cx)
+            || self
+                .plan
+                .as_ref()
+                .is_some_and(|plan| plan.focus_handle(cx).contains_focused(window, cx))
+        {
             self.editor.focus_handle(cx)
         } else {
             self.show_notices = false;
+            if self.show_plan
+                && let Some(plan) = &self.plan
+            {
+                plan.update(cx, |plan, cx| plan.focus(window, cx));
+                return;
+            }
             self.grid.read(cx).pane_focus(cx)
         };
         window.focus(&focus, cx);
         cx.notify();
     }
     fn focus_toolbar(&mut self, _: &FocusToolbar, window: &mut Window, cx: &mut Context<Self>) {
-        if self.grid.focus_handle(cx).contains_focused(window, cx) {
+        if self.grid.read(cx).content_has_focus(window, cx) {
             self.previous_focus = Some(self.grid.focus_handle(cx));
         } else if self.editor.focus_handle(cx).contains_focused(window, cx) {
             self.previous_focus = Some(self.editor.focus_handle(cx));
         }
-        let index = if self.connected && self.execution.is_none() && !self.closing {
+        let index = if self.review.is_some() && !self.closing {
+            18
+        } else if self.connected
+            && self.execution.is_none()
+            && !self.transaction_pending
+            && !self.closing
+        {
             0
         } else if self
             .execution
@@ -565,13 +1418,24 @@ impl Workbench {
             return;
         }
         let mut controls = vec![4, 5, 6];
-        if self.connected && self.execution.is_none() {
+        if self.can_edit_query_cell(cx) {
+            controls.push(24);
+        }
+        if self.document.is_some() {
+            controls.extend([20, 21, 22]);
+        }
+        if self.connected
+            && self.execution.is_none()
+            && !self.transaction_pending
+            && !self.query_changes_blocked(cx)
+        {
             controls.extend([0, 1]);
         }
-        if self
-            .execution
-            .as_ref()
-            .is_some_and(|execution| execution.terminal.is_none())
+        if self.review.is_none()
+            && self
+                .execution
+                .as_ref()
+                .is_some_and(|execution| execution.terminal.is_none())
         {
             controls.push(2);
         }
@@ -584,12 +1448,26 @@ impl Workbench {
         if self.failure.is_some() {
             controls.push(9);
         }
+        if self.review.is_some() {
+            controls.extend([18, 19]);
+        }
+        if self.document.is_some() {
+            controls.extend(Self::transaction_controls().into_iter().filter_map(
+                |(_, control, index)| self.can_control_transaction(control).then_some(index),
+            ));
+        }
         let mut focus = controls
             .into_iter()
             .map(|index| self.toolbar_focus[index].clone())
             .collect::<Vec<_>>();
+        if let Some(view) = &self.query_changes.view {
+            focus.extend(view.read(cx).focus_handles(cx));
+        }
         focus.extend(self.result_focus.iter().cloned());
         focus.push(self.toolbar_focus[8].clone());
+        if self.plan.is_some() {
+            focus.push(self.toolbar_focus[23].clone());
+        }
         let current = focus.iter().position(|handle| handle.is_focused(window));
         let next = match (current, backwards) {
             (Some(index), true) => (index + focus.len() - 1) % focus.len(),
@@ -630,6 +1508,32 @@ impl Workbench {
     }
     fn activate(&mut self, control: Control, window: &mut Window, cx: &mut Context<Self>) {
         match control {
+            Control::EditCell => self.edit_query_cell(window, cx),
+            Control::Explain(analyze) => self.explain_draft(analyze, cx),
+            Control::Plan => {
+                self.show_notices = false;
+                self.show_plan = true;
+                if let Some(view) = &self.plan {
+                    view.update(cx, |view, cx| view.focus(window, cx));
+                }
+                cx.notify();
+            }
+            Control::Bindings => {
+                self.show_parameters = !self.show_parameters;
+                if self.show_parameters {
+                    self.parameters
+                        .update(cx, |parameters, cx| parameters.focus(window, cx));
+                } else {
+                    self.restore_content_focus(window, cx);
+                }
+                cx.notify();
+            }
+            Control::Transaction(action) => self.control_transaction(action, window, cx),
+            Control::ConfirmQuery => self.confirm_query(window, cx),
+            Control::CancelReview => {
+                self.restore_content_focus(window, cx);
+                self.invalidate_review(cx);
+            }
             Control::ReturnToSql => {
                 window.focus(&self.editor.focus_handle(cx), cx);
                 cx.notify();
@@ -645,10 +1549,12 @@ impl Workbench {
             }
             Control::Result(index) => {
                 self.show_notices = false;
+                self.show_plan = false;
                 self.grid.update(cx, |grid, cx| grid.set_active(index, cx));
                 cx.notify();
             }
             Control::Notices => {
+                self.show_plan = false;
                 self.show_notices = !self.show_notices;
                 cx.notify();
             }
@@ -671,7 +1577,10 @@ impl Workbench {
         };
         let weak = cx.weak_entity();
         let role = match control {
-            Control::Layout(_) => Role::RadioButton,
+            Control::Layout(_)
+            | Control::Transaction(
+                TransactionControl::Mode(_) | TransactionControl::Isolation(_),
+            ) => Role::RadioButton,
             Control::Result(_) => Role::Tab,
             _ => Role::Button,
         };
@@ -680,7 +1589,14 @@ impl Workbench {
             .role(role)
             .aria_label(label.clone())
             .when(
-                matches!(control, Control::Layout(_) | Control::Notices),
+                matches!(
+                    control,
+                    Control::Layout(_)
+                        | Control::Notices
+                        | Control::Transaction(
+                            TransactionControl::Mode(_) | TransactionControl::Isolation(_)
+                        )
+                ),
                 |button| button.aria_toggled(selected.into()),
             )
             .when(matches!(control, Control::Result(_)), |button| {
@@ -721,23 +1637,46 @@ impl Workbench {
                     this.activate(control, window, cx);
                 }
             }))
-            .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
-                if enabled && matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                    this.activate(control, window, cx);
-                    cx.stop_propagation();
-                }
-            }))
             .child(label)
     }
 }
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let can_run = self.connected && self.execution.is_none() && !self.closing;
+        self.render_completion(window, cx);
+        if self.query_changes_return_focus {
+            self.query_changes_return_focus = false;
+            window.focus(&self.grid.focus_handle(cx), cx);
+        }
+        if self.plan_return_focus {
+            self.plan_return_focus = false;
+            window.focus(&self.grid.focus_handle(cx), cx);
+        }
+        if self.parameters_return_focus {
+            self.parameters_return_focus = false;
+            window.focus(&self.toolbar_focus[20], cx);
+        }
+        let editable_bindings =
+            !self.closing && (self.execution.is_none() || self.review.is_some());
+        self.parameters.update(cx, |parameters, cx| {
+            parameters.set_editable(editable_bindings, cx)
+        });
+        if self.review.is_none()
+            && (self.toolbar_focus[18].is_focused(window)
+                || self.toolbar_focus[19].is_focused(window))
+        {
+            self.restore_content_focus(window, cx);
+        }
+        let can_run = !self.query_changes_blocked(cx)
+            && self.connected
+            && self.execution.is_none()
+            && !self.transaction_pending
+            && !self.closing;
         let can_stop = self
             .execution
             .as_ref()
             .is_some_and(|execution| execution.terminal.is_none())
-            && !self.closing;
+            && !self.closing
+            && self.review.is_none();
         let wide = window.viewport_size().width > px(860.);
         let side = self.layout == Layout::SideBySide && wide;
         let compact = self.layout == Layout::ResultsFirst && !self.expanded;
@@ -762,7 +1701,11 @@ impl Render for Workbench {
                     .h(px(28.))
                     .flex_shrink_0()
                     .px_2()
-                    .child("Query 1")
+                    .child(if self.document.is_some() {
+                        "SQL"
+                    } else {
+                        "Query 1"
+                    })
                     .when(self.layout == Layout::ResultsFirst, |pane| {
                         pane.child(self.button(
                             if self.expanded {
@@ -899,6 +1842,16 @@ impl Render for Workbench {
                     .p_1()
                     .flex_shrink_0()
                     .children(tabs)
+                    .when(self.plan.is_some(), |pane| {
+                        pane.child(self.button(
+                            "Plan",
+                            Control::Plan,
+                            23,
+                            !self.closing,
+                            self.show_plan,
+                            cx,
+                        ))
+                    })
                     .child(self.button(
                         format!("Notices {notices_count}"),
                         Control::Notices,
@@ -913,7 +1866,10 @@ impl Render for Workbench {
                     .id("result-content")
                     .flex_1()
                     .min_h_0()
-                    .when(!self.show_notices, |pane| pane.child(self.grid.clone()))
+                    .when(!self.show_notices && !self.show_plan, |pane| {
+                        pane.child(self.grid.clone())
+                    })
+                    .when(self.show_plan, |pane| pane.children(self.plan.clone()))
                     .when(self.show_notices, |pane| {
                         pane.overflow_y_scroll()
                             .p_2()
@@ -961,8 +1917,26 @@ impl Render for Workbench {
             .flex_col()
             .bg(rgb(0x000000))
             .text_color(rgb(0xffffff))
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                this.sync_completion_input(window, cx);
+                let Some(view) = this.query_changes.view.clone() else { return; };
+                if view.update(cx, |view, cx| view.composition_active(window, cx)) { return; }
+                let handles = view.read(cx).focus_handles(cx);
+                let Some(index) = handles.iter().position(|focus| focus.contains_focused(window, cx)) else { return; };
+                let modifiers = event.keystroke.modifiers;
+                if event.keystroke.key == "tab" && !modifiers.control && !modifiers.alt && !modifiers.platform {
+                    let next = if modifiers.shift { index.checked_sub(1) } else { (index + 1 < handles.len()).then_some(index + 1) };
+                    window.focus(next.map_or(&this.toolbar_focus[24], |next| &handles[next]), cx);
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(|this, _: &RunStatement, window, cx| this.run(false, window, cx)))
             .on_action(cx.listener(|this, _: &RunScript, window, cx| this.run(true, window, cx)))
+            .on_action(cx.listener(|this, _: &InsertTopRows, window, cx| this.insert_snippet(sql::Snippet::TopRows, window, cx)))
+            .on_action(cx.listener(|this, _: &InsertGroupedCount, window, cx| this.insert_snippet(sql::Snippet::GroupedCount, window, cx)))
+            .on_action(cx.listener(|this, _: &InsertRecentRows, window, cx| this.insert_snippet(sql::Snippet::RecentRows, window, cx)))
+            .on_action(cx.listener(|this, _: &RefreshCompletionMetadata, window, cx| this.refresh_completion(window, cx)))
+            .on_action(cx.listener(|this, _: &FormatSql, window, cx| this.format_sql(window, cx)))
             .on_action(cx.listener(|this, _: &StopQuery, _, cx| this.stop(cx)))
             .on_action(cx.listener(Self::reconnect))
             .on_action(cx.listener(Self::switch_pane))
@@ -1010,7 +1984,7 @@ impl Render for Workbench {
                             .flex_1()
                             .min_w(px(180.))
                             .text_sm()
-                            .child("dbunk_demo · 127.0.0.1:15432"),
+                            .child(if self.document.is_some() { "PostgreSQL" } else { "dbunk_demo · 127.0.0.1:15432" }),
                     )
                     .child("Layout")
                     .child(self.button(
@@ -1037,12 +2011,17 @@ impl Render for Workbench {
                         self.layout == Layout::ResultsFirst,
                         cx,
                     ))
+                    .child(self.button("Edit selected cell", Control::EditCell, 24, self.can_edit_query_cell(cx), false, cx))
                     .child(self.button("Run", Control::Run, 0, can_run, false, cx))
                     .child(self.button("Run script", Control::Script, 1, can_run, false, cx))
                     .child(self.button("Stop", Control::Stop, 2, can_stop, false, cx))
+                    .when(self.document.is_some(), |toolbar| toolbar
+                        .child(self.button("Bindings", Control::Bindings, 20, !self.closing, self.show_parameters, cx))
+                        .child(self.button("Explain draft", Control::Explain(false), 21, !self.closing, false, cx))
+                        .child(self.button("Analyze draft", Control::Explain(true), 22, !self.closing, false, cx)))
                     .when(!self.connected, |toolbar| {
                         toolbar.child(self.button(
-                            "Reconnect",
+                            if self.document.is_some() { "Connect" } else { "Reconnect" },
                             Control::Reconnect,
                             3,
                             !self.connecting && !self.closing,
@@ -1055,6 +2034,27 @@ impl Render for Workbench {
                 div().text_sm().px_2().py_1().flex_shrink_0()
                     .child("F8: controls · Tab: next control · Enter: activate · Escape: return · F6: SQL / results")
             )
+            .when(self.document.is_some() && self.show_parameters, |pane| pane.child(self.parameters.clone()))
+            .when_some(self.review.as_ref(), |pane, review| {
+                let reviewed_sql = review.sql.clone();
+                pane.child(
+                    div().id("query-confirmation").role(Role::Group).aria_label("Safe Mode query review")
+                        .flex().flex_col().flex_shrink_0().p_2().gap_2().border_b_1().border_color(rgb(0x444444))
+                        .child(div().id("query-confirmation-announcement").role(Role::Alert)
+                            .aria_label("Safe Mode requires confirmation. Review the exact SQL, then confirm or cancel. Query has not run.")
+                            .child("Safe Mode requires confirmation"))
+                        .child(review.classification.clone())
+                        .child(div().id("query-review-bindings").role(Role::Document).aria_label("Bound parameters and row limit")
+                            .a11y_synthetic_children({ let value = review.bindings.clone(); move |builder| { builder.parent_node().set_value(value.clone()); } })
+                            .max_h(px(120.)).overflow_y_scroll().text_sm().child(review.bindings.clone()))
+                        .child(div().id("query-review-sql").role(Role::Document).aria_label("SQL requiring confirmation")
+                            .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(reviewed_sql.clone()); })
+                            .max_h(px(160.)).overflow_y_scroll().text_sm().child(review.sql.clone()))
+                        .child(div().flex().gap_2()
+                            .child(self.button("Cancel review", Control::CancelReview, 18, !self.closing, false, cx))
+                            .child(self.button("Confirm and run", Control::ConfirmQuery, 19, !self.closing, false, cx)))
+                )
+            })
             // A new identity per failure also announces identical errors when
             // two executions finish before a cleared frame can be painted.
             .when_some(self.failure.as_ref(), |pane, failure| {
@@ -1075,6 +2075,28 @@ impl Render for Workbench {
                     .child(editor)
                     .child(results),
             )
+            .when(self.document.is_some(), |pane| {
+                let transaction_label = self.transaction_label();
+                pane.child(div().id("transaction-controls").role(Role::Group).aria_label("Transaction controls")
+                    .flex().flex_col().flex_shrink_0().border_t_1().border_color(rgb(0x333333)).p_2().gap_2()
+                    .child(div().id("transaction-state").role(Role::Status).aria_label("Transaction state")
+                        .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(transaction_label.clone()); })
+                        .text_sm().child(self.transaction_label()))
+                    .child(div().flex().flex_wrap().gap_2().children(Self::transaction_controls().into_iter().map(|(label, control, index)| {
+                        let selected = self.transaction.as_ref().is_some_and(|snapshot| match control {
+                            TransactionControl::Mode(mode) => snapshot.mode == mode,
+                            TransactionControl::Isolation(isolation) => snapshot.manual_isolation == isolation,
+                            _ => false,
+                        });
+                        self.button(label, Control::Transaction(control), index, self.can_control_transaction(control), selected, cx)
+                    })))
+                    .when_some(self.transaction_error.as_ref(), |footer, message| {
+                        footer.child(div().id("transaction-error").role(Role::Alert).aria_label(message.clone()).text_sm().child(message.clone()))
+                    }))
+            })
+            .when_some(self.query_changes.unavailable.clone(), |content, reason| content.child(div().id("query-editing-unavailable").role(Role::Status).aria_label(reason.clone()).px_2().text_sm().child(reason)))
+            .when_some(self.completion.as_ref().map(|completion| completion.status()), |content, status| content.child(div().id("sql-completion-status").role(Role::Status).aria_label(status.clone()).px_2().text_sm().child(status)))
+            .when_some(self.query_changes.view.clone(), |content, changes| content.child(div().id("query-change-scroll").max_h(px(260.)).overflow_y_scroll().child(changes)))
             .child(
                 div()
                     .id("query-status")
@@ -1091,5 +2113,74 @@ impl Render for Workbench {
                     .text_sm()
                     .child(self.status.clone()),
             )
+    }
+}
+
+impl Drop for Workbench {
+    fn drop(&mut self) {
+        if let Some(budget) = &self.retained_budget {
+            budget.set(budget.get().saturating_sub(self.retained_bytes));
+        }
+    }
+}
+
+fn review_bindings(
+    parameters: Option<&[mailbox::ReviewParameter]>,
+    row_limit: Option<i64>,
+) -> String {
+    let mut lines = vec![row_limit.map_or_else(
+        || "Row limit: none".into(),
+        |limit| format!("Row limit: {limit}"),
+    )];
+    match parameters {
+        None => lines.push("Named parameters: off".into()),
+        Some([]) => lines.push("Named parameters: on; no bindings".into()),
+        Some(values) => lines.extend(values.iter().map(|value| {
+            format!(
+                ":{} = {}",
+                value.name,
+                value.value.as_ref().map_or_else(
+                    || "NULL".into(),
+                    |text| serde_json::to_string(text).expect("string serialization")
+                )
+            )
+        })),
+    }
+    lines.join("\n")
+}
+
+#[cfg(test)]
+mod binding_review_tests {
+    use super::*;
+
+    #[test]
+    fn review_preserves_disabled_empty_null_text_and_bound_limit() {
+        assert_eq!(
+            review_bindings(None, None),
+            "Row limit: none\nNamed parameters: off"
+        );
+        assert_eq!(
+            review_bindings(Some(&[]), Some(7)),
+            "Row limit: 7\nNamed parameters: on; no bindings"
+        );
+        let values = [
+            mailbox::ReviewParameter {
+                name: "null".into(),
+                value: None,
+            },
+            mailbox::ReviewParameter {
+                name: "empty".into(),
+                value: Some(String::new()),
+            },
+            mailbox::ReviewParameter {
+                name: "text".into(),
+                value: Some("NULL\n'🧪".into()),
+            },
+        ];
+        assert_eq!(
+            review_bindings(Some(&values), Some(1)),
+            "Row limit: 1\n:null = NULL\n:empty = \"\"\n:text = \"NULL\\n'🧪\""
+        );
+        assert!(!format!("{:?}", values).contains("🧪"));
     }
 }

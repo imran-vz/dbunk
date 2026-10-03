@@ -1,0 +1,108 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Save query
+		12 button Rename
+		13 button Pin
+		14 button ←
+		15 button →
+		16 button Close
+		17 button Credentials
+		18 container Connections
+			19 button + Connection
+			20 button Open table
+			21 button −
+			22 button +
+			23 button Auto-fit fixture
+			24 button Edit
+			25 button Duplicate
+			26 button Copy URI
+			27 button ★
+			28 button Delete
+			29 button Comfortable
+		30 tab group
+			31 tab (settable, boolean) Query 1 · Disconnected, Value: off
+			32 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			33 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			34 tab (settable, boolean) History · Open tab to load records, Value: off
+			35 tab (settable, boolean) History query · Disconnected, Value: off
+			36 tab (settable, boolean) Administration · Disconnected. Connect, then Refresh to collect readings, Value: off
+			37 tab (settable, boolean) EXPLAIN · Disconnected, Value: off
+			38 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			39 tab (settable, boolean) Objects · Read-only table structure loaded, Value: on
+			40 tab (settable, boolean) CSV transfer · Choose the exact target and CSV options, then explicitly inspect and review, Value: off
+			41 tab (settable, boolean) native_seed_window_20261003.destination · Disconnected, Value: off
+			42 tab (settable, boolean) Value: off, Seed table · Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.
+		43 button Connect
+		44 button Disconnect
+		45 button Clear results
+		46 container Table structure, read only
+			47 button Catalog
+			48 button Refresh
+			49 button (disabled) Cancel read
+			50 button Copy selected details
+			51 button (disabled) Open related table
+			52 text "native_structure_window_20261003"."child" | Database OID 16384 | Relation OID 17075 | Captured 2026-10-03 08:39:01.31935+00
+			53 tab group Table structure sections
+				54 tab (settable, boolean) Overview (1), Value: off
+				55 tab (settable, boolean) Columns (5), Value: off
+				56 tab (settable, boolean) Primary key (1), Value: off
+				57 tab (settable, boolean) Foreign keys (1), Value: off
+				58 tab (settable, boolean) Referenced by (0), Value: off
+				59 tab (settable, boolean) Indexes (2), Value: off
+				60 tab (settable, boolean) Constraints (3), Value: off
+				61 tab (settable, boolean) Triggers (1), Value: off
+				62 tab (settable, boolean) Policies (1), Value: off
+				63 tab (settable, boolean) Relation grants (9), Value: on
+				64 tab (settable, boolean) Rules (1), Value: off
+				65 tab (settable, boolean) Parents (0), Value: off
+				66 tab (settable, boolean) Children (0), Value: off
+			67 text Explicit relation ACL entries from pg_class.relacl only. Excludes column ACLs, inherited role membership, ownership, default privileges and effective authorization. An empty section does not mean no access.
+			68 list 9 captured Relation grants; arrows select, Enter inspects
+				69 text (selected) "dbunk" → "PUBLIC" · grant 1, Secondary Actions: Pick
+				70 text (selectable) "dbunk" → "dbunk" · grant 2, Secondary Actions: Pick
+				71 text (selectable) "dbunk" → "dbunk" · grant 3, Secondary Actions: Pick
+				72 text (selectable) "dbunk" → "dbunk" · grant 4, Secondary Actions: Pick
+				73 text (selectable) "dbunk" → "dbunk" · grant 5, Secondary Actions: Pick
+				74 text (selectable) "dbunk" → "dbunk" · grant 6, Secondary Actions: Pick
+				75 text (selectable) "dbunk" → "dbunk" · grant 7, Secondary Actions: Pick
+				76 text (selectable) "dbunk" → "dbunk" · grant 8, Secondary Actions: Pick
+				77 text (selectable) "dbunk" → "dbunk" · grant 9, Secondary Actions: Pick
+			78 container Exact selected structure details, read only
+				79 text entry area (settable) Read-only selected table structure details, Value: Relation grants · "native_structure_window_20261003"."child"
+Database OID: 16384; relation OID: 17075
+Captured: 2026-10-03 08:39:01.31935+00
+
+Explicit relation ACL entries from pg_class.relacl only. Excludes column ACLs, inherited role membership, ownership, default privileges and effective authorization. An empty section does not mean no access.
+
+Grantor: "dbunk"
+Grantee: "PUBLIC"
+Grant option: false
+Privilege (text, 6 UTF-8 bytes):
+SELECT
+
+			80 container Read-only table structure loaded
+		81 container (settable) Draft persistence, Value: Saved
+		82 button Retry
+		83 button Export SQL
+		84 button Discard and quit
+	85 close button
+	86 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	87 minimize button
+	88 text dbunk Native Workspace
+89 menu bar
+	90 dbunk Native Preflight
+	91 Query
+	92 Results
+	93 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

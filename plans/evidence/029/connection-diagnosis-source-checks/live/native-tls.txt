@@ -1,0 +1,15 @@
+PASS: trusted verify-full
+PASS: staged trusted verify-full
+PASS: untrusted CA
+PASS: staged untrusted CA
+PASS: hostname mismatch
+PASS: staged hostname mismatch
+PASS: verify-ca ignores hostname
+PASS: staged verify-ca ignores hostname
+PASS: require TLS
+PASS: staged require TLS
+PASS: prefer TLS
+PASS: staged prefer TLS
+PASS: saved native connection opens an encrypted query session
+PASS: staged plain connection and encryption warning
+PASS: native TLS matrix and joined backend shutdown

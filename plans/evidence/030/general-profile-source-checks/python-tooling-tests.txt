@@ -1,0 +1,29 @@
+.....................Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Persistent isolated stage04 profile: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpzxu8t3zg/new-stage04
+Executable: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpzxu8t3zg/dbunk-native; evidence: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpzxu8t3zg/evidence
+Native workspace PID: 123456
+Workspace quit; drafts and profile retained at /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpzxu8t3zg/new-stage04
+.Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Explicit general PostgreSQL profile (create-general-profile): /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/profile
+Verification ownership is scoped to the checked fixtures; the general app profile does not restrict endpoints.
+Executable: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/dbunk-native; evidence: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/evidence
+Native workspace PID: 123456
+General profile ownership receipt: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/evidence/general-profile-owner.json
+Workspace quit; drafts and profile retained at /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/profile
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Explicit general PostgreSQL profile (general-profile): /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/profile
+Verification ownership is scoped to the checked fixtures; the general app profile does not restrict endpoints.
+Executable: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/dbunk-native; evidence: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/reopen
+Native workspace PID: 123456
+Workspace quit; drafts and profile retained at /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpuba6xyec/profile
+.......Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Explicit general PostgreSQL profile (create-general-profile): /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpj5krlhiq/profile
+Verification ownership is scoped to the checked fixtures; the general app profile does not restrict endpoints.
+Executable: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpj5krlhiq/dbunk-native; evidence: /private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/tmpj5krlhiq/evidence
+Native workspace PID: 123456
+Forced failure cleanup is not a successful quit gate
+.......
+----------------------------------------------------------------------
+Ran 36 tests in 0.027s
+
+OK

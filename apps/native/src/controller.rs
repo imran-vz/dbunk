@@ -6,6 +6,7 @@ use std::time::Duration;
 use dbunk_lib::backend::{
     AckPayload, Backend, ExecutePayload, ExecutionPayload, HeartbeatPayload, Layout,
     OpenSessionPayload, QueryEventEnvelope, QuerySessionError, RegisterOwnerPayload,
+    TransactionControl,
 };
 use futures_util::FutureExt;
 use futures_util::future::{BoxFuture, Shared};
@@ -13,6 +14,39 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
 use crate::mailbox::{self, Failure, Message};
+#[path = "table_runtime.rs"]
+mod table_runtime;
+use table_runtime::TableRuntime;
+#[path = "diagnosis_runtime.rs"]
+mod diagnosis_runtime;
+pub use table_runtime::{TableCommand, TableControls, TableMessage, TableReceiver};
+#[path = "query_controls.rs"]
+mod query_controls;
+use query_controls::QueryControls;
+pub use query_controls::transaction_allowed;
+#[path = "workspace_runtime.rs"]
+mod workspace_runtime;
+
+#[path = "query_library_runtime.rs"]
+mod query_library_runtime;
+use query_library_runtime::LibraryRuntime;
+pub use query_library_runtime::{LibraryCommand, LibraryControls, LibraryDelivery, LibraryReply};
+
+#[path = "pg_tool_runtime.rs"]
+mod pg_tool_runtime;
+use pg_tool_runtime::PgToolRuntime;
+pub use pg_tool_runtime::{ToolCommand, ToolControls, ToolDelivery, ToolReply};
+
+#[path = "csv_transfer_runtime.rs"]
+mod csv_transfer_runtime;
+use csv_transfer_runtime::CsvRuntime;
+#[path = "schema_compare_runtime.rs"]
+mod schema_compare_runtime;
+pub use csv_transfer_runtime::{CsvCommand, CsvControls, CsvDelivery, CsvReply};
+use schema_compare_runtime::CompareRuntime;
+pub use schema_compare_runtime::{
+    CompareCommand, CompareControls, CompareFailure, CompareReceiver, CompareReply,
+};
 
 pub const WINDOW: &str = "native-fixture";
 const GRACE: Duration = Duration::from_secs(3);
@@ -36,6 +70,8 @@ impl std::fmt::Display for WorkerError {
 
 pub enum Command {
     Run(ExecutePayload),
+    Confirm(String),
+    Transaction(TransactionControl),
     Cancel(ExecutionPayload),
     Layout(Layout),
 }
@@ -43,6 +79,9 @@ pub enum Command {
 #[derive(Clone)]
 pub struct Controls {
     commands: mpsc::Sender<Command>,
+    transactions: mpsc::Sender<TransactionControl>,
+    discarded_review: watch::Sender<Option<String>>,
+    cancellation: Option<watch::Sender<Option<ExecutionPayload>>>,
     layout: watch::Sender<Option<Layout>>,
     acknowledgements: watch::Sender<Option<AckPayload>>,
     focused: watch::Sender<bool>,
@@ -56,6 +95,12 @@ impl Controls {
         if self.closing.load(Ordering::Acquire) {
             return Err("Application is closing");
         }
+        if let Command::Transaction(control) = command {
+            return self
+                .transactions
+                .try_send(control)
+                .map_err(|_| "Transaction control is already pending");
+        }
         if let Command::Layout(layout) = command {
             // The preference belongs to the profile, including while disconnected.
             return self
@@ -63,9 +108,16 @@ impl Controls {
                 .send(Some(layout))
                 .map_err(|_| "Layout storage is unavailable");
         }
+        if let (Command::Cancel(payload), Some(cancellation)) = (&command, &self.cancellation) {
+            cancellation.send_replace(Some(payload.clone()));
+            return Ok(());
+        }
         self.commands
             .try_send(command)
             .map_err(|_| "Native command queue is unavailable")
+    }
+    pub fn discard_confirmation(&self, execution: String) {
+        self.discarded_review.send_replace(Some(execution));
     }
     pub fn acknowledge(&self, payload: AckPayload) {
         self.acknowledgements.send_replace(Some(payload));
@@ -114,6 +166,7 @@ struct Sessions {
     failure: Option<String>,
 }
 pub struct Host {
+    pub files: crate::file_runtime::FileRuntime,
     pub backend: Backend,
     pub runtime: tokio::runtime::Handle,
     sessions: Mutex<Sessions>,
@@ -123,6 +176,12 @@ pub struct Host {
     layout_stop: watch::Sender<bool>,
     layout_worker: Worker,
     shutdown: tokio::sync::Mutex<Option<WorkerResult>>,
+    workspace: Option<workspace_runtime::WorkspaceRuntime>,
+    tables: Option<TableRuntime>,
+    library: Option<LibraryRuntime>,
+    pg_tools: Option<PgToolRuntime>,
+    csv_transfers: Option<CsvRuntime>,
+    comparisons: Option<CompareRuntime>,
 }
 impl Host {
     pub fn new(backend: Backend, runtime: tokio::runtime::Handle) -> Arc<Self> {
@@ -133,6 +192,7 @@ impl Host {
             runtime.spawn(async move { persist_layout(storage, preferences, stop).await }),
         );
         Arc::new(Self {
+            files: crate::file_runtime::FileRuntime::default(),
             backend,
             runtime,
             sessions: Mutex::new(Sessions::default()),
@@ -142,7 +202,237 @@ impl Host {
             layout_stop,
             layout_worker,
             shutdown: tokio::sync::Mutex::new(None),
+            workspace: None,
+            tables: None,
+            library: None,
+            pg_tools: None,
+            csv_transfers: None,
+            comparisons: None,
         })
+    }
+
+    /// Stage04 owns one window registration and heartbeat for all documents.
+    pub fn new_workspace(
+        backend: Backend,
+        runtime: tokio::runtime::Handle,
+        owner: String,
+    ) -> Arc<Self> {
+        let mut host = Self::new(backend, runtime);
+        let value = Arc::get_mut(&mut host).expect("new host has one owner");
+        value.workspace = Some(workspace_runtime::WorkspaceRuntime::new(
+            value.backend.clone(),
+            value.runtime.clone(),
+            owner,
+            value.layout.clone(),
+            value.closing.clone(),
+            value.submission.clone(),
+        ));
+        value.tables = Some(TableRuntime::new(
+            value.backend.clone(),
+            value.runtime.clone(),
+            value
+                .workspace
+                .as_ref()
+                .expect("workspace initialized")
+                .queue_budget(),
+        ));
+        value.library = Some(LibraryRuntime::new(
+            value.backend.clone(),
+            value.runtime.clone(),
+            value.workspace.as_ref().unwrap().queue_budget(),
+        ));
+        value.pg_tools = Some(PgToolRuntime::new(
+            value.backend.clone(),
+            value.runtime.clone(),
+            value.workspace.as_ref().unwrap().queue_budget(),
+        ));
+        value.csv_transfers = Some(CsvRuntime::new(
+            value.backend.clone(),
+            value.runtime.clone(),
+            value.workspace.as_ref().unwrap().queue_budget(),
+        ));
+        value.comparisons = Some(CompareRuntime::new(
+            value.backend.clone(),
+            value.runtime.clone(),
+            value.workspace.as_ref().unwrap().queue_budget(),
+            value.owner().expect("workspace initialized").to_owned(),
+        ));
+        host
+    }
+
+    pub fn open_comparisons(
+        &self,
+        wake: async_channel::Sender<()>,
+    ) -> Result<(CompareControls, CompareReceiver), &'static str> {
+        let _submission = self.submission.lock().unwrap();
+        if self.closing.load(Ordering::Acquire) {
+            return Err("Application is closing");
+        }
+        self.comparisons
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .open(None, wake)
+    }
+    pub fn open_comparison_reader(
+        &self,
+        tab: String,
+        wake: async_channel::Sender<()>,
+    ) -> Result<(CompareControls, CompareReceiver), &'static str> {
+        let _submission = self.submission.lock().unwrap();
+        if self.closing.load(Ordering::Acquire) {
+            return Err("Application is closing");
+        }
+        self.comparisons
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .open(Some(tab), wake)
+    }
+
+    pub fn open_csv_transfers(
+        &self,
+        wake: async_channel::Sender<()>,
+    ) -> Result<(CsvControls, async_channel::Receiver<CsvDelivery>), &'static str> {
+        let _submission = self.submission.lock().unwrap();
+        if self.closing.load(Ordering::Acquire) {
+            return Err("Application is closing");
+        }
+        self.csv_transfers
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .open(wake)
+    }
+
+    pub fn open_pg_tools(
+        &self,
+        wake: async_channel::Sender<()>,
+    ) -> Result<(ToolControls, async_channel::Receiver<ToolDelivery>), &'static str> {
+        let _submission = self.submission.lock().unwrap();
+        if self.closing.load(Ordering::Acquire) {
+            return Err("Application is closing");
+        }
+        self.pg_tools
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .open(wake)
+    }
+
+    pub fn open_library(
+        &self,
+        id: String,
+        wake: async_channel::Sender<()>,
+    ) -> Result<(LibraryControls, async_channel::Receiver<LibraryDelivery>), &'static str> {
+        let _submission = self.submission.lock().unwrap();
+        if self.closing.load(Ordering::Acquire) {
+            return Err("Application is closing");
+        }
+        self.library
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .open(id, wake)
+    }
+
+    pub fn owner(&self) -> Option<&str> {
+        self.workspace.as_ref().map(|workspace| workspace.owner())
+    }
+
+    pub fn mailbox(&self) -> (mailbox::Sender, mailbox::Receiver) {
+        match &self.workspace {
+            Some(workspace) => workspace.mailbox(),
+            None => mailbox::channel(mailbox::QUEUE_CAPACITY, mailbox::QUEUE_BYTES),
+        }
+    }
+
+    pub fn connect_document(
+        &self,
+        tab: String,
+        connection: String,
+        session: String,
+        events: mailbox::Sender,
+    ) -> Result<Controls, &'static str> {
+        self.workspace
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .connect(tab, connection, session, events)
+    }
+
+    pub fn open_table_document(
+        &self,
+        id: String,
+        connection: String,
+        wake: async_channel::Sender<()>,
+    ) -> Result<(TableControls, TableReceiver), &'static str> {
+        let _submission = self.submission.lock().unwrap();
+        if self.closing.load(Ordering::Acquire) {
+            return Err("Application is closing");
+        }
+        self.tables
+            .as_ref()
+            .ok_or("A workspace host is required")?
+            .open(WINDOW.into(), id, connection, wake)
+    }
+
+    pub async fn close_document(&self, tab: &str) -> WorkerResult {
+        if let Some(comparisons) = &self.comparisons {
+            comparisons.close(tab).await?;
+        }
+        self.disconnect_document(tab).await
+    }
+
+    pub async fn disconnect_document(&self, tab: &str) -> WorkerResult {
+        if let Some(library) = &self.library {
+            library.close(tab).await?;
+        }
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("A workspace host is required")?;
+        let (query, table) = tokio::join!(workspace.disconnect(tab), async {
+            match &self.tables {
+                Some(tables) => tables
+                    .close(tab)
+                    .await
+                    .map_err(|error| format!("Table cleanup failed: {error}")),
+                None => Ok(dbunk_lib::backend::data::DataCloseOutcome::Closed),
+            }
+        });
+        query?;
+        match table? {
+            dbunk_lib::backend::data::DataCloseOutcome::Closed => Ok(()),
+            dbunk_lib::backend::data::DataCloseOutcome::ConnectionDataClosed => {
+                Err("All table documents on this connection were closed during cleanup".into())
+            }
+        }
+    }
+
+    pub async fn disconnect_connection_documents(&self, connection: &str) -> WorkerResult {
+        self.disconnect_matching(Some(connection)).await
+    }
+
+    pub async fn disconnect_all_documents(&self) -> WorkerResult {
+        self.disconnect_matching(None).await
+    }
+
+    async fn disconnect_matching(&self, connection: Option<&str>) -> WorkerResult {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("A workspace host is required")?;
+        let (query, table) = tokio::join!(workspace.disconnect_matching(connection), async {
+            match &self.tables {
+                Some(tables) => tables
+                    .close_matching(connection)
+                    .await
+                    .map_err(|error| format!("Table cleanup failed: {error}")),
+                None => Ok(Vec::new()),
+            }
+        });
+        query?;
+        if table?.iter().any(|(_, outcome)| {
+            *outcome == dbunk_lib::backend::data::DataCloseOutcome::ConnectionDataClosed
+        }) {
+            return Err("All table documents on a connection were closed during cleanup".into());
+        }
+        Ok(())
     }
 
     /// A new owner is admitted only after the previous owner's full cleanup
@@ -153,6 +443,9 @@ impl Host {
         session: String,
         events: mailbox::Sender,
     ) -> Result<Controls, &'static str> {
+        if self.workspace.is_some() {
+            return Err("Use document connections in a workspace");
+        }
         let mut sessions = self.sessions.lock().unwrap();
         if self.closing.load(Ordering::Acquire) {
             return Err("Application is closing");
@@ -184,11 +477,16 @@ impl Host {
             return Err("Connection is already pending");
         }
         let (commands, command_rx) = mpsc::channel(16);
+        let (transactions, transaction_rx) = mpsc::channel(1);
+        let (discarded_review, review_rx) = watch::channel(None);
         let (acknowledgements, ack_rx) = watch::channel(None);
         let (focused, focus_rx) = watch::channel(true);
         let (stop, stop_rx) = watch::channel(false);
         let controls = Controls {
             commands,
+            transactions,
+            discarded_review,
+            cancellation: None,
             acknowledgements,
             focused,
             stop,
@@ -224,6 +522,8 @@ impl Host {
                     session,
                     events.clone(),
                     command_rx,
+                    transaction_rx,
+                    review_rx,
                     ack_rx,
                     focus_rx,
                     stop_rx,
@@ -272,6 +572,25 @@ impl Host {
             // can be admitted after this snapshot and the final layout flush.
             let _submission = self.submission.lock().unwrap();
             self.closing.store(true, Ordering::Release);
+            self.files.stop();
+            if let Some(workspace) = &self.workspace {
+                workspace.stop();
+            }
+            if let Some(tables) = &self.tables {
+                tables.stop();
+            }
+            if let Some(library) = &self.library {
+                library.stop();
+            }
+            if let Some(tools) = &self.pg_tools {
+                tools.stop();
+            }
+            if let Some(comparisons) = &self.comparisons {
+                comparisons.stop();
+            }
+            if let Some(csv) = &self.csv_transfers {
+                csv.stop();
+            }
             if let Some(active) = sessions.active.take() {
                 active.controls.stop();
             }
@@ -287,7 +606,41 @@ impl Host {
         // Flush the last preference before fencing backend storage. Its work
         // uses the same deadlines, so slow storage cannot extend shutdown.
         let layout_result = join_worker(&self.layout_worker, grace, final_deadline, false).await;
-        let (worker_result, backend_result) = tokio::join!(
+        // Local storage acknowledgements finish before Backend fences its call
+        // lane. Sessions/sockets remain owned until the backend shutdown below.
+        let (workspace_result, library_result, tools_result, csv_result, comparisons_result) = tokio::join!(
+            async {
+                match &self.workspace {
+                    Some(workspace) => workspace.join(grace, final_deadline).await,
+                    None => Ok(()),
+                }
+            },
+            async {
+                match &self.library {
+                    Some(library) => library.join(grace, final_deadline).await,
+                    None => Ok(()),
+                }
+            },
+            async {
+                match &self.pg_tools {
+                    Some(tools) => tools.join(grace, final_deadline).await,
+                    None => Ok(()),
+                }
+            },
+            async {
+                match &self.csv_transfers {
+                    Some(csv) => csv.join(grace, final_deadline).await,
+                    None => Ok(()),
+                }
+            },
+            async {
+                match &self.comparisons {
+                    Some(comparisons) => comparisons.join(grace, final_deadline).await,
+                    None => Ok(()),
+                }
+            },
+        );
+        let (worker_result, backend_result, table_result) = tokio::join!(
             async {
                 let results = futures_util::future::join_all(
                     workers
@@ -301,12 +654,26 @@ impl Host {
                     .map(|_| ())
             },
             self.backend.shutdown_with_deadlines(grace, final_deadline),
+            async {
+                match &self.tables {
+                    Some(tables) => tables.join(grace, final_deadline).await,
+                    None => Ok(()),
+                }
+            },
         );
+        let file_result = self.files.join(final_deadline).await;
         let result = prior_failure
             .map_or(Ok(()), Err)
             .and(layout_result)
             .and(worker_result)
-            .and(backend_result);
+            .and(backend_result)
+            .and(workspace_result)
+            .and(table_result)
+            .and(library_result)
+            .and(tools_result)
+            .and(csv_result)
+            .and(comparisons_result)
+            .and(file_result);
         *shutdown = Some(result.clone());
         result
     }
@@ -364,6 +731,8 @@ async fn session_worker(
     session: String,
     events: mailbox::Sender,
     mut commands: mpsc::Receiver<Command>,
+    mut transactions: mpsc::Receiver<TransactionControl>,
+    mut discarded_review: watch::Receiver<Option<String>>,
     mut acknowledgements: watch::Receiver<Option<AckPayload>>,
     mut focused: watch::Receiver<bool>,
     mut stop: watch::Receiver<bool>,
@@ -415,7 +784,12 @@ async fn session_worker(
             return Ok(());
         }
         tokio::select! {
+            biased;
             _ = stop.changed() => return Ok(()),
+            changed = discarded_review.changed() => {
+                if changed.is_err() { return Ok(()); }
+                discarded_review.borrow_and_update();
+            }
             changed = acknowledgements.changed() => {
                 if changed.is_err() { return Ok(()); }
                 let payload = acknowledgements.borrow_and_update().clone();
@@ -431,14 +805,24 @@ async fn session_worker(
                 let focused = *focused.borrow_and_update();
                 backend.set_focus(WINDOW, focused).await.map_err(error_message)?;
             }
+            control = transactions.recv() => {
+                let Some(control) = control else { return Ok(()); };
+                let result = backend.control_transaction(WINDOW, &session, control).await;
+                events.send(Message::Transaction { session: session.clone(), result }).map_err(|_| "Transaction reply delivery failed")?;
+            }
             command = commands.recv() => {
                 let Some(command) = command else { return Ok(()); };
                 match command {
                     Command::Run(payload) => {
                         let execution = payload.execution_id.clone();
+                        // The stage03 fixture keeps its original refusal-only
+                        // behavior; service-issued review belongs to stage04.
                         if let Err(error) = backend.execute(WINDOW, payload).await {
-                            events.send(Message::Rejected { execution, message: error_message(error) }).map_err(|_| "Query refusal delivery failed".to_string())?;
+                            events.send(Message::Rejected { execution, message: error_message(error) }).map_err(|_| "Query refusal delivery failed")?;
                         }
+                    }
+                    Command::Confirm(execution) => {
+                        events.send(Message::Rejected { execution, message: "Query review requires a workspace".into() }).map_err(|_| "Query refusal delivery failed")?;
                     }
                     Command::Cancel(payload) => {
                         let execution = payload.execution_id.clone();
@@ -451,7 +835,7 @@ async fn session_worker(
                             let _ = events.send(Message::CancelFailed { execution, message: error_message(error) });
                         }
                     }
-                    Command::Layout(_) => unreachable!("layout uses the profile preference channel"),
+                    Command::Layout(_) | Command::Transaction(_) => unreachable!("separate control channels"),
                 }
             }
             _ = heartbeat.tick() => {
@@ -565,6 +949,9 @@ mod tests {
         let (stop, _) = watch::channel(false);
         let controls = Controls {
             commands,
+            transactions: mpsc::channel(1).0,
+            discarded_review: watch::channel(None).0,
+            cancellation: None,
             layout,
             acknowledgements,
             focused,

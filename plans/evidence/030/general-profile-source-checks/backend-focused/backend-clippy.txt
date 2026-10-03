@@ -1,0 +1,24 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error: large size difference between variants
+   --> src/backend/development.rs:148:1
+    |
+148 | / pub(super) enum EndpointCapability {
+149 | |     OwnedFixtures(DevelopmentFixtures),
+    | |     ---------------------------------- the largest variant contains at least 256 bytes
+150 | |     GeneralPostgres,
+    | |     --------------- the second-largest variant carries no data at all
+151 | | }
+    | |_^ the entire enum is at least 256 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#large_enum_variant
+    = note: `-D clippy::large-enum-variant` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::large_enum_variant)]`
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+149 -     OwnedFixtures(DevelopmentFixtures),
+149 +     OwnedFixtures(Box<DevelopmentFixtures>),
+    |
+
+error: could not compile `dbunk` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (lib test) due to 1 previous error

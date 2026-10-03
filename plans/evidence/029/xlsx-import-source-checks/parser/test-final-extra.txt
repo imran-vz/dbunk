@@ -1,0 +1,24 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.89s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 16 tests
+test xlsx_native::tests::alternate_zip_filename_cannot_bypass_raw_name_admission ... ok
+test xlsx_native::tests::corrupt_zip_crc_and_declared_expansion_refuse ... ok
+test xlsx_native::tests::null_token_and_sheet_identity_are_validated_before_output ... ok
+test xlsx_native::tests::zip_admission_rejects_ambiguous_zip64_encryption_and_oversized_metadata ... ok
+test xlsx_native::tests::empty_sheet_is_not_a_synthetic_data_row ... ok
+test xlsx_native::tests::exact_numeric_cache_boolean_date_and_unicode ... ok
+test xlsx_native::tests::baseline_headers_duplicate_names_and_null_are_indexed_exactly ... ok
+test xlsx_native::tests::cancellation_and_output_failure_never_return_a_summary ... ok
+test xlsx_native::tests::unsupported_nested_cell_values_cannot_silently_become_empty ... ok
+test xlsx_native::tests::existing_xlsx_writer_workbooks_keep_sheet_order_and_cells ... ok
+test xlsx_native::tests::sparse_extent_matches_used_range_without_dense_allocation ... ok
+test xlsx_native::tests::spreadsheet_string_escapes_and_surrogate_pairs_are_decoded_once ... ok
+test xlsx_native::tests::metadata_relationships_and_sheets_require_exact_structural_paths ... ok
+test xlsx_native::tests::malformed_values_and_formula_caches_refuse ... ok
+test xlsx_native::tests::xml_structure_entities_encoding_and_raw_field_limits ... ok
+test xlsx_native::tests::record_escape_expansion_is_checked_before_writing_that_record ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 1078 filtered out; finished in 0.13s
+

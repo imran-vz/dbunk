@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 1 test
+test backend::admin::control_live_tests::native_admin_control_owned_identity_policy_signals_audit_and_joined_cleanup ... owned stage03 UUID=2283820d-33ec-4c4c-ae03-7051092bd410 target application=native_admin_control_873660faba074dbbbdaa6a2ef4d006f1 temporary profile=/private/tmp/dbunk-native-admin-control-20261003-checks/.tmpcIuVmS baseline=0
+owned target pid=70166 backend_start=2026-10-03T03:56:33.241069Z
+observed stale-start refusal; stale-query refusal; read-only cancellation 57014; read-only termination refusal; exact Strict confirmation; terminate signal and target closure; one required override audit
+joined target/backend cleanup baseline=0 final=0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1016 filtered out; finished in 1.13s
+

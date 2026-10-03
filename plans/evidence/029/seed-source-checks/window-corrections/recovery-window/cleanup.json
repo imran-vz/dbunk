@@ -1,0 +1,45 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema_oid": 16930,
+  "verified_relations": [
+    {
+      "oid": "16931",
+      "name": "parent",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned seed window 20261003"
+    },
+    {
+      "oid": "16934",
+      "name": "parent_pkey",
+      "kind": "i",
+      "owner": "dbunk",
+      "comment": null
+    },
+    {
+      "oid": "16936",
+      "name": "destination_id_seq",
+      "kind": "S",
+      "owner": "dbunk",
+      "comment": null
+    },
+    {
+      "oid": "16937",
+      "name": "destination",
+      "kind": "r",
+      "owner": "dbunk",
+      "comment": "dbunk owned seed window 20261003"
+    },
+    {
+      "oid": "16944",
+      "name": "destination_pkey",
+      "kind": "i",
+      "owner": "dbunk",
+      "comment": null
+    }
+  ],
+  "schema_absent": true,
+  "stage03_connections": 0,
+  "stage04_connections": 0,
+  "normal_quit_exit_code": 0
+}

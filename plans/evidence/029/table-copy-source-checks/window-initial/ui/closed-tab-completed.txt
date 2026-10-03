@@ -1,0 +1,4 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				95 text (selectable) Secondary Actions: Pick, Completed: Completed { rows: 3 } | native_copy_window_20261003.source → native_copy_window_20261003.slow_destination
+~		62 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

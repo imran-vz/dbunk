@@ -1,0 +1,11 @@
+{
+  "prior_source_manifest": "plans/evidence/029/export-impact-source-checks/source-sha256.json",
+  "checked_sources": 252,
+  "changed_sources": [],
+  "carried_checks_if_unchanged": [
+    "isolated backend Clippy/tests",
+    "Tauri isolated facade tests",
+    "Tauri custom-protocol build"
+  ],
+  "note": "All 252 backend manifest inputs remain unchanged. These previous backend checks carry forward; ignored tests remain ignored. Required just commands and native checks run again for this native Rust increment. This is not a tooling-source hash proof."
+}

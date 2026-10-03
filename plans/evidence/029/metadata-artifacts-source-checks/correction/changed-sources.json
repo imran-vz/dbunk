@@ -1,0 +1,14 @@
+[
+  "apps/native/src/schema_map_model.rs",
+  "apps/native/src/schema_map_model/drag.rs",
+  "apps/native/src/schema_map_model/hit.rs",
+  "apps/native/src/schema_map_model/layout.rs",
+  "apps/native/src/schema_map_model/svg.rs",
+  "apps/native/src/schema_map_model/tests.rs",
+  "apps/native/src/schema_map_view.rs",
+  "apps/native/src/schema_map_view/actions.rs",
+  "apps/native/src/schema_map_view/canvas.rs",
+  "apps/native/src/schema_map_view/movement.rs",
+  "apps/native/src/schema_map_view/render.rs",
+  "apps/native/src/schema_map_view/tests.rs"
+]

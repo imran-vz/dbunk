@@ -1,0 +1,8 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "guarded_recorded_objects_removed": true,
+  "recorded_oids_absent": true,
+  "drop_mode": "RESTRICT",
+  "stage03_backends": 0,
+  "stage04_tls_backends": 0
+}

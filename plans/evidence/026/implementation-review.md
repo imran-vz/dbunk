@@ -1,11 +1,15 @@
 # Stage 03 implementation and verification
 
-2026-10-02. Uncommitted work against `102568b8003461c9821fb84fc0957ccd3e4d0b13`.
-Plan state remains in `plans/README.md`. No completion SHA exists.
+Completed at `3f987c96640d6738b48ae1113ceac3ebbdc8563f`, reviewed on
+2026-10-02. The [completion review](./completion-review.md) verifies that the
+recorded source hashes match that commit and the raw evidence supports closure.
+Canonical plan state is `DONE: 3f987c9` in `plans/README.md`.
 
-All five steps are now verified. The final window-race and real-result
-performance gates pass; see [final verification](#final-verification).
-The plan is ready for review, pending a separately authorized completion commit.
+The record below was captured on 2026-10-02 against `102568b8003461c9821fb84fc0957ccd3e4d0b13`
+plus the then-uncommitted implementation. References below to pending work or
+no completion SHA describe those historical checkpoints. All five steps,
+including the final window-race and real-result performance gates, are verified;
+see [final verification](#final-verification).
 
 ## Implementation
 

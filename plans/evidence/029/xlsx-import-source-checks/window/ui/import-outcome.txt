@@ -1,0 +1,40 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 172
+~			123 tab (settable, boolean) Query 1 · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			124 tab (settable, boolean) Value: off, native_parity_20261003.rows · Database may have changed; reconnect and refresh before using retained data
+~			127 tab (settable, boolean) History query · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			128 tab (settable, boolean) Administration · Database may have changed; reconnect and refresh before using retained data, Value: off
+~			129 tab (settable, boolean) EXPLAIN · Database may have changed; retained results may be stale. SQL session preserved, Value: off
+~			131 tab (settable, boolean) Objects · Database may have changed; reconnect and refresh before using retained data, Value: off
+~			132 tab (settable, boolean) CSV transfer · Database changed; inspect again. Setup text and accepted transfers remain, Value: on
+~		136 checkbox (settable, boolean) Import CSV, Value: off
+~		137 checkbox (settable, boolean) Import XLSX, Value: on
+~		138 checkbox (settable, boolean) Export CSV, Value: off
+~		143 button Load choices
+~		149 button Choose XLSX file
+~		150 button Inspect target and source
+~		152 button (disabled) Release inspection
+~		158 text Database changed; inspect again. Setup text and accepted transfers remain
+~		161 button (disabled) Cancel selected transfer
+~		162 button Dismiss finished transfer
+~			173 text (selected) exact-values.xlsx · Import XLSX · Completed, Secondary Actions: Pick
+~		174 text Import XLSX · exact-values.xlsx
+Connection: 18477c6a-4ee3-4ce6-b63e-defb702d5b7e
+Target: native_xlsx_window_20261003.destination
+Attempt: f3b923f9-f23a-4b1f-b9a4-7feeef34c2f5
+State: Completed
+Started: 2026-10-03T07:23:57.994419+00:00
+Finished: 2026-10-03T07:23:58.003417+00:00
+Source size: 128
+Bytes processed: 128
+Rows processed: 2
+Rows committed: 2
+Commit or publication succeeded
+Cleanup complete
+
+
+XLSX sheet 1: Exact values
+Workbook bytes: 1443
+Canonical CSV bytes: 128 (transfer progress uses these bytes)
+
+The focused UI element is 92 standard window dbunk Native Workspace, Secondary Actions: Raise

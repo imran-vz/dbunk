@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "pid": 12313,
+  "executable": "/private/tmp/dbunk-native-package-20261003-seed-keyboard-debug/dbunk Native Preflight.app/Contents/MacOS/dbunk-native",
+  "executable_sha256": "9a096d41c6e955aca5a46c82dd6ccc20c965dd29019e8435ac418a1794219d1a",
+  "profile": "/private/tmp/dbunk-native-auto-fit-20261003-review",
+  "profile_mode": "stage04-fixture",
+  "general_profile_owner": null,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "cwd": "/private/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-workspace-launch-3fsnhs2j",
+  "tls_fixture_instance": "15151cfc-5885-4066-831f-2717ed9b4587",
+  "bundle": "/private/tmp/dbunk-native-package-20261003-seed-keyboard-debug/dbunk Native Preflight.app"
+}

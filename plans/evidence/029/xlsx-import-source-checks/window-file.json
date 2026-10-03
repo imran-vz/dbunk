@@ -1,0 +1,11 @@
+{
+  "path": "/private/tmp/dbunk-native-xlsx-window-20261003-files/exact-values.xlsx",
+  "sha256": "5fadbeb62f26afb2f252dac44967c1709ab11584777ac761874952075a9095d1",
+  "bytes": 1443,
+  "sheets": [
+    "Exact values",
+    "Other values (hidden)"
+  ],
+  "expected_rows": 2,
+  "expected_cached_formulas": 1
+}

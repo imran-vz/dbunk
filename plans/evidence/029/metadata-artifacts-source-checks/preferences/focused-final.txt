@@ -1,0 +1,14 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.40s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 6 tests
+test backend::schema_map::preferences::tests::bounded_exact_positions_and_defaults ... ok
+test backend::schema_map::preferences::tests::committed_ack_stale_save_reset_and_absence_aba ... ok
+test backend::schema_map::preferences::tests::concurrent_writers_publish_only_one_exact_observed_revision ... ok
+test backend::schema_map::preferences::tests::decoded_position_count_and_unknown_identity_fields_refuse ... ok
+test backend::schema_map::preferences::tests::future_corrupt_and_oversized_bytes_survive_load_save_and_reset ... ok
+test backend::schema_map::preferences::tests::scopes_documents_and_profiles_cannot_retarget_revision ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1151 filtered out; finished in 0.11s
+

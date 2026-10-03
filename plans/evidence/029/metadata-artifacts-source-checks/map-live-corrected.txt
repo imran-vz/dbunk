@@ -1,0 +1,13 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.12s
+     Running unittests src/lib.rs (target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 1 test
+test backend::schema_map::live_tests::native_schema_map_complete_scopes_identity_metadata_and_joined_cleanup ... Owned target 2283820d-33ec-4c4c-ae03-7051092bd410 at 127.0.0.1:15432/dbunk_demo; schemas "native_map_eda10d1067e9409e90b1ebdb299f8715", "native_map_eda10d1067e9409e90b1ebdb299f8715.neighbor"; helper native_map_eda10d1067e9409e90b1ebdb299f8715
+Owned temporary profile /var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpYVeckL
+SCHEMA_MAP_OBJECTS {"functions":[{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"map_trigger","oid":20369,"owner":"dbunk","schema":"native_map_eda10d1067e9409e90b1ebdb299f8715"}],"schemas":[{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"native_map_eda10d1067e9409e90b1ebdb299f8715","oid":20314,"owner":"dbunk"},{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"native_map_eda10d1067e9409e90b1ebdb299f8715.neighbor","oid":20315,"owner":"dbunk"}],"tables":[{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"parent","oid":20316,"owner":"dbunk","schema":"native_map_eda10d1067e9409e90b1ebdb299f8715"},{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"group","oid":20326,"owner":"dbunk","schema":"native_map_eda10d1067e9409e90b1ebdb299f8715"},{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"parent","oid":20331,"owner":"dbunk","schema":"native_map_eda10d1067e9409e90b1ebdb299f8715.neighbor"},{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"neighbor.parent","oid":20336,"owner":"dbunk","schema":"native_map_eda10d1067e9409e90b1ebdb299f8715"},{"comment":"dbunk native schema map eda10d1067e9409e90b1ebdb299f8715","name":"links","oid":20347,"owner":"dbunk","schema":"native_map_eda10d1067e9409e90b1ebdb299f8715"}]}
+Owned schema-map teardown: shutdown=Ok(()); cleanup=Ok(()); activity 0 -> 0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1156 filtered out; finished in 1.41s
+

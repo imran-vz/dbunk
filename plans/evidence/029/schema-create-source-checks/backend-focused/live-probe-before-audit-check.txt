@@ -1,0 +1,11 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.56s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 1 test
+test backend::schema_ddl::live_tests::native_create_schema_receipt_duplicate_atomic_rollback_and_cleanup ... owned schema cleaned: name=native_schema_ddl_53ad7a75931146b6b520b0d126982ec5 oid=16632 owner=dbunk mode=RESTRICT
+fixture=2283820d-33ec-4c4c-ae03-7051092bd410 endpoint=127.0.0.1:15432/dbunk_demo baseline=0 restored=true rollback_schema_absent=true
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 945 filtered out; finished in 0.75s
+

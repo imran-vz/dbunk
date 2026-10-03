@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/Users/imran/projects/Code/dbunk/src-tauri/target/debug/examples/native_tls_probe",
+    "/private/tmp/dbunk-native-diagnosis-20261003-live",
+    "/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/dbunk-native-tls-manifest-wwtrtpsz/fixture.json",
+    "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/ca.pem",
+    "/Users/imran/projects/Code/dbunk/tools/native/.state/tls/15151cfc-5885-4066-831f-2717ed9b4587/untrusted-ca.pem"
+  ],
+  "profile": "/private/tmp/dbunk-native-diagnosis-20261003-live",
+  "fixtures": {
+    "version": 1,
+    "fixture": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "database": "dbunk_demo",
+    "user": "dbunk",
+    "tls": {
+      "fixture": "dbunk-native-stage04-tls",
+      "instance": "15151cfc-5885-4066-831f-2717ed9b4587",
+      "host": "127.0.0.1",
+      "port": 15433,
+      "database": "dbunk_tls_demo",
+      "user": "dbunk"
+    }
+  },
+  "executable_sha256": "39c0ba105ec9d036c41e6afd03eb7d9d8ec8b77cbb6052ed0c45dd4c458b88a6",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "scope": "public native facade and real owned TLS endpoint; no actual window claim"
+}

@@ -1,0 +1,4 @@
+project=dbunk-native-stage03 instance=2283820d-33ec-4c4c-ae03-7051092bd410 endpoint=127.0.0.1:15432/dbunk_demo
+{"active_other_clients" : 0, "remaining_probe_schemas" : 0, "remaining_named_lock_clients" : 0}
+temporary_profile_absent=True path=/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpIOCz0v
+temporary_profile_absent=True path=/var/folders/t8/2_v0ysk945b7g7jbm4_rj6x00000gn/T/.tmpZABelI

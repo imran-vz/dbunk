@@ -1,0 +1,52 @@
+[
+  {
+    "check": "just-fmt-final",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit_code": 0,
+    "seconds": 0.78
+  },
+  {
+    "check": "isolated-clippy-final",
+    "command": [
+      "cargo",
+      "clippy",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 26.65
+  },
+  {
+    "check": "just-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit_code": 0,
+    "seconds": 95.24
+  },
+  {
+    "check": "isolated-tests",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "isolated-profile"
+    ],
+    "exit_code": 0,
+    "seconds": 87.01
+  }
+]

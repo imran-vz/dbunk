@@ -2,6 +2,7 @@
 pub(crate) mod csv;
 mod files;
 pub(crate) mod manager;
+pub(crate) mod native;
 pub(crate) mod protocol;
 pub(crate) mod runner;
 pub(crate) use manager::TransferManager;

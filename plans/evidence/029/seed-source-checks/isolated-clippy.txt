@@ -1,0 +1,10 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0063]: missing field `seed_jobs` in initializer of `dbunk_lib::backend::WorkspaceSnapshot`
+   --> examples/native_workspace_probe.rs:145:13
+    |
+145 |             WorkspaceSnapshot {
+    |             ^^^^^^^^^^^^^^^^^ missing `seed_jobs`
+
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `dbunk` (example "native_workspace_probe") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

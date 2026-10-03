@@ -1,0 +1,31 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			36 tab (settable, boolean) Administration · Overview readings collected; row counts are estimates, Value: on
+~			81 button Next page
++			95 container Database scope | database "dbunk_demo" (OID 16384) | 256 rows on this page of 266 captured relations | 2026-10-03T09:10:10.051706+00:00 to 2026-10-03T09:10:10.060417+00:00
+~				89 tab (settable, boolean) Database metrics (8), Value: on
+~				90 tab (settable, boolean) Scope totals (8), Value: off
+~				91 tab (settable, boolean) Relations (256), Value: off
+~			92 list 8 captured Database metrics; arrows select, Enter inspects
++				96 text (selected) Database size (bytes): 9164467, Secondary Actions: Pick
++				97 text (selectable) Table size (bytes): 40960, Secondary Actions: Pick
++				98 text (selectable) Index size (bytes): 49152, Secondary Actions: Pick
++				99 text (selectable) Tables: 5, Secondary Actions: Pick
++				100 text (selectable) Schemas containing relations: 4, Secondary Actions: Pick
++				101 text (selectable) Estimated rows: Unknown, Secondary Actions: Pick
++				102 text (selectable) Indexes: 3, Secondary Actions: Pick
++				103 text (selectable) Current-database connections: 1, Secondary Actions: Pick
++				104 text entry area (settable) Read-only exact overview statistics, Value: Database: "dbunk_demo"
+Database OID: 16384
+Reader PID: 76707
+Collection started: 2026-10-03T09:10:10.051706+00:00
+Collection ended: 2026-10-03T09:10:10.057911+00:00
+Statistics and physical sizes can change during collection; this is not an atomic server-wide measurement.
+
+Database size (bytes): 9164467
+Exact returned byte count. Restricted is distinct from zero or Unknown.
+
+Metric capture interval is shown above. Relation page interval (values may have been collected at different times):
+2026-10-03T09:10:10.051706+00:00 to 2026-10-03T09:10:10.060417+00:00
+
+~			94 container Overview readings collected; row counts are estimates
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 7 tests
+test backend::development::tests::corrupt_settings_and_denied_keychain_never_look_empty ... ok
+test backend::development::tests::fixture_admission_rejects_endpoint_transport_and_engine_substitution ... ok
+test backend::development::tests::foreign_paths_markers_databases_and_fixture_changes_are_preserved ... ok
+test backend::development::tests::scoped_namespace_is_lazy_and_cannot_fall_back_to_production ... ok
+test backend::development::tests::session_admission_rejects_foreign_endpoint_before_credentials_or_network ... ok
+test backend::development::tests::sqlite_lifecycle_reopen_and_reset_never_construct_keychain_entries ... ok
+test backend::development::tests::tls_fixture_opt_in_pins_endpoint_without_bypassing_certificate_validation ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 908 filtered out; finished in 1.17s
+

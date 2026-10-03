@@ -1,0 +1,9 @@
+{
+  "schema_oid": "16892",
+  "table_oid": "16893",
+  "owner": "dbunk",
+  "comment": "dbunk owned XLSX window 20261003",
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema": "native_xlsx_window_20261003",
+  "table": "destination"
+}

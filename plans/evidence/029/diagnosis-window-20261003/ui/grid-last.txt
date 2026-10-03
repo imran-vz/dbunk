@@ -1,0 +1,36 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 61-92
+~		55 table (settable) Query results, Value: row-250
++			119 row
++				120 cell (settable) 243
++				121 cell (settable) 2430
++				122 cell (settable) row-243
++			123 row
++				124 cell (settable) 244
++				125 cell (settable) 2440
++				126 cell (settable) row-244
++			127 row
++				128 cell (settable) 245
++				129 cell (settable) 2450
++				130 cell (settable) row-245
++			131 row
++				132 cell (settable) 246
++				133 cell (settable) 2460
++				134 cell (settable) row-246
++			135 row
++				136 cell (settable) 247
++				137 cell (settable) 2470
++				138 cell (settable) row-247
++			139 row
++				140 cell (settable) 248
++				141 cell (settable) 2480
++				142 cell (settable) row-248
++			143 row
++				144 cell (settable) 249
++				145 cell (settable) 2490
++				146 cell (settable) row-249
++			147 row
++				148 cell (settable) 250
++				149 cell (settable) 2500
++				150 cell (settable) row-250
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

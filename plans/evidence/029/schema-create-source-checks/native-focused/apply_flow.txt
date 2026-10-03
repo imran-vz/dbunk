@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 2 tests
+test apply_flow::tests::cancelled_save_cannot_release_a_late_or_duplicate_write ... ok
+test apply_flow::tests::confirmation_has_a_new_durable_fence_and_is_cancellable ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 211 filtered out; finished in 0.00s
+

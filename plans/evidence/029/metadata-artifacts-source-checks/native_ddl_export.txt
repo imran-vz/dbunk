@@ -1,0 +1,17 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.47s
+     Running unittests src/lib.rs (target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 9 tests
+test backend::ddl_export::live_tests::native_ddl_export_referenced_unique_index_and_mixed_relations ... ignored, explicit owned stage03 mixed DDL probe; creates UUID schema with marker/OID-guarded cleanup
+test backend::ddl_export::live_tests::native_ddl_export_scopes_identity_and_joined_cleanup ... ignored, explicit read-only owned stage03 DDL export probe; identity/activity guard required
+test postgres::native_ddl_export::tests::actual_capacity_and_request_bounds_are_enforced ... ok
+test postgres::native_ddl_export::tests::empty_schema_remains_an_explicit_schema_export ... ok
+test postgres::native_ddl_export::tests::exact_ranges_preserve_unicode_and_quoted_names ... ok
+test postgres::native_ddl_export::tests::only_permission_sqlstate_gets_permission_classification ... ok
+test postgres::native_ddl_export::tests::scope_and_database_replacement_are_not_valid_artifacts ... ok
+test postgres::native_ddl_export::tests::scoped_schema_declarations_and_omissions_are_exact ... ok
+test postgres::native_ddl_export::tests::source_and_encoded_budgets_refuse_before_append ... ok
+
+test result: ok. 7 passed; 0 failed; 2 ignored; 0 measured; 1142 filtered out; finished in 0.05s
+

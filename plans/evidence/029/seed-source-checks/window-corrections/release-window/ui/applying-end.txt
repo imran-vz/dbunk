@@ -1,0 +1,20 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 94-99
+~			42 tab (settable, boolean) Seed table · Seed apply requested. Check the attempt's transaction outcome and cleanup status., Value: on
+~				50 button (disabled) Edit selected recipe
+~				53 button (disabled) Review selected seed
+~				54 button (disabled) Apply reviewed seed
+~				58 text Seed apply requested. Check the attempt's transaction outcome and cleanup status.
++				93 text Seed admitted. Check the attempt for its transaction outcome and cleanup status.
+~					79 text (selected) Running: Pending | native_seed_window_20261003.destination, Secondary Actions: Pick
+~				80 text Attempt d6c1558a-8e1e-41d8-882d-a7417027addb
+Durable recovery: Applying
+Destination: Auto-fit fixture (18477c6a-4ee3-4ce6-b63e-defb702d5b7e) / native_seed_window_20261003.destination
+Endpoint: 127.0.0.1:15432 / dbunk_demo / user dbunk / environment Development
+Safe mode: Protected; read-only: false
+Observed database OID: 16384; relation OID: 16937
+Rows: 1; exact seed: 42; frozen clock (Unix seconds): 1791015152
+Columns: 3 inserted; 2 defaulted
+Recipe identity: 61606e55293cd10d30d76bfa391191b783e39ccc8be8dfd
+~		66 container (settable) Draft persistence, Value: Saved
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

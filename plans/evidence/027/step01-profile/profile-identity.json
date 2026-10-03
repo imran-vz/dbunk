@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "profile_id": "1cd8d4c3-3863-4d4f-85a2-ca08bedf54c6",
+  "credential_namespace": "181a817b-93d6-42e8-9a55-4eaf9e804d2c",
+  "path": "/private/tmp/dbunk-native-stage04-profile-check-20261002",
+  "fixtures": {
+    "version": 1,
+    "fixture": "dbunk-native-stage03",
+    "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "database": "dbunk_demo",
+    "user": "dbunk"
+  }
+}

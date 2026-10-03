@@ -1,0 +1,21 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34.22s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-357761efdf37d8ec)
+
+running 13 tests
+test backend::table_copy::tests::borrowed_bounds_refuse_spare_capacity_and_invalid_recovery_identity ... ok
+test backend::table_copy::tests::both_endpoint_authorities_and_destination_readonly_refuse_before_inspection ... ok
+test backend::table_copy::tests::cancel_during_admitted_data_retirement_keeps_owner_until_existing_request_joins ... ok
+test backend::table_copy::tests::cancellation_invalidates_confirmation_and_same_id_replacement_cannot_use_old_token ... ok
+test backend::table_copy::tests::dropped_submission_keeps_app_owned_receipt_and_exactly_once_success_audit ... ok
+test backend::table_copy::tests::execution_budget_refusal_preserves_review_and_does_not_dispatch ... ok
+test backend::table_copy::tests::retirement_cancels_ready_tokens_and_latches_synchronous_registration ... ok
+test backend::table_copy::tests::shutdown_joins_an_admitted_worker_after_cancellation_not_just_driver_abort ... ok
+test backend::table_copy::tests::unknown_is_retained_in_receipt_and_change_highwater_without_success_audit ... ok
+test postgres::native_table_copy::tests::cancellation_before_commit_never_polls_commit_but_terminal_ack_wins_late_cancel ... ok
+test postgres::native_table_copy::tests::lost_commit_ack_is_unknown_and_never_retried ... ok
+test postgres::native_table_copy::tests::mapping_is_by_exact_name_and_discloses_identity_generated_and_defaults ... ok
+test postgres::native_table_copy::tests::shared_copy_projection_preserves_null_token_and_quotes_and_server_bounds ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 1058 filtered out; finished in 0.24s
+

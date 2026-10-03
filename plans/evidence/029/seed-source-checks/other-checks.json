@@ -1,0 +1,22 @@
+[
+  {
+    "check": "format",
+    "exit_code": 0
+  },
+  {
+    "check": "lint",
+    "exit_code": 0
+  },
+  {
+    "check": "typecheck",
+    "exit_code": 0
+  },
+  {
+    "check": "tooling",
+    "exit_code": 0
+  },
+  {
+    "check": "dependencies",
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,6 @@
+    Checking flate2 v1.1.9
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking zip v2.4.2
+    Checking rust_xlsxwriter v0.84.1
+    Checking calamine v0.26.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.31s

@@ -3,13 +3,14 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::oneshot;
 
-use crate::commands::{bastions, settings};
+use crate::commands::bastions;
 use crate::connections;
 use crate::postgres::backup::{
     manager::JobContext,
     protocol::{PgBackupFormat, PgBackupScope, PgToolJobError, StartPgBackupPayload},
     runner::{Ready, Request},
 };
+use crate::settings;
 use crate::socket_lifecycle::{self, CacheInvalidation};
 use crate::{
     AppState, BastionAuthMethod, ConnectionOrganization, CredentialStorageMode, Environment,
@@ -211,7 +212,7 @@ async fn delete_waits_for_job_termination_before_record_and_cache_removal() {
     assert_admission_blocked(&state, "delete");
     assert_connection_present(&state, "delete", true).await;
     assert!(
-        crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
+        crate::credentials::read_all(&state.credentials, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read credentials")
             .contains_key("delete")
@@ -222,7 +223,7 @@ async fn delete_waits_for_job_termination_before_record_and_cache_removal() {
     command.await.expect("delete task").expect("delete");
     assert_connection_present(&state, "delete", false).await;
     assert!(
-        !crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
+        !crate::credentials::read_all(&state.credentials, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read credentials")
             .contains_key("delete")
@@ -257,7 +258,7 @@ async fn credential_reset_waits_for_all_jobs_then_reopens_global_admission() {
         .await
         .expect("read onboarding state"));
     assert_eq!(
-        crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
+        crate::credentials::read_all(&state.credentials, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read credentials")
             .len(),
@@ -274,7 +275,7 @@ async fn credential_reset_waits_for_all_jobs_then_reopens_global_admission() {
         .await
         .expect("read onboarding state"));
     assert!(
-        crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
+        crate::credentials::read_all(&state.credentials, CredentialStorageMode::PlainSqlite)
             .await
             .expect("read credentials")
             .is_empty()
@@ -456,12 +457,13 @@ async fn credential_configuration_and_migration_wait_for_jobs_before_changing_st
         job.wait_for_cancellation().await;
         assert!(!command.is_finished());
         assert_admission_blocked(&state, "new-during-credential-change");
-        assert!(
-            crate::credentials::read_all(&state.pool, CredentialStorageMode::PlainSqlite)
-                .await
-                .unwrap()
-                .contains_key("credential-change")
-        );
+        assert!(crate::credentials::read_all(
+            &state.credentials,
+            CredentialStorageMode::PlainSqlite
+        )
+        .await
+        .unwrap()
+        .contains_key("credential-change"));
         job.terminate().await;
         command.await.unwrap().unwrap();
         assert_eq!(

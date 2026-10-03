@@ -114,7 +114,7 @@ async fn finished_within(manager: &CompareManager, id: &str, limit: Duration) ->
 async fn run(state: &AppState, request: StartRequest, limit: Duration) -> Status {
     let status = state
         .pg_schema_compare
-        .start_native(request, state.pool.clone())
+        .start_native(request, state.pool.clone(), state.credentials.clone())
         .unwrap();
     finished_within(&state.pg_schema_compare, &status.job_id, limit).await
 }
@@ -295,7 +295,11 @@ async fn cancellation_interrupts_storage_resolution_before_any_connection_attemp
     }
     let status = state
         .pg_schema_compare
-        .start_native(fresh(&pg, "a", &pg, "b"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "a", &pg, "b"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
@@ -331,7 +335,11 @@ async fn cancellation_and_deadline_interrupt_a_silent_handshake_without_a_connec
 
     let manager = state.pg_schema_compare.clone();
     let status = manager
-        .start_native(fresh(&pg, "a", &pg, "b"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "a", &pg, "b"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     let (mut socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
         .await
@@ -361,10 +369,11 @@ async fn cancellation_and_deadline_interrupt_a_silent_handshake_without_a_connec
     // An absent configured connect timeout never disables the job deadline,
     // which starts at admission and covers resolution and the handshake.
     let pool = state.pool.clone();
+    let credentials = state.credentials.clone();
     let status = manager
         .start_with_timing(
             fresh(&pg, "a", &pg, "b"),
-            move |ctx| runner::run(ctx, pool),
+            move |ctx| runner::run(ctx, pool, credentials),
             Duration::from_millis(400),
             Duration::from_millis(100),
         )
@@ -432,7 +441,11 @@ async fn cancellation_during_ssh_setup_holds_admission_until_the_blocked_worker_
 
     let manager = state.pg_schema_compare.clone();
     let status = manager
-        .start_native(fresh(&pg, "a", &pg, "b"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "a", &pg, "b"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     // The SSH handshake is a blocking OS call on the setup worker. It has
     // reached the bastion socket and now waits for a banner that never comes.
@@ -880,7 +893,11 @@ async fn native_teardown_backend_loss_and_read_only_audit() {
         .await
         .unwrap();
     let status = manager
-        .start_native(fresh(&pg, "td_a", &pg, "td_b"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "td_a", &pg, "td_b"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     wait_for_lock(&admin.client, "td_a.orders").await;
     assert_eq!(backends().await, baseline_backends + 1);
@@ -910,7 +927,11 @@ async fn native_teardown_backend_loss_and_read_only_audit() {
         .await
         .unwrap();
     let status = manager
-        .start_native(fresh(&pg, "td_a", &pg, "td_b"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "td_a", &pg, "td_b"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     wait_for_lock(&admin.client, "td_a.orders").await;
     let started = std::time::Instant::now();
@@ -933,7 +954,11 @@ async fn native_teardown_backend_loss_and_read_only_audit() {
         .await
         .unwrap();
     let status = manager
-        .start_native(fresh(&pg, "td_a", &pg, "td_b"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "td_a", &pg, "td_b"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     let pid = wait_for_lock(&admin.client, "td_a.orders").await;
     assert!(admin
@@ -1004,7 +1029,11 @@ async fn native_concurrent_ddl_during_lock_wait_is_consistent_or_retried() {
         .await
         .unwrap();
     let status = manager
-        .start_native(fresh(&pg, "ddl_s", &pg, "ddl_t"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "ddl_s", &pg, "ddl_t"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     wait_for_lock(&admin.client, "ddl_t.orders").await;
     admin
@@ -1062,7 +1091,11 @@ async fn native_concurrent_ddl_during_lock_wait_is_consistent_or_retried() {
         .await
         .unwrap();
     let status = manager
-        .start_native(fresh(&pg, "ddl_s", &pg, "ddl_t"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "ddl_s", &pg, "ddl_t"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     wait_for_lock(&admin.client, "ddl_t.orders").await;
     admin
@@ -1538,12 +1571,17 @@ async fn native_memory_profile_with_increasing_schema_size_and_exact_limits() {
     store(&state, &pg_two).await;
     manager.budget.reset_peak();
     let first = manager
-        .start_native(fresh(&pg, "prof_s", &pg, "prof_t"), state.pool.clone())
+        .start_native(
+            fresh(&pg, "prof_s", &pg, "prof_t"),
+            state.pool.clone(),
+            state.credentials.clone(),
+        )
         .unwrap();
     let second = manager
         .start_native(
             fresh(&pg_two, "prof_t", &pg_two, "prof_s"),
             state.pool.clone(),
+            state.credentials.clone(),
         )
         .unwrap();
     let first = finished_within(&manager, &first.job_id, Duration::from_secs(60)).await;

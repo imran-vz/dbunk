@@ -1,0 +1,37 @@
+{
+  "version": 11,
+  "rows": 0,
+  "seedJobs": [
+    {
+      "attemptId": "9c49b8e7-aa2d-475b-aed7-5c32df30619a",
+      "description": {
+        "endpoint": {
+          "connectionId": "18477c6a-4ee3-4ce6-b63e-defb702d5b7e",
+          "schema": "native_seed_window_20261003",
+          "table": "destination"
+        },
+        "connection": {
+          "connectionName": "Auto-fit fixture",
+          "host": "127.0.0.1",
+          "port": 15432,
+          "database": "dbunk_demo",
+          "user": "dbunk",
+          "environment": "Development",
+          "safeMode": "Protected",
+          "readOnly": false
+        },
+        "databaseOid": 16384,
+        "relationOid": 16937,
+        "rowCount": 3,
+        "seedUsed": 18446744073709551615,
+        "clockEpochSeconds": 1791014587,
+        "recipeSha256": "092af1231100cb3b0e31318be979b59b7a6fe5750c60a4e3a01b13e787973ac0",
+        "recipeSummary": "note: constant \"seed window exact \u96ea\" (21 UTF-8 bytes); NULL rate Some(0.0)\nscore: DEFAULT; NULL rate None\n",
+        "recipeSummaryTruncated": false,
+        "insertedColumns": 2,
+        "defaultedColumns": 3
+      },
+      "state": "staged"
+    }
+  ]
+}

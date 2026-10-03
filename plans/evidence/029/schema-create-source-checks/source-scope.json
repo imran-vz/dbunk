@@ -1,0 +1,7 @@
+{
+  "files": 374,
+  "removed_previous_paths": [
+    "apps/native/src/table_changes/apply_flow.rs"
+  ],
+  "scope": "previous frozen scope plus all native, backend and PostgreSQL Rust sources; shared ApplyFlow moved to native root"
+}

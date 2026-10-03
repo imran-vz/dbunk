@@ -19,6 +19,17 @@ impl CompareManager {
         validate_transport(&s, session, transport)?;
         let now = Instant::now();
         prune(&mut s, now);
+        let page = self.encode_read(&s, response_id, request, read, now)?;
+        s.responses.handoff(session, page, send)
+    }
+    fn encode_read(
+        &self,
+        s: &State,
+        response_id: &str,
+        request: &ResultRequest,
+        read: ReadRequest,
+        now: Instant,
+    ) -> Result<EncodedPage, CompareError> {
         let entry = s
             .jobs
             .iter()
@@ -75,7 +86,40 @@ impl CompareManager {
                 },
             )?,
         };
-        s.responses.handoff(session, page, send)
+        Ok(page)
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn read_owned(
+        &self,
+        response_id: &str,
+        request: &ResultRequest,
+        read: ReadRequest,
+    ) -> Result<EncodedPage, CompareError> {
+        let mut state = self.inner.lock().unwrap();
+        let now = Instant::now();
+        prune(&mut state, now);
+        self.encode_read(&state, response_id, request, read, now)
+    }
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) fn validate_result(&self, request: &ResultRequest) -> Result<(), CompareError> {
+        let mut state = self.inner.lock().unwrap();
+        let now = Instant::now();
+        prune(&mut state, now);
+        let result = state
+            .jobs
+            .iter()
+            .find(|e| e.status.job_id == request.identity.job_id && !e.invalidated)
+            .and_then(|e| e.result.as_ref())
+            .ok_or(CompareError::Unavailable)?;
+        result.validate_read(&request.identity, now)?;
+        let metadata = result.metadata();
+        if metadata.identity != request.identity
+            || metadata.source.endpoint != request.source
+            || metadata.target.endpoint != request.target
+        {
+            return Err(CompareError::Unavailable);
+        }
+        Ok(())
     }
     fn encode_detail(
         &self,

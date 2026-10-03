@@ -1,0 +1,37 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: captured variable cannot escape `FnMut` closure body
+   --> src/schema_map_view/render.rs:188:50
+    |
+168 |     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    |                                          -- variable defined here
+...
+188 |             .children((0..ACTIONS.len()).map(|i| self.button(i, cx)));
+    |                                                - ^^^^^^^^^^^^^^^--^
+    |                                                | |              |
+    |                                                | |              variable captured here
+    |                                                | returns a reference to a captured variable which escapes the closure body
+    |                                                inferred to be a `FnMut` closure
+    |
+    = note: `FnMut` closures only have access to their captured variables while they are executing...
+    = note: ...therefore, they cannot allow references to captured variables to escape
+
+error: captured variable cannot escape `FnMut` closure body
+   --> src/schema_map_view/render.rs:202:44
+    |
+168 |     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    |                                          -- variable defined here
+...
+202 |                 .map(|(i, (scope, label))| self.scope_button(i, scope, label, cx)),
+    |                                          - ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^--^
+    |                                          | |                                  |
+    |                                          | |                                  variable captured here
+    |                                          | returns a reference to a captured variable which escapes the closure body
+    |                                          inferred to be a `FnMut` closure
+    |
+    = note: `FnMut` closures only have access to their captured variables while they are executing...
+    = note: ...therefore, they cannot allow references to captured variables to escape
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 2 previous errors

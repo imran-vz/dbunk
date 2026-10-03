@@ -1,0 +1,22 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error: this `if` statement can be collapsed
+   --> src/table_copy_store.rs:140:13
+    |
+140 | /             if job.change_revision.is_some_and(|revision| revision > self.revision) {
+141 | |                 if !gap { cx.emit(CopyEvent::DestinationChanged(Some(job.intent.destination.connection_id.clone()))); }
+142 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+140 ~             if job.change_revision.is_some_and(|revision| revision > self.revision)
+141 ~                 && !gap { cx.emit(CopyEvent::DestinationChanged(Some(job.intent.destination.connection_id.clone()))); }
+    |
+
+error: could not compile `dbunk-native` (bin "dbunk-native") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

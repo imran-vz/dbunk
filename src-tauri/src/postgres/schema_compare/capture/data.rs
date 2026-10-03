@@ -17,7 +17,7 @@ pub struct CapturedEndpoint {
     _base: Reservation,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExcludedCount {
     pub category: ExcludedCategory,

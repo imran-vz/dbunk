@@ -1,0 +1,5 @@
+Target: owned fixture dbunk-native-stage03 127.0.0.1:15432/dbunk_demo instance=2283820d-33ec-4c4c-ae03-7051092bd410
+Persistent isolated stage04 profile: /private/tmp/dbunk-native-admin-20261003-review
+Executable: /private/tmp/dbunk-native-package-20261003-admin/dbunk Native Preflight.app/Contents/MacOS/dbunk-native; evidence: /Users/imran/projects/Code/dbunk/plans/evidence/029/admin-window-20261003
+Native workspace PID: 68741
+Native workspace launch failed: Native workspace exited -15; inspect /Users/imran/projects/Code/dbunk/plans/evidence/029/admin-window-20261003/native.log

@@ -51,6 +51,14 @@ A host calls the service, never the manager: `QuerySessionManager::execute`
 takes the policy as an argument, and only the service guarantees it comes from
 the stored connection.
 
+Plan 028 backend preparation extracts `table_browse::service` and
+`result_mutation::service` with the same rule. Table paging/counts, preferences,
+analysis, preview/apply and virtual-key operations keep their Tauri signatures;
+the prior browse execution module is now named `runner`. Successful activity,
+required-override auditing and storage-error redaction remain in the services.
+This extraction alone does not activate native data tools: owned document
+admission and joined executor/socket lifecycle are separate gates.
+
 ### The Tauri adapter keeps the wire protocol
 
 `commands::channel_sink` wraps a `Channel` and serializes there. Sequence
@@ -58,6 +66,77 @@ numbers, cumulative ACKs, the credit window and every event's JSON are
 unchanged. Whether a native host keeps the ACK and credit mechanism or uses a
 bounded in-process channel is decided when that host exists, and only after
 the same failure-mode tests pass against it.
+
+### Initial stage 04 settings extraction
+
+Plan 027's initial Step 1 work also extracts `settings`: app settings,
+credential configure/unlock/change/reset, and namespaced UI-state persistence.
+The Tauri adapters keep their command names and JSON. Credential mutation
+fences remain in the service and are tested without Tauri.
+
+Credential consumers now carry an explicit profile context, including SSH,
+managed-server rollback and schema-comparison workers. The context binds its
+SQLite pool, encryption key, password cache, mutation lock and Keychain store.
+The default Tauri context retains the ordinary single Keychain entry and its
+legacy read-error policy. The stage03 fixture has no OS Keychain capability.
+SQLite credential rewrites are transactional; SQLite-only profile lifecycle
+changes commit credentials, verifier and settings together before publishing
+the new key/cache. Injected failures preserve the prior working SQLite state.
+
+The stage04 constructor now uses a separate versioned marker, canonical private
+path, exclusive lock, app-generated namespace and launcher-verified fixture
+manifest. A read-only SQLite identity check precedes migrations or credential
+construction. The process cannot switch stage04 profiles. Native SQLite pools
+use FULL synchronous commits; default Tauri pools retain their existing setting.
+The bounded backend facade exposes redacted SQLite credential settings and
+lifecycle operations. It rejects corrupt onboarding state and unsupported modes
+before credential access; a confirmed reset preserves metadata and drafts.
+
+Plan 030 adds a separate explicit general PostgreSQL profile constructor with
+its own `.dbunk-native-profile` marker and SQLite identity. It reuses the native
+credential lifecycle with an independent UUID namespace, private path and
+exclusive lock. Endpoint authority is an enum: existing fixture profiles retain
+their immutable manifests; general profiles admit supported direct PostgreSQL
+connections only after the same credential, policy and document admission checks.
+Opening never adopts an unmarked legacy profile or falls back to a default path.
+The native entry point separates create from open and restores disconnected state.
+Normal and stage04 profiles share the process-selection guard; stage03's original
+constructor remains separate. This implements the explicit capability requested
+by Plan 030, not production identity, profile import or daily-driver cutover.
+See [current source evidence](../../plans/evidence/030/general-profile-source-checks/README.md).
+
+Plan 027's subsequent Step 1 implementation adds native Keychain mode changes
+with a secret-free SQLite recovery journal and namespace-scoped primary and
+rollback entries. Failed cross-store changes retain recovery state rather than
+claiming an empty store or successful conversion. Native admission serializes
+credential/metadata changes with connection startup. Injected process tests
+cover failed writes, recovery and namespace selection; SQLite-only lifecycle
+paths never construct a Keychain entry. A disposable real OS Keychain CLI probe
+also passes separate-process reopen, conversion and reset, with both owned
+entries absent after cleanup. The subsequent
+[packaged GPUI checks](../../plans/evidence/027/workspace-package-20261002/agent-verification.md)
+also pass Keychain onboarding, blank-password edit preservation, separate-process
+reopen, encrypted SQLite conversion/unlock, conversion back to Keychain, and
+confirmed reset preserving SQL and connection metadata. All four launches join
+shutdown and return fixture activity to baseline; scoped cleanup verifies both
+entries absent.
+
+[Recovery window checks](../../plans/evidence/027/workspace-recovery-20261002/agent-verification.md)
+verify that corrupt/future records survive ordinary quit unchanged and that an
+oversized current draft can be exported exactly before explicit discard without
+replacing its last durable version. The
+[workspace performance capture](../../plans/evidence/027/workspace-performance-b/summary.json)
+records one/four-session diagnostics and 20 open/run/close cycles; it uses an
+earlier binary than these recovery fixes.
+
+These checks do not complete Plan 027 or establish full PostgreSQL parity.
+VoiceOver is explicitly deferred and non-blocking under the current scope.
+Keyboard/AX, real IME in remaining controls and actual-window race/recovery
+gates retain their scoped pending status.
+The [frozen package source manifest](../../plans/evidence/027/workspace-package-20261002/source-manifest.json)
+predates Plan 028 backend preparation, so its window evidence does not validate
+that newer source. Current scope and remaining gates are in the
+[workspace progress record](../../plans/evidence/027/step02-workspace-progress.md).
 
 ### The proof is a build without Tauri
 
@@ -101,15 +180,23 @@ unchanged. PlainSqlite fixture initialization does not call credential migration
 or Keychain. This is an uncommitted stage 03 addition with separate verification
 in `plans/evidence/026/`, not retroactive Plan 025 completion evidence.
 
+Plan 027 found that fresh fixture seeding indirectly called ordinary
+credential cleanup through `connections::save`, contradicting the no-Keychain
+claim above. Fresh seeding now writes only its validated SQLite fixture
+records. A recording-keyring test in a separate process proves no Keychain
+entry is selected on fresh open or reopen. The public fixture constructor
+and profile guard are unchanged. See
+`plans/evidence/027/step01-progress.md` for the correction and red/green proof.
+
 ## Consequences
 
 - `--no-default-features` builds allow `dead_code` and `unused_imports`:
   families whose logic still lives in `commands` leave their backend functions
   without a caller in that build. The default build keeps both lints. The
   allowance goes when the last family is extracted.
-- Two tests that drive command logic outside the extracted families are
-  compiled only with `tauri-host`: `postgres::transfer::runner_tests_live` and
-  `result_mutation::live::safety_live_apply_strict_confirmation_and_audit`.
+- `postgres::transfer::runner_tests_live` still requires `tauri-host`.
+  Plan 028 moves `result_mutation::live::safety_live_apply_strict_confirmation_and_audit`
+  to the shared service, so it also compiles without Tauri.
 - `isolated-profile` is a non-default feature that honors
   `DBUNK_DEV_CONFIG_DIR` in optimized builds, for measurement against a
   disposable profile. Release artefacts are built without it and always use

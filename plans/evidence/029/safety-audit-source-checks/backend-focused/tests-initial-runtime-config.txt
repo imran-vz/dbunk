@@ -1,0 +1,44 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.37s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-823aad939f962c25)
+
+running 5 tests
+test backend::safety_audit::tests::continuation_is_exact_stable_and_profile_bound ... FAILED
+test backend::safety_audit::tests::encoded_byte_limit_continues_without_skipping_a_row ... FAILED
+test backend::safety_audit::tests::global_retention_can_end_a_continuation_with_an_empty_page ... FAILED
+test backend::safety_audit::tests::persisted_corruption_is_refused_without_leaking_its_values ... FAILED
+test backend::safety_audit::tests::public_capture_validation_accounts_for_capacities_order_and_redacts ... ok
+
+failures:
+
+---- backend::safety_audit::tests::continuation_is_exact_stable_and_profile_bound stdout ----
+
+thread 'backend::safety_audit::tests::continuation_is_exact_stable_and_profile_bound' (9099039) panicked at src/backend/safety_audit/tests.rs:12:10:
+called `Result::unwrap()` on an `Err` value: "Native backend requires a multi-thread Tokio runtime"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- backend::safety_audit::tests::encoded_byte_limit_continues_without_skipping_a_row stdout ----
+
+thread 'backend::safety_audit::tests::encoded_byte_limit_continues_without_skipping_a_row' (9099040) panicked at src/backend/safety_audit/tests.rs:12:10:
+called `Result::unwrap()` on an `Err` value: "Native backend requires a multi-thread Tokio runtime"
+
+---- backend::safety_audit::tests::global_retention_can_end_a_continuation_with_an_empty_page stdout ----
+
+thread 'backend::safety_audit::tests::global_retention_can_end_a_continuation_with_an_empty_page' (9099041) panicked at src/backend/safety_audit/tests.rs:12:10:
+called `Result::unwrap()` on an `Err` value: "Native backend requires a multi-thread Tokio runtime"
+
+---- backend::safety_audit::tests::persisted_corruption_is_refused_without_leaking_its_values stdout ----
+
+thread 'backend::safety_audit::tests::persisted_corruption_is_refused_without_leaking_its_values' (9099042) panicked at src/backend/safety_audit/tests.rs:12:10:
+called `Result::unwrap()` on an `Err` value: "Native backend requires a multi-thread Tokio runtime"
+
+
+failures:
+    backend::safety_audit::tests::continuation_is_exact_stable_and_profile_bound
+    backend::safety_audit::tests::encoded_byte_limit_continues_without_skipping_a_row
+    backend::safety_audit::tests::global_retention_can_end_a_continuation_with_an_empty_page
+    backend::safety_audit::tests::persisted_corruption_is_refused_without_leaking_its_values
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 946 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--lib`

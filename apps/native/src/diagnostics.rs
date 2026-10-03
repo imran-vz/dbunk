@@ -40,6 +40,10 @@ impl ExecutedSql {
         Some(Self { source, range })
     }
 
+    pub fn sql(&self) -> &str {
+        &self.source[self.range.clone()]
+    }
+
     pub fn range_for_position(
         &self,
         position: Option<u32>,

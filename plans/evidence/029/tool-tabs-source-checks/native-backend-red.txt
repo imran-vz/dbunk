@@ -1,0 +1,35 @@
+cargo clippy --manifest-path src-tauri/Cargo.toml --no-default-features --features isolated-profile --all-targets -- -D warnings
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0063]: missing fields `saved_query_id` and `tool` in initializer of `dbunk_lib::backend::WorkspaceDocument`
+   --> examples/native_workspace_probe.rs:113:36
+    |
+113 |         .map(|(index, connection)| WorkspaceDocument {
+    |                                    ^^^^^^^^^^^^^^^^^ missing `saved_query_id` and `tool`
+
+error[E0063]: missing fields `saved_query_id` and `tool` in initializer of `dbunk_lib::backend::WorkspaceDocument`
+   --> examples/native_keychain_probe.rs:210:33
+    |
+210 |                 documents: vec![WorkspaceDocument {
+    |                                 ^^^^^^^^^^^^^^^^^ missing `saved_query_id` and `tool`
+
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `dbunk` (example "native_workspace_probe") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (example "native_keychain_probe") due to 1 previous error
+error: field assignment outside of initializer for an instance created with Default::default()
+   --> src/backend/development/workspace_tests.rs:558:5
+    |
+558 |     snapshot.active_document_id = Some("history".into());
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: consider initializing the variable with `backend::development::workspace::WorkspaceSnapshot { active_document_id: Some("history".into()), ..Default::default() }` and removing relevant reassignments
+   --> src/backend/development/workspace_tests.rs:557:5
+    |
+557 |     let mut snapshot = WorkspaceSnapshot::default();
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+    = note: `-D clippy::field-reassign-with-default` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::field_reassign_with_default)]`
+
+error: could not compile `dbunk` (lib test) due to 1 previous error
+error: Recipe `check-native-backend` failed on line 47 with exit code 101

@@ -1,0 +1,19 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			65 button Open selected table
+~				83 text (selected) Table "native_map_window_20261003"."links" · OID 20399 · junction · 0 triggers, Secondary Actions: Pick
+~				86 text (selectable) Foreign key OID 20387 · tenant, parent_id → tenant, id, Secondary Actions: Pick
+~			89 text Selected map detail page 1. Database: "dbunk_demo"
+Database OID: 16384
+Captured: 2026-10-03T09:59:46.945603Z
+Table: "native_map_window_20261003"."links"
+Relation OID: 20399
+Schema OID: 20371
+Kind: Table
+External target: false
+Junction: true
+Columns: 2
+User triggers: 0
+1: "child_id" integer | NOT NULL | PRIMARY KEY
+2: "other_id" integer | NOT NULL | PRIMARY KEY
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

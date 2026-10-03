@@ -1,0 +1,10 @@
+{
+  "pid": 47592,
+  "command_and_hash_verified": true,
+  "signal": "SIGTERM",
+  "stopped": true,
+  "fixture_instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "backend_final": 0,
+  "profile_retained": "/private/tmp/dbunk-native-schema-create-20261003-review",
+  "normal_quit_pass": false
+}

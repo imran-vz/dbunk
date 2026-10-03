@@ -1,0 +1,37 @@
+Window: "", App: System Settings.
+0 sheet Secondary Actions: Raise
+	1 split group
+		2 container
+			3 scroll area
+				4 list Sidebar
+					5 row (selected) All Input Sources
+					6 row (selectable)
+					7 row (selectable) ABC
+			8 button Add
+			9 button (disabled) Remove
+		10 splitter (disabled, settable, float) 200
+		11 container
+			12 scroll area
+				13 switch Show Input menu in menu bar, Value: off
+				14 container
+					15 switch Correct spelling automatically, Value: on
+					16 switch Capitalize words automatically, Value: on
+					17 switch Show inline predictive text, Value: on
+					18 switch Add period with double-space, Value: on
+				19 pop up button Spelling, Value: Automatic by Language
+				20 container
+					21 switch Use smart quotes and dashes, Value: on
+					22 pop up button For double quotes, Value: “abc”
+					23 pop up button For single quotes, Value: ‘abc’
+			24 button Done
+25 menu bar
+	26 System Settings
+	27 Edit
+	28 View
+	29 Window
+	30 Help
+
+Selected:
+	5 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

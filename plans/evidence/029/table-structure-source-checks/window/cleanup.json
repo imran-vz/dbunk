@@ -1,0 +1,9 @@
+{
+  "normal_exit": 0,
+  "schema_absent": true,
+  "all_prior_documents_unchanged": true,
+  "prior_documents": 12,
+  "current_documents": 13,
+  "stage03_backends": 0,
+  "stage04_backends": 0
+}

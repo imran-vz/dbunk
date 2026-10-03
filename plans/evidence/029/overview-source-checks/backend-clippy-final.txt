@@ -1,0 +1,5 @@
+    Checking libz-sys v1.1.29
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking libssh2-sys v0.3.1
+    Checking ssh2 v0.9.5
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.37s

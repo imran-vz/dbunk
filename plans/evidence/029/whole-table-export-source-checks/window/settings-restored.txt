@@ -1,0 +1,95 @@
+Window: "dbunk Native Workspace", App: dbunk Native Preflight.
+0 standard window dbunk Native Workspace, Secondary Actions: Raise
+	1 container
+		2 button + Query
+		3 button History
+		4 button Saved
+		5 button Objects
+		6 button Administration
+		7 button Backup / Restore
+		8 button CSV transfer
+		9 button Copy table
+		10 button Compare schemas
+		11 button Schema map
+		12 button Save query
+		13 button Rename
+		14 button Pin
+		15 button ←
+		16 button →
+		17 button Close
+		18 button Credentials
+		19 container Connections
+			20 button + Connection
+			21 button Open table
+			22 button −
+			23 button +
+			24 button Auto-fit fixture
+			25 button Edit
+			26 button Duplicate
+			27 button Copy URI
+			28 button ★
+			29 button Delete
+			30 button Comfortable
+		31 tab group
+			32 tab (settable, boolean) Query 1 · Disconnected: Connection closed, Value: off
+			33 tab (settable, boolean) native_parity_20261003.rows · Disconnected, Value: off
+			34 tab (settable, boolean) Saved queries · Open tab to load records, Value: off
+			35 tab (settable, boolean) History · Open tab to load records, Value: off
+			36 tab (settable, boolean) History query · Disconnected: Connection closed, Value: off
+			37 tab (settable, boolean) Administration · Disconnected; retained readings may be stale, Value: on
+			38 tab (settable, boolean) EXPLAIN · Disconnected: Connection closed, Value: off
+			39 tab (settable, boolean) Value: off, Table copy · Prepare reads both tables; destination rows change only after exact review and saved admission.
+			40 tab (settable, boolean) Objects · Disconnected; retained catalog may be stale, Value: off
+			41 tab (settable, boolean) CSV transfer · Database changed; inspect again. Setup text and accepted transfers remain, Value: off
+			42 tab (settable, boolean) native_seed_window_20261003.destination · Disconnected, Value: off
+			43 tab (settable, boolean) Value: off, Seed table · Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.
+			44 tab (settable, boolean) native_structure_window_20261003.parent · Disconnected, Value: off
+			45 tab (settable, boolean) Schema map · Disconnected; retained map may be stale, Value: off
+		46 button Connect
+		47 button Disconnect
+		48 button Clear results
+		49 container Saved connection settings
+			50 button Administration
+			51 button Edit connection
+			52 list Saved connection fields; Up and Down select
+				53 text (selectable) Connection ID, Secondary Actions: Pick
+				54 text (selectable) Name, Secondary Actions: Pick
+				55 text (selectable) Engine, Secondary Actions: Pick
+				56 text (selected) Folder, Secondary Actions: Pick
+				57 text (selectable) Favorite, Secondary Actions: Pick
+				58 text (selectable) Color, Secondary Actions: Pick
+				59 text (selectable) Host, Secondary Actions: Pick
+				60 text (selectable) Port, Secondary Actions: Pick
+				61 text (selectable) Database, Secondary Actions: Pick
+				62 text (selectable) User, Secondary Actions: Pick
+				63 text (selectable) Environment, Secondary Actions: Pick
+				64 text (selectable) Configured safe mode, Secondary Actions: Pick
+				65 text (selectable) Read only, Secondary Actions: Pick
+				66 text (selectable) TLS mode, Secondary Actions: Pick
+				67 text (selectable) TLS server name, Secondary Actions: Pick
+				68 text (selectable) Root certificate path, Secondary Actions: Pick
+				69 text (selectable) Client certificate path, Secondary Actions: Pick
+				70 text (selectable) Client key path, Secondary Actions: Pick
+				71 text (selectable) Statement timeout (ms), Secondary Actions: Pick
+				72 text (selectable) Idle transaction timeout (ms), Secondary Actions: Pick
+				73 text (selectable) Connect timeout (ms), Secondary Actions: Pick
+				74 text (selectable) Keepalive (seconds), Secondary Actions: Pick
+				75 text (selectable) Default role, Secondary Actions: Pick
+				76 text (selectable) Default search path, Secondary Actions: Pick
+			77 text entry area (settable) Exact saved connection setting, read only, Value: Folder
+
+		78 container (settable) Draft persistence, Value: Saved
+		79 button Retry
+		80 button Export SQL
+		81 button Discard and quit
+	82 close button
+	83 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	84 minimize button
+	85 text dbunk Native Workspace
+86 menu bar
+	87 dbunk Native Preflight
+	88 Query
+	89 Results
+	90 Connections
+
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

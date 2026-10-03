@@ -1,0 +1,42 @@
+[
+  {
+    "name": "rust-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": true,
+    "elapsed_seconds": 0.57
+  },
+  {
+    "name": "rust-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": true,
+    "elapsed_seconds": 25.72
+  },
+  {
+    "name": "rust-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit": 0,
+    "serialized_rust_tests": true,
+    "elapsed_seconds": 96.33
+  },
+  {
+    "name": "native-backend",
+    "command": [
+      "just",
+      "check-native-backend"
+    ],
+    "exit": 101,
+    "serialized_rust_tests": true,
+    "elapsed_seconds": 80.97
+  }
+]

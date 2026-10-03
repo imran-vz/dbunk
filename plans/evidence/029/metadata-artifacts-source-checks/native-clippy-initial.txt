@@ -1,0 +1,105 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error[E0433]: cannot find module or crate `thiserror` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:212:45
+    |
+212 | #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+    |                                             ^^^^^^^^^ use of unresolved module or unlinked crate `thiserror`
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:214:7
+    |
+214 |     #[error("Invalid native map preferences; nothing was saved")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:216:7
+    |
+216 |     #[error("Native map preferences exceed the storage limit; stored settings preserved")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:218:7
+    |
+218 |     #[error("Native map preferences use an unsupported version; stored settings preserved")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:220:7
+    |
+220 |     #[error("Stored native map preferences are corrupt; stored settings preserved")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:222:7
+    |
+222 |     #[error("Native map preferences changed; reload before saving or resetting")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:224:7
+    |
+224 |     #[error("Native map preference storage is unavailable")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:226:7
+    |
+226 |     #[error("The map document is closed, retired or belongs to another profile")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+error: cannot find attribute `error` in this scope
+   --> /Users/imran/projects/Code/dbunk/src-tauri/src/backend/schema_map/preferences/types.rs:228:7
+    |
+228 |     #[error("The native profile is unavailable for map preferences")]
+    |       ^^^^^
+    |
+help: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+    |
+213 + #[derive(Error)]
+214 | pub enum SchemaMapPreferencesError {
+    |
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `dbunk` (lib) due to 9 previous errors

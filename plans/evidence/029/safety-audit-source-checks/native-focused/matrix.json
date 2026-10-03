@@ -1,0 +1,44 @@
+[
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "clippy",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "model",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "safety_audit_model::"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "runtime",
+    "command": [
+      "cargo",
+      "+1.98.1",
+      "test",
+      "--manifest-path",
+      "apps/native/Cargo.toml",
+      "--locked",
+      "local_audit_delivery_is_bounded_joined_and_reopens_after_disconnect"
+    ],
+    "exit": 0
+  }
+]

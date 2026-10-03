@@ -1,0 +1,20 @@
+[
+  {
+    "check": "just-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit_code": 0,
+    "seconds": 28.94
+  },
+  {
+    "check": "just-test",
+    "command": [
+      "just",
+      "test"
+    ],
+    "exit_code": 0,
+    "seconds": 86.66
+  }
+]

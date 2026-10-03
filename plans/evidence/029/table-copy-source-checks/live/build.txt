@@ -1,0 +1,2 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.43s

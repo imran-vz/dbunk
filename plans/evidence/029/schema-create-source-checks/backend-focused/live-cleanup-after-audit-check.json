@@ -1,0 +1,10 @@
+{
+  "endpoint": "127.0.0.1:15432/dbunk_demo",
+  "instance": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema": "native_schema_ddl_fbcbf51aa60a455b8b78ef8d6c68056b",
+  "created_oid": 16634,
+  "schema_and_rollback_absent": true,
+  "final_activity": 0,
+  "confirmed_success_audit": 1,
+  "duplicate_added_audit": 0
+}

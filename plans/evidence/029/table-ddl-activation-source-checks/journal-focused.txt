@@ -1,0 +1,19 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `dbunk` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.09s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/dbunk_lib-0706e3906013aa1d)
+
+running 6 tests
+test backend::development::workspace::table_ddl_tests::table_ddl_capacity_envelope_and_other_journals_refuse_without_overwrite ... ok
+test backend::development::workspace::table_ddl_tests::table_ddl_exact_matching_includes_old_comment_attnum_namespace_and_both_timeouts ... ok
+test backend::development::workspace::table_ddl_tests::table_ddl_exact_restore_is_read_only_and_preserves_empty_comment_intent ... ok
+test backend::development::workspace::table_ddl_tests::table_ddl_invalid_recovery_cannot_overwrite_original_record ... ok
+test backend::development::workspace::table_ddl_tests::table_ddl_legacy_workspaces_accept_absence_and_reject_even_null_new_fields ... ok
+test backend::development::workspace::table_ddl_tests::table_ddl_rename_forms_preserve_exact_whitespace_and_quote_spelling ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1178 filtered out; finished in 0.05s
+

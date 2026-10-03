@@ -1,0 +1,58 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+error: large size difference between variants
+   --> src/backend/schema_comparisons/types.rs:90:1
+    |
+ 90 | /   pub enum CompareReply {
+ 91 | | /     Metadata {
+ 92 | | |         metadata: ComparisonMetadata,
+ 93 | | |         kind: DifferenceKind,
+ 94 | | |         object_count: usize,
+ 95 | | |         source_excluded_counts: Vec<ExcludedCount>,
+ 96 | | |         target_excluded_counts: Vec<ExcludedCount>,
+ 97 | | |     },
+    | | |_____- the largest variant contains at least 385 bytes
+...   |
+103 | | /     Fields {
+104 | | |         object: RelationIdentity,
+105 | | |         offset: u32,
+106 | | |         next_offset: Option<u32>,
+107 | | |         items: Vec<FieldSummary>,
+108 | | |     },
+    | | |_____- the second-largest variant contains at least 68 bytes
+...   |
+120 | |       },
+121 | |   }
+    | |___^ the entire enum is at least 392 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#large_enum_variant
+    = note: `-D clippy::large-enum-variant` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::large_enum_variant)]`
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+ 92 -         metadata: ComparisonMetadata,
+ 92 +         metadata: Box<ComparisonMetadata>,
+    |
+
+error: this `impl` can be derived
+  --> src/backend/schema_comparisons.rs:29:1
+   |
+29 | / impl Default for Registry {
+30 | |     fn default() -> Self {
+31 | |         Self {
+32 | |             owner: Default::default(),
+...  |
+38 | | }
+   | |_^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#derivable_impls
+   = note: `-D clippy::derivable-impls` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::derivable_impls)]`
+help: replace the manual implementation with a derive attribute
+   |
+23 + #[derive(Default)]
+24 | pub(super) struct Registry {
+   |
+
+error: could not compile `dbunk` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `dbunk` (lib test) due to 2 previous errors

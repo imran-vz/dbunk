@@ -1,0 +1,10 @@
+{
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "schema_oid": 20517,
+  "table_oid": 20518,
+  "guard": "exact original names, owners, tags, attnum, comments and rows; RESTRICT",
+  "absent": true,
+  "stage03_backends": 0,
+  "stage04_backends": 0,
+  "scope": "Unused window fixture removed; no DDL window pass"
+}

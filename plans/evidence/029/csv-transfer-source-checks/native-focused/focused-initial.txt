@@ -1,0 +1,23 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+   Compiling dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.92s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (apps/native/target/debug/deps/dbunk_native-d1438b3a799f789d)
+
+running 12 tests
+test csv_transfer_store::tests::abandoned_blocked_cleanup_cannot_starve_another_ready_inspection ... ok
+test csv_transfer_model::tests::import_revision_gaps_require_all_sources_and_only_ack_after_invalidation ... ok
+test csv_transfer_store::tests::dropped_setup_owner_cancels_preparation_then_releases_only_joined_inspection ... ok
+test csv_transfer_model::tests::option_and_path_refusals_preserve_last_valid_setup ... ok
+test csv_transfer_model::tests::picker_owner_revision_target_and_connection_generation_are_exact ... ok
+test result_export::tests::csv_baseline_preserves_null_empty_quotes_and_exact_numeric_text ... ok
+test csv_transfer_model::tests::capacity_and_admission_guards_refuse_hostile_or_unreleased_observations ... ok
+test csv_transfer_model::tests::mapping_preserves_duplicate_and_blank_source_indices_and_required_targets ... ok
+test csv_transfer_model::tests::mapping_cycles_past_occupied_generated_and_identity_targets ... ok
+test csv_transfer_model::tests::captures_charge_overlap_and_preserve_missing_selection_and_zero_counts ... ok
+test controller::workspace_runtime::tests::csv_observer_shutdown_fences_queued_inspection_and_closes_before_wake ... ok
+test controller::workspace_runtime::tests::csv_reply_budget_refusal_precedes_inspection_registration ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 0.05s
+

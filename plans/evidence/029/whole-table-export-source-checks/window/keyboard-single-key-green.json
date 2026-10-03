@@ -1,0 +1,51 @@
+[
+  {
+    "key": "Return",
+    "before": "CSV",
+    "expected": "JSON",
+    "actual": "JSON",
+    "pass": true
+  },
+  {
+    "key": "space",
+    "before": "JSON",
+    "expected": "SQL INSERT",
+    "actual": "SQL INSERT",
+    "pass": true
+  },
+  {
+    "key": "Return",
+    "before": "SQL INSERT",
+    "expected": "HTML",
+    "actual": "HTML",
+    "pass": true
+  },
+  {
+    "key": "space",
+    "before": "HTML",
+    "expected": "Markdown",
+    "actual": "Markdown",
+    "pass": true
+  },
+  {
+    "key": "Return",
+    "before": "Markdown",
+    "expected": "Text",
+    "actual": "Text",
+    "pass": true
+  },
+  {
+    "key": "space",
+    "before": "Text",
+    "expected": "XLSX",
+    "actual": "XLSX",
+    "pass": true
+  },
+  {
+    "key": "Return",
+    "before": "XLSX",
+    "expected": "CSV",
+    "actual": "CSV",
+    "pass": true
+  }
+]

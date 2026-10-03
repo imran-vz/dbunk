@@ -1,0 +1,12 @@
+{
+  "base_commit": "3f987c96640d6738b48ae1113ceac3ebbdc8563f",
+  "tauri_parity_baseline": "102568b",
+  "backend_rust": "1.97.1",
+  "native_rust": "1.98.1",
+  "fixture_uuid": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "fixture_server": "PostgreSQL17.11",
+  "fixture_cleanup_verified": true,
+  "actual_window": "pending: cgWindowNotFound",
+  "voiceover": "deferred, not passed",
+  "dependency_change": "flate2 direct dependency using already locked versions; no version updates"
+}

@@ -1,0 +1,2 @@
+47321|Lock|REFRESH MATERIALIZED VIEW "native_maint_window_432c769c4fe84cfe8224a15f1753e6ee"."summary"
+46848|Timeout|SELECT pg_sleep(50);

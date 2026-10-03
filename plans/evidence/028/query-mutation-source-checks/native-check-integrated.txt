@@ -1,0 +1,10 @@
+   Compiling dbunk v0.1.0-alpha.1 (/Users/imran/projects/Code/dbunk/src-tauri)
+    Checking dbunk-native v0.0.0 (/Users/imran/projects/Code/dbunk/apps/native)
+error[E0599]: no method named `overflow_y_scroll` found for struct `gpui::Div` in the current scope
+    --> src/workbench.rs:2044:112
+     |
+2044 | ...s| content.child(div().max_h(px(260.)).overflow_y_scroll().child(changes)))
+     |                                           ^^^^^^^^^^^^^^^^^ method not found in `gpui::Div`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `dbunk-native` (bin "dbunk-native" test) due to 1 previous error

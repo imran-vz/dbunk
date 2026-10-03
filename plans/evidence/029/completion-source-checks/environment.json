@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-10-02T23:11:18.615663+00:00",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "source_count": 333,
+  "scope": "SQL completion increment; dirty source preserved; no commit/cutover",
+  "fixture": "2283820d-33ec-4c4c-ae03-7051092bd410",
+  "backend_toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "native_toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)"
+}

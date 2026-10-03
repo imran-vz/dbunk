@@ -1,0 +1,6 @@
+The following is a diff from the previous accessibility tree for Window: "dbunk Native Workspace" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~			36 tab (settable, boolean) Value: on, Administration · Overview read refused: PostgreSQL refused the catalog read; previous capture retained
+~			103 button Refresh scope
+~			105 button (disabled) Cancel read
+~			139 container Overview read refused: PostgreSQL refused the catalog read; previous capture retained
+The focused UI element is 0 standard window dbunk Native Workspace, Secondary Actions: Raise

@@ -1,0 +1,38 @@
+[
+  {
+    "check": "just-fmt",
+    "command": [
+      "just",
+      "fmt"
+    ],
+    "exit_code": 0,
+    "seconds": 0.8
+  },
+  {
+    "check": "just-lint",
+    "command": [
+      "just",
+      "lint"
+    ],
+    "exit_code": 0,
+    "seconds": 13.83
+  },
+  {
+    "check": "isolated-clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "isolated-profile",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 101,
+    "seconds": 22.23
+  }
+]

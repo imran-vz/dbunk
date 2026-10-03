@@ -1,0 +1,28 @@
+[
+  {
+    "name": "format",
+    "command": [
+      "pnpm",
+      "format"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.79,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  },
+  {
+    "name": "lint",
+    "command": [
+      "pnpm",
+      "lint"
+    ],
+    "exit": 1,
+    "elapsed_seconds": 1.23,
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "RUST_TEST_THREADS": "1"
+    }
+  }
+]

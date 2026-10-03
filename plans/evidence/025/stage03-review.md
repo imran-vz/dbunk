@@ -15,7 +15,7 @@ dependency of the core-only safety tests, not a request to extract more families
 
 The review corrected the evidence's lifecycle interpretation in Plan 025 and
 ADR-0032. It does not claim that the future native shutdown barrier exists.
-Stage 03 is [Plan 026](../../026-native-postgres-workflow.md).
+Stage 03 is [Plan 026](https://github.com/imran-vz/dbunk/blob/3f987c96640d6738b48ae1113ceac3ebbdc8563f/plans/026-native-postgres-workflow.md).
 
 ## Standards
 

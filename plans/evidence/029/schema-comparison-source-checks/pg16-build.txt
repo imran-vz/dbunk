@@ -1,0 +1,4 @@
+Downloading official PostgreSQL 16.14 into /private/tmp/dbunk-native-comparison-runtime-20261003
+Building PostgreSQL 16.14 with private prefix /private/tmp/dbunk-native-comparison-runtime-20261003/installed
+postgres (PostgreSQL) 16.14
+/private/tmp/dbunk-native-comparison-runtime-20261003/installed
