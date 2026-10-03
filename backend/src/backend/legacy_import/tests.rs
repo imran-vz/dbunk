@@ -680,13 +680,10 @@ async fn imported_profile_opens_through_the_ordinary_native_opener() {
         let connections = backend.development_connections().await.unwrap();
         assert_eq!(connections.len(), 5);
         for connection in &connections {
-            let inactive = [
-                corpus::MYSQL,
-                corpus::REDIS,
-                corpus::PG_BASTION,
-                corpus::PG_UNKNOWN_FIELD,
-            ]
-            .contains(&connection.id.as_str());
+            // Plan 031: MySQL and Redis records are supported connections in
+            // general profiles; their legacy query tabs still stay unmapped.
+            let inactive =
+                [corpus::PG_BASTION, corpus::PG_UNKNOWN_FIELD].contains(&connection.id.as_str());
             assert_eq!(
                 connection.unsupported_reason.is_some(),
                 inactive,

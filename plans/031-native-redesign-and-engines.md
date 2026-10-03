@@ -40,3 +40,22 @@
    SQLite and ClickHouse; Redis keyspace tree and console.
 5. **Verification** – focused tests per step; window/keyboard/IME acceptance
    when automation is available.
+
+## Engine object models (for the sidebar tree)
+
+- **PostgreSQL**: database → schemas → tables, views, materialized views,
+  foreign tables, functions/procedures/aggregates, sequences, types/domains,
+  extensions; database-wide event triggers, roles, tablespaces (list-only).
+- **MySQL**: a "database" is the schema → tables, views, routines, events,
+  triggers.
+- **SQLite**: one `main` schema (plus attached databases) → tables, views,
+  indexes, triggers.
+- **ClickHouse**: no schemas. The server holds databases (`system.databases`);
+  each contains tables (with their engine, e.g. MergeTree, Distributed),
+  views, materialized views (with their target table) and dictionaries
+  (`system.dictionaries`). The current backend explorer lists only the
+  connection's database and groups materialized views with views; the native
+  tree should list all permitted databases and separate the kinds.
+- **Redis**: logical databases (db0–dbN) → keys grouped by type (string, hash,
+  list, set, zset, stream) from bounded SCAN pages; counts come from sampling
+  and must be labelled as estimates. The workspace is a console first.

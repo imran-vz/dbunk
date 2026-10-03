@@ -528,35 +528,22 @@ impl ExportView {
     ) -> gpui::AnyElement {
         let enabled = self.enabled(action);
         let weak = cx.entity().downgrade();
-        div()
-            .id(("export-action", index))
-            .role(Role::Button)
-            .aria_label(label.clone())
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
-            .track_focus(&self.buttons[index])
-            .tab_stop(enabled)
-            .tab_index(0)
-            .focus(|s| s.bg(crate::style::hover()))
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .child(label)
-            .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| this.activate(action, window, cx))
-                    .ok();
-            })
-            .into_any_element()
+        crate::ui::tool_button(
+            ("export-action", index),
+            label,
+            matches!(action, Action::Save).then_some("icons/download.svg"),
+            enabled,
+            matches!(action, Action::Save),
+        )
+        .track_focus(&self.buttons[index])
+        .tab_stop(enabled)
+        .tab_index(0)
+        .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| this.activate(action, window, cx))
+                .ok();
+        })
+        .into_any_element()
     }
 }
 impl Drop for ExportView {
@@ -578,6 +565,7 @@ impl Render for ExportView {
             .size_full()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_sm()
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 for editor in [&this.null, &this.target] {
                     if editor.focus_handle(cx).is_focused(window)
@@ -627,10 +615,7 @@ impl Render for ExportView {
                 cx.stop_propagation();
             }))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
+                crate::ui::toolbar()
                     .child(self.button(
                         0,
                         format!("Format: {}", EXTENSIONS[self.format]),
@@ -656,6 +641,7 @@ impl Render for ExportView {
                         Action::Compression,
                         cx,
                     ))
+                    .child(crate::ui::separator())
                     .child(self.button(3, "Save new file".into(), Action::Save, cx))
                     .child(self.button(4, "Cancel export".into(), Action::Cancel, cx))
                     .child(self.button(5, "Results".into(), Action::Close, cx)),
@@ -663,31 +649,67 @@ impl Render for ExportView {
             .child(
                 div()
                     .flex()
-                    .h_8()
-                    .child("NULL token")
-                    .child(div().flex_1().child(self.null_accessible.clone())),
+                    .flex_col()
+                    .gap_1()
+                    .px_2()
+                    .py_2()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(gpui::px(110.))
+                                    .text_color(crate::style::dim())
+                                    .child("NULL token"),
+                            )
+                            .child(
+                                crate::ui::field()
+                                    .flex_1()
+                                    .max_w(gpui::px(360.))
+                                    .font_family(crate::style::MONO)
+                                    .child(self.null_accessible.clone()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(gpui::px(110.))
+                                    .text_color(crate::style::dim())
+                                    .child("SQL table name"),
+                            )
+                            .child(
+                                crate::ui::field()
+                                    .flex_1()
+                                    .max_w(gpui::px(360.))
+                                    .font_family(crate::style::MONO)
+                                    .child(self.target_accessible.clone()),
+                            ),
+                    )
+                    .children(self.field_notice.as_ref().map(|notice| {
+                        div()
+                            .id("export-field-notice")
+                            .role(Role::Label)
+                            .aria_label(notice.clone())
+                            .text_color(crate::style::warn())
+                            .child(notice.clone())
+                    })),
             )
+            .child(crate::ui::grow())
             .child(
-                div()
-                    .flex()
-                    .h_8()
-                    .child("SQL table name")
-                    .child(div().flex_1().child(self.target_accessible.clone())),
+                crate::ui::status_line().child(
+                    div()
+                        .id("export-status")
+                        .role(Role::Label)
+                        .aria_label(self.status.clone())
+                        .child(self.status.clone()),
+                ),
             )
-            .child(
-                div()
-                    .id("export-status")
-                    .role(Role::Label)
-                    .aria_label(self.status.clone())
-                    .child(self.status.clone()),
-            )
-            .children(self.field_notice.as_ref().map(|notice| {
-                div()
-                    .id("export-field-notice")
-                    .role(Role::Label)
-                    .aria_label(notice.clone())
-                    .child(notice.clone())
-            }))
     }
 }
 #[cfg(test)]

@@ -73,6 +73,10 @@ pub use bastions::{
     DevelopmentSecretInput,
 };
 pub use development::{
+    DevelopmentClickHouseConnection, DevelopmentEndpoint, DevelopmentEngineConnection,
+    DevelopmentMySqlConnection, DevelopmentRedisConnection, DevelopmentSqliteConnection,
+};
+pub use development::{
     DevelopmentConnection, DevelopmentConnectionFailure, DevelopmentConnectionOrganization,
     DevelopmentConnectionTest, DevelopmentCredentialState, DevelopmentDriverOptions,
     DevelopmentEnvironment, DevelopmentFixtures, DevelopmentPostgresConnection,
@@ -627,6 +631,20 @@ async fn admit_connection(
         return Err(QuerySessionError::ConnectionLost);
     }
     Ok(())
+}
+
+/// Admission for PostgreSQL-only services. General profiles now admit every
+/// engine, so services built on PostgreSQL catalogs refuse others up front.
+async fn admit_postgres_connection(
+    state: &AppState,
+    development: Option<&development::Authority>,
+    connection_id: &str,
+) -> Result<(), QuerySessionError> {
+    admit_connection(state, development, connection_id).await?;
+    match crate::storage::read_connection_by_id(&state.pool, connection_id).await {
+        Ok(Some(crate::StoredConnection::PostgreSQL(_))) => Ok(()),
+        _ => Err(QuerySessionError::ConnectionLost),
+    }
 }
 
 #[cfg(test)]

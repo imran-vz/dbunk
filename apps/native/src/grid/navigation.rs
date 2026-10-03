@@ -2,7 +2,7 @@
 use crate::bounded_field::Field;
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Window, div,
-    prelude::*,
+    prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -128,19 +128,10 @@ impl GoToRowView {
     fn button(&self, index: usize, cx: &Context<Self>) -> impl IntoElement + use<> {
         let label = if index == 0 { "Go" } else { "Cancel" };
         let weak = cx.entity().downgrade();
-        div()
-            .id(("go-to-row-action", index))
-            .role(Role::Button)
-            .aria_label(label)
+        crate::ui::tool_button(("go-to-row-action", index), label, None, true, index == 0)
             .track_focus(&self.buttons[index])
             .tab_stop(true)
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .focus(|style| style.bg(crate::style::hover()))
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(index == 0, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(index == 0, window, cx))
@@ -167,16 +158,18 @@ impl Render for GoToRowView {
             .size_full()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_sm()
             .capture_key_down(cx.listener(Self::key))
-            .child("Go to row")
+            .child(crate::ui::section_label("Go to row"))
             .child(
                 div()
                     .id("go-to-row-range")
                     .role(Role::Label)
                     .aria_label(range.clone())
+                    .text_color(crate::style::dim())
                     .child(range),
             )
-            .child(self.field.clone())
+            .child(crate::ui::field().w(px(220.)).child(self.field.clone()))
             .when_some(self.message, |view, message| {
                 view.child(
                     div()
@@ -194,7 +187,7 @@ impl Render for GoToRowView {
             .child(
                 div()
                     .flex()
-                    .gap_2()
+                    .gap(px(4.))
                     .child(self.button(0, cx))
                     .child(self.button(1, cx)),
             )

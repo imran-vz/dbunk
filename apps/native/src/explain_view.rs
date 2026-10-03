@@ -185,17 +185,26 @@ impl ExplainView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let weak = cx.weak_entity();
-        div()
-            .id(("plan-control", index))
-            .role(Role::Button)
-            .aria_label(label)
+        let button = match action {
+            Action::Mode(mode) => crate::ui::segment(
+                ("plan-control", index),
+                label,
+                std::mem::discriminant(&self.mode) == std::mem::discriminant(&mode),
+                true,
+            ),
+            Action::Copy => crate::ui::tool_button(
+                ("plan-control", index),
+                label,
+                Some("icons/copy.svg"),
+                true,
+                false,
+            ),
+            _ => crate::ui::tool_button(("plan-control", index), label, None, true, false),
+        };
+        button
             .track_focus(&self.buttons[index])
             .tab_stop(true)
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .focus(|style| style.bg(crate::style::hover()))
-            .child(label)
             .on_click(cx.listener(move |this, _, _, cx| this.activate(action, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
                 weak.update(cx, |this, cx| this.activate(action, cx)).ok();
@@ -240,6 +249,7 @@ impl Render for ExplainView {
             .min_h_0()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_sm()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let key = event.keystroke.key.as_str();
                 let modifiers = event.keystroke.modifiers;
@@ -291,21 +301,26 @@ impl Render for ExplainView {
                 }
             }))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
+                crate::ui::segmented()
                     .child(self.button(0, "Tree", Action::Mode(Mode::Tree), cx))
                     .child(self.button(1, "JSON", Action::Mode(Mode::Json), cx))
                     .child(self.button(2, "Executed SQL", Action::Mode(Mode::Sql), cx))
+                    .child(crate::ui::separator())
+                    .child(
+                        div()
+                            .id("plan-summary")
+                            .role(Role::Label)
+                            .aria_label(summary.clone())
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(crate::style::MONO)
+                            .text_size(px(crate::style::FONT_SMALL))
+                            .text_color(crate::style::faint())
+                            .child(summary),
+                    )
                     .child(self.button(3, "Copy", Action::Copy, cx))
                     .child(self.button(4, "Return to results", Action::Close, cx)),
-            )
-            .child(
-                div()
-                    .id("plan-summary")
-                    .role(Role::Label)
-                    .aria_label(summary.clone())
-                    .child(summary),
             )
             .when(matches!(self.mode, Mode::Tree), |pane| {
                 pane.child(
@@ -337,10 +352,34 @@ impl Render for ExplainView {
                                                 .when(!node.children.is_empty(), |item| {
                                                     item.aria_expanded(!this.collapsed[index])
                                                 })
-                                                .h(px(26.))
-                                                .pl(px((node.depth * 16 + 8) as f32))
+                                                .h(px(crate::style::ROW))
+                                                .pl(px((node.depth * 14 + 8) as f32))
                                                 .pr_2()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(4.))
                                                 .overflow_hidden()
+                                                .whitespace_nowrap()
+                                                .font_family(crate::style::MONO)
+                                                .hover(|item| item.bg(crate::style::hover()))
+                                                .child(
+                                                    div()
+                                                        .w(px(crate::style::ICON))
+                                                        .flex_none()
+                                                        .text_color(crate::style::faint())
+                                                        .when(!node.children.is_empty(), |caret| {
+                                                            caret.child(
+                                                                gpui::svg()
+                                                                    .path(if this.collapsed[index] {
+                                                                        "icons/chevron_right.svg"
+                                                                    } else {
+                                                                        "icons/chevron_down.svg"
+                                                                    })
+                                                                    .size(px(crate::style::ICON))
+                                                                    .text_color(crate::style::faint()),
+                                                            )
+                                                        }),
+                                                )
                                                 .when(row == this.selected, |item| {
                                                     item.bg(crate::style::select())
                                                 })
@@ -367,6 +406,13 @@ impl Render for ExplainView {
                         .aria_label(details.clone())
                         .max_h(px(140.))
                         .overflow_y_scroll()
+                        .px_2()
+                        .py_1()
+                        .border_t_1()
+                        .border_color(crate::style::line())
+                        .bg(crate::style::panel())
+                        .font_family(crate::style::MONO)
+                        .text_color(crate::style::dim())
                         .child(details),
                 )
             })
@@ -384,16 +430,20 @@ impl Render for ExplainView {
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .p_2()
+                        .px_2()
+                        .py_1()
+                        .font_family(crate::style::MONO)
                         .child(text),
                 )
             })
             .child(
-                div()
-                    .id("plan-status")
-                    .role(Role::Label)
-                    .aria_label(self.status.clone())
-                    .child(self.status.clone()),
+                crate::ui::status_line().child(
+                    div()
+                        .id("plan-status")
+                        .role(Role::Label)
+                        .aria_label(self.status.clone())
+                        .child(self.status.clone()),
+                ),
             )
     }
 }

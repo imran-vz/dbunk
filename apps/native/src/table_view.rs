@@ -1540,6 +1540,7 @@ impl TableView {
                     .role(Role::Label)
                     .aria_label(summary.clone())
                     .px_2()
+                    .py_1()
                     .child(summary),
             );
         if !rows.is_empty() {
@@ -1549,6 +1550,8 @@ impl TableView {
                     .role(Role::Label)
                     .aria_label(rows.clone())
                     .px_2()
+                    .font_family(crate::style::MONO)
+                    .text_color(crate::style::dim())
                     .max_h(px(160.))
                     .overflow_y_scroll()
                     .child(rows),
@@ -1561,10 +1564,11 @@ impl TableView {
                     .role(Role::Label)
                     .aria_label(selected.clone())
                     .px_2()
+                    .font_family(crate::style::MONO)
                     .child(selected),
             );
         }
-        let mut buttons = div().flex().flex_wrap();
+        let mut buttons = crate::ui::toolbar().border_b_0();
         for (label, action) in DETAIL_BUTTONS.into_iter().zip([
             Action::DetailRow,
             Action::DetailColumn(false),
@@ -1668,38 +1672,42 @@ impl TableView {
         if enabled {
             self.tab_order.push(focus.clone());
         }
-        div()
-            .id(label.clone())
-            .role(Role::Button)
-            .aria_label(label.clone())
-            .track_focus(&focus)
-            .tab_index(0)
-            .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
-            .on_click(cx.listener(move |this, _, window, cx| {
-                if enabled {
-                    this.activate(action, window, cx);
-                }
-            }))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                if enabled {
-                    let _ = weak.update(cx, |this, cx| this.activate(action, window, cx));
-                }
-            })
-            .child(label)
-            .into_any_element()
+        let icon = match action {
+            Action::Refresh => Some("icons/rotate_cw.svg"),
+            Action::Insert => Some("icons/plus.svg"),
+            Action::Delete => Some("icons/trash.svg"),
+            Action::Count => Some("icons/hash.svg"),
+            Action::ForeignKeys => Some("icons/link.svg"),
+            Action::WholeExport => Some("icons/download.svg"),
+            Action::Structure => Some("icons/list_tree.svg"),
+            Action::Connect => Some("icons/power.svg"),
+            _ => None,
+        };
+        let selected = match action {
+            Action::PageSize(size) => self
+                .model
+                .as_ref()
+                .is_some_and(|model| model.query().page_size == size),
+            _ => false,
+        };
+        crate::ui::pressed(
+            crate::ui::tool_button(label.clone(), label.clone(), icon, enabled, false),
+            selected,
+        )
+        .track_focus(&focus)
+        .tab_index(0)
+        .tab_stop(enabled)
+        .on_click(cx.listener(move |this, _, window, cx| {
+            if enabled {
+                this.activate(action, window, cx);
+            }
+        }))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            if enabled {
+                let _ = weak.update(cx, |this, cx| this.activate(action, window, cx));
+            }
+        })
+        .into_any_element()
     }
 }
 impl Drop for TableView {
@@ -1743,11 +1751,12 @@ impl Render for TableView {
             return div().size_full().child(view.clone());
         }
         self.tab_order.clear();
-        let mut toolbar = div()
-            .flex()
-            .flex_wrap()
-            .border_b_1()
-            .border_color(crate::style::line());
+        let mut toolbar = crate::ui::toolbar()
+            .child(crate::ui::crumbs(
+                format!("{}.", self.state.schema),
+                self.state.table.clone(),
+            ))
+            .child(crate::ui::separator());
         for (label, action) in [
             ("Connect", Action::Connect),
             (
@@ -1781,13 +1790,25 @@ impl Render for TableView {
             ("Sort selected column", Action::Sort),
             ("Cancel", Action::Cancel),
         ] {
+            // Groups follow the existing keyboard order: connection, table
+            // tools, then row editing and page actions.
+            if matches!(
+                action,
+                Action::FileJob(_) | Action::Refresh | Action::Cancel
+            ) && !matches!(
+                action,
+                Action::FileJob(crate::pg_tool_jobs::Operation::Restore)
+            ) {
+                toolbar = toolbar.child(crate::ui::separator());
+            }
             toolbar = toolbar.child(self.button(label, action, cx));
         }
-        let mut columns = div()
-            .flex()
-            .flex_wrap()
-            .border_b_1()
-            .border_color(crate::style::line());
+        let mut columns = crate::ui::toolbar().child(
+            div()
+                .pr_1()
+                .text_color(crate::style::faint())
+                .child("Columns"),
+        );
         for (label, action) in [
             ("Narrow column", Action::Column(ColumnAction::Narrow)),
             ("Widen column", Action::Column(ColumnAction::Widen)),
@@ -1807,7 +1828,7 @@ impl Render for TableView {
         }
         self.update_controls(cx);
         self.tab_order.push(self.grid.focus_handle(cx));
-        let mut reference = div().flex().flex_col();
+        let mut reference = div().flex().flex_col().flex_shrink_0().text_sm();
         if let Some(review) = &self.references {
             let current = self.reference_current(&review.selection, cx);
             let source = if self
@@ -1876,6 +1897,12 @@ impl Render for TableView {
                     .aria_label("Foreign-key reference from original loaded row")
                     .max_h(px(120.))
                     .overflow_y_scroll()
+                    .px_2()
+                    .py_1()
+                    .border_t_1()
+                    .border_color(crate::style::line())
+                    .font_family(crate::style::MONO)
+                    .text_color(crate::style::dim())
                     .child(
                         div()
                             .id("foreign-key-details")
@@ -1884,9 +1911,7 @@ impl Render for TableView {
                             .child(details),
                     ),
             );
-            let buttons = div()
-                .flex()
-                .flex_wrap()
+            let buttons = crate::ui::toolbar()
                 .child(self.button("Next constraint", Action::NextReference, cx))
                 .child(self.button("Show related row", Action::ShowRelated, cx))
                 .child(self.button("Open referenced table", Action::OpenReference, cx))
@@ -1896,7 +1921,7 @@ impl Render for TableView {
         if let Some(panel) = self.render_detail(cx) {
             reference = reference.child(panel);
         }
-        let mut paging = div().flex().flex_wrap();
+        let mut paging = div().flex().flex_wrap().items_center().gap(px(2.));
         for (label, action) in [
             ("First", Action::First),
             ("Previous", Action::Previous),
@@ -1905,9 +1930,33 @@ impl Render for TableView {
         ] {
             paging = paging.child(self.button(label, action, cx));
         }
+        paging = paging.child(crate::ui::separator());
         for size in PAGE_SIZES {
             paging = paging.child(self.button(&size.to_string(), Action::PageSize(size), cx));
         }
+        let summary = self.model.as_ref().and_then(|model| {
+            let result = model.result()?;
+            let total = model
+                .exact_count()
+                .map(|count| (count.value, false))
+                .or_else(|| match result.count.kind {
+                    BrowseCountKind::Unknown => None,
+                    kind => result
+                        .count
+                        .value
+                        .map(|value| (value, kind == BrowseCountKind::Estimated)),
+                });
+            Some((
+                page_summary(
+                    model.page(),
+                    model.query().page_size,
+                    result.rows.len(),
+                    total,
+                ),
+                format!("{} ms", result.runtime_ms),
+            ))
+        });
+        let staged = self.changes.read(cx).staged_len();
         div()
             .flex()
             .flex_col()
@@ -1990,26 +2039,95 @@ impl Render for TableView {
                     .role(Role::Status)
                     .aria_label(message.clone())
                     .px_2()
+                    .py_1()
+                    .text_sm()
+                    .text_color(crate::style::dim())
+                    .border_b_1()
+                    .border_color(crate::style::line_soft())
                     .child(message.clone())
             }))
             .child(self.browse_controls.clone())
             .child(div().flex_1().min_h_0().child(self.grid.clone()))
             .child(reference)
             .child(self.changes.clone())
-            .child(paging)
             .child(
-                div()
-                    .id("table-status")
-                    .role(Role::Status)
-                    .aria_label(self.status.clone())
-                    .a11y_synthetic_children(|builder| {
-                        builder
-                            .parent_node()
-                            .set_live(gpui::accesskit::Live::Polite)
+                crate::ui::status_line()
+                    .child(paging)
+                    .when_some(summary.as_ref(), |footer, (rows, _)| {
+                        footer.child(rows.clone())
                     })
-                    .px_2()
-                    .py_1()
-                    .child(self.status.clone()),
+                    .when(staged > 0, |footer| {
+                        footer.child(div().text_color(crate::style::warn()).child(format!(
+                            "{staged} staged change{}",
+                            if staged == 1 { "" } else { "s" }
+                        )))
+                    })
+                    .child(
+                        div()
+                            .id("table-status")
+                            .role(Role::Status)
+                            .aria_label(self.status.clone())
+                            .a11y_synthetic_children(|builder| {
+                                builder
+                                    .parent_node()
+                                    .set_live(gpui::accesskit::Live::Polite)
+                            })
+                            .flex_1()
+                            .min_w_0()
+                            .text_color(crate::style::dim())
+                            .child(self.status.clone()),
+                    )
+                    .when_some(summary, |footer, (_, latency)| footer.child(latency)),
             )
+    }
+}
+
+/// Footer row range, e.g. `rows 101–200 of 18,204 (estimate) · page 2`.
+fn page_summary(page: u32, page_size: u32, rows: usize, total: Option<(u64, bool)>) -> String {
+    let start = u64::from(page.max(1) - 1) * u64::from(page_size) + 1;
+    let range = if rows == 0 {
+        "no rows".to_owned()
+    } else {
+        format!("rows {start}–{}", start + rows as u64 - 1)
+    };
+    let total = total.map_or(String::new(), |(value, estimate)| {
+        format!(
+            " of {}{}",
+            grouped(value),
+            if estimate { " (estimate)" } else { "" }
+        )
+    });
+    format!("{range}{total} · page {}", page.max(1))
+}
+
+fn grouped(value: u64) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+#[cfg(test)]
+mod footer_tests {
+    use super::*;
+
+    #[test]
+    fn page_summary_reports_one_based_ranges_and_marks_estimates() {
+        assert_eq!(
+            page_summary(1, 50, 50, Some((18_204, true))),
+            "rows 1–50 of 18,204 (estimate) · page 1"
+        );
+        assert_eq!(
+            page_summary(3, 100, 7, Some((207, false))),
+            "rows 201–207 of 207 · page 3"
+        );
+        assert_eq!(page_summary(1, 100, 0, None), "no rows · page 1");
+        assert_eq!(grouped(1_000_000), "1,000,000");
+        assert_eq!(grouped(999), "999");
     }
 }

@@ -51,7 +51,7 @@ actions!(
     ]
 );
 
-const ROW_HEIGHT: Pixels = px(24.);
+const ROW_HEIGHT: Pixels = px(crate::style::ROW);
 
 struct GridView {
     scroll: UniformListScrollHandle,
@@ -529,9 +529,17 @@ impl ResultGrid {
                 .map_or(0, |set| set.widths.pinned_count())
         }
     }
+    /// Column panes share the list width with the row-number gutter.
     fn viewport_width(&self) -> f32 {
         let width = self.scroll().0.borrow().base_handle.bounds().size.width / px(1.);
-        if width > 0. { width } else { 2400. }
+        if width > 0. {
+            (width - self.gutter()).max(0.)
+        } else {
+            2400.
+        }
+    }
+    fn gutter(&self) -> f32 {
+        render::gutter_width(self.row_count())
     }
     fn panes(&self) -> frozen::Panes {
         let pinned = self.pinned_count();
@@ -1043,41 +1051,53 @@ impl Render for ResultGrid {
             .text_sm()
             .child(
                 div()
-                    .h(ROW_HEIGHT)
                     .flex_shrink_0()
+                    .h(px(crate::style::FOOTER))
                     .px_2()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
                     .border_b_1()
-                    .border_color(crate::style::line())
-                    .id("grid-status")
-                    .role(Role::Label)
-                    .aria_label(status.clone())
-                    .child(status),
+                    .border_color(crate::style::line_soft())
+                    .child(
+                        div()
+                            .id("grid-status")
+                            .role(Role::Label)
+                            .aria_label(status.clone())
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(crate::style::MONO)
+                            .text_size(px(crate::style::FONT_SMALL))
+                            .text_color(crate::style::faint())
+                            .child(status),
+                    )
+                    .when(self.export_host.is_some(), |row| {
+                        row.child(
+                            crate::ui::tool_button(
+                                "open-result-export",
+                                "Export retained rows",
+                                Some("icons/download.svg"),
+                                true,
+                                false,
+                            )
+                            .aria_label(
+                                "Export selected cells, or all retained rows when no selection",
+                            )
+                            .track_focus(&self.export_focus)
+                            .tab_stop(true)
+                            .tab_index(0)
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                export_weak
+                                    .update(cx, |this, cx| this.export(&ExportCells, window, cx))
+                                    .ok();
+                            })
+                            .on_click(cx.listener(
+                                |this, _, window, cx| this.export(&ExportCells, window, cx),
+                            )),
+                        )
+                    }),
             )
-            .when(self.export_host.is_some(), |root| {
-                root.child(
-                    div()
-                        .id("open-result-export")
-                        .role(Role::Button)
-                        .aria_label("Export selected cells, or all retained rows when no selection")
-                        .track_focus(&self.export_focus)
-                        .tab_stop(true)
-                        .tab_index(0)
-                        .focus(|s| s.bg(crate::style::hover()))
-                        .px_2()
-                        .py_1()
-                        .child("Export retained rows")
-                        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                            export_weak
-                                .update(cx, |this, cx| this.export(&ExportCells, window, cx))
-                                .ok();
-                        })
-                        .on_click(
-                            cx.listener(|this, _, window, cx| {
-                                this.export(&ExportCells, window, cx)
-                            }),
-                        ),
-                )
-            })
             .children(header)
             .child(
                 uniform_list(

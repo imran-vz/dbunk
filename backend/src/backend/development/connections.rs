@@ -2,6 +2,13 @@
 //! arguments and never appear in a form model, serialized response or Debug.
 use super::*;
 use crate::credentials::native_connections::{self, Change};
+pub use engine_connections::{
+    DevelopmentClickHouseConnection, DevelopmentEndpoint, DevelopmentEngineConnection,
+    DevelopmentMySqlConnection, DevelopmentRedisConnection, DevelopmentSqliteConnection,
+};
+
+#[path = "engine_connections.rs"]
+mod engine_connections;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -118,7 +125,7 @@ impl DevelopmentSshTunnel {
         }
     }
 
-    fn from_config(config: &crate::SshTunnelConfig) -> Option<Self> {
+    pub(super) fn from_config(config: &crate::SshTunnelConfig) -> Option<Self> {
         let config = config.normalized();
         config.enabled.then(|| Self {
             bastion_id: config.bastion_server_id.unwrap_or_default(),
@@ -167,11 +174,25 @@ pub struct DevelopmentConnection {
     pub engine: String,
     pub organization: DevelopmentConnectionOrganization,
     /// Unsupported connections remain visible but cannot be rewritten through
-    /// the PostgreSQL form. Organization changes preserve their other columns.
+    /// the connection form. Organization changes preserve their other columns.
     pub unsupported_reason: Option<String>,
+    /// PostgreSQL form data; kept for PostgreSQL-only workspace lanes.
     pub postgres: Option<DevelopmentPostgresConnection>,
     /// Stored environment for every engine; drives the window signal.
     pub environment: DevelopmentEnvironment,
+    /// Plan 031: editable record for every supported engine (PostgreSQL
+    /// included). None when the record is unsupported or unreadable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<DevelopmentEngineConnection>,
+}
+
+impl DevelopmentConnection {
+    /// Engine-neutral host/port/database/user summary for display.
+    pub fn endpoint(&self) -> Option<DevelopmentEndpoint> {
+        self.settings
+            .as_ref()
+            .map(DevelopmentEngineConnection::endpoint)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -216,7 +237,13 @@ impl Backend {
         form: DevelopmentPostgresConnection,
         password: String,
     ) -> Result<DevelopmentConnection, String> {
-        self.save_native_connection(id, form, password, None).await
+        self.save_native_connection(
+            id,
+            DevelopmentEngineConnection::PostgreSQL(form),
+            password,
+            None,
+        )
+        .await
     }
 
     /// Form submission commits organization, metadata and credentials together.
@@ -224,6 +251,25 @@ impl Backend {
         &self,
         id: Option<String>,
         form: DevelopmentPostgresConnection,
+        password: String,
+        organization: DevelopmentConnectionOrganization,
+    ) -> Result<DevelopmentConnection, String> {
+        self.save_development_engine_connection(
+            id,
+            DevelopmentEngineConnection::PostgreSQL(form),
+            password,
+            organization,
+        )
+        .await
+    }
+
+    /// Plan 031: form submission for any engine the profile permits. A blank
+    /// password keeps the stored secret; a saved record keeps its engine.
+    /// SQLite paths must name an existing readable file and are never created.
+    pub async fn save_development_engine_connection(
+        &self,
+        id: Option<String>,
+        form: DevelopmentEngineConnection,
         password: String,
         organization: DevelopmentConnectionOrganization,
     ) -> Result<DevelopmentConnection, String> {
@@ -237,7 +283,7 @@ impl Backend {
     async fn save_native_connection(
         &self,
         id: Option<String>,
-        form: DevelopmentPostgresConnection,
+        form: DevelopmentEngineConnection,
         password: String,
         organization: Option<DevelopmentConnectionOrganization>,
     ) -> Result<DevelopmentConnection, String> {
@@ -245,6 +291,25 @@ impl Backend {
         let inner = self.0.clone();
         self.development_call(move |state| async move {
             Ok(async {
+                if let DevelopmentEngineConnection::SQLite(sqlite) = &form {
+                    // Advisory file check outside the credential lock. Edits
+                    // that keep the stored path need not reach the file again.
+                    let stored = match &id {
+                        Some(id) => storage::read_native_connections(&state.pool)
+                            .await?
+                            .into_iter()
+                            .find(|(connection, _)| connection.id() == id)
+                            .map(|(connection, _)| connection),
+                        None => None,
+                    };
+                    let unchanged = matches!(
+                        &stored,
+                        Some(StoredConnection::SQLite(stored)) if stored.database == sqlite.path
+                    );
+                    if !unchanged {
+                        engine_connections::check_sqlite_file(&sqlite.path).await?;
+                    }
+                }
                 let connection_id = id
                     .clone()
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -277,10 +342,8 @@ impl Backend {
                                 .transpose()?;
                             let mut connection =
                                 form.into_stored(connection_id.clone(), previous)?;
-                            if let (Some(organization), StoredConnection::PostgreSQL(pg)) =
-                                (organization, &mut connection)
-                            {
-                                pg.organization = crate::ConnectionOrganization {
+                            if let Some(organization) = organization {
+                                *connection.organization_mut() = crate::ConnectionOrganization {
                                     folder: organization.folder.trim().into(),
                                     is_favorite: organization.is_favorite,
                                     color: organization.color.trim().into(),
@@ -295,12 +358,13 @@ impl Backend {
                             })
                         })
                         .await?;
+                        let updated = updated.expect("save returns metadata");
                         crate::socket_lifecycle::invalidate_connection_caches(
                             &connection_id,
-                            Some(crate::DatabaseEngine::PostgreSQL),
+                            Some(updated.engine()),
                         )
                         .await;
-                        Ok::<_, String>(updated.expect("save returns metadata"))
+                        Ok::<_, String>(updated)
                     })
                     .await?;
                 Ok(summary(&result, &authority))
@@ -431,6 +495,23 @@ impl Backend {
         form: DevelopmentPostgresConnection,
         password: String,
     ) -> Result<DevelopmentConnectionTest, String> {
+        self.test_development_engine_connection(
+            id,
+            DevelopmentEngineConnection::PostgreSQL(form),
+            password,
+        )
+        .await
+    }
+
+    /// Plan 031: explicit, bounded, unsaved probe for any permitted engine.
+    /// PostgreSQL uses its owned driver; other engines run the existing
+    /// dispatch ping once (no session, no retry). Nothing is saved.
+    pub async fn test_development_engine_connection(
+        &self,
+        id: Option<String>,
+        form: DevelopmentEngineConnection,
+        password: String,
+    ) -> Result<DevelopmentConnectionTest, String> {
         let authority = self.development()?;
         let tasks = self.0.tasks.child();
         self.development_call(move |state| async move {
@@ -438,7 +519,8 @@ impl Backend {
                 // Serialize credential snapshots with edits/reset throughout this
                 // bounded probe. It cannot outlive a later credential change.
                 let _guard = credentials::mutation_guard(&state.credentials).await;
-                let connection = prepare_probe(&state, &authority, id, form, password).await?;
+                let connection =
+                    prepare_engine_probe(&state, &authority, id, form, password).await?;
                 let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
                 // C08.a: the route lives until the probe has joined its drivers.
                 let (_route, connection) =
@@ -555,6 +637,7 @@ async fn list(
             let mut result = summary(connection, authority);
             if !valid {
                 result.postgres = None;
+                result.settings = None;
                 result.unsupported_reason =
                     Some("Stored connection options are unsupported or unreadable".into());
             }
@@ -578,9 +661,7 @@ fn unsupported_reason(authority: &Authority) -> &'static str {
         EndpointCapability::OwnedFixtures(_) => {
             "Outside the owned PostgreSQL fixture manifest or supported field limits"
         }
-        EndpointCapability::GeneralPostgres => {
-            "Only supported PostgreSQL connections within field limits are available"
-        }
+        EndpointCapability::GeneralPostgres => "Connection fields are outside supported limits",
     }
 }
 
@@ -591,6 +672,23 @@ pub(in crate::backend) async fn prepare_probe(
     authority: &Authority,
     id: Option<String>,
     form: DevelopmentPostgresConnection,
+    password: String,
+) -> Result<StoredConnection, String> {
+    prepare_engine_probe(
+        state,
+        authority,
+        id,
+        DevelopmentEngineConnection::PostgreSQL(form),
+        password,
+    )
+    .await
+}
+
+async fn prepare_engine_probe(
+    state: &crate::app::AppState,
+    authority: &Authority,
+    id: Option<String>,
+    form: DevelopmentEngineConnection,
     password: String,
 ) -> Result<StoredConnection, String> {
     let rows = storage::read_native_connections(&state.pool).await?;
@@ -648,6 +746,9 @@ async fn probe(
     connection: &StoredConnection,
     timeout: std::time::Duration,
 ) -> Result<DevelopmentConnectionTest, String> {
+    if connection.engine() != crate::DatabaseEngine::PostgreSQL {
+        return engine_probe(connection, timeout).await;
+    }
     let spec =
         crate::postgres::connect_spec::ResolvedPostgresConnectSpec::from_connection(connection)
             .map_err(|_| "PostgreSQL connection required")?;
@@ -699,6 +800,36 @@ async fn probe(
     Ok(DevelopmentConnectionTest::Failed { reason })
 }
 
+/// One dispatch ping under an absolute timeout. SQLite first proves the file
+/// exists and is readable so the probe can never create a database.
+async fn engine_probe(
+    connection: &StoredConnection,
+    timeout: std::time::Duration,
+) -> Result<DevelopmentConnectionTest, String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    if let StoredConnection::SQLite(sqlite) = connection {
+        tokio::time::timeout_at(
+            deadline,
+            engine_connections::check_sqlite_file(&sqlite.database),
+        )
+        .await
+        .map_err(|_| "SQLite database file check timed out".to_string())??;
+    }
+    let started = std::time::Instant::now();
+    let reason =
+        match tokio::time::timeout_at(deadline, crate::dispatch::ping_connection(connection)).await
+        {
+            Ok(Ok(_)) => {
+                return Ok(DevelopmentConnectionTest::Reachable {
+                    latency_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                })
+            }
+            Ok(Err(error)) => engine_connections::classify_engine_error(&error),
+            Err(_) => DevelopmentConnectionFailure::Timeout,
+        };
+    Ok(DevelopmentConnectionTest::Failed { reason })
+}
+
 fn supported<'a>(
     all: &'a [StoredConnection],
     id: &str,
@@ -721,6 +852,53 @@ fn environment_of(environment: crate::Environment) -> DevelopmentEnvironment {
     }
 }
 
+fn stored_environment(environment: DevelopmentEnvironment) -> crate::Environment {
+    match environment {
+        DevelopmentEnvironment::Development => crate::Environment::Development,
+        DevelopmentEnvironment::Test => crate::Environment::Test,
+        DevelopmentEnvironment::Staging => crate::Environment::Staging,
+        DevelopmentEnvironment::Production => crate::Environment::Production,
+    }
+}
+
+fn safe_mode_of(mode: crate::SafeMode) -> DevelopmentSafeMode {
+    match mode {
+        crate::SafeMode::Inherit => DevelopmentSafeMode::Inherit,
+        crate::SafeMode::Disabled => DevelopmentSafeMode::Disabled,
+        crate::SafeMode::Protected => DevelopmentSafeMode::Protected,
+        crate::SafeMode::Strict => DevelopmentSafeMode::Strict,
+    }
+}
+
+fn stored_safe_mode(mode: DevelopmentSafeMode) -> crate::SafeMode {
+    match mode {
+        DevelopmentSafeMode::Inherit => crate::SafeMode::Inherit,
+        DevelopmentSafeMode::Disabled => crate::SafeMode::Disabled,
+        DevelopmentSafeMode::Protected => crate::SafeMode::Protected,
+        DevelopmentSafeMode::Strict => crate::SafeMode::Strict,
+    }
+}
+
+/// An enabled form route replaces the stored one. Disabling a route keeps its
+/// other stored options (as the Tauri form does) so re-enabling loses nothing.
+fn tunnel_config(
+    input: Option<DevelopmentSshTunnel>,
+    previous: Option<&StoredConnection>,
+) -> Result<crate::SshTunnelConfig, String> {
+    let ssh_tunnel = match input {
+        Some(tunnel) => tunnel.into_config(),
+        None => previous
+            .and_then(StoredConnection::ssh_tunnel)
+            .map(|stored| crate::SshTunnelConfig {
+                enabled: false,
+                ..stored.clone()
+            })
+            .unwrap_or_default(),
+    };
+    validate_tunnel_fields(&ssh_tunnel)?;
+    Ok(ssh_tunnel)
+}
+
 fn summary(connection: &StoredConnection, authority: &Authority) -> DevelopmentConnection {
     let supported = authority.permits(connection);
     DevelopmentConnection {
@@ -741,6 +919,7 @@ fn summary(connection: &StoredConnection, authority: &Authority) -> DevelopmentC
             _ => None,
         },
         environment: environment_of(connection.policy().environment),
+        settings: supported.then(|| DevelopmentEngineConnection::from_stored(connection)),
     }
 }
 
@@ -782,12 +961,7 @@ impl DevelopmentPostgresConnection {
             database: pg.database.clone(),
             user: pg.user.clone(),
             environment: environment_of(pg.environment),
-            safe_mode: match pg.safe_mode {
-                crate::SafeMode::Inherit => DevelopmentSafeMode::Inherit,
-                crate::SafeMode::Disabled => DevelopmentSafeMode::Disabled,
-                crate::SafeMode::Protected => DevelopmentSafeMode::Protected,
-                crate::SafeMode::Strict => DevelopmentSafeMode::Strict,
-            },
+            safe_mode: safe_mode_of(pg.safe_mode),
             read_only: pg.read_only,
             tls: DevelopmentTlsOptions {
                 mode: match tls.mode {
@@ -840,19 +1014,7 @@ impl DevelopmentPostgresConnection {
             ],
             self.tls.server_name.as_deref(),
         )?;
-        // Disabling a route keeps its other stored options (as the Tauri form
-        // does) so re-enabling it elsewhere loses nothing.
-        let ssh_tunnel = match self.ssh_tunnel {
-            Some(tunnel) => tunnel.into_config(),
-            None => previous
-                .and_then(StoredConnection::ssh_tunnel)
-                .map(|stored| crate::SshTunnelConfig {
-                    enabled: false,
-                    ..stored.clone()
-                })
-                .unwrap_or_default(),
-        };
-        validate_tunnel_fields(&ssh_tunnel)?;
+        let ssh_tunnel = tunnel_config(self.ssh_tunnel, previous)?;
         let organization = previous
             .map(|value| value.organization().clone())
             .unwrap_or_default();
@@ -869,18 +1031,8 @@ impl DevelopmentPostgresConnection {
                 .and_then(StoredConnection::last_activity_at)
                 .map(str::to_owned),
             organization,
-            environment: match self.environment {
-                DevelopmentEnvironment::Development => crate::Environment::Development,
-                DevelopmentEnvironment::Test => crate::Environment::Test,
-                DevelopmentEnvironment::Staging => crate::Environment::Staging,
-                DevelopmentEnvironment::Production => crate::Environment::Production,
-            },
-            safe_mode: match self.safe_mode {
-                DevelopmentSafeMode::Inherit => crate::SafeMode::Inherit,
-                DevelopmentSafeMode::Disabled => crate::SafeMode::Disabled,
-                DevelopmentSafeMode::Protected => crate::SafeMode::Protected,
-                DevelopmentSafeMode::Strict => crate::SafeMode::Strict,
-            },
+            environment: stored_environment(self.environment),
+            safe_mode: stored_safe_mode(self.safe_mode),
             read_only: self.read_only,
             ssl: self.tls.mode != DevelopmentTlsMode::Disable,
             tls_options: Some(crate::PgTlsOptions {
@@ -913,7 +1065,7 @@ impl DevelopmentPostgresConnection {
 // files, DNS or credentials are touched while deciding metadata support.
 pub(super) fn supported_fields(connection: &StoredConnection) -> bool {
     let StoredConnection::PostgreSQL(pg) = connection else {
-        return false;
+        return engine_connections::supported_engine_fields(connection);
     };
     if validate_tunnel_fields(&pg.ssh_tunnel).is_err() {
         return false;

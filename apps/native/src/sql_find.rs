@@ -222,19 +222,36 @@ impl Render for FindView {
             .track_focus(&self.root)
             .capture_key_down(cx.listener(Self::key_down))
             .flex()
+            .flex_none()
             .items_center()
             .gap_2()
+            .h(px(crate::style::TOOLBAR))
             .px_2()
+            .bg(crate::style::panel())
             .border_b_1()
-            .border_color(crate::style::line())
-            .child(div().w(px(280.)).h(px(24.)).child(self.accessible.clone()))
+            .border_color(crate::style::line_soft())
+            .text_sm()
+            .child(
+                gpui::svg()
+                    .path("icons/magnifying_glass.svg")
+                    .size(px(crate::style::ICON))
+                    .flex_none()
+                    .text_color(crate::style::faint()),
+            )
+            .child(
+                crate::ui::field()
+                    .w(px(280.))
+                    .font_family(crate::style::MONO)
+                    .child(self.accessible.clone()),
+            )
             .child(
                 div()
                     .id("sql-find-status")
                     .role(Role::Status)
                     .aria_label(self.status.clone())
-                    .text_xs()
-                    .text_color(crate::style::dim())
+                    .font_family(crate::style::MONO)
+                    .text_size(px(crate::style::FONT_SMALL))
+                    .text_color(crate::style::faint())
                     .child(self.status.clone()),
             )
     }

@@ -27,9 +27,15 @@ pub fn editable_connection<'a>(
 ) -> Option<&'a DevelopmentConnection> {
     connections.iter().find(|c| {
         c.id == id
-            && c.engine == "PostgreSQL"
-            && c.postgres.is_some()
             && c.unsupported_reason.is_none()
+            && if c.engine == "PostgreSQL" {
+                c.postgres.is_some()
+            } else {
+                // Plan 031: other engines edit through their own field set.
+                c.settings
+                    .as_ref()
+                    .is_some_and(|settings| settings.engine() == c.engine)
+            }
     })
 }
 impl Capture {
@@ -168,6 +174,15 @@ fn visit(
         row("Unavailable", format_args!("{reason}"))?;
     }
     let Some(p) = &c.postgres else {
+        if let Some(endpoint) = c.endpoint() {
+            row("Host", format_args!("{}", endpoint.host))?;
+            if let Some(port) = endpoint.port {
+                row("Port", format_args!("{port}"))?;
+            }
+            row("Database", format_args!("{}", endpoint.database))?;
+            row("User", format_args!("{}", endpoint.user))?;
+            return row("Environment", format_args!("{:?}", c.environment));
+        }
         return row(
             "PostgreSQL settings",
             format_args!("Unavailable; this record cannot be edited through the PostgreSQL form"),
