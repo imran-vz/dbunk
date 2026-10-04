@@ -52,27 +52,34 @@ pub async fn fetch_key_metadata(
     payload: &KeyPayload,
 ) -> Result<KeyMetadata, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_key_metadata_on(&mut conn, payload).await
+}
 
+/// [`fetch_key_metadata`] on a caller-owned connection (the native session).
+pub async fn fetch_key_metadata_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &KeyPayload,
+) -> Result<KeyMetadata, String> {
     let key_type: String = conn
         .key_type(&payload.key)
         .await
         .map_err(connection::redis_err)?;
     let ttl: i64 = redis::cmd("TTL")
         .arg(&payload.key)
-        .query_async(&mut conn)
+        .query_async(&mut *conn)
         .await
         .map_err(connection::redis_err)?;
     let encoding: Option<String> = redis::cmd("OBJECT")
         .arg("ENCODING")
         .arg(&payload.key)
-        .query_async(&mut conn)
+        .query_async(&mut *conn)
         .await
         .ok();
 
     let element_count = match key_type.as_str() {
         "string" => redis::cmd("STRLEN")
             .arg(&payload.key)
-            .query_async::<i64>(&mut conn)
+            .query_async::<i64>(&mut *conn)
             .await
             .ok()
             .map(|n| n.max(0) as u64),
@@ -98,7 +105,7 @@ pub async fn fetch_key_metadata(
             .map(|n| n as u64),
         "stream" => redis::cmd("XLEN")
             .arg(&payload.key)
-            .query_async::<i64>(&mut conn)
+            .query_async::<i64>(&mut *conn)
             .await
             .ok()
             .map(|n| n.max(0) as u64),
@@ -144,7 +151,14 @@ pub async fn fetch_string(
     payload: &FetchStringPayload,
 ) -> Result<StringValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_string_on(&mut conn, payload).await
+}
 
+/// [`fetch_string`] on a caller-owned connection (the native session).
+pub async fn fetch_string_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &FetchStringPayload,
+) -> Result<StringValuePayload, String> {
     let total: i64 = conn
         .strlen(&payload.key)
         .await
@@ -157,7 +171,7 @@ pub async fn fetch_string(
             .arg(&payload.key)
             .arg(0)
             .arg(i64::from(payload.max_bytes) - 1)
-            .query_async(&mut conn)
+            .query_async(&mut *conn)
             .await
             .map_err(connection::redis_err)?;
         return Ok(StringValuePayload {
@@ -224,12 +238,19 @@ pub async fn fetch_hash(
     payload: &FetchHashPayload,
 ) -> Result<HashValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_hash_on(&mut conn, payload).await
+}
 
+/// [`fetch_hash`] on a caller-owned connection (the native session).
+pub async fn fetch_hash_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &FetchHashPayload,
+) -> Result<HashValuePayload, String> {
     match payload.mode {
         HashMode::Full => {
             let raw: Vec<redis::Value> = redis::cmd("HGETALL")
                 .arg(&payload.key)
-                .query_async(&mut conn)
+                .query_async(&mut *conn)
                 .await
                 .map_err(connection::redis_err)?;
             Ok(HashValuePayload {
@@ -248,7 +269,7 @@ pub async fn fetch_hash(
                 cmd.arg("MATCH").arg(pattern);
             }
             let (next, raw): (String, Vec<redis::Value>) = cmd
-                .query_async(&mut conn)
+                .query_async(&mut *conn)
                 .await
                 .map_err(connection::redis_err)?;
             Ok(HashValuePayload {
@@ -300,6 +321,14 @@ pub async fn fetch_list(
     payload: &FetchListPayload,
 ) -> Result<ListValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_list_on(&mut conn, payload).await
+}
+
+/// [`fetch_list`] on a caller-owned connection (the native session).
+pub async fn fetch_list_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &FetchListPayload,
+) -> Result<ListValuePayload, String> {
     let (lrange_start, lrange_stop) = if payload.reverse {
         // Tail-first paging needs head-indexed LRANGE bounds derived
         // from LLEN — otherwise the displayed `absIndex` and the
@@ -307,7 +336,7 @@ pub async fn fetch_list(
         // elements (see review 2026-05-14 P0-2).
         let len: i64 = redis::cmd("LLEN")
             .arg(&payload.key)
-            .query_async(&mut conn)
+            .query_async(&mut *conn)
             .await
             .map_err(connection::redis_err)?;
         match tail_lrange_args(len, payload.start, payload.stop) {
@@ -321,7 +350,7 @@ pub async fn fetch_list(
         .arg(&payload.key)
         .arg(lrange_start)
         .arg(lrange_stop)
-        .query_async(&mut conn)
+        .query_async(&mut *conn)
         .await
         .map_err(connection::redis_err)?;
     let mut items: Vec<SerializedValue> = raw.into_iter().map(value::serialize).collect();
@@ -382,12 +411,19 @@ pub async fn fetch_set(
     payload: &FetchSetPayload,
 ) -> Result<SetValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_set_on(&mut conn, payload).await
+}
 
+/// [`fetch_set`] on a caller-owned connection (the native session).
+pub async fn fetch_set_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &FetchSetPayload,
+) -> Result<SetValuePayload, String> {
     match payload.mode {
         SetMode::Full => {
             let raw: Vec<redis::Value> = redis::cmd("SMEMBERS")
                 .arg(&payload.key)
-                .query_async(&mut conn)
+                .query_async(&mut *conn)
                 .await
                 .map_err(connection::redis_err)?;
             Ok(SetValuePayload {
@@ -406,7 +442,7 @@ pub async fn fetch_set(
                 cmd.arg("MATCH").arg(pattern);
             }
             let (next, raw): (String, Vec<redis::Value>) = cmd
-                .query_async(&mut conn)
+                .query_async(&mut *conn)
                 .await
                 .map_err(connection::redis_err)?;
             Ok(SetValuePayload {
@@ -460,7 +496,14 @@ pub async fn fetch_sorted_set(
     payload: &FetchSortedSetPayload,
 ) -> Result<SortedSetValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_sorted_set_on(&mut conn, payload).await
+}
 
+/// [`fetch_sorted_set`] on a caller-owned connection (the native session).
+pub async fn fetch_sorted_set_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &FetchSortedSetPayload,
+) -> Result<SortedSetValuePayload, String> {
     match payload.mode {
         ZsetMode::Rank => {
             let cmd_name = if payload.reverse {
@@ -473,7 +516,7 @@ pub async fn fetch_sorted_set(
                 .arg(payload.start)
                 .arg(payload.stop)
                 .arg("WITHSCORES")
-                .query_async(&mut conn)
+                .query_async(&mut *conn)
                 .await
                 .map_err(connection::redis_err)?;
             Ok(SortedSetValuePayload {
@@ -499,7 +542,7 @@ pub async fn fetch_sorted_set(
                 .arg(if payload.reverse { &max } else { &min })
                 .arg(if payload.reverse { &min } else { &max })
                 .arg("WITHSCORES")
-                .query_async(&mut conn)
+                .query_async(&mut *conn)
                 .await
                 .map_err(connection::redis_err)?;
             Ok(SortedSetValuePayload {
@@ -568,6 +611,14 @@ pub async fn fetch_stream(
     payload: &FetchStreamPayload,
 ) -> Result<StreamValuePayload, String> {
     let mut conn = connection::manager_for(connection).await?;
+    fetch_stream_on(&mut conn, payload).await
+}
+
+/// [`fetch_stream`] on a caller-owned connection (the native session).
+pub async fn fetch_stream_on<C: redis::aio::ConnectionLike + Send>(
+    conn: &mut C,
+    payload: &FetchStreamPayload,
+) -> Result<StreamValuePayload, String> {
     let cmd_name = if payload.reverse {
         "XREVRANGE"
     } else {
@@ -587,7 +638,7 @@ pub async fn fetch_stream(
         })
         .arg("COUNT")
         .arg(payload.count)
-        .query_async(&mut conn)
+        .query_async(&mut *conn)
         .await
         .map_err(connection::redis_err)?;
 
