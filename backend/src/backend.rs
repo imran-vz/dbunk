@@ -24,6 +24,7 @@ pub mod export_configurations;
 pub mod legacy_import;
 pub mod maintenance;
 pub mod managed_servers;
+pub mod mysql_sessions;
 mod native_profile;
 pub mod object_ddl;
 pub mod objects;
@@ -162,6 +163,9 @@ struct Inner {
     _profile_lock: std::fs::File,
     development: Option<Arc<development::Authority>>,
     development_gate: Arc<Mutex<()>>,
+    /// Plan 031 step 4: live native MySQL sessions. Boxed: safety-audit
+    /// cursors count `size_of::<Inner>()` against a fixed budget.
+    mysql: Box<mysql_sessions::Registry>,
 }
 
 /// An opaque, cloneable service handle for an explicitly validated native profile.
@@ -232,6 +236,7 @@ impl Backend {
             _profile_lock: profile_lock,
             development,
             development_gate: Arc::new(Mutex::new(())),
+            mysql: Default::default(),
         }))
     }
 
@@ -524,6 +529,7 @@ impl Backend {
             self.0.csv_transfers.close(&self.0.state.pg_transfers);
             self.0.table_copy.close();
             self.0.table_seed.close();
+            self.0.mysql.close();
             self.0.schema_comparisons.close();
         }
         let mut shutdown = self.0.shutdown.lock().await;

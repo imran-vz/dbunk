@@ -192,15 +192,20 @@ pub(super) fn connection_phase(
     }
 }
 
+/// A tab bar entry: id, name, icon, status, active, pinned.
+type TabSpec = (String, String, &'static str, String, bool, bool);
+
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
     (connection.postgres.is_some() && connection.unsupported_reason.is_none())
         || crate::sqlite_workspace::is_sqlite(connection)
         || super::engines::surface_connection(connection)
         || crate::clickhouse::is_clickhouse(connection)
+        || (crate::engine_lane::EngineLane::supports(connection)
+            && connection.unsupported_reason.is_none())
 }
 
-/// One tab in the tab bar, from a workspace document or a SQLite tab.
+/// One tab in the tab bar, from a workspace document or an engine tab.
 struct ShellTab {
     id: String,
     name: String,
@@ -337,16 +342,20 @@ impl Workspace {
                 .iter()
                 .filter(|document| document.metadata.connection_id.as_deref() == Some(id))
                 .map(|document| document.view.read(cx).connection_phase(cx))
-                .chain(self.engine_phase(id, cx)),
+                .chain(self.engine_phase(id, cx))
+                .chain(self.engine_lane_of(id).map(|lane| lane.phase(cx))),
         )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
         if let Some(connection) = self.active_engine_connection() {
             return Some(connection);
         }
-        // A selected SQLite connection owns the whole workspace view.
-        let sqlite = self.sqlite_active().and(self.selected_connection.as_ref());
-        let id = sqlite
+        // A selected SQLite connection or engine lane owns the whole
+        // workspace view.
+        let owned = (self.sqlite_active().is_some() || self.engine_lane().is_some())
+            .then_some(self.selected_connection.as_ref())
+            .flatten();
+        let id = owned
             .or_else(|| {
                 self.active_index()
                     .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
@@ -727,17 +736,31 @@ impl Workspace {
                     .child(self.connection_list(cx)),
             )
             .child(div().flex_1().min_h_0().flex().flex_col().map(
-                |tree| match (self.sqlite_active(), self.engine_tree()) {
-                    (Some(sqlite), _) => tree.child(sqlite.read(cx).tree()),
-                    (None, Some(engine)) => tree.child(engine),
-                    (None, None) => tree.child(self.object_tree()),
+                |tree| match (self.sqlite_active(), self.engine_tree(), self.engine_lane()) {
+                    (Some(sqlite), _, _) => tree.child(sqlite.read(cx).tree()),
+                    (None, Some(engine), _) => tree.child(engine),
+                    (None, None, Some(lane)) => tree.child(lane.tree(cx)),
+                    (None, None, None) => tree.child(self.object_tree()),
                 },
             ))
     }
 
     fn tab_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let env = self.env_color();
-        // A selected SQLite connection shows its own tabs.
+        // A selected SQLite connection or engine lane shows its own tabs.
+        let lane_tabs = self.engine_lane().map(|lane| {
+            lane.tabs(cx)
+                .into_iter()
+                .map(|tab| ShellTab {
+                    active: tab.active,
+                    id: tab.id,
+                    name: tab.title,
+                    kind: tab.icon,
+                    status: String::new(),
+                    pinned: false,
+                })
+                .collect::<Vec<_>>()
+        });
         let items = match self.sqlite_tabs(cx) {
             Some(tabs) => tabs
                 .into_iter()
@@ -750,6 +773,7 @@ impl Workspace {
                     pinned: false,
                 })
                 .collect::<Vec<_>>(),
+            None if lane_tabs.is_some() => lane_tabs.unwrap_or_default(),
             None => self
                 .documents
                 .iter()
@@ -782,7 +806,11 @@ impl Workspace {
             } = tab;
             self.shell_button(
                 SharedString::from(format!("tab-{id}")),
-                format!("{name}, {status}"),
+                if status.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{name}, {status}")
+                },
                 Operation::SelectDocument(id.clone()),
                 cx,
             )
@@ -840,7 +868,8 @@ impl Workspace {
                     close.opacity(0.).group_hover(group, |s| s.opacity(0.8))
                 }
             })
-        });
+        };
+        let tabs = specs.into_iter().map(tab);
         div()
             .id("tab-bar")
             .h(px(style::BAR))
@@ -964,7 +993,12 @@ impl Workspace {
             })
             .unwrap_or_else(|| "No connection".into());
         let latency = connection
-            .and_then(|c| self.shell.last_latency.get(&c.id))
+            .and_then(|c| {
+                self.shell.last_latency.get(&c.id).copied().or_else(|| {
+                    self.engine_lane_of(&c.id)
+                        .and_then(|lane| lane.last_latency(cx))
+                })
+            })
             .map(|ms| format!("last query {ms} ms"))
             .unwrap_or_else(|| "last query —".into());
         let state = match (&phase, connection) {
@@ -1285,6 +1319,15 @@ impl Workspace {
                     div().flex_1().min_h_0().bg(style::bg()).child(body),
                 )
                 .into_any_element(),
+                // An engine lane renders its own documents.
+                (None, None, _) if self.engine_lane().is_some() => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .bg(style::bg())
+                    .children(self.engine_lane().map(|lane| lane.content()))
+                    .into_any_element(),
                 // Each document fades and settles in when it becomes active.
                 (None, None, Some(index)) => crate::ui::appear(
                     SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
