@@ -43,6 +43,7 @@ pub mod schema_map;
 mod selection;
 pub mod sequences;
 pub mod server_details;
+pub mod sqlite_session;
 pub mod table_copy;
 pub mod table_ddl;
 pub mod table_export;
