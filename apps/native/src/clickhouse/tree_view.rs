@@ -19,15 +19,12 @@ use std::{collections::HashMap, sync::Arc};
 pub enum TreeEvent {
     /// Open an object's data (`structure == false`) or structure.
     Open {
-        connection: String,
         database: String,
         name: String,
         kind: ObjectKind,
         structure: bool,
     },
-    NewQuery {
-        connection: String,
-    },
+    NewQuery,
 }
 
 #[derive(Default)]
@@ -270,9 +267,8 @@ impl ClickHouseTree {
                 self.rebuild(cx);
             }
             RowKind::Object { kind, name } => {
-                if let Some(connection) = self.connection.clone() {
+                if self.connection.is_some() {
                     cx.emit(TreeEvent::Open {
-                        connection,
                         database: row.database.clone(),
                         name: name.clone(),
                         kind: *kind,
@@ -436,8 +432,8 @@ impl Render for ClickHouseTree {
                         self.connection.is_some(),
                         cx,
                         |this, cx| {
-                            if let Some(connection) = this.connection.clone() {
-                                cx.emit(TreeEvent::NewQuery { connection });
+                            if this.connection.is_some() {
+                                cx.emit(TreeEvent::NewQuery);
                             }
                         },
                     ))

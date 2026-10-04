@@ -92,32 +92,6 @@ impl<S: Clone> SessionModel<S> {
         entry.phase = ConnectionPhase::Failed(error);
         entry.session.take()
     }
-
-    /// Ends every connection `keep` rejects (deleted, edited or no longer
-    /// ClickHouse), returning their sessions for closing.
-    pub fn retain(&mut self, keep: impl Fn(&str) -> bool) -> Vec<S> {
-        let gone = self
-            .entries
-            .keys()
-            .filter(|id| !keep(id))
-            .cloned()
-            .collect::<Vec<_>>();
-        gone.iter().filter_map(|id| self.end(id)).collect()
-    }
-
-    pub fn drain(&mut self) -> Vec<S> {
-        self.entries
-            .drain()
-            .filter_map(|(_, entry)| entry.session)
-            .collect()
-    }
-}
-
-/// Whether `id`'s session survives a settled form: an edit or delete
-/// (`scope`) ends that connection's session, a credential change (`all`)
-/// ends every session, and a new connection (neither) ends none.
-pub fn survives_change(scope: Option<&str>, all: bool, id: &str) -> bool {
-    !all && scope != Some(id)
 }
 
 #[cfg(test)]
@@ -169,29 +143,5 @@ mod tests {
         assert_eq!(model.lost("a", |s| *s == 1, "gone".into()), Some(1));
         assert_eq!(model.phase("a"), Failed("gone".into()));
         assert_eq!(model.lost("a", |_| true, "again".into()), None);
-    }
-
-    #[test]
-    fn retain_and_drain_return_every_open_session() {
-        let mut model = SessionModel::<u32>::default();
-        for (id, session) in [("a", 1), ("b", 2), ("c", 3)] {
-            let attempt = model.begin(id).unwrap();
-            model.settle(id, attempt, Ok(session));
-        }
-        let mut closed = model.retain(|id| id != "b");
-        assert_eq!(closed, [2]);
-        assert_eq!(model.phase("b"), Idle);
-        closed = model.drain();
-        closed.sort();
-        assert_eq!(closed, [1, 3]);
-        assert_eq!(model.phase("a"), Idle);
-    }
-
-    #[test]
-    fn only_edited_connections_or_credential_changes_end_sessions() {
-        assert!(survives_change(None, false, "a"), "new connection");
-        assert!(survives_change(Some("b"), false, "a"));
-        assert!(!survives_change(Some("a"), false, "a"));
-        assert!(!survives_change(None, true, "a"));
     }
 }

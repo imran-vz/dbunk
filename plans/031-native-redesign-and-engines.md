@@ -310,20 +310,73 @@ native workspace.
 ## Step 4 integration (2026-10-05)
 
 The four engine branches were built in parallel from `fd74f09` and merged in
-the order SQLite, Redis, ClickHouse, MySQL. Each arrived with its own seam,
-and the merge keeps all four side by side; each hook acts only for its own
-connections, so their order does not change behavior:
+the order SQLite, Redis, ClickHouse, MySQL, each with its own seam
+(`workspace_sqlite.rs`; `workspace_engines.rs`; `workspace_clickhouse.rs`
+with a transient `DocumentView::ClickHouse`; `workspace_engine.rs` and
+`engine_lane.rs`). The follow-up folds them into one seam:
+`apps/native/src/workspace_engines.rs`. The other four integration modules,
+`DocumentView::ClickHouse`, `is_transient()` and the snapshot filter are
+gone; the engine modules (`sqlite_*`, `redis_*`, `clickhouse/*`,
+`mysql_lane/*`) keep their sessions, trees and documents.
 
-- SQLite: `workspace_sqlite.rs` (`sqlite_operation`, own tabs, tree and body).
-- Redis: `workspace_engines.rs` (`EngineSurface`, `engine_intercepts`).
-- ClickHouse: `workspace_clickhouse.rs` plus a transient
-  `DocumentView::ClickHouse` variant in the ordinary document list.
-- MySQL: `workspace_engine.rs` and `engine_lane.rs` (`EngineLane`,
-  `engine_activate`).
+- **One enum.** `EngineSurface` has one variant per engine (`Redis`,
+  `Sqlite`, `ClickHouse`, `MySql`), each an entity that owns one
+  connection's session, tree and tabs. Its methods are `phase`, `connect`,
+  `detach` (the session leaves, late results drop by generation, and its
+  close comes back as a future), `release`, `tabs`, `owns_tab`,
+  `select_tab`, `close_tab`, `new_tab`, `close_active`, `cycle`, `clear`,
+  `focus` and `body`. `surface_connection` decides which saved records get a
+  surface (a readable, supported Redis, SQLite, ClickHouse or MySQL record);
+  `connectable()` is PostgreSQL or that.
+- **Workspace calls.** `Workspace::activate` makes one call
+  (`engine_operation`) before the PostgreSQL match; it handles select
+  (create the surface if needed, then connect: the only connect and retry
+  gesture), row and tab Connect/Disconnect, tab select/close/cycle/new, Clear,
+  and a clear message for operations an engine lacks (open table by name,
+  rename, pin, move, library tools, save query). A PostgreSQL document chosen
+  from the palette while an engine is selected moves the selection to that
+  document's connection; selecting a PostgreSQL connection hands focus back
+  to the documents. The shell makes one lookup each: `engine_tree`,
+  `engine_tabs`, `engine_body`, `engine_phase` (Idle for an engine
+  connection without a surface yet), and latency from
+  `shell.last_latency`, which every surface feeds through its own
+  `Latency` event (MySQL is no longer polled).
+- **Tabs.** Every surface lists its tabs as `TabInfo` and the shell renders
+  them with the same renderer as PostgreSQL documents: one look, one close
+  button (Redis's console is the only tab without one), `SelectDocument` and
+  `CloseDocument` routed to the owning surface. Tab actions follow one rule
+  for every surface: New stays (a new query; Redis shows its console) and
+  the Tools menu, whose entries are all PostgreSQL operations, is hidden.
+- **ClickHouse moved onto a surface.** `clickhouse/workspace.rs`
+  (`ClickHouseWorkspace`) owns a per-connection `ClickHouseSessions` and
+  `ClickHouseTree` and its own tabs (limit 16, query tabs named `Query N`).
+  Its tabs show only while that connection is selected, like the other
+  engines, and are still never persisted. With the session detached at quit,
+  the old per-document read-only switch at close is no longer needed.
+- **Saved-record changes.** One entry point, `reconcile_engines`, runs after
+  every connection reload and every settled connection or credential form;
+  the pure `fate` decides per surface. A deleted, unsupported, unreadable or
+  re-typed connection drops its surface and closes its session (on reload,
+  no longer from `render`). SQLite closes when its record JSON (path,
+  read-only, policy, name) changes, and ignores credential and scoped forms
+  since it resolves no secret. Redis and ClickHouse close on a record change,
+  on a form that edited or deleted them, and on any credential change. MySQL
+  is left to the backend, which retires its sessions in `retire_data` on
+  every save, delete and credential change; the lane watches its session's
+  closed signal, so the workspace does not close it a second time.
+- **Close.** Disconnect, stale records, removal and quit all detach the
+  session and run its close on the runtime, concurrently, each within
+  `CLOSE_DEADLINE` (5 s, plus 1 s before the waiter is abandoned; SQLite
+  aborts its worker at the deadline). A failed user disconnect is shown in
+  the message strip; quit joins every engine close before `host.shutdown()`.
+  Redis has no async close: its last handle (sockets, SSH route) is dropped
+  on a blocking thread.
 
-`Workspace::activate` runs the SQLite, Redis and MySQL interceptors in turn
-before the PostgreSQL/ClickHouse match; the shell picks the tree, tab strip
-and body from whichever of them owns the selected connection. Folding these
-into one engine seam is follow-up work. Checks after the merge: `just fmt`,
-`just lint`, `just test`, `just fmt-native`, `just lint-native` and
-`just test-native` pass; no window, keyboard/AX or IME acceptance.
+Checks: `just fmt`, `just lint`, `just test`, `just fmt-native`,
+`just lint-native` and `just test-native` pass. Unit tests cover
+`surface_connection`/`connectable` for all five engines with unreadable and
+unsupported records, `fate` per engine (record change, scoped and credential
+forms, deletion, unsupported and re-typed records) and the joined, bounded
+close; the existing ClickHouse session-model tests cover a superseded
+attempt's late session being closed after a reconnect. No window,
+keyboard/AX or IME acceptance.

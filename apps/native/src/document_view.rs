@@ -76,8 +76,6 @@ enum Content {
     SchemaCompare(Entity<SchemaCompareView>),
     TableCopy(Entity<crate::table_copy_view::TableCopyView>),
     TableSeed(Entity<crate::table_seed_view::TableSeedView>),
-    /// Plan 031 step 4: a session-scoped ClickHouse tab (never persisted).
-    ClickHouse(Entity<crate::clickhouse::document::ClickHouseDocument>),
 }
 pub struct DocumentResources {
     pub host: Arc<Host>,
@@ -97,6 +95,16 @@ pub enum ConnectionPhase {
     Connected,
     Failed(String),
 }
+/// One tab in the shell's tab bar: a workspace document or an engine tab.
+pub struct TabInfo {
+    pub id: String,
+    pub title: String,
+    pub icon: &'static str,
+    pub status: String,
+    pub active: bool,
+    pub pinned: bool,
+    pub closable: bool,
+}
 pub struct DocumentView {
     content: Content,
     _events: Option<Subscription>,
@@ -104,28 +112,6 @@ pub struct DocumentView {
 }
 impl EventEmitter<DocumentEvent> for DocumentView {}
 impl DocumentView {
-    /// Wraps a ClickHouse document; the workspace subscribes to its events.
-    pub fn from_clickhouse(
-        view: Entity<crate::clickhouse::document::ClickHouseDocument>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let status = cx.observe(&view, |_, _, cx| cx.notify());
-        Self {
-            content: Content::ClickHouse(view),
-            _events: None,
-            _status: status,
-        }
-    }
-    pub fn clickhouse(&self) -> Option<&Entity<crate::clickhouse::document::ClickHouseDocument>> {
-        match &self.content {
-            Content::ClickHouse(view) => Some(view),
-            _ => None,
-        }
-    }
-    /// Session-scoped documents are left out of the workspace snapshot.
-    pub fn is_transient(&self) -> bool {
-        matches!(self.content, Content::ClickHouse(_))
-    }
     pub fn new(
         resources: DocumentResources,
         document: (&mut WorkspaceDocument, bool),
@@ -421,8 +407,7 @@ impl DocumentView {
             | Content::SchemaCompare(_)
             | Content::TableCopy(_)
             | Content::TableSeed(_)
-            | Content::CsvTransfer(_)
-            | Content::ClickHouse(_) => (String::new(), WorkspaceSelection::default()),
+            | Content::CsvTransfer(_) => (String::new(), WorkspaceSelection::default()),
         }
     }
     pub fn snapshot_payload_bytes(&self, cx: &App) -> usize {
@@ -446,8 +431,7 @@ impl DocumentView {
             | Content::SchemaCompare(_)
             | Content::TableCopy(_)
             | Content::TableSeed(_)
-            | Content::CsvTransfer(_)
-            | Content::ClickHouse(_) => 0,
+            | Content::CsvTransfer(_) => 0,
         }
     }
     pub fn query_changes(&self, cx: &App) -> Option<dbunk_lib::backend::WorkspaceQueryChanges> {
@@ -517,8 +501,7 @@ impl DocumentView {
             | Content::SchemaCompare(_)
             | Content::TableCopy(_)
             | Content::TableSeed(_)
-            | Content::CsvTransfer(_)
-            | Content::ClickHouse(_) => None,
+            | Content::CsvTransfer(_) => None,
             Content::Table(view) => Some(view.read(cx).snapshot(cx)),
         }
     }
@@ -546,7 +529,6 @@ impl DocumentView {
             Content::PgTools(view) => view.read(cx).status(),
             Content::TableCopy(view) => view.read(cx).status(),
             Content::TableSeed(view) => view.read(cx).status(),
-            Content::ClickHouse(view) => view.read(cx).status(),
         }
     }
     pub fn focus_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -564,9 +546,6 @@ impl DocumentView {
             Content::TableCopy(view) => view.update(cx, |view, cx| view.focus_document(window, cx)),
             Content::TableSeed(view) => view.update(cx, |view, cx| view.focus_document(window, cx)),
             Content::SchemaCompare(view) => {
-                view.update(cx, |view, cx| view.focus_document(window, cx))
-            }
-            Content::ClickHouse(view) => {
                 view.update(cx, |view, cx| view.focus_document(window, cx))
             }
         }
@@ -588,7 +567,6 @@ impl DocumentView {
             Content::SchemaCompare(view) => {
                 view.update(cx, |view, cx| view.remember_focus(window, cx))
             }
-            Content::ClickHouse(_) => {}
         }
     }
     pub fn set_document_layout(&mut self, layout: Layout, cx: &mut Context<Self>) {
@@ -613,9 +591,6 @@ impl DocumentView {
             Content::SchemaCompare(view) => {
                 view.update(cx, |view, cx| view.set_editable(editable, cx))
             }
-            Content::ClickHouse(view) => {
-                view.update(cx, |view, cx| view.set_editable(editable, cx))
-            }
         }
     }
     pub fn bind_connection(&mut self, id: String, cx: &mut Context<Self>) {
@@ -632,7 +607,7 @@ impl DocumentView {
             Content::SchemaCompare(view) => {
                 view.update(cx, |view, cx| view.bind_connection(id, cx))
             }
-            Content::Library(_) | Content::ClickHouse(_) => {}
+            Content::Library(_) => {}
         }
     }
     pub fn begin_connect(&mut self, cx: &mut Context<Self>) {
@@ -647,8 +622,7 @@ impl DocumentView {
             | Content::SchemaCompare(_)
             | Content::TableCopy(_)
             | Content::TableSeed(_)
-            | Content::CsvTransfer(_)
-            | Content::ClickHouse(_) => {}
+            | Content::CsvTransfer(_) => {}
         }
     }
     pub fn mark_disconnected(&mut self, cx: &mut Context<Self>) {
@@ -658,10 +632,7 @@ impl DocumentView {
             Content::Catalog(view) => view.update(cx, |view, cx| view.mark_disconnected(cx)),
             Content::Admin(view) => view.update(cx, |view, cx| view.mark_disconnected(cx)),
             Content::SchemaMap(view) => view.update(cx, |view, cx| view.mark_disconnected(cx)),
-            Content::Library(_)
-            | Content::TableCopy(_)
-            | Content::TableSeed(_)
-            | Content::ClickHouse(_) => {}
+            Content::Library(_) | Content::TableCopy(_) | Content::TableSeed(_) => {}
             Content::SchemaCompare(view) => view.update(cx, |view, cx| view.clear(cx)),
             Content::CsvTransfer(view) => {
                 view.update(cx, |view, cx| view.invalidate_after_restore(cx))
@@ -681,8 +652,7 @@ impl DocumentView {
             Content::Library(_)
             | Content::SchemaCompare(_)
             | Content::TableCopy(_)
-            | Content::TableSeed(_)
-            | Content::ClickHouse(_) => {}
+            | Content::TableSeed(_) => {}
             Content::CsvTransfer(view) => {
                 view.update(cx, |view, cx| view.invalidate_after_restore(cx))
             }
@@ -702,7 +672,6 @@ impl DocumentView {
             | Content::TableSeed(_)
             | Content::CsvTransfer(_) => {}
             Content::Library(_) => {}
-            Content::ClickHouse(view) => view.update(cx, |view, cx| view.clear_results(cx)),
         }
     }
     pub fn drain_one(&mut self, cx: &mut Context<Self>) -> bool {
@@ -718,7 +687,6 @@ impl DocumentView {
             Content::TableCopy(_) => false,
             Content::TableSeed(_) => false,
             Content::SchemaCompare(view) => view.update(cx, |view, cx| view.drain_one(cx)),
-            Content::ClickHouse(_) => false,
         }
     }
     pub fn visit_cached_schemas(&self, connection: &str, cx: &App, visit: &mut dyn FnMut(&str)) {
@@ -925,7 +893,6 @@ impl DocumentView {
             Content::PgTools(view) => view.read(cx).has_pending(),
             Content::TableCopy(_) => false,
             Content::TableSeed(_) => false,
-            Content::ClickHouse(_) => false,
         }
     }
 }
@@ -958,7 +925,6 @@ impl Render for DocumentView {
             Content::TableCopy(view) => view.clone().into_any_element(),
             Content::TableSeed(view) => view.clone().into_any_element(),
             Content::SchemaCompare(view) => view.clone().into_any_element(),
-            Content::ClickHouse(view) => view.clone().into_any_element(),
         }
     }
 }

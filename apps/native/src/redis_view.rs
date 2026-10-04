@@ -1,7 +1,8 @@
 //! Plan 031 step 4: the Redis workspace for one saved connection. It owns
 //! one backend `RedisSession` and every Tokio job that uses it, renders the
-//! sidebar keyspace tree and tab strip through [`RedisPart`] views, and
-//! renders the console (always the first tab) and key inspector tabs itself.
+//! sidebar keyspace tree through a [`RedisPart`] view, lists its tabs for the
+//! shell's tab bar, and renders the console (always the first tab) and key
+//! inspector tabs itself.
 //!
 //! Contracts: one tree page per database and one console command at a time;
 //! jobs are aborted and their late results dropped (by generation) on
@@ -9,7 +10,7 @@
 use crate::{
     accessible_editor::AccessibleEditor,
     controller::Host,
-    document_view::ConnectionPhase,
+    document_view::{ConnectionPhase, TabInfo},
     redis_model::{self, Console, Entry, Keyspace, Pending, Tone, TreeRow},
     style, ui,
 };
@@ -43,28 +44,17 @@ enum KeyState {
     Failed(String),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Part {
-    Tree,
-    Tabs,
-}
-
-/// A view onto one part of a [`RedisWorkspace`], so the shell can place the
-/// tree in the sidebar and the tabs in its tab bar.
+/// A view onto the keyspace tree of a [`RedisWorkspace`], so the shell can
+/// place it in the sidebar.
 pub struct RedisPart {
     owner: WeakEntity<RedisWorkspace>,
-    part: Part,
     _observe: Subscription,
 }
 
 impl Render for RedisPart {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let part = self.part;
         self.owner
-            .update(cx, |owner, cx| match part {
-                Part::Tree => owner.tree(window, cx),
-                Part::Tabs => owner.tabs(cx),
-            })
+            .update(cx, |owner, cx| owner.tree(window, cx))
             .unwrap_or_else(|_| div().into_any_element())
     }
 }
@@ -92,7 +82,6 @@ pub struct RedisWorkspace {
     console_scroll: UniformListScrollHandle,
     tree_scroll: UniformListScrollHandle,
     tree_view: Option<Entity<RedisPart>>,
-    tabs_view: Option<Entity<RedisPart>>,
 }
 
 impl EventEmitter<RedisEvent> for RedisWorkspace {}
@@ -132,37 +121,20 @@ impl RedisWorkspace {
             console_scroll: UniformListScrollHandle::new(),
             tree_scroll: UniformListScrollHandle::new(),
             tree_view: None,
-            tabs_view: None,
         }
     }
 
-    fn part(&mut self, part: Part, cx: &mut Context<Self>) -> Entity<RedisPart> {
-        let slot = match part {
-            Part::Tree => &self.tree_view,
-            Part::Tabs => &self.tabs_view,
-        };
-        if let Some(view) = slot {
+    pub fn tree_view(&mut self, cx: &mut Context<Self>) -> Entity<RedisPart> {
+        if let Some(view) = &self.tree_view {
             return view.clone();
         }
         let owner = cx.entity();
         let view = cx.new(|cx| RedisPart {
             owner: owner.downgrade(),
-            part,
             _observe: cx.observe(&owner, |_, _, cx| cx.notify()),
         });
-        match part {
-            Part::Tree => self.tree_view = Some(view.clone()),
-            Part::Tabs => self.tabs_view = Some(view.clone()),
-        }
+        self.tree_view = Some(view.clone());
         view
-    }
-
-    pub fn tree_view(&mut self, cx: &mut Context<Self>) -> Entity<RedisPart> {
-        self.part(Part::Tree, cx)
-    }
-
-    pub fn tabs_view(&mut self, cx: &mut Context<Self>) -> Entity<RedisPart> {
-        self.part(Part::Tabs, cx)
     }
 
     pub fn phase(&self) -> ConnectionPhase {
@@ -248,27 +220,29 @@ impl RedisWorkspace {
         self.load_page(overview.default_db, cx);
     }
 
-    /// Closes the session and aborts its jobs; the tree empties, the
-    /// transcript and inspector snapshots stay.
-    pub fn disconnect(&mut self, cx: &mut Context<Self>) {
+    /// Aborts the session's jobs and hands the session back for a joined
+    /// close; the tree empties, the transcript and inspector snapshots stay.
+    pub fn disconnect(&mut self, cx: &mut Context<Self>) -> Option<Arc<RedisSession>> {
         if self.session.is_some() || self.phase == ConnectionPhase::Connecting {
             self.note(Tone::Note, "Disconnected".into());
         }
-        self.retire();
+        let session = self.retire();
         self.phase = ConnectionPhase::Idle;
         cx.notify();
+        session
     }
 
-    fn retire(&mut self) {
+    fn retire(&mut self) -> Option<Arc<RedisSession>> {
         self.generation += 1;
         for job in self.jobs.drain(..) {
             job.abort();
         }
-        self.session = None;
+        let session = self.session.take();
         self.policy = None;
         self.keyspace = Keyspace::default();
         self.console.running = false;
         self.console.pending = None;
+        session
     }
 
     fn lost(&mut self, reason: String, cx: &mut Context<Self>) {
@@ -653,6 +627,66 @@ impl RedisWorkspace {
         cx.notify();
     }
 
+    /// Tabs for the shell's tab bar: the console, then key inspectors.
+    pub fn tabs(&self) -> Vec<TabInfo> {
+        std::iter::once(TabInfo {
+            id: self.tab_id(None),
+            title: "Console".into(),
+            icon: "icons/terminal.svg",
+            status: String::new(),
+            active: self.active.is_none(),
+            pinned: false,
+            closable: false,
+        })
+        .chain(self.keys.iter().map(|tab| TabInfo {
+            id: self.tab_id(Some(tab.id)),
+            title: format!("{} · db{}", tab.key, tab.db),
+            icon: "icons/hash.svg",
+            status: String::new(),
+            active: self.active == Some(tab.id),
+            pinned: false,
+            closable: true,
+        }))
+        .collect()
+    }
+
+    fn tab_id(&self, tab: Option<u64>) -> String {
+        match tab {
+            None => format!("redis-{}-console", self.connection_id),
+            Some(id) => format!("redis-{}-{id}", self.connection_id),
+        }
+    }
+
+    /// The tab a shell tab id names: `Some(None)` is the console.
+    fn tab_of(&self, id: &str) -> Option<Option<u64>> {
+        let rest = id.strip_prefix(&format!("redis-{}-", self.connection_id))?;
+        if rest == "console" {
+            return Some(None);
+        }
+        let key = rest.parse().ok()?;
+        self.keys
+            .iter()
+            .any(|tab| tab.id == key)
+            .then_some(Some(key))
+    }
+
+    pub fn owns_tab(&self, id: &str) -> bool {
+        self.tab_of(id).is_some()
+    }
+
+    pub fn select_tab_id(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(tab) = self.tab_of(id) {
+            self.select_tab(tab, window, cx);
+        }
+    }
+
+    /// Closes a key tab; the console stays.
+    pub fn close_tab_id(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(Some(key)) = self.tab_of(id) {
+            self.close_key(key, window, cx);
+        }
+    }
+
     pub fn close_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.active {
             self.close_key(id, window, cx);
@@ -896,102 +930,6 @@ impl RedisWorkspace {
                 .child(message)
                 .into_any_element(),
         }
-    }
-
-    fn tabs(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let tab = |id: SharedString, label: String, icon: &'static str, active: bool| {
-            div()
-                .id(id)
-                .role(Role::Tab)
-                .aria_label(label.clone())
-                .aria_selected(active)
-                .h_full()
-                .min_w(px(110.))
-                .max_w(px(220.))
-                .px(px(10.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .border_r_1()
-                .border_color(style::line_soft())
-                .cursor_pointer()
-                .text_color(if active { style::text() } else { style::dim() })
-                .when(active, |tab| tab.bg(style::bg()))
-                .hover(|s| s.text_color(style::text()))
-                .child(
-                    svg()
-                        .path(icon)
-                        .size(px(style::ICON))
-                        .flex_none()
-                        .text_color(if active { style::text() } else { style::dim() }),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .child(label),
-                )
-        };
-        let mut tabs = vec![
-            tab(
-                "redis-tab-console".into(),
-                "Console".into(),
-                "icons/terminal.svg",
-                self.active.is_none(),
-            )
-            .on_click(cx.listener(|this, _, window, cx| this.select_tab(None, window, cx)))
-            .into_any_element(),
-        ];
-        for key in &self.keys {
-            let id = key.id;
-            let label = format!("{} · db{}", key.key, key.db);
-            tabs.push(
-                tab(
-                    SharedString::from(format!("redis-tab-{id}")),
-                    label.clone(),
-                    "icons/hash.svg",
-                    self.active == Some(id),
-                )
-                .on_click(
-                    cx.listener(move |this, _, window, cx| this.select_tab(Some(id), window, cx)),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("redis-close-tab-{id}")))
-                        .role(Role::Button)
-                        .aria_label(format!("Close {label}"))
-                        .size(px(16.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(4.))
-                        .hover(|s| s.bg(style::hover()))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.close_key(id, window, cx)
-                        }))
-                        .child(
-                            svg()
-                                .path("icons/close.svg")
-                                .size(px(style::ICON))
-                                .text_color(style::dim()),
-                        ),
-                )
-                .into_any_element(),
-            );
-        }
-        div()
-            .id("redis-tabs")
-            .role(Role::TabList)
-            .aria_label("Redis tabs")
-            .h_full()
-            .flex()
-            .min_w_0()
-            .overflow_x_scroll()
-            .children(tabs)
-            .into_any_element()
     }
 
     fn console_view(&mut self, cx: &mut Context<Self>) -> AnyElement {

@@ -1,9 +1,5 @@
 //! Selected stage04 persistent Navigator. Documents own editors and results;
 //! the workspace owns focus, fair draining, restoration and acknowledged saves.
-#[path = "workspace_clickhouse.rs"]
-mod clickhouse_integration;
-#[path = "workspace_engine.rs"]
-mod engine;
 #[path = "workspace_engines.rs"]
 mod engines;
 #[path = "workspace_health.rs"]
@@ -16,8 +12,6 @@ mod palette;
 mod seed_integration;
 #[path = "workspace_shell.rs"]
 mod shell;
-#[path = "workspace_sqlite.rs"]
-mod sqlite_integration;
 
 use crate::{
     controller::Host,
@@ -130,6 +124,7 @@ enum Operation {
 
 pub struct Workspace {
     shell: shell::ShellState,
+    /// Plan 031 step 4: sessions, trees and tabs of non-PostgreSQL engines.
     engines: engines::EngineSurfaces,
     host: Arc<Host>,
     pg_tools: Entity<crate::pg_tool_store::ToolStore>,
@@ -144,9 +139,6 @@ pub struct Workspace {
     import_changes: crate::csv_transfer_model::ImportChanges,
     _csv_events: Subscription,
     documents: Vec<Document>,
-    clickhouse: clickhouse_integration::ClickHouseState,
-    /// Plan 031 step 4: sessions, trees and tabs of non-PostgreSQL engines.
-    engine_lanes: engine::EngineLanes,
     navigator: Entity<crate::navigator_view::NavigatorView>,
     _navigator_events: Subscription,
     dock: Entity<crate::dock_view::DockView>,
@@ -159,9 +151,6 @@ pub struct Workspace {
     health_probe: Option<Task<()>>,
     active: Option<String>,
     selected_connection: Option<String>,
-    /// Plan 031 step 4: native SQLite workspaces, one per connected SQLite
-    /// connection.
-    sqlite: sqlite_integration::SqliteHost,
     connections: Vec<DevelopmentConnection>,
     credential_state: Option<DevelopmentCredentialState>,
     layout: Layout,
@@ -410,10 +399,8 @@ impl Workspace {
             },
         );
         let shell = shell::ShellState::new(window, cx);
-        let clickhouse = clickhouse_integration::ClickHouseState::new(host.clone(), window, cx);
         let mut workspace = Self {
             shell,
-            clickhouse,
             dock,
             _dock_events: dock_events,
             navigator,
@@ -437,10 +424,8 @@ impl Workspace {
             import_changes: Default::default(),
             _csv_events: csv_events,
             documents: Vec::new(),
-            engine_lanes: Default::default(),
             active: None,
             selected_connection: None,
-            sqlite: Default::default(),
             engines: Default::default(),
             connections: Vec::new(),
             credential_state: None,
@@ -511,9 +496,7 @@ impl Workspace {
                     Ok(Ok((settings, connections, saved))) => {
                         this.credential_state = Some(settings.state);
                         this.connections = connections;
-                        this.sqlite_reconcile(cx);
-                        this.sync_engines(cx);
-                        this.sync_clickhouse(cx);
+                        this.reconcile_engines(None, cx);
                         for document in &this.documents {
                             document.view.update(cx, |view, cx| {
                                 view.set_comparison_connections(
@@ -816,12 +799,10 @@ impl Workspace {
     }
 
     pub fn snapshot(&self, cx: &mut gpui::App) -> WorkspaceSnapshot {
-        let (transient, active_document_id) = self.transient_documents(cx);
         WorkspaceSnapshot {
             documents: self
                 .documents
                 .iter()
-                .filter(|document| !transient.contains(&document.metadata.id))
                 .map(|document| {
                     let mut metadata = document.metadata.clone();
                     if metadata.table.is_none() {
@@ -840,7 +821,7 @@ impl Workspace {
                     metadata
                 })
                 .collect(),
-            active_document_id,
+            active_document_id: self.active.clone(),
             layout: self.layout,
             density: self.density,
             navigator_width: self.navigator_width,
@@ -1556,14 +1537,7 @@ impl Workspace {
         self.form_scope = None;
         self.form_credentials = false;
         self.resetting = false;
-        if self.sqlite_operation(&operation, window, cx) {
-            cx.notify();
-            return;
-        }
-        if self.engine_intercepts(&operation, window, cx) {
-            return;
-        }
-        if self.engine_activate(&operation, window, cx) {
+        if self.engine_operation(&operation, window, cx) {
             return;
         }
         match operation {
@@ -1571,9 +1545,6 @@ impl Workspace {
                 self.open_library(kind, window, cx);
             }
             Operation::SaveQuery => self.save_query(window, cx),
-            Operation::OpenTable if self.clickhouse_selected().is_some() => {
-                self.message = Some("Open ClickHouse tables from the object tree".into());
-            }
             Operation::OpenTable => {
                 if self.selected_connection.is_none() {
                     self.message = Some("Select a connection first".into());
@@ -1582,11 +1553,7 @@ impl Workspace {
                     self.show_form(form, None, window, cx);
                 }
             }
-            Operation::New => {
-                if !self.new_clickhouse_query(window, cx) {
-                    self.new_document(window, cx)
-                }
-            }
+            Operation::New => self.new_document(window, cx),
             Operation::Close => self.close_document(window, cx),
             Operation::CloseDocument(id) => {
                 if self
@@ -1605,9 +1572,6 @@ impl Workspace {
                 self.active = Some(id);
                 self.changed(cx);
                 self.focus_active(window, cx);
-            }
-            Operation::SelectConnection(id) if self.is_clickhouse(&id) => {
-                self.select_clickhouse(id, cx)
             }
             Operation::SelectConnection(id) => {
                 self.selected_connection = Some(id.clone());
@@ -1640,9 +1604,6 @@ impl Workspace {
                     self.changed(cx);
                 }
                 self.connect_selection(id, window, cx);
-            }
-            Operation::DisconnectConnection(id) if self.is_clickhouse(&id) => {
-                self.disconnect_clickhouse(id, cx)
             }
             Operation::DisconnectConnection(id) => self.disconnect_connection(id, window, cx),
             Operation::Rename => {
@@ -2124,10 +2085,7 @@ impl Workspace {
     fn settle_form_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let scope = self.form_scope.clone();
         let all = self.form_credentials;
-        if all || scope.is_some() {
-            self.retire_engines(if all { None } else { scope.as_deref() }, cx);
-        }
-        self.invalidate_clickhouse(scope.as_deref(), all, cx);
+        self.reconcile_engines(Some((scope.as_deref(), all)), cx);
         // An edited endpoint keeps its ID; the retained tree may now describe
         // a different database.
         self.navigator.update(cx, |view, cx| {
@@ -2230,8 +2188,6 @@ impl Workspace {
             self.changed(cx);
         }
         self.closing = true;
-        self.retire_engines(None, cx);
-        self.close_clickhouse(cx);
         self.navigator
             .update(cx, |view, cx| view.set_editable(false, cx));
         for document in &self.documents {
@@ -2245,7 +2201,7 @@ impl Workspace {
             self.writer.clone()
         };
         let host = self.host.clone();
-        let sqlite_sessions = self.sqlite_take_sessions(cx);
+        let engine_sessions = self.detach_engines(cx);
         // Fullscreen keeps the previous record. GPUI reports the frame origin
         // display-locally but sizes new windows by content area.
         let geometry = match window.window_bounds() {
@@ -2293,7 +2249,7 @@ impl Workspace {
                 .await;
             }
             // A session that misses its deadline is aborted; quit continues.
-            if let Err(error) = sqlite_integration::close_sqlite_sessions(sqlite_sessions).await {
+            if let Err(error) = engines::close_within(engine_sessions).await {
                 log::warn!("{error}");
             }
             host.shutdown().await.map_err(|error| (error, false))
@@ -2343,8 +2299,6 @@ impl Render for Workspace {
         });
         self.navigator
             .update(cx, |view, cx| view.set_connection(navigator_connection, cx));
-        self.sync_clickhouse_tree(cx);
-        self.sync_engine_lanes();
         let projects = shell::projects(&self.connections);
         if self
             .shell
