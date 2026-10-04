@@ -19,7 +19,7 @@ impl Workspace {
         self.engine_lanes.0.get(id).map(|(lane, _)| lane)
     }
 
-    fn engine_connection(&self, id: &str) -> Option<&DevelopmentConnection> {
+    fn lane_connection(&self, id: &str) -> Option<&DevelopmentConnection> {
         self.connections
             .iter()
             .find(|connection| connection.id == id && EngineLane::supports(connection))
@@ -34,7 +34,7 @@ impl Workspace {
     ) -> bool {
         match operation {
             Operation::SelectConnection(id) => {
-                let Some(connection) = self.engine_connection(id).cloned() else {
+                let Some(connection) = self.lane_connection(id).cloned() else {
                     return false;
                 };
                 self.selected_connection = Some(id.clone());

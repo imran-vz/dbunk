@@ -2,10 +2,10 @@
 //! the workspace owns focus, fair draining, restoration and acknowledged saves.
 #[path = "workspace_clickhouse.rs"]
 mod clickhouse_integration;
-#[path = "workspace_engines.rs"]
-mod engines;
 #[path = "workspace_engine.rs"]
 mod engine;
+#[path = "workspace_engines.rs"]
+mod engines;
 #[path = "workspace_health.rs"]
 mod health;
 #[path = "managed_view.rs"]
