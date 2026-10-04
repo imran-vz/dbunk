@@ -1,7 +1,8 @@
 # Plan 031: Native redesign and multi-engine workspace
 
-- Status: IN PROGRESS through Step 3 (see [README.md](./README.md)); Step 4
-  (engines) and Step 5 (window acceptance) remain. Requested by Imran on
+- Status: IN PROGRESS through Step 3, Step 4 SQLite done (see
+  [README.md](./README.md)); Step 4 for MySQL, ClickHouse and Redis and Step 5
+  (window acceptance) remain. Requested by Imran on
   2026-10-03 together with the hard migration (ADR-0033). Supersedes the visual direction of Plans 027–029; their
   behavioral contracts (bounded resources, exact-save recovery, owned workers,
   stored policy, no automatic retry) still apply.
@@ -86,3 +87,54 @@ reference, started from the mock.
   for sidebar hide/show. All respect Reduce motion.
 - Not yet verified in a real window: this harness cannot capture or drive the
   app window (no screen-recording or AX trust).
+
+## Step 4: SQLite (2026-10-04)
+
+Branch `plan-031-step4-sqlite`. Selecting a SQLite connection opens a native
+SQLite workspace end to end; the sidebar row's connect, disconnect, connecting
+and failed states and the status bar now apply to SQLite too.
+
+- **Session** (`backend/src/backend/sqlite_session.rs`,
+  `Backend::open_sqlite_session`): one owned worker task per connection holds
+  one `SqliteConnection`; requests run in order on a bounded queue (8, refused
+  with "busy" when full). The file must already exist (the existing
+  `check_sqlite_file` probe, then `create_if_missing(false)`; `ATTACH` cannot
+  create files either). Read-only connections open with
+  `SQLITE_OPEN_READONLY`. The tree, table pages, structure and the query tab
+  share the session, so `ATTACH`, temp tables and an open transaction are
+  visible across documents, like a SQLite shell.
+- **Bounds**: 2,000 rows per result set, 16 result sets, 16 MiB retained per
+  run, 64 KiB per text cell, 256-byte BLOB hex previews, 1,000-row table
+  pages, 5,000 tree objects per kind per database, 1 MiB SQL. Rows past a
+  bound are still read (every statement runs) and reported as omitted. The
+  native grid also charges results to the workspace retention allowance.
+- **Safety**: user SQL passes the existing policy (`classify_script` +
+  `assert_permitted`): read-only blocks writes, protected/strict (including
+  production by default) ask for confirmation of the exact reviewed text, and
+  confirmed overrides are audited after success. PRAGMA, ATTACH and REPLACE
+  classify as unknown, so they count as writes.
+- **Cancel and close**: Stop interrupts only its own request through SQLite's
+  progress handler. Disconnect refuses queued work, interrupts the running
+  request and joins the worker within 5 s (rolling back an open transaction);
+  a worker that misses the deadline is aborted. Quit closes every SQLite
+  session before the host shuts down. Nothing reconnects or retries by
+  itself; a reconnect drops late results from the previous attempt, and a
+  saved change to the path, read-only flag or policy closes the session.
+- **Tree**: `main`, `temp` once used, and attached databases (`PRAGMA
+  database_list`) → tables, views, indexes, triggers from `sqlite_master`,
+  with counts, filter and keyboard navigation (arrows, Enter opens data,
+  Shift-Enter opens structure). Indexes and triggers open their table's
+  structure. The tree refreshes after a run that may create, drop or attach.
+- **Documents**: query tab (editor, ⌘↵ run, ⌘. stop, multiple result sets in
+  the shared result grid, row/latency summary, confirmation banner); table
+  data (200-row pages in natural order, previous/next, refresh); structure
+  (columns with type, NOT NULL, default, key position and generated/hidden
+  markers; indexes with origin, partial flag and expression members; foreign
+  keys; triggers with definitions; CREATE statement). Tab titles hide `main.`
+  and name attached schemas.
+
+Not yet: SQLite tabs are not persisted in the workspace snapshot or listed in
+the command palette; no sorting, filtering or cell editing in table data; no
+schema tools (DDL editor, export, compare) for SQLite. Checks: backend and
+native unit tests against real SQLite files; no window, keyboard/AX or IME
+acceptance.

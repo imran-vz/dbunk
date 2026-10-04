@@ -194,7 +194,18 @@ pub(super) fn connection_phase(
 
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
-    connection.postgres.is_some() && connection.unsupported_reason.is_none()
+    (connection.postgres.is_some() && connection.unsupported_reason.is_none())
+        || crate::sqlite_workspace::is_sqlite(connection)
+}
+
+/// One tab in the tab bar, from a workspace document or a SQLite tab.
+struct ShellTab {
+    id: String,
+    name: String,
+    kind: &'static str,
+    status: String,
+    active: bool,
+    pinned: bool,
 }
 
 fn sidebar_spring() -> SpringConfig {
@@ -312,6 +323,9 @@ impl Workspace {
         connected: &std::collections::BTreeSet<String>,
         cx: &gpui::App,
     ) -> ConnectionPhase {
+        if let Some(phase) = self.sqlite_phase(id, cx) {
+            return phase;
+        }
         connection_phase(
             connected.contains(id),
             self.documents
@@ -321,9 +335,13 @@ impl Workspace {
         )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
-        let id = self
-            .active_index()
-            .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
+        // A selected SQLite connection owns the whole workspace view.
+        let sqlite = self.sqlite_active().and(self.selected_connection.as_ref());
+        let id = sqlite
+            .or_else(|| {
+                self.active_index()
+                    .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
+            })
             .or(self.selected_connection.as_ref())?;
         self.connections
             .iter()
@@ -699,32 +717,60 @@ impl Workspace {
                     )
                     .child(self.connection_list(cx)),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .child(self.navigator.clone()),
-            )
+            .child(div().flex_1().min_h_0().flex().flex_col().map(
+                |tree| match self.sqlite_active() {
+                    Some(sqlite) => tree.child(sqlite.read(cx).tree()),
+                    None => tree.child(self.navigator.clone()),
+                },
+            ))
     }
 
     fn tab_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let env = self.env_color();
-        let tabs = self.documents.iter().map(|document| {
-            let id = document.metadata.id.clone();
-            let active = Some(&id) == self.active.as_ref();
-            let kind = if document.metadata.tool.is_some() {
-                "icons/list_tree.svg"
-            } else if document.metadata.table.is_some() {
-                "icons/table.svg"
-            } else {
-                "icons/terminal.svg"
-            };
-            let status = document.view.read(cx).document_status(cx).to_owned();
+        // A selected SQLite connection shows its own tabs.
+        let items = match self.sqlite_tabs(cx) {
+            Some(tabs) => tabs
+                .into_iter()
+                .map(|tab| ShellTab {
+                    active: tab.active,
+                    id: tab.id,
+                    name: tab.title,
+                    kind: tab.icon,
+                    status: tab.status,
+                    pinned: false,
+                })
+                .collect::<Vec<_>>(),
+            None => self
+                .documents
+                .iter()
+                .map(|document| ShellTab {
+                    id: document.metadata.id.clone(),
+                    name: document.metadata.name.clone(),
+                    kind: if document.metadata.tool.is_some() {
+                        "icons/list_tree.svg"
+                    } else if document.metadata.table.is_some() {
+                        "icons/table.svg"
+                    } else {
+                        "icons/terminal.svg"
+                    },
+                    status: document.view.read(cx).document_status(cx).to_owned(),
+                    active: Some(&document.metadata.id) == self.active.as_ref(),
+                    pinned: document.metadata.pinned,
+                })
+                .collect(),
+        };
+        let tabs = items.into_iter().map(|tab| {
+            let ShellTab {
+                id,
+                name,
+                kind,
+                status,
+                active,
+                pinned,
+            } = tab;
             self.shell_button(
                 SharedString::from(format!("tab-{id}")),
-                format!("{}, {status}", document.metadata.name),
+                format!("{name}, {status}"),
                 Operation::SelectDocument(id.clone()),
                 cx,
             )
@@ -760,11 +806,7 @@ impl Workspace {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .child(format!(
-                        "{}{}",
-                        if document.metadata.pinned { "● " } else { "" },
-                        document.metadata.name
-                    )),
+                    .child(format!("{}{}", if pinned { "● " } else { "" }, name)),
             )
             .group(SharedString::from(format!("tab-group-{id}")))
             .child({
@@ -772,7 +814,7 @@ impl Workspace {
                 let close = self
                     .row_button(
                         SharedString::from(format!("close-tab-{id}")),
-                        format!("Close {}", document.metadata.name),
+                        format!("Close {name}"),
                         "icons/close.svg",
                         style::dim(),
                         Operation::CloseDocument(id.clone()),
@@ -1216,9 +1258,11 @@ impl Workspace {
                         .child("Production · writes require review and confirmation"),
                 )
             })
-            .child(match self.active_index() {
+            .child(match (self.sqlite_active().cloned(), self.active_index()) {
+                // A selected SQLite connection shows its own active document.
+                (Some(sqlite), _) => div().flex_1().min_h_0().child(sqlite).into_any_element(),
                 // Each document fades and settles in when it becomes active.
-                Some(index) => crate::ui::appear(
+                (None, Some(index)) => crate::ui::appear(
                     SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
                     div()
                         .flex_1()
@@ -1227,7 +1271,7 @@ impl Workspace {
                         .child(self.documents[index].view.clone()),
                 )
                 .into_any_element(),
-                None => div()
+                (None, None) => div()
                     .flex_1()
                     .flex()
                     .items_center()
@@ -1400,6 +1444,25 @@ mod tests {
             settings: None,
             environment,
         }
+    }
+
+    #[test]
+    fn sqlite_connections_are_connectable_without_postgres_settings() {
+        let mut local = connection("local", "", DevelopmentEnvironment::Development);
+        assert!(!connectable(&local));
+        local.engine = "SQLite".into();
+        local.settings = Some(dbunk_lib::backend::DevelopmentEngineConnection::SQLite(
+            dbunk_lib::backend::DevelopmentSqliteConnection {
+                name: "local".into(),
+                path: "/tmp/local.db".into(),
+                environment: DevelopmentEnvironment::Development,
+                safe_mode: dbunk_lib::backend::DevelopmentSafeMode::Inherit,
+                read_only: false,
+            },
+        ));
+        assert!(connectable(&local));
+        local.unsupported_reason = Some("unsupported".into());
+        assert!(!connectable(&local));
     }
 
     #[test]
