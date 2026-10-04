@@ -93,6 +93,11 @@ pub use development::{
     WORKSPACE_MUTATION_MAX_BYTES, WORKSPACE_MUTATION_MAX_CHANGES, WORKSPACE_SCHEMA_ALTER_MAX_BYTES,
     WORKSPACE_SEED_MAX_JOBS, WORKSPACE_TABLE_DDL_MAX_BYTES,
 };
+pub use development::{
+    RedisConsoleOutcome, RedisDatabase, RedisKey, RedisKeyInspection, RedisKeyValue, RedisOverview,
+    RedisPolicy, RedisScanPage, RedisSession, RedisSessionError, RedisValue, REDIS_INSPECT_ITEMS,
+    REDIS_MAX_DATABASES, REDIS_PAGE_KEYS, REDIS_SCAN_COUNT,
+};
 pub use development::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
 pub use legacy_import::{
     import_legacy_profile, snapshot_legacy_profile, LegacyImportManifest, LegacySnapshotManifest,

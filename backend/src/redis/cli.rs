@@ -123,19 +123,19 @@ pub enum RunCommandResult {
     },
 }
 
-pub async fn run_command(
-    connection: &RedisStoredConnection,
-    payload: &RunCommandPayload,
-) -> Result<RunCommandResult, String> {
-    if payload.tokens.is_empty() {
-        return Ok(RunCommandResult::Rejected {
+/// The CLI's refusal rules, shared with the native console: empty input,
+/// Pub/Sub commands, and the ADR-0009 destructive list without
+/// confirmation. `None` means the command may run.
+pub fn guard(tokens: &[String], confirmed: bool) -> Option<RunCommandResult> {
+    if tokens.is_empty() {
+        return Some(RunCommandResult::Rejected {
             reason: "Empty command".into(),
         });
     }
 
-    let head = payload.tokens[0].to_uppercase();
-    let two = if payload.tokens.len() >= 2 {
-        format!("{} {}", head, payload.tokens[1].to_uppercase())
+    let head = tokens[0].to_uppercase();
+    let two = if tokens.len() >= 2 {
+        format!("{} {}", head, tokens[1].to_uppercase())
     } else {
         head.clone()
     };
@@ -147,7 +147,7 @@ pub async fn run_command(
         head.as_str(),
         "SUBSCRIBE" | "PSUBSCRIBE" | "UNSUBSCRIBE" | "PUNSUBSCRIBE" | "MONITOR"
     ) {
-        return Ok(RunCommandResult::Rejected {
+        return Some(RunCommandResult::Rejected {
             reason: format!(
                 "{head} is not available in the CLI. Use the Pub/Sub tab for subscriptions.",
             ),
@@ -166,12 +166,23 @@ pub async fn run_command(
         });
 
     if let Some((matched, severity)) = destructive {
-        if !payload.confirmed {
-            return Ok(RunCommandResult::NeedsConfirmation {
+        if !confirmed {
+            return Some(RunCommandResult::NeedsConfirmation {
                 command: matched.to_string(),
                 severity: severity.to_string(),
             });
         }
+    }
+
+    None
+}
+
+pub async fn run_command(
+    connection: &RedisStoredConnection,
+    payload: &RunCommandPayload,
+) -> Result<RunCommandResult, String> {
+    if let Some(refusal) = guard(&payload.tokens, payload.confirmed) {
+        return Ok(refusal);
     }
 
     let mut cmd = redis::cmd(&payload.tokens[0]);

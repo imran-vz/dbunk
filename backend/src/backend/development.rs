@@ -19,6 +19,11 @@ pub use connections::{
     DevelopmentSafeMode, DevelopmentSqliteConnection, DevelopmentSshTunnel, DevelopmentTlsMode,
     DevelopmentTlsOptions,
 };
+pub use connections::{
+    RedisConsoleOutcome, RedisDatabase, RedisKey, RedisKeyInspection, RedisKeyValue, RedisOverview,
+    RedisPolicy, RedisScanPage, RedisSession, RedisSessionError, RedisValue, REDIS_INSPECT_ITEMS,
+    REDIS_MAX_DATABASES, REDIS_PAGE_KEYS, REDIS_SCAN_COUNT,
+};
 pub use settings::{DevelopmentCredentialState, DevelopmentSettings, DevelopmentStorageMode};
 pub(super) use workspace::encode_record as encode_workspace_record;
 pub use workspace::{
