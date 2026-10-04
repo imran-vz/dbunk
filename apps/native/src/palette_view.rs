@@ -166,11 +166,32 @@ impl<C: 'static> Render for PaletteView<C> {
             .max_h(px(480.))
             .flex()
             .flex_col()
-            .bg(crate::style::bg())
+            .overflow_hidden()
+            .rounded(px(8.))
+            .bg(crate::style::panel())
             .text_color(crate::style::text())
+            .text_size(px(crate::style::FONT))
             .border_1()
-            .border_color(crate::style::faint())
-            .child(div().h(px(28.)).px_2().child(self.accessible.clone()))
+            .border_color(crate::style::line())
+            .shadow_lg()
+            .child(
+                div()
+                    .h(px(34.))
+                    .px(px(10.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .border_b_1()
+                    .border_color(crate::style::line())
+                    .child(
+                        gpui::svg()
+                            .path("icons/magnifying_glass.svg")
+                            .size(px(crate::style::ICON))
+                            .flex_none()
+                            .text_color(crate::style::faint()),
+                    )
+                    .child(div().flex_1().min_w_0().child(self.accessible.clone())),
+            )
             .child(
                 div()
                     .id("open-anything-results")
@@ -191,12 +212,6 @@ impl<C: 'static> Render for PaletteView<C> {
                                     .map(|position| {
                                         let index = this.ranked.items[position];
                                         let item = &this.items[index];
-                                        let text = format!(
-                                            "{}  {}  {}",
-                                            item.kind.label(),
-                                            item.label,
-                                            item.description
-                                        );
                                         let selected = position == this.selected;
                                         div()
                                             .id(("open-anything-row", position))
@@ -204,12 +219,41 @@ impl<C: 'static> Render for PaletteView<C> {
                                             .aria_label(this.row_label(index))
                                             .aria_selected(selected)
                                             .h(px(24.))
-                                            .px_2()
-                                            .text_sm()
+                                            .px(px(10.))
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(8.))
                                             .overflow_hidden()
                                             .whitespace_nowrap()
+                                            .cursor_pointer()
+                                            .hover(|row| row.bg(crate::style::hover()))
                                             .when(selected, |row| row.bg(crate::style::select()))
-                                            .child(SharedString::from(text))
+                                            .child(
+                                                div()
+                                                    .flex_none()
+                                                    .w(px(64.))
+                                                    .text_size(px(crate::style::FONT_SMALL))
+                                                    .text_color(crate::style::faint())
+                                                    .child(item.kind.label()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_none()
+                                                    .text_color(crate::style::text())
+                                                    .child(SharedString::from(item.label.clone())),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .overflow_hidden()
+                                                    .text_color(crate::style::faint())
+                                                    .font_family(crate::style::MONO)
+                                                    .text_size(px(crate::style::FONT_SMALL))
+                                                    .child(SharedString::from(
+                                                        item.description.clone(),
+                                                    )),
+                                            )
                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                 this.selected = position;
                                                 this.choose(position, cx);
@@ -228,8 +272,11 @@ impl<C: 'static> Render for PaletteView<C> {
                         .id("open-anything-truncated")
                         .role(Role::Label)
                         .aria_label(format!("Not shown: {truncated}"))
-                        .px_2()
-                        .text_xs()
+                        .px(px(10.))
+                        .py(px(4.))
+                        .border_t_1()
+                        .border_color(crate::style::line_soft())
+                        .text_size(px(crate::style::FONT_SMALL))
                         .text_color(crate::style::warn())
                         .child(format!("Not shown: {truncated}; refine the search")),
                 )
@@ -240,8 +287,11 @@ impl<C: 'static> Render for PaletteView<C> {
                         .id("open-anything-note")
                         .role(Role::Label)
                         .aria_label(note.clone())
-                        .px_2()
-                        .text_xs()
+                        .px(px(10.))
+                        .py(px(4.))
+                        .border_t_1()
+                        .border_color(crate::style::line_soft())
+                        .text_size(px(crate::style::FONT_SMALL))
                         .text_color(crate::style::dim())
                         .child(note),
                 )

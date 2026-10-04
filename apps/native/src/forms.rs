@@ -17,8 +17,10 @@ mod bastions;
 mod diagnosis;
 mod engine;
 mod engine_view;
+mod render;
 mod tunnel;
 mod uri;
+mod validation;
 
 type FormJob =
     futures_util::future::BoxFuture<'static, (Option<String>, Result<Option<String>, String>)>;
@@ -53,6 +55,14 @@ enum FormAction {
     TunnelVia(usize),
     Engine(engine::Engine),
     EngineToggle(engine::Toggle),
+    Acknowledge,
+}
+/// How a form message reads: errors shake and take the danger colour.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tone {
+    Info,
+    Success,
+    Error,
 }
 enum Kind {
     Credentials(DevelopmentSettings),
@@ -85,6 +95,14 @@ pub struct Form {
     busy: bool,
     confirm_reset: bool,
     message: Option<String>,
+    tone: Tone,
+    /// Bumped by every new message so a repeated error still shakes.
+    message_seq: u64,
+    /// Body text of a confirmation page (delete, discard, reset).
+    prompt: Option<String>,
+    acknowledged: bool,
+    /// Inline field errors show after the first submit or test.
+    attempted: bool,
     task: Option<Task<()>>,
     diagnosis: Option<diagnosis::State>,
     tunnel: Option<tunnel::State>,
@@ -98,7 +116,11 @@ impl Form {
             host,
             kind,
             fields: Vec::new(),
-            controls: HashMap::from([("Cancel".into(), cx.focus_handle())]),
+            controls: HashMap::from([
+                ("Cancel".into(), cx.focus_handle()),
+                ("Submit".into(), cx.focus_handle()),
+                ("Recover credentials".into(), cx.focus_handle()),
+            ]),
             visible_controls: Vec::new(),
             mode: DevelopmentStorageMode::PlainSqlite,
             environment: DevelopmentEnvironment::Development,
@@ -109,12 +131,28 @@ impl Form {
             busy: false,
             confirm_reset: false,
             message: None,
+            tone: Tone::Info,
+            message_seq: 0,
+            prompt: None,
+            acknowledged: false,
+            attempted: false,
             task: None,
             diagnosis: None,
             tunnel: None,
             engine: engine::Engine::Postgres,
             toggles: engine::Toggles::default(),
         }
+    }
+    fn say(&mut self, text: impl Into<String>, tone: Tone) {
+        self.message = Some(text.into());
+        self.tone = tone;
+        self.message_seq = self.message_seq.wrapping_add(1);
+    }
+    fn fail(&mut self, text: impl Into<String>) {
+        self.say(text, Tone::Error);
+    }
+    fn note(&mut self, text: impl Into<String>) {
+        self.say(text, Tone::Info);
     }
     fn field(
         &mut self,
@@ -133,11 +171,15 @@ impl Form {
         });
         let accessible = cx.new(|cx| AccessibleEditor::field(editor.clone(), label, secret, cx));
         cx.subscribe(&editor, |this, _, event, cx| {
-            if matches!(event, editor::EditorEvent::BufferEdited)
-                && let Some(state) = &mut this.diagnosis
-            {
+            if !matches!(event, editor::EditorEvent::BufferEdited) {
+                return;
+            }
+            if let Some(state) = &mut this.diagnosis {
                 state.invalidate();
                 this.message = None;
+            }
+            // Inline errors follow the text once they are showing.
+            if this.attempted || this.diagnosis.is_some() {
                 cx.notify();
             }
         })
@@ -155,14 +197,34 @@ impl Form {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let mode = settings.mode.unwrap_or(DevelopmentStorageMode::PlainSqlite);
-        let recovery = settings.state == DevelopmentCredentialState::NeedsRecovery;
+        // Encrypted SQLite is the recommended first choice, as before.
+        let mode = settings
+            .mode
+            .unwrap_or(DevelopmentStorageMode::EncryptedSqlite);
+        let state = settings.state;
         let mut form = Self::base(host, Kind::Credentials(settings), cx);
         form.mode = mode;
-        if !recovery {
+        if state != DevelopmentCredentialState::NeedsRecovery {
             form.field(
                 "password",
-                "Credential password",
+                if state == DevelopmentCredentialState::NeedsUnlock {
+                    "Credential password"
+                } else {
+                    "New credential password"
+                },
+                String::new(),
+                true,
+                window,
+                cx,
+            );
+        }
+        if matches!(
+            state,
+            DevelopmentCredentialState::NeedsOnboarding | DevelopmentCredentialState::Ready
+        ) {
+            form.field(
+                "confirm",
+                "Confirm password",
                 String::new(),
                 true,
                 window,
@@ -351,7 +413,7 @@ impl Form {
         cx: &mut Context<Self>,
     ) -> Self {
         let mut form = Self::base(host, Kind::Delete(connection.id), cx);
-        form.message = Some(format!(
+        form.prompt = Some(format!(
             "Delete {}? Saved query drafts will be kept, disconnected.",
             connection.name
         ));
@@ -360,22 +422,38 @@ impl Form {
     }
     pub fn discard_drafts(host: Arc<Host>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut form = Self::base(host, Kind::Discard, cx);
-        form.message =
+        form.prompt =
             Some("Discard unsaved drafts and close? The last saved workspace will be kept.".into());
         form.focus(window, cx);
         form
     }
     pub fn reset_workspace(host: Arc<Host>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut form = Self::base(host, Kind::ResetWorkspace, cx);
-        form.message = Some("Reset saved query drafts? Connections are kept and the workspace stays open. Export the saved JSON first if you need to preserve it.".into());
+        form.prompt = Some("Reset saved query drafts? Connections are kept and the workspace stays open. Export the saved JSON first if you need to preserve it.".into());
         form.focus(window, cx);
         form
     }
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        if let Some(field) = self.fields.first() {
+        if let Some(field) = self
+            .fields
+            .iter()
+            .find(|field| self.field_visible(field.key))
+        {
             window.focus(&field.editor.focus_handle(cx), cx);
-        } else if let Some(cancel) = self.controls.get("Cancel") {
-            window.focus(cancel, cx);
+        } else {
+            // Gates have no Cancel; land on the action that moves them on.
+            let key = match &self.kind {
+                Kind::Credentials(settings)
+                    if settings.state == DevelopmentCredentialState::NeedsRecovery =>
+                {
+                    "Recover credentials"
+                }
+                _ if !self.dismissible() => "Submit",
+                _ => "Cancel",
+            };
+            if let Some(handle) = self.controls.get(key) {
+                window.focus(handle, cx);
+            }
         }
     }
     fn value(&self, key: &str, cx: &App) -> String {
@@ -485,9 +563,53 @@ impl Form {
         }
         self.engine = to;
     }
+    /// The credential gate cannot be dismissed until storage is ready: the
+    /// workspace behind it has no usable credentials.
+    fn dismissible(&self) -> bool {
+        match &self.kind {
+            Kind::Credentials(settings) => settings.state == DevelopmentCredentialState::Ready,
+            _ => true,
+        }
+    }
+    /// Inline errors for the visible fields of this form.
+    fn field_errors(&self, cx: &App) -> validation::Errors {
+        match &self.kind {
+            Kind::Connection { .. } => {
+                validation::connection(self.engine, |key| self.value(key, cx))
+            }
+            Kind::Credentials(settings) => validation::credentials(
+                settings.state,
+                self.mode,
+                &self.value("password", cx),
+                &self.value("confirm", cx),
+                self.acknowledged,
+            ),
+            _ => Vec::new(),
+        }
+    }
+    /// A summary error when `action` must not run with the current input.
+    fn blocking_errors(&self, action: FormAction, cx: &App) -> Option<String> {
+        if matches!(
+            action,
+            FormAction::ConfirmReset | FormAction::Recover | FormAction::Delete
+        ) {
+            return None;
+        }
+        let errors = self.field_errors(cx);
+        match errors.len() {
+            0 => None,
+            1 => Some(errors[0].1.clone()),
+            count => Some(format!("Fix the {count} highlighted fields")),
+        }
+    }
     fn field_visible(&self, key: &str) -> bool {
         match &self.kind {
             Kind::Bastions(state) => bastions::field_visible(state.auth(), key),
+            Kind::Credentials(settings) => {
+                !self.confirm_reset
+                    && (settings.state == DevelopmentCredentialState::NeedsUnlock
+                        || self.mode == DevelopmentStorageMode::EncryptedSqlite)
+            }
             Kind::Connection { .. } if !self.engine.shows(key) => false,
             _ if key.starts_with("tunnel-") => {
                 self.tunnel.as_ref().is_some_and(|tunnel| tunnel.enabled)
@@ -502,12 +624,18 @@ impl Form {
                 && state.running()
             {
                 state.cancel();
-                self.message = Some("Cancelling connection test…".into());
+                self.note("Cancelling connection test…");
                 cx.notify();
             }
             return;
         }
         if matches!(action, FormAction::Test) {
+            if let Some(errors) = self.blocking_errors(action, cx) {
+                self.attempted = true;
+                self.fail(errors);
+                cx.notify();
+                return;
+            }
             self.test_connection(cx);
             return;
         }
@@ -534,7 +662,18 @@ impl Form {
                 return;
             }
             FormAction::Cancel => {
-                cx.emit(FormEvent::Cancelled);
+                if self.confirm_reset {
+                    self.confirm_reset = false;
+                    self.message = None;
+                    cx.notify();
+                } else if self.dismissible() {
+                    cx.emit(FormEvent::Cancelled);
+                }
+                return;
+            }
+            FormAction::Acknowledge => {
+                self.acknowledged = !self.acknowledged;
+                cx.notify();
                 return;
             }
             FormAction::Discard => {
@@ -542,6 +681,9 @@ impl Form {
                 return;
             }
             FormAction::Mode(mode) => {
+                if self.mode != mode {
+                    self.acknowledged = false;
+                }
                 self.mode = mode;
                 cx.notify();
                 return;
@@ -599,6 +741,7 @@ impl Form {
             }
             FormAction::Reset => {
                 self.confirm_reset = true;
+                self.message = None;
                 cx.notify();
                 return;
             }
@@ -631,7 +774,7 @@ impl Form {
         if matches!(self.kind, Kind::Rename) {
             let name = self.value("name", cx);
             if name.trim().is_empty() {
-                self.message = Some("Enter a query name".into());
+                self.fail("Enter a query name");
                 cx.notify();
                 return;
             }
@@ -645,23 +788,32 @@ impl Form {
                 .iter()
                 .any(|value| value.is_empty() || value.len() > 256 || value.contains('\0'))
             {
-                self.message =
-                    Some("Enter a schema and table name (at most 256 bytes each)".into());
+                self.fail("Enter a schema and table name (at most 256 bytes each)");
                 cx.notify();
             } else {
                 cx.emit(FormEvent::OpenTable { schema, table });
             }
             return;
         }
+        if let Some(errors) = self.blocking_errors(action, cx) {
+            self.attempted = true;
+            self.fail(errors);
+            cx.notify();
+            return;
+        }
         let backend = self.host.backend.clone();
         let password = self.value("password", cx);
         let mode = self.mode;
+        // Only Encrypted SQLite takes a password; never send a stray one.
+        let storage_password = (mode == DevelopmentStorageMode::EncryptedSqlite
+            && !password.is_empty())
+        .then(|| password.clone());
         let job: FormJob = match &self.kind {
             Kind::Connection { id } => {
                 let form = match self.engine_input(cx) {
                     Ok(form) => form,
                     Err(error) => {
-                        self.message = Some(error);
+                        self.fail(error);
                         cx.notify();
                         return;
                     }
@@ -697,18 +849,11 @@ impl Form {
                         backend.unlock_development_credentials(password).await
                     } else if state == DevelopmentCredentialState::NeedsOnboarding {
                         backend
-                            .configure_development_credentials(
-                                mode,
-                                (!password.is_empty()).then_some(password),
-                            )
+                            .configure_development_credentials(mode, storage_password)
                             .await
                     } else {
                         backend
-                            .change_development_credentials(
-                                mode,
-                                (!password.is_empty()).then_some(password),
-                                true,
-                            )
+                            .change_development_credentials(mode, storage_password, true)
                             .await
                     };
                     (None, result.map(|_| None))
@@ -752,8 +897,8 @@ impl Form {
                 }
                 match result {
                     Ok(None) => cx.emit(FormEvent::Saved),
-                    Ok(Some(message)) => this.message = Some(message),
-                    Err(error) => this.message = Some(error),
+                    Ok(Some(message)) => this.note(message),
+                    Err(error) => this.fail(error),
                 }
                 cx.notify();
             });
@@ -773,10 +918,13 @@ impl Form {
             FormAction::ReadOnly => "Read-only".to_owned(),
             FormAction::Favorite => "Favorite".to_owned(),
             FormAction::Cancel => "Cancel".to_owned(),
+            FormAction::Submit => "Submit".to_owned(),
+            FormAction::Acknowledge => "Acknowledge".to_owned(),
             FormAction::Tunnel => "SSH tunnel".to_owned(),
             FormAction::TunnelVia(index) => format!("tunnel-via-{index}"),
             FormAction::Engine(engine) => format!("engine-{}", engine.label()),
             FormAction::EngineToggle(toggle) => format!("engine-toggle-{toggle:?}"),
+            FormAction::Mode(mode) => format!("mode-{mode:?}"),
             FormAction::Bastion(bastions::Action::ClearPassphrase) => "Clear passphrase".to_owned(),
             FormAction::Bastion(bastions::Action::Row(op, index)) => {
                 format!("bastion-{op:?}-{index}")
@@ -811,12 +959,19 @@ impl Form {
             FormAction::ReadOnly
                 | FormAction::Favorite
                 | FormAction::Tunnel
+                | FormAction::Acknowledge
                 | FormAction::EngineToggle(_)
                 | FormAction::Bastion(bastions::Action::ClearPassphrase)
         );
         let weak = cx.weak_entity();
-        div()
-            .id(SharedString::from(key))
+        let element = if choice {
+            render::chip(key, label, selected, enabled, chip_dot(action))
+        } else if toggle {
+            render::toggle_row(key, label, selected, enabled)
+        } else {
+            crate::ui::button(key, label, variant(action), enabled)
+        };
+        element
             .role(if choice {
                 Role::RadioButton
             } else if toggle {
@@ -824,24 +979,9 @@ impl Form {
             } else {
                 Role::Button
             })
-            .aria_label(label.clone())
             .track_focus(&focus)
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(if selected {
-                crate::style::text()
-            } else {
-                crate::style::line()
-            })
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if choice || toggle {
                     builder.parent_node().set_toggled(Toggled::from(selected));
@@ -850,11 +990,14 @@ impl Form {
                     builder.parent_node().set_disabled();
                 }
             })
-            .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
+            .when(enabled, |element| {
+                element.on_click(
+                    cx.listener(move |this, _, window, cx| this.activate(action, window, cx)),
+                )
+            })
             .on_a11y_action(Action::Click, move |_, window, cx| {
                 let _ = weak.update(cx, |this, cx| this.activate(action, window, cx));
             })
-            .child(label)
             .into_any_element()
     }
     fn key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -895,325 +1038,28 @@ impl Form {
         }
     }
 }
+/// Button weight follows what the action does.
+fn variant(action: FormAction) -> crate::ui::Variant {
+    use crate::ui::Variant;
+    match action {
+        FormAction::Submit => Variant::Primary,
+        FormAction::Delete | FormAction::Discard | FormAction::ConfirmReset => Variant::Danger,
+        FormAction::Cancel | FormAction::Reset | FormAction::Bastion(bastions::Action::Back) => {
+            Variant::Ghost
+        }
+        _ => Variant::Secondary,
+    }
+}
+/// Environment choices carry their signal colour.
+fn chip_dot(action: FormAction) -> Option<u32> {
+    match action {
+        FormAction::Environment(environment) => Some(crate::style::env(Some(environment))),
+        _ => None,
+    }
+}
 fn number(value: Option<u32>) -> String {
     value.map(|value| value.to_string()).unwrap_or_default()
 }
-impl Render for Form {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.visible_controls.clear();
-        let title: SharedString = match self.kind {
-            Kind::Credentials(_) => "Credential storage".into(),
-            Kind::Connection { .. } => format!("{} connection", self.engine.label()).into(),
-            Kind::Rename => "Rename query".into(),
-            Kind::OpenTable => "Open table".into(),
-            Kind::Delete(_) => "Delete connection".into(),
-            Kind::Discard => "Unsaved drafts".into(),
-            Kind::ResetWorkspace => "Reset saved drafts".into(),
-            Kind::Bastions(_) => "Bastion servers".into(),
-        };
-        let mut content = div().flex().flex_col().gap_2();
-        if matches!(self.kind, Kind::Connection { .. }) {
-            if self.engine_selectable() {
-                let mut picker = div()
-                    .id("engine-picker")
-                    .role(Role::RadioGroup)
-                    .aria_label("Engine")
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .child("Engine");
-                for value in engine::Engine::ALL {
-                    picker = picker.child(self.button(
-                        value.label(),
-                        FormAction::Engine(value),
-                        self.engine == value,
-                        cx,
-                    ));
-                }
-                content = content.child(picker);
-            }
-            let engine = self.engine;
-            let mut fields = div().flex().flex_wrap().gap_x_4().gap_y_2();
-            for field in self
-                .fields
-                .iter()
-                .filter(|field| !field.key.starts_with("tunnel-") && engine.shows(field.key))
-            {
-                fields = fields.child(
-                    div()
-                        .w(px(430.))
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(div().w(px(170.)).child(field.label))
-                        .child(
-                            div()
-                                .flex_1()
-                                .h(px(26.))
-                                .border_b_1()
-                                .border_color(crate::style::line())
-                                .child(field.accessible.clone()),
-                        ),
-                );
-            }
-            content = content.child(fields);
-            if engine.shows("password") {
-                content = content.child(div().child("Blank password keeps the saved password."));
-            }
-            let mut policy = div().flex().flex_wrap().gap_2().child("Environment");
-            for (label, value) in [
-                ("Development", DevelopmentEnvironment::Development),
-                ("Test", DevelopmentEnvironment::Test),
-                ("Staging", DevelopmentEnvironment::Staging),
-                ("Production", DevelopmentEnvironment::Production),
-            ] {
-                policy = policy.child(self.button(
-                    label,
-                    FormAction::Environment(value),
-                    self.environment == value,
-                    cx,
-                ));
-            }
-            content = content.child(policy);
-            let mut policy = div().flex().flex_wrap().gap_2().child("Safe Mode");
-            for (label, value) in [
-                ("Inherit", DevelopmentSafeMode::Inherit),
-                ("Disabled", DevelopmentSafeMode::Disabled),
-                ("Protected", DevelopmentSafeMode::Protected),
-                ("Strict", DevelopmentSafeMode::Strict),
-            ] {
-                policy = policy.child(self.button(
-                    label,
-                    FormAction::Safe(value),
-                    self.safe == value,
-                    cx,
-                ));
-            }
-            policy = policy
-                .child(self.button(
-                    if self.read_only {
-                        "Read-only: on"
-                    } else {
-                        "Read-only: off"
-                    },
-                    FormAction::ReadOnly,
-                    self.read_only,
-                    cx,
-                ))
-                .child(self.button(
-                    if self.favorite {
-                        "Favorite: yes"
-                    } else {
-                        "Favorite: no"
-                    },
-                    FormAction::Favorite,
-                    self.favorite,
-                    cx,
-                ));
-            content = content.child(policy);
-            if let Some(section) = self.engine_view(cx) {
-                content = content.child(section);
-            }
-            if engine.tunnels()
-                && let Some(section) = self.tunnel_view(cx)
-            {
-                content = content.child(section);
-            }
-            if engine == engine::Engine::Postgres {
-                let mut tls = div().flex().flex_wrap().gap_2().child("TLS");
-                for (label, value) in [
-                    ("Disable TLS", DevelopmentTlsMode::Disable),
-                    ("Prefer TLS", DevelopmentTlsMode::Prefer),
-                    ("Require TLS", DevelopmentTlsMode::Require),
-                    ("Verify CA", DevelopmentTlsMode::VerifyCa),
-                    ("Verify full", DevelopmentTlsMode::VerifyFull),
-                ] {
-                    tls = tls.child(self.button(
-                        label,
-                        FormAction::Tls(value),
-                        self.tls == value,
-                        cx,
-                    ));
-                }
-                content = content.child(tls).child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(self.button(
-                            "Choose root certificate",
-                            FormAction::Pick("root-cert"),
-                            false,
-                            cx,
-                        ))
-                        .child(self.button(
-                            "Choose client certificate",
-                            FormAction::Pick("client-cert"),
-                            false,
-                            cx,
-                        ))
-                        .child(self.button(
-                            "Choose client key",
-                            FormAction::Pick("client-key"),
-                            false,
-                            cx,
-                        )),
-                );
-            }
-        } else if matches!(self.kind, Kind::Bastions(_)) {
-            content = content.child(self.bastion_view(cx));
-        } else if let Kind::Credentials(settings) = &self.kind {
-            let state = settings.state;
-            if state == DevelopmentCredentialState::NeedsRecovery {
-                content=content.child("An interrupted credential change needs recovery. Stored data is preserved.").child(self.button("Recover credentials",FormAction::Recover,false,cx));
-            } else {
-                if state != DevelopmentCredentialState::NeedsUnlock {
-                    content = content.child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(self.button(
-                                "Plain SQLite",
-                                FormAction::Mode(DevelopmentStorageMode::PlainSqlite),
-                                self.mode == DevelopmentStorageMode::PlainSqlite,
-                                cx,
-                            ))
-                            .child(self.button(
-                                "Encrypted SQLite",
-                                FormAction::Mode(DevelopmentStorageMode::EncryptedSqlite),
-                                self.mode == DevelopmentStorageMode::EncryptedSqlite,
-                                cx,
-                            ))
-                            .child(self.button(
-                                "Keychain",
-                                FormAction::Mode(DevelopmentStorageMode::Keychain),
-                                self.mode == DevelopmentStorageMode::Keychain,
-                                cx,
-                            )),
-                    );
-                }
-                if let Some(field) = self.fields.first() {
-                    content = content.child(
-                        div().flex().gap_2().child(field.label).child(
-                            div()
-                                .w(px(320.))
-                                .h(px(28.))
-                                .border_b_1()
-                                .border_color(crate::style::line())
-                                .child(field.accessible.clone()),
-                        ),
-                    );
-                }
-                content = content.child("Credential encryption does not encrypt SQL drafts.");
-                if state != DevelopmentCredentialState::NeedsOnboarding {
-                    content = content.child(self.button(
-                        "Reset saved passwords",
-                        FormAction::Reset,
-                        false,
-                        cx,
-                    ));
-                }
-            }
-        } else {
-            for field in &self.fields {
-                content = content.child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(field.label)
-                        .child(div().w(px(400.)).h(px(28.)).child(field.accessible.clone())),
-                );
-            }
-        }
-        if let Some(message) = &self.message {
-            content = content.child(
-                div()
-                    .id("form-message")
-                    .role(Role::Alert)
-                    .aria_label(message.clone())
-                    .a11y_synthetic_children(|builder| {
-                        builder.parent_node().set_live(Live::Polite);
-                    })
-                    .child(message.clone()),
-            );
-        }
-        if self.confirm_reset {
-            content = content
-                .child("Reset removes saved passwords. Connections and SQL drafts are kept.")
-                .child(self.button("Confirm password loss", FormAction::ConfirmReset, false, cx));
-        }
-        if let Some(view) = self.diagnosis.as_ref().and_then(diagnosis::State::view) {
-            content = content.child(view);
-        }
-        let mut buttons = div().flex().gap_3().pt_3();
-        let action = match &self.kind {
-            Kind::OpenTable => Some(("Open", FormAction::Submit)),
-            Kind::Delete(_) => Some(("Delete connection", FormAction::Delete)),
-            Kind::Discard => Some(("Discard unsaved drafts and close", FormAction::Discard)),
-            Kind::ResetWorkspace => Some(("Reset saved drafts", FormAction::Discard)),
-            Kind::Credentials(settings)
-                if settings.state == DevelopmentCredentialState::NeedsRecovery =>
-            {
-                None
-            }
-            Kind::Credentials(settings)
-                if settings.state == DevelopmentCredentialState::NeedsUnlock =>
-            {
-                Some(("Unlock", FormAction::Submit))
-            }
-            Kind::Bastions(state) if !state.editing() => None,
-            _ => Some(("Save", FormAction::Submit)),
-        };
-        let bastion_editing = matches!(&self.kind, Kind::Bastions(state) if state.editing());
-        if let Some((label, action)) = action {
-            buttons = buttons.child(self.button(label, action, false, cx));
-        }
-        if matches!(self.kind, Kind::Connection { id: None })
-            && self.engine == engine::Engine::Postgres
-        {
-            buttons = buttons.child(self.button(
-                "Import URI from clipboard",
-                FormAction::ImportUri,
-                false,
-                cx,
-            ));
-        }
-        if matches!(self.kind, Kind::Connection { .. }) {
-            buttons = buttons.child(self.button("Test connection", FormAction::Test, false, cx));
-        }
-        if bastion_editing {
-            buttons = buttons.child(self.button(
-                "Back to Bastion Servers",
-                FormAction::Bastion(bastions::Action::Back),
-                false,
-                cx,
-            ));
-        }
-        let cancel = if matches!(self.kind, Kind::Bastions(_)) {
-            "Close"
-        } else {
-            "Cancel"
-        };
-        buttons = buttons.child(self.button(cancel, FormAction::Cancel, false, cx));
-        if self.busy {
-            buttons = buttons.child("Working…");
-        }
-        div()
-            .id("native-form")
-            .role(Role::Dialog)
-            .aria_label(title.clone())
-            .bg(crate::style::bg())
-            .text_color(crate::style::text())
-            .text_sm()
-            .p_4()
-            .size_full()
-            .overflow_y_scroll()
-            .capture_key_down(cx.listener(Self::key))
-            .child(div().text_lg().mb_3().child(title))
-            .child(content)
-            .child(buttons)
-    }
-}
-
 /// Defaults describe the selected profile capability; choosing a form never
 /// saves credentials or opens a connection.
 fn connection_defaults(kind: Option<NativeProfileKind>) -> DevelopmentPostgresConnection {

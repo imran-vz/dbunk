@@ -498,31 +498,25 @@ impl ManagedServersView {
         self.visible_controls.push(focus.clone());
         let enabled = !self.busy || op == Op::Close;
         let weak = cx.weak_entity();
-        div()
-            .id(SharedString::from(key))
+        let variant = match op {
+            Op::Close => crate::ui::Variant::Ghost,
+            _ => crate::ui::Variant::Secondary,
+        };
+        crate::ui::button(SharedString::from(key), label.clone(), variant, enabled)
+            .when(selected == Some(true), |button| {
+                button
+                    .bg(crate::style::primary_fill())
+                    .border_color(crate::style::primary_line())
+                    .text_color(crate::style::primary_text())
+            })
             .role(if selected.is_some() {
                 Role::RadioButton
             } else {
                 Role::Button
             })
-            .aria_label(label.clone())
             .track_focus(&focus)
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(if selected == Some(true) {
-                crate::style::text()
-            } else {
-                crate::style::line()
-            })
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
             .a11y_synthetic_children(move |builder| {
                 if let Some(selected) = selected {
                     builder.parent_node().set_toggled(Toggled::from(selected));
@@ -536,7 +530,6 @@ impl ManagedServersView {
             .on_a11y_action(Action::Click, move |_, window, cx| {
                 let _ = weak.update(cx, |this, cx| this.activate(op, window, cx));
             })
-            .child(label)
             .into_any_element()
     }
 
@@ -580,24 +573,17 @@ impl ManagedServersView {
     }
 
     fn composer(&mut self, cx: &mut Context<Self>) -> gpui::Div {
-        let mut content = div().flex().flex_col().gap_2();
+        let mut content = div().flex().flex_col().gap(px(10.));
+        let mut fields = div().grid().grid_cols(2).gap_x(px(12.)).gap_y(px(10.));
         for field in &self.fields {
-            content = content.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().w(px(230.)).child(field.label))
-                    .child(
-                        div()
-                            .w(px(320.))
-                            .h(px(26.))
-                            .border_b_1()
-                            .border_color(crate::style::line())
-                            .child(field.accessible.clone()),
-                    ),
-            );
+            fields = fields.child(crate::ui::labelled(
+                field.label,
+                crate::ui::input_frame(false)
+                    .child(div().flex_1().min_w_0().child(field.accessible.clone())),
+                None,
+            ));
         }
+        content = content.child(fields);
         let mut versions = div().flex().flex_wrap().gap_2().child("PostgreSQL version");
         for version in MANAGED_POSTGRES_VERSIONS {
             versions = versions.child(self.button(
@@ -778,28 +764,61 @@ impl Render for ManagedServersView {
                     .child(message.clone()),
             );
         }
-        let mut footer = div().flex().gap_3().pt_3();
-        footer = footer.child(self.button("Close", "Close", Op::Close, None, cx));
+        let mut footer = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(px(6.))
+            .pt(px(12.))
+            .border_t_1()
+            .border_color(crate::style::line_soft());
         if self.busy {
-            footer = footer.child("Working…");
+            footer = footer.child(
+                div()
+                    .text_sm()
+                    .text_color(crate::style::faint())
+                    .child("Working…"),
+            );
         }
+        footer = footer.child(self.button("Close", "Close", Op::Close, None, cx));
         div()
             .id("managed-servers")
             .role(Role::Dialog)
             .aria_label("Managed servers")
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_sm()
-            .p_4()
+            .text_size(px(crate::style::FONT))
             .size_full()
             .overflow_y_scroll()
             .capture_key_down(cx.listener(Self::key))
-            .child(div().text_lg().mb_3().child("Managed servers"))
+            .child(div().h(px(crate::style::BAR)).flex_none())
             .child(
-                "Local PostgreSQL in Docker, owned by this profile. Containers are matched by their labels, never by name.",
+                div().w_full().flex().justify_center().px(px(24.)).pb(px(32.)).child(
+                    div()
+                        .w(px(680.))
+                        .max_w_full()
+                        .flex()
+                        .flex_col()
+                        .gap(px(16.))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(3.))
+                                .child(
+                                    div()
+                                        .text_size(px(15.))
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .child("Managed servers"),
+                                )
+                                .child(div().text_sm().text_color(crate::style::dim()).child(
+                                    "Local PostgreSQL in Docker, owned by this profile. Containers are matched by their labels, never by name.",
+                                )),
+                        )
+                        .child(content)
+                        .child(footer),
+                ),
             )
-            .child(content)
-            .child(footer)
     }
 }
 

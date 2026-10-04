@@ -22,6 +22,20 @@ pub const TOOL: f32 = 20.;
 /// Data font: the editor's buffer font, so grid cells and SQL line up.
 pub const MONO: &str = ".ZedMono";
 
+/// Motion. Short and quiet: a page settles in, an error nudges, a tooltip
+/// fades. Nothing slides across the window. GPUI skips every animation when
+/// the system asks for reduced motion.
+pub const APPEAR_MS: u64 = 160;
+/// How far (px) a new page rises while it fades in.
+pub const APPEAR_RISE: f32 = 4.;
+pub const SHAKE_MS: u64 = 320;
+/// Peak horizontal offset (px) of an error shake.
+pub const SHAKE_PX: f32 = 3.;
+pub const TOOLTIP_MS: u64 = 120;
+pub const TOOLTIP_DELAY_MS: u64 = 450;
+/// Sidebar open/close spring: critically damped, settles in about 0.3 s.
+pub const SIDEBAR_SPRING: (f32, f32, f32) = (420., 41., 1.);
+
 pub fn bg() -> Rgba {
     rgb(0x0c0d0f)
 }
@@ -33,6 +47,10 @@ pub fn raised() -> Rgba {
 }
 pub fn hover() -> Rgba {
     rgb(0x1d2126)
+}
+/// A control held down: darker than `raised`, read as pushed in.
+pub fn pressed() -> Rgba {
+    rgb(0x0f1114)
 }
 pub fn select() -> Rgba {
     rgb(0x22324a)
@@ -64,6 +82,29 @@ pub fn bad() -> Rgba {
 /// Keyboard focus ring and the selected-cell outline.
 pub fn accent() -> Rgba {
     rgb(0x6aa6ff)
+}
+/// Primary action fill and border: the accent, kept quiet.
+pub fn primary_fill() -> Rgba {
+    rgba(0x6aa6ff26)
+}
+pub fn primary_line() -> Rgba {
+    rgba(0x6aa6ff73)
+}
+pub fn primary_text() -> Rgba {
+    rgb(0xd6e6ff)
+}
+/// Error surfaces: field borders, banners and danger buttons.
+pub fn bad_fill() -> Rgba {
+    rgba(0xf8514924)
+}
+pub fn bad_line() -> Rgba {
+    rgba(0xf8514973)
+}
+pub fn bad_text() -> Rgba {
+    rgb(0xffb3ad)
+}
+pub fn ok_fill() -> Rgba {
+    rgba(0x3fb9501f)
 }
 /// Row hover in data grids, between `bg` and `panel`.
 pub fn row_hover() -> Rgba {

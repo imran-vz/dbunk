@@ -1,5 +1,7 @@
 # dbunk Design System — Dense Developer-Tool UI Specification
 
+> **Superseded (2026-10-04):** the native app's design reference is [`/DESIGN.md`](../DESIGN.md). This document describes the removed Tauri/React UI and is kept for history.
+
 **Status:** Authoritative. Supersedes `designs/DESIGN.md` (Workbench Rail shell spec) wherever the two conflict.
 **Scope:** The complete visual and behavioral system for dbunk. This document is written to be portable: another application could adopt it and reproduce the same design language without access to dbunk itself.
 **Design-primary target:** dark mode, default (amber) preset. All values in this document are authored against it; light mode and the other presets (Dracula, GitHub, Gruvbox) are derived through the semantic token layer and verified after.

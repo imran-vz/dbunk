@@ -76,7 +76,15 @@ impl State {
             .aria_label("Connection diagnosis")
             .flex()
             .flex_col()
-            .gap_1();
+            .gap(px(3.))
+            .p(px(8.))
+            .rounded(px(5.))
+            .border_1()
+            .border_color(crate::style::line())
+            .bg(crate::style::panel())
+            .font_family(crate::style::MONO)
+            .text_size(px(crate::style::FONT_SMALL))
+            .text_color(crate::style::dim());
         for (index, stage) in report.stages.iter().enumerate() {
             let label = stage_line(stage);
             view = view.child(
@@ -123,7 +131,7 @@ impl Form {
         let form = match self.connection_input(cx) {
             Ok(form) => form,
             Err(error) => {
-                self.message = Some(error);
+                self.fail(error);
                 cx.notify();
                 return;
             }
@@ -133,7 +141,7 @@ impl Form {
             return;
         };
         if let Err(error) = state.admit() {
-            self.message = Some(error.into());
+            self.fail(error);
             cx.notify();
             return;
         }
@@ -141,7 +149,7 @@ impl Form {
             Ok(work) => work,
             Err(error) => {
                 state.lease = None;
-                self.message = Some(error);
+                self.fail(error);
                 cx.notify();
                 return;
             }
@@ -178,28 +186,31 @@ impl Form {
                 };
                 if state.revision != revision {
                     state.lease = None;
-                    this.message = Some("Connection settings changed; test again".into());
+                    this.note("Connection settings changed; test again");
                 } else {
                     match result {
                         Ok(report) if report.checked_heap_bytes().is_some() => {
-                            this.message = Some(match report.outcome {
+                            let outcome = match &report.outcome {
                                 NativeDiagnosisOutcome::Reachable { latency_ms } => {
-                                    format!("Connected in {latency_ms} ms")
+                                    Ok(format!("Connected in {latency_ms} ms"))
                                 }
                                 NativeDiagnosisOutcome::Failed { stage } => {
-                                    format!("Connection test failed at {}", stage_name(stage))
+                                    Err(format!("Connection test failed at {}", stage_name(*stage)))
                                 }
-                            });
+                            };
                             state.report = Some(report);
+                            match outcome {
+                                Ok(text) => this.say(text, Tone::Success),
+                                Err(text) => this.fail(text),
+                            }
                         }
                         Ok(_) => {
                             state.lease = None;
-                            this.message =
-                                Some("Connection diagnosis exceeded its display limit".into());
+                            this.fail("Connection diagnosis exceeded its display limit");
                         }
                         Err(error) => {
                             state.lease = None;
-                            this.message = Some(error);
+                            this.fail(error);
                         }
                     }
                 }

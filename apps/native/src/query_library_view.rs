@@ -384,14 +384,32 @@ impl LibraryView {
                 }
             })
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(crate::style::line())
-            .cursor_pointer()
+            .h(px(crate::style::TOOL))
+            .px(px(6.))
+            .flex()
+            .items_center()
+            .rounded(px(4.))
+            .text_sm()
+            .text_color(if enabled {
+                crate::style::dim()
+            } else {
+                crate::style::faint()
+            })
+            .when(enabled, |button| {
+                crate::ui::press(
+                    button
+                        .cursor_pointer()
+                        .hover(|s| s.bg(crate::style::hover()).text_color(crate::style::text())),
+                )
+            })
+            .focus(|s| s.bg(crate::style::hover()).text_color(crate::style::text()))
             .when(
                 matches!(action, Action::Select(index) if self.selected == Some(index)),
-                |button| button.bg(crate::style::hover()),
+                |button| {
+                    button
+                        .bg(crate::style::select())
+                        .text_color(crate::style::text())
+                },
             )
             .child(match &action {
                 Action::Refresh => "Refresh".into(),

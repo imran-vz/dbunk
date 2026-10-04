@@ -21,6 +21,19 @@ pub enum DevelopmentStorageMode {
 }
 
 impl DevelopmentStorageMode {
+    /// Only Encrypted SQLite takes a credential password. A password sent
+    /// with another mode would be silently ignored, which reads to the user as
+    /// "any password is accepted", so it is refused instead.
+    fn check_password(self, password: Option<&str>) -> Result<(), String> {
+        match (self, password) {
+            (Self::EncryptedSqlite, None | Some("")) => {
+                Err("Encrypted SQLite needs a credential password".into())
+            }
+            (Self::EncryptedSqlite, Some(_)) | (_, None) => Ok(()),
+            (_, Some(_)) => Err("Only Encrypted SQLite uses a credential password".into()),
+        }
+    }
+
     fn core(self) -> CredentialStorageMode {
         match self {
             Self::Keychain => CredentialStorageMode::Keychain,
@@ -58,6 +71,7 @@ impl Backend {
         mode: DevelopmentStorageMode,
         password: Option<String>,
     ) -> Result<DevelopmentSettings, String> {
+        mode.check_password(password.as_deref())?;
         let authority = self.development()?;
         let inner = self.0.clone();
         self.development_call(move |state| async move {
@@ -101,6 +115,9 @@ impl Backend {
         &self,
         password: String,
     ) -> Result<DevelopmentSettings, String> {
+        if password.is_empty() {
+            return Err("Enter the credential password".into());
+        }
         let authority = self.development()?;
         self.development_call(move |state| async move {
             Ok(async {
@@ -119,6 +136,7 @@ impl Backend {
         password: Option<String>,
         confirmed: bool,
     ) -> Result<DevelopmentSettings, String> {
+        mode.check_password(password.as_deref())?;
         let authority = self.development()?;
         let inner = self.0.clone();
         self.development_call(move |state| async move {

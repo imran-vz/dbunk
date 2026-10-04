@@ -117,6 +117,18 @@ async fn sqlite_lifecycle_reopen_and_reset_never_construct_keychain_entries() {
         .configure_development_credentials(Mode::EncryptedSqlite, None)
         .await
         .is_err());
+    // A password only protects Encrypted SQLite; other modes must not
+    // silently accept and discard one.
+    for mode in [Mode::PlainSqlite, Mode::Keychain] {
+        assert!(backend
+            .configure_development_credentials(mode, Some("ignored".into()))
+            .await
+            .is_err());
+    }
+    assert!(backend
+        .unlock_development_credentials(String::new())
+        .await
+        .is_err());
     assert_eq!(
         backend.development_settings().await.unwrap().state,
         State::NeedsOnboarding
@@ -164,6 +176,14 @@ async fn sqlite_lifecycle_reopen_and_reset_never_construct_keychain_entries() {
         .change_development_credentials(Mode::PlainSqlite, None, false)
         .await
         .is_err());
+    assert!(backend
+        .change_development_credentials(Mode::PlainSqlite, Some("ignored".into()), true)
+        .await
+        .is_err());
+    assert_eq!(
+        backend.development_settings().await.unwrap().mode,
+        Some(Mode::EncryptedSqlite)
+    );
     backend
         .change_development_credentials(Mode::PlainSqlite, None, true)
         .await

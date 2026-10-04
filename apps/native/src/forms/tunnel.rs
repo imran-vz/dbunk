@@ -137,7 +137,7 @@ impl Form {
                             }
                         }
                     }
-                    Err(error) => this.message = Some(error),
+                    Err(error) => this.fail(error),
                 }
                 cx.notify();
             });
@@ -196,13 +196,9 @@ impl Form {
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(div().flex().gap_2().child("SSH").child(self.button(
-                    if enabled {
-                        "SSH tunnel: on"
-                    } else {
-                        "SSH tunnel: off"
-                    },
+                .gap(px(10.))
+                .child(div().flex().child(self.button(
+                    "SSH tunnel",
                     FormAction::Tunnel,
                     enabled,
                     cx,
@@ -210,53 +206,65 @@ impl Form {
         if !enabled {
             return Some(section);
         }
-        let mut via = div().flex().flex_wrap().gap_2().child("Final Bastion");
+        let note = |text: &'static str| {
+            div()
+                .text_sm()
+                .text_color(crate::style::faint())
+                .child(text)
+        };
+        let mut chips = div().flex().flex_wrap().gap(px(4.));
         if !loaded {
-            via = via.child("Loading Bastion Servers…");
+            chips = chips.child(note("Loading Bastion Servers…"));
         } else if choices.is_empty() {
-            via = via.child("No Bastion Servers yet; add one under Bastion servers.");
-        }
-        if let Some(id) = &selected
-            && loaded
-            && !choices.iter().any(|(choice, _)| choice == id)
-        {
-            via = via.child("The saved Bastion Server no longer exists; choose another.");
+            chips = chips.child(note(
+                "No Bastion Servers yet; add one under Bastion servers.",
+            ));
         }
         for (index, (id, name)) in choices.iter().enumerate() {
-            via = via.child(self.button(
+            chips = chips.child(self.button(
                 format!("Via {name}"),
                 FormAction::TunnelVia(index),
                 selected.as_deref() == Some(id.as_str()),
                 cx,
             ));
         }
+        let mut via = div()
+            .flex()
+            .flex_col()
+            .gap(px(5.))
+            .child(
+                div()
+                    .text_size(px(crate::style::FONT_SMALL))
+                    .text_color(crate::style::dim())
+                    .child("Final Bastion"),
+            )
+            .child(chips);
+        if let Some(id) = &selected
+            && loaded
+            && !choices.iter().any(|(choice, _)| choice == id)
+        {
+            via = via.child(note(
+                "The saved Bastion Server no longer exists; choose another.",
+            ));
+        }
         section = section.child(via);
-        let mut fields = div().flex().flex_wrap().gap_x_4().gap_y_2();
-        for field in self
+        let errors = super::validation::Errors::new();
+        let keys: Vec<&'static str> = self
             .fields
             .iter()
-            .filter(|field| field.key.starts_with("tunnel-"))
-        {
-            fields = fields.child(
-                div()
-                    .w(px(430.))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().w(px(170.)).child(field.label))
-                    .child(
-                        div()
-                            .flex_1()
-                            .h(px(26.))
-                            .border_b_1()
-                            .border_color(crate::style::line())
-                            .child(field.accessible.clone()),
-                    ),
-            );
+            .map(|field| field.key)
+            .filter(|key| key.starts_with("tunnel-"))
+            .collect();
+        let mut fields = div().grid().grid_cols(2).gap_x(px(12.)).gap_y(px(10.));
+        for key in keys {
+            if let Some(input) = self.text_field(key, &errors, false) {
+                fields = fields.child(input);
+            }
         }
         Some(section.child(fields).child(
+            div().text_sm().text_color(crate::style::faint()).child(
             "The database host and port are dialled from the final Bastion. Connections fail closed until each Bastion's host key is tested and trusted. TLS verifies the database host name through the tunnel.",
-        ))
+        )))
     }
 }
 
