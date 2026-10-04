@@ -2,7 +2,7 @@
 //! connection search and list, object tree), tab bar, production strip,
 //! collapsible status bar and the environment frame + tint.
 use super::*;
-use crate::document_view::ConnectionPhase;
+use crate::document_view::{ConnectionPhase, TabInfo};
 use crate::style;
 use dbunk_lib::backend::DevelopmentEnvironment;
 use editor::Editor;
@@ -195,21 +195,7 @@ pub(super) fn connection_phase(
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
     (connection.postgres.is_some() && connection.unsupported_reason.is_none())
-        || crate::sqlite_workspace::is_sqlite(connection)
         || super::engines::surface_connection(connection)
-        || crate::clickhouse::is_clickhouse(connection)
-        || (crate::engine_lane::EngineLane::supports(connection)
-            && connection.unsupported_reason.is_none())
-}
-
-/// One tab in the tab bar, from a workspace document or an engine tab.
-struct ShellTab {
-    id: String,
-    name: String,
-    kind: &'static str,
-    status: String,
-    active: bool,
-    pinned: bool,
 }
 
 fn sidebar_spring() -> SpringConfig {
@@ -327,10 +313,7 @@ impl Workspace {
         connected: &std::collections::BTreeSet<String>,
         cx: &gpui::App,
     ) -> ConnectionPhase {
-        if let Some(phase) = self.clickhouse_phase(id, cx) {
-            return phase;
-        }
-        if let Some(phase) = self.sqlite_phase(id, cx) {
+        if let Some(phase) = self.engine_phase(id, cx) {
             return phase;
         }
         connection_phase(
@@ -338,25 +321,17 @@ impl Workspace {
             self.documents
                 .iter()
                 .filter(|document| document.metadata.connection_id.as_deref() == Some(id))
-                .map(|document| document.view.read(cx).connection_phase(cx))
-                .chain(self.engine_phase(id, cx))
-                .chain(self.engine_lane_of(id).map(|lane| lane.phase(cx))),
+                .map(|document| document.view.read(cx).connection_phase(cx)),
         )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
+        // A selected engine connection owns the whole workspace view.
         if let Some(connection) = self.active_engine_connection() {
             return Some(connection);
         }
-        // A selected SQLite connection or engine lane owns the whole
-        // workspace view.
-        let owned = (self.sqlite_active().is_some() || self.engine_lane().is_some())
-            .then_some(self.selected_connection.as_ref())
-            .flatten();
-        let id = owned
-            .or_else(|| {
-                self.active_index()
-                    .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
-            })
+        let id = self
+            .active_index()
+            .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
             .or(self.selected_connection.as_ref())?;
         self.connections
             .iter()
@@ -732,54 +707,24 @@ impl Workspace {
                     )
                     .child(self.connection_list(cx)),
             )
-            .child(div().flex_1().min_h_0().flex().flex_col().map(|tree| {
-                match (self.sqlite_active(), self.engine_tree(), self.engine_lane()) {
-                    (Some(sqlite), _, _) => tree.child(sqlite.read(cx).tree()),
-                    (None, Some(engine), _) => tree.child(engine),
-                    (None, None, Some(lane)) => tree.child(lane.tree(cx)),
-                    (None, None, None) => tree.child(self.object_tree()),
-                }
-            }))
+            .child(div().flex_1().min_h_0().flex().flex_col().map(
+                |tree| match self.engine_tree() {
+                    Some(engine) => tree.child(engine),
+                    None => tree.child(self.navigator.clone()),
+                },
+            ))
     }
 
     fn tab_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let env = self.env_color();
-        // A selected SQLite connection or engine lane shows its own tabs.
-        let lane_tabs = self.engine_lane().map(|lane| {
-            lane.tabs(cx)
-                .into_iter()
-                .map(|tab| ShellTab {
-                    active: tab.active,
-                    id: tab.id,
-                    name: tab.title,
-                    kind: tab.icon,
-                    status: String::new(),
-                    pinned: false,
-                })
-                .collect::<Vec<_>>()
-        });
-        let items = match self.sqlite_tabs(cx) {
-            Some(tabs) => tabs
-                .into_iter()
-                .map(|tab| ShellTab {
-                    active: tab.active,
-                    id: tab.id,
-                    name: tab.title,
-                    kind: tab.icon,
-                    status: tab.status,
-                    pinned: false,
-                })
-                .collect::<Vec<_>>(),
-            None if lane_tabs.is_some() => lane_tabs.unwrap_or_default(),
-            None => self
-                .documents
+        // A selected engine connection shows its own tabs.
+        let items = self.engine_tabs(cx).unwrap_or_else(|| {
+            self.documents
                 .iter()
-                .map(|document| ShellTab {
+                .map(|document| TabInfo {
                     id: document.metadata.id.clone(),
-                    name: document.metadata.name.clone(),
-                    kind: if let Some(icon) = self.clickhouse_tab_icon(document, cx) {
-                        icon
-                    } else if document.metadata.tool.is_some() {
+                    title: document.metadata.name.clone(),
+                    icon: if document.metadata.tool.is_some() {
                         "icons/list_tree.svg"
                     } else if document.metadata.table.is_some() {
                         "icons/table.svg"
@@ -789,17 +734,19 @@ impl Workspace {
                     status: document.view.read(cx).document_status(cx).to_owned(),
                     active: Some(&document.metadata.id) == self.active.as_ref(),
                     pinned: document.metadata.pinned,
+                    closable: true,
                 })
-                .collect(),
-        };
+                .collect()
+        });
         let tabs = items.into_iter().map(|tab| {
-            let ShellTab {
+            let TabInfo {
                 id,
-                name,
-                kind,
+                title: name,
+                icon: kind,
                 status,
                 active,
                 pinned,
+                closable,
             } = tab;
             self.shell_button(
                 SharedString::from(format!("tab-{id}")),
@@ -846,24 +793,26 @@ impl Workspace {
                     .child(format!("{}{}", if pinned { "● " } else { "" }, name)),
             )
             .group(SharedString::from(format!("tab-group-{id}")))
-            .child({
-                let group = SharedString::from(format!("tab-group-{id}"));
-                let close = self
-                    .row_button(
-                        SharedString::from(format!("close-tab-{id}")),
-                        format!("Close {name}"),
-                        "icons/close.svg",
-                        style::dim(),
-                        Operation::CloseDocument(id.clone()),
-                        cx,
-                    )
-                    .hover(|s| s.bg(style::hover()));
-                // Hidden until the tab is hovered, always shown when active.
-                if active {
-                    close.opacity(0.8)
-                } else {
-                    close.opacity(0.).group_hover(group, |s| s.opacity(0.8))
-                }
+            .when(closable, |tab| {
+                tab.child({
+                    let group = SharedString::from(format!("tab-group-{id}"));
+                    let close = self
+                        .row_button(
+                            SharedString::from(format!("close-tab-{id}")),
+                            format!("Close {name}"),
+                            "icons/close.svg",
+                            style::dim(),
+                            Operation::CloseDocument(id.clone()),
+                            cx,
+                        )
+                        .hover(|s| s.bg(style::hover()));
+                    // Hidden until the tab is hovered, always shown when active.
+                    if active {
+                        close.opacity(0.8)
+                    } else {
+                        close.opacity(0.).group_hover(group, |s| s.opacity(0.8))
+                    }
+                })
             })
         });
         div()
@@ -919,17 +868,13 @@ impl Workspace {
                     .flex()
                     .min_w_0()
                     .overflow_x_scroll()
-                    .map(|list| match self.engine_tabs() {
-                        Some(engine) => list.child(engine),
-                        None => list.children(tabs),
-                    }),
+                    .children(tabs),
             )
             .child(self.drag_region("tab-bar-drag"))
             .child(
                 div()
                     .id("tab-actions")
                     .flex()
-                    .when(self.active_engine().is_some(), |actions| actions.hidden())
                     .items_center()
                     .gap(px(2.))
                     .px(px(6.))
@@ -942,16 +887,20 @@ impl Workspace {
                         Operation::New,
                         cx,
                     ))
-                    .child(
-                        self.shell_button(
-                            "tools-menu",
-                            "Tools",
-                            Operation::ShellMenu(ShellMenu::Tools),
-                            cx,
+                    // Every tool works on PostgreSQL documents; an engine
+                    // surface keeps only New (a query, or Redis's console).
+                    .when(self.active_engine().is_none(), |actions| {
+                        actions.child(
+                            self.shell_button(
+                                "tools-menu",
+                                "Tools",
+                                Operation::ShellMenu(ShellMenu::Tools),
+                                cx,
+                            )
+                            .child("Tools")
+                            .child(icon("icons/chevron_down.svg", style::faint())),
                         )
-                        .child("Tools")
-                        .child(icon("icons/chevron_down.svg", style::faint())),
-                    ),
+                    }),
             )
     }
 
@@ -989,12 +938,7 @@ impl Workspace {
             })
             .unwrap_or_else(|| "No connection".into());
         let latency = connection
-            .and_then(|c| {
-                self.shell.last_latency.get(&c.id).copied().or_else(|| {
-                    self.engine_lane_of(&c.id)
-                        .and_then(|lane| lane.last_latency(cx))
-                })
-            })
+            .and_then(|c| self.shell.last_latency.get(&c.id).copied())
             .map(|ms| format!("last query {ms} ms"))
             .unwrap_or_else(|| "last query —".into());
         let state = match (&phase, connection) {
@@ -1304,63 +1248,48 @@ impl Workspace {
                         .child("Production · writes require review and confirmation"),
                 )
             })
-            .child(
-                match (
-                    self.sqlite_active().cloned(),
-                    self.engine_body(),
-                    self.active_index(),
-                ) {
-                    // A selected SQLite connection shows its own active document.
-                    (Some(sqlite), _, _) => {
-                        div().flex_1().min_h_0().child(sqlite).into_any_element()
-                    }
-                    (None, Some(body), _) => crate::ui::appear(
-                        SharedString::from(format!(
-                            "engine-{}",
-                            self.selected_connection.as_deref().unwrap_or_default()
-                        )),
-                        div().flex_1().min_h_0().bg(style::bg()).child(body),
-                    )
-                    .into_any_element(),
-                    // An engine lane renders its own documents.
-                    (None, None, _) if self.engine_lane().is_some() => div()
+            .child(match (self.engine_body(), self.active_index()) {
+                // A selected engine connection renders its own documents.
+                (Some(body), _) => crate::ui::appear(
+                    SharedString::from(format!(
+                        "engine-{}",
+                        self.selected_connection.as_deref().unwrap_or_default()
+                    )),
+                    div()
                         .flex_1()
                         .min_h_0()
                         .flex()
                         .flex_col()
                         .bg(style::bg())
-                        .children(self.engine_lane().map(|lane| lane.content()))
-                        .into_any_element(),
-                    // Each document fades and settles in when it becomes active.
-                    (None, None, Some(index)) => crate::ui::appear(
-                        SharedString::from(format!(
-                            "document-{}",
-                            self.documents[index].metadata.id
-                        )),
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .bg(style::bg())
-                            .child(self.documents[index].view.clone()),
-                    )
-                    .into_any_element(),
-                    (None, None, None) => div()
+                        .child(body),
+                )
+                .into_any_element(),
+                // Each document fades and settles in when it becomes active.
+                (None, Some(index)) => crate::ui::appear(
+                    SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
+                    div()
                         .flex_1()
-                        .flex()
-                        .items_center()
-                        .justify_center()
+                        .min_h_0()
                         .bg(style::bg())
-                        .text_color(style::faint())
-                        .child(if self.loading {
-                            "Loading workspace"
-                        } else if self.restored {
-                            "Select a connection, then open a table or ⌘T for a query"
-                        } else {
-                            "Workspace recovery required"
-                        })
-                        .into_any_element(),
-                },
-            )
+                        .child(self.documents[index].view.clone()),
+                )
+                .into_any_element(),
+                (None, None) => div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(style::bg())
+                    .text_color(style::faint())
+                    .child(if self.loading {
+                        "Loading workspace"
+                    } else if self.restored {
+                        "Select a connection, then open a table or ⌘T for a query"
+                    } else {
+                        "Workspace recovery required"
+                    })
+                    .into_any_element(),
+            })
             .when_some(self.message.clone(), |area, message| {
                 // Keyed by text and by the action that set it, so a repeated
                 // error shakes again.
@@ -1521,22 +1450,35 @@ mod tests {
     }
 
     #[test]
-    fn sqlite_connections_are_connectable_without_postgres_settings() {
-        let mut local = connection("local", "", DevelopmentEnvironment::Development);
-        assert!(!connectable(&local));
-        local.engine = "SQLite".into();
-        local.settings = Some(dbunk_lib::backend::DevelopmentEngineConnection::SQLite(
-            dbunk_lib::backend::DevelopmentSqliteConnection {
-                name: "local".into(),
-                path: "/tmp/local.db".into(),
-                environment: DevelopmentEnvironment::Development,
-                safe_mode: dbunk_lib::backend::DevelopmentSafeMode::Inherit,
-                read_only: false,
-            },
-        ));
-        assert!(connectable(&local));
-        local.unsupported_reason = Some("unsupported".into());
-        assert!(!connectable(&local));
+    fn readable_records_of_every_engine_are_connectable() {
+        // PostgreSQL connects through its endpoint, not engine settings.
+        let mut postgres = connection("pg", "", DevelopmentEnvironment::Development);
+        assert!(!connectable(&postgres), "no endpoint");
+        postgres.postgres = Some(dbunk_lib::backend::DevelopmentPostgresConnection {
+            name: "pg".into(),
+            host: "127.0.0.1".into(),
+            port: 5432,
+            database: "postgres".into(),
+            user: "postgres".into(),
+            environment: DevelopmentEnvironment::Development,
+            safe_mode: dbunk_lib::backend::DevelopmentSafeMode::Inherit,
+            read_only: false,
+            tls: Default::default(),
+            driver_options: Default::default(),
+            ssh_tunnel: None,
+        });
+        assert!(connectable(&postgres));
+        postgres.unsupported_reason = Some("unsupported".into());
+        assert!(!connectable(&postgres));
+        for engine in super::super::engines::tests::engine_records() {
+            assert!(connectable(&engine), "{}", engine.engine);
+            let mut unreadable = engine.clone();
+            unreadable.settings = None;
+            assert!(!connectable(&unreadable), "{}", engine.engine);
+            let mut unsupported = engine.clone();
+            unsupported.unsupported_reason = Some("unsupported".into());
+            assert!(!connectable(&unsupported), "{}", engine.engine);
+        }
     }
 
     #[test]

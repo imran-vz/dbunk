@@ -43,7 +43,6 @@ mod ddl_export_view;
 mod diagnostics;
 mod dock_view;
 mod document_view;
-mod engine_lane;
 mod export_view;
 mod file_log;
 mod file_runtime;

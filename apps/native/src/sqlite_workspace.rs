@@ -6,14 +6,13 @@
 //! Connecting never retries on its own; a failure stays until the user
 //! retries or disconnects. A reconnect bumps a generation so late results
 //! from an older session are dropped (and a late session is closed).
-use crate::document_view::ConnectionPhase;
+use crate::document_view::{ConnectionPhase, TabInfo};
 use crate::sqlite_documents::{
     SqliteDataView, SqliteDocEvent, SqliteQueryView, SqliteStructureView,
 };
 use crate::sqlite_model::{self, Key, Move, ObjectKind, RowKind, TabKind, TreeRow};
 use crate::{controller::Host, style};
 use dbunk_lib::backend::sqlite_session::{SqliteObjects, SqliteSession};
-use dbunk_lib::backend::{DevelopmentConnection, DevelopmentEngineConnection};
 use editor::Editor;
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, KeyDownEvent, Role, SharedString,
@@ -24,20 +23,7 @@ use std::{
     collections::BTreeSet,
     rc::Rc,
     sync::Arc,
-    time::Duration,
 };
-
-/// Whether the shell opens this connection as a native SQLite workspace.
-pub fn is_sqlite(connection: &DevelopmentConnection) -> bool {
-    connection.unsupported_reason.is_none()
-        && matches!(
-            connection.settings,
-            Some(DevelopmentEngineConnection::SQLite(_))
-        )
-}
-
-/// How long a disconnect or quit waits for a session worker to join.
-pub const CLOSE_DEADLINE: Duration = Duration::from_secs(5);
 
 /// The connection's current session, shared by its documents. `None` while
 /// disconnected; documents read it per request so a reconnect is picked up.
@@ -62,15 +48,6 @@ pub enum SqliteEvent {
     /// Tabs, phase or the active document changed.
     Changed,
     Latency(u64),
-}
-
-/// A tab as the shell's tab bar shows it.
-pub struct TabInfo {
-    pub id: String,
-    pub title: String,
-    pub icon: &'static str,
-    pub status: String,
-    pub active: bool,
 }
 
 enum TabView {
@@ -213,8 +190,8 @@ impl SqliteWorkspace {
         cx.notify();
     }
 
-    /// Detaches the session for the caller to close (with `CLOSE_DEADLINE`)
-    /// and returns to Idle. Documents keep their contents but can no longer
+    /// Detaches the session for the caller to close (a joined, bounded
+    /// close; see `workspace_engines.rs`) and returns to Idle. Documents keep their contents but can no longer
     /// run. An attempt in flight is abandoned; its session is closed when it
     /// arrives.
     pub fn take_session(&mut self, cx: &mut Context<Self>) -> Option<Arc<SqliteSession>> {
@@ -237,23 +214,6 @@ impl SqliteWorkspace {
         session
     }
 
-    /// Closes the session and waits for its worker. A failed join is
-    /// reported; the session is detached either way.
-    pub fn disconnect(&mut self, cx: &mut Context<Self>) -> Task<Result<(), String>> {
-        let Some(session) = self.take_session(cx) else {
-            return Task::ready(Ok(()));
-        };
-        let task = self
-            .context
-            .host
-            .runtime
-            .spawn(async move { session.close(CLOSE_DEADLINE).await });
-        cx.spawn(async move |_, _| {
-            task.await
-                .unwrap_or_else(|_| Err("SQLite disconnect failed".into()))
-        })
-    }
-
     pub fn tabs(&self, cx: &App) -> Vec<TabInfo> {
         self.tabs
             .iter()
@@ -267,6 +227,8 @@ impl SqliteWorkspace {
                     TabView::Structure(view) => view.read(cx).status(),
                 },
                 active: self.active.as_ref() == Some(&tab.id),
+                pinned: false,
+                closable: true,
             })
             .collect()
     }
@@ -465,7 +427,7 @@ impl SqliteWorkspace {
         self.select_tab(&id, window, cx);
     }
 
-    fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.active_index() else {
             return;
         };

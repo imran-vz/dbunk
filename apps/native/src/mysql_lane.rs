@@ -6,16 +6,24 @@ mod document;
 mod model;
 mod tree;
 
-use crate::{controller::Host, document_view::ConnectionPhase, engine_lane::EngineTab};
+use crate::{
+    controller::Host,
+    document_view::{ConnectionPhase, TabInfo},
+};
 use dbunk_lib::backend::mysql_sessions::{MySqlObjectKind, MySqlSession};
 use document::{DocEvent, DocKind, MySqlDocument};
-use gpui::{Context, Entity, Subscription, Task, Window, div, prelude::*, px};
+use gpui::{Context, Entity, EventEmitter, Subscription, Task, Window, div, prelude::*, px};
 use model::{Lifecycle, Tree};
 use std::sync::Arc;
 use tree::{MySqlTreeView, TreeEvent};
 
 /// Documents per connection, like the workspace's query tab limit.
 const MAX_DOCUMENTS: usize = 16;
+
+pub enum MySqlEvent {
+    /// A statement completed in this many milliseconds.
+    Latency(u64),
+}
 
 struct Doc {
     id: String,
@@ -35,12 +43,13 @@ pub struct MySqlLane {
     _tree_events: Subscription,
     documents: Vec<Doc>,
     active: Option<String>,
-    last_latency: Option<u64>,
     message: Option<String>,
     connect_task: Option<Task<()>>,
     watch_task: Option<Task<()>>,
     tree_tasks: Vec<Task<()>>,
 }
+
+impl EventEmitter<MySqlEvent> for MySqlLane {}
 
 impl MySqlLane {
     pub fn new(
@@ -65,7 +74,6 @@ impl MySqlLane {
             _tree_events: tree_events,
             documents: Vec::new(),
             active: None,
-            last_latency: None,
             message: None,
             connect_task: None,
             watch_task: None,
@@ -77,22 +85,21 @@ impl MySqlLane {
         self.life.phase().clone()
     }
 
-    pub fn last_latency(&self) -> Option<u64> {
-        self.last_latency
-    }
-
     pub fn tree_view(&self) -> Entity<MySqlTreeView> {
         self.tree_view.clone()
     }
 
-    pub fn tabs(&self) -> Vec<EngineTab> {
+    pub fn tabs(&self) -> Vec<TabInfo> {
         self.documents
             .iter()
-            .map(|doc| EngineTab {
+            .map(|doc| TabInfo {
                 id: doc.id.clone(),
                 title: doc.title.clone(),
                 icon: doc.kind.icon(),
+                status: String::new(),
                 active: self.active.as_ref() == Some(&doc.id),
+                pinned: false,
+                closable: true,
             })
             .collect()
     }
@@ -176,18 +183,16 @@ impl MySqlLane {
         }
     }
 
-    /// Closes the session. Documents keep their text and last results.
-    pub fn disconnect(&mut self, cx: &mut Context<Self>) {
+    /// Detaches the session and hands it back for a joined close.
+    /// Documents keep their text and last results.
+    pub fn disconnect(&mut self, cx: &mut Context<Self>) -> Option<MySqlSession> {
         self.life.disconnect();
         // Dropping the task leaves the open call to the backend; its late
         // session is never delivered and closes when its handle drops.
         self.connect_task = None;
-        if let Some(session) = self.detach(cx) {
-            self.host
-                .runtime
-                .spawn(async move { session.close().await });
-        }
+        let session = self.detach(cx);
         cx.notify();
+        session
     }
 
     fn detach(&mut self, cx: &mut Context<Self>) -> Option<MySqlSession> {
@@ -353,10 +358,7 @@ impl MySqlLane {
                 &view,
                 window,
                 |this, _, event: &DocEvent, window, cx| match event {
-                    DocEvent::Latency(ms) => {
-                        this.last_latency = Some(*ms);
-                        cx.notify();
-                    }
+                    DocEvent::Latency(ms) => cx.emit(MySqlEvent::Latency(*ms)),
                     DocEvent::Structure(object) => {
                         this.open(DocKind::Structure(object.clone()), None, window, cx)
                     }
@@ -389,8 +391,8 @@ impl MySqlLane {
         }
     }
 
-    /// Steps through tabs; `back` moves left. Wraps at the ends.
-    pub fn cycle(&mut self, back: bool, window: &mut Window, cx: &mut Context<Self>) {
+    /// Steps through tabs, wrapping at the ends.
+    pub fn cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let count = self.documents.len();
         if count == 0 {
             return;
@@ -400,10 +402,10 @@ impl MySqlLane {
             .iter()
             .position(|doc| Some(&doc.id) == self.active.as_ref())
             .unwrap_or(0);
-        let next = if back {
-            (current + count - 1) % count
-        } else {
+        let next = if forward {
             (current + 1) % count
+        } else {
+            (current + count - 1) % count
         };
         let id = self.documents[next].id.clone();
         self.select_tab(&id, window, cx);
@@ -411,7 +413,7 @@ impl MySqlLane {
 
     /// Closes a tab; a running request in it is abandoned to the worker,
     /// which finishes it and keeps the session usable.
-    pub fn close_tab(&mut self, id: &str, cx: &mut Context<Self>) {
+    pub fn close_tab(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.documents.iter().position(|doc| doc.id == id) else {
             return;
         };
@@ -421,13 +423,24 @@ impl MySqlLane {
                 .documents
                 .get(index.min(self.documents.len().saturating_sub(1)))
                 .map(|doc| doc.id.clone());
+            self.focus_active(window, cx);
         }
         cx.notify();
     }
 
-    pub fn close_active(&mut self, cx: &mut Context<Self>) {
+    pub fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.active.clone() {
-            self.close_tab(&id, cx);
+            self.close_tab(&id, window, cx);
+        }
+    }
+
+    pub fn focus_active(&self, window: &mut Window, cx: &mut gpui::App) {
+        if let Some(doc) = self
+            .documents
+            .iter()
+            .find(|doc| Some(&doc.id) == self.active.as_ref())
+        {
+            doc.view.update(cx, |view, cx| view.focus(window, cx));
         }
     }
 }

@@ -1,6 +1,6 @@
-//! Workspace-owned ClickHouse sessions, one per connection. Connect and
-//! disconnect are explicit; a transport failure seen by any document marks the
-//! session failed and leaves reconnecting to the user.
+//! The session of one [`super::workspace::ClickHouseWorkspace`]. Connect and
+//! disconnect are explicit; a transport failure seen by any document marks
+//! the session failed and leaves reconnecting to the user.
 use super::session_model::SessionModel;
 use crate::{controller::Host, document_view::ConnectionPhase};
 use dbunk_lib::backend::clickhouse::ClickHouseSession;
@@ -80,12 +80,12 @@ impl ClickHouseSessions {
         self.changed(cx);
     }
 
-    /// Closes the connection's session; an attempt in flight is discarded
-    /// when it settles.
-    pub fn disconnect(&mut self, id: &str, cx: &mut Context<Self>) {
+    /// Ends the connection's session and hands it back for a joined close;
+    /// an attempt in flight is discarded when it settles.
+    pub fn disconnect(&mut self, id: &str, cx: &mut Context<Self>) -> Option<ClickHouseSession> {
         let session = self.model.end(id);
-        self.close(session);
         self.changed(cx);
+        session
     }
 
     /// A document's request on `used` lost the transport.
@@ -101,22 +101,5 @@ impl ClickHouseSessions {
             self.close(session);
             self.changed(cx);
         }
-    }
-
-    /// Ends sessions `keep` rejects: deleted, edited or no longer ClickHouse.
-    pub fn retain(&mut self, keep: impl Fn(&str) -> bool, cx: &mut Context<Self>) {
-        let closed = self.model.retain(keep);
-        if !closed.is_empty() {
-            self.close(closed);
-        }
-        self.changed(cx);
-    }
-
-    /// Workspace close: every session is released.
-    pub fn close_all(&mut self, cx: &mut Context<Self>) {
-        let sessions = self.model.drain();
-        self.attempts.clear();
-        self.close(sessions);
-        self.changed(cx);
     }
 }

@@ -104,7 +104,6 @@ pub struct ClickHouseDocument {
     status: String,
     error: Option<String>,
     error_seq: u64,
-    editable: bool,
     focus: FocusHandle,
     _grid_events: Subscription,
     _sessions: Subscription,
@@ -178,7 +177,6 @@ impl ClickHouseDocument {
             status: String::new(),
             error: None,
             error_seq: 0,
-            editable: true,
             focus: cx.focus_handle(),
             _grid_events: grid_events,
             _sessions: session_events,
@@ -191,9 +189,6 @@ impl ClickHouseDocument {
         document
     }
 
-    pub fn connection(&self) -> &str {
-        &self.connection
-    }
     pub fn mode(&self) -> &Mode {
         &self.mode
     }
@@ -211,14 +206,6 @@ impl ClickHouseDocument {
 
     pub fn connection_phase(&self, cx: &gpui::App) -> ConnectionPhase {
         self.sessions.read(cx).phase(&self.connection)
-    }
-
-    pub fn set_editable(&mut self, editable: bool, cx: &mut Context<Self>) {
-        self.editable = editable;
-        if let Some((editor, _)) = &self.editor {
-            editor.update(cx, |editor, _| editor.set_read_only(!editable));
-        }
-        cx.notify();
     }
 
     pub fn focus_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -440,7 +427,7 @@ impl ClickHouseDocument {
     }
 
     fn run_statement(&mut self, cx: &mut Context<Self>) {
-        if self.mode != Mode::Query || !self.editable || self.run.is_some() {
+        if self.mode != Mode::Query || self.run.is_some() {
             return;
         }
         match self.statement(cx) {
@@ -544,7 +531,7 @@ impl ClickHouseDocument {
                             "clickhouse-run",
                             "Run",
                             Some("icons/play_filled.svg"),
-                            connected && !running && self.editable,
+                            connected && !running,
                             true,
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.run_statement(cx)))
