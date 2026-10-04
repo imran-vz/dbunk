@@ -1,5 +1,7 @@
 //! Selected stage04 persistent Navigator. Documents own editors and results;
 //! the workspace owns focus, fair draining, restoration and acknowledged saves.
+#[path = "workspace_clickhouse.rs"]
+mod clickhouse_integration;
 #[path = "workspace_health.rs"]
 mod health;
 #[path = "managed_view.rs"]
@@ -135,6 +137,7 @@ pub struct Workspace {
     import_changes: crate::csv_transfer_model::ImportChanges,
     _csv_events: Subscription,
     documents: Vec<Document>,
+    clickhouse: clickhouse_integration::ClickHouseState,
     navigator: Entity<crate::navigator_view::NavigatorView>,
     _navigator_events: Subscription,
     dock: Entity<crate::dock_view::DockView>,
@@ -395,8 +398,10 @@ impl Workspace {
             },
         );
         let shell = shell::ShellState::new(window, cx);
+        let clickhouse = clickhouse_integration::ClickHouseState::new(host.clone(), window, cx);
         let mut workspace = Self {
             shell,
+            clickhouse,
             dock,
             _dock_events: dock_events,
             navigator,
@@ -491,6 +496,7 @@ impl Workspace {
                     Ok(Ok((settings, connections, saved))) => {
                         this.credential_state = Some(settings.state);
                         this.connections = connections;
+                        this.sync_clickhouse(cx);
                         for document in &this.documents {
                             document.view.update(cx, |view, cx| {
                                 view.set_comparison_connections(
@@ -793,10 +799,12 @@ impl Workspace {
     }
 
     pub fn snapshot(&self, cx: &mut gpui::App) -> WorkspaceSnapshot {
+        let (transient, active_document_id) = self.transient_documents(cx);
         WorkspaceSnapshot {
             documents: self
                 .documents
                 .iter()
+                .filter(|document| !transient.contains(&document.metadata.id))
                 .map(|document| {
                     let mut metadata = document.metadata.clone();
                     if metadata.table.is_none() {
@@ -815,7 +823,7 @@ impl Workspace {
                     metadata
                 })
                 .collect(),
-            active_document_id: self.active.clone(),
+            active_document_id,
             layout: self.layout,
             density: self.density,
             navigator_width: self.navigator_width,
@@ -1531,6 +1539,9 @@ impl Workspace {
                 self.open_library(kind, window, cx);
             }
             Operation::SaveQuery => self.save_query(window, cx),
+            Operation::OpenTable if self.clickhouse_selected().is_some() => {
+                self.message = Some("Open ClickHouse tables from the object tree".into());
+            }
             Operation::OpenTable => {
                 if self.selected_connection.is_none() {
                     self.message = Some("Select a connection first".into());
@@ -1539,7 +1550,11 @@ impl Workspace {
                     self.show_form(form, None, window, cx);
                 }
             }
-            Operation::New => self.new_document(window, cx),
+            Operation::New => {
+                if !self.new_clickhouse_query(window, cx) {
+                    self.new_document(window, cx)
+                }
+            }
             Operation::Close => self.close_document(window, cx),
             Operation::CloseDocument(id) => {
                 if self
@@ -1558,6 +1573,9 @@ impl Workspace {
                 self.active = Some(id);
                 self.changed(cx);
                 self.focus_active(window, cx);
+            }
+            Operation::SelectConnection(id) if self.is_clickhouse(&id) => {
+                self.select_clickhouse(id, cx)
             }
             Operation::SelectConnection(id) => {
                 self.selected_connection = Some(id.clone());
@@ -1590,6 +1608,9 @@ impl Workspace {
                     self.changed(cx);
                 }
                 self.connect_selection(id, window, cx);
+            }
+            Operation::DisconnectConnection(id) if self.is_clickhouse(&id) => {
+                self.disconnect_clickhouse(id, cx)
             }
             Operation::DisconnectConnection(id) => self.disconnect_connection(id, window, cx),
             Operation::Rename => {
@@ -2071,6 +2092,7 @@ impl Workspace {
     fn settle_form_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let scope = self.form_scope.clone();
         let all = self.form_credentials;
+        self.invalidate_clickhouse(scope.as_deref(), all, cx);
         // An edited endpoint keeps its ID; the retained tree may now describe
         // a different database.
         self.navigator.update(cx, |view, cx| {
@@ -2173,6 +2195,7 @@ impl Workspace {
             self.changed(cx);
         }
         self.closing = true;
+        self.close_clickhouse(cx);
         self.navigator
             .update(cx, |view, cx| view.set_editable(false, cx));
         for document in &self.documents {
@@ -2279,6 +2302,7 @@ impl Render for Workspace {
         });
         self.navigator
             .update(cx, |view, cx| view.set_connection(navigator_connection, cx));
+        self.sync_clickhouse_tree(cx);
         let projects = shell::projects(&self.connections);
         if self
             .shell
