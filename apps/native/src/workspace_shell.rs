@@ -192,9 +192,13 @@ pub(super) fn connection_phase(
     }
 }
 
+/// A tab bar entry: id, name, icon, status, active, pinned.
+type TabSpec = (String, String, &'static str, String, bool, bool);
+
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
-    connection.postgres.is_some() && connection.unsupported_reason.is_none()
+    (connection.postgres.is_some() || crate::engine_lane::EngineLane::supports(connection))
+        && connection.unsupported_reason.is_none()
 }
 
 fn sidebar_spring() -> SpringConfig {
@@ -317,14 +321,19 @@ impl Workspace {
             self.documents
                 .iter()
                 .filter(|document| document.metadata.connection_id.as_deref() == Some(id))
-                .map(|document| document.view.read(cx).connection_phase(cx)),
+                .map(|document| document.view.read(cx).connection_phase(cx))
+                .chain(self.engine_lane_of(id).map(|lane| lane.phase(cx))),
         )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
-        let id = self
-            .active_index()
-            .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
-            .or(self.selected_connection.as_ref())?;
+        // An engine lane shows its own connection's tabs.
+        let id = if self.engine_lane().is_some() {
+            self.selected_connection.as_ref()?
+        } else {
+            self.active_index()
+                .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
+                .or(self.selected_connection.as_ref())?
+        };
         self.connections
             .iter()
             .find(|connection| &connection.id == id)
@@ -699,32 +708,60 @@ impl Workspace {
                     )
                     .child(self.connection_list(cx)),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .child(self.navigator.clone()),
-            )
+            .child(div().flex_1().min_h_0().flex().flex_col().map(
+                |tree| match self.engine_lane() {
+                    Some(lane) => tree.child(lane.tree(cx)),
+                    None => tree.child(self.navigator.clone()),
+                },
+            ))
     }
 
     fn tab_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let env = self.env_color();
-        let tabs = self.documents.iter().map(|document| {
-            let id = document.metadata.id.clone();
-            let active = Some(&id) == self.active.as_ref();
-            let kind = if document.metadata.tool.is_some() {
-                "icons/list_tree.svg"
-            } else if document.metadata.table.is_some() {
-                "icons/table.svg"
-            } else {
-                "icons/terminal.svg"
-            };
-            let status = document.view.read(cx).document_status(cx).to_owned();
+        // (id, name, icon, status, active, pinned); an engine lane supplies
+        // its own documents for the selected connection.
+        let specs: Vec<TabSpec> = match self.engine_lane() {
+            Some(lane) => lane
+                .tabs(cx)
+                .into_iter()
+                .map(|tab| {
+                    (
+                        tab.id,
+                        tab.title,
+                        tab.icon,
+                        String::new(),
+                        tab.active,
+                        false,
+                    )
+                })
+                .collect(),
+            None => self
+                .documents
+                .iter()
+                .map(|document| {
+                    let id = document.metadata.id.clone();
+                    let active = Some(&id) == self.active.as_ref();
+                    let kind = if document.metadata.tool.is_some() {
+                        "icons/list_tree.svg"
+                    } else if document.metadata.table.is_some() {
+                        "icons/table.svg"
+                    } else {
+                        "icons/terminal.svg"
+                    };
+                    let status = document.view.read(cx).document_status(cx).to_owned();
+                    let name = document.metadata.name.clone();
+                    (id, name, kind, status, active, document.metadata.pinned)
+                })
+                .collect(),
+        };
+        let tab = |(id, name, kind, status, active, pinned): TabSpec| {
             self.shell_button(
                 SharedString::from(format!("tab-{id}")),
-                format!("{}, {status}", document.metadata.name),
+                if status.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{name}, {status}")
+                },
                 Operation::SelectDocument(id.clone()),
                 cx,
             )
@@ -760,11 +797,7 @@ impl Workspace {
                     .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .child(format!(
-                        "{}{}",
-                        if document.metadata.pinned { "● " } else { "" },
-                        document.metadata.name
-                    )),
+                    .child(format!("{}{name}", if pinned { "● " } else { "" })),
             )
             .group(SharedString::from(format!("tab-group-{id}")))
             .child({
@@ -772,7 +805,7 @@ impl Workspace {
                 let close = self
                     .row_button(
                         SharedString::from(format!("close-tab-{id}")),
-                        format!("Close {}", document.metadata.name),
+                        format!("Close {name}"),
                         "icons/close.svg",
                         style::dim(),
                         Operation::CloseDocument(id.clone()),
@@ -786,7 +819,8 @@ impl Workspace {
                     close.opacity(0.).group_hover(group, |s| s.opacity(0.8))
                 }
             })
-        });
+        };
+        let tabs = specs.into_iter().map(tab);
         div()
             .id("tab-bar")
             .h(px(style::BAR))
@@ -906,7 +940,12 @@ impl Workspace {
             })
             .unwrap_or_else(|| "No connection".into());
         let latency = connection
-            .and_then(|c| self.shell.last_latency.get(&c.id))
+            .and_then(|c| {
+                self.shell.last_latency.get(&c.id).copied().or_else(|| {
+                    self.engine_lane_of(&c.id)
+                        .and_then(|lane| lane.last_latency(cx))
+                })
+            })
             .map(|ms| format!("last query {ms} ms"))
             .unwrap_or_else(|| "last query —".into());
         let state = match (&phase, connection) {
@@ -1217,6 +1256,15 @@ impl Workspace {
                 )
             })
             .child(match self.active_index() {
+                // An engine lane renders its own documents.
+                _ if self.engine_lane().is_some() => div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .bg(style::bg())
+                    .children(self.engine_lane().map(|lane| lane.content()))
+                    .into_any_element(),
                 // Each document fades and settles in when it becomes active.
                 Some(index) => crate::ui::appear(
                     SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
