@@ -194,7 +194,8 @@ pub(super) fn connection_phase(
 
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
-    connection.postgres.is_some() && connection.unsupported_reason.is_none()
+    (connection.postgres.is_some() && connection.unsupported_reason.is_none())
+        || super::engines::surface_connection(connection)
 }
 
 fn sidebar_spring() -> SpringConfig {
@@ -317,10 +318,14 @@ impl Workspace {
             self.documents
                 .iter()
                 .filter(|document| document.metadata.connection_id.as_deref() == Some(id))
-                .map(|document| document.view.read(cx).connection_phase(cx)),
+                .map(|document| document.view.read(cx).connection_phase(cx))
+                .chain(self.engine_phase(id, cx)),
         )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
+        if let Some(connection) = self.active_engine_connection() {
+            return Some(connection);
+        }
         let id = self
             .active_index()
             .and_then(|index| self.documents[index].metadata.connection_id.as_ref())
@@ -705,7 +710,10 @@ impl Workspace {
                     .min_h_0()
                     .flex()
                     .flex_col()
-                    .child(self.navigator.clone()),
+                    .child(match self.engine_tree() {
+                        Some(tree) => tree.into_any_element(),
+                        None => self.navigator.clone().into_any_element(),
+                    }),
             )
     }
 
@@ -840,13 +848,17 @@ impl Workspace {
                     .flex()
                     .min_w_0()
                     .overflow_x_scroll()
-                    .children(tabs),
+                    .map(|list| match self.engine_tabs() {
+                        Some(engine) => list.child(engine),
+                        None => list.children(tabs),
+                    }),
             )
             .child(self.drag_region("tab-bar-drag"))
             .child(
                 div()
                     .id("tab-actions")
                     .flex()
+                    .when(self.active_engine().is_some(), |actions| actions.hidden())
                     .items_center()
                     .gap(px(2.))
                     .px(px(6.))
@@ -1216,9 +1228,17 @@ impl Workspace {
                         .child("Production · writes require review and confirmation"),
                 )
             })
-            .child(match self.active_index() {
+            .child(match (self.engine_body(), self.active_index()) {
+                (Some(body), _) => crate::ui::appear(
+                    SharedString::from(format!(
+                        "engine-{}",
+                        self.selected_connection.as_deref().unwrap_or_default()
+                    )),
+                    div().flex_1().min_h_0().bg(style::bg()).child(body),
+                )
+                .into_any_element(),
                 // Each document fades and settles in when it becomes active.
-                Some(index) => crate::ui::appear(
+                (None, Some(index)) => crate::ui::appear(
                     SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
                     div()
                         .flex_1()
@@ -1227,7 +1247,7 @@ impl Workspace {
                         .child(self.documents[index].view.clone()),
                 )
                 .into_any_element(),
-                None => div()
+                (None, None) => div()
                     .flex_1()
                     .flex()
                     .items_center()

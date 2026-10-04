@@ -1,5 +1,7 @@
 //! Selected stage04 persistent Navigator. Documents own editors and results;
 //! the workspace owns focus, fair draining, restoration and acknowledged saves.
+#[path = "workspace_engines.rs"]
+mod engines;
 #[path = "workspace_health.rs"]
 mod health;
 #[path = "managed_view.rs"]
@@ -122,6 +124,7 @@ enum Operation {
 
 pub struct Workspace {
     shell: shell::ShellState,
+    engines: engines::EngineSurfaces,
     host: Arc<Host>,
     pg_tools: Entity<crate::pg_tool_store::ToolStore>,
     restore_changes: crate::pg_tool_jobs::RestoreChanges,
@@ -422,6 +425,7 @@ impl Workspace {
             documents: Vec::new(),
             active: None,
             selected_connection: None,
+            engines: Default::default(),
             connections: Vec::new(),
             credential_state: None,
             layout: Layout::Stacked,
@@ -491,6 +495,7 @@ impl Workspace {
                     Ok(Ok((settings, connections, saved))) => {
                         this.credential_state = Some(settings.state);
                         this.connections = connections;
+                        this.sync_engines(cx);
                         for document in &this.documents {
                             document.view.update(cx, |view, cx| {
                                 view.set_comparison_connections(
@@ -992,7 +997,9 @@ impl Workspace {
             .position(|document| Some(&document.metadata.id) == self.active.as_ref())
     }
     fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.active_index() {
+        if self.active_engine().is_some() {
+            self.focus_engine(window, cx);
+        } else if let Some(index) = self.active_index() {
             self.documents[index]
                 .view
                 .update(cx, |view, cx| view.focus_document(window, cx));
@@ -1001,6 +1008,9 @@ impl Workspace {
         }
     }
     fn remember_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active_engine().is_some() {
+            return;
+        }
         if let Some(index) = self.active_index() {
             self.documents[index]
                 .view
@@ -1526,6 +1536,9 @@ impl Workspace {
         self.form_scope = None;
         self.form_credentials = false;
         self.resetting = false;
+        if self.engine_intercepts(&operation, window, cx) {
+            return;
+        }
         match operation {
             Operation::Library(kind) => {
                 self.open_library(kind, window, cx);
@@ -2071,6 +2084,9 @@ impl Workspace {
     fn settle_form_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let scope = self.form_scope.clone();
         let all = self.form_credentials;
+        if all || scope.is_some() {
+            self.retire_engines(if all { None } else { scope.as_deref() }, cx);
+        }
         // An edited endpoint keeps its ID; the retained tree may now describe
         // a different database.
         self.navigator.update(cx, |view, cx| {
@@ -2173,6 +2189,7 @@ impl Workspace {
             self.changed(cx);
         }
         self.closing = true;
+        self.retire_engines(None, cx);
         self.navigator
             .update(cx, |view, cx| view.set_editable(false, cx));
         for document in &self.documents {

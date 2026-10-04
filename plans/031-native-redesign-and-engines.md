@@ -1,7 +1,8 @@
 # Plan 031: Native redesign and multi-engine workspace
 
 - Status: IN PROGRESS through Step 3 (see [README.md](./README.md)); Step 4
-  (engines) and Step 5 (window acceptance) remain. Requested by Imran on
+  has Redis (below); MySQL, SQLite and ClickHouse and Step 5 (window
+  acceptance) remain. Requested by Imran on
   2026-10-03 together with the hard migration (ADR-0033). Supersedes the visual direction of Plans 027–029; their
   behavioral contracts (bounded resources, exact-save recovery, owned workers,
   stored policy, no automatic retry) still apply.
@@ -86,3 +87,60 @@ reference, started from the mock.
   for sidebar hide/show. All respect Reduce motion.
 - Not yet verified in a real window: this harness cannot capture or drive the
   app window (no screen-recording or AX trust).
+
+## Step 4: Redis (2026-10-04)
+
+Selecting a saved Redis connection opens a native session and shows the Redis
+surface: the sidebar keyspace tree replaces the PostgreSQL navigator, the tab
+bar shows the Redis tabs, and the workspace opens on the console.
+
+- **Session** (`backend/src/backend/development/redis_session.rs`):
+  `Backend::open_redis_session` resolves the saved record, its secret and SSH
+  route under the development gate, then opens two dedicated connections
+  (console lane, browse lane) within 10 s. No reconnect and no retry: a
+  transport error or a command unanswered in 15 s latches the session as lost;
+  the row and status bar show the failure and the user retries by selecting
+  the connection again. Server error replies (`WRONGTYPE`, …) stay console
+  replies.
+- **Keyspace tree**: `db0–dbN` from `CONFIG GET databases` (capped at 16;
+  without it, databases holding keys plus the default) with exact totals from
+  `INFO keyspace`. Expanding a database loads one bounded page (up to 8 `SCAN`
+  calls of `COUNT 200`, at most 1,000 names, one pipelined `TYPE`), grouped
+  into string, hash, list, set, zset, stream and other. Group counts are
+  labelled `~N` (sample share of the total) until a scan completes. "Load
+  more" continues the cursor on request; at most 5,000 keys are retained per
+  database and 500 listed per group. A failed page keeps its samples and
+  cursor.
+- **Console** (first tab, not closable): `redis-cli` quoting, Up/Down history
+  (100), a 200-entry transcript rendered virtually, `SELECT` tracked in the
+  prompt. Guards: the existing ADR-0009 destructive list and Pub/Sub refusal
+  (`redis::cli::guard`, now shared with the old CLI path), plus
+  `redis::console_policy`: blocking commands (`BLPOP`, `XREAD … BLOCK`,
+  `WAIT`, …) and connection-changing ones (`HELLO`, `QUIT`, `CLIENT REPLY`, …)
+  are refused; anything not on the read allowlist counts as a write. Read-only
+  connections refuse writes (unknown commands included); connections whose
+  resolved safety level is not Disabled (staging/production by default)
+  confirm writes with an explicit "Run COMMAND" button. Replies are bounded to
+  2,000 nodes and 256 KiB, and 500 lines each.
+- **Key inspector** (one tab per key, at most 8, oldest replaced): type, TTL,
+  encoding and length, then the first 200 elements (or 64 KiB of a string)
+  through the existing `key_inspector` fetchers, now generic over a
+  caller-owned connection (`fetch_*_on`). Non-UTF-8 key names are listed
+  escaped and inspected from the console.
+- **Ownership**: each Redis surface owns its session and aborts its Tokio jobs
+  on disconnect, loss, connection edit/delete, credential change and window
+  close; late results are dropped by generation.
+- **Shared seam** (for the other engine branches):
+  `apps/native/src/workspace_engines.rs` holds `EngineSurface` (one variant per
+  engine; Redis today) and the per-connection surfaces. The shell asks it for
+  the tree, tab strip, body and phase of the selected connection;
+  `Workspace::activate` lets it intercept connection selection/disconnect and
+  tab shortcuts first. No PostgreSQL document changed.
+- **Verification**: backend unit tests (keyspace parsing, database list,
+  console admission, reply bounds), a profile test for the saved-record open
+  path (refused port fails once, wrong engine refused), and a live test run
+  against a disposable Valkey 9.1 container (`DBUNK_REDIS_TEST_PORT`): browse,
+  run, inspect, lane isolation, stored read-only/staging policy and loss
+  latching. Native model tests cover tokenizing, grouping, estimates, bounds
+  and the failed-page cursor. Not verified: the real window, keyboard and AX
+  (no screen-recording or AX trust in this harness).
