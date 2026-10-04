@@ -192,9 +192,6 @@ pub(super) fn connection_phase(
     }
 }
 
-/// A tab bar entry: id, name, icon, status, active, pinned.
-type TabSpec = (String, String, &'static str, String, bool, bool);
-
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
     (connection.postgres.is_some() && connection.unsupported_reason.is_none())
@@ -735,14 +732,14 @@ impl Workspace {
                     )
                     .child(self.connection_list(cx)),
             )
-            .child(div().flex_1().min_h_0().flex().flex_col().map(
-                |tree| match (self.sqlite_active(), self.engine_tree(), self.engine_lane()) {
+            .child(div().flex_1().min_h_0().flex().flex_col().map(|tree| {
+                match (self.sqlite_active(), self.engine_tree(), self.engine_lane()) {
                     (Some(sqlite), _, _) => tree.child(sqlite.read(cx).tree()),
                     (None, Some(engine), _) => tree.child(engine),
                     (None, None, Some(lane)) => tree.child(lane.tree(cx)),
                     (None, None, None) => tree.child(self.object_tree()),
-                },
-            ))
+                }
+            }))
     }
 
     fn tab_bar(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -868,8 +865,7 @@ impl Workspace {
                     close.opacity(0.).group_hover(group, |s| s.opacity(0.8))
                 }
             })
-        };
-        let tabs = specs.into_iter().map(tab);
+        });
         div()
             .id("tab-bar")
             .h(px(style::BAR))
@@ -1308,52 +1304,63 @@ impl Workspace {
                         .child("Production · writes require review and confirmation"),
                 )
             })
-            .child(match (self.sqlite_active().cloned(), self.engine_body(), self.active_index()) {
-                // A selected SQLite connection shows its own active document.
-                (Some(sqlite), _, _) => div().flex_1().min_h_0().child(sqlite).into_any_element(),
-                (None, Some(body), _) => crate::ui::appear(
-                    SharedString::from(format!(
-                        "engine-{}",
-                        self.selected_connection.as_deref().unwrap_or_default()
-                    )),
-                    div().flex_1().min_h_0().bg(style::bg()).child(body),
-                )
-                .into_any_element(),
-                // An engine lane renders its own documents.
-                (None, None, _) if self.engine_lane().is_some() => div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .bg(style::bg())
-                    .children(self.engine_lane().map(|lane| lane.content()))
+            .child(
+                match (
+                    self.sqlite_active().cloned(),
+                    self.engine_body(),
+                    self.active_index(),
+                ) {
+                    // A selected SQLite connection shows its own active document.
+                    (Some(sqlite), _, _) => {
+                        div().flex_1().min_h_0().child(sqlite).into_any_element()
+                    }
+                    (None, Some(body), _) => crate::ui::appear(
+                        SharedString::from(format!(
+                            "engine-{}",
+                            self.selected_connection.as_deref().unwrap_or_default()
+                        )),
+                        div().flex_1().min_h_0().bg(style::bg()).child(body),
+                    )
                     .into_any_element(),
-                // Each document fades and settles in when it becomes active.
-                (None, None, Some(index)) => crate::ui::appear(
-                    SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
-                    div()
+                    // An engine lane renders its own documents.
+                    (None, None, _) if self.engine_lane().is_some() => div()
                         .flex_1()
                         .min_h_0()
+                        .flex()
+                        .flex_col()
                         .bg(style::bg())
-                        .child(self.documents[index].view.clone()),
-                )
-                .into_any_element(),
-                (None, None, None) => div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(style::bg())
-                    .text_color(style::faint())
-                    .child(if self.loading {
-                        "Loading workspace"
-                    } else if self.restored {
-                        "Select a connection, then open a table or ⌘T for a query"
-                    } else {
-                        "Workspace recovery required"
-                    })
+                        .children(self.engine_lane().map(|lane| lane.content()))
+                        .into_any_element(),
+                    // Each document fades and settles in when it becomes active.
+                    (None, None, Some(index)) => crate::ui::appear(
+                        SharedString::from(format!(
+                            "document-{}",
+                            self.documents[index].metadata.id
+                        )),
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .bg(style::bg())
+                            .child(self.documents[index].view.clone()),
+                    )
                     .into_any_element(),
-            })
+                    (None, None, None) => div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(style::bg())
+                        .text_color(style::faint())
+                        .child(if self.loading {
+                            "Loading workspace"
+                        } else if self.restored {
+                            "Select a connection, then open a table or ⌘T for a query"
+                        } else {
+                            "Workspace recovery required"
+                        })
+                        .into_any_element(),
+                },
+            )
             .when_some(self.message.clone(), |area, message| {
                 // Keyed by text and by the action that set it, so a repeated
                 // error shakes again.

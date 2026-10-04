@@ -1,8 +1,8 @@
 # Plan 031: Native redesign and multi-engine workspace
 
-- Status: IN PROGRESS through Step 3, Step 4 SQLite done (see
-  [README.md](./README.md)); Step 4 for MySQL, ClickHouse and Redis and Step 5
-  (window acceptance) remain. Requested by Imran on
+- Status: IN PROGRESS through Step 4 (see [README.md](./README.md)): SQLite,
+  Redis, ClickHouse and MySQL have native sessions, trees and documents;
+  Step 5 (window acceptance) remains. Requested by Imran on
   2026-10-03 together with the hard migration (ADR-0033). Supersedes the visual direction of Plans 027–029; their
   behavioral contracts (bounded resources, exact-save recovery, owned workers,
   stored policy, no automatic retry) still apply.
@@ -307,3 +307,23 @@ native workspace.
   tests and a live backend test against a disposable `mysql:8.4` container
   (`DBUNK_MYSQL_LIVE=host:port:password`); no real-window or AX check.
 
+## Step 4 integration (2026-10-05)
+
+The four engine branches were built in parallel from `fd74f09` and merged in
+the order SQLite, Redis, ClickHouse, MySQL. Each arrived with its own seam,
+and the merge keeps all four side by side; each hook acts only for its own
+connections, so their order does not change behavior:
+
+- SQLite: `workspace_sqlite.rs` (`sqlite_operation`, own tabs, tree and body).
+- Redis: `workspace_engines.rs` (`EngineSurface`, `engine_intercepts`).
+- ClickHouse: `workspace_clickhouse.rs` plus a transient
+  `DocumentView::ClickHouse` variant in the ordinary document list.
+- MySQL: `workspace_engine.rs` and `engine_lane.rs` (`EngineLane`,
+  `engine_activate`).
+
+`Workspace::activate` runs the SQLite, Redis and MySQL interceptors in turn
+before the PostgreSQL/ClickHouse match; the shell picks the tree, tab strip
+and body from whichever of them owns the selected connection. Folding these
+into one engine seam is follow-up work. Checks after the merge: `just fmt`,
+`just lint`, `just test`, `just fmt-native`, `just lint-native` and
+`just test-native` pass; no window, keyboard/AX or IME acceptance.
