@@ -13,6 +13,7 @@
 pub mod capabilities;
 pub mod cli;
 pub mod connection;
+pub mod console_policy;
 pub mod destructive_commands;
 pub mod key_inspector;
 pub mod key_ops;

@@ -9,6 +9,13 @@ pub use engine_connections::{
 
 #[path = "engine_connections.rs"]
 pub(in crate::backend) mod engine_connections;
+#[path = "redis_session.rs"]
+mod redis_session;
+pub use redis_session::{
+    RedisConsoleOutcome, RedisDatabase, RedisKey, RedisKeyInspection, RedisKeyValue, RedisOverview,
+    RedisPolicy, RedisScanPage, RedisSession, RedisSessionError, RedisValue, REDIS_INSPECT_ITEMS,
+    REDIS_MAX_DATABASES, REDIS_PAGE_KEYS, REDIS_SCAN_COUNT,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

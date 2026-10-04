@@ -196,6 +196,7 @@ pub(super) fn connection_phase(
 fn connectable(connection: &DevelopmentConnection) -> bool {
     (connection.postgres.is_some() && connection.unsupported_reason.is_none())
         || crate::sqlite_workspace::is_sqlite(connection)
+        || super::engines::surface_connection(connection)
 }
 
 /// One tab in the tab bar, from a workspace document or a SQLite tab.
@@ -331,10 +332,14 @@ impl Workspace {
             self.documents
                 .iter()
                 .filter(|document| document.metadata.connection_id.as_deref() == Some(id))
-                .map(|document| document.view.read(cx).connection_phase(cx)),
+                .map(|document| document.view.read(cx).connection_phase(cx))
+                .chain(self.engine_phase(id, cx)),
         )
     }
     fn current_connection(&self) -> Option<&DevelopmentConnection> {
+        if let Some(connection) = self.active_engine_connection() {
+            return Some(connection);
+        }
         // A selected SQLite connection owns the whole workspace view.
         let sqlite = self.sqlite_active().and(self.selected_connection.as_ref());
         let id = sqlite
@@ -718,9 +723,10 @@ impl Workspace {
                     .child(self.connection_list(cx)),
             )
             .child(div().flex_1().min_h_0().flex().flex_col().map(
-                |tree| match self.sqlite_active() {
-                    Some(sqlite) => tree.child(sqlite.read(cx).tree()),
-                    None => tree.child(self.navigator.clone()),
+                |tree| match (self.sqlite_active(), self.engine_tree()) {
+                    (Some(sqlite), _) => tree.child(sqlite.read(cx).tree()),
+                    (None, Some(engine)) => tree.child(engine),
+                    (None, None) => tree.child(self.navigator.clone()),
                 },
             ))
     }
@@ -882,13 +888,17 @@ impl Workspace {
                     .flex()
                     .min_w_0()
                     .overflow_x_scroll()
-                    .children(tabs),
+                    .map(|list| match self.engine_tabs() {
+                        Some(engine) => list.child(engine),
+                        None => list.children(tabs),
+                    }),
             )
             .child(self.drag_region("tab-bar-drag"))
             .child(
                 div()
                     .id("tab-actions")
                     .flex()
+                    .when(self.active_engine().is_some(), |actions| actions.hidden())
                     .items_center()
                     .gap(px(2.))
                     .px(px(6.))
@@ -1258,11 +1268,19 @@ impl Workspace {
                         .child("Production · writes require review and confirmation"),
                 )
             })
-            .child(match (self.sqlite_active().cloned(), self.active_index()) {
+            .child(match (self.sqlite_active().cloned(), self.engine_body(), self.active_index()) {
                 // A selected SQLite connection shows its own active document.
-                (Some(sqlite), _) => div().flex_1().min_h_0().child(sqlite).into_any_element(),
+                (Some(sqlite), _, _) => div().flex_1().min_h_0().child(sqlite).into_any_element(),
+                (None, Some(body), _) => crate::ui::appear(
+                    SharedString::from(format!(
+                        "engine-{}",
+                        self.selected_connection.as_deref().unwrap_or_default()
+                    )),
+                    div().flex_1().min_h_0().bg(style::bg()).child(body),
+                )
+                .into_any_element(),
                 // Each document fades and settles in when it becomes active.
-                (None, Some(index)) => crate::ui::appear(
+                (None, None, Some(index)) => crate::ui::appear(
                     SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
                     div()
                         .flex_1()
@@ -1271,7 +1289,7 @@ impl Workspace {
                         .child(self.documents[index].view.clone()),
                 )
                 .into_any_element(),
-                (None, None) => div()
+                (None, None, None) => div()
                     .flex_1()
                     .flex()
                     .items_center()

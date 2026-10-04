@@ -68,6 +68,8 @@ mod persistence;
 mod query_library;
 mod query_library_view;
 mod query_result;
+mod redis_model;
+mod redis_view;
 mod result_export;
 mod results;
 mod server_details_model;
