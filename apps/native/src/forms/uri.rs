@@ -12,14 +12,14 @@ impl Form {
                 editor.marked_text_range(window, cx).is_some()
             })
         }) {
-            self.message = Some("Finish text composition before importing a URI".into());
+            self.fail("Finish text composition before importing a URI");
             cx.notify();
             return;
         }
         let parsed = match crate::connection_uri::read(cx) {
             Ok(parsed) => parsed,
             Err(error) => {
-                self.message = Some(error);
+                self.fail(error);
                 cx.notify();
                 return;
             }
@@ -40,7 +40,7 @@ impl Form {
         if let Some(mode) = parsed.tls_mode {
             self.tls = mode;
         }
-        self.message = Some(if parsed.ignored_params.is_empty() {
+        self.note(if parsed.ignored_params.is_empty() {
             "URI imported. Review fields before Test or Save".into()
         } else {
             format!(

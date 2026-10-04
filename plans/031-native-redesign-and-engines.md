@@ -59,3 +59,29 @@
 - **Redis**: logical databases (db0–dbN) → keys grouped by type (string, hash,
   list, set, zset, stream) from bounded SCAN pages; counts come from sampling
   and must be labelled as estimates. The workspace is a console first.
+
+## Whole-app theme and interaction pass (2026-10-04)
+
+Requested by Imran after reviewing the redesign: the theme must cover every
+surface, not only the workspace. [`DESIGN.md`](../DESIGN.md) is now the design
+reference, started from the mock.
+
+- Credential storage restores the three previous options with the previous
+  rules: Encrypted SQLite (recommended default, password typed twice,
+  acknowledgement), OS keychain, Unencrypted SQLite (acknowledgement). Setup,
+  unlock and recovery are non-dismissable full-window gates; unlock has
+  "Forgot password?" → confirmed reset. The backend now refuses a password sent
+  with a non-encrypted mode and an empty unlock password; previously plain mode
+  silently ignored the typed password, which read as "any password works".
+- Every form page (connection, credentials, bastions, rename, open table,
+  delete, discard) uses the kit: header with a working close button, sections,
+  labelled inputs with inline validation, tone-aware messages, footer actions.
+  Command palette, managed servers and query library buttons follow the kit.
+- Tabs close from their own close button; the separate top-right close-tab
+  icon, which silently did nothing without an active closable tab, is removed.
+  Overlays now block pointer input to the workspace beneath them.
+- Motion: press depth on controls, 160 ms fade/rise for pages, documents and
+  popovers, error shake, opacity-only tooltips on icon buttons, and a spring
+  for sidebar hide/show. All respect Reduce motion.
+- Not yet verified in a real window: this harness cannot capture or drive the
+  app window (no screen-recording or AX trust).

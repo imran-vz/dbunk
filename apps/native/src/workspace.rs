@@ -81,6 +81,8 @@ struct Document {
 enum Operation {
     New,
     Close,
+    /// Close one tab from its own close button.
+    CloseDocument(String),
     Next,
     Previous,
     Rename,
@@ -166,6 +168,9 @@ pub struct Workspace {
     cleanup_failed: bool,
     load_error: Option<WorkspaceError>,
     message: Option<String>,
+    /// Bumped by each user action; keys the error shake so a repeated
+    /// identical error still moves.
+    message_seq: u64,
     dialog: Option<Entity<Form>>,
     managed: Option<Entity<managed_view::ManagedServersView>>,
     _managed_events: Option<Subscription>,
@@ -438,6 +443,7 @@ impl Workspace {
             cleanup_failed: false,
             load_error: None,
             message: None,
+            message_seq: 0,
             dialog: None,
             managed: None,
             _managed_events: None,
@@ -1459,6 +1465,24 @@ impl Workspace {
         match &operation {
             Operation::ToggleSidebar => {
                 self.shell.sidebar_collapsed = !self.shell.sidebar_collapsed;
+                self.shell.sidebar_toggled = true;
+                self.shell.sidebar_settling = true;
+                self.shell.sidebar_epoch += 1;
+                let epoch = self.shell.sidebar_epoch;
+                // Both ends stay rendered until the spring has settled.
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(450))
+                        .await;
+                    this.update(cx, |this, cx| {
+                        if this.shell.sidebar_epoch == epoch {
+                            this.shell.sidebar_settling = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
                 cx.notify();
                 return;
             }
@@ -1498,6 +1522,7 @@ impl Workspace {
         }
         self.previous_focus = window.focused(cx);
         self.message = None;
+        self.message_seq = self.message_seq.wrapping_add(1);
         self.form_scope = None;
         self.form_credentials = false;
         self.resetting = false;
@@ -1516,6 +1541,16 @@ impl Workspace {
             }
             Operation::New => self.new_document(window, cx),
             Operation::Close => self.close_document(window, cx),
+            Operation::CloseDocument(id) => {
+                if self
+                    .documents
+                    .iter()
+                    .any(|document| document.metadata.id == id)
+                {
+                    self.active = Some(id);
+                    self.close_document(window, cx);
+                }
+            }
             Operation::Next => self.select_next(false, window, cx),
             Operation::Previous => self.select_next(true, window, cx),
             Operation::SelectDocument(id) => {
@@ -2365,10 +2400,13 @@ impl Render for Workspace {
                 cx.listener(|this, _: &crate::workbench::Quit, window, cx| this.close(window, cx)),
             )
             .when_some(self.dialog.clone(), |root, dialog| {
+                // Occlude: clicks must not reach the workspace behind a page.
                 root.child(
                     div()
+                        .id("dialog-layer")
                         .absolute()
                         .inset_0()
+                        .occlude()
                         .bg(crate::style::bg())
                         .child(dialog),
                 )
@@ -2381,16 +2419,21 @@ impl Render for Workspace {
                         .flex()
                         .justify_center()
                         .pt(px(64.))
-                        .child(palette),
+                        .child(crate::ui::appear("palette", div().child(palette))),
                 )
             })
             .when_some(self.managed.clone(), |root, managed| {
                 root.child(
                     div()
+                        .id("managed-layer")
                         .absolute()
                         .inset_0()
+                        .occlude()
                         .bg(crate::style::bg())
-                        .child(managed),
+                        .child(crate::ui::appear(
+                            "managed-page",
+                            div().size_full().child(managed),
+                        )),
                 )
             })
     }

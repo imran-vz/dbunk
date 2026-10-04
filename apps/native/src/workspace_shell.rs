@@ -6,7 +6,14 @@ use crate::document_view::ConnectionPhase;
 use crate::style;
 use dbunk_lib::backend::DevelopmentEnvironment;
 use editor::Editor;
-use gpui::{AnyElement, MouseButton, WindowControlArea, rgba, svg};
+use gpui::{
+    AnimationExt, AnyElement, MouseButton, SpringAnimation, SpringConfig, WindowControlArea, rgba,
+    svg,
+};
+
+/// Width of the tab bar's left inset when the sidebar is hidden: room for
+/// the traffic lights plus the show-sidebar button.
+const REVEAL: f32 = style::TRAFFIC_LIGHTS + 28.;
 
 #[derive(Clone, PartialEq)]
 pub(super) enum ShellMenu {
@@ -17,6 +24,11 @@ pub(super) enum ShellMenu {
 
 pub(super) struct ShellState {
     pub sidebar_collapsed: bool,
+    /// Set by the first toggle; until then the sidebar renders without motion.
+    pub sidebar_toggled: bool,
+    /// True while the open/close spring runs, so both ends stay rendered.
+    pub sidebar_settling: bool,
+    pub sidebar_epoch: u64,
     pub status_collapsed: bool,
     /// `None` until connections load; then the first project.
     pub project: Option<String>,
@@ -51,6 +63,9 @@ impl ShellState {
         });
         Self {
             sidebar_collapsed: false,
+            sidebar_toggled: false,
+            sidebar_settling: false,
+            sidebar_epoch: 0,
             status_collapsed: false,
             project: None,
             env_filter: None,
@@ -182,6 +197,11 @@ fn connectable(connection: &DevelopmentConnection) -> bool {
     connection.postgres.is_some() && connection.unsupported_reason.is_none()
 }
 
+fn sidebar_spring() -> SpringConfig {
+    let (stiffness, damping, mass) = style::SIDEBAR_SPRING;
+    SpringConfig::new(stiffness, damping, mass)
+}
+
 fn icon(path: &'static str, color: gpui::Rgba) -> impl IntoElement {
     svg()
         .path(path)
@@ -240,6 +260,7 @@ impl Workspace {
             .hover(|s| s.bg(style::hover()).text_color(style::text()))
             .focus(|s| s.bg(style::hover()).text_color(style::text()))
             .cursor_pointer()
+            .active(|s| s.bg(style::pressed()))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(ax.clone(), window, cx))
                     .ok();
@@ -256,10 +277,13 @@ impl Workspace {
         operation: Operation,
         cx: &Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        self.shell_button(id, label, operation, cx)
+        let label = label.into();
+        crate::ui::press(self.shell_button(id, label.clone(), operation, cx))
             .w(px(20.))
             .px_0()
             .justify_center()
+            .tooltip(crate::ui::tooltip(label))
+            .tooltip_show_delay(crate::ui::tooltip_delay())
             .child(icon(path, style::dim()))
     }
     /// A button inside a connection row; it must not also select the row.
@@ -272,8 +296,11 @@ impl Workspace {
         operation: Operation,
         cx: &Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        self.shell_button(id, label, operation, cx)
+        let label = label.into();
+        self.shell_button(id, label.clone(), operation, cx)
             .on_click(|_, _, cx| cx.stop_propagation())
+            .tooltip(crate::ui::tooltip(label))
+            .tooltip_show_delay(crate::ui::tooltip_delay())
             .size(px(16.))
             .px_0()
             .justify_center()
@@ -315,7 +342,7 @@ impl Workspace {
             .pr(px(10.))
             .child(self.icon_button(
                 "collapse-sidebar",
-                "Collapse sidebar",
+                "Hide sidebar  ⌘\\",
                 "icons/threads_sidebar_left_open.svg",
                 Operation::ToggleSidebar,
                 cx,
@@ -739,6 +766,26 @@ impl Workspace {
                         document.metadata.name
                     )),
             )
+            .group(SharedString::from(format!("tab-group-{id}")))
+            .child({
+                let group = SharedString::from(format!("tab-group-{id}"));
+                let close = self
+                    .row_button(
+                        SharedString::from(format!("close-tab-{id}")),
+                        format!("Close {}", document.metadata.name),
+                        "icons/close.svg",
+                        style::dim(),
+                        Operation::CloseDocument(id.clone()),
+                        cx,
+                    )
+                    .hover(|s| s.bg(style::hover()));
+                // Hidden until the tab is hovered, always shown when active.
+                if active {
+                    close.opacity(0.8)
+                } else {
+                    close.opacity(0.).group_hover(group, |s| s.opacity(0.8))
+                }
+            })
         });
         div()
             .id("tab-bar")
@@ -749,21 +796,42 @@ impl Workspace {
             .bg(style::panel())
             .border_b_1()
             .border_color(style::line())
-            .when(self.shell.sidebar_collapsed, |bar| {
-                bar.child(
-                    div()
-                        .pl(px(style::TRAFFIC_LIGHTS))
-                        .flex()
-                        .items_center()
-                        .child(self.icon_button(
-                            "expand-sidebar",
-                            "Show sidebar",
-                            "icons/threads_sidebar_left_closed.svg",
-                            Operation::ToggleSidebar,
-                            cx,
-                        )),
-                )
-            })
+            .when(
+                self.shell.sidebar_collapsed || self.shell.sidebar_settling,
+                |bar| {
+                    let collapsed = self.shell.sidebar_collapsed;
+                    let mut spring = SpringAnimation::new(sidebar_spring()).to(px(if collapsed {
+                        REVEAL
+                    } else {
+                        0.
+                    }));
+                    if self.shell.sidebar_toggled {
+                        spring = spring.from(px(if collapsed { 0. } else { REVEAL }));
+                    }
+                    bar.child(
+                        div()
+                            .flex_none()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .w(px(REVEAL))
+                                    .h_full()
+                                    .pl(px(style::TRAFFIC_LIGHTS))
+                                    .flex()
+                                    .items_center()
+                                    .child(self.icon_button(
+                                        "expand-sidebar",
+                                        "Show sidebar  ⌘\\",
+                                        "icons/threads_sidebar_left_closed.svg",
+                                        Operation::ToggleSidebar,
+                                        cx,
+                                    )),
+                            )
+                            .with_spring("tab-bar-reveal", spring, |reveal, width| reveal.w(width)),
+                    )
+                },
+            )
             .child(
                 div()
                     .id("document-tabs")
@@ -800,14 +868,7 @@ impl Workspace {
                         )
                         .child("Tools")
                         .child(icon("icons/chevron_down.svg", style::faint())),
-                    )
-                    .child(self.icon_button(
-                        "close-tab",
-                        "Close tab",
-                        "icons/close.svg",
-                        Operation::Close,
-                        cx,
-                    )),
+                    ),
             )
     }
 
@@ -1113,7 +1174,7 @@ impl Workspace {
                         cx.notify();
                     }),
                 )
-                .child(panel)
+                .child(crate::ui::appear("shell-menu-panel", panel))
                 .into_any_element(),
         )
     }
@@ -1156,11 +1217,16 @@ impl Workspace {
                 )
             })
             .child(match self.active_index() {
-                Some(index) => div()
-                    .flex_1()
-                    .min_h_0()
-                    .bg(style::bg())
-                    .child(self.documents[index].view.clone()),
+                // Each document fades and settles in when it becomes active.
+                Some(index) => crate::ui::appear(
+                    SharedString::from(format!("document-{}", self.documents[index].metadata.id)),
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .bg(style::bg())
+                        .child(self.documents[index].view.clone()),
+                )
+                .into_any_element(),
                 None => div()
                     .flex_1()
                     .flex()
@@ -1174,10 +1240,21 @@ impl Workspace {
                         "Select a connection, then open a table or ⌘T for a query"
                     } else {
                         "Workspace recovery required"
-                    }),
+                    })
+                    .into_any_element(),
             })
             .when_some(self.message.clone(), |area, message| {
-                area.child(
+                // Keyed by text and by the action that set it, so a repeated
+                // error shakes again.
+                let key = {
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    message.hash(&mut hasher);
+                    self.message_seq.hash(&mut hasher);
+                    hasher.finish()
+                };
+                area.child(crate::ui::shake(
+                    ("workspace-error-shake", key),
                     div()
                         .id("workspace-error")
                         .role(Role::Alert)
@@ -1187,11 +1264,12 @@ impl Workspace {
                         .items_center()
                         .gap(px(8.))
                         .px(px(10.))
-                        .py(px(3.))
-                        .bg(style::raised())
+                        .py(px(4.))
+                        .bg(style::bad_fill())
                         .border_t_1()
-                        .border_color(style::line())
-                        .text_color(style::warn())
+                        .border_color(style::bad_line())
+                        .text_color(style::bad_text())
+                        .child(icon("icons/warning.svg", style::bad_text()))
                         .child(div().flex_1().child(message))
                         .when(
                             matches!(self.save_status, SaveStatus::Failed(_))
@@ -1240,7 +1318,7 @@ impl Workspace {
                                     )
                             },
                         ),
-                )
+                ))
             })
             .when(self.dock.read(cx).is_open(), |area| {
                 area.child(self.dock.clone())
@@ -1258,9 +1336,30 @@ impl Workspace {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .when(!self.shell.sidebar_collapsed, |row| {
-                        row.child(self.sidebar(cx))
-                    })
+                    .when(
+                        !self.shell.sidebar_collapsed || self.shell.sidebar_settling,
+                        |row| {
+                            let width = self.navigator_width.max(style::SIDEBAR);
+                            let collapsed = self.shell.sidebar_collapsed;
+                            let mut spring = SpringAnimation::new(sidebar_spring())
+                                .to(px(if collapsed { 0. } else { width }));
+                            if self.shell.sidebar_toggled {
+                                spring = spring.from(px(if collapsed { width } else { 0. }));
+                            }
+                            // The sidebar keeps its width inside a clipping slot,
+                            // so content slides out instead of reflowing.
+                            row.child(
+                                div()
+                                    .flex_none()
+                                    .h_full()
+                                    .overflow_hidden()
+                                    .child(self.sidebar(cx))
+                                    .with_spring("sidebar-slot", spring, |slot, width| {
+                                        slot.w(width)
+                                    }),
+                            )
+                        },
+                    )
                     .child(workspace_area),
             )
             .child(self.status_bar(cx))

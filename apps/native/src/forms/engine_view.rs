@@ -7,21 +7,7 @@ impl Form {
     pub(super) fn engine_view(&mut self, cx: &mut Context<Self>) -> Option<gpui::Div> {
         let toggles: &[(Toggle, &str, &str)] = match self.engine {
             Engine::Postgres => return None,
-            Engine::Sqlite => {
-                return Some(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(div().flex().gap_2().child(self.button(
-                            "Choose database file",
-                            FormAction::Pick("path"),
-                            false,
-                            cx,
-                        )))
-                        .child("The file must already exist; dbunk never creates it."),
-                );
-            }
+            Engine::Sqlite => return None,
             Engine::MySql => &[(Toggle::MySqlTls, "TLS: preferred", "TLS: off")],
             Engine::ClickHouse => &[(Toggle::Https, "HTTPS: on", "HTTPS: off")],
             Engine::Redis if self.toggles.redis_tls => &[
@@ -34,7 +20,7 @@ impl Form {
             ],
             Engine::Redis => &[(Toggle::RedisTls, "TLS: on", "TLS: off")],
         };
-        let mut row = div().flex().flex_wrap().gap_2().child("Transport");
+        let mut row = div().flex().flex_wrap().gap(px(16.));
         for (toggle, on, off) in toggles {
             let value = self.toggles.get(*toggle);
             row = row.child(self.button(
@@ -44,7 +30,7 @@ impl Form {
                 cx,
             ));
         }
-        Some(div().flex().flex_col().gap_2().child(row))
+        Some(row)
     }
 
     /// One explicit unsaved probe through the backend's bounded dispatch ping.
@@ -57,7 +43,7 @@ impl Form {
         let form = match self.engine_input(cx) {
             Ok(form) => form,
             Err(error) => {
-                self.message = Some(error);
+                self.fail(error);
                 cx.notify();
                 return;
             }
@@ -75,7 +61,7 @@ impl Form {
                 .await
         });
         self.busy = true;
-        self.message = Some("Testing connection…".into());
+        self.note("Testing connection…");
         for field in &self.fields {
             field
                 .editor
@@ -96,11 +82,18 @@ impl Form {
                     .diagnosis
                     .as_ref()
                     .is_some_and(|state| state.revision() == revision);
-                this.message = Some(if current {
-                    test_message(result)
+                if !current {
+                    this.note("Connection settings changed; test again");
                 } else {
-                    "Connection settings changed; test again".into()
-                });
+                    let reachable =
+                        matches!(result, Ok(DevelopmentConnectionTest::Reachable { .. }));
+                    let text = test_message(result);
+                    if reachable {
+                        this.say(text, Tone::Success);
+                    } else {
+                        this.fail(text);
+                    }
+                }
                 cx.notify();
             });
         }));

@@ -2,7 +2,12 @@
 //! footer status lines. Helpers only style; callers keep their own focus
 //! handles, tab order, `on_click` and `on_a11y_action` handlers.
 use crate::style;
-use gpui::{Div, ElementId, Role, SharedString, Stateful, div, prelude::*, px, svg};
+use gpui::{
+    Animation, AnimationElement, AnimationExt, AnyView, App, BoxShadow, Context, Div, ElementId,
+    Render, Role, SharedString, Stateful, Window, div, ease_out_quint, hsla, point, prelude::*, px,
+    svg,
+};
+use std::time::Duration;
 
 /// A 28 px document toolbar. Wraps onto further rows instead of clipping
 /// controls when the window is narrow.
@@ -62,9 +67,11 @@ pub fn tool_button(
         .whitespace_nowrap()
         .text_color(color)
         .when(enabled, |button| {
-            button
-                .cursor_pointer()
-                .hover(|s| s.bg(style::hover()).text_color(style::text()))
+            press(
+                button
+                    .cursor_pointer()
+                    .hover(|s| s.bg(style::hover()).text_color(style::text())),
+            )
         })
         .focus(|s| {
             s.bg(style::hover())
@@ -216,4 +223,401 @@ pub fn field() -> Div {
         .border_1()
         .border_color(style::line())
         .bg(style::bg())
+}
+
+/// Pressed depth for any clickable control: the face darkens and sinks under
+/// an inset shadow while the pointer is held, so a click is felt before its
+/// result arrives. Layout never moves.
+pub fn press(control: Stateful<Div>) -> Stateful<Div> {
+    control.active(|s| s.bg(style::pressed()).shadow(vec![sunken()]))
+}
+
+fn sunken() -> BoxShadow {
+    BoxShadow {
+        color: hsla(0., 0., 0., 0.55),
+        offset: point(px(0.), px(1.)),
+        blur_radius: px(2.),
+        spread_radius: px(0.),
+        inset: true,
+    }
+}
+
+/// The resting lift of a raised button: one hairline of shadow underneath.
+fn lifted() -> BoxShadow {
+    BoxShadow {
+        color: hsla(0., 0., 0., 0.45),
+        offset: point(px(0.), px(1.)),
+        blur_radius: px(0.),
+        spread_radius: px(0.),
+        inset: false,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Variant {
+    /// The one action a page exists for (Save, Unlock, Continue).
+    Primary,
+    /// Other actions: raised and bordered.
+    Secondary,
+    /// Quiet actions (Cancel, Back): no fill until hovered.
+    Ghost,
+    /// Destructive actions.
+    Danger,
+}
+
+/// A 24 px form/page button. Like `tool_button`, it only styles: callers own
+/// focus, `on_click` and `on_a11y_action`.
+pub fn button(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    variant: Variant,
+    enabled: bool,
+) -> Stateful<Div> {
+    let label = label.into();
+    let (fill, line, text) = match variant {
+        Variant::Primary => (
+            style::primary_fill(),
+            style::primary_line(),
+            style::primary_text(),
+        ),
+        Variant::Secondary => (style::raised(), style::line(), style::text()),
+        Variant::Ghost => (
+            gpui::transparent_black().into(),
+            gpui::transparent_black().into(),
+            style::dim(),
+        ),
+        Variant::Danger => (style::bad_fill(), style::bad_line(), style::bad_text()),
+    };
+    div()
+        .id(id)
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .flex_none()
+        .h(px(24.))
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(5.))
+        .rounded(px(5.))
+        .border_1()
+        .border_color(line)
+        .bg(fill)
+        .text_sm()
+        .whitespace_nowrap()
+        .text_color(if enabled { text } else { style::faint() })
+        .when(variant != Variant::Ghost && enabled, |b| {
+            b.shadow(vec![lifted()])
+        })
+        .when(!enabled, |b| b.opacity(0.55))
+        .when(enabled, |b| {
+            press(b.cursor_pointer().hover(move |s| match variant {
+                Variant::Ghost => s.bg(style::hover()).text_color(style::text()),
+                _ => s.border_color(style::faint()),
+            }))
+        })
+        .focus(|s| s.border_color(style::accent()))
+        .child(label)
+        .when(!enabled, |b| {
+            b.a11y_synthetic_children(|builder| builder.parent_node().set_disabled())
+        })
+}
+
+/// Fades and lifts a page, dialog or panel into place once per `id`. Give
+/// each page its own id so switching pages replays the entrance.
+pub fn appear<E: Styled + IntoElement + 'static>(
+    id: impl Into<ElementId>,
+    element: E,
+) -> AnimationElement<E> {
+    element.with_animation(
+        id,
+        Animation::new(Duration::from_millis(style::APPEAR_MS)).with_easing(ease_out_quint()),
+        |element, t| {
+            element
+                .opacity(t)
+                .relative()
+                .top(px((1. - t) * style::APPEAR_RISE))
+        },
+    )
+}
+
+/// Horizontal offset of an error shake at normalized time `t`: three damped
+/// swings that start and end at rest.
+pub fn shake_offset(t: f32) -> f32 {
+    let t = t.clamp(0., 1.);
+    (t * std::f32::consts::PI * 6.).sin() * style::SHAKE_PX * (1. - t)
+}
+
+/// Shakes an error once per `id`. Key the id by an error sequence number so
+/// a repeated identical error still draws the eye.
+pub fn shake<E: Styled + IntoElement + 'static>(
+    id: impl Into<ElementId>,
+    element: E,
+) -> AnimationElement<E> {
+    element.with_animation(
+        id,
+        Animation::new(Duration::from_millis(style::SHAKE_MS)),
+        |element, t| element.relative().left(px(shake_offset(t))),
+    )
+}
+
+/// A dismissable inline error: red wash, warning icon, AX alert. Wrap with
+/// `shake` at the call site.
+pub fn error_banner(id: impl Into<ElementId>, message: impl Into<SharedString>) -> Stateful<Div> {
+    let message = message.into();
+    div()
+        .id(id)
+        .role(Role::Alert)
+        .aria_label(message.clone())
+        .flex()
+        .items_start()
+        .gap(px(6.))
+        .px(px(8.))
+        .py(px(5.))
+        .rounded(px(5.))
+        .border_1()
+        .border_color(style::bad_line())
+        .bg(style::bad_fill())
+        .text_sm()
+        .text_color(style::bad_text())
+        .child(
+            svg()
+                .path("icons/warning.svg")
+                .mt(px(1.))
+                .size(px(style::ICON))
+                .flex_none()
+                .text_color(style::bad_text()),
+        )
+        .child(div().flex_1().min_w_0().child(message))
+}
+
+/// A hover tooltip that fades in; no scale, no slide.
+pub struct Tooltip {
+    text: SharedString,
+}
+
+impl Render for Tooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(6.))
+            .py(px(3.))
+            .rounded(px(4.))
+            .border_1()
+            .border_color(style::line())
+            .bg(style::raised())
+            .shadow_md()
+            .text_size(px(style::FONT))
+            .text_color(style::text())
+            .child(self.text.clone())
+            .with_animation(
+                ("tooltip", cx.entity_id().as_u64()),
+                Animation::new(Duration::from_millis(style::TOOLTIP_MS)),
+                |element, t| element.opacity(t),
+            )
+    }
+}
+
+/// Builder for `.tooltip(...)`; pair with `tooltip_delay()`.
+pub fn tooltip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView {
+    let text = text.into();
+    move |_, cx| {
+        let text = text.clone();
+        cx.new(|_| Tooltip { text }).into()
+    }
+}
+
+pub fn tooltip_delay() -> Duration {
+    Duration::from_millis(style::TOOLTIP_DELAY_MS)
+}
+
+/// Bordered text-field frame; `error` swaps the border to the danger colour.
+pub fn input_frame(error: bool) -> Div {
+    div()
+        .min_h(px(26.))
+        .px(px(7.))
+        .flex()
+        .items_center()
+        .rounded(px(5.))
+        .border_1()
+        .border_color(if error {
+            style::bad_line()
+        } else {
+            style::line()
+        })
+        .bg(style::bg())
+}
+
+/// Field label over its input, with an optional hint or error underneath.
+pub fn labelled(
+    label: impl Into<SharedString>,
+    input: impl IntoElement,
+    note: Option<(SharedString, bool)>,
+) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .min_w_0()
+        .child(
+            div()
+                .text_size(px(style::FONT_SMALL))
+                .text_color(style::dim())
+                .child(label.into()),
+        )
+        .child(input)
+        .when_some(note, |field, (text, error)| {
+            field.child(
+                div()
+                    .text_size(px(style::FONT_SMALL))
+                    .text_color(if error {
+                        style::bad_text()
+                    } else {
+                        style::faint()
+                    })
+                    .child(text),
+            )
+        })
+}
+
+/// A titled group of fields on a page.
+pub fn section(title: impl Into<SharedString>) -> Div {
+    div().flex().flex_col().gap(px(8.)).child(
+        div()
+            .pb(px(4.))
+            .border_b_1()
+            .border_color(style::line_soft())
+            .text_size(px(style::FONT_SMALL))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(style::faint())
+            .child(title.into().to_uppercase()),
+    )
+}
+
+/// 12 px checkbox glyph for toggle rows.
+pub fn check_box(checked: bool) -> Div {
+    div()
+        .flex_none()
+        .size(px(12.))
+        .mt(px(1.))
+        .rounded(px(3.))
+        .border_1()
+        .border_color(if checked {
+            style::accent()
+        } else {
+            style::faint()
+        })
+        .bg(if checked {
+            style::primary_fill()
+        } else {
+            style::bg()
+        })
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(checked, |b| {
+            b.child(
+                svg()
+                    .path("icons/check.svg")
+                    .size(px(9.))
+                    .text_color(style::accent()),
+            )
+        })
+}
+
+/// A selectable card: title, optional badge and body text. Selected cards
+/// take the accent border and fill.
+pub fn choice_card(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    body: impl Into<SharedString>,
+    icon: &'static str,
+    badge_text: Option<&'static str>,
+    selected: bool,
+) -> Stateful<Div> {
+    let title = title.into();
+    div()
+        .id(id)
+        .role(Role::RadioButton)
+        .aria_label(title.clone())
+        .flex()
+        .items_start()
+        .gap(px(10.))
+        .p(px(10.))
+        .rounded(px(6.))
+        .border_1()
+        .border_color(if selected {
+            style::primary_line()
+        } else {
+            style::line()
+        })
+        .bg(if selected {
+            style::primary_fill()
+        } else {
+            style::panel()
+        })
+        .cursor_pointer()
+        .hover(|s| s.border_color(style::faint()))
+        .focus(|s| s.border_color(style::accent()))
+        .child(
+            div()
+                .flex_none()
+                .size(px(26.))
+                .rounded(px(5.))
+                .border_1()
+                .border_color(style::line())
+                .bg(style::bg())
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(svg().path(icon).size(px(13.)).text_color(if selected {
+                    style::accent()
+                } else {
+                    style::dim()
+                })),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(style::text())
+                        .child(title)
+                        .when_some(badge_text, |row, text| {
+                            row.child(
+                                div()
+                                    .px(px(5.))
+                                    .rounded(px(3.))
+                                    .bg(style::primary_fill())
+                                    .text_size(px(style::FONT_SMALL))
+                                    .text_color(style::accent())
+                                    .child(text),
+                            )
+                        }),
+                )
+                .child(div().text_sm().text_color(style::dim()).child(body.into())),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shake_starts_and_ends_at_rest_within_its_amplitude() {
+        assert!(shake_offset(0.).abs() < 1e-4);
+        assert!(shake_offset(1.).abs() < 1e-4);
+        assert!(shake_offset(-1.).abs() < 1e-4 && shake_offset(2.).abs() < 1e-4);
+        let peak = (0..=100)
+            .map(|i| shake_offset(i as f32 / 100.).abs())
+            .fold(0., f32::max);
+        assert!(peak > 1. && peak <= style::SHAKE_PX);
+    }
 }

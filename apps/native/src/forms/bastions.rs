@@ -187,6 +187,7 @@ impl Form {
         };
         state.loaded = true;
         let mut leave_editor = false;
+        let failed = result.is_err();
         let message = match result {
             Ok(Outcome::Listed(list)) => {
                 state.list = list;
@@ -215,7 +216,11 @@ impl Form {
             self.fields.clear();
             self.focus(window, cx);
         }
-        self.message = message;
+        match message {
+            Some(text) if failed => self.fail(text),
+            Some(text) => self.note(text),
+            None => self.message = None,
+        }
         cx.notify();
     }
 
@@ -287,7 +292,7 @@ impl Form {
                 let Some(bastion) = row(state, index) else {
                     return;
                 };
-                self.message = Some(format!("Testing {}…", bastion.form.name));
+                self.note(format!("Testing {}…", bastion.form.name));
                 self.run_bastion(
                     Box::pin(async move {
                         let test = backend.test_development_bastion(bastion.id.clone()).await?;
@@ -377,7 +382,7 @@ impl Form {
         let port = match self.value("bastion-port", cx).trim().parse::<u16>() {
             Ok(port) if port > 0 => port,
             _ => {
-                self.message = Some("Bastion port must be between 1 and 65535".into());
+                self.fail("Bastion port must be between 1 and 65535");
                 cx.notify();
                 return;
             }
@@ -511,7 +516,13 @@ impl Form {
         let Kind::Bastions(state) = &self.kind else {
             return div();
         };
-        let mut content = div().flex().flex_col().gap_2();
+        let mut content = div().flex().flex_col().gap(px(12.));
+        let note = |text: String| {
+            div()
+                .text_sm()
+                .text_color(crate::style::faint())
+                .child(text)
+        };
         if let Some(id) = &state.editing {
             let auth = state.auth;
             let clear_passphrase = state.clear_passphrase;
@@ -519,7 +530,7 @@ impl Form {
                 .as_ref()
                 .and_then(|id| state.list.iter().find(|bastion| &bastion.id == id))
                 .cloned();
-            let mut methods = div().flex().flex_wrap().gap_2().child("Authentication");
+            let mut methods = div().flex().flex_wrap().gap(px(4.));
             for value in [
                 DevelopmentBastionAuth::Password,
                 DevelopmentBastionAuth::PrivateKeyPath,
@@ -532,28 +543,29 @@ impl Form {
                     cx,
                 ));
             }
-            content = content.child(methods);
-            let mut fields = div().flex().flex_col().gap_2();
+            content = content.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(5.))
+                    .child(
+                        div()
+                            .text_size(px(crate::style::FONT_SMALL))
+                            .text_color(crate::style::dim())
+                            .child("Authentication"),
+                    )
+                    .child(methods),
+            );
+            let errors = super::validation::Errors::new();
+            let mut fields = div().grid().grid_cols(2).gap_x(px(12.)).gap_y(px(10.));
             for field in &self.fields {
                 if !field_visible(auth, field.key) {
                     continue;
                 }
                 let tall = field.key == "bastion-key-content";
-                fields = fields.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(div().w(px(170.)).child(field.label))
-                        .child(
-                            div()
-                                .w(px(420.))
-                                .h(px(if tall { 96. } else { 26. }))
-                                .border_b_1()
-                                .border_color(crate::style::line())
-                                .child(field.accessible.clone()),
-                        ),
-                );
+                if let Some(input) = self.text_field(field.key, &errors, tall) {
+                    fields = fields.child(if tall { input.col_span_full() } else { input });
+                }
             }
             content = content.child(fields);
             let saved = existing.map(|bastion| {
@@ -565,9 +577,10 @@ impl Form {
                     yes(bastion.has_passphrase)
                 )
             });
-            content = content.child(
-                saved.unwrap_or_else(|| "Secrets are stored with your credential storage.".into()),
-            );
+            content =
+                content.child(note(saved.unwrap_or_else(|| {
+                    "Secrets are stored with your credential storage.".into()
+                })));
             if auth != DevelopmentBastionAuth::Password {
                 content = content.child(self.button(
                     if clear_passphrase {
@@ -583,13 +596,13 @@ impl Form {
             return content;
         }
         if !state.loaded {
-            return content.child("Loading Bastion Servers…");
+            return content.child(note("Loading Bastion Servers…".into()));
         }
         let list = state.list.clone();
         let review = state.review.clone();
         let tests = state.tests.clone();
         if list.is_empty() {
-            content = content.child("No Bastion Servers yet.");
+            content = content.child(note("No Bastion Servers yet.".into()));
         }
         let mut rows = div()
             .id("bastion-list")
@@ -597,7 +610,7 @@ impl Form {
             .aria_label("Bastion Servers")
             .flex()
             .flex_col()
-            .gap_3();
+            .gap(px(8.));
         for (index, bastion) in list.iter().enumerate() {
             let name = &bastion.form.name;
             let summary = format!(
@@ -618,12 +631,17 @@ impl Form {
                 .aria_label(summary.clone())
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(px(8.))
+                .p(px(10.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(crate::style::line())
+                .bg(crate::style::panel())
                 .child(summary);
             let mut actions = div()
                 .flex()
                 .flex_wrap()
-                .gap_2()
+                .gap(px(6.))
                 .child(self.button(
                     format!("Edit {name}"),
                     FormAction::Bastion(Action::Row(RowOp::Edit, index)),
