@@ -416,7 +416,7 @@ pub(super) fn validate_sqlite_path(path: &str) -> Result<(), String> {
 }
 
 /// Requires an existing, readable regular file. Never creates or writes it.
-pub(super) async fn check_sqlite_file(path: &str) -> Result<(), String> {
+pub(in crate::backend) async fn check_sqlite_file(path: &str) -> Result<(), String> {
     validate_sqlite_path(path)?;
     const UNREADABLE: &str = "SQLite database file does not exist or is not readable";
     let metadata = tokio::fs::metadata(path).await.map_err(|_| UNREADABLE)?;

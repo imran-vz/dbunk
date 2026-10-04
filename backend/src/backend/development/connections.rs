@@ -8,7 +8,7 @@ pub use engine_connections::{
 };
 
 #[path = "engine_connections.rs"]
-mod engine_connections;
+pub(in crate::backend) mod engine_connections;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
