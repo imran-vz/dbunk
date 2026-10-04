@@ -1,7 +1,8 @@
 # Plan 031: Native redesign and multi-engine workspace
 
-- Status: IN PROGRESS. Requested by Imran on 2026-10-03 together with the hard
-  migration (ADR-0033). Supersedes the visual direction of Plans 027–029; their
+- Status: IN PROGRESS through Step 3 (see [README.md](./README.md)); Step 4
+  (engines) and Step 5 (window acceptance) remain. Requested by Imran on
+  2026-10-03 together with the hard migration (ADR-0033). Supersedes the visual direction of Plans 027–029; their
   behavioral contracts (bounded resources, exact-save recovery, owned workers,
   stored policy, no automatic retry) still apply.
 - Design: [interactive mock](./mocks/native-redesign/index.html). Decisions:
