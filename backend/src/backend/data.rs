@@ -274,6 +274,7 @@ pub(super) async fn retire_data(
     connection: Option<&str>,
 ) -> Result<(), String> {
     inner.documents.retire_matching(connection);
+    inner.mysql.retire(connection);
     let started = tokio::time::Instant::now();
     let graceful = async {
         match connection {

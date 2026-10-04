@@ -1,5 +1,7 @@
 //! Selected stage04 persistent Navigator. Documents own editors and results;
 //! the workspace owns focus, fair draining, restoration and acknowledged saves.
+#[path = "workspace_engine.rs"]
+mod engine;
 #[path = "workspace_health.rs"]
 mod health;
 #[path = "managed_view.rs"]
@@ -135,6 +137,8 @@ pub struct Workspace {
     import_changes: crate::csv_transfer_model::ImportChanges,
     _csv_events: Subscription,
     documents: Vec<Document>,
+    /// Plan 031 step 4: sessions, trees and tabs of non-PostgreSQL engines.
+    engine_lanes: engine::EngineLanes,
     navigator: Entity<crate::navigator_view::NavigatorView>,
     _navigator_events: Subscription,
     dock: Entity<crate::dock_view::DockView>,
@@ -420,6 +424,7 @@ impl Workspace {
             import_changes: Default::default(),
             _csv_events: csv_events,
             documents: Vec::new(),
+            engine_lanes: Default::default(),
             active: None,
             selected_connection: None,
             connections: Vec::new(),
@@ -1526,6 +1531,9 @@ impl Workspace {
         self.form_scope = None;
         self.form_credentials = false;
         self.resetting = false;
+        if self.engine_activate(&operation, window, cx) {
+            return;
+        }
         match operation {
             Operation::Library(kind) => {
                 self.open_library(kind, window, cx);
@@ -2279,6 +2287,7 @@ impl Render for Workspace {
         });
         self.navigator
             .update(cx, |view, cx| view.set_connection(navigator_connection, cx));
+        self.sync_engine_lanes();
         let projects = shell::projects(&self.connections);
         if self
             .shell
