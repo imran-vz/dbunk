@@ -197,6 +197,7 @@ fn connectable(connection: &DevelopmentConnection) -> bool {
     (connection.postgres.is_some() && connection.unsupported_reason.is_none())
         || crate::sqlite_workspace::is_sqlite(connection)
         || super::engines::surface_connection(connection)
+        || crate::clickhouse::is_clickhouse(connection)
 }
 
 /// One tab in the tab bar, from a workspace document or a SQLite tab.
@@ -324,6 +325,9 @@ impl Workspace {
         connected: &std::collections::BTreeSet<String>,
         cx: &gpui::App,
     ) -> ConnectionPhase {
+        if let Some(phase) = self.clickhouse_phase(id, cx) {
+            return phase;
+        }
         if let Some(phase) = self.sqlite_phase(id, cx) {
             return phase;
         }
@@ -726,7 +730,7 @@ impl Workspace {
                 |tree| match (self.sqlite_active(), self.engine_tree()) {
                     (Some(sqlite), _) => tree.child(sqlite.read(cx).tree()),
                     (None, Some(engine)) => tree.child(engine),
-                    (None, None) => tree.child(self.navigator.clone()),
+                    (None, None) => tree.child(self.object_tree()),
                 },
             ))
     }
@@ -752,7 +756,9 @@ impl Workspace {
                 .map(|document| ShellTab {
                     id: document.metadata.id.clone(),
                     name: document.metadata.name.clone(),
-                    kind: if document.metadata.tool.is_some() {
+                    kind: if let Some(icon) = self.clickhouse_tab_icon(document, cx) {
+                        icon
+                    } else if document.metadata.tool.is_some() {
                         "icons/list_tree.svg"
                     } else if document.metadata.table.is_some() {
                         "icons/table.svg"

@@ -195,3 +195,72 @@ bar shows the Redis tabs, and the workspace opens on the console.
   latching. Native model tests cover tokenizing, grouping, estimates, bounds
   and the failed-page cursor. Not verified: the real window, keyboard and AX
   (no screen-recording or AX trust in this harness).
+
+## Step 4: ClickHouse (2026-10-04)
+
+ClickHouse connections now work end to end in the native app. MySQL, SQLite
+and Redis are separate Step 4 branches.
+
+- **Session**: selecting a ClickHouse connection opens a session
+  (`dbunk_lib::backend::clickhouse`): the stored record, the cached secret
+  and, for tunnelled connections, an owned SSH route, proven by one bounded
+  `SELECT 1` (10 s). Connect, disconnect, connecting and failed states use the
+  existing sidebar row and status bar. Failures are classified (unreachable,
+  timed out, authentication, missing database, or the ClickHouse error code),
+  never server text. Nothing reconnects or retries on its own. A transport
+  failure seen by any document or the tree marks the session failed; the user
+  reconnects. Editing or deleting the connection, or changing credentials,
+  ends its session.
+- **Bounds**: native reads stream `JSONCompactEachRowWithNamesAndTypes` and
+  stop at a row cap, a byte cap and a deadline (query 10,000 rows / 32 MiB /
+  300 s; data page 100 rows / 16 MiB / 60 s; catalog 20,000 objects / 32 MiB /
+  30 s; structure 30 s). Results that hit a cap say which one. No server
+  setting is sent, so `readonly=1` profiles still work.
+- **Policy**: every query document statement passes the connection's
+  read-only and safe-mode policy first (shared classifier plus ClickHouse
+  heads: `DESCRIBE`/`EXISTS`/`SHOW` read, `OPTIMIZE`/`SYSTEM`/`RENAME`/`KILL`
+  DDL, `DETACH` destructive). Safe mode asks for confirmation in the document;
+  a confirmed override is audited. One statement per run (ClickHouse HTTP
+  accepts one). Stop aborts the request and sends a best-effort
+  `KILL QUERY … ASYNC`.
+- **Object tree**: all permitted databases from `system.databases` (user
+  databases first, then `system`/`information_schema`), each with Tables (with
+  engine), Views, Materialized Views (with target table, from the `TO` clause
+  or the implicit `.inner`/`.inner_id` table) and Dictionaries (with
+  `system.dictionaries` status) as separate groups. External-engine databases
+  (MySQL, PostgreSQL, SQLite and their Materialized variants) are listed but
+  not expanded, since listing them reads a remote server. An unreadable
+  `system.dictionaries` (privileges) is shown as a note, not a failure;
+  server-config dictionaries get their own group. Filter, keyboard navigation
+  (arrows, Enter = data, Shift-Enter = structure), Refresh and New query.
+  The legacy `fetch_schema_explorer` now uses the same catalog: every
+  database, materialized views separate from views.
+- **Documents** (session-scoped tabs, not persisted across launches): a query
+  tab (Cmd-Enter runs the statement at the cursor or the selection, Cmd-.
+  stops), table data (100-row pages with a look-ahead row, previous/next,
+  header-click sort asc → desc → none) and structure (engine, rows, size,
+  sorting key, partition and sample keys, columns with defaults and key
+  marks, skip indexes, CHECK constraints, stored DDL). Results use the shared
+  read-only grid. `+`/Cmd-T with a ClickHouse connection selected opens a
+  ClickHouse query; Cmd-O (PostgreSQL open-table form) points to the tree.
+- **Seams shared with the other engine branches**: `DocumentView` gained one
+  `Content::ClickHouse` variant (no-op arms in the PostgreSQL-only methods),
+  `from_clickhouse`/`clickhouse()` accessors and `is_transient()`, which the
+  workspace snapshot uses to skip session-scoped tabs. Workspace hooks are
+  one-liners into `workspace_clickhouse.rs` (select/disconnect guard arms,
+  connection sync after reload, invalidation on form settle, close on quit,
+  tree selection in render); the shell asks `clickhouse_phase`,
+  `object_tree()` and `clickhouse_tab_icon`, and `connectable()` admits
+  ClickHouse.
+- **Verification**: backend unit tests for the bounded reader (split chunks,
+  NULLs, row and byte caps, mid-stream exceptions, explicit `FORMAT`), the
+  catalog (kinds, MV targets, external databases, truncation, unreadable
+  dictionaries) and policy classification; an end-to-end backend test
+  against a loopback fake ClickHouse HTTP server (connect, wrong password,
+  catalog, browse SQL, structure, server errors, read-only refusal with no
+  request sent, production confirmation and audit, closed session, unreachable
+  endpoint). Native model tests for session phases (single attempt, stale
+  results closed, loss scoped to the session used, invalidation rules), the
+  tree (grouping, expansion, filter, bounds) and paging/summaries. Not
+  verified: a real ClickHouse server and the running window (no AX or screen
+  capture in this harness).
