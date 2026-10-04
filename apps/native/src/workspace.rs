@@ -10,6 +10,8 @@ mod palette;
 mod seed_integration;
 #[path = "workspace_shell.rs"]
 mod shell;
+#[path = "workspace_sqlite.rs"]
+mod sqlite_integration;
 
 use crate::{
     controller::Host,
@@ -147,6 +149,9 @@ pub struct Workspace {
     health_probe: Option<Task<()>>,
     active: Option<String>,
     selected_connection: Option<String>,
+    /// Plan 031 step 4: native SQLite workspaces, one per connected SQLite
+    /// connection.
+    sqlite: sqlite_integration::SqliteHost,
     connections: Vec<DevelopmentConnection>,
     credential_state: Option<DevelopmentCredentialState>,
     layout: Layout,
@@ -422,6 +427,7 @@ impl Workspace {
             documents: Vec::new(),
             active: None,
             selected_connection: None,
+            sqlite: Default::default(),
             connections: Vec::new(),
             credential_state: None,
             layout: Layout::Stacked,
@@ -491,6 +497,7 @@ impl Workspace {
                     Ok(Ok((settings, connections, saved))) => {
                         this.credential_state = Some(settings.state);
                         this.connections = connections;
+                        this.sqlite_reconcile(cx);
                         for document in &this.documents {
                             document.view.update(cx, |view, cx| {
                                 view.set_comparison_connections(
@@ -1526,6 +1533,10 @@ impl Workspace {
         self.form_scope = None;
         self.form_credentials = false;
         self.resetting = false;
+        if self.sqlite_operation(&operation, window, cx) {
+            cx.notify();
+            return;
+        }
         match operation {
             Operation::Library(kind) => {
                 self.open_library(kind, window, cx);
@@ -2186,6 +2197,7 @@ impl Workspace {
             self.writer.clone()
         };
         let host = self.host.clone();
+        let sqlite_sessions = self.sqlite_take_sessions(cx);
         // Fullscreen keeps the previous record. GPUI reports the frame origin
         // display-locally but sizes new windows by content area.
         let geometry = match window.window_bounds() {
@@ -2231,6 +2243,10 @@ impl Workspace {
                     host.backend.set_window_geometry(geometry),
                 )
                 .await;
+            }
+            // A session that misses its deadline is aborted; quit continues.
+            if let Err(error) = sqlite_integration::close_sqlite_sessions(sqlite_sessions).await {
+                log::warn!("{error}");
             }
             host.shutdown().await.map_err(|error| (error, false))
         });
