@@ -9,6 +9,7 @@ mod browse_preferences;
 mod catalog;
 mod catalog_view;
 mod cell_value;
+mod clickhouse;
 mod connection_uri;
 mod console_model;
 mod controller;

@@ -195,6 +195,7 @@ pub(super) fn connection_phase(
 /// Whether the native host can open a session for this connection.
 fn connectable(connection: &DevelopmentConnection) -> bool {
     connection.postgres.is_some() && connection.unsupported_reason.is_none()
+        || crate::clickhouse::is_clickhouse(connection)
 }
 
 fn sidebar_spring() -> SpringConfig {
@@ -312,6 +313,9 @@ impl Workspace {
         connected: &std::collections::BTreeSet<String>,
         cx: &gpui::App,
     ) -> ConnectionPhase {
+        if let Some(phase) = self.clickhouse_phase(id, cx) {
+            return phase;
+        }
         connection_phase(
             connected.contains(id),
             self.documents
@@ -705,7 +709,7 @@ impl Workspace {
                     .min_h_0()
                     .flex()
                     .flex_col()
-                    .child(self.navigator.clone()),
+                    .child(self.object_tree()),
             )
     }
 
@@ -714,7 +718,9 @@ impl Workspace {
         let tabs = self.documents.iter().map(|document| {
             let id = document.metadata.id.clone();
             let active = Some(&id) == self.active.as_ref();
-            let kind = if document.metadata.tool.is_some() {
+            let kind = if let Some(icon) = self.clickhouse_tab_icon(document, cx) {
+                icon
+            } else if document.metadata.tool.is_some() {
                 "icons/list_tree.svg"
             } else if document.metadata.table.is_some() {
                 "icons/table.svg"

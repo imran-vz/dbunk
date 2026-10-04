@@ -10,6 +10,7 @@
 
 pub mod admin;
 pub mod bastions;
+pub mod clickhouse;
 pub mod completion;
 pub mod connection_diagnosis;
 pub mod connection_uri;

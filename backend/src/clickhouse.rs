@@ -10,8 +10,10 @@
 //!
 //! - [`run_query`] — execute one statement; SELECTs come back with column
 //!   names + row strings, DML returns 0 rows. Routes by HTTP POST.
-//! - [`fetch_schema_explorer`] — list tables + views in the connection's
-//!   active database via `system.tables`.
+//! - [`fetch_schema_explorer`] — every permitted database with its tables,
+//!   views and materialized views, from [`catalog`].
+//! - [`bounded`] / [`catalog`] — row-, byte- and time-bounded streaming reads
+//!   and the server-wide object catalog used by native sessions.
 //! - [`fetch_table_structure`] — full structure (columns, sorting key as
 //!   PK analogue, skip indices, constraints) from `system.*`.
 //! - [`fetch_database_overview_stats`] — aggregate sizes + counts from
@@ -31,6 +33,9 @@
 //!   `QueryResult` shape.
 //! - [`shared_client`] caches a `reqwest::Client` per process so TLS
 //!   handshakes amortize across the schema-explorer fan-out.
+
+pub(crate) mod bounded;
+pub(crate) mod catalog;
 
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -222,50 +227,43 @@ pub async fn run_query(connection: &StoredConnection, query: &str) -> Result<Que
 // Schema explorer
 // ---------------------------------------------------------------------------
 
+/// One explorer entry per permitted database. Materialized views stay
+/// separate from views (Plan 031); dictionaries have no explorer slot.
 pub async fn fetch_schema_explorer(
     connection: &StoredConnection,
 ) -> Result<Vec<SchemaExplorer>, String> {
-    let database = database(connection)?;
-    let escaped = escape(&database);
-    let tables_query = format!(
-        "SELECT name FROM system.tables WHERE database = '{}' AND engine NOT IN ('View', 'MaterializedView', 'LiveView') ORDER BY name",
-        escaped
-    );
-    let views_query = format!(
-        "SELECT name FROM system.tables WHERE database = '{}' AND engine IN ('View', 'MaterializedView', 'LiveView') ORDER BY name",
-        escaped
-    );
-    let tables_result = run_query(connection, &tables_query).await?;
-    let views_result = run_query(connection, &views_query).await?;
-
-    let tables = tables_result
-        .rows
+    let catalog = catalog::fetch(connection)
+        .await
+        .map_err(|error| error.message)?;
+    Ok(catalog
+        .databases
         .into_iter()
-        .filter_map(|row| row.into_iter().next())
-        .collect::<Vec<_>>();
-    let views = views_result
-        .rows
-        .into_iter()
-        .filter_map(|row| row.into_iter().next())
-        .collect::<Vec<_>>();
-
-    Ok(vec![SchemaExplorer {
-        name: database,
-        tables,
-        views,
-        materialized_views: vec![],
-        sequences: vec![],
-        foreign_tables: vec![],
-        functions: vec![],
-        procedures: vec![],
-        aggregate_functions: vec![],
-        types: vec![],
-        domains: vec![],
-        extensions: vec![],
-        event_triggers: vec![],
-        roles: vec![],
-        tablespaces: vec![],
-    }])
+        .map(|database| SchemaExplorer {
+            name: database.name,
+            tables: database
+                .tables
+                .into_iter()
+                .map(|table| table.name)
+                .collect(),
+            views: database.views.into_iter().map(|view| view.name).collect(),
+            materialized_views: database
+                .materialized_views
+                .into_iter()
+                .map(|view| view.name)
+                .collect(),
+            sequences: vec![],
+            foreign_tables: vec![],
+            functions: vec![],
+            procedures: vec![],
+            aggregate_functions: vec![],
+            types: vec![],
+            domains: vec![],
+            extensions: vec![],
+            event_triggers: vec![],
+            roles: vec![],
+            tablespaces: vec![],
+        })
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
