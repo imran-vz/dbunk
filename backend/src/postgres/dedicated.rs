@@ -422,7 +422,7 @@ fn capped_notice(
     let permit = match tx.try_reserve() {
         Ok(permit) => permit,
         Err(_) => {
-            let _ = dropped.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+            let _ = dropped.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
                 Some(n.saturating_add(1))
             });
             return;
@@ -431,7 +431,7 @@ fn capped_notice(
     let short_severity = prefix(severity, severity_bytes);
     let short_message = prefix(message, message_bytes);
     if short_severity.len() != severity.len() || short_message.len() != message.len() {
-        let _ = dropped.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+        let _ = dropped.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
             Some(n.saturating_add(1))
         });
     }
