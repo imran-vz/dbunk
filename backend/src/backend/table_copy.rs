@@ -159,7 +159,7 @@ impl Control {
     }
     pub(crate) fn add_bytes(&self, n: usize) -> Result<(), TableCopyError> {
         self.bytes
-            .fetch_update(
+            .try_update(
                 std::sync::atomic::Ordering::AcqRel,
                 std::sync::atomic::Ordering::Acquire,
                 |old| old.checked_add(n as u64),

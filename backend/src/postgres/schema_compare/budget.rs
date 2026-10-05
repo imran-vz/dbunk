@@ -106,7 +106,7 @@ impl Budget {
         let previous = self
             .counters
             .used
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                 used.checked_add(bytes)
                     .filter(|next| *next <= self.counters.limit)
             })
@@ -118,7 +118,7 @@ impl Budget {
             .fetch_max(previous + bytes, Ordering::AcqRel);
         if let Some(scope) = &self.result_scope {
             if scope
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
                     used.checked_add(bytes).filter(|next| *next <= RESULT_BYTES)
                 })
                 .is_err()
@@ -140,7 +140,7 @@ impl Budget {
     pub fn serializer(&self) -> Result<SerializerLease, CompareError> {
         self.counters
             .serializers
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < 2).then_some(n + 1)
             })
             .map_err(|_| CompareError::Busy)?;
