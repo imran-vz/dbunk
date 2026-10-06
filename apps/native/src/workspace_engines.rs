@@ -17,6 +17,7 @@ use crate::{
     clickhouse::workspace::{ClickHouseEvent, ClickHouseWorkspace},
     document_view::TabInfo,
     mysql_lane::{MySqlEvent, MySqlLane},
+    open_anything::{Item, ItemKind, Target},
     redis_view::{RedisEvent, RedisWorkspace},
     sqlite_workspace::{SqliteEvent, SqliteWorkspace},
 };
@@ -140,6 +141,23 @@ async fn close_by(closing: Vec<Closing>, limit: Duration) -> Result<(), String> 
     futures_util::future::join_all(bounded)
         .await
         .into_iter()
+        .collect()
+}
+
+/// Palette entries for one surface's tabs. Keys carry the connection, since
+/// tab ids are only unique within a surface.
+fn tab_items<C>(connection: &str, connection_name: &str, tabs: &[TabInfo]) -> Vec<Item<C>> {
+    tabs.iter()
+        .map(|tab| {
+            Item::new(
+                format!("engine-tab:{connection}:{}", tab.id),
+                ItemKind::Tab,
+                tab.title.clone(),
+                format!("Open tab · {connection_name}"),
+                &tab.status,
+                Target::Tab(tab.id.clone()),
+            )
+        })
         .collect()
 }
 
@@ -296,6 +314,23 @@ impl EngineSurface {
         }
     }
 
+    /// The engine's display name, as in `DevelopmentConnection::engine`.
+    fn engine(&self) -> &'static str {
+        match self {
+            Self::Redis(_) => "Redis",
+            Self::Sqlite(_) => "SQLite",
+            Self::ClickHouse(_) => "ClickHouse",
+            Self::MySql(_) => "MySQL",
+        }
+    }
+
+    /// Whether [`clear`](Self::clear) does anything: Redis clears its
+    /// console, ClickHouse the active tab's results. SQLite and MySQL tabs
+    /// expose no clear yet.
+    pub(super) fn can_clear(&self) -> bool {
+        matches!(self, Self::Redis(_) | Self::ClickHouse(_))
+    }
+
     /// Clears the active tab's results; false when the engine has none to
     /// clear.
     fn clear(&self, window: &mut Window, cx: &mut App) -> bool {
@@ -305,6 +340,16 @@ impl EngineSurface {
             Self::Sqlite(_) | Self::MySql(_) => return false,
         }
         true
+    }
+
+    /// Open Anything entries for this surface's tabs on `connection`.
+    pub(super) fn palette_items<C>(
+        &self,
+        connection: &str,
+        connection_name: &str,
+        cx: &App,
+    ) -> Vec<Item<C>> {
+        tab_items(connection, connection_name, &self.tabs(cx))
     }
 
     fn focus(&self, window: &mut Window, cx: &mut App) {
@@ -385,6 +430,58 @@ impl Workspace {
         if let Some(surface) = self.active_engine() {
             surface.focus(window, cx);
         }
+    }
+
+    /// `Some(can_clear)` while an engine surface is selected.
+    pub(super) fn active_engine_can_clear(&self) -> Option<bool> {
+        self.active_engine().map(EngineSurface::can_clear)
+    }
+
+    /// Open Anything entries for every surface's tabs, each with the
+    /// connection and tab it opens.
+    pub(super) fn engine_palette_items<C>(&self, cx: &App) -> Vec<(String, String, Item<C>)> {
+        let mut items = Vec::new();
+        for surface in &self.engines.0 {
+            let connection = &surface.opened;
+            for item in surface
+                .surface
+                .palette_items(&connection.id, &connection.name, cx)
+            {
+                if let Target::Tab(tab) = &item.target {
+                    items.push((connection.id.clone(), tab.clone(), item));
+                }
+            }
+        }
+        items
+    }
+
+    /// Selects `connection` (without connecting: choosing a tab is not the
+    /// connect gesture) and shows its tab `tab`.
+    pub(super) fn open_engine_tab(
+        &mut self,
+        connection: String,
+        tab: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(surface) = self
+            .surface(&connection)
+            .map(|surface| surface.surface.clone())
+        else {
+            self.refuse("That connection's tabs were closed", cx);
+            return;
+        };
+        if self.engine_connection(&connection).is_none() || !surface.owns_tab(&tab, cx) {
+            self.refuse("That tab was closed", cx);
+            return;
+        }
+        if self.selected_connection.as_deref() != Some(connection.as_str()) {
+            self.remember_focus(window, cx);
+            self.follow_connection_project(&connection);
+            self.selected_connection = Some(connection);
+        }
+        surface.select_tab(&tab, window, cx);
+        cx.notify();
     }
 
     fn ensure_surface(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -535,7 +632,10 @@ impl Workspace {
             }
             Operation::Clear => {
                 if !surface.clear(window, cx) {
-                    self.message = Some("Available for PostgreSQL connections only".into());
+                    self.message = Some(format!(
+                        "Clear results is not available for {} tabs yet",
+                        surface.engine()
+                    ));
                 }
             }
             Operation::OpenTable => {
@@ -721,6 +821,29 @@ pub(super) mod tests {
     fn unsupported(mut connection: DevelopmentConnection) -> DevelopmentConnection {
         connection.unsupported_reason = Some("unreadable".into());
         connection
+    }
+
+    #[test]
+    fn palette_tab_entries_are_keyed_by_connection_and_open_their_tab() {
+        let tab = |id: &str, title: &str| TabInfo {
+            id: id.into(),
+            title: title.into(),
+            icon: "icons/terminal.svg",
+            status: "12 rows".into(),
+            active: false,
+            pinned: false,
+            closable: true,
+        };
+        let tabs = [tab("q1", "Query 1"), tab("t2", "users")];
+        let items: Vec<Item<()>> = tab_items("conn-a", "shop", &tabs);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[1].key, "engine-tab:conn-a:t2");
+        assert_eq!(items[1].label, "users");
+        assert_eq!(items[1].description, "Open tab · shop");
+        assert_eq!(items[1].target, Target::Tab("t2".into()));
+        // The same tab id on another connection is a different entry.
+        let other: Vec<Item<()>> = tab_items("conn-b", "cache", &tabs[..1]);
+        assert_ne!(other[0].key, items[0].key);
     }
 
     #[test]
