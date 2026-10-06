@@ -50,10 +50,22 @@ Everything else stays quiet so that signal is never missed.
 
 Derived fills (alpha over the surface): `primary_fill`/`primary_line`
 (accent at 15 % / 45 %), `bad_fill`/`bad_line`/`bad_text` for errors and
-destructive actions, `ok_fill` for success notes.
+destructive actions, `ok_fill` for success notes, `warn_fill` (warn at 11 %)
+for confirmations and policy notes that need a second look.
 
 Data colours in grids: numbers `#79c0ff`, booleans `#d2a8ff`, `NULL` faint
 italic, edited cells `warn` at 14 %.
+
+Object kinds in sidebar trees (`style::kind_icon`); containers (databases,
+schemas, groups) stay `dim`:
+
+| Token | Hex | Use |
+| --- | --- | --- |
+| `kind_table` | `#6aa6ff` (`accent`) | Tables |
+| `kind_view` | `#b392f0` | Views |
+| `kind_materialized` | `#d2a8ff` | Materialized views |
+| `kind_type` | `#79c0ff` | Types, domains, dictionaries, foreign tables, triggers |
+| `kind_routine` | `#56d4dd` | Functions, procedures, aggregates |
 
 Engine badges (14 px, 8 px mono label): PG `#6c9bd2`, MY `#e6a23c`,
 CH `#f4d03f`, RD `#e5534b`, SQ `#8bb8a8`.
@@ -75,7 +87,8 @@ review and confirmation". With no connection the signal is neutral `faint`.
 ### Type
 
 - UI: system font, 11 px (`FONT`); small text 10 px (`FONT_SMALL`). Page titles
-  15 px semibold; section headings 10 px uppercase semibold `faint`.
+  15 px semibold (`FONT_TITLE`); section headings 10 px uppercase semibold
+  `faint`.
 - Data: `.ZedMono` (`MONO`) for grid cells, SQL, hosts, latencies, counts.
 
 ### Sizes
@@ -208,5 +221,6 @@ which leads to a red confirmation before credential storage is reset.
 - Every control is reachable by Tab, shows a focus state (accent border or
   hover fill) and has an AX role and label; toggles report their state.
 - Escape dismisses a dismissable page; gates ignore it.
-- Shortcuts: `⌘K` palette, `⌘T` new query, `⌘W` close tab, `⌘\` sidebar,
-  `⌘J` status bar, `⌘,` credentials.
+- Shortcuts: `⌘K` palette, `⌘O` open table, `⌘P` switch project (Projects
+  menu), `⌘⇧C` focus connection search, `⌘T` new query, `⌘W` close tab, `⌘\`
+  sidebar, `⌘J` status bar, `⌘,` credentials.

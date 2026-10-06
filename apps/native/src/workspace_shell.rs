@@ -159,6 +159,122 @@ pub(super) fn connection_color(stored: &str) -> Option<u32> {
     }
 }
 
+/// Seconds since the Unix epoch for a stored timestamp: RFC 3339
+/// (`2026-08-24T10:00:00Z`, `…T10:00:00.123+02:00`) or SQLite's
+/// `2026-08-24 10:00:00` (UTC when no zone is given). `None` otherwise.
+fn timestamp_secs(stored: &str) -> Option<i64> {
+    let text = stored.trim();
+    let bytes = text.as_bytes();
+    if bytes.len() < 19 || !text.is_char_boundary(19) {
+        return None;
+    }
+    let number = |range: std::ops::Range<usize>| -> Option<i64> {
+        let part = text.get(range)?;
+        if !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        part.parse::<i64>().ok()
+    };
+    if bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !matches!(bytes[10], b'T' | b't' | b' ')
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+    {
+        return None;
+    }
+    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
+    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    let mut rest = &text[19..];
+    if let Some(fraction) = rest.strip_prefix('.') {
+        let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 {
+            return None;
+        }
+        rest = &fraction[digits..];
+    }
+    let offset = match rest {
+        "" | "Z" | "z" => 0,
+        zone => {
+            let sign = match zone.as_bytes()[0] {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return None,
+            };
+            let zone = &zone[1..];
+            let (hours, minutes) = match zone.len() {
+                5 if zone.as_bytes()[2] == b':' => (zone.get(0..2)?, zone.get(3..5)?),
+                4 => (zone.get(0..2)?, zone.get(2..4)?),
+                _ => return None,
+            };
+            if !hours
+                .bytes()
+                .chain(minutes.bytes())
+                .all(|b| b.is_ascii_digit())
+            {
+                return None;
+            }
+            let hours: i64 = hours.parse().ok()?;
+            let minutes: i64 = minutes.parse().ok()?;
+            sign * (hours * 3600 + minutes * 60)
+        }
+    };
+    // Days from the civil date (Howard Hinnant's algorithm).
+    let shifted = if month <= 2 { year - 1 } else { year };
+    let era = shifted.div_euclid(400);
+    let year_of_era = shifted - era * 400;
+    let month_index = (month + 9) % 12;
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some(days * 86_400 + hour * 3600 + minute * 60 + second - offset)
+}
+
+/// Sidebar tooltip for a connection's last activity, relative to `now`
+/// (Unix seconds) for the last week, then the stored date. Text that does
+/// not parse is shown as stored rather than hidden.
+fn last_activity_label(stored: &str, now: i64) -> String {
+    let Some(at) = timestamp_secs(stored) else {
+        return format!("Last activity {}", stored.trim());
+    };
+    let age = now - at;
+    // Older than a week, or a clock that moved backwards: the stored date.
+    let when = if !(0..604_800).contains(&age) {
+        let stored = stored.trim();
+        stored.get(..10).unwrap_or(stored).to_owned()
+    } else if age < 60 {
+        "just now".to_owned()
+    } else if age < 3600 {
+        format!("{} min ago", age / 60)
+    } else if age < 86_400 {
+        format!("{} h ago", age / 3600)
+    } else if age < 2 * 86_400 {
+        "yesterday".to_owned()
+    } else {
+        format!("{} days ago", age / 86_400)
+    };
+    format!("Last activity {when}")
+}
+
+/// The error strip's Retry button. After a latched cleanup failure with the
+/// drafts already durable, Retry quits (see `Workspace::finish_close`), so it
+/// says so.
+fn retry_label(cleanup_failed: bool, drafts_durable: bool) -> &'static str {
+    if cleanup_failed && drafts_durable {
+        "Quit anyway"
+    } else {
+        "Retry"
+    }
+}
+
 /// The status bar's host: `host:port`, or `None` for file engines.
 fn status_host(host: &str, port: Option<u16>) -> Option<String> {
     if host.is_empty() {
@@ -813,6 +929,11 @@ impl Workspace {
             self.shell.env_filter,
             &search,
         );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| {
+                i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
+            });
         let mut rows: Vec<AnyElement> = Vec::new();
         if groups.is_empty() {
             rows.push(
@@ -860,6 +981,11 @@ impl Workspace {
                     .endpoint()
                     .map(|endpoint| endpoint.database)
                     .unwrap_or_default();
+                let activity = connection
+                    .last_activity_at
+                    .as_deref()
+                    .filter(|stored| !stored.trim().is_empty())
+                    .map(|stored| last_activity_label(stored, now));
                 let mut row = self
                     .shell_button(
                         SharedString::from(format!("connection-{id}")),
@@ -886,6 +1012,10 @@ impl Workspace {
                     )
                     .role(Role::ListBoxOption)
                     .aria_selected(selected)
+                    .when_some(activity, |row, activity| {
+                        row.tooltip(crate::ui::tooltip(activity))
+                            .tooltip_show_delay(crate::ui::tooltip_delay())
+                    })
                     .rounded_none()
                     .relative()
                     .pl(px(16.))
@@ -1686,15 +1816,16 @@ impl Workspace {
                                 || self.load_error.is_some()
                                 || self.cleanup_failed,
                             |strip| {
+                                let retry = retry_label(self.cleanup_failed, self.drafts_durable);
                                 strip
                                     .child(
                                         self.shell_button(
                                             "retry-save",
-                                            "Retry",
+                                            retry,
                                             Operation::Retry,
                                             cx,
                                         )
-                                        .child("Retry"),
+                                        .child(retry),
                                     )
                                     .child(
                                         self.shell_button(
@@ -1809,6 +1940,7 @@ mod tests {
             postgres: None,
             settings: None,
             environment,
+            last_activity_at: None,
         }
     }
 
@@ -1938,6 +2070,61 @@ mod tests {
             ["Connect", "Disconnect", "Credentials"]
         );
         assert!(!labels(None, false).contains(&"Managed servers"));
+    }
+
+    #[test]
+    fn retry_reads_quit_anyway_only_when_a_latched_cleanup_left_drafts_safe() {
+        assert_eq!(retry_label(true, true), "Quit anyway");
+        // Drafts still at risk: Retry runs cleanup again.
+        assert_eq!(retry_label(true, false), "Retry");
+        // A failed save or load keeps its Retry, durable or not.
+        assert_eq!(retry_label(false, true), "Retry");
+        assert_eq!(retry_label(false, false), "Retry");
+    }
+
+    #[test]
+    fn stored_activity_timestamps_parse_rfc3339_and_sqlite_text() {
+        // 2026-08-24T00:00:00Z
+        let midnight = 1_787_529_600;
+        assert_eq!(timestamp_secs("2026-08-24T00:00:00Z"), Some(midnight));
+        assert_eq!(timestamp_secs("2026-08-24T00:00:00.123Z"), Some(midnight));
+        assert_eq!(timestamp_secs("2026-08-24 00:00:00"), Some(midnight));
+        assert_eq!(timestamp_secs("2026-08-24T02:00:00+02:00"), Some(midnight));
+        assert_eq!(timestamp_secs("2026-08-23T22:30:00-0130"), Some(midnight));
+        assert_eq!(timestamp_secs("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(timestamp_secs("2024-03-01T00:00:00Z"), Some(1_709_251_200));
+        for bad in [
+            "",
+            "2026-08-24",
+            "2026-13-24T00:00:00Z",
+            "2026-08-24T00:00:00+2",
+            "2026-08-24T00:00:00.Z",
+            "2026-08-24T00:00:00 UTC",
+            "yesterday afternoon",
+            "2026-08-24T00:00:0é",
+        ] {
+            assert_eq!(timestamp_secs(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn last_activity_reads_relative_for_a_week_then_as_a_date() {
+        let at = "2026-08-24T00:00:00Z";
+        let midnight = 1_787_529_600;
+        let label = |age: i64| last_activity_label(at, midnight + age);
+        assert_eq!(label(5), "Last activity just now");
+        assert_eq!(label(125), "Last activity 2 min ago");
+        assert_eq!(label(3 * 3600 + 10), "Last activity 3 h ago");
+        assert_eq!(label(86_400 + 5), "Last activity yesterday");
+        assert_eq!(label(4 * 86_400), "Last activity 4 days ago");
+        assert_eq!(label(30 * 86_400), "Last activity 2026-08-24");
+        // Clock behind the stored time: the date, never "in the future".
+        assert_eq!(label(-3600), "Last activity 2026-08-24");
+        // Unparseable text is shown as stored rather than hidden.
+        assert_eq!(
+            last_activity_label(" last tuesday ", midnight),
+            "Last activity last tuesday"
+        );
     }
 
     #[test]

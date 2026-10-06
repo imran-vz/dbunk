@@ -111,8 +111,9 @@ and failed states and the status bar now apply to SQLite too.
 - **Safety**: user SQL passes the existing policy (`classify_script` +
   `assert_permitted`): read-only blocks writes, protected/strict (including
   production by default) ask for confirmation of the exact reviewed text, and
-  confirmed overrides are audited after success. PRAGMA, ATTACH and REPLACE
-  classify as unknown, so they count as writes.
+  confirmed overrides are audited once execution starts (corrected
+  2026-10-06; the first version audited after success). PRAGMA, ATTACH and
+  REPLACE classify as unknown, so they count as writes.
 - **Cancel and close**: Stop interrupts only its own request through SQLite's
   progress handler. Disconnect refuses queued work, interrupts the running
   request and joins the worker within 5 s (rolling back an open transaction);
@@ -218,8 +219,9 @@ and Redis are separate Step 4 branches.
   setting is sent, so `readonly=1` profiles still work.
 - **Policy**: every query document statement passes the connection's
   read-only and safe-mode policy first (shared classifier plus ClickHouse
-  heads: `DESCRIBE`/`EXISTS`/`SHOW` read, `OPTIMIZE`/`SYSTEM`/`RENAME`/`KILL`
-  DDL, `DETACH` destructive). Safe mode asks for confirmation in the document;
+  heads: `DESCRIBE`/`EXISTS`/`SHOW` read; `SYSTEM`, `RENAME`, `EXCHANGE`,
+  `KILL`, `DETACH` and `REPLACE` destructive, as are data-moving `ALTER`
+  actions; corrected 2026-10-06, when they were first plain DDL). Safe mode asks for confirmation in the document;
   a confirmed override is audited. One statement per run (ClickHouse HTTP
   accepts one). Stop aborts the request and sends a best-effort
   `KILL QUERY … ASYNC`.
@@ -302,8 +304,8 @@ native workspace.
   asks it for the sidebar tree, tab list, content and connection phase; tab
   and connection commands route to it. PostgreSQL documents are unchanged.
 - **Not yet**: MySQL tabs and query text are not persisted across restarts;
-  no row editing, export or EXPLAIN; the query runs the whole editor text
-  (no statement-under-cursor); no SSH-tunnelled live check. Verified by unit
+  no row editing or EXPLAIN; no SSH-tunnelled live check. (Export and
+  statement-under-cursor landed in the 2026-10-06 gap fixes.) Verified by unit
   tests and a live backend test against a disposable `mysql:8.4` container
   (`DBUNK_MYSQL_LIVE=host:port:password`); no real-window or AX check.
 
@@ -380,3 +382,34 @@ forms, deletion, unsupported and re-typed records) and the joined, bounded
 close; the existing ClickHouse session-model tests cover a superseded
 attempt's late session being closed after a reconnect. No window,
 keyboard/AX or IME acceptance.
+
+## Gap fixes (2026-10-06)
+
+A batch of fixes for gaps found after the Step 4 integration, merged to
+`main`. Not yet compiled or tested at time of writing; `just` checks and
+manual window checks are still owed.
+
+- **SQL classification per dialect.** MySQL and SQLite scripts are lexed with
+  their own rules: backtick identifiers, `#` comments (MySQL) and `--`
+  comment spacing. MySQL executable comments (`/*! … */`) fail closed.
+  `WITH … REPLACE` counts as a write, and `SET GLOBAL`, `SET PERSIST` and
+  `SET PASSWORD` are destructive.
+- **ClickHouse policy.** Destructive `ALTER` actions and `SYSTEM`, `RENAME`,
+  `EXCHANGE` and `KILL` heads need confirmation; reads through external table
+  functions (`url(`, `s3(`, `remote(`, …) are refused on read-only
+  connections. Abort, tab close and timeout send `KILL QUERY`.
+- **Paging.** ClickHouse, MySQL and SQLite table pages are ordered; Next keeps
+  the rows already read, and pages without a reliable key say the order is
+  approximate.
+- **Cancel and statements.** MySQL and SQLite cancel per request.
+  SQLite and MySQL run the statement under the cursor. MySQL and ClickHouse
+  results can be exported.
+- **Redis.** Replies are bounded per value with a size preflight; sessions
+  are dropped off the UI thread; `*_RO` commands are refused on read-only
+  connections; keys are handled as raw bytes.
+- **SQLite.** Sessions open with `foreign_keys` off; at most 16 tabs.
+- **Shell.** The palette lists engine tabs in Open Anything; overlays occlude
+  the workspace; menus work from the keyboard; Reduce motion is read from
+  macOS; quitting from the OS flushes drafts; draft saves are debounced; shell
+  state is persisted (workspace snapshot v16); new shortcuts `⌘O` (open
+  table), `⌘P` (switch project) and `⌘⇧C` (focus connection search).

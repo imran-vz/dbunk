@@ -191,6 +191,10 @@ pub struct DevelopmentConnection {
     /// included). None when the record is unsupported or unreadable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<DevelopmentEngineConnection>,
+    /// When the stored record last saw activity (RFC 3339 text, as stored).
+    /// None when the record has never been used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
 }
 
 impl DevelopmentConnection {
@@ -927,6 +931,7 @@ fn summary(connection: &StoredConnection, authority: &Authority) -> DevelopmentC
         },
         environment: environment_of(connection.policy().environment),
         settings: supported.then(|| DevelopmentEngineConnection::from_stored(connection)),
+        last_activity_at: connection.last_activity_at().map(str::to_string),
     }
 }
 

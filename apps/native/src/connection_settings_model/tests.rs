@@ -22,6 +22,7 @@ fn record(id: &str) -> DevelopmentConnection {
         }),
         environment: Default::default(),
         settings: None,
+        last_activity_at: None,
     }
 }
 #[test]

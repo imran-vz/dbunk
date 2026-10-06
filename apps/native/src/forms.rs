@@ -56,9 +56,11 @@ enum FormAction {
     Engine(engine::Engine),
     EngineToggle(engine::Toggle),
     Acknowledge,
+    /// Read credential settings again after the user grants Keychain access.
+    RetryKeychain,
 }
 /// How a form message reads: errors shake and take the danger colour.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Tone {
     Info,
     Success,
@@ -745,6 +747,10 @@ impl Form {
                 cx.notify();
                 return;
             }
+            FormAction::RetryKeychain => {
+                self.retry_keychain(cx);
+                return;
+            }
             FormAction::Pick(key) => {
                 let picker = cx.prompt_for_paths(PathPromptOptions {
                     files: true,
@@ -905,6 +911,36 @@ impl Form {
         }));
         cx.notify();
     }
+    /// Reads credential settings again; the backend retries the Keychain
+    /// read, so access granted since the form opened clears the notice.
+    fn retry_keychain(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.kind, Kind::Credentials(_)) {
+            return;
+        }
+        let backend = self.host.backend.clone();
+        self.busy = true;
+        self.message = None;
+        let work = self
+            .host
+            .runtime
+            .spawn(async move { backend.development_settings().await });
+        self.task = Some(cx.spawn(async move |this, cx| {
+            let result = match work.await {
+                Ok(result) => result.map(|settings| settings.keychain_unavailable),
+                Err(_) => Err("Keychain check could not finish".into()),
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.busy = false;
+                if let (Ok(unavailable), Kind::Credentials(settings)) = (&result, &mut this.kind) {
+                    settings.keychain_unavailable = unavailable.clone();
+                }
+                let (text, tone) = keychain_retry_message(result);
+                this.say(text, tone);
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
     fn button(
         &mut self,
         label: impl Into<SharedString>,
@@ -1057,6 +1093,28 @@ fn chip_dot(action: FormAction) -> Option<u32> {
         _ => None,
     }
 }
+/// The standing notice on the credentials page while the Keychain is
+/// unreadable. `reason` is the backend's fixed, secret-free text.
+fn keychain_notice(reason: &str) -> String {
+    format!(
+        "{}. Connections and drafts still load, but saved passwords cannot be used until dbunk can read the keychain.",
+        reason.trim().trim_end_matches('.')
+    )
+}
+/// Outcome of a Keychain retry: the still-unavailable reason, or a load error.
+fn keychain_retry_message(result: Result<Option<String>, String>) -> (String, Tone) {
+    match result {
+        Ok(None) => (
+            "Keychain access restored. Saved passwords can be used again.".into(),
+            Tone::Success,
+        ),
+        Ok(Some(reason)) => (
+            format!("Keychain is still unavailable: {}", reason.trim()),
+            Tone::Error,
+        ),
+        Err(error) => (error, Tone::Error),
+    }
+}
 fn number(value: Option<u32>) -> String {
     value.map(|value| value.to_string()).unwrap_or_default()
 }
@@ -1089,6 +1147,32 @@ fn connection_defaults(kind: Option<NativeProfileKind>) -> DevelopmentPostgresCo
 #[cfg(test)]
 mod defaults_tests {
     use super::*;
+
+    #[test]
+    fn keychain_retry_reports_restored_access_and_keeps_failures_loud() {
+        let (text, tone) = keychain_retry_message(Ok(None));
+        assert_eq!(tone, Tone::Success);
+        assert!(text.contains("restored"), "{text}");
+        let denied = "Credential Keychain access was denied or locked; unlock it and retry";
+        let (text, tone) = keychain_retry_message(Ok(Some(denied.into())));
+        assert_eq!(tone, Tone::Error);
+        assert!(text.ends_with(denied), "{text}");
+        let (text, tone) = keychain_retry_message(Err("Native backend is closing".into()));
+        assert_eq!(
+            (text.as_str(), tone),
+            ("Native backend is closing", Tone::Error)
+        );
+    }
+
+    #[test]
+    fn keychain_notice_keeps_the_reason_and_one_full_stop() {
+        let notice = keychain_notice("Credential Keychain is unavailable; retry the operation.");
+        assert!(
+            notice.starts_with("Credential Keychain is unavailable; retry the operation. "),
+            "{notice}"
+        );
+        assert!(!notice.contains(".."), "{notice}");
+    }
 
     #[test]
     fn general_defaults_do_not_embed_the_fixture_database_or_port() {

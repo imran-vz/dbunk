@@ -1,10 +1,11 @@
 # Redis commands that require typed-confirmation before execution.
-# Single source of truth — codegen produces both the Rust
-# (`destructive_commands.rs`) and TS (`src/lib/redis/destructive-commands.ts`)
-# lists from this file. See ADR-0009.
+# Documentation copy only. The source of truth is the Rust constants
+# `DESTRUCTIVE_HARD` and `DESTRUCTIVE_SOFT` in `destructive_commands.rs`;
+# nothing reads or generates code from this file. It is maintained by hand:
+# keep it in step when editing those constants.
 #
-# Two categories — both halt execution until confirmation, but the
-# frontend can render slightly different messaging by category.
+# Two categories: both halt execution until confirmation, but the
+# app can render slightly different messaging by category.
 #
 # `hard` — the command itself is destructive at a scale that warrants
 # typing the command name to confirm (or refusing entirely on read-only

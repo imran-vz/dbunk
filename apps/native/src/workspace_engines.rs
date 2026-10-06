@@ -325,10 +325,12 @@ impl EngineSurface {
     }
 
     /// Whether [`clear`](Self::clear) does anything: Redis clears its
-    /// console, ClickHouse the active tab's results. SQLite and MySQL tabs
-    /// expose no clear yet.
+    /// console; ClickHouse, SQLite and MySQL the active query tab's results.
     pub(super) fn can_clear(&self) -> bool {
-        matches!(self, Self::Redis(_) | Self::ClickHouse(_))
+        matches!(
+            self,
+            Self::Redis(_) | Self::ClickHouse(_) | Self::Sqlite(_) | Self::MySql(_)
+        )
     }
 
     /// Clears the active tab's results; false when the engine has none to
@@ -337,7 +339,8 @@ impl EngineSurface {
         match self {
             Self::Redis(view) => view.update(cx, |view, cx| view.clear_console(window, cx)),
             Self::ClickHouse(view) => view.update(cx, |view, cx| view.clear_results(cx)),
-            Self::Sqlite(_) | Self::MySql(_) => return false,
+            Self::Sqlite(view) => view.update(cx, |view, cx| view.clear_results(cx)),
+            Self::MySql(view) => view.update(cx, |view, cx| view.clear_results(cx)),
         }
         true
     }
@@ -728,6 +731,7 @@ pub(super) mod tests {
             postgres: None,
             environment: ENV,
             settings,
+            last_activity_at: None,
         }
     }
 

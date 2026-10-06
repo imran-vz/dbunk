@@ -448,6 +448,17 @@ impl SqliteWorkspace {
         self.select_tab(&id, window, cx);
     }
 
+    /// Clears the active query tab's results; data and structure tabs have
+    /// none to clear.
+    pub fn clear_results(&mut self, cx: &mut Context<Self>) {
+        let Some(index) = self.active_index() else {
+            return;
+        };
+        if let TabView::Query(view) = &self.tabs[index].view {
+            view.update(cx, |view, cx| view.clear_results(cx));
+        }
+    }
+
     pub fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.active_index() else {
             return;

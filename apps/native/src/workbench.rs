@@ -1980,6 +1980,45 @@ impl Render for Workbench {
             .flex()
             .flex_col()
             .when_some(self.failure.as_ref(), |pane, failure| {
+                let heading = failure.code.as_ref().map_or("Query failed".into(), |code| {
+                    format!("Query failed · {code}")
+                });
+                // The banner's first line is its icon and heading; the
+                // full-width details wrap onto the lines below inside the
+                // same red wash.
+                let details = div()
+                    .w_full()
+                    .pl(px(crate::style::ICON + 6.))
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("query-failure-message")
+                            .role(Role::Label)
+                            .aria_label(failure.message.clone())
+                            .child(failure.message.clone()),
+                    )
+                    .when_some(failure.location.clone(), |surface, location| {
+                        surface.child(
+                            div()
+                                .id("query-failure-location")
+                                .role(Role::Label)
+                                .aria_label(location.clone())
+                                .font_family(crate::style::MONO)
+                                .text_color(crate::style::dim())
+                                .child(location),
+                        )
+                    })
+                    .child(self.button(
+                        "Return to SQL",
+                        Control::ReturnToSql,
+                        9,
+                        !self.closing,
+                        false,
+                        cx,
+                    ));
                 pane.child(
                     div()
                         .id("query-failure")
@@ -1988,46 +2027,15 @@ impl Render for Workbench {
                         .flex_shrink_0()
                         .max_h(px(180.))
                         .overflow_y_scroll()
-                        .flex()
-                        .flex_col()
-                        .items_start()
-                        .gap_1()
-                        .border_l_2()
-                        .border_b_1()
-                        .border_color(crate::style::bad())
-                        .px_2()
-                        .py_1()
-                        .text_sm()
-                        .child(div().text_color(crate::style::bad()).child(
-                            failure.code.as_ref().map_or("Query failed".into(), |code| {
-                                format!("Query failed · {code}")
-                            }),
-                        ))
-                        .child(
-                            div()
-                                .id("query-failure-message")
-                                .role(Role::Label)
-                                .aria_label(failure.message.clone())
-                                .child(failure.message.clone()),
-                        )
-                        .when_some(failure.location.clone(), |surface, location| {
-                            surface.child(
-                                div()
-                                    .id("query-failure-location")
-                                    .role(Role::Label)
-                                    .aria_label(location.clone())
-                                    .font_family(crate::style::MONO)
-                                    .text_color(crate::style::dim())
-                                    .child(location),
-                            )
-                        })
-                        .child(self.button(
-                            "Return to SQL",
-                            Control::ReturnToSql,
-                            9,
-                            !self.closing,
-                            false,
-                            cx,
+                        .px(px(8.))
+                        .py(px(6.))
+                        // A new identity per failure replays the shake, even
+                        // for an identical repeated error.
+                        .child(crate::ui::shake(
+                            format!("query-failure-shake-{}", failure.announcement_id),
+                            crate::ui::error_banner("query-failure-banner", heading)
+                                .flex_wrap()
+                                .child(details),
                         )),
                 )
             })
