@@ -52,39 +52,30 @@ impl PgToolView {
                 | Action::TableChoices
         );
         let weak = cx.weak_entity();
-        div()
-            .id(("pg-tool-control", index))
-            .role(if toggle { Role::CheckBox } else { Role::Button })
-            .aria_label(label)
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-                if toggle {
-                    builder
-                        .parent_node()
-                        .set_toggled(gpui::accesskit::Toggled::from(selected));
-                }
-            })
-            .track_focus(&self.buttons[index])
-            .tab_index(0)
-            .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .when(selected, |element| element.bg(crate::style::select()))
-            .focus(|style| style.bg(crate::style::line()))
-            .child(label)
-            .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| this.activate(action, window, cx))
-                    .ok();
-            })
-            .into_any_element()
+        crate::ui::pressed(
+            crate::ui::tool_button(("pg-tool-control", index), label, None, enabled, false),
+            selected,
+        )
+        .role(if toggle { Role::CheckBox } else { Role::Button })
+        .a11y_synthetic_children(move |builder| {
+            if !enabled {
+                builder.parent_node().set_disabled();
+            }
+            if toggle {
+                builder
+                    .parent_node()
+                    .set_toggled(gpui::accesskit::Toggled::from(selected));
+            }
+        })
+        .track_focus(&self.buttons[index])
+        .tab_index(0)
+        .tab_stop(enabled)
+        .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| this.activate(action, window, cx))
+                .ok();
+        })
+        .into_any_element()
     }
     fn review_text(&self, cx: &gpui::App) -> Option<String> {
         let store = self.store.read(cx);
@@ -189,7 +180,7 @@ impl Render for PgToolView {
             .map(|capture| capture.limits());
         let fields = self.fields.clone();
         div().id("pg-tool-setup").role(Role::Group).aria_label("PostgreSQL backup and restore")
-            .track_focus(&self.focus).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text())
+            .track_focus(&self.focus).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{
                 if this.composing(window,cx){return;}
                 let modifiers=event.keystroke.modifiers;
@@ -213,26 +204,26 @@ impl Render for PgToolView {
                 this.selected=jobs.get(next).and_then(|index|this.store.read(cx).capture().and_then(|capture|capture.key(*index)));
                 cx.notify();cx.stop_propagation();
             }))
-            .when_some(limits, |body, limits| body.child(div().px_2().child(limits)))
-            .child(div().flex().flex_wrap().p_2().child("Backup / Restore").children((0..2).map(|index|self.button(index,cx))))
-            .child(div().id("pg-tool-connection").px_2().role(Role::Label).aria_label(format!("Connection: {connection}")).child(format!("Connection: {connection}")))
+            .when_some(limits, |body, limits| body.child(div().px_2().font_family(crate::style::MONO).text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::faint()).child(limits)))
+            .child(crate::ui::toolbar().child(crate::ui::section_label("Backup / Restore")).child(crate::ui::separator()).children((0..2).map(|index|self.button(index,cx))))
+            .child(div().id("pg-tool-connection").px_2().py(px(4.)).text_color(crate::style::dim()).role(Role::Label).aria_label(format!("Connection: {connection}")).child(format!("Connection: {connection}")))
             .child(div().id("pg-tool-body").flex_1().min_h_0().overflow_y_scroll().track_scroll(&self.scroll)
-                .child(div().flex().flex_wrap().p_2().children((2..8).filter(|index|backup || !matches!(index,4..=6)).map(|index|self.button(index,cx))))
+                .child(crate::ui::toolbar().children((2..8).filter(|index|backup || !matches!(index,4..=6)).map(|index|self.button(index,cx))))
                 .when(backup&&self.scope!=ScopeChoice::Database,|body|body.when_some(fields,|body,(schema,table)|{
                     body.child(div().px_2().child("Schema").child(schema)).when(self.scope==ScopeChoice::Table,|body|body.child(div().px_2().child("Table").child(table)))
                 }))
                 .when(backup,|body|body.child(self.choices_element(cx)))
-                .child(div().id("pg-tool-selected-file").px_2().py_1().role(Role::Label).aria_label(format!("Selected file: {filename}")).child(filename))
-                .child(div().px_2().child(if backup{"Choose a new destination. Existing files are never replaced."}else{"Restore targets the database. Select plain or custom format explicitly; the filename does not determine it."}))
-                .child(div().flex().flex_wrap().p_2().children([8,9,16].map(|index|self.button(index,cx))))
-                .child(div().id("pg-tool-status").px_2().role(Role::Label).aria_label(status.clone()).child(status))
-                .when_some(store_message,|body,message|body.child(div().id("pg-tool-observation-error").px_2().role(Role::Alert).child(message)))
+                .child(div().id("pg-tool-selected-file").px_2().py_1().font_family(crate::style::MONO).role(Role::Label).aria_label(format!("Selected file: {filename}")).child(filename))
+                .child(div().px_2().text_color(crate::style::dim()).child(if backup{"Choose a new destination. Existing files are never replaced."}else{"Restore targets the database. Select plain or custom format explicitly; the filename does not determine it."}))
+                .child(crate::ui::toolbar().children([8,9,16].map(|index|self.button(index,cx))))
+                .child(div().id("pg-tool-status").px_2().py(px(4.)).text_color(crate::style::dim()).role(Role::Label).aria_label(status.clone()).child(status))
+                .when_some(store_message,|body,message|body.child(div().px_2().py(px(4.)).child(crate::ui::shake(format!("pg-tool-observation-error-shake-{message}"),crate::ui::error_banner("pg-tool-observation-error",message)))))
                 .when_some(review,|body,review|body.child(div().id("pg-tool-review").p_2().role(Role::Label).aria_label(review.clone()).whitespace_normal().child(review)))
-                .child(div().flex().flex_wrap().p_2().children((10..16).map(|index|self.button(index,cx))))
-                .when(unresolved,|body|body.child(div().id("pg-tool-unknown-outcome").role(Role::Alert).p_2().child("An unknown restore outcome remains. Inspect the database, then acknowledge and dismiss that job before preparing another.")))
-                .child(div().px_2().child("Recent jobs · This session · Up to one hour and 32 finished jobs"))
+                .child(crate::ui::toolbar().children((10..16).map(|index|self.button(index,cx))))
+                .when(unresolved,|body|body.child(div().id("pg-tool-unknown-outcome").role(Role::Alert).p_2().text_color(crate::style::warn()).child("An unknown restore outcome remains. Inspect the database, then acknowledge and dismiss that job before preparing another.")))
+                .child(crate::ui::toolbar().child(crate::ui::section_label("Recent jobs")).child("This session · Up to one hour and 32 finished jobs"))
                 .child(div().id("pg-tool-jobs").role(Role::ListBox).aria_label("Recent backup and restore jobs").track_focus(&self.list).tab_index(0).min_h(px(28.))
-                    .when(jobs.is_empty(),|list|list.child("No observed jobs for this connection. Missing records do not establish whether a queued start was admitted."))
+                    .when(jobs.is_empty(),|list|list.child(div().px_2().text_color(crate::style::faint()).child("No observed jobs for this connection. Missing records do not establish whether a queued start was admitted.")))
                     .children(jobs.into_iter().enumerate().map(|(index,(attempt,label))|{
                         let selected=self.selected==Some(attempt);let weak=cx.weak_entity();
                         div().id(("pg-tool-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).px_2().py_1()
@@ -242,6 +233,6 @@ impl Render for PgToolView {
                     })))
                 .when_some(details,|body,details|body.child(div().id("pg-tool-details").role(Role::Label).aria_label(details.clone()).track_focus(&self.details).tab_index(0).p_2().whitespace_normal().child(details)))
                 .when(self.selected.is_some()&&self.selected_row(cx).is_none(),|body|body.child(div().p_2().child("Selected job is missing or expired. Refresh observation; another job has not been selected.")))
-                .child(div().p_2().child("Closing this setup leaves admitted jobs running. Cancel active jobs and wait for cleanup before changing connections or credentials. Client preflight reports tool availability; restore does not create a database or remap owners.")))
+                .child(div().p_2().text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::faint()).child("Closing this setup leaves admitted jobs running. Cancel active jobs and wait for cleanup before changing connections or credentials. Client preflight reports tool availability; restore does not create a database or remap owners.")))
     }
 }

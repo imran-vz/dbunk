@@ -390,28 +390,11 @@ impl WholeTableExportView {
             _ => name.into(),
         };
         let weak = cx.weak_entity();
-        div()
-            .id(("whole-export-action", index))
-            .role(Role::Button)
-            .aria_label(label.clone())
+        let primary = matches!(action, Action::Save);
+        crate::ui::tool_button(("whole-export-action", index), label, None, enabled, primary)
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|s| s.bg(crate::style::line()))
             // GPUI maps a focused Enter/Space pair to this click on key-up.
             // A separate key-down activation would run the action twice.
             .on_click(cx.listener(move |this, _, window, cx| this.click_button(index, window, cx)))
@@ -419,7 +402,6 @@ impl WholeTableExportView {
                 weak.update(cx, |this, cx| this.click_button(index, window, cx))
                     .ok();
             })
-            .child(label)
             .into_any_element()
     }
 }
@@ -446,7 +428,7 @@ impl Render for WholeTableExportView {
             .flex_col()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_xs()
+            .text_size(gpui::px(crate::style::FONT))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 this.focus_control(false, window, cx);
                 cx.stop_propagation();
@@ -457,11 +439,7 @@ impl Render for WholeTableExportView {
             }))
             .capture_key_down(cx.listener(|this, event, window, cx| this.key(event, window, cx)))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .p_2()
+                crate::ui::toolbar()
                     .children((0..ACTIONS.len()).map(|index| self.button(index, cx))),
             )
             .child(
@@ -470,6 +448,9 @@ impl Render for WholeTableExportView {
                     .role(Role::Label)
                     .aria_label(target.clone())
                     .px_2()
+                    .pt_1()
+                    .font_family(crate::style::MONO)
+                    .text_color(crate::style::dim())
                     .child(target),
             )
             .child(div().p_2().child(self.null.clone()))
@@ -479,6 +460,7 @@ impl Render for WholeTableExportView {
                     .role(Role::Label)
                     .aria_label(scope_disclosure)
                     .px_2()
+                    .text_color(crate::style::dim())
                     .child(scope_disclosure),
             )
             .child(
@@ -488,14 +470,16 @@ impl Render for WholeTableExportView {
                     .aria_label(format_disclosure)
                     .px_2()
                     .py_1()
+                    .text_color(crate::style::dim())
                     .child(format_disclosure),
             )
+            .child(crate::ui::grow())
             .child(
-                div()
+                crate::ui::status_line()
                     .id("whole-export-status")
+                    .text_color(crate::style::dim())
                     .role(Role::Status)
                     .aria_label(self.status.clone())
-                    .p_2()
                     .child(self.status.clone()),
             )
     }

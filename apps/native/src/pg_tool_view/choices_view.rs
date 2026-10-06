@@ -31,13 +31,7 @@ impl PgToolView {
             .id("pg-tool-choices")
             .flex()
             .flex_col()
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .p_2()
-                    .children((17..23).map(|index| self.button(index, cx))),
-            )
+            .child(crate::ui::toolbar().children((17..23).map(|index| self.button(index, cx))))
             .child(
                 div()
                     .id("pg-tool-choice-limits")

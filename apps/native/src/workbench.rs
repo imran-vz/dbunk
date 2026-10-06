@@ -2297,7 +2297,7 @@ impl Render for Workbench {
                             separator.into_iter().chain([self.button(label, Control::Transaction(control), index, self.can_control_transaction(control), selected, cx).into_any_element()])
                         })))
                     .when_some(self.transaction_error.as_ref(), |footer, message| {
-                        footer.child(div().id("transaction-error").role(Role::Alert).aria_label(message.clone()).px_2().pb_1().text_sm().text_color(crate::style::bad()).child(message.clone()))
+                        footer.child(div().px_2().pb_1().child(crate::ui::shake(format!("transaction-error-shake-{message}"), crate::ui::error_banner("transaction-error", message.clone()))))
                     }))
             })
             .when_some(self.query_changes.unavailable.clone(), |content, reason| content.child(div().id("query-editing-unavailable").role(Role::Status).aria_label(reason.clone()).px_2().py_1().text_sm().text_color(crate::style::dim()).border_t_1().border_color(crate::style::line_soft()).child(reason)))

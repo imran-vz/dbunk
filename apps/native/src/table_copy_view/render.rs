@@ -23,34 +23,16 @@ impl TableCopyView {
         };
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
-        div()
-            .id(("table-copy-action", index))
-            .role(Role::Button)
-            .aria_label(label.clone())
+        let primary = matches!(action, Action::Apply);
+        crate::ui::tool_button(("table-copy-action", index), label, None, enabled, primary)
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
                     .ok();
             })
-            .child(label)
             .into_any_element()
     }
     fn job_label(&self, id: TableCopyAttemptId, cx: &gpui::App) -> String {
@@ -304,9 +286,10 @@ impl Render for TableCopyView {
             .flex()
             .flex_col()
             .gap_2()
-            .child(div().flex().flex_wrap().gap_1().children(
-                (0..ACTIONS.len()).map(|index| self.button(index, cx)),
-            ))
+            .child(
+                crate::ui::toolbar()
+                    .children((0..ACTIONS.len()).map(|index| self.button(index, cx))),
+            )
             .child(label("table-copy-status", self.status.clone()))
             .child(label(
                 "table-copy-boundaries",
@@ -319,8 +302,10 @@ impl Render for TableCopyView {
             content = content.child(
                 div()
                     .flex()
+                    .items_center()
                     .gap_2()
-                    .child(FIELD_LABELS[index])
+                    .px_2()
+                    .child(div().text_color(crate::style::dim()).child(FIELD_LABELS[index]))
                     .child(div().flex_1().child(field.clone())),
             );
         }
@@ -395,6 +380,7 @@ impl Render for TableCopyView {
             .size_full()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(Self::key))
             .overflow_y_scroll()
             .track_scroll(&self.details_scroll)
@@ -406,6 +392,8 @@ fn label(id: &'static str, text: String) -> AnyElement {
         .id(id)
         .role(Role::Label)
         .aria_label(text.clone())
+        .px_2()
+        .whitespace_normal()
         .child(text)
         .into_any_element()
 }

@@ -172,28 +172,10 @@ impl ConnectionSettingsView {
             "Edit connection"
         };
         let weak = cx.weak_entity();
-        div()
-            .id(("connection-settings-action", index))
-            .role(Role::Button)
-            .aria_label(label)
+        crate::ui::tool_button(("connection-settings-action", index), label, None, enabled, false)
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
-            .border_1()
-            .border_color(crate::style::line())
-            .px_2()
-            .py_1()
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|s| s.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| {
                 window.focus(&this.buttons[index], cx);
                 this.activate(index, cx);
@@ -205,7 +187,6 @@ impl ConnectionSettingsView {
                 })
                 .ok();
             })
-            .child(label)
             .into_any_element()
     }
 }
@@ -231,15 +212,15 @@ impl Render for ConnectionSettingsView {
             self.editor = Some(SelectedEditor { editor, accessible });
         }
         let count = self.capture.as_ref().map_or(0, Capture::count);
-        div().id("connection-settings").key_context("ConnectionSettings").role(Role::Group).aria_label("Saved connection settings").track_focus(&self.root).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text()).text_xs()
+        div().id("connection-settings").key_context("ConnectionSettings").role(Role::Group).aria_label("Saved connection settings").track_focus(&self.root).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
             .capture_action(|_:&editor::actions::ToggleSoftWrap,_,cx|cx.stop_propagation())
             .capture_action(cx.listener(|this,_:&editor::actions::Cancel,_,cx|{this.activate(0,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&NextControl,window,cx|{this.focus_control(false,window,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this,_:&PreviousControl,window,cx|{this.focus_control(true,window,cx);cx.stop_propagation();}))
             .capture_key_down(cx.listener(|this,event,window,cx|this.key(event,window,cx)))
-            .child(div().flex().gap_2().p_2().child(self.button(0,cx)).child(self.button(1,cx)))
-            .child(div().id("connection-settings-status").role(Role::Status).aria_label(self.message).px_2().py_1().child(self.message))
-            .when(!self.current&&self.capture.is_some(),|view|view.child(div().px_2().child("Previous saved metadata retained; Edit disabled until metadata reload succeeds")))
+            .child(crate::ui::toolbar().child(self.button(0,cx)).child(self.button(1,cx)))
+            .child(div().id("connection-settings-status").role(Role::Status).aria_label(self.message).px_2().py_1().text_color(crate::style::dim()).child(self.message))
+            .when(!self.current&&self.capture.is_some(),|view|view.child(div().px_2().text_color(crate::style::warn()).child("Previous saved metadata retained; Edit disabled until metadata reload succeeds")))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().id("connection-settings-fields").role(Role::ListBox).aria_label("Saved connection fields; Up and Down select").track_focus(&self.list).tab_stop(count>0).tab_index(0).w(px(280.)).min_h_0().border_r_1().border_color(crate::style::line()).child(
                     uniform_list("connection-setting-rows",count,cx.processor(|this,range:std::ops::Range<usize>,_,cx|{range.filter_map(|index|{let label=this.capture.as_ref()?.label(index)?;let revision=this.revision;let weak=cx.weak_entity();Some(div().id(("connection-setting",index)).role(Role::ListBoxOption).aria_label(label).aria_selected(this.selected==index).h(px(28.)).px_2().truncate().bg(if this.selected==index{crate::style::hover()}else{crate::style::bg()}).on_click(cx.listener(move |this,_,window,cx|{this.select(revision,index,cx);window.focus(&this.list,cx);})).on_a11y_action(gpui::accesskit::Action::Click,move |_,_,cx|{weak.update(cx,|this,cx|this.select(revision,index,cx)).ok();}).child(label))}).collect()})).track_scroll(&self.scroll).h_full()))

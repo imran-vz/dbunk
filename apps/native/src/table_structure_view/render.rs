@@ -20,14 +20,18 @@ impl StructureView {
         let enabled = self.enabled(action);
         let weak = cx.weak_entity();
         let label: SharedString = label.into();
-        div()
-            .id(("structure-control", id))
+        let button = match selected {
+            Some(selected) => {
+                crate::ui::segment(("structure-control", id), label, selected, enabled)
+            }
+            None => crate::ui::tool_button(("structure-control", id), label, None, enabled, false),
+        };
+        button
             .role(if selected.is_some() {
                 Role::Tab
             } else {
                 Role::Button
             })
-            .aria_label(label.clone())
             .track_focus(focus)
             .tab_stop(enabled)
             .tab_index(0)
@@ -39,27 +43,11 @@ impl StructureView {
                     builder.parent_node().set_selected(selected);
                 }
             })
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .bg(if selected == Some(true) {
-                crate::style::hover()
-            } else {
-                crate::style::bg()
-            })
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
                     .ok();
             })
-            .child(label)
             .into_any_element()
     }
     fn rows(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -133,7 +121,7 @@ impl Render for StructureView {
             .min_h_0()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_xs()
+            .text_size(px(crate::style::FONT))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 this.focus_control(false, window, cx);
                 cx.stop_propagation();
@@ -156,7 +144,7 @@ impl Render for StructureView {
                 cx.listener(|this, event: &KeyDownEvent, window, cx| this.key(event, window, cx)),
             )
             .child(
-                div().flex().flex_wrap().gap_1().p_2().children(
+                crate::ui::toolbar().children(
                     ACTIONS
                         .iter()
                         .map(|(action, label)| self.button(*action, (*label).into(), cx)),
@@ -169,6 +157,8 @@ impl Render for StructureView {
                     .aria_label(header.clone())
                     .px_2()
                     .py_1()
+                    .font_family(crate::style::MONO)
+                    .text_color(crate::style::dim())
                     .child(header),
             )
             .when(!self.capture_current || !self.ready, |view| {
@@ -179,19 +169,15 @@ impl Render for StructureView {
                         .aria_label("Retained capture may be stale. Refresh before navigation.")
                         .px_2()
                         .py_1()
+                        .text_color(crate::style::warn())
                         .child("Retained capture may be stale. Refresh before navigation."),
                 )
             })
             .child(
-                div()
+                crate::ui::segmented()
                     .id("structure-sections")
                     .role(Role::TabList)
                     .aria_label("Table structure sections")
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .px_2()
-                    .py_1()
                     .children(Section::ALL.iter().enumerate().map(|(index, section)| {
                         self.button(
                             Action::Section(index),
@@ -208,6 +194,7 @@ impl Render for StructureView {
                         .aria_label(crate::table_structure_model::RELATION_ACL_SCOPE)
                         .px_2()
                         .py_1()
+                        .text_color(crate::style::dim())
                         .child(crate::table_structure_model::RELATION_ACL_SCOPE),
                 )
             })
@@ -234,7 +221,10 @@ impl Render for StructureView {
                             .border_color(crate::style::line())
                             .when(count == 0, |list| {
                                 list.child(
-                                    div().p_2().child(self.capture.empty_label(self.section)),
+                                    div()
+                                        .p_2()
+                                        .text_color(crate::style::faint())
+                                        .child(self.capture.empty_label(self.section)),
                                 )
                             })
                             .when(count > 0, |list| list.child(self.rows(cx))),
@@ -253,12 +243,11 @@ impl Render for StructureView {
                     ),
             )
             .child(
-                div()
+                crate::ui::status_line()
                     .id("structure-runtime-status")
+                    .text_color(crate::style::dim())
                     .role(Role::Status)
                     .aria_label(self.status.clone())
-                    .px_2()
-                    .py_1()
                     .child(self.status.clone()),
             )
             .when_some(self.message.as_ref(), |view, message| {
@@ -269,6 +258,7 @@ impl Render for StructureView {
                         .aria_label(message.clone())
                         .px_2()
                         .py_1()
+                        .text_color(crate::style::dim())
                         .child(message.clone()),
                 )
             })

@@ -24,14 +24,16 @@ impl OverviewView {
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
         let label: SharedString = label.into();
-        div()
-            .id(("overview-action", id))
+        let button = match selected {
+            Some(selected) => crate::ui::segment(("overview-action", id), label, selected, enabled),
+            None => crate::ui::tool_button(("overview-action", id), label, None, enabled, false),
+        };
+        button
             .role(if selected.is_some() {
                 Role::Tab
             } else {
                 Role::Button
             })
-            .aria_label(label.clone())
             .track_focus(focus)
             .tab_stop(enabled)
             .tab_index(0)
@@ -43,27 +45,11 @@ impl OverviewView {
                     builder.parent_node().set_selected(selected);
                 }
             })
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .bg(if selected == Some(true) {
-                crate::style::hover()
-            } else {
-                crate::style::bg()
-            })
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::line()))
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
                     .ok();
             })
-            .child(label)
             .into_any_element()
     }
     fn recent_section(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -110,8 +96,9 @@ impl OverviewView {
                         .h(px(24.))
                         .px_2()
                         .truncate()
-                        .text_color(if enabled { crate::style::text() } else { crate::style::dim() })
-                        .focus(|style| style.bg(crate::style::line()))
+                        .text_color(if enabled { crate::style::text() } else { crate::style::faint() })
+                        .when(enabled, |row| row.cursor_pointer().hover(|style| style.bg(crate::style::hover())))
+                        .focus(|style| style.bg(crate::style::hover()))
                         // GPUI activates a focused clickable element on
                         // Enter/Space key-up; no key-down duplicate.
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -136,7 +123,7 @@ impl OverviewView {
             .flex_col()
             .border_t_1()
             .border_color(crate::style::line())
-            .child(div().px_2().pt_1().text_sm().child("Recent queries"))
+            .child(div().px_2().pt_1().child(crate::ui::section_label("Recent queries")))
             .child(label("overview-recent-summary", summary))
             .child(
                 div()
@@ -210,30 +197,30 @@ impl Render for OverviewView {
             .map_or(0, |capture| capture.count(self.section));
         let scope_matches = self.scope_matches(cx);
         let capture_status = self.capture.as_ref().map(Capture::status);
-        div().id("overview-view").key_context("Overview").role(Role::Group).aria_label("Read-only PostgreSQL overview and statistics").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(crate::style::bg()).text_color(crate::style::text()).text_xs()
+        div().id("overview-view").key_context("Overview").role(Role::Group).aria_label("Read-only PostgreSQL overview and statistics").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
             .on_action(cx.listener(|this,_:&NextControl,window,cx|{if !this.composing(window,cx){this.focus_control(false,window,cx);cx.stop_propagation();}}))
             .on_action(cx.listener(|this,_:&PreviousControl,window,cx|{if !this.composing(window,cx){this.focus_control(true,window,cx);cx.stop_propagation();}}))
             .capture_action(|_:&editor::actions::ToggleSoftWrap,_,cx|cx.stop_propagation())
             .capture_action(cx.listener(|this,_:&editor::actions::Cancel,window,cx|{if !this.composing(window,cx){this.activate(Action::Back,window,cx);cx.stop_propagation();}}))
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|this.key(event,window,cx)))
-            .child(div().flex().flex_wrap().gap_1().p_2().children(ACTIONS.iter().map(|(action,label)|self.button(*action,(*label).into(),cx))))
-            .child(div().id("overview-connection-header").role(Role::Label).aria_label(format!("Connection: {}",self.header)).px_2().py_1().text_sm().child(format!("Connection: {}",self.header)))
-            .child(div().id("overview-scopes").role(Role::TabList).aria_label("Requested overview scope").flex().gap_1().px_2().children(Scope::ALL.iter().enumerate().map(|(index,scope)|self.button(Action::Scope(index),scope.label().into(),cx))))
-            .when(self.scope!=Scope::Database,|view|view.when_some(self.fields.first(),|view,field|view.child(div().flex().gap_2().px_2().py_1().child("Schema").child(div().flex_1().child(field.clone())))))
-            .when(self.scope==Scope::Relation,|view|view.when_some(self.fields.get(1),|view,field|view.child(div().flex().gap_2().px_2().py_1().child("Relation").child(div().flex_1().child(field.clone())))))
+            .child(crate::ui::toolbar().children(ACTIONS.iter().map(|(action,label)|self.button(*action,(*label).into(),cx))))
+            .child(div().id("overview-connection-header").role(Role::Label).aria_label(format!("Connection: {}",self.header)).px_2().py_1().text_sm().text_color(crate::style::dim()).child(format!("Connection: {}",self.header)))
+            .child(crate::ui::segmented().id("overview-scopes").role(Role::TabList).aria_label("Requested overview scope").children(Scope::ALL.iter().enumerate().map(|(index,scope)|self.button(Action::Scope(index),scope.label().into(),cx))))
+            .when(self.scope!=Scope::Database,|view|view.when_some(self.fields.first(),|view,field|view.child(div().flex().items_center().gap_2().px_2().py_1().child(div().text_color(crate::style::dim()).child("Schema")).child(div().flex_1().child(field.clone())))))
+            .when(self.scope==Scope::Relation,|view|view.when_some(self.fields.get(1),|view,field|view.child(div().flex().items_center().gap_2().px_2().py_1().child(div().text_color(crate::style::dim()).child("Relation")).child(div().flex_1().child(field.clone())))))
             .child(label("overview-boundaries","Estimates are not exact counts. Pages are fresh captures; only one page is retained. Sizes are per relation, not recursive partition totals.".into()))
             .when_some(capture_status,|view,status|view.child(label("overview-capture-identity",status)))
             .when(self.capture.is_some()&&(!self.capture_current||!self.ready),|view|view.child(label("overview-stale","Retained capture may be stale. Refresh preserves its identity. To inspect a replacement, return to Administration and Clear captures.".into())))
             .when(self.capture.is_some()&&!scope_matches,|view|view.child(label("overview-scope-changed","Controls differ from the captured scope. Refresh to inspect this scope; Next is disabled.".into())))
-            .child(div().id("overview-sections").role(Role::TabList).aria_label("Overview sections").flex().flex_wrap().gap_1().px_2().py_1().children(Section::ALL.iter().enumerate().map(|(index,section)|self.button(Action::Section(index),format!("{} ({})",section.label(),self.capture.as_ref().map_or(0,|capture|capture.count(*section))),cx))))
+            .child(crate::ui::segmented().id("overview-sections").role(Role::TabList).aria_label("Overview sections").children(Section::ALL.iter().enumerate().map(|(index,section)|self.button(Action::Section(index),format!("{} ({})",section.label(),self.capture.as_ref().map_or(0,|capture|capture.count(*section))),cx))))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().id("overview-list").role(Role::ListBox).aria_label(format!("{} captured {}; arrows select, Enter inspects",count,self.section.label())).track_focus(&self.list).tab_stop(true).tab_index(0).w(px(360.)).min_h_0().border_r_1().border_color(crate::style::line())
-                    .when(count==0,|view|view.child(div().p_2().child(self.capture.as_ref().map_or("Connect and refresh to capture statistics",|capture|capture.empty_label(self.section)))))
+                    .when(count==0,|view|view.child(div().p_2().text_color(crate::style::faint()).child(self.capture.as_ref().map_or("Connect and refresh to capture statistics",|capture|capture.empty_label(self.section)))))
                     .when(count>0,|view|view.child(self.rows(cx))))
                 .child(div().id("overview-selected-details").role(Role::Group).aria_label("Exact selected overview statistics, read only").flex_1().min_w_0().min_h_0().when_some(self.editor.as_ref(),|view,editor|view.child(editor.accessible.clone()))))
             .child(self.recent_section(cx))
             .child(label("overview-runtime-status",self.status.clone()))
-            .when_some(self.message.as_ref(),|view,message|view.child(label("overview-message",message.clone())))
+            .when_some(self.message.as_ref(),|view,message|view.child(div().px_2().py_1().child(crate::ui::shake(format!("overview-message-shake-{message}"),crate::ui::error_banner("overview-message",message.clone())))))
     }
 }
 fn label(id: &'static str, text: String) -> AnyElement {
@@ -243,6 +230,7 @@ fn label(id: &'static str, text: String) -> AnyElement {
         .aria_label(text.clone())
         .px_2()
         .py_1()
+        .text_color(crate::style::dim())
         .child(text)
         .into_any_element()
 }

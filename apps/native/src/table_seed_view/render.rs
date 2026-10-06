@@ -22,34 +22,16 @@ impl TableSeedView {
         };
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
-        div()
-            .id(("seed-action", index))
-            .role(Role::Button)
-            .aria_label(text.clone())
+        let primary = matches!(action, Action::Apply);
+        crate::ui::tool_button(("seed-action", index), text, None, enabled, primary)
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
                     .ok();
             })
-            .child(text)
             .into_any_element()
     }
 }
@@ -57,7 +39,7 @@ impl Render for TableSeedView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_fields(window, cx);
         let mut content=div().flex().flex_col().gap_2()
-            .child(div().flex().flex_wrap().gap_1().children((0..ACTIONS.len()).filter(|index|!matches!(ACTIONS[*index].0,Action::Mode|Action::SaveColumn)).map(|index|self.button(index,cx))))
+            .child(crate::ui::toolbar().children((0..ACTIONS.len()).filter(|index|!matches!(ACTIONS[*index].0,Action::Mode|Action::SaveColumn)).map(|index|self.button(index,cx))))
             .child(label("seed-status",self.status.clone()))
             .child(label("seed-boundaries","Generate rows on the backend in one destination transaction. DEFAULT leaves database defaults authoritative. Exact review freezes the seed and clock. Cancellation after COMMIT cannot undo rows. Jobs and uncertain intent survive tab closure.".into()));
         if let Some(message) = self.store.read(cx).message() {
@@ -68,7 +50,8 @@ impl Render for TableSeedView {
                 div()
                     .flex()
                     .gap_2()
-                    .child(FIELDS[index].0)
+                    .px_2()
+                    .child(div().text_color(crate::style::dim()).child(FIELDS[index].0))
                     .child(div().flex_1().child(field.clone())),
             );
         }
@@ -140,9 +123,7 @@ impl Render for TableSeedView {
                         ),
                     ))
                     .child(
-                        div()
-                            .flex()
-                            .gap_1()
+                        crate::ui::toolbar()
                             .child(self.button(4, cx))
                             .child(self.button(5, cx)),
                     );
@@ -157,7 +138,8 @@ impl Render for TableSeedView {
                         div()
                             .flex()
                             .gap_2()
-                            .child(FIELDS[index].0)
+                            .px_2()
+                            .child(div().text_color(crate::style::dim()).child(FIELDS[index].0))
                             .child(div().flex_1().child(field.clone())),
                     );
                 }
@@ -220,7 +202,7 @@ impl Render for TableSeedView {
         if let Some(text) = self.details(cx) {
             content = content.child(label("seed-attempt-details", text));
         }
-        div().id("seed-view").key_context("TableSeed").role(Role::Group).aria_label("PostgreSQL table seed").track_focus(&self.root).size_full().bg(crate::style::bg()).text_color(crate::style::text())
+        div().id("seed-view").key_context("TableSeed").role(Role::Group).aria_label("PostgreSQL table seed").track_focus(&self.root).size_full().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| this.focus_control(false, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousControl, window, cx| this.focus_control(true, window, cx)))
             .capture_key_down(cx.listener(Self::key)).overflow_y_scroll().track_scroll(&self.scroll)
@@ -232,6 +214,8 @@ fn label(id: &'static str, text: String) -> AnyElement {
         .id(id)
         .role(Role::Label)
         .aria_label(text.clone())
+        .px_2()
+        .whitespace_normal()
         .child(text)
         .into_any_element()
 }
