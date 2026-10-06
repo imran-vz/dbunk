@@ -104,7 +104,7 @@ impl TableChanges {
     /// Applying changes invalidates the old values. Explicit rerun remains a
     /// query-session action; mutation success never re-executes captured SQL.
     pub fn clear_query_rows(&mut self, cx: &mut Context<Self>) {
-        self.edit = None;
+        self.drop_edit();
         if let ChangeSource::Query { rows, .. } = &mut self.source {
             *rows = None;
         }

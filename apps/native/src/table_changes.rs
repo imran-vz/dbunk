@@ -1,18 +1,30 @@
 //! Staged table writes. Service tokens never survive editing or disconnection;
 //! apply cannot reach the worker until the workspace acknowledges its journal.
+//! Plan 032: edits open in the grid (inline) or in an anchored popover, and
+//! every save goes through an environment-aware review dialog. The backend
+//! NeedsConfirmation token remains the enforcement boundary (ADR-0024).
 use crate::{
     accessible_editor::AccessibleEditor,
     cell_value::{self, Kind},
     controller::{TableCommand, TableControls, TableMessage},
-    data_model::{ApplyResolution, ApplyTicket, MutationDraft, ReviewPlan},
+    data_model::{
+        Advance, ApplyResolution, ApplyTicket, CellRef, ConfirmationStep, DraftOverlay, EditSeed,
+        ModelError, MutationDraft, OverlayKey, Preconfirmation, ReviewPlan, RowMark, TablePolicy,
+        on_needs_confirmation,
+    },
 };
 use dbunk_lib::backend::{WorkspaceMutationDraft, WorkspaceTableState, data::*};
 use editor::Editor;
 use gpui::{
-    App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, SharedString,
-    Window, div, prelude::*, px,
+    AnyView, App, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent,
+    Pixels, Role, SharedString, Subscription, Window, div, prelude::*, px,
 };
-use std::{cell::Cell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
+use uuid::Uuid;
 
 pub enum ChangesEvent {
     Changed,
@@ -20,6 +32,56 @@ pub enum ChangesEvent {
     Applied,
     KeyChanged,
     FocusGrid(Vec<FocusHandle>),
+    /// An editor opened for `cell`. With `popover`, the host supplies the
+    /// cell's window bounds through `set_popover_anchor`.
+    EditOpened {
+        cell: CellRef,
+        source: usize,
+        popover: bool,
+    },
+    /// The editor closed (staged or cancelled); the host moves the grid
+    /// selection by `advance` and focuses the grid.
+    EditClosed {
+        advance: Advance,
+    },
+    /// Staged tints, inserted rows or the failed-change outline changed.
+    OverlayChanged,
+}
+/// Host-triggered actions (toolbar, overflow menu, notice strip).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ChangesCommand {
+    Review,
+    Discard,
+    RetryRecovery,
+    Reconcile,
+    CancelPending,
+    OpenVirtualKey,
+    OpenChangeList(Bounds<Pixels>),
+}
+/// The single notice the table shows above the grid, if any.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChangesNotice {
+    OutcomeUnknown,
+    Unrestored,
+    ReadOnlyWithStaged,
+    Unavailable(SharedString),
+}
+/// Cheap, render-ready state for the table toolbar and footer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChangesSummary {
+    pub staged: usize,
+    pub included: usize,
+    pub updates: usize,
+    pub inserts: usize,
+    pub deletes: usize,
+    pub pending: bool,
+    pub editing: bool,
+    /// A modal dialog (review, discard, virtual key) is open. The change-list
+    /// popover is not modal and does not count.
+    pub dialog_open: bool,
+    pub can_review: Result<(), SharedString>,
+    pub notice: Option<ChangesNotice>,
+    pub message: SharedString,
 }
 #[derive(Debug, Clone, Copy)]
 enum Action {
@@ -37,6 +99,8 @@ enum Action {
     Confirm,
     CancelReview,
     CancelPending,
+    ReviewAgain,
+    CloseDialog,
     Stage,
     BulkColumn,
     Null,
@@ -47,9 +111,15 @@ enum Action {
     Discard,
     ConfirmDiscard,
     CancelDiscard,
-    Include(uuid::Uuid, bool),
-    Remove(uuid::Uuid),
+    Include(Uuid, bool),
+    Remove(Uuid),
     Reconcile,
+}
+/// Where an open editor renders: in the grid cell, or in an anchored popover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Presentation {
+    Inline,
+    Popover,
 }
 struct Edit {
     row: Option<usize>,
@@ -65,13 +135,34 @@ struct Edit {
     context: batch_edit::EditContext,
     history: literal_guard::History,
     _literal_events: Option<gpui::Subscription>,
+    /// The grid cell this editor belongs to (table mode).
+    cell: Option<(CellRef, usize)>,
+    /// Staged insert whose column value this editor sets.
+    insert: Option<Uuid>,
+    /// The insert cell was DEFAULT and its text has not been edited.
+    default: bool,
+    presentation: Presentation,
+    /// Validation or staging refusal shown inside the popover editor.
+    error: Option<String>,
+}
+impl Edit {
+    fn multiline(&self) -> bool {
+        self.presentation == Presentation::Popover
+    }
 }
 enum Token {
     Review(MutationReview),
     Confirmation(MutationConfirmation),
+    /// Lets cx-free tests build a pending apply; never constructed otherwise.
+    #[cfg(test)]
+    Test,
 }
 mod array_view;
 mod batch_edit;
+mod cell_editor;
+mod change_list;
+mod key_dialog;
+mod review;
 mod source;
 use source::ChangeSource;
 mod literal_guard;
@@ -80,6 +171,45 @@ use crate::apply_flow::ApplyFlow;
 struct PendingApply {
     ticket: ApplyTicket,
     flow: ApplyFlow<Token>,
+    /// What the user's click acknowledged, recorded before dispatch.
+    preconfirmed: Preconfirmation,
+    /// Backend confirmations sent automatically for this apply (at most one).
+    auto_confirms: u32,
+}
+/// Overlay-layer content. At most one is open. The review dialog stays open
+/// from Review until the apply succeeds, fails or is cancelled.
+enum Dialog {
+    Review(review::ReviewDialog),
+    Discard,
+    VirtualKey,
+    ChangeList(Bounds<Pixels>),
+}
+impl Dialog {
+    fn modal(&self) -> bool {
+        !matches!(self, Self::ChangeList(_))
+    }
+}
+
+const NO_IDENTITY: &str = "No row identity. Choose ⋯ › Virtual key… to edit";
+const CHECKING: &str = "Checking editable columns…";
+
+/// Short, value-free text for a refused draft operation.
+fn model_error_text(error: ModelError) -> &'static str {
+    match error {
+        ModelError::Budget => "the 128-change or 4 MiB draft limit was reached",
+        ModelError::InvalidInput => "the row or column is no longer valid",
+        ModelError::InvalidReply => "the database reply was inconsistent",
+        ModelError::Unavailable => "this row or column cannot be changed",
+        ModelError::Stale => "the table changed; wait for the editable columns check",
+        ModelError::Applying => "an apply is in progress",
+        ModelError::AmbiguousIdentity => {
+            "the row identity is ambiguous; refresh the page before editing"
+        }
+        ModelError::OutcomeUnknown => "the previous apply outcome is unknown",
+    }
+}
+fn refusal(action: &str, error: ModelError) -> SharedString {
+    format!("{action} refused: {}", model_error_text(error)).into()
 }
 
 const KEY_BYTES: usize = 16 * 1024;
@@ -154,11 +284,20 @@ pub struct TableChanges {
     applying: Option<PendingApply>,
     edit: Option<Edit>,
     enabled: bool,
-    discard: bool,
     message: String,
     buttons: HashMap<String, FocusHandle>,
     visible_buttons: Vec<FocusHandle>,
     rendered_buttons: Vec<FocusHandle>,
+    policy: TablePolicy,
+    cell_editor: Option<(Entity<cell_editor::CellEditor>, Subscription)>,
+    dialog: Option<Dialog>,
+    overlay_cache: RefCell<Option<(OverlayKey, Option<Uuid>, Rc<DraftOverlay>)>>,
+    last_failed: Option<Uuid>,
+    popover_anchor: Option<Bounds<Pixels>>,
+    /// Why editing is unavailable after the last analysis, if it is.
+    unavailable: Option<SharedString>,
+    /// Focus the open dialog's first control on the next render.
+    focus_request: bool,
 }
 impl EventEmitter<ChangesEvent> for TableChanges {}
 impl TableChanges {
@@ -208,11 +347,18 @@ impl TableChanges {
             applying: None,
             edit: None,
             enabled: true,
-            discard: false,
             message: String::new(),
             buttons: HashMap::new(),
             visible_buttons: Vec::new(),
             rendered_buttons: Vec::new(),
+            policy: TablePolicy::UNKNOWN,
+            cell_editor: None,
+            dialog: None,
+            overlay_cache: RefCell::new(None),
+            last_failed: None,
+            popover_anchor: None,
+            unavailable: None,
+            focus_request: false,
         };
         view.restore_intent();
         view
@@ -242,7 +388,10 @@ impl TableChanges {
         self.draft.as_ref().map_or(0, MutationDraft::len)
     }
     pub fn navigation_blocked(&self) -> bool {
-        self.pending() || self.edit.is_some() || self.key.editing
+        self.pending() || self.edit.is_some() || self.key.editing || self.modal_open()
+    }
+    fn modal_open(&self) -> bool {
+        self.dialog.as_ref().is_some_and(Dialog::modal)
     }
     pub fn pending(&self) -> bool {
         self.applying.is_some()
@@ -261,12 +410,16 @@ impl TableChanges {
         controls: Option<TableControls>,
         cx: &mut Context<Self>,
     ) {
-        // Captured bulk/duplicate pages must drop before their source lease.
-        self.edit = None;
+        // Captured bulk pages must drop before their source lease.
+        self.drop_edit();
         self.finish_work();
         self.page = page;
+        self.overlay_cache.borrow_mut().take();
         self.controls = controls;
         self.reset_key();
+        if matches!(self.dialog, Some(Dialog::VirtualKey | Dialog::ChangeList(_))) {
+            self.dialog = None;
+        }
         self.discard_review();
         if let Some(draft) = &mut self.draft {
             draft.invalidate();
@@ -276,7 +429,25 @@ impl TableChanges {
         if self.page.is_some() && self.controls.is_some() {
             self.analyze(cx);
         }
+        cx.emit(ChangesEvent::OverlayChanged);
         cx.notify();
+    }
+    /// Drops an open editor without staging or emitting. Callers that close an
+    /// edit the user can see use `close_edit`.
+    fn drop_edit(&mut self) {
+        self.edit = None;
+        self.cell_editor = None;
+        self.popover_anchor = None;
+    }
+    /// Closes the open editor, returns focus to the grid and tells the host
+    /// how to move the selection.
+    fn close_edit(&mut self, advance: Advance, cx: &mut Context<Self>) {
+        if self.edit.is_none() {
+            return;
+        }
+        self.return_focus(cx);
+        self.drop_edit();
+        cx.emit(ChangesEvent::EditClosed { advance });
     }
     fn reset_key(&mut self) {
         self.budget
@@ -430,11 +601,16 @@ impl TableChanges {
         }
         true
     }
+    /// Drops an unapplied review. A review dialog that is not applying and
+    /// shows no failure closes with it, so it never outlives its token.
     fn discard_review(&mut self) {
         self.review = None;
         self.reviewing = None;
         if self.applying.is_none() {
             self.reserve(true, 0);
+            if matches!(&self.dialog, Some(Dialog::Review(dialog)) if dialog.failure.is_none()) {
+                self.dialog = None;
+            }
         }
     }
     fn return_focus(&self, cx: &mut Context<Self>) {
@@ -462,6 +638,7 @@ impl TableChanges {
         }
         self.reserve(false, 0);
         self.discard_review();
+        self.unavailable = None;
         let id = self.next();
         let payload = AnalyzeResultSetPayload {
             connection_id: String::new(),
@@ -470,6 +647,7 @@ impl TableChanges {
             source: match self.source.analysis_source() {
                 Ok(source) => source,
                 Err(error) => {
+                    self.unavailable = Some(error.clone().into());
                     self.message = error;
                     cx.notify();
                     return;
@@ -492,13 +670,31 @@ impl TableChanges {
         cx.notify();
     }
     pub fn disconnected(&mut self, cx: &mut Context<Self>) {
+        let editing = self.edit.is_some();
+        if self.disconnect_state() {
+            cx.emit(ChangesEvent::Changed);
+        }
+        if editing {
+            cx.emit(ChangesEvent::EditClosed {
+                advance: Advance::Stay,
+            });
+        }
+        cx.emit(ChangesEvent::OverlayChanged);
+        cx.notify();
+    }
+    /// The cx-free part of `disconnected`. A dispatched apply settles as
+    /// ConnectionLost, which leaves its outcome unknown; nothing is retried.
+    /// Returns whether a pending apply was settled.
+    fn disconnect_state(&mut self) -> bool {
         self.controls = None;
         self.reset_key();
         self.analysis = None;
         self.analyzing = None;
         self.reviewing = None;
         self.review = None;
-        self.edit = None;
+        self.drop_edit();
+        self.dialog = None;
+        let mut settled = false;
         if let Some(pending) = self.applying.take()
             && let Some(draft) = &mut self.draft
         {
@@ -508,7 +704,7 @@ impl TableChanges {
                 ResultMutationError::Cancelled
             };
             let _ = draft.finish_apply(pending.ticket, Err(error));
-            cx.emit(ChangesEvent::Changed);
+            settled = true;
         }
         if let Some(draft) = &mut self.draft {
             draft.invalidate();
@@ -516,8 +712,10 @@ impl TableChanges {
         self.reserve(true, 0);
         self.reserve(false, 0);
         self.finish_work();
-        cx.notify();
+        settled
     }
+    /// Legacy cell entry point. Table tabs route through `begin_edit`; query
+    /// results keep their popover editor.
     pub fn edit_cell(
         &mut self,
         row: usize,
@@ -525,6 +723,15 @@ impl TableChanges {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.is_query() {
+            if let Err(reason) =
+                self.begin_edit(CellRef::Page(row), column, EditSeed::Keep, window, cx)
+            {
+                self.message = reason.to_string();
+                cx.notify();
+            }
+            return;
+        }
         if !self.can_edit() || !self.admit_work() {
             cx.notify();
             return;
@@ -594,20 +801,36 @@ impl TableChanges {
         }
         let text = value.clone().unwrap_or_default();
         let null = value.is_none();
-        self.open_edit((Some(row), Some(name), table_index), text, null, window, cx);
+        self.open_edit(
+            (Some(row), Some(name), table_index),
+            text,
+            null,
+            Presentation::Popover,
+            window,
+            cx,
+        );
     }
+    /// Legacy JSON insert editor. Table tabs use `add_row` and the insert band.
     pub fn insert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_query() || !self.can_edit() || !self.admit_work() {
+        if self.is_query() || !self.can_edit() || self.edit.is_some() || !self.admit_work() {
             cx.notify();
             return;
         }
-        self.open_edit((None, None, 0), "{}".into(), false, window, cx);
+        self.open_edit(
+            (None, None, 0),
+            "{}".into(),
+            false,
+            Presentation::Popover,
+            window,
+            cx,
+        );
     }
     fn open_edit(
         &mut self,
         (row, column, table_index): (Option<usize>, Option<String>, usize),
         mut text: String,
         null: bool,
+        presentation: Presentation,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -631,7 +854,7 @@ impl TableChanges {
             text = "{}".into();
         }
         let raw = kind == Some(Kind::Array) && cell_value::parse_array(&text).is_err();
-        let multiline = kind.is_some() || row.is_none();
+        let multiline = presentation == Presentation::Popover;
         let history = literal_guard::History::new(text.clone());
         let editor = cx.new(|cx| {
             let mut editor = if multiline {
@@ -673,9 +896,14 @@ impl TableChanges {
             context: batch_edit::EditContext::Ordinary,
             history,
             _literal_events: None,
+            cell: None,
+            insert: None,
+            default: false,
+            presentation,
+            error: None,
         });
         self.install_literal_guard(window, cx);
-        if kind == Some(Kind::Array) && !raw {
+        if kind == Some(Kind::Array) && !raw && multiline {
             self.open_array(window, cx);
         }
         cx.notify();
@@ -801,30 +1029,89 @@ impl TableChanges {
         self.changed(result.map(|_| ()), cx);
     }
     fn can_edit(&self) -> bool {
-        self.enabled
-            && self.unrestored.is_none()
-            && !self.pending()
-            && !self.key.editing
-            && self.controls.is_some()
-            && self.analysis.is_some()
+        self.can_edit_now().is_ok()
     }
-    fn changed(
-        &mut self,
-        result: Result<(), crate::data_model::ModelError>,
-        cx: &mut Context<Self>,
-    ) {
+    /// Why a new edit, insert, delete or duplicate is refused right now. The
+    /// first applicable reason wins, so read-only always explains itself.
+    pub fn can_edit_now(&self) -> Result<(), SharedString> {
+        if let Some(reason) = self.policy.read_only_reason() {
+            return Err(reason.into());
+        }
+        if self.unrestored.is_some() {
+            return Err("Saved changes need recovery before editing. Retry or discard them".into());
+        }
+        if self.applying.is_none()
+            && self
+                .draft
+                .as_ref()
+                .is_some_and(MutationDraft::outcome_unknown)
+        {
+            return Err(
+                "The previous apply outcome is unknown. Refresh, then Mark resolved".into(),
+            );
+        }
+        if self.applying.is_some() || self.reviewing.is_some() {
+            return Err("Changes are being reviewed or applied".into());
+        }
+        if self.modal_open() {
+            return Err("Close the open dialog first".into());
+        }
+        if self.key.editing || self.key.pending.is_some() || self.key.refreshing {
+            return Err("The virtual key is being updated".into());
+        }
+        if !self.enabled {
+            return Err("The table is busy".into());
+        }
+        if self.controls.is_none() {
+            return Err("The table is disconnected".into());
+        }
+        if self.analyzing.is_some() {
+            return Err(CHECKING.into());
+        }
+        if self.analysis.is_none() || self.draft.is_none() {
+            return Err(self.unavailable.clone().unwrap_or_else(|| CHECKING.into()));
+        }
+        Ok(())
+    }
+    /// Gate for removing or excluding staged changes. Unlike editing, this
+    /// needs no fresh analysis and stays available on read-only connections.
+    fn can_select_now(&self) -> Result<(), SharedString> {
+        if self.unrestored.is_some() {
+            return Err("Saved changes need recovery first".into());
+        }
+        if self.applying.is_some() || self.reviewing.is_some() {
+            return Err("Changes are being reviewed or applied".into());
+        }
+        if self.modal_open() {
+            return Err("Close the open dialog first".into());
+        }
+        if self.edit.is_some() {
+            return Err("Save or cancel the open edit first".into());
+        }
+        if !self.enabled {
+            return Err("The table is busy".into());
+        }
+        Ok(())
+    }
+    fn changed(&mut self, result: Result<(), ModelError>, cx: &mut Context<Self>) {
         match result {
             Ok(()) => {
                 self.discard_review();
                 self.message = "Changes staged".into();
                 cx.emit(ChangesEvent::Changed);
+                cx.emit(ChangesEvent::OverlayChanged);
             }
-            Err(error) => self.message = format!("Change refused: {error:?}"),
+            Err(error) => {
+                self.message = format!("Change refused: {}", model_error_text(error));
+            }
         };
         self.finish_work();
         cx.notify();
     }
-    fn stage(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Validates and stages the open editor. On success the editor closes and
+    /// the host moves the selection by `advance`; on failure the draft text
+    /// stays in the editor with the reason.
+    fn stage(&mut self, advance: Advance, window: &mut Window, cx: &mut Context<Self>) {
         if self.composition_active(window, cx) {
             self.message = "Finish composing the value before staging".into();
             cx.notify();
@@ -834,34 +1121,36 @@ impl TableChanges {
             edit.context
                 .current(self.page.as_ref(), self.analysis.as_ref())
         }) {
-            self.message = "Source changed; reopen this edit on the current page".into();
-            cx.notify();
+            self.edit_refused("Source changed; reopen this edit on the current page", cx);
             return;
         }
         let Some(edit) = &self.edit else {
             return;
         };
         if edit.editor.read(cx).buffer().read(cx).len(cx).0 > cell_value::MAX_VALUE_BYTES {
-            self.message = "Cell input exceeds 1 MiB; text was retained".into();
-            cx.notify();
+            self.edit_refused("Cell input exceeds 1 MiB; text was retained", cx);
             return;
         }
+        // An element edit in the array view also replaces a DEFAULT insert cell.
+        let mut default = edit.default;
         let text = if !edit.null
             && let Some(array) = edit.array.clone()
         {
             match array.update(cx, |array, cx| array.replacement(window, cx)) {
-                Ok(Some(text)) => text,
+                Ok(Some(text)) => {
+                    default = false;
+                    text
+                }
                 Ok(None) => edit.editor.read(cx).text(cx),
                 Err(error) => {
-                    self.message = error;
-                    cx.notify();
+                    self.edit_refused(&error, cx);
                     return;
                 }
             }
         } else {
             edit.editor.read(cx).text(cx)
         };
-        if !edit.null && !edit.raw {
+        if !edit.null && !edit.raw && !default {
             let validation = match edit.kind {
                 Some(Kind::Json) => cell_value::validate_json(&text),
                 Some(Kind::Array) => cell_value::parse_array(&text).map(|_| ()),
@@ -869,8 +1158,7 @@ impl TableChanges {
                 None => Ok(()),
             };
             if let Err(error) = validation {
-                self.message = error.to_string();
-                cx.notify();
+                self.edit_refused(&error.to_string(), cx);
                 return;
             }
         }
@@ -879,53 +1167,74 @@ impl TableChanges {
             return;
         }
         let rows = self.captured_rows();
-        let result =
-            if let (Some(row), Some(column), Some(rows)) = (edit.row, edit.column.as_ref(), rows) {
-                let Some(values) = rows.row(row) else {
-                    self.message = "Source row is unavailable".into();
-                    cx.notify();
-                    return;
-                };
-                self.draft
-                    .as_mut()
-                    .ok_or(crate::data_model::ModelError::Unavailable)
-                    .and_then(|draft| {
-                        draft.stage_update(
-                            edit.table_index,
-                            values,
-                            rows.hidden(row),
-                            rows.truncated(),
-                            vec![MutationValue {
-                                column: column.clone(),
-                                value: if edit.null { None } else { Some(text) },
-                            }],
-                        )
-                    })
+        let result = if let (Some(id), Some(column)) = (edit.insert, edit.column.as_ref()) {
+            // DEFAULT stays omitted until the text is edited; NULL is explicit.
+            let value = if default {
+                None
+            } else if edit.null {
+                Some(None)
             } else {
-                if self.is_query() {
-                    self.message = "Source result is unavailable; no changes staged".into();
-                    cx.notify();
+                Some(Some(text))
+            };
+            self.draft
+                .as_mut()
+                .ok_or(ModelError::Unavailable)
+                .and_then(|draft| draft.set_insert_value(id, column, value))
+        } else if let (Some(row), Some(column), Some(rows)) =
+            (edit.row, edit.column.as_ref(), rows)
+        {
+            let Some(values) = rows.row(row) else {
+                self.edit_refused("Source row is unavailable", cx);
+                return;
+            };
+            self.draft
+                .as_mut()
+                .ok_or(ModelError::Unavailable)
+                .and_then(|draft| {
+                    draft.stage_update(
+                        edit.table_index,
+                        values,
+                        rows.hidden(row),
+                        rows.truncated(),
+                        vec![MutationValue {
+                            column: column.clone(),
+                            value: if edit.null { None } else { Some(text) },
+                        }],
+                    )
+                })
+        } else {
+            if self.is_query() {
+                self.edit_refused("Source result is unavailable; no changes staged", cx);
+                return;
+            }
+            match insert_values(&text) {
+                Ok(values) => self
+                    .draft
+                    .as_mut()
+                    .ok_or(ModelError::Unavailable)
+                    .and_then(|draft| draft.stage_insert(0, values).map(|_| ())),
+                Err(error) => {
+                    self.edit_refused(&error, cx);
                     return;
                 }
-                let values = insert_values(&text);
-                match values {
-                    Ok(values) => self
-                        .draft
-                        .as_mut()
-                        .ok_or(crate::data_model::ModelError::Unavailable)
-                        .and_then(|draft| draft.stage_insert(0, values).map(|_| ())),
-                    Err(error) => {
-                        self.message = error;
-                        cx.notify();
-                        return;
-                    }
-                }
-            };
-        if result.is_ok() {
-            self.return_focus(cx);
-            self.edit = None;
+            }
+        };
+        let staged = result.is_ok();
+        if staged {
+            self.close_edit(advance, cx);
         }
         self.changed(result, cx);
+        if !staged && let Some(edit) = &mut self.edit {
+            edit.error = Some(self.message.clone());
+        }
+    }
+    /// Keeps the editor open with its draft text and shows why it was refused.
+    fn edit_refused(&mut self, message: &str, cx: &mut Context<Self>) {
+        self.message = message.to_owned();
+        if let Some(edit) = &mut self.edit {
+            edit.error = Some(message.to_owned());
+        }
+        cx.notify();
     }
     fn format_value(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.composition_active(window, cx) {
@@ -1014,8 +1323,11 @@ impl TableChanges {
         self.finish_work();
         cx.notify();
     }
-    fn prepare_apply(&mut self, cx: &mut Context<Self>) {
-        if self.unrestored.is_some() {
+    /// Starts the durable apply. `preconfirmed` records what the user's click
+    /// acknowledged; it only ever authorizes one automatic backend
+    /// confirmation for this apply.
+    fn prepare_apply(&mut self, preconfirmed: Preconfirmation, cx: &mut Context<Self>) {
+        if self.unrestored.is_some() || self.policy.read_only {
             return;
         }
         let Some((plan, token)) = self.review.take() else {
@@ -1024,7 +1336,7 @@ impl TableChanges {
         let result = self
             .draft
             .as_mut()
-            .ok_or(crate::data_model::ModelError::Unavailable)
+            .ok_or(ModelError::Unavailable)
             .and_then(|draft| draft.begin_apply(&plan));
         match result {
             Ok(ticket) => {
@@ -1032,15 +1344,21 @@ impl TableChanges {
                 self.applying = Some(PendingApply {
                     ticket,
                     flow: ApplyFlow::new(id, Token::Review(token)),
+                    preconfirmed,
+                    auto_confirms: 0,
                 });
+                self.last_failed = None;
                 self.message = "Saving change recovery record".into();
                 cx.emit(ChangesEvent::Changed);
+                cx.emit(ChangesEvent::OverlayChanged);
                 cx.emit(ChangesEvent::PersistApply(id));
-                self.return_focus(cx);
             }
             Err(error) => {
                 self.reserve(true, 0);
-                self.message = format!("Apply refused: {error:?}");
+                self.message = format!("Apply refused: {}", model_error_text(error));
+                if let Some(Dialog::Review(dialog)) = &mut self.dialog {
+                    dialog.failure = Some(self.message.clone());
+                }
             }
         };
         cx.notify();
@@ -1064,6 +1382,8 @@ impl TableChanges {
         let command = match token {
             Token::Review(review) => TableCommand::Apply(id, review),
             Token::Confirmation(confirmation) => TableCommand::Confirm(id, confirmation),
+            #[cfg(test)]
+            Token::Test => return,
         };
         match self
             .controls
@@ -1078,8 +1398,7 @@ impl TableChanges {
     }
     pub fn cancel(&mut self, cx: &mut Context<Self>) -> bool {
         if self.edit.is_some() {
-            self.return_focus(cx);
-            self.edit = None;
+            self.close_edit(Advance::Stay, cx);
             self.finish_work();
             cx.notify();
             return false;
@@ -1102,6 +1421,10 @@ impl TableChanges {
             let _ = draft.finish_apply(pending.ticket, Err(ResultMutationError::Cancelled));
         }
         self.reserve(true, 0);
+        // The review dialog stays open and explains why nothing was sent.
+        if let Some(Dialog::Review(dialog)) = &mut self.dialog {
+            dialog.failure = Some(message.clone());
+        }
         self.message = message;
         self.return_focus(cx);
         cx.emit(ChangesEvent::Changed);
@@ -1161,13 +1484,13 @@ impl TableChanges {
                     Ok(analysis) => {
                         if let AnalysisStatement::NotAnalyzable { reason } = &analysis.statement {
                             self.reserve(false, 0);
-                            self.message = match reason {
+                            self.set_unavailable(match reason {
                                 NotAnalyzableReason::SessionDependentTypes => "This query includes types that need execution rendering context. Edit the row in a table tab".into(),
                                 NotAnalyzableReason::PossibleTempShadowing => "Temporary tables may change this query's target. Result editing is unavailable".into(),
                                 NotAnalyzableReason::NoTableOrigins | NotAnalyzableReason::NoProjectedColumns => "This result has no editable base-table columns".into(),
                                 NotAnalyzableReason::MultiStatement => "Result editing requires one SQL statement".into(),
                                 NotAnalyzableReason::Database { message, .. } => format!("Result editing unavailable: {message}"),
-                            };
+                            });
                             cx.notify();
                             return;
                         }
@@ -1179,8 +1502,9 @@ impl TableChanges {
                             false,
                             crate::results::encoded_size(&analysis).saturating_mul(2),
                         ) {
-                            self.message =
-                                "Analysis retention budget reached; clear another tab".into();
+                            self.set_unavailable(
+                                "Analysis retention budget reached; clear another tab".into(),
+                            );
                             cx.notify();
                             return;
                         }
@@ -1196,13 +1520,15 @@ impl TableChanges {
                             })
                         {
                             self.reserve(false, 0);
-                            self.message = "Recovered query guards need execution encoding metadata; saved changes are retained for export and reconciliation".into();
+                            self.set_unavailable("Recovered query guards need execution encoding metadata; saved changes are retained for export and reconciliation".into());
                             cx.notify();
                             return;
                         }
                         if !compatible {
                             self.reserve(false, 0);
-                            self.message = "Table structure changed; refresh before editing".into();
+                            self.set_unavailable(
+                                "Table structure changed; refresh before editing".into(),
+                            );
                             cx.notify();
                             return;
                         }
@@ -1215,16 +1541,21 @@ impl TableChanges {
                         match result {
                             Ok(()) => {
                                 self.analysis = Some(analysis);
+                                self.unavailable = None;
                                 self.message = String::new();
                             }
                             Err(error) => {
                                 self.reserve(false, 0);
-                                self.message = format!("Editing unavailable: {error:?}");
+                                self.set_unavailable(format!(
+                                    "Editing unavailable: {}",
+                                    model_error_text(error)
+                                ));
                             }
                         }
                     }
-                    Err(error) => self.message = format!("Analysis failed: {error:?}"),
+                    Err(error) => self.set_unavailable(format!("Analysis failed: {error:?}")),
                 }
+                cx.emit(ChangesEvent::OverlayChanged);
                 self.load_key(cx);
             }
             TableMessage::Reviewed(id, result)
@@ -1243,16 +1574,23 @@ impl TableChanges {
                                 .saturating_add(crate::results::encoded_size(plan.plan())),
                         ) {
                             self.reserve(true, 0);
-                            self.message="Review exceeds its retention budget; select fewer changes or clear another tab".into();
+                            self.review_failed("Review exceeds its retention budget; select fewer changes or clear another tab".into());
                             cx.notify();
                             return;
                         }
+                        self.reviewed(&plan, token.preview());
                         self.review = Some((plan, token));
-                        self.message = "Review the SQL and bound values before applying".into();
+                        self.message = "Review the changes and SQL before applying".into();
                     }
                     Err(error) => {
                         self.reserve(true, 0);
-                        self.message = format!("Review failed: {error:?}");
+                        let message = match &error {
+                            DataError::Mutation(error) => {
+                                crate::data_model::apply_error_message(error)
+                            }
+                            error => format!("{error:?}"),
+                        };
+                        self.review_failed(format!("Review failed: {message}"));
                     }
                 }
             }
@@ -1263,6 +1601,14 @@ impl TableChanges {
             {
                 match result {
                     Ok(MutationSubmission::NeedsConfirmation(token)) => {
+                        if self.policy.read_only {
+                            self.cancel_pending(
+                                "Connection is read-only; nothing was applied and changes are retained"
+                                    .into(),
+                                cx,
+                            );
+                            return;
+                        }
                         if !self.reserve(true, token.retained_bytes()) {
                             self.cancel_pending(
                                 "Confirmation exceeds its retention budget; changes retained"
@@ -1271,10 +1617,7 @@ impl TableChanges {
                             );
                             return;
                         }
-                        let pending = self.applying.as_mut().unwrap();
-                        pending.flow.needs_confirmation(Token::Confirmation(*token));
-                        self.message =
-                            "Safe Mode requires confirmation of these exact changes".into();
+                        self.needs_confirmation(Token::Confirmation(*token), cx);
                     }
                     result => {
                         let pending = self.applying.take().unwrap();
@@ -1288,23 +1631,30 @@ impl TableChanges {
                             match draft.finish_apply(pending.ticket, result) {
                                 Ok(ApplyResolution::Applied) => {
                                     self.message = "Changes applied".into();
+                                    self.last_failed = None;
+                                    if matches!(self.dialog, Some(Dialog::Review(_))) {
+                                        self.dialog = None;
+                                    }
+                                    self.return_focus(cx);
                                     cx.emit(ChangesEvent::Applied);
                                 }
                                 Ok(ApplyResolution::Failed { change, error }) => {
-                                    self.message = format!(
-                                        "Apply failed{}: {error:?}",
-                                        change.map_or(String::new(), |id| format!(
-                                            " for change {id}"
-                                        ))
-                                    )
+                                    self.last_failed = change;
+                                    self.review_failed(format!(
+                                        "Apply failed: {}",
+                                        crate::data_model::apply_error_message(&error)
+                                    ));
                                 }
                                 Err(error) => {
-                                    self.message =
-                                        format!("Apply outcome requires inspection: {error:?}")
+                                    self.review_failed(format!(
+                                        "Apply outcome requires inspection: {}",
+                                        model_error_text(error)
+                                    ));
                                 }
                             }
                         }
                         cx.emit(ChangesEvent::Changed);
+                        cx.emit(ChangesEvent::OverlayChanged);
                     }
                 }
             }
@@ -1312,6 +1662,10 @@ impl TableChanges {
         }
         self.finish_work();
         cx.notify();
+    }
+    fn set_unavailable(&mut self, message: String) {
+        self.unavailable = Some(message.clone().into());
+        self.message = message;
     }
     fn activate(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
         if !self.enabled {
@@ -1373,33 +1727,16 @@ impl TableChanges {
             }
             Action::KeySave => self.write_key(false, cx),
             Action::KeyClear => self.write_key(true, cx),
-            Action::Review if !self.pending() => self.request_review(cx),
-            Action::Apply if !self.pending() => self.prepare_apply(cx),
-            Action::Confirm => {
-                if self
-                    .applying
-                    .as_ref()
-                    .is_some_and(|pending| pending.flow.confirming())
-                {
-                    let id = self.next();
-                    if self.applying.as_mut().unwrap().flow.confirm(id) {
-                        self.return_focus(cx);
-                        cx.emit(ChangesEvent::PersistApply(id));
-                    }
-                }
+            Action::Review if !self.pending() => self.open_review(window, cx),
+            Action::ReviewAgain if !self.pending() => {
+                self.dialog = None;
+                self.open_review(window, cx);
             }
-            Action::CancelReview => {
-                if self
-                    .applying
-                    .as_ref()
-                    .is_some_and(|pending| !pending.flow.dispatched())
-                {
-                    self.cancel_pending("Confirmation cancelled; changes retained".into(), cx);
-                } else if self.applying.is_none() {
-                    self.discard_review();
-                    self.return_focus(cx);
-                }
-            }
+            // The gate is recomputed here from the live policy; a rendered
+            // button never authorizes by itself.
+            Action::Apply | Action::Confirm => self.apply_clicked(cx),
+            Action::CancelReview => self.cancel_review(cx),
+            Action::CloseDialog => self.close_dialog(cx),
             Action::CancelPending if self.pending() => {
                 if self.cancel(cx)
                     && let Some(controls) = &self.controls
@@ -1408,7 +1745,7 @@ impl TableChanges {
                     self.message = "Stopping change operation; waiting for its outcome".into();
                 }
             }
-            Action::Stage if !self.pending() => self.stage(window, cx),
+            Action::Stage if !self.pending() => self.stage(Advance::Stay, window, cx),
             Action::BulkColumn if !self.pending() => self.cycle_bulk_column(window, cx),
             Action::FormatValue if !self.pending() => self.format_value(window, cx),
             Action::CopyLiteral => {
@@ -1427,32 +1764,34 @@ impl TableChanges {
             Action::Null => {
                 if let Some(edit) = &mut self.edit {
                     edit.null = !edit.null;
+                    edit.default = false;
+                    edit.error = None;
                 }
             }
-            Action::CancelEdit => {
-                self.return_focus(cx);
-                self.edit = None;
+            Action::CancelEdit => self.close_edit(Advance::Stay, cx),
+            Action::Discard if self.applying.is_none() && self.reviewing.is_none() => {
+                self.dialog = Some(Dialog::Discard);
+                self.focus_request = true;
             }
-            Action::Discard if self.applying.is_none() => self.discard = true,
             Action::CancelDiscard => {
                 self.return_focus(cx);
-                self.discard = false;
+                if matches!(self.dialog, Some(Dialog::Discard)) {
+                    self.dialog = None;
+                }
             }
-            Action::Include(id, included)
-                if !self.pending() && self.edit.is_none() && self.admit_work() =>
-            {
+            Action::Include(id, included) if self.can_select_now().is_ok() && self.admit_work() => {
                 let result = self
                     .draft
                     .as_mut()
-                    .ok_or(crate::data_model::ModelError::Unavailable)
+                    .ok_or(ModelError::Unavailable)
                     .and_then(|draft| draft.include(id, included));
                 self.changed(result, cx);
             }
-            Action::Remove(id) if !self.pending() && self.edit.is_none() && self.admit_work() => {
+            Action::Remove(id) if self.can_select_now().is_ok() && self.admit_work() => {
                 let result = self
                     .draft
                     .as_mut()
-                    .ok_or(crate::data_model::ModelError::Unavailable)
+                    .ok_or(ModelError::Unavailable)
                     .and_then(|draft| draft.remove(id));
                 if result.is_ok() {
                     self.return_focus(cx);
@@ -1466,11 +1805,15 @@ impl TableChanges {
                     .clone()
                     .and_then(|analysis| MutationDraft::new(analysis).ok());
                 self.discard_review();
-                self.discard = false;
+                if matches!(self.dialog, Some(Dialog::Discard | Dialog::Review(_))) {
+                    self.dialog = None;
+                }
+                self.last_failed = None;
                 self.return_focus(cx);
-                self.edit = None;
+                self.drop_edit();
                 self.analyze(cx);
                 cx.emit(ChangesEvent::Changed);
+                cx.emit(ChangesEvent::OverlayChanged);
             }
             Action::Reconcile if !self.pending() => {
                 if let Some(draft) = &mut self.draft {
@@ -1478,9 +1821,13 @@ impl TableChanges {
                         Ok(()) => {
                             self.return_focus(cx);
                             cx.emit(ChangesEvent::Changed);
+                            cx.emit(ChangesEvent::OverlayChanged);
                             self.analyze(cx);
                         }
-                        Err(error) => self.message = format!("Recovery refused: {error:?}"),
+                        Err(error) => {
+                            self.message =
+                                format!("Recovery refused: {}", model_error_text(error));
+                        }
                     }
                 }
             }
@@ -1488,6 +1835,220 @@ impl TableChanges {
         }
         self.finish_work();
         cx.notify();
+    }
+
+    pub fn set_policy(&mut self, policy: TablePolicy, cx: &mut Context<Self>) {
+        let editing = self.edit.is_some();
+        if !self.apply_policy(policy) {
+            return;
+        }
+        if editing && self.edit.is_none() {
+            cx.emit(ChangesEvent::EditClosed {
+                advance: Advance::Stay,
+            });
+        }
+        cx.notify();
+    }
+    /// The cx-free part of `set_policy`. Read-only closes any open editor;
+    /// an open review keeps its dialog, and its gate follows the new policy
+    /// on the next render and on every click. Returns whether it changed.
+    fn apply_policy(&mut self, policy: TablePolicy) -> bool {
+        if self.policy == policy {
+            return false;
+        }
+        self.policy = policy;
+        if policy.read_only && self.edit.is_some() {
+            self.drop_edit();
+            self.finish_work();
+            self.message = policy.read_only_reason().unwrap_or_default().to_owned();
+        }
+        if policy.read_only && matches!(self.dialog, Some(Dialog::VirtualKey)) {
+            self.key.editing = false;
+            self.dialog = None;
+        }
+        true
+    }
+    pub fn policy(&self) -> TablePolicy {
+        self.policy
+    }
+    /// Staged values for the grid, cached by draft owner and revision, page
+    /// identity and the failed change, so repeated syncs share one `Rc`.
+    pub fn overlay(&self) -> Rc<DraftOverlay> {
+        let key = OverlayKey {
+            draft: self
+                .draft
+                .as_ref()
+                .map(|draft| (draft.owner(), draft.revision())),
+            page: self
+                .page
+                .as_ref()
+                .map_or(0, |page| Rc::as_ptr(page) as usize),
+        };
+        if let Some((cached, failed, overlay)) = &*self.overlay_cache.borrow()
+            && *cached == key
+            && *failed == self.last_failed
+        {
+            return overlay.clone();
+        }
+        let overlay = Rc::new(match (&self.draft, &self.page) {
+            (Some(draft), Some(page)) => draft.overlay(page, key.page, self.last_failed),
+            (_, page) => DraftOverlay::empty(page.as_ref().map_or(0, |page| page.rows.len())),
+        });
+        *self.overlay_cache.borrow_mut() = Some((key, self.last_failed, overlay.clone()));
+        overlay
+    }
+    /// The inline cell editor the grid hosts, if one is open.
+    pub fn inline_editor(&self) -> Option<(CellRef, usize, AnyView)> {
+        let (editor, _) = self.cell_editor.as_ref()?;
+        let (cell, source) = self.edit.as_ref()?.cell?;
+        Some((cell, source, editor.clone().into()))
+    }
+    /// Window bounds of the edited cell, for the popover editor.
+    pub fn set_popover_anchor(&mut self, anchor: Option<Bounds<Pixels>>, cx: &mut Context<Self>) {
+        if self.popover_anchor != anchor {
+            self.popover_anchor = anchor;
+            cx.notify();
+        }
+    }
+    pub fn command(&mut self, command: ChangesCommand, window: &mut Window, cx: &mut Context<Self>) {
+        match command {
+            ChangesCommand::Review => self.activate(Action::Review, window, cx),
+            ChangesCommand::Discard => {
+                if self.edit.is_some() {
+                    self.close_edit(Advance::Stay, cx);
+                }
+                self.activate(Action::Discard, window, cx);
+            }
+            ChangesCommand::RetryRecovery => self.activate(Action::RetryRecovery, window, cx),
+            ChangesCommand::Reconcile => self.activate(Action::Reconcile, window, cx),
+            ChangesCommand::CancelPending => self.activate(Action::CancelPending, window, cx),
+            ChangesCommand::OpenVirtualKey => {
+                if self.pending() || self.modal_open() || self.edit.is_some() {
+                    self.message = "Finish the current edit or operation first".into();
+                } else if self.source.relation().is_none() || self.page.is_none() {
+                    self.message = "Virtual keys are available for loaded table pages".into();
+                } else {
+                    self.dialog = Some(Dialog::VirtualKey);
+                    self.focus_request = true;
+                    if !self.key.loaded && self.key.pending.is_none() && !self.key.refreshing {
+                        self.load_key(cx);
+                    }
+                }
+            }
+            ChangesCommand::OpenChangeList(anchor) => {
+                if matches!(self.dialog, Some(Dialog::ChangeList(_))) {
+                    self.dialog = None;
+                } else if !self.modal_open() && self.staged_len() > 0 {
+                    self.dialog = Some(Dialog::ChangeList(anchor));
+                    self.focus_request = true;
+                }
+            }
+        }
+        cx.notify();
+    }
+    fn close_dialog(&mut self, cx: &mut Context<Self>) {
+        let review = matches!(self.dialog, Some(Dialog::Review(_)));
+        let key = matches!(self.dialog, Some(Dialog::VirtualKey));
+        if review {
+            self.cancel_review(cx);
+        } else if key {
+            // A key write in flight keeps its dialog until it settles.
+            if self.key.pending.is_none() {
+                self.key.editing = false;
+                self.dialog = None;
+                self.return_focus(cx);
+            }
+        } else if self.dialog.is_some() {
+            self.dialog = None;
+            self.return_focus(cx);
+        }
+    }
+    fn review_gate(&self) -> Result<(), SharedString> {
+        if let Some(reason) = self.policy.read_only_reason() {
+            return Err(reason.into());
+        }
+        if self.unrestored.is_some() {
+            return Err("Retry or discard the saved changes first".into());
+        }
+        let Some(draft) = &self.draft else {
+            return Err("No staged changes".into());
+        };
+        if self.applying.is_none() && draft.outcome_unknown() {
+            return Err(
+                "The previous apply outcome is unknown. Refresh, then Mark resolved".into(),
+            );
+        }
+        if !draft.changes().any(|(_, included, _)| included) {
+            return Err("No staged changes are selected".into());
+        }
+        if self.pending() {
+            return Err("Wait for the current operation to finish".into());
+        }
+        if self
+            .edit
+            .as_ref()
+            .is_some_and(|edit| edit.presentation == Presentation::Popover)
+        {
+            return Err("Save or cancel the open editor first".into());
+        }
+        if self.controls.is_none() {
+            return Err("The table is disconnected".into());
+        }
+        if !self.enabled {
+            return Err("The table is busy".into());
+        }
+        if self.analysis.is_none() {
+            return Err(self.unavailable.clone().unwrap_or_else(|| CHECKING.into()));
+        }
+        Ok(())
+    }
+    pub fn summary(&self) -> ChangesSummary {
+        let (mut staged, mut included, mut updates, mut inserts, mut deletes) = (0, 0, 0, 0, 0);
+        let mut count = |selected: bool, operation: &MutationOp| {
+            staged += 1;
+            included += usize::from(selected);
+            match operation {
+                MutationOp::Update { .. } => updates += 1,
+                MutationOp::Insert { .. } => inserts += 1,
+                MutationOp::Delete { .. } => deletes += 1,
+            }
+        };
+        if let Some(saved) = &self.unrestored {
+            for change in &saved.changes {
+                count(change.included, &change.operation);
+            }
+        } else if let Some(draft) = &self.draft {
+            for (_, selected, operation) in draft.changes() {
+                count(selected, operation);
+            }
+        }
+        let notice = if self.unrestored.is_some() {
+            Some(ChangesNotice::Unrestored)
+        } else if self.applying.is_none()
+            && self
+                .draft
+                .as_ref()
+                .is_some_and(MutationDraft::outcome_unknown)
+        {
+            Some(ChangesNotice::OutcomeUnknown)
+        } else if self.policy.read_only && staged > 0 {
+            Some(ChangesNotice::ReadOnlyWithStaged)
+        } else {
+            self.unavailable.clone().map(ChangesNotice::Unavailable)
+        };
+        ChangesSummary {
+            staged,
+            included,
+            updates,
+            inserts,
+            deletes,
+            pending: self.pending(),
+            editing: self.edit.is_some(),
+            dialog_open: self.modal_open(),
+            can_review: self.review_gate(),
+            notice,
+            message: self.message.clone().into(),
+        }
     }
 }
 
@@ -1742,5 +2303,194 @@ mod tests {
         assert!(insert_values(r#"{"big":123456789012345678901234567890}"#).is_err());
         assert!(insert_values(r#"{"value":true}"#).is_err());
         assert!(insert_values("{}").unwrap().is_empty());
+    }
+
+    fn example_state() -> WorkspaceTableState {
+        WorkspaceTableState {
+            schema: "public".into(),
+            table: "example".into(),
+            filters: vec![],
+            sort: vec![],
+            page_size: 100,
+            draft: None,
+        }
+    }
+    fn editable_analysis() -> AnalyzeResultSetResult {
+        let allowed = || CapabilityVerdict {
+            allowed: true,
+            reason: None,
+        };
+        AnalyzeResultSetResult {
+            request_id: 1,
+            analysis_id: 1,
+            statement: AnalysisStatement::Analyzed,
+            columns: ["id", "name"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, name)| AnalyzedColumn {
+                    name: name.into(),
+                    origin: ColumnOrigin::Table {
+                        schema: "public".into(),
+                        table: "example".into(),
+                        column: name.into(),
+                        attnum: index as i16 + 1,
+                    },
+                    cast_type: if index == 0 { "integer" } else { "text" }.into(),
+                    nullable: index != 0,
+                    writability: ColumnWritability::Writable,
+                })
+                .collect(),
+            tables: vec![AnalyzedTable {
+                schema: "public".into(),
+                table: "example".into(),
+                identity: MutationIdentity {
+                    kind: MutationIdentityKind::PrimaryKey,
+                    columns: vec!["id".into()],
+                },
+                identity_projected: true,
+                identity_projection_indexes: vec![0],
+                updatable: allowed(),
+                deletable: allowed(),
+                insertable: allowed(),
+            }],
+        }
+    }
+    fn example_page() -> BrowseTableResult {
+        BrowseTableResult {
+            request_id: 1,
+            columns: vec![
+                BrowseColumn {
+                    name: "id".into(),
+                    cast_type: "integer".into(),
+                    nullable: false,
+                },
+                BrowseColumn {
+                    name: "name".into(),
+                    cast_type: "text".into(),
+                    nullable: true,
+                },
+            ],
+            rows: vec![vec![Some("1".into()), Some("Ada".into())]],
+            identity: BrowseIdentity {
+                kind: BrowseIdentityKind::PrimaryKey,
+                columns: vec!["id".into()],
+            },
+            row_identity: None,
+            page_info: BrowsePageInfo {
+                mode: BrowsePageMode::Offset,
+                page: Some(1),
+                has_more: false,
+                next_cursor: None,
+            },
+            count: BrowseCount {
+                kind: BrowseCountKind::Unknown,
+                value: None,
+            },
+            inspection: BrowseInspection {
+                sql: String::new(),
+                params: vec![],
+            },
+            omitted_rows: 0,
+            truncated_cells: 0,
+            runtime_ms: 0,
+        }
+    }
+
+    #[test]
+    fn read_only_policy_refuses_review_and_editing_with_its_reason() {
+        use dbunk_lib::backend::{DevelopmentEnvironment, DevelopmentSafeMode};
+        let state = example_state();
+        let mut view = TableChanges::new(&state, None, Rc::new(Cell::new(0)));
+        assert_eq!(view.policy(), TablePolicy::UNKNOWN);
+        let read_only = TablePolicy::resolve(
+            DevelopmentEnvironment::Development,
+            DevelopmentSafeMode::Inherit,
+            true,
+        );
+        assert!(view.apply_policy(read_only));
+        assert!(!view.apply_policy(read_only), "an unchanged policy is a no-op");
+        let reason = SharedString::from(read_only.read_only_reason().unwrap());
+        assert_eq!(view.can_edit_now(), Err(reason.clone()));
+        assert_eq!(view.summary().can_review, Err(reason.clone()));
+
+        // Staged work stays reviewable only after the connection is writable.
+        let mut draft = MutationDraft::new(editable_analysis()).unwrap();
+        draft.stage_insert(0, vec![]).unwrap();
+        view.draft = Some(draft);
+        let summary = view.summary();
+        assert_eq!(summary.can_review, Err(reason));
+        assert_eq!(summary.notice, Some(ChangesNotice::ReadOnlyWithStaged));
+        assert_eq!((summary.staged, summary.inserts), (1, 1));
+        // Removing staged changes does not need a writable connection.
+        assert_eq!(view.can_select_now(), Ok(()));
+    }
+
+    #[test]
+    fn overlay_is_cached_until_the_draft_revision_page_or_failure_changes() {
+        let state = example_state();
+        let mut view = TableChanges::new(&state, None, Rc::new(Cell::new(0)));
+        view.page = Some(Rc::new(example_page()));
+        let mut draft = MutationDraft::new(editable_analysis()).unwrap();
+        let id = draft.stage_insert(0, vec![]).unwrap();
+        view.draft = Some(draft);
+        let first = view.overlay();
+        assert!(Rc::ptr_eq(&first, &view.overlay()));
+        view.draft.as_mut().unwrap().include(id, false).unwrap();
+        let second = view.overlay();
+        assert!(!Rc::ptr_eq(&first, &second));
+        assert!(Rc::ptr_eq(&second, &view.overlay()));
+        view.last_failed = Some(id);
+        let third = view.overlay();
+        assert!(!Rc::ptr_eq(&second, &third));
+        view.page = Some(Rc::new(example_page()));
+        view.overlay_cache.borrow_mut().take();
+        assert!(!Rc::ptr_eq(&third, &view.overlay()));
+    }
+
+    #[test]
+    fn disconnect_during_a_dispatched_apply_leaves_the_outcome_unknown() {
+        let state = example_state();
+        let mut view = TableChanges::new(&state, None, Rc::new(Cell::new(0)));
+        let mut draft = MutationDraft::new(editable_analysis()).unwrap();
+        draft.stage_insert(0, vec![]).unwrap();
+        let plan = draft.review().unwrap();
+        let ticket = draft.begin_apply(&plan).unwrap();
+        view.draft = Some(draft);
+        let mut flow = ApplyFlow::new(1, Token::Test);
+        assert!(flow.saved(1).is_some(), "journal acknowledged and dispatched");
+        view.applying = Some(PendingApply {
+            ticket,
+            flow,
+            preconfirmed: Preconfirmation::Granted,
+            auto_confirms: 0,
+        });
+        assert!(view.disconnect_state());
+        assert!(view.applying.is_none());
+        assert!(view.draft.as_ref().unwrap().outcome_unknown());
+        let summary = view.summary();
+        assert_eq!(summary.notice, Some(ChangesNotice::OutcomeUnknown));
+        assert_eq!(summary.staged, 1, "nothing is dropped or retried");
+        assert!(summary.can_review.is_err());
+        assert!(view.can_edit_now().is_err());
+    }
+
+    #[test]
+    fn disconnect_before_dispatch_cancels_without_an_unknown_outcome() {
+        let state = example_state();
+        let mut view = TableChanges::new(&state, None, Rc::new(Cell::new(0)));
+        let mut draft = MutationDraft::new(editable_analysis()).unwrap();
+        draft.stage_insert(0, vec![]).unwrap();
+        let plan = draft.review().unwrap();
+        let ticket = draft.begin_apply(&plan).unwrap();
+        view.draft = Some(draft);
+        view.applying = Some(PendingApply {
+            ticket,
+            flow: ApplyFlow::new(1, Token::Test),
+            preconfirmed: Preconfirmation::NotGranted,
+            auto_confirms: 0,
+        });
+        assert!(view.disconnect_state());
+        assert!(!view.draft.as_ref().unwrap().outcome_unknown());
+        assert_eq!(view.summary().notice, None);
     }
 }

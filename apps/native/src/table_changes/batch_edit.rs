@@ -1,11 +1,22 @@
-//! Bulk and duplicate reuse the existing literal/insert editors and staging path.
+//! Row-level staging: add, duplicate and delete rows, and the bulk editor,
+//! which reuses the literal editor and staging path.
 use super::*;
-use crate::data_model::{BulkOutcome, BulkRow, ModelError};
-use serde::{Serialize, Serializer, ser::SerializeMap};
+use crate::data_model::{BulkOutcome, BulkRow};
 
 pub(super) struct Capture {
     page: Rc<BrowseTableResult>,
     analysis_id: u64,
+}
+impl Capture {
+    /// The captured page and analysis are still the ones on screen.
+    pub(super) fn current(
+        &self,
+        page: Option<&Rc<BrowseTableResult>>,
+        analysis: Option<&AnalyzeResultSetResult>,
+    ) -> bool {
+        page.is_some_and(|page| Rc::ptr_eq(page, &self.page))
+            && analysis.is_some_and(|analysis| analysis.analysis_id == self.analysis_id)
+    }
 }
 pub(super) struct BulkEdit {
     capture: Capture,
@@ -14,7 +25,6 @@ pub(super) struct BulkEdit {
 }
 pub(super) enum EditContext {
     Ordinary,
-    Duplicate(Capture),
     Bulk(BulkEdit),
 }
 impl EditContext {
@@ -23,18 +33,14 @@ impl EditContext {
         page: Option<&Rc<BrowseTableResult>>,
         analysis: Option<&AnalyzeResultSetResult>,
     ) -> bool {
-        let capture = match self {
-            Self::Ordinary => return true,
-            Self::Duplicate(capture) => capture,
-            Self::Bulk(bulk) => &bulk.capture,
-        };
-        page.is_some_and(|page| Rc::ptr_eq(page, &capture.page))
-            && analysis.is_some_and(|analysis| analysis.analysis_id == capture.analysis_id)
+        match self {
+            Self::Ordinary => true,
+            Self::Bulk(bulk) => bulk.capture.current(page, analysis),
+        }
     }
     pub(super) fn label(&self) -> Option<String> {
         match self {
             Self::Ordinary => None,
-            Self::Duplicate(_) => Some("Duplicate row JSON, omitted columns use defaults".into()),
             Self::Bulk(bulk) => Some(format!("Set {} selected rows", bulk.rows.len())),
         }
     }
@@ -60,60 +66,122 @@ fn source_column<'a>(
     }
 }
 
-/// JSON strings are SQL text; NULL is explicit and absent keys request defaults.
-struct InsertJson<'a>(&'a [MutationValue]);
-impl Serialize for InsertJson<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        for value in self.0 {
-            map.serialize_entry(&value.column, &value.value)?;
-        }
-        map.end()
-    }
-}
-fn duplicate_json(values: &[MutationValue]) -> Result<String, ModelError> {
-    let json = InsertJson(values);
-    if crate::results::encoded_size(&json) > cell_value::MAX_VALUE_BYTES {
-        return Err(ModelError::Budget);
-    }
-    serde_json::to_string(&json).map_err(|_| ModelError::InvalidInput)
-}
-
 impl TableChanges {
-    pub fn duplicate(&mut self, row: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.can_edit() || self.edit.is_some() {
+    /// Checks shared by the direct row operations (no editor involved).
+    fn row_operation_ready(&mut self) -> Result<(), SharedString> {
+        if self.is_query() {
+            return Err("Rows can only be added or deleted in a table tab".into());
+        }
+        if self.edit.is_some() {
+            return Err("Save or cancel the open edit first".into());
+        }
+        self.can_edit_now()?;
+        if !self.admit_work() {
+            return Err(self.message.clone().into());
+        }
+        Ok(())
+    }
+    /// Stages an empty insert; every cell shows DEFAULT in the insert band.
+    pub fn add_row(&mut self, cx: &mut Context<Self>) -> Result<Uuid, SharedString> {
+        self.row_operation_ready()?;
+        let result = self
+            .draft
+            .as_mut()
+            .ok_or(ModelError::Unavailable)
+            .and_then(|draft| draft.stage_insert(0, vec![]));
+        let id = result.as_ref().ok().copied();
+        self.finish_change("Add row", result.map(|_| ()), cx)?;
+        self.message = "Row added; edit its cells, then review".into();
+        Ok(id.expect("staged insert id"))
+    }
+    /// Removes a draft insert (the band's × button).
+    pub fn remove_insert(&mut self, change: Uuid, cx: &mut Context<Self>) {
+        if self.edit.as_ref().is_some_and(|edit| edit.insert == Some(change)) {
+            self.close_edit(Advance::Stay, cx);
+            self.finish_work();
+        }
+        if let Err(reason) = self.can_select_now() {
+            self.message = reason.to_string();
+            cx.notify();
             return;
         }
         if !self.admit_work() {
             cx.notify();
             return;
         }
-        let prepared = (|| {
-            let page = self.page.as_ref().ok_or(ModelError::Unavailable)?;
-            let values = page.rows.get(row).ok_or(ModelError::InvalidInput)?;
-            let values = self
-                .draft
-                .as_ref()
-                .ok_or(ModelError::Unavailable)?
-                .duplicate_values(0, values, page.truncated_cells > 0 || page.omitted_rows > 0)?;
-            let text = duplicate_json(&values)?;
-            let capture = Capture {
-                page: page.clone(),
-                analysis_id: self.analysis.as_ref().ok_or(ModelError::Stale)?.analysis_id,
-            };
-            Ok::<_, ModelError>((text, capture))
-        })();
-        match prepared {
-            Ok((text, capture)) => {
-                self.open_edit((None, None, 0), text, false, window, cx);
-                self.edit.as_mut().unwrap().context = EditContext::Duplicate(capture);
-                self.relabel_batch(cx);
-                self.message = "Original row copied; omitted columns use defaults".into();
-            }
-            Err(error) => self.message = format!("Duplicate refused: {error:?}"),
+        let result = self
+            .draft
+            .as_mut()
+            .ok_or(ModelError::Unavailable)
+            .and_then(|draft| draft.remove(change));
+        let _ = self.finish_change("Remove row", result, cx);
+    }
+    /// Stages deletes for checked page rows, all or nothing.
+    pub fn stage_deletes(
+        &mut self,
+        rows: &[usize],
+        cx: &mut Context<Self>,
+    ) -> Result<usize, SharedString> {
+        if rows.is_empty() {
+            return Err("Check the rows to delete first".into());
         }
-        self.finish_work();
-        cx.notify();
+        self.row_operation_ready()?;
+        let Some(page) = self.page.clone() else {
+            self.finish_work();
+            return Err("The table page is not loaded".into());
+        };
+        let selected = rows
+            .iter()
+            .map(|row| {
+                page.rows.get(*row).map(|values| {
+                    (
+                        values.as_slice(),
+                        page.row_identity
+                            .as_ref()
+                            .and_then(|identity| identity.get(*row))
+                            .map(Vec::as_slice),
+                    )
+                })
+            })
+            .collect::<Option<Vec<BulkRow<'_>>>>();
+        let Some(selected) = selected else {
+            self.finish_work();
+            return Err("A checked row is no longer on this page".into());
+        };
+        let result = self
+            .draft
+            .as_mut()
+            .ok_or(ModelError::Unavailable)
+            .and_then(|draft| draft.stage_deletes(0, &selected, page.truncated_cells > 0));
+        let count = result.as_ref().ok().copied();
+        drop(selected);
+        self.finish_change("Delete", result.map(|_| ()), cx)?;
+        let count = count.unwrap_or_default();
+        self.message = format!(
+            "{count} row{} staged for deletion; review to apply",
+            if count == 1 { "" } else { "s" }
+        );
+        Ok(count)
+    }
+    /// Copies the original source row (not staged values) into a new insert.
+    /// Missing columns stay omitted for their defaults.
+    pub fn duplicate(&mut self, row: usize, cx: &mut Context<Self>) -> Result<Uuid, SharedString> {
+        self.row_operation_ready()?;
+        let result = (|| {
+            let page = self.page.clone().ok_or(ModelError::Unavailable)?;
+            let values = page.rows.get(row).ok_or(ModelError::InvalidInput)?;
+            let draft = self.draft.as_mut().ok_or(ModelError::Unavailable)?;
+            let values = draft.duplicate_values(
+                0,
+                values,
+                page.truncated_cells > 0 || page.omitted_rows > 0,
+            )?;
+            draft.stage_insert(0, values)
+        })();
+        let id = result.as_ref().ok().copied();
+        self.finish_change("Duplicate", result.map(|_| ()), cx)?;
+        self.message = "Row duplicated into a new insert; review to apply".into();
+        Ok(id.expect("staged insert id"))
     }
 
     pub fn bulk_edit(
@@ -195,18 +263,27 @@ impl TableChanges {
         })();
         match prepared {
             Ok((name, bulk)) => {
+                let (row, column) = (bulk.rows[0], bulk.column);
                 self.open_edit(
-                    (Some(bulk.rows[0]), Some(name), 0),
+                    (Some(row), Some(name), 0),
                     String::new(),
                     false,
+                    Presentation::Popover,
                     window,
                     cx,
                 );
                 self.edit.as_mut().unwrap().context = EditContext::Bulk(bulk);
                 self.relabel_batch(cx);
                 self.message = "Assign one literal value or NULL to the selected rows".into();
+                cx.emit(ChangesEvent::EditOpened {
+                    cell: CellRef::Page(row),
+                    source: column,
+                    popover: true,
+                });
             }
-            Err(error) => self.message = format!("Bulk edit refused: {error:?}"),
+            Err(error) => {
+                self.message = format!("Bulk edit refused: {}", model_error_text(error));
+            }
         }
         self.finish_work();
         cx.notify();
@@ -226,7 +303,7 @@ impl TableChanges {
             _ => edit.context.label().unwrap_or_default(),
         };
         let editor = edit.editor.clone();
-        let multiline = edit.kind.is_some() || edit.row.is_none();
+        let multiline = edit.multiline();
         edit.accessible = cx.new(|cx| {
             if multiline {
                 AccessibleEditor::new(editor, label, cx)
@@ -301,7 +378,14 @@ impl TableChanges {
         bulk.column = next;
         // Column selection must not replace a retained literal just because
         // NULL is selected (the ordinary empty-array initializer is cell-only).
-        self.open_edit((Some(bulk.rows[0]), Some(name), 0), text, false, window, cx);
+        self.open_edit(
+            (Some(bulk.rows[0]), Some(name), 0),
+            text,
+            false,
+            Presentation::Popover,
+            window,
+            cx,
+        );
         let edit = self.edit.as_mut().unwrap();
         edit.null = null;
         edit.context = EditContext::Bulk(bulk);
@@ -337,20 +421,29 @@ impl TableChanges {
             .as_mut()
             .ok_or(ModelError::Unavailable)
             .and_then(|draft| draft.stage_bulk_update(0, &rows, false, value));
+        drop(rows);
         match result {
             Ok(outcome) => {
-                self.return_focus(cx);
-                self.edit = None;
+                self.close_edit(Advance::Stay, cx);
                 if outcome.changed > 0 {
                     self.discard_review();
                     cx.emit(ChangesEvent::Changed);
+                    cx.emit(ChangesEvent::OverlayChanged);
                 }
                 self.message = format!(
                     "{} of {} selected rows changed; changes are staged",
                     outcome.changed, outcome.selected
                 );
             }
-            Err(error) => self.message = format!("Bulk edit refused; draft unchanged: {error:?}"),
+            Err(error) => {
+                self.edit_refused(
+                    &format!(
+                        "Bulk edit refused; draft unchanged: {}",
+                        model_error_text(error)
+                    ),
+                    cx,
+                );
+            }
         }
         self.finish_work();
         cx.notify();
