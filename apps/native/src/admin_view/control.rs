@@ -361,9 +361,7 @@ impl AdminView {
             .border_t_1()
             .border_color(crate::style::line())
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
+                crate::ui::toolbar()
                     .children((15..ACTIONS.len()).map(|index| self.button(index, cx))),
             )
             .when(self.control.can_display(), |panel| {
@@ -379,6 +377,9 @@ impl AdminView {
                         .max_h(px(200.))
                         .overflow_y_scroll()
                         .track_scroll(&self.control_scroll)
+                        .px_2()
+                        .py_1()
+                        .whitespace_normal()
                         .child(self.control.text()),
                 )
             })

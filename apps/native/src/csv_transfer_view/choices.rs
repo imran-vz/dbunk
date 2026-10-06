@@ -258,9 +258,9 @@ impl CsvTransferView {
             .capture
             .as_ref()
             .is_some_and(|capture| !capture.catalog.truncated.is_empty());
-        div().child(div().flex().flex_wrap().children((14..19).map(|index|self.button(index,cx))))
+        div().child(crate::ui::toolbar().children((14..19).map(|index|self.button(index,cx))))
             .child("Ordinary and partitioned tables. Typing does not query PostgreSQL. Enter exact names when choices are missing.")
-            .when(truncated,|body|body.child(div().id("csv-choice-limit").role(Role::Alert).child("Catalog choices are truncated; missing names are not proof of absence.")))
+            .when(truncated,|body|body.child(div().id("csv-choice-limit").role(Role::Alert).px_2().text_color(crate::style::warn()).child("Catalog choices are truncated; missing names are not proof of absence.")))
             .when(self.metadata.capture.is_some(),|body|body.child(div().id("csv-choice-list").role(Role::ListBox).aria_label("CSV schema and table choices").track_focus(&self.choice_focus).tab_index(0)
                 .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if !this.choice_focus.is_focused(window){return;}let count=this.metadata.capture.as_ref().map_or(0,|capture|capture.visible.len());match event.keystroke.key.as_str(){"up"=>this.metadata.selected=Some(this.metadata.selected.unwrap_or(0).saturating_sub(1)),"down"=>this.metadata.selected=Some(this.metadata.selected.map_or(0,|index|(index+1).min(count.saturating_sub(1)))),"home"=>this.metadata.selected=Some(0),"end"=>this.metadata.selected=count.checked_sub(1),"enter"=>{this.use_choice(window,cx);},_=>return}cx.notify();cx.stop_propagation();}))
                 .child(gpui::uniform_list("csv-choices",count,cx.processor(|this,range:std::ops::Range<usize>,_,cx|{range.map(|index|{

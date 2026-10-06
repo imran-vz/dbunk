@@ -24,27 +24,10 @@ impl SchemaCompareView {
         let label = if let Some(key) = &copy_key && self.reader.read(cx).state().and_then(|state| state.value(key.value.side)).is_some_and(|reply| matches!(reply,CompareReply::Value { offset,next_offset,.. } if *offset != 0 || *next_offset < key.value.raw_bytes)) { format!("{label} (partial value)") } else { label.to_owned() };
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
-        div()
-            .id(("comparison-action", index))
-            .role(Role::Button)
-            .aria_label(label.clone())
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
+        crate::ui::tool_button(("comparison-action", index), label, None, enabled, false)
             .track_focus(&self.buttons[index])
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::line()))
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.activate_captured(action, click_key.as_ref(), window, cx)
             }))
@@ -805,7 +788,7 @@ impl SchemaCompareView {
                     )
                 },
             ))
-            .child(div().flex().flex_wrap().children(
+            .child(crate::ui::toolbar().children(
                 [12 + index * 2, 13 + index * 2, 16 + index].map(|index| self.button(index, cx)),
             ))
             .child(
@@ -828,7 +811,7 @@ impl SchemaCompareView {
             .capture()
             .map_or(&[][..], |capture| capture.rows());
         div().child("Session comparisons · up to 2 active and 2 terminal jobs; completed results expire")
-            .child(div().flex().flex_wrap().children([1,2,3,4].map(|index|self.button(index,cx))))
+            .child(crate::ui::toolbar().children([1,2,3,4].map(|index|self.button(index,cx))))
             .child(div().id("comparison-jobs").role(Role::ListBox).aria_label("Session schema comparison jobs").track_focus(&self.jobs_focus).tab_index(0)
                 .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if !this.jobs_focus.is_focused(window){return;}let rows=this.store.read(cx).capture().map_or(&[][..],|capture|capture.rows());let current=rows.iter().position(|job|Some(job.job_id.as_str())==this.selected.as_deref());if let Some(next)=navigation(&event.keystroke.key,current,rows.len()){let id=rows[next].job_id.clone();this.select_job(id,window,cx);cx.stop_propagation();}}))
                 .when(rows.is_empty(),|body|body.child("No comparison jobs observed. A missing observation does not prove a queued admission failed."))
@@ -901,7 +884,7 @@ Draft endpoints differ from this comparison."
             .flex_col()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_size(px(12.))
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.composing(window, cx) {
                     return;
@@ -943,9 +926,10 @@ Draft endpoints differ from this comparison."
                 }
             }))
             .child(
-                div()
-                    .p_2()
-                    .child("Schema comparison · read-only PostgreSQL 16 ordinary tables"),
+                crate::ui::toolbar()
+                    .child(crate::ui::section_label("Schema comparison"))
+                    .child(crate::ui::badge("read-only"))
+                    .child("PostgreSQL 16 ordinary tables"),
             )
             .child(
                 div()
@@ -963,9 +947,7 @@ Draft endpoints differ from this comparison."
                             .child(self.connection_element(Side::Target, cx)),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
+                        crate::ui::toolbar()
                             .children([0, 5, 6, 7].map(|index| self.button(index, cx))),
                     )
                     .child(
@@ -974,25 +956,20 @@ Draft endpoints differ from this comparison."
                             .role(Role::Label)
                             .aria_label(self.status.clone())
                             .p_2()
+                            .text_color(crate::style::dim())
                             .child(self.status.clone()),
                     )
                     .when_some(store_message, |body, message| {
-                        body.child(
-                            div()
-                                .id("comparison-store-error")
-                                .role(Role::Alert)
-                                .p_2()
-                                .child(message),
-                        )
+                        body.child(div().p_2().child(crate::ui::shake(
+                            format!("comparison-store-error-shake-{message}"),
+                            crate::ui::error_banner("comparison-store-error", message),
+                        )))
                     })
                     .when_some(reader_message, |body, message| {
-                        body.child(
-                            div()
-                                .id("comparison-reader-error")
-                                .role(Role::Alert)
-                                .p_2()
-                                .child(message),
-                        )
+                        body.child(div().p_2().child(crate::ui::shake(
+                            format!("comparison-reader-error-shake-{message}"),
+                            crate::ui::error_banner("comparison-reader-error", message),
+                        )))
                     })
                     .when_some(accepted, |body, text| {
                         body.child(

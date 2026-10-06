@@ -610,8 +610,15 @@ impl AdminView {
             || matches!(action, Action::NonDefault) && self.non_default;
         let tab = matches!(action, Action::Section(_));
         let weak = cx.weak_entity();
-        div()
-            .id(("admin-control", index))
+        let button = if tab {
+            crate::ui::segment(("admin-control", index), label, selected, enabled)
+        } else {
+            crate::ui::pressed(
+                crate::ui::tool_button(("admin-control", index), label, None, enabled, false),
+                selected,
+            )
+        };
+        button
             .role(if tab {
                 Role::Tab
             } else if matches!(action, Action::NonDefault) {
@@ -619,7 +626,6 @@ impl AdminView {
             } else {
                 Role::Button
             })
-            .aria_label(label)
             .when(tab, |button| button.aria_selected(selected))
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
@@ -634,16 +640,6 @@ impl AdminView {
             .track_focus(&self.buttons[index])
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .when(selected, |button| button.bg(crate::style::select()))
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::line()))
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -705,6 +701,7 @@ impl Render for AdminView {
             .flex_col()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.filter.focus_handle(cx).is_focused(window)
                     && this
@@ -793,10 +790,7 @@ impl Render for AdminView {
                 cx.stop_propagation();
             }))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .p_2()
+                crate::ui::toolbar()
                     .children((0..5).map(|index| self.button(index, cx)))
                     .child(self.button(21, cx))
                     .child(self.button(22, cx)),
@@ -807,6 +801,8 @@ impl Render for AdminView {
                     .role(Role::Label)
                     .aria_label(format!("Connection: {connection}"))
                     .px_2()
+                    .pt_1()
+                    .text_color(crate::style::dim())
                     .child(format!("Connection: {connection}")),
             )
             .child(
@@ -816,6 +812,8 @@ impl Render for AdminView {
                     .aria_label(metrics.clone())
                     .px_2()
                     .py_1()
+                    .font_family(crate::style::MONO)
+                    .text_color(crate::style::dim())
                     .child(metrics),
             )
             .child(
@@ -824,6 +822,8 @@ impl Render for AdminView {
                     .role(Role::Label)
                     .aria_label(captured.clone())
                     .px_2()
+                    .text_size(px(crate::style::FONT_SMALL))
+                    .text_color(crate::style::faint())
                     .child(captured),
             )
             .when(self.capture_stale(), |view| {
@@ -833,6 +833,7 @@ impl Render for AdminView {
                         .role(Role::Status)
                         .aria_label("Retained readings may be stale")
                         .px_2()
+                        .text_color(crate::style::warn())
                         .child("Retained readings may be stale"),
                 )
             })
@@ -843,16 +844,16 @@ impl Render for AdminView {
                         .role(Role::Status)
                         .aria_label(limits.clone())
                         .px_2()
+                        .text_size(px(crate::style::FONT_SMALL))
+                        .text_color(crate::style::faint())
                         .child(limits),
                 )
             })
             .child(
-                div()
+                crate::ui::segmented()
                     .id("admin-sections")
                     .role(Role::TabList)
                     .aria_label("Administration sections")
-                    .flex()
-                    .flex_wrap()
                     .children((5..12).map(|index| self.button(index, cx))),
             )
             .when(
@@ -861,6 +862,7 @@ impl Render for AdminView {
                     view.child(
                         div()
                             .flex()
+                            .items_center()
                             .gap_2()
                             .p_2()
                             .child(div().flex_1().child(self.filter.clone()))
@@ -870,9 +872,19 @@ impl Render for AdminView {
                 },
             )
             .when(self.section == Section::Audit, |view| {
-                view.child(div().px_2().child(self.button(14, cx)))
+                view.child(crate::ui::toolbar().child(self.button(14, cx)))
             })
-            .child(div().px_2().text_sm().child(self.section.headings()))
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .border_b_1()
+                    .border_color(crate::style::line_soft())
+                    .font_family(crate::style::MONO)
+                    .text_size(px(crate::style::FONT_SMALL))
+                    .text_color(crate::style::faint())
+                    .child(self.section.headings()),
+            )
             .child(
                 div()
                     .id("admin-list")
@@ -889,7 +901,12 @@ impl Render for AdminView {
                     .flex_1()
                     .min_h_0()
                     .when(count == 0, |list| {
-                        list.child(div().p_2().child(self.capture_empty_label()))
+                        list.child(
+                            div()
+                                .p_2()
+                                .text_color(crate::style::faint())
+                                .child(self.capture_empty_label()),
+                        )
                     })
                     .child(
                         uniform_list(
@@ -952,14 +969,11 @@ impl Render for AdminView {
             })
             .child(self.control_panel(cx))
             .child(
-                div()
+                crate::ui::status_line()
                     .id("admin-status")
+                    .text_color(crate::style::dim())
                     .role(Role::Status)
                     .aria_label(self.status.clone())
-                    .px_2()
-                    .py_1()
-                    .border_t_1()
-                    .border_color(crate::style::line())
                     .child(self.status.clone()),
             )
     }
