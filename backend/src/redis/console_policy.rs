@@ -31,8 +31,6 @@ const READ_COMMANDS: &[&str] = &[
     // Geo and HyperLogLog
     "GEOPOS", "GEODIST", "GEOHASH", "GEORADIUS_RO", "GEORADIUSBYMEMBER_RO", "GEOSEARCH",
     "PFCOUNT",
-    // Read-only scripting: the server refuses writes inside these.
-    "EVAL_RO", "EVALSHA_RO", "FCALL_RO",
     // Server and connection state
     "PING", "ECHO", "DBSIZE", "INFO", "TIME", "LASTSAVE", "ROLE", "SELECT", "COMMAND",
     "LOLWUT", "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH",
@@ -40,6 +38,11 @@ const READ_COMMANDS: &[&str] = &[
     "JSON.GET", "JSON.MGET", "JSON.TYPE", "JSON.STRLEN", "JSON.ARRLEN", "JSON.OBJKEYS",
     "JSON.OBJLEN", "JSON.ARRINDEX", "JSON.RESP",
 ];
+
+/// Read-only scripting. The server refuses writes inside these, but a script
+/// can still loop or scan for as long as the server lets it, so read-only
+/// connections refuse them.
+const READ_SCRIPTS: &[&str] = &["EVAL_RO", "EVALSHA_RO", "FCALL_RO"];
 
 /// Read-only subcommands of container commands, as `"CONTAINER SUB"`.
 #[rustfmt::skip]
@@ -76,6 +79,9 @@ const SESSION_BREAKING: &[&str] = &[
 pub enum ConsoleCommand {
     /// Reads only; runs under every policy.
     Read,
+    /// A read-only script: cannot write, but runs unbounded server-side.
+    /// Refused on read-only connections, runs without confirmation elsewhere.
+    ReadScript,
     /// May write (or is unknown). Blocked on read-only connections and
     /// confirmed first on protected ones.
     Write,
@@ -111,6 +117,9 @@ pub fn classify(tokens: &[String]) -> ConsoleCommand {
     }
     if READ_COMMANDS.contains(&head.as_str()) {
         return ConsoleCommand::Read;
+    }
+    if READ_SCRIPTS.contains(&head.as_str()) {
+        return ConsoleCommand::ReadScript;
     }
     if let Some(sub) = sub {
         let pair = format!("{head} {sub}");
@@ -154,6 +163,13 @@ mod tests {
         assert_eq!(classify(&tokens("OBJECT")), ConsoleCommand::Write);
         assert_eq!(classify(&tokens("EVAL return 1 0")), ConsoleCommand::Write);
         assert_eq!(classify(&tokens("FUTURECMD x")), ConsoleCommand::Write);
+    }
+
+    #[test]
+    fn read_only_scripts_are_their_own_class() {
+        for text in ["EVAL_RO return 1 0", "evalsha_ro abc 0", "FCALL_RO f 0"] {
+            assert_eq!(classify(&tokens(text)), ConsoleCommand::ReadScript, "{text}");
+        }
     }
 
     #[test]

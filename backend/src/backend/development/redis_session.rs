@@ -39,6 +39,16 @@ pub const REDIS_REPLY_BYTES: usize = 256 * 1024;
 pub const REDIS_INSPECT_ITEMS: u32 = 200;
 /// Prefix fetched for one inspected string.
 pub const REDIS_INSPECT_STRING_BYTES: u32 = 64 * 1024;
+/// Whole-value console reads (`GET`, `MGET`, …) are refused above this many
+/// bytes, measured with `STRLEN` first. A reply is fully allocated before it
+/// can be bounded, so the check has to happen before the read.
+pub const REDIS_CONSOLE_STRING_BYTES: u64 = 1024 * 1024;
+/// Whole-collection console reads (`LRANGE k 0 -1`, `HGETALL`, `SMEMBERS`,
+/// full `ZRANGE`/`XRANGE`, …) are refused above this many elements,
+/// measured with `LLEN`/`HLEN`/`SCARD`/`ZCARD`/`XLEN` first.
+pub const REDIS_CONSOLE_ELEMENTS: u64 = 10_000;
+/// `KEYS` is refused when the database holds more keys than this (`DBSIZE`).
+pub const REDIS_CONSOLE_KEYS: u64 = 10_000;
 const PATTERN_BYTES: usize = 1_024;
 
 /// A bounded Redis reply. Strings are UTF-8 text or `0x` hex.
@@ -148,6 +158,8 @@ pub struct RedisKeyInspection {
 struct Lane {
     connection: MultiplexedConnection,
     db: u8,
+    /// Inside `MULTI` (console lane only): commands are queued, not run.
+    in_multi: bool,
 }
 
 /// Policy resolved from the stored connection when the session opened.
@@ -256,10 +268,12 @@ impl RedisSession {
             console: tokio::sync::Mutex::new(Lane {
                 connection: console,
                 db: connection.db_number,
+                in_multi: false,
             }),
             browse: tokio::sync::Mutex::new(Lane {
                 connection: browse,
                 db: connection.db_number,
+                in_multi: false,
             }),
             lost: std::sync::Mutex::new(None),
             _route: route,
@@ -309,6 +323,24 @@ impl RedisSession {
         }
     }
 
+    /// [`Self::query`] for a pipeline.
+    async fn pipeline<T: redis::FromRedisValue>(
+        &self,
+        connection: &mut MultiplexedConnection,
+        pipe: &redis::Pipeline,
+    ) -> Result<T, RedisSessionError> {
+        match tokio::time::timeout(REDIS_COMMAND_TIMEOUT, pipe.query_async(connection)).await {
+            Err(_) => Err(self.lose(timeout_message())),
+            Ok(Err(error)) if is_transport(&error) => {
+                Err(self.lose(redis_connection::redis_err(error)))
+            }
+            Ok(Err(error)) => Err(RedisSessionError::Failed(redis_connection::redis_err(
+                error,
+            ))),
+            Ok(Ok(value)) => Ok(value),
+        }
+    }
+
     async fn select(&self, lane: &mut Lane, db: u8) -> Result<(), RedisSessionError> {
         if db >= REDIS_MAX_DATABASES {
             return Err(RedisSessionError::Failed(format!(
@@ -316,12 +348,57 @@ impl RedisSession {
                 REDIS_MAX_DATABASES - 1
             )));
         }
+        self.switch_db(lane, db).await
+    }
+
+    /// `SELECT` without the tree's range check: the console may sit on any
+    /// database the server has.
+    async fn switch_db(&self, lane: &mut Lane, db: u8) -> Result<(), RedisSessionError> {
         if lane.db != db {
             self.query::<()>(&mut lane.connection, redis::cmd("SELECT").arg(db))
                 .await?;
             lane.db = db;
         }
         Ok(())
+    }
+
+    /// Measures a whole-value read on the browse lane, in the console's
+    /// database, and returns a refusal when it is over its limit. The browse
+    /// lane is never inside `MULTI`, so the probe runs now even when the
+    /// console command is only queued. A probe the server rejects (wrong
+    /// type, unknown database) lets the command run: it meets the same error.
+    async fn measure(
+        &self,
+        check: &Preflight,
+        db: u8,
+    ) -> Result<Option<String>, RedisSessionError> {
+        let mut lane = self.browse.lock().await;
+        let mut pipe = redis::pipe();
+        if check.keys.is_empty() {
+            pipe.cmd(check.probe);
+        } else {
+            for key in &check.keys {
+                pipe.cmd(check.probe).arg(key.as_slice());
+            }
+        }
+        let measured = match self.switch_db(&mut lane, db).await {
+            Ok(()) => {
+                self.pipeline::<Vec<i64>>(&mut lane.connection, &pipe)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        match measured {
+            Ok(sizes) => Ok(judge(
+                check,
+                sizes
+                    .into_iter()
+                    .map(|size| size.max(0) as u64)
+                    .fold(0, u64::saturating_add),
+            )),
+            Err(RedisSessionError::Failed(_)) => Ok(None),
+            Err(lost) => Err(lost),
+        }
     }
 
     /// Database list with exact key totals, and the server version.
@@ -402,23 +479,7 @@ impl RedisSession {
             for name in &names {
                 pipe.cmd("TYPE").arg(name);
             }
-            match tokio::time::timeout(
-                REDIS_COMMAND_TIMEOUT,
-                pipe.query_async(&mut lane.connection),
-            )
-            .await
-            {
-                Err(_) => return Err(self.lose(timeout_message())),
-                Ok(Err(error)) if is_transport(&error) => {
-                    return Err(self.lose(redis_connection::redis_err(error)))
-                }
-                Ok(Err(error)) => {
-                    return Err(RedisSessionError::Failed(redis_connection::redis_err(
-                        error,
-                    )))
-                }
-                Ok(Ok(kinds)) => kinds,
-            }
+            self.pipeline(&mut lane.connection, &pipe).await?
         };
         Ok(RedisScanPage {
             keys: names
@@ -431,48 +492,69 @@ impl RedisSession {
     }
 
     /// Runs one console command on the console lane after the CLI guard, the
-    /// console policy and the connection's read-only/confirmation policy.
+    /// console policy, the connection's read-only/confirmation policy and,
+    /// for whole-value reads, a size check. Arguments are raw bytes, so keys
+    /// that are not UTF-8 can be named. Refusals come before confirmations.
     pub async fn run(
         &self,
-        tokens: Vec<String>,
+        tokens: Vec<Vec<u8>>,
         confirmed: bool,
     ) -> Result<RedisConsoleOutcome, RedisSessionError> {
         self.check()?;
-        if let Some(refusal) = admit(&tokens, confirmed, self.policy) {
-            return Ok(refusal);
-        }
         let mut lane = self.console.lock().await;
-        let mut command = redis::cmd(&tokens[0]);
-        for argument in &tokens[1..] {
-            command.arg(argument);
+        let confirmation = match admit(&tokens, confirmed, self.policy, lane.in_multi) {
+            Some(RedisConsoleOutcome::Refused { reason }) => {
+                return Ok(RedisConsoleOutcome::Refused { reason })
+            }
+            other => other,
+        };
+        if let Some(check) = preflight(&tokens) {
+            if let Some(reason) = self.measure(&check, lane.db).await? {
+                return Ok(RedisConsoleOutcome::Refused { reason });
+            }
+        }
+        if let Some(outcome) = confirmation {
+            return Ok(outcome);
+        }
+        let mut command = redis::Cmd::new();
+        for token in &tokens {
+            command.arg(token.as_slice());
         }
         let started = std::time::Instant::now();
-        let reply = self
+        let reply = match self
             .query::<redis::Value>(&mut lane.connection, &command)
-            .await;
-        let elapsed_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        let value = match reply {
-            Ok(value) => value,
-            Err(RedisSessionError::Failed(message)) => {
-                return Ok(RedisConsoleOutcome::Reply {
-                    value: RedisValue::Error(message),
-                    truncated: false,
-                    elapsed_ms,
-                    db: lane.db,
-                })
-            }
+            .await
+        {
+            Ok(value) => Ok(value),
+            Err(RedisSessionError::Failed(message)) => Err(message),
             Err(lost) => return Err(lost),
         };
-        if tokens[0].eq_ignore_ascii_case("SELECT") && matches!(value, redis::Value::Okay) {
-            if let Some(db) = tokens.get(1).and_then(|db| db.parse().ok()) {
-                lane.db = db;
+        let elapsed_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        match word(&tokens[0]).as_str() {
+            // A nested MULTI is an error and leaves the transaction open.
+            "MULTI" if reply.is_ok() => lane.in_multi = true,
+            // EXEC and DISCARD end the transaction whatever they reply.
+            "EXEC" | "DISCARD" => lane.in_multi = false,
+            // Only an executed SELECT moves the prompt; `admit` refuses it
+            // inside MULTI, where it would only run at EXEC.
+            "SELECT" if matches!(reply, Ok(redis::Value::Okay)) => {
+                if let Some(db) = tokens.get(1).and_then(|db| database_index(db)) {
+                    lane.db = db;
+                }
             }
+            _ => {}
         }
-        let mut budget = Budget::default();
-        let value = bound(crate::redis::value::serialize(value), &mut budget);
+        let (value, truncated) = match reply {
+            Ok(value) => {
+                let mut budget = Budget::default();
+                let value = bound_reply(value, &mut budget);
+                (value, budget.truncated)
+            }
+            Err(message) => (RedisValue::Error(message), false),
+        };
         Ok(RedisConsoleOutcome::Reply {
             value,
-            truncated: budget.truncated,
+            truncated,
             elapsed_ms,
             db: lane.db,
         })
@@ -517,58 +599,316 @@ fn is_transport(error: &redis::RedisError) -> bool {
     error.is_unrecoverable_error() || error.is_timeout() || error.is_connection_dropped()
 }
 
-/// The pre-flight decision for one console command; `None` runs it.
+/// The policy decision for one console command; `None` runs it. Every
+/// refusal is decided before any confirmation, so a command that can never
+/// run is not first offered for confirmation.
 pub(crate) fn admit(
-    tokens: &[String],
+    tokens: &[Vec<u8>],
     confirmed: bool,
     policy: RedisPolicy,
+    in_multi: bool,
 ) -> Option<RedisConsoleOutcome> {
+    let refused = |reason: String| Some(RedisConsoleOutcome::Refused { reason });
     if tokens.len() > REDIS_COMMAND_TOKENS
-        || tokens.iter().map(String::len).sum::<usize>() > REDIS_COMMAND_BYTES
+        || tokens.iter().map(Vec::len).sum::<usize>() > REDIS_COMMAND_BYTES
     {
-        return Some(RedisConsoleOutcome::Refused {
-            reason: format!(
-                "Commands are limited to {REDIS_COMMAND_TOKENS} arguments and {} KiB",
-                REDIS_COMMAND_BYTES / 1024
-            ),
-        });
+        return refused(format!(
+            "Commands are limited to {REDIS_COMMAND_TOKENS} arguments and {} KiB",
+            REDIS_COMMAND_BYTES / 1024
+        ));
     }
-    if let Some(refusal) = cli::guard(tokens, confirmed) {
-        return Some(match refusal {
-            cli::RunCommandResult::NeedsConfirmation { command, severity } => {
-                RedisConsoleOutcome::NeedsConfirmation {
-                    reason: if severity == "soft" {
-                        format!("{command} can block the server on a large keyspace")
-                    } else {
-                        format!("{command} is destructive")
-                    },
-                    command,
-                }
-            }
-            cli::RunCommandResult::Rejected { reason } => RedisConsoleOutcome::Refused {
-                reason: reason.replace("Pub/Sub tab", "a Pub/Sub tool"),
-            },
-            cli::RunCommandResult::Ok { .. } => unreachable!("guard never runs a command"),
-        });
+    // Command names and keywords are ASCII; a lossy view classifies them
+    // while the command itself is sent with the raw bytes.
+    let words: Vec<String> = tokens
+        .iter()
+        .map(|token| String::from_utf8_lossy(token).into_owned())
+        .collect();
+    let guarded = cli::guard(&words, confirmed);
+    if let Some(cli::RunCommandResult::Rejected { reason }) = &guarded {
+        return refused(reason.replace("Pub/Sub tab", "a Pub/Sub tool"));
     }
-    match console_policy::classify(tokens) {
-        console_policy::ConsoleCommand::Refused(reason) => {
-            Some(RedisConsoleOutcome::Refused { reason })
-        }
-        console_policy::ConsoleCommand::Read => None,
+    let class = console_policy::classify(&words);
+    match &class {
+        console_policy::ConsoleCommand::Refused(reason) => return refused(reason.clone()),
         console_policy::ConsoleCommand::Write if policy.read_only => {
-            Some(RedisConsoleOutcome::Refused {
-                reason: "This connection is read-only".into(),
-            })
+            return refused("This connection is read-only".into());
         }
-        console_policy::ConsoleCommand::Write if policy.confirm_writes && !confirmed => {
-            Some(RedisConsoleOutcome::NeedsConfirmation {
-                command: tokens[0].to_uppercase(),
-                reason: "Writes on this connection need confirmation".into(),
-            })
+        console_policy::ConsoleCommand::ReadScript if policy.read_only => {
+            return refused(
+                "Scripts can run unbounded on the server and are not available on read-only connections"
+                    .into(),
+            );
         }
-        console_policy::ConsoleCommand::Write => None,
+        _ => {}
     }
+    let head = words
+        .first()
+        .map(|word| word.to_uppercase())
+        .unwrap_or_default();
+    if head == "SELECT" {
+        if in_multi {
+            return refused(
+                "SELECT inside MULTI would only run at EXEC and leave the prompt's database unknown; run it before MULTI or after EXEC"
+                    .into(),
+            );
+        }
+        if tokens.len() == 2 && database_index(&tokens[1]).is_none() {
+            return refused("The console can switch to databases 0–255".into());
+        }
+    }
+    if let Some(cli::RunCommandResult::NeedsConfirmation { command, severity }) = guarded {
+        return Some(RedisConsoleOutcome::NeedsConfirmation {
+            reason: if severity == "soft" {
+                format!(
+                    "{command} walks the whole keyspace and can block the server; SCAN 0 MATCH <pattern> COUNT 100 pages through it instead"
+                )
+            } else {
+                format!("{command} is destructive")
+            },
+            command,
+        });
+    }
+    if class == console_policy::ConsoleCommand::Write && policy.confirm_writes && !confirmed {
+        return Some(RedisConsoleOutcome::NeedsConfirmation {
+            command: head,
+            reason: "Writes on this connection need confirmation".into(),
+        });
+    }
+    None
+}
+
+/// A console argument as an upper-case word (lossy for non-UTF-8 bytes).
+fn word(token: &[u8]) -> String {
+    String::from_utf8_lossy(token).to_uppercase()
+}
+
+fn integer(token: Option<&Vec<u8>>) -> Option<i64> {
+    std::str::from_utf8(token?).ok()?.parse().ok()
+}
+
+/// A `SELECT` argument the console can track.
+fn database_index(token: &[u8]) -> Option<u8> {
+    std::str::from_utf8(token).ok()?.parse().ok()
+}
+
+/// How a probe's total maps to the size of the reply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Window {
+    /// The whole value: the probe total is the reply size.
+    All,
+    /// A rank range over a collection the probe measured.
+    Rank { start: i64, stop: i64 },
+}
+
+/// A size check to run before a whole-value console read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Preflight {
+    head: String,
+    /// Integer-reply probe, run once per key (once when there are none).
+    probe: &'static str,
+    keys: Vec<Vec<u8>>,
+    window: Window,
+    limit: u64,
+    unit: &'static str,
+    /// The bounded form to suggest instead.
+    hint: String,
+}
+
+/// The size check for a console command whose reply can be a whole value
+/// of unbounded size, or `None` when the command is bounded by its own
+/// arguments (a small range, `LIMIT`, `COUNT`) or is not a whole-value read.
+pub(crate) fn preflight(tokens: &[Vec<u8>]) -> Option<Preflight> {
+    let head = word(tokens.first()?);
+    let key = tokens.get(1);
+    // Index of an option keyword after the key.
+    let option = |keyword: &[u8]| {
+        tokens
+            .iter()
+            .skip(2)
+            .position(|token| token.eq_ignore_ascii_case(keyword))
+            .map(|at| at + 2)
+    };
+    let within = |count: Option<i64>| {
+        count.is_some_and(|count| count >= 0 && count as u64 <= REDIS_CONSOLE_ELEMENTS)
+    };
+    // `LIMIT offset count` with a count within the limit.
+    let limited = || within(option("LIMIT".as_bytes()).and_then(|at| integer(tokens.get(at + 2))));
+    let elements = |probe: &'static str, key: &Vec<u8>, window: Window, hint: String| Preflight {
+        head: head.clone(),
+        probe,
+        keys: vec![key.clone()],
+        window,
+        limit: REDIS_CONSOLE_ELEMENTS,
+        unit: "elements",
+        hint,
+    };
+    let scan = |command: &str, key: &Vec<u8>| {
+        format!(
+            "Page through it with {command} {} 0 COUNT 100",
+            quote_arg(key)
+        )
+    };
+    let check = match head.as_str() {
+        "GET" | "GETDEL" | "GETEX" | "GETSET" => {
+            let key = key?;
+            Preflight {
+                head: head.clone(),
+                probe: "STRLEN",
+                keys: vec![key.clone()],
+                window: Window::All,
+                limit: REDIS_CONSOLE_STRING_BYTES,
+                unit: "bytes",
+                hint: format!(
+                    "Read a slice with GETRANGE {} 0 {}",
+                    quote_arg(key),
+                    REDIS_CONSOLE_STRING_BYTES - 1
+                ),
+            }
+        }
+        "MGET" if tokens.len() > 1 => Preflight {
+            head: head.clone(),
+            probe: "STRLEN",
+            keys: tokens[1..].to_vec(),
+            window: Window::All,
+            limit: REDIS_CONSOLE_STRING_BYTES,
+            unit: "bytes",
+            hint: "Read fewer keys at a time, or slices with GETRANGE".into(),
+        },
+        "LRANGE" | "ZRANGE" | "ZREVRANGE" => {
+            let key = key?;
+            let probe = if head == "LRANGE" { "LLEN" } else { "ZCARD" };
+            if head == "ZRANGE" && (option("BYSCORE".as_bytes()).is_some() || option("BYLEX".as_bytes()).is_some()) {
+                if limited() {
+                    return None;
+                }
+                elements(
+                    probe,
+                    key,
+                    Window::All,
+                    format!("Add LIMIT 0 100, or {}", scan("ZSCAN", key)),
+                )
+            } else {
+                let (start, stop) = (integer(tokens.get(2))?, integer(tokens.get(3))?);
+                if small_range(start, stop) {
+                    return None;
+                }
+                elements(
+                    probe,
+                    key,
+                    Window::Rank { start, stop },
+                    format!("Read a window, e.g. {head} {} 0 99", quote_arg(key)),
+                )
+            }
+        }
+        "ZRANGEBYSCORE" | "ZREVRANGEBYSCORE" | "ZRANGEBYLEX" | "ZREVRANGEBYLEX" => {
+            let key = key?;
+            if limited() {
+                return None;
+            }
+            elements(
+                "ZCARD",
+                key,
+                Window::All,
+                format!("Add LIMIT 0 100, or {}", scan("ZSCAN", key)),
+            )
+        }
+        "HGETALL" | "HKEYS" | "HVALS" => {
+            let key = key?;
+            elements("HLEN", key, Window::All, scan("HSCAN", key))
+        }
+        "SMEMBERS" => {
+            let key = key?;
+            elements("SCARD", key, Window::All, scan("SSCAN", key))
+        }
+        "XRANGE" | "XREVRANGE" => {
+            let key = key?;
+            if within(option("COUNT".as_bytes()).and_then(|at| integer(tokens.get(at + 1)))) {
+                return None;
+            }
+            elements("XLEN", key, Window::All, "Add COUNT 100".into())
+        }
+        "KEYS" => Preflight {
+            head: head.clone(),
+            probe: "DBSIZE",
+            keys: Vec::new(),
+            window: Window::All,
+            limit: REDIS_CONSOLE_KEYS,
+            unit: "keys",
+            hint: format!(
+                "Page through them with SCAN 0 MATCH {} COUNT 100",
+                key.map_or_else(|| "*".to_owned(), |pattern| quote_arg(pattern))
+            ),
+        },
+        _ => return None,
+    };
+    Some(check)
+}
+
+/// A non-negative range no wider than the element limit needs no probe.
+fn small_range(start: i64, stop: i64) -> bool {
+    start >= 0 && stop >= 0 && (stop < start || ((stop - start) as u64) < REDIS_CONSOLE_ELEMENTS)
+}
+
+/// Elements a rank range covers in a collection of `len` elements
+/// (`LRANGE`/`ZRANGE` semantics: negative indexes count from the end).
+pub(crate) fn range_len(len: u64, start: i64, stop: i64) -> u64 {
+    let len = i64::try_from(len).unwrap_or(i64::MAX);
+    let start = if start < 0 {
+        start.saturating_add(len).max(0)
+    } else {
+        start
+    };
+    let stop = if stop < 0 {
+        stop.saturating_add(len)
+    } else {
+        stop
+    }
+    .min(len - 1);
+    if start > stop || start >= len {
+        0
+    } else {
+        (stop - start) as u64 + 1
+    }
+}
+
+/// The refusal for a measured whole-value read, if it is over its limit.
+pub(crate) fn judge(check: &Preflight, total: u64) -> Option<String> {
+    let size = match check.window {
+        Window::All => total,
+        Window::Rank { start, stop } => range_len(total, start, stop),
+    };
+    (size > check.limit).then(|| {
+        format!(
+            "{} covers {size} {}, over the console's limit of {}. {}.",
+            check.head, check.unit, check.limit, check.hint
+        )
+    })
+}
+
+/// One argument as it would be typed in the console: bare when it is plain
+/// printable ASCII, otherwise double-quoted with `redis-cli` escapes
+/// (`\xHH` for any other byte), so it round-trips through the tokenizer.
+pub(crate) fn quote_arg(bytes: &[u8]) -> String {
+    let bare = |byte: &u8| byte.is_ascii_graphic() && !matches!(*byte, b'"' | b'\'' | b'\\');
+    if !bytes.is_empty() && bytes.iter().all(bare) {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+    let mut out = String::with_capacity(bytes.len() + 2);
+    out.push('"');
+    for &byte in bytes {
+        match byte {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\t' => out.push_str("\\t"),
+            b' ' => out.push(' '),
+            byte if byte.is_ascii_graphic() => out.push(char::from(byte)),
+            byte => out.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    out.push('"');
+    out
 }
 
 async fn inspect_on(
@@ -756,23 +1096,136 @@ fn bound_pairs(
     out
 }
 
-/// Converts a reply within the node and byte budget. Text is cut on a
-/// character boundary with an ellipsis; arrays end with `Omitted(n)`.
+/// Text within the byte budget, cut on a character boundary with an
+/// ellipsis.
+fn cut_text(value: String, budget: &mut Budget) -> String {
+    if value.len() <= budget.bytes {
+        budget.bytes -= value.len();
+        return value;
+    }
+    let mut end = budget.bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    budget.bytes = 0;
+    budget.truncated = true;
+    format!("{}…", &value[..end])
+}
+
+/// Converts a raw console reply within the node and byte budget by walking
+/// the `redis::Value` itself: the reply is never serialized whole first, and
+/// nothing past the budget is copied, decoded or hex-expanded. Strings
+/// follow [`crate::redis::value::encode_string`]: printable UTF-8 as text,
+/// anything else as `0x` hex.
+fn bound_reply(value: redis::Value, budget: &mut Budget) -> RedisValue {
+    budget.nodes = budget.nodes.saturating_sub(1);
+    match value {
+        redis::Value::Nil => RedisValue::Nil,
+        redis::Value::Int(value) => RedisValue::Int(value),
+        redis::Value::Okay => RedisValue::Status(cut_text("OK".into(), budget)),
+        redis::Value::SimpleString(value) | redis::Value::VerbatimString { text: value, .. } => {
+            RedisValue::Status(cut_text(value, budget))
+        }
+        redis::Value::BulkString(bytes) => bound_bytes(bytes, budget),
+        redis::Value::Double(value) => RedisValue::Text(cut_text(value.to_string(), budget)),
+        redis::Value::Boolean(value) => RedisValue::Text(cut_text(value.to_string(), budget)),
+        redis::Value::BigNumber(value) => RedisValue::Text(cut_text(value.to_string(), budget)),
+        redis::Value::ServerError(error) => RedisValue::Error(cut_text(
+            error.details().unwrap_or("server error").to_owned(),
+            budget,
+        )),
+        redis::Value::Attribute { data, .. } => bound_reply(*data, budget),
+        redis::Value::Array(values)
+        | redis::Value::Set(values)
+        | redis::Value::Push { data: values, .. } => {
+            let total = values.len();
+            bound_sequence(values.into_iter(), total, budget)
+        }
+        redis::Value::Map(entries) => {
+            let total = entries.len().saturating_mul(2);
+            bound_sequence(
+                entries.into_iter().flat_map(|(key, value)| [key, value]),
+                total,
+                budget,
+            )
+        }
+    }
+}
+
+fn bound_sequence(
+    values: impl Iterator<Item = redis::Value>,
+    total: usize,
+    budget: &mut Budget,
+) -> RedisValue {
+    let mut out = Vec::new();
+    for value in values {
+        if budget.nodes == 0 || budget.bytes == 0 {
+            break;
+        }
+        out.push(bound_reply(value, budget));
+    }
+    if out.len() < total {
+        budget.truncated = true;
+        out.push(RedisValue::Omitted(total - out.len()));
+    }
+    RedisValue::Array(out)
+}
+
+/// One bulk string within the budget. The text-or-hex decision reads the
+/// whole value without allocating; only the kept prefix is converted.
+fn bound_bytes(mut bytes: Vec<u8>, budget: &mut Budget) -> RedisValue {
+    let printable = std::str::from_utf8(&bytes).is_ok_and(|text| {
+        !text
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+    });
+    if printable {
+        let cut = bytes.len() > budget.bytes;
+        if cut {
+            let mut end = budget.bytes;
+            // Back up to a character boundary: never split a UTF-8 sequence.
+            while end > 0 && bytes[end] & 0xC0 == 0x80 {
+                end -= 1;
+            }
+            bytes.truncate(end);
+            budget.bytes = 0;
+            budget.truncated = true;
+        } else {
+            budget.bytes -= bytes.len();
+        }
+        let mut text = String::from_utf8(bytes)
+            .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned());
+        if cut {
+            text.push('…');
+        }
+        return RedisValue::Text(text);
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let whole = bytes.len().saturating_mul(2).saturating_add(2);
+    let keep = if whole <= budget.bytes {
+        bytes.len()
+    } else {
+        budget.truncated = true;
+        budget.bytes.saturating_sub(2) / 2
+    };
+    let mut hex = String::with_capacity(keep * 2 + 2 + '…'.len_utf8());
+    hex.push_str("0x");
+    for byte in &bytes[..keep] {
+        hex.push(char::from(HEX[usize::from(byte >> 4)]));
+        hex.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    budget.bytes = budget.bytes.saturating_sub(hex.len());
+    if keep < bytes.len() {
+        hex.push('…');
+    }
+    RedisValue::Bytes(hex)
+}
+
+/// Converts an inspector reply within the node and byte budget. Text is cut
+/// on a character boundary with an ellipsis; arrays end with `Omitted(n)`.
 fn bound(value: SerializedValue, budget: &mut Budget) -> RedisValue {
     budget.nodes = budget.nodes.saturating_sub(1);
-    let mut text = |value: String| {
-        if value.len() <= budget.bytes {
-            budget.bytes -= value.len();
-            return value;
-        }
-        let mut end = budget.bytes;
-        while !value.is_char_boundary(end) {
-            end -= 1;
-        }
-        budget.bytes = 0;
-        budget.truncated = true;
-        format!("{}…", &value[..end])
-    };
+    let mut text = |value: String| cut_text(value, budget);
     match value {
         SerializedValue::Nil => RedisValue::Nil,
         SerializedValue::Int { value } => RedisValue::Int(value),

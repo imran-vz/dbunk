@@ -164,33 +164,41 @@ pub async fn fetch_string_on<C: redis::aio::ConnectionLike + Send>(
         .await
         .map_err(connection::redis_err)?;
     let total_bytes = total.max(0) as u64;
-
-    if total_bytes > payload.max_bytes as u64 {
-        // GETRANGE 0 max-1 — bounded prefix only.
-        let bytes: Vec<u8> = redis::cmd("GETRANGE")
-            .arg(&payload.key)
-            .arg(0)
-            .arg(i64::from(payload.max_bytes) - 1)
-            .query_async(&mut *conn)
-            .await
-            .map_err(connection::redis_err)?;
+    if payload.max_bytes == 0 {
+        // `GETRANGE k 0 -1` would be the whole value.
         return Ok(StringValuePayload {
-            value: value::encode_string(bytes),
+            value: value::encode_string(Vec::new()),
             total_bytes,
-            truncated: true,
+            truncated: total_bytes > 0,
         });
     }
-
-    let bytes: Option<Vec<u8>> = conn
-        .get(&payload.key)
+    // Always a bounded prefix: the value can grow between STRLEN and the
+    // read, so a plain GET could still return an unbounded reply.
+    let bytes: Vec<u8> = redis::cmd("GETRANGE")
+        .arg(&payload.key)
+        .arg(0)
+        .arg(i64::from(payload.max_bytes) - 1)
+        .query_async(&mut *conn)
         .await
         .map_err(connection::redis_err)?;
-    let bytes = bytes.unwrap_or_default();
+    let (total_bytes, truncated) = prefix_extent(total_bytes, bytes.len(), payload.max_bytes);
     Ok(StringValuePayload {
         value: value::encode_string(bytes),
         total_bytes,
-        truncated: false,
+        truncated,
     })
+}
+
+/// Total length and truncation for a `GETRANGE 0 max-1` prefix read after
+/// `STRLEN`. A read shorter than the cap is the whole value (it may have
+/// shrunk since `STRLEN`); a full one is cut if the value was longer, or
+/// grew in between.
+fn prefix_extent(measured: u64, read: usize, max_bytes: u32) -> (u64, bool) {
+    let read = read as u64;
+    if read < u64::from(max_bytes) {
+        return (read, false);
+    }
+    (measured.max(read), measured > read || read > measured)
 }
 
 // ---------------------------------------------------------------------------
@@ -882,7 +890,21 @@ pub async fn fetch_json(
 
 #[cfg(test)]
 mod tests {
-    use super::tail_lrange_args;
+    use super::{prefix_extent, tail_lrange_args};
+
+    #[test]
+    fn string_prefix_reports_growth_after_strlen() {
+        // Fits: whole value read.
+        assert_eq!(prefix_extent(10, 10, 64), (10, false));
+        // Longer than the cap: prefix only.
+        assert_eq!(prefix_extent(100, 64, 64), (100, true));
+        // Grew past the cap between STRLEN and GETRANGE.
+        assert_eq!(prefix_extent(10, 64, 64), (64, true));
+        // Exactly the cap.
+        assert_eq!(prefix_extent(64, 64, 64), (64, false));
+        // Shrank or vanished in between: what was read is the value.
+        assert_eq!(prefix_extent(10, 0, 64), (0, false));
+    }
 
     // Page-0 of a 500-elt list with pageSize=200: we want the LAST 200
     // entries (indices 300..=499) so that reversing the response yields

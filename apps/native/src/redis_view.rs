@@ -86,6 +86,21 @@ pub struct RedisWorkspace {
 
 impl EventEmitter<RedisEvent> for RedisWorkspace {}
 
+/// Drops a retired or stale session on a blocking thread. The last handle
+/// owns the sockets and any SSH route, whose teardown blocks; it must never
+/// run on the UI thread. Same approach as `EngineSurface::detach`.
+fn release_session(runtime: &tokio::runtime::Handle, session: Arc<RedisSession>) {
+    drop(runtime.spawn_blocking(move || drop(session)));
+}
+
+impl Drop for RedisWorkspace {
+    fn drop(&mut self) {
+        // Normally detached first; this covers a workspace dropped with a
+        // live session.
+        self.retire_and_release();
+    }
+}
+
 impl RedisWorkspace {
     pub fn new(
         connection_id: String,
@@ -150,17 +165,22 @@ impl RedisWorkspace {
         ) {
             return;
         }
-        self.retire();
+        self.retire_and_release();
         self.phase = ConnectionPhase::Connecting;
         let backend = self.host.backend.clone();
         let id = self.connection_id.clone();
         let generation = self.generation;
+        let runtime = self.host.runtime.clone();
         let job = self.host.runtime.spawn(async move {
             let session = Arc::new(backend.open_redis_session(id).await?);
-            let overview = session
-                .overview()
-                .await
-                .map_err(|error| error.to_string())?;
+            let overview = match session.overview().await {
+                Ok(overview) => overview,
+                Err(error) => {
+                    // Never dropped on the UI thread, whoever awaits this.
+                    release_session(&tokio::runtime::Handle::current(), session);
+                    return Err(error.to_string());
+                }
+            };
             Ok::<_, String>((session, overview))
         });
         self.jobs.push(job.abort_handle());
@@ -168,20 +188,27 @@ impl RedisWorkspace {
             let Ok(result) = job.await else {
                 return;
             };
+            // Taken only by a current workspace; a stale or orphaned session
+            // is released on a blocking thread below, never dropped here.
+            let mut slot = Some(result);
             this.update(cx, |this, cx| {
                 if this.generation != generation {
                     return;
                 }
-                match result {
-                    Ok((session, overview)) => this.opened(session, overview, cx),
-                    Err(error) => {
+                match slot.take() {
+                    Some(Ok((session, overview))) => this.opened(session, overview, cx),
+                    Some(Err(error)) => {
                         this.note(Tone::Error, format!("Connection failed: {error}"));
                         this.phase = ConnectionPhase::Failed(error);
                     }
+                    None => {}
                 }
                 cx.notify();
             })
             .ok();
+            if let Some(Ok((session, _))) = slot {
+                release_session(&runtime, session);
+            }
         })
         .detach();
         cx.notify();
@@ -245,9 +272,17 @@ impl RedisWorkspace {
         session
     }
 
+    /// [`Self::retire`] for callers that do not hand the session on: the
+    /// session goes to a blocking thread instead of dropping here.
+    fn retire_and_release(&mut self) {
+        if let Some(session) = self.retire() {
+            release_session(&self.host.runtime, session);
+        }
+    }
+
     fn lost(&mut self, reason: String, cx: &mut Context<Self>) {
         self.note(Tone::Error, format!("Session lost: {reason}"));
-        self.retire();
+        self.retire_and_release();
         self.phase = ConnectionPhase::Failed(reason);
         cx.notify();
     }
@@ -299,47 +334,40 @@ impl RedisWorkspace {
         if self.session.is_none() {
             return;
         }
-        let Some(cursor) = self.keyspace.get_mut(db).and_then(|node| node.begin_page()) else {
+        let Some(request) = self.keyspace.begin_page(db) else {
             return;
         };
+        let (cursor, epoch) = (request.cursor, request.epoch);
         let retry = cursor.clone();
         let started = self.spawn(
             cx,
             move |session| async move { session.scan(db, cursor, "*").await },
-            move |this, result, _| {
-                if let Some(node) = this.keyspace.get_mut(db) {
-                    match result {
-                        Ok(page) => node.apply_page(page),
-                        Err(error) => node.fail_page(retry, error.to_string()),
-                    }
+            move |this, result, _| match result {
+                // Pages from before a tree refresh are dropped by epoch.
+                Ok(page) => {
+                    this.keyspace.apply_page(db, epoch, page);
                 }
+                Err(error) => this
+                    .keyspace
+                    .fail_page(db, epoch, retry, error.to_string()),
             },
         );
-        if !started && let Some(node) = self.keyspace.get_mut(db) {
-            node.fail_page(None, "Not connected".into());
+        if !started {
+            self.keyspace
+                .fail_page(db, epoch, None, "Not connected".into());
         }
         cx.notify();
     }
 
     /// Re-reads database totals and restarts sampling from the first page.
+    /// Pages still in flight belong to the old tree and are dropped.
     fn refresh_tree(&mut self, cx: &mut Context<Self>) {
         self.spawn(
             cx,
             |session| async move { session.overview().await },
             |this, result, cx| {
                 if let Ok(overview) = result {
-                    let expanded: Vec<u8> = this
-                        .keyspace
-                        .databases
-                        .iter()
-                        .filter(|db| db.expanded)
-                        .map(|db| db.index)
-                        .collect();
-                    this.keyspace = Keyspace::new(&overview.databases, overview.default_db);
-                    for db in expanded {
-                        if let Some(node) = this.keyspace.get_mut(db) {
-                            node.expanded = true;
-                        }
+                    for db in this.keyspace.refresh(&overview.databases) {
                         this.load_page(db, cx);
                     }
                 }
@@ -438,7 +466,13 @@ impl RedisWorkspace {
         }
     }
 
-    fn run(&mut self, input: String, tokens: Vec<String>, confirmed: bool, cx: &mut Context<Self>) {
+    fn run(
+        &mut self,
+        input: String,
+        tokens: Vec<Vec<u8>>,
+        confirmed: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.console.pending = None;
         let command = input.clone();
         let retry = tokens.clone();
@@ -560,16 +594,29 @@ impl RedisWorkspace {
         cx.stop_propagation();
     }
 
-    /// Opens (or selects) the inspector tab for a UTF-8 key.
+    /// Opens (or selects) the inspector tab for a UTF-8 key. Other keys are
+    /// handed to the console, whose arguments are raw bytes: the input is
+    /// prefilled with an escaped `TYPE` command for that exact key (not run).
     fn inspect(&mut self, db: u8, name: &[u8], window: &mut Window, cx: &mut Context<Self>) {
         let Ok(key) = String::from_utf8(name.to_vec()) else {
+            let quoted = redis_model::quote_key(name);
+            let select = if db == self.console.db {
+                String::new()
+            } else {
+                format!("SELECT {db}, then ")
+            };
             self.note(
-                Tone::Error,
+                Tone::Note,
                 format!(
-                    "{} is not UTF-8; inspect it from the console",
+                    "{} is not UTF-8 and has no inspector tab; {select}name it in the console as {quoted}",
                     redis_model::display_key(name)
                 ),
             );
+            if db == self.console.db {
+                self.input.update(cx, |editor, cx| {
+                    editor.set_text(format!("TYPE {quoted}"), window, cx)
+                });
+            }
             self.select_tab(None, window, cx);
             return;
         };
