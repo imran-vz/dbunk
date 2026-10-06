@@ -61,6 +61,7 @@ pub(super) fn snapshot() -> WorkspaceSnapshot {
         layout: Layout::SideBySide,
         density: WorkspaceDensity::Compact,
         navigator_width: 320.0,
+        shell: None,
     }
 }
 
@@ -92,7 +93,7 @@ async fn schema_map_tab_round_trips_only_identity_and_old_workspaces_remain_read
     save(&pool, None, input.clone()).await.unwrap();
     let encoded = raw(&pool).await;
     let mut value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(value["version"], 15);
+    assert_eq!(value["version"], 16);
     assert_eq!(load(&pool).await.unwrap().snapshot, Some(input));
     assert_eq!(raw(&pool).await, encoded);
     for version in 1..=11 {
@@ -109,6 +110,51 @@ async fn schema_map_tab_round_trips_only_identity_and_old_workspaces_remain_read
         assert_eq!(load(&pool).await.unwrap().snapshot, Some(legacy.clone()));
         assert_eq!(raw(&pool).await, encoded);
     }
+}
+
+#[tokio::test]
+async fn shell_state_round_trips_and_pre_v16_records_load_with_defaults() {
+    let pool = pool().await;
+    let mut input = snapshot();
+    input.shell = Some(WorkspaceShell {
+        sidebar_collapsed: true,
+        status_bar_collapsed: true,
+        project: Some("Payments 東京".into()),
+        environment: Some(crate::backend::DevelopmentEnvironment::Staging),
+    });
+    save(&pool, None, input.clone()).await.unwrap();
+    let encoded = raw(&pool).await;
+    let value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(value["version"], 16);
+    assert_eq!(value["snapshot"]["shell"]["environment"], "staging");
+    assert_eq!(
+        load(&pool).await.unwrap().snapshot,
+        Some(validate(input).unwrap())
+    );
+
+    // A version-15 record has no shell state: it loads with the defaults and
+    // the stored bytes are not upgraded by loading.
+    let mut old = value.clone();
+    old["version"] = 15.into();
+    old["snapshot"].as_object_mut().unwrap().remove("shell");
+    let old = old.to_string();
+    seed(&pool, &old).await;
+    let loaded = load(&pool).await.unwrap().snapshot.unwrap();
+    assert_eq!(loaded.shell, None);
+    assert_eq!(loaded.documents, validate(snapshot()).unwrap().documents);
+    assert_eq!(raw(&pool).await, old);
+
+    // An older envelope cannot carry the newer field, and unknown shell
+    // fields are refused rather than dropped.
+    let mut forged = value.clone();
+    forged["version"] = 15.into();
+    assert_eq!(decode(&forged.to_string()), Err(WorkspaceError::Corrupt));
+    let mut future = value.clone();
+    future["snapshot"]["shell"]["pinnedPanel"] = true.into();
+    assert_eq!(decode(&future.to_string()), Err(WorkspaceError::Corrupt));
+    let mut empty = value;
+    empty["snapshot"]["shell"]["project"] = "".into();
+    assert_eq!(decode(&empty.to_string()), Err(WorkspaceError::Corrupt));
 }
 
 #[tokio::test]
@@ -148,8 +194,8 @@ async fn corrupt_and_future_records_are_preserved_until_explicit_reset() {
     for (value, expected) in [
         ("broken", WorkspaceError::Corrupt),
         (
-            r#"{"version":16,"snapshot":{"future":"data"}}"#,
-            WorkspaceError::UnsupportedVersion(16),
+            r#"{"version":17,"snapshot":{"future":"data"}}"#,
+            WorkspaceError::UnsupportedVersion(17),
         ),
         (r#"{"version":1,"snapshot":{}}"#, WorkspaceError::Corrupt),
     ] {
@@ -470,7 +516,7 @@ async fn v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_c
     input.documents[0].table = Some(table_state());
     let revision = save(&pool, None, input.clone()).await.unwrap();
     let encoded: serde_json::Value = serde_json::from_str(&raw(&pool).await).unwrap();
-    assert_eq!(encoded["version"], 15);
+    assert_eq!(encoded["version"], 16);
     let table = &encoded["snapshot"]["documents"][0]["table"];
     assert_eq!(table["draft"]["applyState"], "outcomeUnknown");
     assert_eq!(
@@ -499,7 +545,7 @@ async fn v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_c
 }
 
 #[tokio::test]
-async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v15() {
+async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v16() {
     let pool = pool().await;
     let mut value: serde_json::Value = serde_json::from_str(&encode(snapshot()).unwrap()).unwrap();
     value["version"] = 1.into();
@@ -519,7 +565,7 @@ async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v15() 
         .unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&raw(&pool).await).unwrap()["version"],
-        15
+        16
     );
 }
 
@@ -670,7 +716,7 @@ async fn schema_journal_round_trips_exact_attempt_comment_and_unknown_state_with
         revision = Some(save(&pool, revision, input.clone()).await.unwrap());
         let encoded = raw(&pool).await;
         let json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(json["version"], 15);
+        assert_eq!(json["version"], 16);
         assert_eq!(
             json["snapshot"]["documents"][0]["schemaChanges"]["attemptId"],
             attempt
@@ -699,8 +745,8 @@ async fn old_future_and_corrupt_schema_journals_preserve_their_original_bytes() 
         variants.push((value, WorkspaceError::Corrupt));
     }
     let mut future = base.clone();
-    future["version"] = 16.into();
-    variants.push((future, WorkspaceError::UnsupportedVersion(16)));
+    future["version"] = 17.into();
+    variants.push((future, WorkspaceError::UnsupportedVersion(17)));
     for attempt in [
         "not-a-uuid",
         "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
@@ -809,7 +855,7 @@ async fn backup_restore_tab_persists_only_identity_and_refuses_old_or_extended_r
     let encoded = encode(input.clone()).unwrap();
     assert_eq!(decode(&encoded).unwrap(), input);
     let base: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(base["version"], 15);
+    assert_eq!(base["version"], 16);
     for defect in 0..3 {
         let mut value = base.clone();
         match defect {
@@ -845,7 +891,7 @@ async fn csv_transfer_tab_refuses_persisted_source_samples_or_execution() {
     let encoded = encode(input.clone()).unwrap();
     assert_eq!(decode(&encoded).unwrap(), input);
     let base: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(base["version"], 15);
+    assert_eq!(base["version"], 16);
     for defect in 0..4 {
         let mut value = base.clone();
         match defect {

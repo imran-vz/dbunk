@@ -39,6 +39,7 @@ pub use workspace::{
     WORKSPACE_TABLE_DDL_MAX_BYTES,
 };
 pub use workspace::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
+pub use workspace::WorkspaceShell;
 #[cfg(test)]
 mod tests;
 

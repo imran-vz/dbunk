@@ -101,6 +101,7 @@ pub use development::{
     REDIS_MAX_DATABASES, REDIS_PAGE_KEYS, REDIS_SCAN_COUNT,
 };
 pub use development::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
+pub use development::WorkspaceShell;
 pub use legacy_import::{
     import_legacy_profile, snapshot_legacy_profile, LegacyImportManifest, LegacySnapshotManifest,
 };

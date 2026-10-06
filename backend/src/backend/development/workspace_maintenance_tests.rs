@@ -55,7 +55,7 @@ async fn maintenance_recovery_preserves_exact_identity_and_partial_outcomes_with
         assert_eq!(load(&pool).await.unwrap().snapshot, Some(input.clone()));
         assert_eq!(raw(&pool).await, original);
         let value: serde_json::Value = serde_json::from_str(&original).unwrap();
-        assert_eq!(value["version"], 15);
+        assert_eq!(value["version"], 16);
         assert_eq!(
             value["snapshot"]["documents"][0]["maintenance"]["state"],
             match state {
@@ -71,7 +71,7 @@ async fn maintenance_recovery_preserves_exact_identity_and_partial_outcomes_with
         let mut value = base.clone();
         match defect {
             0 => value["version"] = 8.into(),
-            1 => value["version"] = 16.into(),
+            1 => value["version"] = 17.into(),
             2 => value["snapshot"]["documents"][0]["connectionId"] = serde_json::Value::Null,
             3 => value["snapshot"]["documents"][0]["tool"] = "administration".into(),
             4 => value["snapshot"]["documents"][0]["maintenance"]["confirmation"] = true.into(),
